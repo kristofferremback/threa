@@ -1,81 +1,56 @@
 /**
- * Threading Model Wireframes V2 - Graph-Based Panel Navigation
- * Interactive demo showcasing 10 different panel-based threading approaches
+ * Enhanced Threading Wireframes - Final 3 Options
+ * Deep dive into Stacked Panels, Timeline + Context, and Multi-Context
  */
 
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Option1SingleThreadPanel } from "./wireframes-v2/Option1SingleThreadPanel";
-import { Option2TabbedThreads } from "./wireframes-v2/Option2TabbedThreads";
-import { Option3StackedPanels } from "./wireframes-v2/Option3StackedPanels";
-import { Option4GraphNavigator } from "./wireframes-v2/Option4GraphNavigator";
-import { Option5FocusMode } from "./wireframes-v2/Option5FocusMode";
-import { Option6TimelineContext } from "./wireframes-v2/Option6TimelineContext";
-import { Option7BidirectionalNav } from "./wireframes-v2/Option7BidirectionalNav";
-import { Option8ConnectionMap } from "./wireframes-v2/Option8ConnectionMap";
-import { Option9ThreadHistory } from "./wireframes-v2/Option9ThreadHistory";
-import { Option10MultiContext } from "./wireframes-v2/Option10MultiContext";
+import { EnhancedStackedPanels } from "./wireframes-enhanced/EnhancedStackedPanels";
+import { EnhancedTimeline } from "./wireframes-enhanced/EnhancedTimeline";
+import { EnhancedMultiContext } from "./wireframes-enhanced/EnhancedMultiContext";
 
 const wireframes = [
   {
     id: 1,
-    name: "Single Panel + Breadcrumbs",
-    component: Option1SingleThreadPanel,
-    description: "One thread at a time with breadcrumb navigation and 'Open Parent' button",
+    name: "Stacked Panels",
+    component: EnhancedStackedPanels,
+    description: "Horizontal panel stack with minimize, pin, and panel management",
+    color: "#2196f3",
+    features: [
+      "Pin important panels",
+      "Minimize to avatar",
+      "Hover previews",
+      "Close all unpinned",
+      "Unlimited panels",
+    ],
   },
   {
     id: 2,
-    name: "Tabbed Threads",
-    component: Option2TabbedThreads,
-    description: "Multiple threads in tabs - open parent in new tab, switch between threads easily",
+    name: "Timeline + Context",
+    component: EnhancedTimeline,
+    description: "Chronological timeline with collapsible parent context and visual threading",
+    color: "#673ab7",
+    features: [
+      "Temporal awareness",
+      "Visual thread lines",
+      "Collapsible context",
+      "Timeline dots",
+      "Full conversation flow",
+    ],
   },
   {
     id: 3,
-    name: "Stacked Panels",
-    component: Option3StackedPanels,
-    description: "Horizontal stack of panels - each thread opens in a new panel to the right",
-  },
-  {
-    id: 4,
-    name: "Graph Navigator",
-    component: Option4GraphNavigator,
-    description: "Visual graph showing parent → current → children with clickable nodes",
-  },
-  {
-    id: 5,
-    name: "Focus Mode",
-    component: Option5FocusMode,
-    description: "Current message highlighted, parent above, siblings & replies below",
-  },
-  {
-    id: 6,
-    name: "Timeline + Context",
-    component: Option6TimelineContext,
-    description: "Chronological feed with thread context showing parent chain",
-  },
-  {
-    id: 7,
-    name: "Bidirectional Navigator",
-    component: Option7BidirectionalNav,
-    description: "Prominent Up/Down buttons for graph navigation with parent/reply previews",
-  },
-  {
-    id: 8,
-    name: "Connection Map",
-    component: Option8ConnectionMap,
-    description: "Mini-map visualization of thread connections + detailed thread view",
-  },
-  {
-    id: 9,
-    name: "Thread History",
-    component: Option9ThreadHistory,
-    description: "Browser-style back/forward navigation through thread jumps",
-  },
-  {
-    id: 10,
     name: "Multi-Context",
-    component: Option10MultiContext,
-    description: "Parent context always visible at top, current message highlighted, replies below",
+    component: EnhancedMultiContext,
+    description: "Parent context always visible with resizable split and numbered steps",
+    color: "#ff6f00",
+    features: [
+      "Never lose context",
+      "Resizable context panel",
+      "Numbered parent chain",
+      "Highlighted current",
+      "Visual connections",
+    ],
   },
 ];
 
@@ -83,7 +58,7 @@ function App() {
   const [selectedOption, setSelectedOption] = useState(1);
 
   const CurrentWireframe = wireframes.find((w) => w.id === selectedOption)!.component;
-  const currentDescription = wireframes.find((w) => w.id === selectedOption)!.description;
+  const currentWireframe = wireframes.find((w) => w.id === selectedOption)!;
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -94,57 +69,80 @@ function App() {
           top: 0,
           backgroundColor: "#fff",
           borderBottom: "2px solid #ddd",
-          padding: "16px 20px",
+          padding: "20px",
           zIndex: 100,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
         }}
       >
-        <h1 style={{ margin: "0 0 4px 0", fontSize: "24px", fontWeight: 700 }}>
-          Graph-Based Threading Models
+        <h1 style={{ margin: "0 0 6px 0", fontSize: "28px", fontWeight: 800 }}>
+          Enhanced Threading Models
         </h1>
-        <p style={{ margin: "0 0 4px 0", fontSize: "13px", color: "#666" }}>
-          All options use side panels with hover previews and "Open Parent" functionality
-        </p>
-        <p style={{ margin: "0 0 16px 0", fontSize: "14px", color: "#333", fontWeight: 500 }}>
-          {currentDescription}
+        <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666", lineHeight: "1.5" }}>
+          Exploring the top 3 panel-based threading approaches with advanced features and polish
         </p>
 
-        {/* Navigation */}
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          {wireframes.map((wireframe) => (
-            <button
-              key={wireframe.id}
-              onClick={() => setSelectedOption(wireframe.id)}
-              style={{
-                padding: "8px 16px",
-                fontSize: "13px",
-                fontWeight: 600,
-                backgroundColor: selectedOption === wireframe.id ? "#0066cc" : "#fff",
-                color: selectedOption === wireframe.id ? "#fff" : "#333",
-                border: selectedOption === wireframe.id ? "none" : "1px solid #ddd",
-                borderRadius: "6px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (selectedOption !== wireframe.id) {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedOption !== wireframe.id) {
-                  e.currentTarget.style.backgroundColor = "#fff";
-                }
-              }}
-            >
-              {wireframe.id}. {wireframe.name}
-            </button>
-          ))}
+        {/* Navigation cards */}
+        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+          {wireframes.map((wireframe) => {
+            const isSelected = selectedOption === wireframe.id;
+            return (
+              <div
+                key={wireframe.id}
+                onClick={() => setSelectedOption(wireframe.id)}
+                style={{
+                  flex: "1 1 300px",
+                  padding: "16px",
+                  backgroundColor: isSelected ? wireframe.color : "#fff",
+                  color: isSelected ? "#fff" : "#333",
+                  border: isSelected ? "none" : "2px solid #e0e0e0",
+                  borderRadius: "10px",
+                  cursor: "pointer",
+                  transition: "all 0.3s",
+                  boxShadow: isSelected
+                    ? "0 4px 12px rgba(0,0,0,0.15)"
+                    : "0 2px 4px rgba(0,0,0,0.05)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = wireframe.color;
+                    e.currentTarget.style.backgroundColor = "#fafafa";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = "#e0e0e0";
+                    e.currentTarget.style.backgroundColor = "#fff";
+                  }
+                }}
+              >
+                <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+                  {wireframe.id}. {wireframe.name}
+                </div>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    opacity: isSelected ? 0.95 : 0.7,
+                    marginBottom: "12px",
+                    lineHeight: "1.4",
+                  }}
+                >
+                  {wireframe.description}
+                </div>
+                <div style={{ fontSize: "11px", opacity: isSelected ? 0.9 : 0.6 }}>
+                  {wireframe.features.map((feature, idx) => (
+                    <div key={idx} style={{ marginBottom: "4px" }}>
+                      • {feature}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: "20px 0", minHeight: "calc(100vh - 250px)" }}>
+      <div style={{ padding: "24px 0" }}>
         <CurrentWireframe />
       </div>
 
@@ -152,20 +150,40 @@ function App() {
       <div
         style={{
           marginTop: "40px",
-          padding: "20px",
-          backgroundColor: "#f5f5f5",
-          borderTop: "1px solid #ddd",
+          padding: "24px",
+          backgroundColor: currentWireframe.color,
+          color: "#fff",
           textAlign: "center",
-          fontSize: "13px",
-          color: "#666",
         }}
       >
-        <p style={{ margin: "0 0 8px 0" }}>
-          <strong>Key Features:</strong> All wireframes treat messages as nodes in a graph, not a tree
+        <h3 style={{ margin: "0 0 12px 0", fontSize: "20px", fontWeight: 700 }}>
+          {currentWireframe.name}
+        </h3>
+        <p style={{ margin: "0 0 16px 0", fontSize: "14px", opacity: 0.9, lineHeight: "1.6" }}>
+          {currentWireframe.description}
         </p>
-        <p style={{ margin: 0 }}>
-          Hover over messages for previews • Click to open in side panel • Navigate with "Open Parent" buttons
-        </p>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "24px",
+            flexWrap: "wrap",
+            fontSize: "13px",
+          }}
+        >
+          {currentWireframe.features.map((feature, idx) => (
+            <div
+              key={idx}
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "rgba(255,255,255,0.2)",
+                borderRadius: "20px",
+              }}
+            >
+              ✓ {feature}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
