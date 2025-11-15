@@ -7,14 +7,29 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TimelineStackedConnected } from "./wireframes-enhanced/TimelineStackedConnected";
 import { TimelineStackedAnimated } from "./wireframes-enhanced/TimelineStackedAnimated";
+import { TimelineStackedArchitectural } from "./wireframes-enhanced/TimelineStackedArchitectural";
 
 const wireframes = [
   {
     id: 1,
+    name: "Architectural Lines",
+    component: TimelineStackedArchitectural,
+    description: "Clean lines that follow panel edges - no curves through space",
+    color: "#673ab7",
+    features: [
+      "Lines follow panel borders",
+      "Subtle darkened backgrounds",
+      "Clean, minimal design",
+      "Edge-to-edge routing",
+      "Professional look",
+    ],
+  },
+  {
+    id: 2,
     name: "Bezier Curve Connectors",
     component: TimelineStackedConnected,
     description: "Smooth curved lines connecting panels with highlighted messages",
-    color: "#673ab7",
+    color: "#512da8",
     features: [
       "Shift+click to open panel",
       "Hover button shortcut",
@@ -24,7 +39,7 @@ const wireframes = [
     ],
   },
   {
-    id: 2,
+    id: 3,
     name: "Animated Color Connectors",
     component: TimelineStackedAnimated,
     description: "Straight lines with unique colors and pulse animations for each panel",
@@ -76,7 +91,7 @@ function App() {
                   key={wireframe.id}
                   onClick={() => setSelectedOption(wireframe.id)}
                   style={{
-                    flex: "1 1 400px",
+                    flex: "1 1 350px",
                     padding: "20px",
                     backgroundColor: isSelected ? wireframe.color : "#fff",
                     color: isSelected ? "#fff" : "#333",
@@ -104,7 +119,7 @@ function App() {
                   }}
                 >
                   <div style={{ fontSize: "20px", fontWeight: 700, marginBottom: "10px" }}>
-                    Option {wireframe.id}. {wireframe.name}
+                    {wireframe.id}. {wireframe.name}
                   </div>
                   <div
                     style={{
