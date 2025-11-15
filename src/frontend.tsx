@@ -1,33 +1,82 @@
 /**
- * Threading Model Wireframes - Interactive Demo
- * Entry point for the React app showcasing 10 different threading UX approaches
+ * Threading Model Wireframes V2 - Graph-Based Panel Navigation
+ * Interactive demo showcasing 10 different panel-based threading approaches
  */
 
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { sampleMessages } from "./data/sampleMessages";
-import { Option1InlineCollapse } from "./wireframes/Option1InlineCollapse";
-import { Option2SplitPanel } from "./wireframes/Option2SplitPanel";
-import { Option3HoverReveal } from "./wireframes/Option3HoverReveal";
-import { Option4ConversationCards } from "./wireframes/Option4ConversationCards";
-import { Option5TimelineJump } from "./wireframes/Option5TimelineJump";
-import { Option6IndentedTree } from "./wireframes/Option6IndentedTree";
-import { Option7StackedCards } from "./wireframes/Option7StackedCards";
-import { Option8CompactLinks } from "./wireframes/Option8CompactLinks";
-import { Option9SlackEnhanced } from "./wireframes/Option9SlackEnhanced";
-import { Option10ConversationFirst } from "./wireframes/Option10ConversationFirst";
+import { Option1SingleThreadPanel } from "./wireframes-v2/Option1SingleThreadPanel";
+import { Option2TabbedThreads } from "./wireframes-v2/Option2TabbedThreads";
+import { Option3StackedPanels } from "./wireframes-v2/Option3StackedPanels";
+import { Option4GraphNavigator } from "./wireframes-v2/Option4GraphNavigator";
+import { Option5FocusMode } from "./wireframes-v2/Option5FocusMode";
+import { Option6TimelineContext } from "./wireframes-v2/Option6TimelineContext";
+import { Option7BidirectionalNav } from "./wireframes-v2/Option7BidirectionalNav";
+import { Option8ConnectionMap } from "./wireframes-v2/Option8ConnectionMap";
+import { Option9ThreadHistory } from "./wireframes-v2/Option9ThreadHistory";
+import { Option10MultiContext } from "./wireframes-v2/Option10MultiContext";
 
 const wireframes = [
-  { id: 1, name: "Inline Collapse", component: Option1InlineCollapse, description: "Expand/collapse threads inline with depth indicators" },
-  { id: 2, name: "Split Panel", component: Option2SplitPanel, description: "Dedicated thread viewer alongside feed" },
-  { id: 3, name: "Hover Reveal", component: Option3HoverReveal, description: "Clean feed, hover shows preview" },
-  { id: 4, name: "Conversation Cards", component: Option4ConversationCards, description: "Expandable branches in discrete cards" },
-  { id: 5, name: "Timeline Jump", component: Option5TimelineJump, description: "Chronological feed with thread modals" },
-  { id: 6, name: "Indented Tree", component: Option6IndentedTree, description: "Classic tree with connector lines" },
-  { id: 7, name: "Stacked Cards", component: Option7StackedCards, description: "Physical depth through layering" },
-  { id: 8, name: "Compact Links", component: Option8CompactLinks, description: "Aggressive compression with modal expansion" },
-  { id: 9, name: "Slack Enhanced", component: Option9SlackEnhanced, description: "Familiar Slack pattern with improvements" },
-  { id: 10, name: "Conversation-First", component: Option10ConversationFirst, description: "Conversations get cards, flat messages are dividers" },
+  {
+    id: 1,
+    name: "Single Panel + Breadcrumbs",
+    component: Option1SingleThreadPanel,
+    description: "One thread at a time with breadcrumb navigation and 'Open Parent' button",
+  },
+  {
+    id: 2,
+    name: "Tabbed Threads",
+    component: Option2TabbedThreads,
+    description: "Multiple threads in tabs - open parent in new tab, switch between threads easily",
+  },
+  {
+    id: 3,
+    name: "Stacked Panels",
+    component: Option3StackedPanels,
+    description: "Horizontal stack of panels - each thread opens in a new panel to the right",
+  },
+  {
+    id: 4,
+    name: "Graph Navigator",
+    component: Option4GraphNavigator,
+    description: "Visual graph showing parent → current → children with clickable nodes",
+  },
+  {
+    id: 5,
+    name: "Focus Mode",
+    component: Option5FocusMode,
+    description: "Current message highlighted, parent above, siblings & replies below",
+  },
+  {
+    id: 6,
+    name: "Timeline + Context",
+    component: Option6TimelineContext,
+    description: "Chronological feed with thread context showing parent chain",
+  },
+  {
+    id: 7,
+    name: "Bidirectional Navigator",
+    component: Option7BidirectionalNav,
+    description: "Prominent Up/Down buttons for graph navigation with parent/reply previews",
+  },
+  {
+    id: 8,
+    name: "Connection Map",
+    component: Option8ConnectionMap,
+    description: "Mini-map visualization of thread connections + detailed thread view",
+  },
+  {
+    id: 9,
+    name: "Thread History",
+    component: Option9ThreadHistory,
+    description: "Browser-style back/forward navigation through thread jumps",
+  },
+  {
+    id: 10,
+    name: "Multi-Context",
+    component: Option10MultiContext,
+    description: "Parent context always visible at top, current message highlighted, replies below",
+  },
 ];
 
 function App() {
@@ -50,10 +99,13 @@ function App() {
           boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
         }}
       >
-        <h1 style={{ margin: "0 0 8px 0", fontSize: "24px", fontWeight: 700 }}>
-          Threading Model Wireframes
+        <h1 style={{ margin: "0 0 4px 0", fontSize: "24px", fontWeight: 700 }}>
+          Graph-Based Threading Models
         </h1>
-        <p style={{ margin: "0 0 16px 0", fontSize: "14px", color: "#666" }}>
+        <p style={{ margin: "0 0 4px 0", fontSize: "13px", color: "#666" }}>
+          All options use side panels with hover previews and "Open Parent" functionality
+        </p>
+        <p style={{ margin: "0 0 16px 0", fontSize: "14px", color: "#333", fontWeight: 500 }}>
           {currentDescription}
         </p>
 
@@ -92,8 +144,8 @@ function App() {
       </div>
 
       {/* Content */}
-      <div style={{ padding: "20px 0", minHeight: "calc(100vh - 200px)" }}>
-        <CurrentWireframe messages={sampleMessages} />
+      <div style={{ padding: "20px 0", minHeight: "calc(100vh - 250px)" }}>
+        <CurrentWireframe />
       </div>
 
       {/* Footer */}
@@ -108,9 +160,11 @@ function App() {
           color: "#666",
         }}
       >
+        <p style={{ margin: "0 0 8px 0" }}>
+          <strong>Key Features:</strong> All wireframes treat messages as nodes in a graph, not a tree
+        </p>
         <p style={{ margin: 0 }}>
-          Use the buttons above to switch between different threading models.
-          Each wireframe demonstrates a unique UX approach.
+          Hover over messages for previews • Click to open in side panel • Navigate with "Open Parent" buttons
         </p>
       </div>
     </div>
