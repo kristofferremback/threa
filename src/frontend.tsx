@@ -1,55 +1,40 @@
 /**
- * Enhanced Threading Wireframes - Final 3 Options
- * Deep dive into Stacked Panels, Timeline + Context, and Multi-Context
+ * Timeline + Stacked Hybrid Wireframes
+ * Combining Timeline view with Stacked Panels and visual connectors
  */
 
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { EnhancedStackedPanels } from "./wireframes-enhanced/EnhancedStackedPanels";
-import { EnhancedTimeline } from "./wireframes-enhanced/EnhancedTimeline";
-import { EnhancedMultiContext } from "./wireframes-enhanced/EnhancedMultiContext";
+import { TimelineStackedConnected } from "./wireframes-enhanced/TimelineStackedConnected";
+import { TimelineStackedAnimated } from "./wireframes-enhanced/TimelineStackedAnimated";
 
 const wireframes = [
   {
     id: 1,
-    name: "Stacked Panels",
-    component: EnhancedStackedPanels,
-    description: "Horizontal panel stack with minimize, pin, and panel management",
-    color: "#2196f3",
+    name: "Bezier Curve Connectors",
+    component: TimelineStackedConnected,
+    description: "Smooth curved lines connecting panels with highlighted messages",
+    color: "#673ab7",
     features: [
-      "Pin important panels",
-      "Minimize to avatar",
-      "Hover previews",
-      "Close all unpinned",
-      "Unlimited panels",
+      "Shift+click to open panel",
+      "Hover button shortcut",
+      "Smooth bezier curves",
+      "Message highlighting",
+      "Arrow indicators",
     ],
   },
   {
     id: 2,
-    name: "Timeline + Context",
-    component: EnhancedTimeline,
-    description: "Chronological timeline with collapsible parent context and visual threading",
-    color: "#673ab7",
+    name: "Animated Color Connectors",
+    component: TimelineStackedAnimated,
+    description: "Straight lines with unique colors and pulse animations for each panel",
+    color: "#3f51b5",
     features: [
-      "Temporal awareness",
-      "Visual thread lines",
-      "Collapsible context",
-      "Timeline dots",
-      "Full conversation flow",
-    ],
-  },
-  {
-    id: 3,
-    name: "Multi-Context",
-    component: EnhancedMultiContext,
-    description: "Parent context always visible with resizable split and numbered steps",
-    color: "#ff6f00",
-    features: [
-      "Never lose context",
-      "Resizable context panel",
-      "Numbered parent chain",
-      "Highlighted current",
-      "Visual connections",
+      "Each panel gets unique color",
+      "Pulse animation on open",
+      "Color-coded highlights",
+      "Straight line connectors",
+      "Glow effects",
     ],
   },
 ];
@@ -61,7 +46,7 @@ function App() {
   const currentWireframe = wireframes.find((w) => w.id === selectedOption)!;
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", backgroundColor: "#fafafa", minHeight: "100vh" }}>
       {/* Header */}
       <div
         style={{
@@ -69,120 +54,126 @@ function App() {
           top: 0,
           backgroundColor: "#fff",
           borderBottom: "2px solid #ddd",
-          padding: "20px",
+          padding: "24px",
           zIndex: 100,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
         }}
       >
-        <h1 style={{ margin: "0 0 6px 0", fontSize: "28px", fontWeight: 800 }}>
-          Enhanced Threading Models
-        </h1>
-        <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#666", lineHeight: "1.5" }}>
-          Exploring the top 3 panel-based threading approaches with advanced features and polish
-        </p>
+        <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
+          <h1 style={{ margin: "0 0 8px 0", fontSize: "32px", fontWeight: 800, color: "#333" }}>
+            Timeline + Stacked Panels
+          </h1>
+          <p style={{ margin: "0 0 20px 0", fontSize: "15px", color: "#666", lineHeight: "1.6" }}>
+            Combining the best of Timeline + Context with Stacked Panels. Visual connections show panel relationships.
+          </p>
 
-        {/* Navigation cards */}
-        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-          {wireframes.map((wireframe) => {
-            const isSelected = selectedOption === wireframe.id;
-            return (
-              <div
-                key={wireframe.id}
-                onClick={() => setSelectedOption(wireframe.id)}
-                style={{
-                  flex: "1 1 300px",
-                  padding: "16px",
-                  backgroundColor: isSelected ? wireframe.color : "#fff",
-                  color: isSelected ? "#fff" : "#333",
-                  border: isSelected ? "none" : "2px solid #e0e0e0",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  transition: "all 0.3s",
-                  boxShadow: isSelected
-                    ? "0 4px 12px rgba(0,0,0,0.15)"
-                    : "0 2px 4px rgba(0,0,0,0.05)",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.borderColor = wireframe.color;
-                    e.currentTarget.style.backgroundColor = "#fafafa";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) {
-                    e.currentTarget.style.borderColor = "#e0e0e0";
-                    e.currentTarget.style.backgroundColor = "#fff";
-                  }
-                }}
-              >
-                <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
-                  {wireframe.id}. {wireframe.name}
-                </div>
+          {/* Navigation cards */}
+          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+            {wireframes.map((wireframe) => {
+              const isSelected = selectedOption === wireframe.id;
+              return (
                 <div
+                  key={wireframe.id}
+                  onClick={() => setSelectedOption(wireframe.id)}
                   style={{
-                    fontSize: "13px",
-                    opacity: isSelected ? 0.95 : 0.7,
-                    marginBottom: "12px",
-                    lineHeight: "1.4",
+                    flex: "1 1 400px",
+                    padding: "20px",
+                    backgroundColor: isSelected ? wireframe.color : "#fff",
+                    color: isSelected ? "#fff" : "#333",
+                    border: isSelected ? "none" : "2px solid #e0e0e0",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    transition: "all 0.3s",
+                    boxShadow: isSelected
+                      ? "0 6px 16px rgba(0,0,0,0.15)"
+                      : "0 2px 6px rgba(0,0,0,0.05)",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = wireframe.color;
+                      e.currentTarget.style.backgroundColor = "#f9f9f9";
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = "#e0e0e0";
+                      e.currentTarget.style.backgroundColor = "#fff";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }
                   }}
                 >
-                  {wireframe.description}
+                  <div style={{ fontSize: "20px", fontWeight: 700, marginBottom: "10px" }}>
+                    Option {wireframe.id}. {wireframe.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      opacity: isSelected ? 0.95 : 0.7,
+                      marginBottom: "14px",
+                      lineHeight: "1.5",
+                    }}
+                  >
+                    {wireframe.description}
+                  </div>
+                  <div style={{ fontSize: "12px", opacity: isSelected ? 0.9 : 0.6 }}>
+                    {wireframe.features.map((feature, idx) => (
+                      <div key={idx} style={{ marginBottom: "5px" }}>
+                        • {feature}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ fontSize: "11px", opacity: isSelected ? 0.9 : 0.6 }}>
-                  {wireframe.features.map((feature, idx) => (
-                    <div key={idx} style={{ marginBottom: "4px" }}>
-                      • {feature}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: "24px 0" }}>
+      <div style={{ padding: "32px 24px", maxWidth: "1600px", margin: "0 auto" }}>
         <CurrentWireframe />
       </div>
 
       {/* Footer */}
       <div
         style={{
-          marginTop: "40px",
-          padding: "24px",
+          marginTop: "60px",
+          padding: "32px",
           backgroundColor: currentWireframe.color,
           color: "#fff",
-          textAlign: "center",
         }}
       >
-        <h3 style={{ margin: "0 0 12px 0", fontSize: "20px", fontWeight: 700 }}>
-          {currentWireframe.name}
-        </h3>
-        <p style={{ margin: "0 0 16px 0", fontSize: "14px", opacity: 0.9, lineHeight: "1.6" }}>
-          {currentWireframe.description}
-        </p>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "24px",
-            flexWrap: "wrap",
-            fontSize: "13px",
-          }}
-        >
-          {currentWireframe.features.map((feature, idx) => (
-            <div
-              key={idx}
-              style={{
-                padding: "8px 16px",
-                backgroundColor: "rgba(255,255,255,0.2)",
-                borderRadius: "20px",
-              }}
-            >
-              ✓ {feature}
-            </div>
-          ))}
+        <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
+          <h3 style={{ margin: "0 0 16px 0", fontSize: "24px", fontWeight: 700 }}>
+            {currentWireframe.name}
+          </h3>
+          <p style={{ margin: "0 0 20px 0", fontSize: "15px", opacity: 0.9, lineHeight: "1.7" }}>
+            {currentWireframe.description}
+          </p>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-start",
+              gap: "12px",
+              flexWrap: "wrap",
+              fontSize: "13px",
+            }}
+          >
+            {currentWireframe.features.map((feature, idx) => (
+              <div
+                key={idx}
+                style={{
+                  padding: "10px 18px",
+                  backgroundColor: "rgba(255,255,255,0.2)",
+                  borderRadius: "24px",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                }}
+              >
+                ✓ {feature}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -197,10 +188,8 @@ const app = (
 );
 
 if (import.meta.hot) {
-  // With hot module reloading, `import.meta.hot.data` is persisted.
   const root = (import.meta.hot.data.root ??= createRoot(elem));
   root.render(app);
 } else {
-  // The hot module reloading API is not available in production.
   createRoot(elem).render(app);
 }
