@@ -257,9 +257,11 @@
     function connectWebSocket() {
       const token = localStorage.getItem('accessToken');
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws?token=${token}`;
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-      ws = new WebSocket(wsUrl);
+      // Pass token via Sec-WebSocket-Protocol header (more secure than query params)
+      // Prefix with "access_token." to make it a valid WebSocket subprotocol
+      ws = new WebSocket(wsUrl, `access_token.${token}`);
 
       ws.onopen = () => {
         console.log('WebSocket connected');
