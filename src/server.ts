@@ -82,11 +82,6 @@ app.get("/health", (c) => {
 // Mount auth routes
 app.route("/auth", authRoutes);
 
-// Serve frontend - Bun will bundle the React app automatically
-app.get("/", (c) => {
-  return c.html(index);
-});
-
 // Get WebSocket handler from engine
 const { websocket } = engine.handler();
 
@@ -106,6 +101,11 @@ export default {
     // Handle Socket.IO requests
     if (url.pathname.startsWith("/socket.io/")) {
       return engine.handleRequest(req, server);
+    }
+
+    // Serve React app at root - Bun will bundle automatically
+    if (url.pathname === "/") {
+      return index.fetch(req);
     }
 
     // Handle HTTP requests with Hono
