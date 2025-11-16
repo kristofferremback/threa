@@ -1,120 +1,93 @@
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
+import { Server } from "socket.io";
+import { Engine } from "@socket.io/bun-engine";
 import { verifyToken } from "./lib/jwt";
-import { wsClients } from "./lib/storage";
 import { authRoutes } from "./routes/auth";
-import type { WSData } from "./lib/types";
 
 // Create Hono app
 const app = new Hono();
 
 // Health check
 app.get("/health", (c) => {
-  return c.json({ status: "ok", message: "Threa API" });
+  return c.json({ status: "ok", message": "Threa API" });
 });
 
 // Mount auth routes
 app.route("/auth", authRoutes);
 
-// Serve frontend
-app.get("/", (c) => {
-  return c.html(Bun.file("src/index.html"));
-});
+// Serve frontend - use serveStatic
+app.get("/", serveStatic({ path: "src/index.html" }));
 
-// Start server with WebSocket support
+// Start server
 const server = Bun.serve({
   port: process.env.PORT || 3000,
-  fetch: async (req, server) => {
-    // Handle WebSocket upgrade with token in Sec-WebSocket-Protocol header
-    if (req.headers.get("upgrade") === "websocket") {
-      const url = new URL(req.url);
+  fetch: app.fetch,
+});
 
-      if (url.pathname === "/ws") {
-        // Extract token from Sec-WebSocket-Protocol header
-        // Format: "access_token.{jwt_token}"
-        const protocols = req.headers.get("sec-websocket-protocol");
+// Create Socket.IO server with Bun engine
+const io = new Server({
+  engine: Engine,
+});
 
-        if (!protocols) {
-          return new Response("No token provided", { status: 401 });
-        }
+// Attach Socket.IO to Bun server
+io.attach(server);
 
-        // The token is passed in the protocol header
-        // We prefix it with "access_token." to make it a valid subprotocol
-        const token = protocols.startsWith("access_token.")
-          ? protocols.slice("access_token.".length)
-          : protocols;
+// Authentication middleware
+io.use(async (socket, next) => {
+  try {
+    // Extract token from auth handshake
+    const token = socket.handshake.auth.token;
 
-        const payload = await verifyToken(token);
-
-        if (!payload) {
-          return new Response("Invalid token", { status: 401 });
-        }
-
-        // Upgrade to WebSocket with user data
-        const upgraded = server.upgrade(req, {
-          data: {
-            userId: payload.userId,
-            email: payload.email,
-          } as WSData,
-        });
-
-        if (!upgraded) {
-          return new Response("WebSocket upgrade failed", { status: 500 });
-        }
-
-        return undefined as any;
-      }
+    if (!token) {
+      return next(new Error("No token provided"));
     }
 
-    // Handle normal HTTP requests
-    return app.fetch(req, server);
-  },
+    const payload = await verifyToken(token);
 
-  // WebSocket handler
-  websocket: {
-    async message(ws, message) {
-      const data = JSON.parse(message as string);
-      const wsData = ws.data as WSData;
+    if (!payload) {
+      return next(new Error("Invalid token"));
+    }
 
-      // Echo messages back to all connected clients
-      console.log(`Message from ${wsData.userId}:`, data);
+    // Attach user data to socket
+    socket.data.userId = payload.userId;
+    socket.data.email = payload.email;
 
-      // Broadcast to all clients
-      for (const [_clientId, client] of wsClients) {
-        if (client.readyState === 1) {
-          // OPEN
-          client.send(
-            JSON.stringify({
-              type: "message",
-              userId: wsData.userId,
-              email: wsData.email,
-              message: data.message,
-              timestamp: new Date().toISOString(),
-            })
-          );
-        }
-      }
-    },
+    next();
+  } catch (error) {
+    next(new Error("Authentication failed"));
+  }
+});
 
-    async open(ws) {
-      const wsData = ws.data as WSData;
+// Socket.IO connection handler
+io.on("connection", (socket) => {
+  const userId = socket.data.userId;
+  const email = socket.data.email;
 
-      wsClients.set(wsData.userId, ws);
-      console.log(`WebSocket connected: ${wsData.email}`);
+  console.log(`WebSocket connected: ${email} (${userId})`);
 
-      ws.send(
-        JSON.stringify({
-          type: "connected",
-          message: "Connected to Threa",
-        })
-      );
-    },
+  // Send welcome message
+  socket.emit("connected", {
+    message: "Connected to Threa",
+  });
 
-    async close(ws) {
-      const wsData = ws.data as WSData;
-      wsClients.delete(wsData.userId);
-      console.log(`WebSocket disconnected: ${wsData.userId}`);
-    },
-  },
+  // Handle chat messages
+  socket.on("message", (data) => {
+    console.log(`Message from ${email}:`, data);
+
+    // Broadcast to all clients
+    io.emit("message", {
+      userId,
+      email,
+      message: data.message,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Handle disconnect
+  socket.on("disconnect", () => {
+    console.log(`WebSocket disconnected: ${email}`);
+  });
 });
 
 console.log(`🚀 Server running on http://localhost:${server.port}`);

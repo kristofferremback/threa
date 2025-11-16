@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { WorkOS } from "@workos-inc/node";
 import { createToken, verifyToken } from "../lib/jwt";
-import { sessions, wsClients } from "../lib/storage";
+import { sessions } from "../lib/storage";
 
 // Initialize WorkOS
 const workos = new WorkOS(process.env.WORKOS_API_KEY);
@@ -109,7 +109,7 @@ authRoutes.post("/logout", async (c) => {
     const payload = await verifyToken(token);
     if (payload) {
       sessions.delete(payload.userId);
-      wsClients.delete(payload.userId);
+      // Socket.IO will handle disconnection automatically
     }
   }
 

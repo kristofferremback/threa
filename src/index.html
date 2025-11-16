@@ -206,9 +206,11 @@
     </div>
   </div>
 
+  <!-- Socket.IO Client -->
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
   <script>
-    let ws = null;
-    let reconnectTimer = null;
+    let socket = null;
 
     // Check if user is logged in
     function checkAuth() {
@@ -247,51 +249,46 @@
       }
 
       localStorage.clear();
-      if (ws) {
-        ws.close();
+      if (socket) {
+        socket.disconnect();
       }
       checkAuth();
     }
 
-    // Connect WebSocket
+    // Connect Socket.IO
     function connectWebSocket() {
       const token = localStorage.getItem('accessToken');
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-      // Pass token via Sec-WebSocket-Protocol header (more secure than query params)
-      // Prefix with "access_token." to make it a valid WebSocket subprotocol
-      ws = new WebSocket(wsUrl, `access_token.${token}`);
-
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        updateStatus('connected', 'Connected');
-        clearTimeout(reconnectTimer);
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('Received:', data);
-
-        if (data.type === 'message') {
-          addMessage(data.email, data.message, data.timestamp);
+      // Create Socket.IO connection with authentication
+      socket = io({
+        auth: {
+          token: token
         }
-      };
+      });
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        updateStatus('disconnected', 'Disconnected - Reconnecting...');
+      socket.on('connect', () => {
+        console.log('Socket.IO connected');
+        updateStatus('connected', 'Connected');
+      });
 
-        // Attempt to reconnect after 3 seconds
-        reconnectTimer = setTimeout(() => {
-          connectWebSocket();
-        }, 3000);
-      };
+      socket.on('connected', (data) => {
+        console.log('Welcome message:', data.message);
+      });
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      socket.on('message', (data) => {
+        console.log('Received:', data);
+        addMessage(data.email, data.message, data.timestamp);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Socket.IO disconnected');
+        updateStatus('disconnected', 'Disconnected');
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('Socket.IO error:', error.message);
         updateStatus('disconnected', 'Connection error');
-      };
+      });
     }
 
     // Update connection status
@@ -308,8 +305,8 @@
       const input = document.getElementById('messageInput');
       const message = input.value.trim();
 
-      if (message && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ message }));
+      if (message && socket && socket.connected) {
+        socket.emit('message', { message });
         input.value = '';
       }
     }
