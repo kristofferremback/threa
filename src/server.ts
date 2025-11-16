@@ -1,37 +1,18 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { Server } from "socket.io";
-import { Engine } from "@socket.io/bun-engine";
+import { Server as Engine } from "@socket.io/bun-engine";
 import { verifyToken } from "./lib/jwt";
 import { authRoutes } from "./routes/auth";
 
-// Create Hono app
-const app = new Hono();
+// Create Socket.IO server
+const io = new Server();
 
-// Health check
-app.get("/health", (c) => {
-  return c.json({ status: "ok", message": "Threa API" });
-});
+// Create Bun engine
+const engine = new Engine();
 
-// Mount auth routes
-app.route("/auth", authRoutes);
-
-// Serve frontend - use serveStatic
-app.get("/", serveStatic({ path: "src/index.html" }));
-
-// Start server
-const server = Bun.serve({
-  port: process.env.PORT || 3000,
-  fetch: app.fetch,
-});
-
-// Create Socket.IO server with Bun engine
-const io = new Server({
-  engine: Engine,
-});
-
-// Attach Socket.IO to Bun server
-io.attach(server);
+// Bind Socket.IO to Bun engine
+io.bind(engine);
 
 // Authentication middleware
 io.use(async (socket, next) => {
@@ -90,5 +71,44 @@ io.on("connection", (socket) => {
   });
 });
 
-console.log(`🚀 Server running on http://localhost:${server.port}`);
-console.log(`📝 Login at http://localhost:${server.port}/auth/login`);
+// Create Hono app
+const app = new Hono();
+
+// Health check
+app.get("/health", (c) => {
+  return c.json({ status: "ok", message: "Threa API" });
+});
+
+// Mount auth routes
+app.route("/auth", authRoutes);
+
+// Serve frontend
+app.get("/", serveStatic({ path: "src/index.html" }));
+
+// Get WebSocket handler from engine
+const { websocket } = engine.handler();
+
+const port = process.env.PORT || 3000;
+
+console.log(`🚀 Server running on http://localhost:${port}`);
+console.log(`📝 Login at http://localhost:${port}/auth/login`);
+
+// Export Bun server config
+export default {
+  port,
+  idleTimeout: 30, // Must be greater than Socket.IO pingInterval (25s)
+
+  fetch(req: Request, server: any) {
+    const url = new URL(req.url);
+
+    // Handle Socket.IO requests
+    if (url.pathname.startsWith("/socket.io/")) {
+      return engine.handleRequest(req, server);
+    }
+
+    // Handle HTTP requests with Hono
+    return app.fetch(req, server);
+  },
+
+  websocket,
+};
