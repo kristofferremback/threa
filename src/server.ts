@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import { serveStatic } from "hono/bun";
 import { Server } from "socket.io";
 import { Server as Engine } from "@socket.io/bun-engine";
 import { verifyToken } from "./lib/jwt";
 import { authRoutes } from "./routes/auth";
+import index from "./index.html";
 
 // Create Socket.IO server
 const io = new Server();
@@ -82,8 +82,10 @@ app.get("/health", (c) => {
 // Mount auth routes
 app.route("/auth", authRoutes);
 
-// Serve frontend
-app.get("/", serveStatic({ path: "src/index.html" }));
+// Serve frontend - Bun will bundle the React app automatically
+app.get("/", (c) => {
+  return c.html(index);
+});
 
 // Get WebSocket handler from engine
 const { websocket } = engine.handler();
