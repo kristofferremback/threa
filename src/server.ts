@@ -103,14 +103,14 @@ export default {
       return engine.handleRequest(req, server);
     }
 
-    // Serve React app at root - Bun will bundle automatically
-    if (url.pathname === "/") {
-      return index.fetch(req);
-    }
-
     // Handle HTTP requests with Hono
     return app.fetch(req, server);
   },
 
   websocket,
+
+  // Use Bun's routes for automatic React bundling
+  routes: {
+    "/": index,
+  },
 };
