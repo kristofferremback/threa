@@ -3,21 +3,26 @@
 A minimal real-time chat application built with:
 
 - **Bun** - Fast JavaScript runtime
-- **Hono** - Lightweight web framework
-- **Bun native WebSockets** - Real-time messaging
+- **Express** - Web framework
+- **Socket.IO** - Real-time messaging with Redis adapter
+- **React + Vite** - Frontend framework
 - **WorkOS + Authkit** - Authentication and authorization
+- **Redis** - WebSocket pub/sub and message broadcasting
+- **Pino** - Structured logging
 
 ## Features
 
-✅ Login and logout with WorkOS Authkit
-✅ Refresh token support (15 min access tokens, 7 day refresh tokens)
-✅ Authenticated WebSocket connections
-✅ Real-time messaging between users
-✅ Minimal frontend with chat interface
+✅ Login and logout with WorkOS Authkit  
+✅ Authenticated WebSocket connections via Socket.IO  
+✅ Real-time messaging between users  
+✅ Redis adapter for horizontal scaling  
+✅ Structured logging with Pino  
+✅ Modern React frontend with Tailwind CSS  
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed (v1.0+)
+- [Docker](https://www.docker.com) (for Redis)
 - [WorkOS account](https://workos.com) with Authkit configured
 
 ## Setup
@@ -33,31 +38,31 @@ bun install
 1. Create a WorkOS account at [workos.com](https://workos.com)
 2. Create a new application
 3. Enable Authkit authentication
-4. Get your API key and Client ID from the WorkOS dashboard
+4. Get your API key, Client ID, and Cookie Password from the WorkOS dashboard
 
 ### 3. Environment Variables
 
-Copy the example environment file and fill in your WorkOS credentials:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
+Create a `.env` file in the root directory:
 
 ```env
 # WorkOS Configuration
 WORKOS_API_KEY=sk_test_your_api_key_here
 WORKOS_CLIENT_ID=client_your_client_id_here
 WORKOS_REDIRECT_URI=http://localhost:3000/api/auth/callback
+WORKOS_COOKIE_PASSWORD=your_cookie_password_here
 
 # Application
 PORT=3000
 NODE_ENV=development
-JWT_SECRET=your-secret-key-change-in-production
+LOG_LEVEL=info
+
+# Redis (optional - defaults to localhost:6379)
+REDIS_URL=redis://localhost:6379
 ```
 
-**Important:** Change `JWT_SECRET` to a secure random string in production!
+**Important:** 
+- Get `WORKOS_COOKIE_PASSWORD` from your WorkOS dashboard (it's a 32-character string)
+- Change all secrets in production!
 
 ### 4. Configure WorkOS Redirect URI
 
@@ -73,21 +78,53 @@ For production, use your actual domain:
 https://yourdomain.com/api/auth/callback
 ```
 
+### 5. Start Redis
+
+Redis is required for Socket.IO message broadcasting. Start it with Docker Compose:
+
+```bash
+bun run dev:redis
+```
+
+Or manually:
+
+```bash
+docker compose up -d
+```
+
+To stop Redis:
+
+```bash
+bun run stop:redis
+```
+
 ## Running the Application
 
-### Development Mode (with hot reload)
+### Development Mode
+
+This starts Redis, the backend server, and the frontend dev server concurrently:
 
 ```bash
 bun run dev
 ```
 
+This runs:
+- Redis (via Docker Compose)
+- Backend server (`src/server/index.ts`) with hot reload
+- Frontend dev server (Vite) with HMR
+
+The application will be available at:
+- Frontend: [http://localhost:3000](http://localhost:3000)
+- Backend API: [http://localhost:3000/api](http://localhost:3000/api)
+
 ### Production Mode
 
+Build and start:
+
 ```bash
+bun run build
 bun run start
 ```
-
-The application will be available at [http://localhost:3000](http://localhost:3000)
 
 ## How It Works
 
@@ -97,76 +134,120 @@ The application will be available at [http://localhost:3000](http://localhost:30
 2. Redirected to WorkOS Authkit login page
 3. After successful login, WorkOS redirects back to `/api/auth/callback`
 4. Server exchanges auth code for user information
-5. Server creates access token (15 min) and refresh token (7 days)
-6. Tokens stored in localStorage
-7. User redirected to chat interface
+5. Server creates sealed session cookie (`wos_session`)
+6. User redirected to chat interface
 
 ### WebSocket Authentication
 
-1. Client connects to `/ws` endpoint with access token as query parameter
-2. Server verifies token before upgrading to WebSocket
-3. WebSocket connection tied to authenticated user
-4. Messages broadcast to all connected clients
+1. Client connects to Socket.IO server
+2. Socket.IO middleware extracts `wos_session` cookie from handshake
+3. Server verifies session with WorkOS before accepting connection
+4. WebSocket connection tied to authenticated user
+5. Messages broadcast to all connected clients via Redis adapter
 
-### Token Refresh
+### Real-Time Messaging
 
-- Access tokens expire after 15 minutes
-- Refresh tokens expire after 7 days
-- Frontend automatically refreshes access token every 10 minutes
-- If refresh fails, user is logged out
+- Socket.IO handles WebSocket connections
+- Redis adapter enables message broadcasting across multiple server instances
+- Messages appear instantly across all connected clients
+- Connection status and typing indicators supported
 
 ## API Endpoints
 
-| Method | Path                 | Description                        |
-| ------ | -------------------- | ---------------------------------- |
-| GET    | `/`                  | Serves frontend HTML               |
-| GET    | `/api/auth/login`    | Redirects to WorkOS login          |
-| GET    | `/api/auth/callback` | Handles WorkOS callback            |
-| POST   | `/api/auth/refresh`  | Refreshes access token             |
-| POST   | `/api/auth/logout`   | Logs out user                      |
-| GET    | `/api/auth/me`       | Gets current user info             |
-| GET    | `/ws`                | WebSocket endpoint (authenticated) |
+| Method | Path                      | Description                        |
+| ------ | ------------------------- | ---------------------------------- |
+| GET    | `/`                       | Serves frontend HTML (production)  |
+| GET    | `/health`                 | Health check endpoint              |
+| GET    | `/api/auth/login`         | Redirects to WorkOS login          |
+| GET    | `/api/auth/login-redirect-url` | Returns WorkOS login URL as JSON |
+| GET    | `/api/auth/callback`      | Handles WorkOS callback            |
+| POST   | `/api/auth/logout`        | Logs out user                      |
+| GET    | `/api/auth/me`            | Gets current user info             |
+| WebSocket | `/` (Socket.IO)        | WebSocket endpoint (authenticated) |
 
 ## Project Structure
 
 ```
 threa/
 ├── src/
-│   ├── server.ts       # Main server with Hono + WebSocket
-│   └── index.html      # Minimal frontend
+│   ├── server/
+│   │   ├── index.ts              # Express server setup
+│   │   ├── config.ts             # Configuration
+│   │   ├── routes/
+│   │   │   └── auth.ts           # Authentication routes
+│   │   ├── websockets/
+│   │   │   └── index.ts          # Socket.IO server setup
+│   │   └── lib/
+│   │       ├── logger.ts         # Pino logger
+│   │       ├── cookie-utils.ts   # Cookie parsing utilities
+│   │       ├── storage.ts        # Storage utilities
+│   │       └── types.ts          # Shared types
+│   └── frontend/
+│       ├── index.html            # HTML entry point
+│       ├── App.tsx               # Main React component
+│       ├── index.css             # Tailwind CSS styles
+│       └── auth/                 # Authentication context & hooks
 ├── docs/
-│   └── spec.md         # Full product specification
-├── .env.example        # Environment variables template
-├── package.json        # Dependencies and scripts
-└── README.md          # This file
+│   └── spec.md                   # Full product specification
+├── docker-compose.yml            # Redis service
+├── package.json                  # Dependencies and scripts
+├── tsconfig.json                 # TypeScript config
+├── tsconfig.server.json          # Server TypeScript config
+├── vite.config.ts                # Vite config
+├── tailwind.config.js            # Tailwind config
+└── README.md                     # This file
 ```
+
+## Technology Stack
+
+### Backend
+- **Express** - HTTP server framework
+- **Socket.IO** - WebSocket library with Redis adapter
+- **WorkOS** - Authentication provider
+- **Redis** - Pub/sub for Socket.IO message broadcasting
+- **Pino** - Structured logging
+- **TypeScript** - Type safety
+
+### Frontend
+- **React 19** - UI framework
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Styling
+- **Socket.IO Client** - WebSocket client
+- **Lucide React** - Icons
+- **Sonner** - Toast notifications
+- **date-fns** - Date formatting
+
+### Infrastructure
+- **Docker Compose** - Local Redis instance
+- **Bun** - Runtime and package manager
+
+## Development Notes
+
+- Bun automatically loads `.env` file (no need for dotenv package)
+- Socket.IO uses Redis adapter for horizontal scaling
+- Hot reload enabled in development mode
+- Structured logging with Pino (pretty-printed in development)
+- WorkOS sealed sessions stored in httpOnly cookies
 
 ## Security Notes
 
-- **JWT Secret:** Use a strong random secret in production
+- **Sealed Sessions:** WorkOS sealed sessions are cryptographically signed cookies
 - **HTTPS:** Always use HTTPS in production for secure WebSocket connections
-- **Token Storage:** Tokens stored in localStorage (consider httpOnly cookies for production)
-- **XSS Protection:** HTML is escaped in chat messages
-- **Token Expiration:** Short-lived access tokens with refresh mechanism
+- **Cookie Security:** Cookies are httpOnly, secure in production, and sameSite=lax
+- **Redis:** Ensure Redis is not exposed publicly in production
 
 ## Next Steps
 
 This is a minimal proof of concept. For production, consider:
 
-- [ ] Use Redis for session storage instead of in-memory Map
-- [ ] Use httpOnly cookies for token storage
-- [ ] Add rate limiting
 - [ ] Add message persistence (database)
-- [ ] Add proper error handling and logging
+- [ ] Add rate limiting
+- [ ] Add proper error handling and monitoring
 - [ ] Add tests
 - [ ] Set up CI/CD
 - [ ] Add proper production deployment configuration
-
-## Development Notes
-
-- Bun automatically loads `.env` file (no need for dotenv package)
-- Bun native WebSocket support (no need for `ws` package)
-- Hot reload enabled in development mode with `--hot` flag
+- [ ] Implement multi-channel conversations (see spec.md)
+- [ ] Add AI-powered question answering (see spec.md)
 
 ## License
 
