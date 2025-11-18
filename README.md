@@ -49,7 +49,7 @@ Edit `.env`:
 # WorkOS Configuration
 WORKOS_API_KEY=sk_test_your_api_key_here
 WORKOS_CLIENT_ID=client_your_client_id_here
-WORKOS_REDIRECT_URI=http://localhost:3000/auth/callback
+WORKOS_REDIRECT_URI=http://localhost:3000/api/auth/callback
 
 # Application
 PORT=3000
@@ -64,13 +64,13 @@ JWT_SECRET=your-secret-key-change-in-production
 In your WorkOS dashboard, add the redirect URI:
 
 ```
-http://localhost:3000/auth/callback
+http://localhost:3000/api/auth/callback
 ```
 
 For production, use your actual domain:
 
 ```
-https://yourdomain.com/auth/callback
+https://yourdomain.com/api/auth/callback
 ```
 
 ## Running the Application
@@ -95,7 +95,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 1. User clicks "Login with WorkOS"
 2. Redirected to WorkOS Authkit login page
-3. After successful login, WorkOS redirects back to `/auth/callback`
+3. After successful login, WorkOS redirects back to `/api/auth/callback`
 4. Server exchanges auth code for user information
 5. Server creates access token (15 min) and refresh token (7 days)
 6. Tokens stored in localStorage
@@ -117,15 +117,15 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Serves frontend HTML |
-| GET | `/auth/login` | Redirects to WorkOS login |
-| GET | `/auth/callback` | Handles WorkOS callback |
-| POST | `/auth/refresh` | Refreshes access token |
-| POST | `/auth/logout` | Logs out user |
-| GET | `/auth/me` | Gets current user info |
-| GET | `/ws` | WebSocket endpoint (authenticated) |
+| Method | Path                 | Description                        |
+| ------ | -------------------- | ---------------------------------- |
+| GET    | `/`                  | Serves frontend HTML               |
+| GET    | `/api/auth/login`    | Redirects to WorkOS login          |
+| GET    | `/api/auth/callback` | Handles WorkOS callback            |
+| POST   | `/api/auth/refresh`  | Refreshes access token             |
+| POST   | `/api/auth/logout`   | Logs out user                      |
+| GET    | `/api/auth/me`       | Gets current user info             |
+| GET    | `/ws`                | WebSocket endpoint (authenticated) |
 
 ## Project Structure
 

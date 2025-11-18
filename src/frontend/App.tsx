@@ -1,133 +1,93 @@
-import { StrictMode, useState, useEffect, useRef } from "react";
-import { createRoot } from "react-dom/client";
-import { io, Socket } from "socket.io-client";
+import { StrictMode, useState, useEffect, useRef } from "react"
+import { createRoot } from "react-dom/client"
+import { io, Socket } from "socket.io-client"
+import { AuthProvider, useAuth } from "./auth"
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [email, setEmail] = useState("");
-  const [messages, setMessages] = useState<Array<{ email: string; message: string; timestamp: string }>>([]);
-  const [inputMessage, setInputMessage] = useState("");
-  const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Check authentication on mount
-  useEffect(() => {
-    const accessToken = localStorage.getItem("accessToken");
-    const userEmail = localStorage.getItem("email");
-
-    if (accessToken && userEmail) {
-      setEmail(userEmail);
-      setIsAuthenticated(true);
-    }
-  }, []);
+  const { isAuthenticated, user } = useAuth()
+  const [messages, setMessages] = useState<Array<{ email: string; message: string; timestamp: string }>>([])
+  const [inputMessage, setInputMessage] = useState("")
+  const [isConnected, setIsConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Connect to Socket.IO when authenticated
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const accessToken = localStorage.getItem("accessToken");
-    if (!accessToken) return;
+    if (!isAuthenticated) return
 
     const socket = io({
-      auth: { token: accessToken },
-    });
+      withCredentials: true,
+      timeout: 25000,
+      // path: "/socket.io/",
+      path: "/socket.io/",
+    })
 
-    socketRef.current = socket;
+    socketRef.current = socket
 
     socket.on("connect", () => {
-      console.log("Socket.IO connected");
-      setIsConnected(true);
-    });
+      console.log("Socket.IO connected")
+      setIsConnected(true)
+    })
 
     socket.on("connected", (data) => {
-      console.log("Welcome:", data.message);
-    });
+      console.log("Welcome:", data.message)
+    })
 
     socket.on("message", (data) => {
-      setMessages((prev) => [...prev, data]);
-    });
+      console.log("New message:", data)
+      setMessages((prev) => [...prev, data])
+    })
 
     socket.on("disconnect", () => {
-      console.log("Socket.IO disconnected");
-      setIsConnected(false);
-    });
+      console.log("Socket.IO disconnected")
+      setIsConnected(false)
+    })
 
     socket.on("connect_error", (error) => {
-      console.error("Connection error:", error.message);
-      setIsConnected(false);
-    });
+      console.error("Connection error:", error.message)
+      setIsConnected(false)
+    })
 
     return () => {
-      socket.disconnect();
-    };
-  }, [isAuthenticated]);
+      socket.disconnect()
+    }
+  }, [isAuthenticated])
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
-  // Auto-refresh token
-  useEffect(() => {
-    if (!isAuthenticated) return;
+  const handleLogin = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
 
-    const refreshToken = async () => {
-      const token = localStorage.getItem("refreshToken");
-      if (!token) return;
-
-      try {
-        const response = await fetch("/auth/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken: token }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          localStorage.setItem("accessToken", data.accessToken);
-        } else {
-          handleLogout();
-        }
-      } catch (error) {
-        console.error("Token refresh error:", error);
-      }
-    };
-
-    const interval = setInterval(refreshToken, 10 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
-
-  const handleLogin = () => {
-    window.location.href = "/auth/login";
-  };
+    window.location.href = "/api/auth/login"
+  }
 
   const handleLogout = async () => {
-    const accessToken = localStorage.getItem("accessToken");
-
     try {
-      await fetch("/auth/logout", {
+      await fetch("/api/auth/logout", {
         method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+        credentials: "include",
+      })
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Logout error:", error)
     }
 
-    localStorage.clear();
-    socketRef.current?.disconnect();
-    setIsAuthenticated(false);
-    setMessages([]);
-  };
+    localStorage.clear()
+    socketRef.current?.disconnect()
+    setMessages([])
+    window.location.reload()
+  }
 
   const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
-    if (!inputMessage.trim() || !socketRef.current?.connected) return;
+    if (!inputMessage.trim() || !socketRef.current?.connected) return
 
-    socketRef.current.emit("message", { message: inputMessage });
-    setInputMessage("");
-  };
+    socketRef.current.emit("message", { message: inputMessage })
+    setInputMessage("")
+  }
 
   if (!isAuthenticated) {
     return (
@@ -140,7 +100,7 @@ function App() {
           </button>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -148,7 +108,7 @@ function App() {
       <div style={styles.header}>
         <h1 style={styles.headerTitle}>Threa</h1>
         <div style={styles.userInfo}>
-          <span style={styles.userEmail}>{email}</span>
+          <span style={styles.userEmail}>{user?.email}</span>
           <button onClick={handleLogout} style={styles.buttonSecondary}>
             Logout
           </button>
@@ -164,9 +124,7 @@ function App() {
           <div key={index} style={styles.message}>
             <div style={styles.messageHeader}>
               <span style={styles.messageEmail}>{msg.email}</span>
-              <span style={styles.messageTime}>
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </span>
+              <span style={styles.messageTime}>{new Date(msg.timestamp).toLocaleTimeString()}</span>
             </div>
             <div style={styles.messageText}>{msg.message}</div>
           </div>
@@ -187,7 +145,7 @@ function App() {
         </button>
       </form>
     </div>
-  );
+  )
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -314,11 +272,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "6px",
     fontSize: "14px",
   },
-};
+}
 
-const root = createRoot(document.getElementById("root")!);
+const root = createRoot(document.getElementById("root")!)
 root.render(
   <StrictMode>
-    <App />
-  </StrictMode>
-);
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  </StrictMode>,
+)

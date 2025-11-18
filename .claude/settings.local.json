@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun run:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(cat:*)",
+      "Bash(bun dev)",
+      "Bash(/Users/kristofferremback/dev/personal/threa/.env)"
+    ]
+  },
+  "outputStyle": "default"
+}
