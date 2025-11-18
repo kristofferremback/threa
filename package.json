@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:redis && concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:redis": "docker compose up -d",
+    "dev": "npm run dev:deps && concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:deps": "docker compose up -d",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
@@ -13,7 +13,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/index.js",
     "preview": "vite preview",
-    "stop:redis": "docker compose down"
+    "stop:deps": "docker compose down"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
@@ -24,6 +24,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "lucide-react": "^0.554.0",
+    "pg": "^8.16.3",
     "pino": "^10.1.0",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.1.2",
@@ -38,6 +39,7 @@
     "@types/cookie-parser": "^1.4.7",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
+    "@types/pg": "^8.15.6",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.5.13",

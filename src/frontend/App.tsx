@@ -9,7 +9,7 @@ import "./index.css"
 
 function App() {
   const { isAuthenticated, user } = useAuth()
-  const [messages, setMessages] = useState<Array<{ email: string; message: string; timestamp: string }>>([])
+  const [messages, setMessages] = useState<Array<{ id?: string; userId?: string; email: string; message: string; timestamp: string }>>([])
   const [inputMessage, setInputMessage] = useState("")
   const [isConnected, setIsConnected] = useState(false)
   const socketRef = useRef<Socket | null>(null)
@@ -33,6 +33,11 @@ function App() {
 
     socket.on("connected", (data) => {
       console.log("Welcome:", data.message)
+    })
+
+    socket.on("messages", (data) => {
+      console.log("Received messages:", data)
+      setMessages(data)
     })
 
     socket.on("message", (data) => {
@@ -150,8 +155,8 @@ function App() {
               <p>No messages yet. Start chatting!</p>
             </div>
           ) : (
-            messages.map((msg, index) => (
-              <div key={index} className="mb-2 rounded-md bg-zinc-800 p-3">
+            messages.map((msg) => (
+              <div key={msg.id || msg.timestamp} className="mb-2 rounded-md bg-zinc-800 p-3">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-sm font-medium text-blue-400">{msg.email}</span>
                   <span className="text-xs text-gray-500">

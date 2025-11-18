@@ -11,8 +11,12 @@ const redirectUri = WORKOS_REDIRECT_URI || "http://localhost:3000/api/auth/callb
 export const middleware = async (req: Request, res: Response, next: NextFunction) => {
   const sealedSession = req.cookies["wos_session"]
 
+  if (!sealedSession) {
+    return res.redirect("/api/auth/login")
+  }
+
   const session = workos.userManagement.loadSealedSession({
-    sessionData: sealedSession!,
+    sessionData: sealedSession,
     cookiePassword: WORKOS_COOKIE_PASSWORD!,
   })
 
@@ -22,30 +26,33 @@ export const middleware = async (req: Request, res: Response, next: NextFunction
     return next()
   }
 
-  if (authRes.reason === "no_session_cookie_provided") {
-    return res.redirect("/api/auth/login")
-  }
-
-  try {
-    const result = await session.refresh({ cookiePassword: WORKOS_COOKIE_PASSWORD! })
-    if (!result.authenticated) {
-      return res.redirect("/api/auth/login")
+  // If authentication failed, try to refresh the session
+  // This handles the case where access token expired (5 min) but session is still valid (30 days)
+  if (!authRes.authenticated && authRes.reason !== "no_session_cookie_provided") {
+    try {
+      const result = await session.refresh({ cookiePassword: WORKOS_COOKIE_PASSWORD! })
+      if (result.authenticated && result.sealedSession) {
+        // Update cookie with refreshed session
+        res.cookie("wos_session", result.sealedSession, {
+          path: "/",
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: "lax",
+          maxAge: 60 * 60 * 24 * 30 * 1000, // 30 days
+        })
+        ;(req as any).user = result.user
+        return next()
+      }
+    } catch (error) {
+      logger.error({ err: error, reason: authRes.reason }, "Session refresh error")
+      // Fall through to redirect to login
     }
-
-    res.cookie("wos_session", result.sealedSession!, {
-      path: "/",
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-    })
-
-    return res.redirect(req.originalUrl)
-  } catch (error) {
-    logger.error({ err: error }, "Session refresh error")
-    res.clearCookie("wos_session")
-    return res.redirect("/api/auth/login")
   }
+
+  // If we get here, session is invalid or refresh failed
+  logger.debug({ reason: authRes.reason }, "Session authentication failed, redirecting to login")
+  res.clearCookie("wos_session")
+  return res.redirect("/api/auth/login")
 }
 
 export const routes = Router()
@@ -65,20 +72,6 @@ routes.get("/login", (req: Request, res: Response) => {
   res.redirect(authorizationUrl)
 })
 
-routes.get("/login-redirect-url", (req: Request, res: Response) => {
-  if (req.cookies["wos_session"]) {
-    logger.debug("Session cookie found, clearing for fresh login")
-    res.clearCookie("wos_session")
-  }
-
-  const authorizationUrl = workos.userManagement.getAuthorizationUrl({
-    provider: "authkit",
-    redirectUri,
-    clientId,
-  })
-
-  res.json({ url: authorizationUrl })
-})
 
 routes.all("/callback", async (req: Request, res: Response) => {
   const code = req.query.code as string
@@ -102,7 +95,7 @@ routes.all("/callback", async (req: Request, res: Response) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7 * 1000,
+      maxAge: 60 * 60 * 24 * 30 * 1000, // 30 days to match WorkOS max session length
     })
 
     res.redirect("/")
@@ -141,9 +134,31 @@ routes.get("/me", async (req: Request, res: Response) => {
     cookiePassword: WORKOS_COOKIE_PASSWORD!,
   })
 
-  const authRes = await session.authenticate()
+  let authRes = await session.authenticate()
+  
+  // If authentication failed, try to refresh (handles expired access tokens)
+  if (!authRes.authenticated && authRes.reason !== "no_session_cookie_provided") {
+    try {
+      const refreshResult = await session.refresh({ cookiePassword: WORKOS_COOKIE_PASSWORD! })
+      if (refreshResult.authenticated && refreshResult.sealedSession) {
+        // Update cookie with refreshed session
+        res.cookie("wos_session", refreshResult.sealedSession, {
+          path: "/",
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: "lax",
+          maxAge: 60 * 60 * 24 * 30 * 1000, // 30 days
+        })
+        authRes = refreshResult
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Session refresh error in /me")
+    }
+  }
+
   if (!authRes.authenticated) {
     logger.debug({ reason: authRes.reason }, "Session not authenticated")
+    res.clearCookie("wos_session")
     return res.status(401).json({ error: "Not authenticated" })
   }
 

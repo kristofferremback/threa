@@ -9,6 +9,9 @@ import { createSocketIOServer } from "./websockets"
 import { PORT } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
+import { runMigrations } from "./lib/migrations"
+import { startOutboxListener, stopOutboxListener } from "./lib/outbox-listener"
+import { closeConnections } from "./lib/db"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -70,12 +73,34 @@ const server = http.createServer(app)
 
 async function startServer() {
   try {
+    logger.info("Running database migrations...")
+    await runMigrations()
+
+    logger.info("Starting outbox listener...")
+    await startOutboxListener()
+
     await createSocketIOServer(server)
 
     server.listen(PORT, () => {
       logger.info({ port: PORT }, "Server started")
       logger.info({ url: `http://localhost:${PORT}/api/auth/login` }, "Login endpoint")
       logger.info("Socket.IO available")
+    })
+
+    process.on("SIGTERM", async () => {
+      logger.info("SIGTERM received, shutting down gracefully")
+      server.close()
+      await stopOutboxListener()
+      await closeConnections()
+      process.exit(0)
+    })
+
+    process.on("SIGINT", async () => {
+      logger.info("SIGINT received, shutting down gracefully")
+      server.close()
+      await stopOutboxListener()
+      await closeConnections()
+      process.exit(0)
     })
   } catch (error) {
     logger.error({ err: error }, "Failed to start server")

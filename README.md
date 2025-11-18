@@ -15,14 +15,16 @@ A minimal real-time chat application built with:
 ✅ Login and logout with WorkOS Authkit  
 ✅ Authenticated WebSocket connections via Socket.IO  
 ✅ Real-time messaging between users  
+✅ Message persistence with PostgreSQL  
+✅ PostgreSQL NOTIFY for outbox pattern  
 ✅ Redis adapter for horizontal scaling  
 ✅ Structured logging with Pino  
-✅ Modern React frontend with Tailwind CSS  
+✅ Modern React frontend with Tailwind CSS
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed (v1.0+)
-- [Docker](https://www.docker.com) (for Redis)
+- [Docker](https://www.docker.com) (for PostgreSQL and Redis)
 - [WorkOS account](https://workos.com) with Authkit configured
 
 ## Setup
@@ -56,11 +58,15 @@ PORT=3000
 NODE_ENV=development
 LOG_LEVEL=info
 
-# Redis (optional - defaults to localhost:6379)
-REDIS_URL=redis://localhost:6379
+# Database
+DATABASE_URL=postgresql://threa:threa@localhost:5433/threa
+
+# Redis (optional - defaults to localhost:6380)
+REDIS_URL=redis://localhost:6380
 ```
 
-**Important:** 
+**Important:**
+
 - Get `WORKOS_COOKIE_PASSWORD` from your WorkOS dashboard (it's a 32-character string)
 - Change all secrets in production!
 
@@ -78,9 +84,9 @@ For production, use your actual domain:
 https://yourdomain.com/api/auth/callback
 ```
 
-### 5. Start Redis
+### 5. Start PostgreSQL and Redis
 
-Redis is required for Socket.IO message broadcasting. Start it with Docker Compose:
+PostgreSQL and Redis are required. Start them with Docker Compose:
 
 ```bash
 bun run dev:redis
@@ -92,7 +98,11 @@ Or manually:
 docker compose up -d
 ```
 
-To stop Redis:
+This starts:
+- PostgreSQL on port 5433 (host) → 5432 (container)
+- Redis on port 6380 (host) → 6379 (container)
+
+To stop:
 
 ```bash
 bun run stop:redis
@@ -109,11 +119,13 @@ bun run dev
 ```
 
 This runs:
+
 - Redis (via Docker Compose)
 - Backend server (`src/server/index.ts`) with hot reload
 - Frontend dev server (Vite) with HMR
 
 The application will be available at:
+
 - Frontend: [http://localhost:3000](http://localhost:3000)
 - Backend API: [http://localhost:3000/api](http://localhost:3000/api)
 
@@ -154,16 +166,15 @@ bun run start
 
 ## API Endpoints
 
-| Method | Path                      | Description                        |
-| ------ | ------------------------- | ---------------------------------- |
-| GET    | `/`                       | Serves frontend HTML (production)  |
-| GET    | `/health`                 | Health check endpoint              |
-| GET    | `/api/auth/login`         | Redirects to WorkOS login          |
-| GET    | `/api/auth/login-redirect-url` | Returns WorkOS login URL as JSON |
-| GET    | `/api/auth/callback`      | Handles WorkOS callback            |
-| POST   | `/api/auth/logout`        | Logs out user                      |
-| GET    | `/api/auth/me`            | Gets current user info             |
-| WebSocket | `/` (Socket.IO)        | WebSocket endpoint (authenticated) |
+| Method    | Path                 | Description                        |
+| --------- | -------------------- | ---------------------------------- |
+| GET       | `/`                  | Serves frontend HTML (production)  |
+| GET       | `/health`            | Health check endpoint              |
+| GET       | `/api/auth/login`    | Redirects to WorkOS login          |
+| GET       | `/api/auth/callback` | Handles WorkOS callback            |
+| POST      | `/api/auth/logout`   | Logs out user                      |
+| GET       | `/api/auth/me`       | Gets current user info             |
+| WebSocket | `/` (Socket.IO)      | WebSocket endpoint (authenticated) |
 
 ## Project Structure
 
@@ -201,6 +212,7 @@ threa/
 ## Technology Stack
 
 ### Backend
+
 - **Express** - HTTP server framework
 - **Socket.IO** - WebSocket library with Redis adapter
 - **WorkOS** - Authentication provider
@@ -209,6 +221,7 @@ threa/
 - **TypeScript** - Type safety
 
 ### Frontend
+
 - **React 19** - UI framework
 - **Vite** - Build tool and dev server
 - **Tailwind CSS** - Styling
@@ -218,6 +231,7 @@ threa/
 - **date-fns** - Date formatting
 
 ### Infrastructure
+
 - **Docker Compose** - Local Redis instance
 - **Bun** - Runtime and package manager
 
