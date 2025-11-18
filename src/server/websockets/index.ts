@@ -1,44 +1,96 @@
-import { Server } from "socket.io"
-import { Server as Engine } from "@socket.io/bun-engine"
-import { CookieMap } from "bun"
-import type { WorkOS } from "@workos-inc/node"
-import { WORKOS_COOKIE_PASSWORD } from "../config"
+import { Server as SocketIOServer } from "socket.io"
+import type { Server as HTTPServer } from "http"
+import { createClient } from "redis"
+import { createAdapter } from "@socket.io/redis-adapter"
+import { workos } from "../routes/auth"
+import { WORKOS_COOKIE_PASSWORD, REDIS_URL } from "../config"
+import { parseCookies } from "../lib/cookie-utils"
+import { logger } from "../lib/logger"
 
-export const createWebsocketServer = (workos: WorkOS): { io: Server; engine: Engine } => {
-  const io = new Server()
-  const engine = new Engine({
-    path: "/socket.io/",
-    pingTimeout: 30000,
+interface SocketData {
+  userId: string
+  email: string
+}
+
+export const createSocketIOServer = async (server: HTTPServer) => {
+  const io = new SocketIOServer<any, any, any, SocketData>(server, {
+    cors: {
+      origin: ["http://localhost:3000", "http://localhost:3001"],
+      credentials: true,
+    },
   })
 
-  io.bind(engine)
+  let pubClient: ReturnType<typeof createClient> | null = null
+  let subClient: ReturnType<typeof createClient> | null = null
+
+  try {
+    pubClient = createClient({ url: REDIS_URL })
+    subClient = pubClient.duplicate()
+
+    let errorOccurred = false
+    const handleError = async (err: Error) => {
+      if (!errorOccurred) {
+        errorOccurred = true
+        logger.error({ err }, "Redis error - disconnecting")
+
+        try {
+          await Promise.all([pubClient?.destroy(), subClient?.destroy()])
+        } catch (err) {
+          logger.error({ err }, "Error destroying Redis client")
+        }
+      }
+    }
+
+    pubClient.on("error", handleError)
+    subClient.on("error", handleError)
+
+    await Promise.all([pubClient.connect(), subClient.connect()])
+
+    await pubClient.ping()
+    await subClient.ping()
+
+    io.adapter(createAdapter(pubClient, subClient))
+
+    logger.info("Redis adapter connected for Socket.IO")
+  } catch (error) {
+    logger.warn("Redis not available - running without message broadcasting")
+
+    try {
+      await pubClient?.destroy()
+      await subClient?.destroy()
+    } catch (err) {
+      logger.error({ err }, "Error destroying Redis client")
+    }
+  }
 
   io.use(async (socket, next) => {
     try {
-      const cookies = new CookieMap(socket.handshake.headers.cookie || "")
-      const sealedSession = cookies.get("wos_session")
+      const cookieHeader = socket.handshake.headers.cookie
+      const cookies = parseCookies(cookieHeader || "")
+      const sealedSession = cookies["wos_session"]
+
+      if (!sealedSession) {
+        logger.warn("No session cookie in Socket.IO connection")
+        return next(new Error("No session cookie provided"))
+      }
 
       const session = workos.userManagement.loadSealedSession({
-        sessionData: sealedSession!,
+        sessionData: sealedSession,
         cookiePassword: WORKOS_COOKIE_PASSWORD,
       })
 
       const authRes = await session.authenticate()
-      if (authRes.authenticated) {
-        socket.data.userId = authRes.user.id
-        socket.data.email = authRes.user.email
-
-        return next()
+      if (!authRes.authenticated) {
+        logger.warn({ reason: authRes.reason }, "Socket.IO auth failed")
+        return next(new Error("Authentication failed"))
       }
 
-      if (authRes.reason === "no_session_cookie_provided") {
-        // Should log in and retry
-        return next(new Error("No session cookie provided"))
-      }
+      socket.data.userId = authRes.user.id
+      socket.data.email = authRes.user.email
 
-      return next(new Error("Invalid session, must log in again"))
+      next()
     } catch (error) {
-      console.error("WebSocket auth error:", error)
+      logger.error({ err: error }, "Socket.IO auth error")
       next(new Error("Authentication failed"))
     }
   })
@@ -47,18 +99,15 @@ export const createWebsocketServer = (workos: WorkOS): { io: Server; engine: Eng
     const userId = socket.data.userId
     const email = socket.data.email
 
-    console.log(`WebSocket connected: ${email} (${userId})`)
+    logger.info({ email, userId }, "Socket.IO connected")
 
-    // Send welcome message
     socket.emit("connected", {
       message: "Connected to Threa",
     })
 
-    // Handle chat messages
     socket.on("message", (data) => {
-      console.log(`Message from ${email}:`, data)
+      logger.info({ email, data }, "Message received")
 
-      // Broadcast to all clients
       io.emit("message", {
         userId,
         email,
@@ -67,11 +116,10 @@ export const createWebsocketServer = (workos: WorkOS): { io: Server; engine: Eng
       })
     })
 
-    // Handle disconnect
     socket.on("disconnect", () => {
-      console.log(`WebSocket disconnected: ${email}`)
+      logger.info({ email }, "Socket.IO disconnected")
     })
   })
 
-  return { io, engine }
+  return io
 }

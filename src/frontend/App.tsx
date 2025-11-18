@@ -1,7 +1,11 @@
 import { StrictMode, useState, useEffect, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import { io, Socket } from "socket.io-client"
+import { formatDistanceToNow } from "date-fns"
+import { Send, LogOut, MessageCircle, Circle } from "lucide-react"
+import { Toaster, toast } from "sonner"
 import { AuthProvider, useAuth } from "./auth"
+import "./index.css"
 
 function App() {
   const { isAuthenticated, user } = useAuth()
@@ -17,9 +21,6 @@ function App() {
 
     const socket = io({
       withCredentials: true,
-      timeout: 25000,
-      // path: "/socket.io/",
-      path: "/socket.io/",
     })
 
     socketRef.current = socket
@@ -27,6 +28,7 @@ function App() {
     socket.on("connect", () => {
       console.log("Socket.IO connected")
       setIsConnected(true)
+      toast.success("Connected to chat")
     })
 
     socket.on("connected", (data) => {
@@ -41,11 +43,13 @@ function App() {
     socket.on("disconnect", () => {
       console.log("Socket.IO disconnected")
       setIsConnected(false)
+      toast.error("Disconnected from chat")
     })
 
     socket.on("connect_error", (error) => {
       console.error("Connection error:", error.message)
       setIsConnected(false)
+      toast.error("Connection error")
     })
 
     return () => {
@@ -91,11 +95,15 @@ function App() {
 
   if (!isAuthenticated) {
     return (
-      <div style={styles.container}>
-        <div style={styles.loginContainer}>
-          <h2>Welcome to Threa</h2>
-          <p>A minimal chat application with WorkOS authentication</p>
-          <button onClick={handleLogin} style={styles.button}>
+      <div className="flex h-screen w-full items-center justify-center bg-zinc-950 font-sans">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <MessageCircle className="h-16 w-16 text-blue-500" />
+          <h2 className="text-2xl font-semibold">Welcome to Threa</h2>
+          <p className="text-gray-400">A minimal chat application with WorkOS authentication</p>
+          <button
+            onClick={handleLogin}
+            className="rounded-md bg-white px-6 py-2.5 text-sm font-medium text-black transition-colors hover:bg-gray-100"
+          >
             Login with WorkOS
           </button>
         </div>
@@ -104,174 +112,80 @@ function App() {
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.headerTitle}>Threa</h1>
-        <div style={styles.userInfo}>
-          <span style={styles.userEmail}>{user?.email}</span>
-          <button onClick={handleLogout} style={styles.buttonSecondary}>
-            Logout
-          </button>
-        </div>
-      </div>
-
-      <div style={isConnected ? styles.statusConnected : styles.statusDisconnected}>
-        {isConnected ? "Connected" : "Disconnected"}
-      </div>
-
-      <div style={styles.messages}>
-        {messages.map((msg, index) => (
-          <div key={index} style={styles.message}>
-            <div style={styles.messageHeader}>
-              <span style={styles.messageEmail}>{msg.email}</span>
-              <span style={styles.messageTime}>{new Date(msg.timestamp).toLocaleTimeString()}</span>
-            </div>
-            <div style={styles.messageText}>{msg.message}</div>
+    <>
+      <Toaster position="top-center" richColors />
+      <div className="mx-auto flex h-screen w-full max-w-3xl flex-col bg-zinc-950 p-5 font-sans text-white">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-5">
+          <div className="flex items-center gap-3">
+            <MessageCircle className="h-6 w-6 text-blue-500" />
+            <h1 className="text-2xl font-semibold">Threa</h1>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400">{user?.email}</span>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 rounded-md bg-zinc-800 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-700"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </button>
+          </div>
+        </div>
+
+        {/* Connection Status */}
+        <div
+          className={`mt-4 flex items-center gap-2 rounded-md px-3 py-2 text-xs ${
+            isConnected ? "bg-green-950/50 text-green-400" : "bg-red-950/50 text-red-400"
+          }`}
+        >
+          <Circle className={`h-2 w-2 ${isConnected ? "fill-green-400" : "fill-red-400"}`} />
+          {isConnected ? "Connected" : "Disconnected"}
+        </div>
+
+        {/* Messages */}
+        <div className="mb-4 mt-4 flex-1 overflow-y-auto rounded-lg bg-zinc-900 p-4">
+          {messages.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-gray-500">
+              <p>No messages yet. Start chatting!</p>
+            </div>
+          ) : (
+            messages.map((msg, index) => (
+              <div key={index} className="mb-2 rounded-md bg-zinc-800 p-3">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-sm font-medium text-blue-400">{msg.email}</span>
+                  <span className="text-xs text-gray-500">
+                    {formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true })}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-200">{msg.message}</div>
+              </div>
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Form */}
+        <form onSubmit={handleSendMessage} className="flex gap-2">
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!inputMessage.trim() || !isConnected}
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-6 py-3 text-sm font-medium transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+            Send
+          </button>
+        </form>
       </div>
-
-      <form onSubmit={handleSendMessage} style={styles.inputContainer}>
-        <input
-          type="text"
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Type a message..."
-          style={styles.input}
-        />
-        <button type="submit" style={styles.button}>
-          Send
-        </button>
-      </form>
-    </div>
+    </>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: "800px",
-    width: "100%",
-    margin: "0 auto",
-    padding: "20px",
-    height: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    background: "#1a1a1a",
-    color: "#fff",
-  },
-  loginContainer: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    height: "100%",
-    gap: "16px",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "20px 0",
-    borderBottom: "1px solid #333",
-    marginBottom: "20px",
-  },
-  headerTitle: {
-    fontSize: "24px",
-    fontWeight: 600,
-    margin: 0,
-  },
-  userInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
-  userEmail: {
-    color: "#888",
-    fontSize: "14px",
-  },
-  button: {
-    background: "#fff",
-    color: "#000",
-    border: "none",
-    padding: "8px 16px",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 500,
-  },
-  buttonSecondary: {
-    background: "#333",
-    color: "#fff",
-    border: "none",
-    padding: "8px 16px",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: 500,
-  },
-  statusConnected: {
-    background: "#1a3a1a",
-    color: "#4ade80",
-    padding: "8px 12px",
-    borderRadius: "6px",
-    fontSize: "12px",
-    marginBottom: "16px",
-  },
-  statusDisconnected: {
-    background: "#3a1a1a",
-    color: "#f87171",
-    padding: "8px 12px",
-    borderRadius: "6px",
-    fontSize: "12px",
-    marginBottom: "16px",
-  },
-  messages: {
-    flex: 1,
-    overflowY: "auto",
-    background: "#0f0f0f",
-    borderRadius: "8px",
-    padding: "16px",
-    marginBottom: "16px",
-  },
-  message: {
-    background: "#222",
-    padding: "12px",
-    borderRadius: "6px",
-    marginBottom: "8px",
-  },
-  messageHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginBottom: "4px",
-  },
-  messageEmail: {
-    color: "#4a9eff",
-    fontWeight: 500,
-    fontSize: "14px",
-  },
-  messageTime: {
-    color: "#666",
-    fontSize: "12px",
-  },
-  messageText: {
-    color: "#ddd",
-    fontSize: "14px",
-  },
-  inputContainer: {
-    display: "flex",
-    gap: "8px",
-  },
-  input: {
-    flex: 1,
-    background: "#222",
-    border: "1px solid #333",
-    color: "#fff",
-    padding: "12px 16px",
-    borderRadius: "6px",
-    fontSize: "14px",
-  },
 }
 
 const root = createRoot(document.getElementById("root")!)

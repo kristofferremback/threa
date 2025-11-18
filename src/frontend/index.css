@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  @apply bg-zinc-950 text-white;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+}

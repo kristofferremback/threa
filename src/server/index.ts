@@ -1,56 +1,86 @@
-import { CookieMap, serve } from "bun"
-import { Hono } from "hono"
-import { logger } from "hono/logger"
-import { routes as authRoutes, middleware as authMiddleware, workos } from "./routes/auth"
-import index from "../frontend/index.html"
-import { createWebsocketServer } from "./websockets"
+import express from "express"
+import cookieParser from "cookie-parser"
+import path from "path"
+import { fileURLToPath } from "url"
+import http from "http"
+import pinoHttp from "pino-http"
+import { routes as authRoutes, middleware as authMiddleware } from "./routes/auth"
+import { createSocketIOServer } from "./websockets"
 import { PORT } from "./config"
+import { logger } from "./lib/logger"
+import { randomUUID } from "crypto"
 
-const app = new Hono()
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
-// Add logging middleware
-app.use("*", logger())
+const app = express()
 
-// Custom middleware to log cookies and headers
-app.use("*", async (c, next) => {
-  console.log("\n=== Request Debug ===")
-  console.log(`${c.req.method} ${c.req.url}`)
-  const cookies = new CookieMap(c.req.header("cookie"))
-  console.log("Cookies:", JSON.stringify(Object.fromEntries(cookies), null, 2))
+app.use(express.json())
+app.use(cookieParser())
 
-  await next()
+app.use(
+  pinoHttp({
+    logger,
+    autoLogging: {
+      ignore: (req) => req.url === "/health",
+    },
+    customLogLevel: (_req, res, err) => {
+      if (res.statusCode >= 500 || err) return "error"
+      if (res.statusCode >= 400) return "warn"
+      return "silent" // Don't log successful requests
+    },
+    genReqId: (req) => (req.headers["x-request-id"] as string) || randomUUID(),
+    redact: {
+      paths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "res.headers['set-cookie']",
+        "req.headers['x-api-key']",
+      ],
+      censor: "[REDACTED]",
+    },
+    customSuccessMessage: (req, res) => {
+      return `${req.method} ${req.url} ${res.statusCode}`
+    },
+    customErrorMessage: (req, res, err) => {
+      return `${req.method} ${req.url} ${res.statusCode} - ${err?.message || "Error"}`
+    },
+  }),
+)
 
-  console.log("Response status:", c.res.status)
-  console.log("Set-Cookie header:", c.res.headers.get("set-cookie"))
-  console.log("===================\n")
-})
+app.get("/health", (_, res) => res.json({ status: "ok", message: "Threa API" }))
 
-app.get("/health", (c) => {
-  return c.json({ status: "ok", message: "Threa API" })
-})
-app.route("/api/auth", authRoutes)
+if (process.env.NODE_ENV !== "production") {
+  app.get("/", (_, res) => res.redirect("http://localhost:3000"))
+}
 
-// Protect all /api/* routes except /api/auth/*
+app.use("/api/auth", authRoutes)
+
 app.use("/api/", authMiddleware)
 
-const { engine } = createWebsocketServer(workos)
-const ioHandler = engine.handler()
+// Serve static files from Vite build in production
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.join(__dirname, "../../dist/frontend")
+  app.use(express.static(distPath))
 
-const port = PORT
+  app.get("*", (_, res) => res.sendFile(path.join(distPath, "index.html")))
+}
 
-console.log(`🚀 Server running on http://localhost:${port}`)
-console.log(`📝 Login at http://localhost:${port}/api/auth/login`)
+const server = http.createServer(app)
 
-serve({
-  port,
-  idleTimeout: 30, // Must be greater than Socket.IO pingInterval (25s)
+async function startServer() {
+  try {
+    await createSocketIOServer(server)
 
-  websocket: ioHandler.websocket,
+    server.listen(PORT, () => {
+      logger.info({ port: PORT }, "Server started")
+      logger.info({ url: `http://localhost:${PORT}/api/auth/login` }, "Login endpoint")
+      logger.info("Socket.IO available")
+    })
+  } catch (error) {
+    logger.error({ err: error }, "Failed to start server")
+    process.exit(1)
+  }
+}
 
-  // Use Bun's routes for automatic React bundling
-  routes: {
-    "/socket.io/*": (req, server) => ioHandler.fetch(req, server),
-    "/api/*": (req) => app.fetch(req),
-    "/*": index,
-  },
-})
+startServer()

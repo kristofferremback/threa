@@ -1,3 +1,7 @@
+import dotenv from "dotenv"
+
+dotenv.config()
+
 const config = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: process.env.PORT || 3000,
@@ -5,6 +9,7 @@ const config = {
   WORKOS_CLIENT_ID: process.env.WORKOS_CLIENT_ID!,
   WORKOS_REDIRECT_URI: process.env.WORKOS_REDIRECT_URI!,
   WORKOS_COOKIE_PASSWORD: process.env.WORKOS_COOKIE_PASSWORD!,
+  REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379",
   isProduction: process.env.NODE_ENV === "production",
 }
 
@@ -14,7 +19,6 @@ export const WORKOS_API_KEY = config.WORKOS_API_KEY
 export const WORKOS_CLIENT_ID = config.WORKOS_CLIENT_ID
 export const WORKOS_REDIRECT_URI = config.WORKOS_REDIRECT_URI
 export const WORKOS_COOKIE_PASSWORD = config.WORKOS_COOKIE_PASSWORD
+export const REDIS_URL = config.REDIS_URL
 
 export const isProduction = config.isProduction
-
-console.log("Configuration:", JSON.stringify(config, null, 2))

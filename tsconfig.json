@@ -3,15 +3,16 @@
     // Environment setup & latest features
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
-    "module": "Preserve",
+    "module": "ESNext",
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "allowJs": true,
 
-    // Bundler mode
+    // Bundler mode (Vite)
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "noEmit": true,
 
     // Best practices
@@ -32,5 +33,6 @@
     "noPropertyAccessFromIndexSignature": false
   },
 
+  "include": ["src/frontend/**/*"],
   "exclude": ["dist", "node_modules"]
 }

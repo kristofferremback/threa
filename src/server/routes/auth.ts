@@ -1,61 +1,59 @@
-import { Hono, type Context, type MiddlewareHandler } from "hono"
+import { Router, type Request, type Response, type NextFunction } from "express"
 import { WorkOS } from "@workos-inc/node"
-import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { isProduction, WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, WORKOS_REDIRECT_URI } from "../config"
+import { logger } from "../lib/logger"
 
 const clientId = WORKOS_CLIENT_ID
 export const workos = new WorkOS(WORKOS_API_KEY, { clientId })
 
 const redirectUri = WORKOS_REDIRECT_URI || "http://localhost:3000/api/auth/callback"
 
-export const middleware: MiddlewareHandler = async (c, next) => {
+export const middleware = async (req: Request, res: Response, next: NextFunction) => {
+  const sealedSession = req.cookies["wos_session"]
+
   const session = workos.userManagement.loadSealedSession({
-    sessionData: getCookie(c, "wos_session")!,
+    sessionData: sealedSession!,
     cookiePassword: WORKOS_COOKIE_PASSWORD!,
   })
 
   const authRes = await session.authenticate()
   if (authRes.authenticated) {
-    c.set("user", authRes.user)
-    authRes.user
+    ;(req as any).user = authRes.user
     return next()
   }
 
   if (authRes.reason === "no_session_cookie_provided") {
-    return c.redirect("/api/auth/login")
+    return res.redirect("/api/auth/login")
   }
 
   try {
-    const res = await session.refresh({ cookiePassword: WORKOS_COOKIE_PASSWORD! })
-    if (!res.authenticated) {
-      return c.redirect("/api/auth/login")
+    const result = await session.refresh({ cookiePassword: WORKOS_COOKIE_PASSWORD! })
+    if (!result.authenticated) {
+      return res.redirect("/api/auth/login")
     }
 
-    setCookie(c, "wos_session", res.sealedSession!, {
+    res.cookie("wos_session", result.sealedSession!, {
       path: "/",
       httpOnly: true,
       secure: isProduction,
-      sameSite: "Lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7 * 1000,
     })
 
-    // This seems to be how WorkOS recommends it's handled since all its examples
-    // do exactly this after refreshing a session.
-    return c.redirect(c.req.url)
+    return res.redirect(req.originalUrl)
   } catch (error) {
-    console.error("Session refresh error:", error)
-    deleteCookie(c, "wos_session")
-
-    return c.redirect("/api/auth/login")
+    logger.error({ err: error }, "Session refresh error")
+    res.clearCookie("wos_session")
+    return res.redirect("/api/auth/login")
   }
 }
 
-export const routes = new Hono()
+export const routes = Router()
 
-routes.get("/login", (c) => {
-  if (getCookie(c, "wos_session")) {
-    console.log("🍪 Session cookie found, deleting for fresh login")
-    deleteCookie(c, "wos_session")
+routes.get("/login", (req: Request, res: Response) => {
+  if (req.cookies["wos_session"]) {
+    logger.debug("Session cookie found, clearing for fresh login")
+    res.clearCookie("wos_session")
   }
 
   const authorizationUrl = workos.userManagement.getAuthorizationUrl({
@@ -64,13 +62,13 @@ routes.get("/login", (c) => {
     clientId,
   })
 
-  return c.redirect(authorizationUrl)
+  res.redirect(authorizationUrl)
 })
 
-routes.get("/login-redirect-url", (c) => {
-  if (getCookie(c, "wos_session")) {
-    console.log("🍪 Session cookie found, deleting for fresh login")
-    deleteCookie(c, "wos_session")
+routes.get("/login-redirect-url", (req: Request, res: Response) => {
+  if (req.cookies["wos_session"]) {
+    logger.debug("Session cookie found, clearing for fresh login")
+    res.clearCookie("wos_session")
   }
 
   const authorizationUrl = workos.userManagement.getAuthorizationUrl({
@@ -79,50 +77,45 @@ routes.get("/login-redirect-url", (c) => {
     clientId,
   })
 
-  return c.json({ url: authorizationUrl })
+  res.json({ url: authorizationUrl })
 })
 
-routes.all("/callback", async (c) => {
-  const code = c.req.query("code")
+routes.all("/callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string
 
   if (!code) {
-    return c.json({ error: "No code provided" }, 400)
+    return res.status(400).json({ error: "No code provided" })
   }
 
   try {
-    console.log("🔐 Authenticating with code...")
+    logger.debug("Authenticating with code")
     const { user, sealedSession } = await workos.userManagement.authenticateWithCode({
       code,
       clientId,
       session: { sealSession: true, cookiePassword: WORKOS_COOKIE_PASSWORD! },
     })
 
-    console.log("✅ Authenticated user:", user.email)
-    console.log("📦 Sealed session:", sealedSession ? "present" : "missing")
-    console.log("🍪 Setting cookie with secure:", isProduction)
+    logger.info({ email: user.email, sealedSession: !!sealedSession }, "User authenticated")
 
-    setCookie(c, "wos_session", sealedSession!, {
+    res.cookie("wos_session", sealedSession!, {
       path: "/",
       httpOnly: true,
       secure: isProduction,
-      sameSite: "Lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7 * 1000,
     })
 
-    console.log("🔄 Redirecting to /")
-
-    return c.redirect("/")
+    res.redirect("/")
   } catch (error) {
-    console.error("❌ Auth error:", error)
-    return c.json({ error: "Authentication failed" }, 401)
+    logger.error({ err: error }, "Authentication failed")
+    res.status(401).json({ error: "Authentication failed" })
   }
 })
 
-routes.post("/logout", async (c) => {
-  const sealedSession = getCookie(c, "wos_session")
+routes.post("/logout", async (req: Request, res: Response) => {
+  const sealedSession = req.cookies["wos_session"]
   if (!sealedSession) {
-    // Should we just return as if we're OK?
-    return c.json({ error: "No session found" }, 400)
+    return res.status(400).json({ error: "No session found" })
   }
 
   const session = await workos.userManagement.loadSealedSession({
@@ -131,37 +124,29 @@ routes.post("/logout", async (c) => {
   })
 
   const logoutUrl = await session.getLogoutUrl()
-  deleteCookie(c, "wos_session")
-
-  return c.redirect(logoutUrl)
+  res.clearCookie("wos_session")
+  res.redirect(logoutUrl)
 })
 
-routes.get("/me", async (c) => {
-  console.log("🔍 /me endpoint called")
-  const sealedSession = getCookie(c, "wos_session")
-  console.log("🍪 Cookie value:", sealedSession ? "present" : "missing")
+routes.get("/me", async (req: Request, res: Response) => {
+  const sealedSession = req.cookies["wos_session"]
 
   if (!sealedSession) {
-    console.log("❌ No session cookie found")
-    return c.json({ error: "No session found" }, 401)
+    logger.debug("No session cookie in /me request")
+    return res.status(401).json({ error: "No session found" })
   }
 
-  const session = await workos.userManagement.loadSealedSession({
+  const session = workos.userManagement.loadSealedSession({
     sessionData: sealedSession,
     cookiePassword: WORKOS_COOKIE_PASSWORD!,
   })
 
   const authRes = await session.authenticate()
   if (!authRes.authenticated) {
-    // if (authRes.reason === "invalid_jwt") {
-    //   console.log("❌ Invalid JWT detected, deleting cookie")
-    //   deleteCookie(c, "wos_session")
-    // }
-
-    console.log("❌ Session not authenticated:", authRes.reason)
-    return c.json({ error: "Not authenticated" }, 401)
+    logger.debug({ reason: authRes.reason }, "Session not authenticated")
+    return res.status(401).json({ error: "Not authenticated" })
   }
 
-  console.log("✅ User authenticated:", authRes.user.email)
-  return c.json(authRes.user)
+  logger.debug({ email: authRes.user.email }, "User session verified")
+  res.json(authRes.user)
 })
