@@ -4,6 +4,7 @@ import { createAdapter } from "@socket.io/redis-adapter"
 import { AuthService } from "../lib/auth-service"
 import { UserService } from "../lib/user-service"
 import { MessageService } from "../lib/messages"
+import { ConversationService } from "../lib/conversation-service"
 import { parseCookies } from "../lib/cookie-utils"
 import { logger } from "../lib/logger"
 import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
@@ -18,6 +19,7 @@ export const createSocketIOServer = async (
   authService: AuthService,
   userService: UserService,
   messageService: MessageService,
+  conversationService: ConversationService,
   redisPubClient: RedisClient,
   redisSubClient: RedisClient,
 ) => {
@@ -117,19 +119,93 @@ export const createSocketIOServer = async (
 
     // Handle incoming messages
     // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
-    socket.on("message", async (data: { message: string }) => {
+    socket.on(
+      "message",
+      async (data: { message: string; replyToMessageId?: string; conversationId?: string; channelIds?: string[] }) => {
+        try {
+          // Get workspace ID for channel
+          const workspaceId = await userService.getWorkspaceIdForChannel(channelId)
+          if (!workspaceId) {
+            throw new Error("Failed to get workspace ID for channel")
+          }
+
+          let conversationId = data.conversationId || null
+          let replyToMessageId = data.replyToMessageId || null
+
+          // If replying to a message, check if conversation exists or create one
+          if (replyToMessageId && !conversationId) {
+            // Get the message being replied to
+            const allMessages = await messageService.getMessagesByChannel(channelId, 1000, 0) // Get enough to find the message
+            const targetMessage = allMessages.find((m) => m.id === replyToMessageId)
+
+            if (targetMessage) {
+              if (targetMessage.conversation_id) {
+                // Message is already in a conversation, use that
+                conversationId = targetMessage.conversation_id
+              } else {
+                // Create new conversation from this reply
+                // The root message is the one being replied to
+                const conversation = await conversationService.createConversation(
+                  workspaceId,
+                  replyToMessageId,
+                  channelId,
+                  data.channelIds || [],
+                )
+                conversationId = conversation.id
+              }
+            }
+          }
+
+          // Persist message to PostgreSQL (creates outbox event)
+          // The outbox listener will publish to Redis, which triggers Socket.IO emit
+          await messageService.createMessage({
+            workspaceId,
+            channelId,
+            authorId: userId,
+            content: data.message,
+            conversationId,
+            replyToMessageId,
+          })
+
+          // If this is a new conversation and has multiple channels, add them
+          if (conversationId && data.channelIds && data.channelIds.length > 0) {
+            for (const additionalChannelId of data.channelIds) {
+              if (additionalChannelId !== channelId) {
+                await conversationService.addChannelToConversation(conversationId, additionalChannelId)
+              }
+            }
+          }
+
+          // No direct emit - message will be broadcast via Redis subscription
+        } catch (error) {
+          logger.error({ err: error }, "Failed to process message")
+          socket.emit("error", { message: "Failed to send message" })
+        }
+      },
+    )
+
+    // Handle loading conversation messages
+    socket.on("loadConversation", async (data: { conversationId: string }) => {
       try {
-        // Persist message to PostgreSQL (creates outbox event)
-        // The outbox listener will publish to Redis, which triggers Socket.IO emit
-        await messageService.createMessage({
-          channelId,
-          authorId: userId,
-          content: data.message,
-        })
-        // No direct emit - message will be broadcast via Redis subscription
+        const messages = await messageService.getMessagesByConversation(data.conversationId)
+        const messagesWithAuthors = await Promise.all(
+          messages.map(async (msg) => {
+            const email = await userService.getUserEmail(msg.author_id)
+            return {
+              id: msg.id,
+              userId: msg.author_id,
+              email: email || "unknown",
+              message: msg.content,
+              timestamp: msg.created_at.toISOString(),
+              conversationId: msg.conversation_id,
+              replyToMessageId: msg.reply_to_message_id,
+            }
+          }),
+        )
+        socket.emit("conversationMessages", { conversationId: data.conversationId, messages: messagesWithAuthors })
       } catch (error) {
-        logger.error({ err: error }, "Failed to process message")
-        socket.emit("error", { message: "Failed to send message" })
+        logger.error({ err: error }, "Failed to load conversation")
+        socket.emit("error", { message: "Failed to load conversation" })
       }
     })
 

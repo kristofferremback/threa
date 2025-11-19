@@ -16,6 +16,7 @@ import { pool, closeConnections } from "./lib/db"
 import { AuthService } from "./lib/auth-service"
 import { UserService } from "./lib/user-service"
 import { MessageService } from "./lib/messages"
+import { ConversationService } from "./lib/conversation-service"
 import { validateEnv } from "./lib/env-validator"
 import { createErrorHandler } from "./middleware/error-handler"
 import { createSocketIORedisClients, type RedisClient } from "./lib/redis"
@@ -24,14 +25,15 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 export interface AppContext {
-  app: express.Application
-  server: HTTPServer
-  authService: AuthService
-  userService: UserService
-  messageService: MessageService
-  redisPubClient: RedisClient
-  redisSubClient: RedisClient
-}
+      app: express.Application
+      server: HTTPServer
+      authService: AuthService
+      userService: UserService
+      messageService: MessageService
+      conversationService: ConversationService
+      redisPubClient: RedisClient
+      redisSubClient: RedisClient
+    }
 
 /**
  * Sets up and configures the Express application and HTTP server
@@ -79,10 +81,11 @@ export async function createApp(): Promise<AppContext> {
     app.get("/", (_, res) => res.redirect("http://localhost:3000"))
   }
 
-  // Create services with dependency injection
-  const authService = new AuthService()
-  const userService = new UserService(pool)
-  const messageService = new MessageService(pool, userService)
+      // Create services with dependency injection
+      const authService = new AuthService()
+      const userService = new UserService(pool)
+      const messageService = new MessageService(pool, userService)
+      const conversationService = new ConversationService(pool)
 
   // Create Redis clients for Socket.IO
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
@@ -106,15 +109,16 @@ export async function createApp(): Promise<AppContext> {
 
   const server = http.createServer(app)
 
-  return {
-    app,
-    server,
-    authService,
-    userService,
-    messageService,
-    redisPubClient,
-    redisSubClient,
-  }
+      return {
+        app,
+        server,
+        authService,
+        userService,
+        messageService,
+        conversationService,
+        redisPubClient,
+        redisSubClient,
+      }
 }
 
 /**
@@ -132,14 +136,15 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting outbox listener...")
     await startOutboxListener()
 
-    await createSocketIOServer(
-      context.server,
-      context.authService,
-      context.userService,
-      context.messageService,
-      context.redisPubClient,
-      context.redisSubClient,
-    )
+        await createSocketIOServer(
+          context.server,
+          context.authService,
+          context.userService,
+          context.messageService,
+          context.conversationService,
+          context.redisPubClient,
+          context.redisSubClient,
+        )
 
     context.server.listen(PORT, () => {
       logger.info({ port: PORT }, "Server started")

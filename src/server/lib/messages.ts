@@ -5,7 +5,10 @@ import { UserService } from "./user-service"
 
 export interface Message {
   id: string
+  workspace_id: string
   channel_id: string
+  conversation_id: string | null
+  reply_to_message_id: string | null
   author_id: string
   content: string
   created_at: Date
@@ -14,9 +17,12 @@ export interface Message {
 }
 
 export interface CreateMessageParams {
+  workspaceId: string
   channelId: string
   authorId: string
   content: string
+  conversationId?: string | null // If provided, message is part of conversation
+  replyToMessageId?: string | null // If provided, message is a reply to another message
 }
 
 export interface MessageWithAuthor {
@@ -41,12 +47,20 @@ export class MessageService {
       // Generate message ID (using ULID format prefix as per spec)
       const messageId = `msg_${randomUUID().replace(/-/g, "")}`
 
-      // Insert message
+      // Insert message with threading support
       const messageResult = await client.query<Message>(
-        `INSERT INTO messages (id, channel_id, author_id, content)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, channel_id, author_id, content, created_at, updated_at, deleted_at`,
-        [messageId, params.channelId, params.authorId, params.content],
+        `INSERT INTO messages (id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at`,
+        [
+          messageId,
+          params.workspaceId,
+          params.channelId,
+          params.conversationId || null,
+          params.replyToMessageId || null,
+          params.authorId,
+          params.content,
+        ],
       )
 
       // Insert outbox event
@@ -59,7 +73,10 @@ export class MessageService {
           "message.created",
           JSON.stringify({
             id: messageId,
+            workspace_id: params.workspaceId,
             channel_id: params.channelId,
+            conversation_id: params.conversationId || null,
+            reply_to_message_id: params.replyToMessageId || null,
             author_id: params.authorId,
             content: params.content,
           }),
@@ -73,7 +90,15 @@ export class MessageService {
         throw new Error("Failed to create message - no result returned")
       }
 
-      logger.debug({ message_id: message.id, channel_id: params.channelId }, "Message created")
+      logger.debug(
+        {
+          message_id: message.id,
+          channel_id: params.channelId,
+          conversation_id: params.conversationId,
+          reply_to_message_id: params.replyToMessageId,
+        },
+        "Message created",
+      )
 
       return message
     } catch (error) {
@@ -88,7 +113,7 @@ export class MessageService {
   async getMessagesByChannel(channelId: string, limit: number = 50, offset: number = 0): Promise<Message[]> {
     try {
       const result = await this.pool.query<Message>(
-        `SELECT id, channel_id, author_id, content, created_at, updated_at, deleted_at
+        `SELECT id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at
          FROM messages
          WHERE channel_id = $1 AND deleted_at IS NULL
          ORDER BY created_at DESC
@@ -99,6 +124,26 @@ export class MessageService {
       return result.rows.reverse() // Reverse to get chronological order
     } catch (error) {
       logger.error({ err: error, channel_id: channelId }, "Failed to get messages")
+      throw error
+    }
+  }
+
+  /**
+   * Get messages in a conversation (threaded messages)
+   */
+  async getMessagesByConversation(conversationId: string): Promise<Message[]> {
+    try {
+      const result = await this.pool.query<Message>(
+        `SELECT id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at
+         FROM messages
+         WHERE conversation_id = $1 AND deleted_at IS NULL
+         ORDER BY created_at ASC`,
+        [conversationId],
+      )
+
+      return result.rows
+    } catch (error) {
+      logger.error({ err: error, conversation_id: conversationId }, "Failed to get conversation messages")
       throw error
     }
   }

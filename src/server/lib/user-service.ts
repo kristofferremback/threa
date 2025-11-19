@@ -80,6 +80,8 @@ export class UserService {
   /**
    * Get or create default workspace and channel for MVP
    * Returns channel ID
+   * 
+   * @deprecated Use WorkspaceService.getOrCreateDefaultChannel() instead
    */
   async getDefaultChannel(): Promise<string> {
     try {
@@ -119,6 +121,22 @@ export class UserService {
     } catch (error) {
       logger.error({ err: error }, "Failed to get default channel")
       throw error
+    }
+  }
+
+  /**
+   * Get workspace ID for a channel
+   */
+  async getWorkspaceIdForChannel(channelId: string): Promise<string | null> {
+    try {
+      const result = await this.pool.query(
+        "SELECT workspace_id FROM channels WHERE id = $1",
+        [channelId]
+      )
+      return result.rows[0]?.workspace_id || null
+    } catch (error) {
+      logger.error({ err: error, channel_id: channelId }, "Failed to get workspace ID for channel")
+      return null
     }
   }
 }
