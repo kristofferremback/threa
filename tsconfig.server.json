@@ -25,6 +25,7 @@
     "allowImportingTsExtensions": false
   },
 
-  "include": ["src/server/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["src/server/**/*", "src/server/types/**/*"],
+  "exclude": ["dist", "node_modules"],
+  "typeRoots": ["./node_modules/@types", "./src/server/types"]
 }

@@ -4,7 +4,7 @@ dotenv.config()
 
 const config = {
   NODE_ENV: process.env.NODE_ENV || "development",
-  PORT: process.env.PORT || 3000,
+  PORT: process.env.PORT || (process.env.NODE_ENV === "production" ? 3000 : 3001),
   WORKOS_API_KEY: process.env.WORKOS_API_KEY!,
   WORKOS_CLIENT_ID: process.env.WORKOS_CLIENT_ID!,
   WORKOS_REDIRECT_URI: process.env.WORKOS_REDIRECT_URI!,

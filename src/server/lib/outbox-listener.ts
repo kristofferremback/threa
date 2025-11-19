@@ -1,12 +1,11 @@
 import { getNotifyClient } from "./db"
 import { logger } from "./logger"
 import { pool } from "./db"
-import { createRedisClient, connectRedisClient } from "./redis"
-import type { RedisClientType } from "redis"
+import { createRedisClient, connectRedisClient, type RedisClient } from "./redis"
 
 let isListening = false
 let notifyClient: Awaited<ReturnType<typeof getNotifyClient>> | null = null
-let redisClient: RedisClientType | null = null
+let redisClient: RedisClient | null = null
 
 export const startOutboxListener = async () => {
   if (isListening) {
