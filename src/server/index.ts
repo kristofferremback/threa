@@ -12,7 +12,7 @@ import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
 import { startOutboxListener, stopOutboxListener } from "./lib/outbox-listener"
-import { closeConnections, pool } from "./lib/db"
+import { pool, closeConnections } from "./lib/db"
 import { AuthService } from "./lib/auth-service"
 import { UserService } from "./lib/user-service"
 import { MessageService } from "./lib/messages"
@@ -151,7 +151,7 @@ export async function startServer(context: AppContext): Promise<void> {
       logger.info("SIGTERM received, shutting down gracefully")
       context.server.close()
       await stopOutboxListener()
-      await closeConnections()
+      await closeConnections(pool)
       process.exit(0)
     })
 
@@ -159,7 +159,7 @@ export async function startServer(context: AppContext): Promise<void> {
       logger.info("SIGINT received, shutting down gracefully")
       context.server.close()
       await stopOutboxListener()
-      await closeConnections()
+      await closeConnections(pool)
       process.exit(0)
     })
   } catch (error) {

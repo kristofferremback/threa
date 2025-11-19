@@ -6,7 +6,7 @@ import { UserService } from "../lib/user-service"
 import { MessageService } from "../lib/messages"
 import { parseCookies } from "../lib/cookie-utils"
 import { logger } from "../lib/logger"
-import type { RedisClient } from "../lib/redis"
+import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
 
 interface SocketData {
   userId: string
@@ -28,9 +28,46 @@ export const createSocketIOServer = async (
     },
   })
 
-  // Set up Redis adapter
+  // Set up Redis adapter for Socket.IO cross-server communication
   io.adapter(createAdapter(redisPubClient, redisSubClient))
   logger.info("Redis adapter connected for Socket.IO")
+
+  // Create a separate Redis subscriber for outbox events
+  // This listens to messages published by the outbox listener
+  const messageSubscriber = createRedisClient({
+    onError: (err: Error) => {
+      logger.error({ err }, "Redis message subscriber error")
+    },
+  })
+  await connectRedisClient(messageSubscriber, "Message subscriber")
+
+  // Subscribe to Redis events for message broadcasting
+  // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
+  await messageSubscriber.subscribe("event:message.created", (message: string) => {
+    // Handle message asynchronously
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { id, channel_id, author_id, content } = event
+
+        // Get author email and broadcast via Socket.IO
+        const email = await userService.getUserEmail(author_id)
+        io.emit("message", {
+          id,
+          userId: author_id,
+          email: email || "unknown",
+          message: content,
+          timestamp: new Date().toISOString(),
+        })
+
+        logger.debug({ message_id: id, channel_id }, "Message broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis message event")
+      }
+    })()
+  })
+
+  logger.info("Subscribed to Redis message events")
 
   // Authentication middleware
   io.use(async (socket, next) => {
@@ -79,21 +116,17 @@ export const createSocketIOServer = async (
     socket.emit("connected", { message: "Connected to Threa", channelId })
 
     // Handle incoming messages
+    // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
     socket.on("message", async (data: { message: string }) => {
       try {
-        const message = await messageService.createMessage({
+        // Persist message to PostgreSQL (creates outbox event)
+        // The outbox listener will publish to Redis, which triggers Socket.IO emit
+        await messageService.createMessage({
           channelId,
           authorId: userId,
           content: data.message,
         })
-
-        io.emit("message", {
-          id: message.id,
-          userId,
-          email,
-          message: data.message,
-          timestamp: message.created_at.toISOString(),
-        })
+        // No direct emit - message will be broadcast via Redis subscription
       } catch (error) {
         logger.error({ err: error }, "Failed to process message")
         socket.emit("error", { message: "Failed to send message" })
