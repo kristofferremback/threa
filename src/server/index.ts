@@ -11,29 +11,35 @@ import { PORT } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
-import { startOutboxListener, stopOutboxListener } from "./lib/outbox-listener"
-import { pool, closeConnections } from "./lib/db"
-import { AuthService } from "./lib/auth-service"
-import { UserService } from "./lib/user-service"
-import { MessageService } from "./lib/messages"
-import { ConversationService } from "./lib/conversation-service"
+import { createDatabasePool, closeDatabasePool } from "./lib/db"
+import { Pool } from "pg"
+import { AuthService } from "./services/auth-service"
+import { UserService } from "./services/user-service"
+import { MessageService } from "./services/messages"
+import { ConversationService } from "./services/conversation-service"
+import { WorkspaceService } from "./services/workspace-service"
 import { validateEnv } from "./lib/env-validator"
 import { createErrorHandler } from "./middleware/error-handler"
 import { createSocketIORedisClients, type RedisClient } from "./lib/redis"
+import { OutboxListener } from "./lib/outbox-listener"
+import { esMain } from "./lib/is-main"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 export interface AppContext {
-      app: express.Application
-      server: HTTPServer
-      authService: AuthService
-      userService: UserService
-      messageService: MessageService
-      conversationService: ConversationService
-      redisPubClient: RedisClient
-      redisSubClient: RedisClient
-    }
+  app: express.Application
+  server: HTTPServer
+  pool: Pool
+  authService: AuthService
+  userService: UserService
+  messageService: MessageService
+  conversationService: ConversationService
+  workspaceService: WorkspaceService
+  redisPubClient: RedisClient
+  redisSubClient: RedisClient
+  outboxListener: OutboxListener
+}
 
 /**
  * Sets up and configures the Express application and HTTP server
@@ -81,11 +87,14 @@ export async function createApp(): Promise<AppContext> {
     app.get("/", (_, res) => res.redirect("http://localhost:3000"))
   }
 
-      // Create services with dependency injection
-      const authService = new AuthService()
-      const userService = new UserService(pool)
-      const messageService = new MessageService(pool, userService)
-      const conversationService = new ConversationService(pool)
+  const pool = createDatabasePool()
+
+  const authService = new AuthService()
+  const userService = new UserService(pool)
+  const messageService = new MessageService(pool, userService)
+  const conversationService = new ConversationService(pool)
+  const workspaceService = new WorkspaceService(pool)
+  const outboxListener = new OutboxListener(pool)
 
   // Create Redis clients for Socket.IO
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
@@ -109,16 +118,19 @@ export async function createApp(): Promise<AppContext> {
 
   const server = http.createServer(app)
 
-      return {
-        app,
-        server,
-        authService,
-        userService,
-        messageService,
-        conversationService,
-        redisPubClient,
-        redisSubClient,
-      }
+  return {
+    app,
+    server,
+    pool,
+    authService,
+    userService,
+    messageService,
+    conversationService,
+    workspaceService,
+    redisPubClient,
+    redisSubClient,
+    outboxListener,
+  }
 }
 
 /**
@@ -131,20 +143,22 @@ export async function startServer(context: AppContext): Promise<void> {
     validateEnv()
 
     logger.info("Running database migrations...")
-    await runMigrations()
+    await runMigrations(context.pool)
 
     logger.info("Starting outbox listener...")
-    await startOutboxListener()
+    await context.outboxListener.start()
 
-        await createSocketIOServer(
-          context.server,
-          context.authService,
-          context.userService,
-          context.messageService,
-          context.conversationService,
-          context.redisPubClient,
-          context.redisSubClient,
-        )
+    await createSocketIOServer({
+      server: context.server,
+      pool: context.pool,
+      authService: context.authService,
+      userService: context.userService,
+      messageService: context.messageService,
+      conversationService: context.conversationService,
+      workspaceService: context.workspaceService,
+      redisPubClient: context.redisPubClient,
+      redisSubClient: context.redisSubClient,
+    })
 
     context.server.listen(PORT, () => {
       logger.info({ port: PORT }, "Server started")
@@ -155,16 +169,16 @@ export async function startServer(context: AppContext): Promise<void> {
     process.on("SIGTERM", async () => {
       logger.info("SIGTERM received, shutting down gracefully")
       context.server.close()
-      await stopOutboxListener()
-      await closeConnections(pool)
+      await context.outboxListener.stop()
+      await context.pool.end()
       process.exit(0)
     })
 
     process.on("SIGINT", async () => {
       logger.info("SIGINT received, shutting down gracefully")
       context.server.close()
-      await stopOutboxListener()
-      await closeConnections(pool)
+      await context.outboxListener.stop()
+      await context.pool.end()
       process.exit(0)
     })
   } catch (error) {
@@ -176,5 +190,7 @@ export async function startServer(context: AppContext): Promise<void> {
 // Start server when this file is executed
 // When imported as a module, the exports are available but server will also start
 // For testing, you can import createApp() and startServer() separately
-const context = await createApp()
-startServer(context)
+if (esMain(import.meta.url)) {
+  const context = await createApp()
+  startServer(context)
+}

@@ -1,7 +1,8 @@
 import { Pool } from "pg"
-import { logger } from "./logger"
+import { logger } from "../lib/logger"
 import { randomUUID } from "crypto"
-import { UserService } from "./user-service"
+import { UserService } from "../services/user-service"
+import { generateId } from "../lib/id"
 
 export interface Message {
   id: string
@@ -45,7 +46,7 @@ export class MessageService {
       await client.query("BEGIN")
 
       // Generate message ID (using ULID format prefix as per spec)
-      const messageId = `msg_${randomUUID().replace(/-/g, "")}`
+      const messageId = generateId("msg")
 
       // Insert message with threading support
       const messageResult = await client.query<Message>(
@@ -64,7 +65,7 @@ export class MessageService {
       )
 
       // Insert outbox event
-      const outboxId = `outbox_${randomUUID().replace(/-/g, "")}`
+      const outboxId = generateId("outbox")
       await client.query(
         `INSERT INTO outbox (id, event_type, payload)
          VALUES ($1, $2, $3)`,
@@ -128,6 +129,22 @@ export class MessageService {
     }
   }
 
+  async getMessageById(messageId: string): Promise<Message | null> {
+    try {
+      const result = await this.pool.query<Message>(
+        `SELECT id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at
+         FROM messages
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [messageId],
+      )
+
+      return result.rows[0] || null
+    } catch (error) {
+      logger.error({ err: error, message_id: messageId }, "Failed to get message")
+      throw error
+    }
+  }
+
   /**
    * Get messages in a conversation (threaded messages)
    */
@@ -144,6 +161,34 @@ export class MessageService {
       return result.rows
     } catch (error) {
       logger.error({ err: error, conversation_id: conversationId }, "Failed to get conversation messages")
+      throw error
+    }
+  }
+
+  async getMessageAncestors(messageId: string): Promise<Message[]> {
+    try {
+      const result = await this.pool.query<Message>(
+        `WITH RECURSIVE ancestors AS (
+           SELECT m.*
+           FROM messages m
+           JOIN messages target ON m.id = target.reply_to_message_id
+           WHERE target.id = $1
+           
+           UNION ALL
+           
+           SELECT m.*
+           FROM messages m
+           INNER JOIN ancestors a ON m.id = a.reply_to_message_id
+         )
+         SELECT id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at
+         FROM ancestors
+         ORDER BY created_at ASC`,
+        [messageId],
+      )
+
+      return result.rows
+    } catch (error) {
+      logger.error({ err: error, message_id: messageId }, "Failed to get message ancestors")
       throw error
     }
   }
@@ -174,14 +219,3 @@ export class MessageService {
     return messagesWithAuthors
   }
 }
-
-// Legacy exports for backward compatibility (will be removed)
-import { pool } from "./db"
-import { UserService as US } from "./user-service"
-
-const userService = new US(pool)
-const messageService = new MessageService(pool, userService)
-
-export const createMessage = (params: CreateMessageParams) => messageService.createMessage(params)
-export const getMessagesByChannel = (channelId: string, limit?: number, offset?: number) =>
-  messageService.getMessagesByChannel(channelId, limit, offset)

@@ -1,4 +1,4 @@
-import { Pool, Client, type PoolConfig } from "pg"
+import { Pool, type PoolConfig } from "pg"
 import { DATABASE_URL } from "../config"
 import { logger } from "./logger"
 
@@ -36,61 +36,3 @@ export const connectDatabasePool = async (pool: Pool, context: string = "Databas
     throw error
   }
 }
-
-/**
- * Create a dedicated client for LISTEN/NOTIFY (must be separate from pool)
- */
-export const createNotifyClient = (): Client => {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-  })
-
-  client.on("error", (err) => {
-    logger.error({ err }, "Notification client error")
-  })
-
-  logger.debug({ database_url: DATABASE_URL }, "Created notification client")
-  return client
-}
-
-/**
- * Connect a notification client
- */
-export const connectNotifyClient = async (client: Client, context: string = "Notification client"): Promise<void> => {
-  try {
-    await client.connect()
-    await client.query("SELECT 1")
-    logger.info({ context }, "Notification client connected")
-  } catch (error) {
-    logger.error({ err: error, context }, "Failed to connect notification client")
-    throw error
-  }
-}
-
-/**
- * Get or create notification client (singleton for backward compatibility)
- */
-let notifyClient: Client | null = null
-
-export const getNotifyClient = async (): Promise<Client> => {
-  if (!notifyClient) {
-    notifyClient = createNotifyClient()
-    await connectNotifyClient(notifyClient)
-  }
-  return notifyClient
-}
-
-/**
- * Close database connections
- */
-export const closeConnections = async (pool: Pool): Promise<void> => {
-  await pool.end()
-  if (notifyClient) {
-    await notifyClient.end()
-    notifyClient = null
-  }
-  logger.info("Database connections closed")
-}
-
-// Singleton pool instance for backward compatibility
-export const pool = createDatabasePool()

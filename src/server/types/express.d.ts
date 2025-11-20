@@ -1,4 +1,4 @@
-import { AuthResult } from "../lib/auth-service"
+import { AuthResult } from "../services/auth-service"
 
 declare global {
   namespace Express {
@@ -9,4 +9,3 @@ declare global {
 }
 
 export {}
-

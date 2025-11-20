@@ -1,6 +1,6 @@
 import { Pool } from "pg"
-import { logger } from "./logger"
-import { randomUUID } from "crypto"
+import { logger } from "../lib/logger"
+import { generateId } from "../lib/id"
 
 export interface Workspace {
   id: string
@@ -16,10 +16,7 @@ export class WorkspaceService {
    * Get or create workspace for a WorkOS organization
    * Ensures 1-to-1 coupling between workspaces and WorkOS organizations
    */
-  async getOrCreateWorkspaceForOrganization(
-    workosOrganizationId: string,
-    workspaceName?: string,
-  ): Promise<Workspace> {
+  async getOrCreateWorkspaceForOrganization(workosOrganizationId: string, workspaceName?: string): Promise<Workspace> {
     try {
       // Try to find existing workspace
       const existingResult = await this.pool.query<Workspace>(
@@ -33,15 +30,19 @@ export class WorkspaceService {
       }
 
       // Create new workspace
-      const workspaceId = `ws_${randomUUID().replace(/-/g, "")}`
+      const workspaceId = generateId("ws")
       const name = workspaceName || `Workspace ${workosOrganizationId.slice(0, 8)}`
 
-      await this.pool.query(
-        "INSERT INTO workspaces (id, name, workos_organization_id) VALUES ($1, $2, $3)",
-        [workspaceId, name, workosOrganizationId],
-      )
+      await this.pool.query("INSERT INTO workspaces (id, name, workos_organization_id) VALUES ($1, $2, $3)", [
+        workspaceId,
+        name,
+        workosOrganizationId,
+      ])
 
-      logger.info({ workspace_id: workspaceId, organization_id: workosOrganizationId }, "Created workspace for organization")
+      logger.info(
+        { workspace_id: workspaceId, organization_id: workosOrganizationId },
+        "Created workspace for organization",
+      )
 
       const result = await this.pool.query<Workspace>(
         "SELECT id, name, workos_organization_id, created_at FROM workspaces WHERE id = $1",
@@ -131,7 +132,7 @@ export class WorkspaceService {
       }
 
       // Create default channel
-      const channelId = `chan_${randomUUID().replace(/-/g, "")}`
+      const channelId = generateId("chan")
       await this.pool.query(
         "INSERT INTO channels (id, workspace_id, name, description) VALUES ($1, $2, '#general', 'General discussion')",
         [channelId, workspaceId],
@@ -145,4 +146,3 @@ export class WorkspaceService {
     }
   }
 }
-

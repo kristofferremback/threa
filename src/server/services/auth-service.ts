@@ -1,6 +1,6 @@
 import { WorkOS } from "@workos-inc/node"
 import { WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, WORKOS_REDIRECT_URI } from "../config"
-import { logger } from "./logger"
+import { logger } from "../lib/logger"
 
 export interface AuthResult {
   success: boolean

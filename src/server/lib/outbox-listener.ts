@@ -1,18 +1,28 @@
 import { Pool } from "pg"
-import { getNotifyClient } from "./db"
 import { logger } from "./logger"
-import { pool } from "./db"
 import { createRedisClient, connectRedisClient, type RedisClient } from "./redis"
+import { DebounceWithMaxWait } from "./debounce"
+import { NotifyClient } from "./notify-client"
 
 const DEBOUNCE_MS = 50 // Debounce window for grouping multiple events
+const MAX_WAIT_MS = 500 // Maximum wait time before processing even if messages keep coming
 
 export class OutboxListener {
   private isListening = false
-  private notifyClient: Awaited<ReturnType<typeof getNotifyClient>> | null = null
+  private notifyClient: NotifyClient | null = null
   private redisClient: RedisClient | null = null
-  private debounceTimer: NodeJS.Timeout | null = null
+  private debouncedNotificationProcessor: DebounceWithMaxWait
 
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) {
+    this.debouncedNotificationProcessor = new DebounceWithMaxWait(
+      () => this.processOutboxBatch(),
+      DEBOUNCE_MS,
+      MAX_WAIT_MS,
+      (error) => {
+        logger.error({ err: error }, "Error processing outbox batch")
+      },
+    )
+  }
 
   async start(): Promise<void> {
     if (this.isListening) {
@@ -21,7 +31,9 @@ export class OutboxListener {
     }
 
     try {
-      this.notifyClient = await getNotifyClient()
+      // Create and connect notification client
+      this.notifyClient = new NotifyClient()
+      await this.notifyClient.connect()
 
       // Connect to Redis for publishing
       this.redisClient = createRedisClient({
@@ -32,20 +44,19 @@ export class OutboxListener {
 
       await connectRedisClient(this.redisClient, "Outbox listener")
 
-      // Subscribe to NOTIFY first
-      await this.notifyClient.query("LISTEN outbox_event")
-      logger.info("Listening for outbox events")
-
       // Set up NOTIFY handler with debouncing
-      this.notifyClient.on("notification", (msg) => {
+      this.notifyClient.onNotification((msg) => {
         if (msg.channel === "outbox_event") {
-          this.handleNotification()
+          this.debouncedNotificationProcessor.trigger()
         }
       })
 
-      this.notifyClient.on("error", (err) => {
+      this.notifyClient.onError((err) => {
         logger.error({ err }, "Notification client error")
       })
+
+      // Subscribe to NOTIFY channel
+      await this.notifyClient.listen("outbox_event")
 
       // On init: immediately check and process pending events
       await this.processOutboxBatch()
@@ -56,20 +67,6 @@ export class OutboxListener {
       logger.error({ err: error }, "Failed to start outbox listener")
       throw error
     }
-  }
-
-  private handleNotification(): void {
-    // Debounce: clear existing timer and set a new one
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer)
-    }
-
-    this.debounceTimer = setTimeout(() => {
-      this.debounceTimer = null
-      this.processOutboxBatch().catch((error) => {
-        logger.error({ err: error }, "Error processing outbox batch")
-      })
-    }, DEBOUNCE_MS)
   }
 
   /**
@@ -111,6 +108,7 @@ export class OutboxListener {
       logger.debug({ count: result.rows.length }, "Completed processing outbox batch")
     } catch (error) {
       logger.error({ err: error }, "Error processing outbox batch")
+      throw error
     }
   }
 
@@ -118,15 +116,12 @@ export class OutboxListener {
     if (!this.isListening) return
 
     try {
-      // Clear debounce timer
-      if (this.debounceTimer) {
-        clearTimeout(this.debounceTimer)
-        this.debounceTimer = null
-      }
+      // Clear debounce timers
+      this.debouncedNotificationProcessor.cancel()
 
       if (this.notifyClient) {
-        await this.notifyClient.query("UNLISTEN outbox_event")
-        await this.notifyClient.end()
+        await this.notifyClient.unlisten("outbox_event")
+        await this.notifyClient.close()
         this.notifyClient = null
       }
       if (this.redisClient) {
@@ -138,21 +133,5 @@ export class OutboxListener {
     } catch (error) {
       logger.error({ err: error }, "Error stopping outbox listener")
     }
-  }
-}
-
-// Singleton instance for backward compatibility
-let instance: OutboxListener | null = null
-
-export const startOutboxListener = async (): Promise<void> => {
-  if (!instance) {
-    instance = new OutboxListener(pool)
-  }
-  await instance.start()
-}
-
-export const stopOutboxListener = async (): Promise<void> => {
-  if (instance) {
-    await instance.stop()
   }
 }

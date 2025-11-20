@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express"
-import { AuthService } from "../lib/auth-service"
-import { SESSION_COOKIE_CONFIG } from "../lib/cookie-config"
+import { AuthService } from "../services/auth-service"
+import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { logger } from "../lib/logger"
 
 export const createAuthMiddleware = (authService: AuthService) => {
@@ -15,6 +15,7 @@ export const createAuthMiddleware = (authService: AuthService) => {
         res.cookie("wos_session", result.sealedSession, SESSION_COOKIE_CONFIG)
       }
 
+      // @ts-expect-error - user is not typed in express request
       req.user = result.user
       return next()
     }

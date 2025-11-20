@@ -1,6 +1,7 @@
 import { Pool } from "pg"
-import { logger } from "./logger"
+import { logger } from "../lib/logger"
 import { randomUUID } from "crypto"
+import { generateId } from "../lib/id"
 
 export interface Conversation {
   id: string
@@ -33,7 +34,7 @@ export class ConversationService {
     try {
       await client.query("BEGIN")
 
-      const conversationId = `conv_${randomUUID().replace(/-/g, "")}`
+      const conversationId = generateId("conv")
 
       // Create conversation
       const conversationResult = await client.query<Conversation>(
@@ -67,10 +68,7 @@ export class ConversationService {
       }
 
       // Update root message to be part of conversation
-      await client.query(
-        `UPDATE messages SET conversation_id = $1 WHERE id = $2`,
-        [conversationId, rootMessageId],
-      )
+      await client.query(`UPDATE messages SET conversation_id = $1 WHERE id = $2`, [conversationId, rootMessageId])
 
       await client.query("COMMIT")
 
@@ -107,7 +105,10 @@ export class ConversationService {
 
       logger.debug({ conversation_id: conversationId, channel_id: channelId }, "Channel added to conversation")
     } catch (error) {
-      logger.error({ err: error, conversation_id: conversationId, channel_id: channelId }, "Failed to add channel to conversation")
+      logger.error(
+        { err: error, conversation_id: conversationId, channel_id: channelId },
+        "Failed to add channel to conversation",
+      )
       throw error
     }
   }
@@ -173,4 +174,3 @@ export class ConversationService {
     }
   }
 }
-

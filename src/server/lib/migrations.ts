@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
-import { pool } from "./db"
+import { Pool } from "pg"
 import { logger } from "./logger"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -10,7 +10,7 @@ const __dirname = dirname(__filename)
 
 const migrationsDir = join(__dirname, "migrations")
 
-export const runMigrations = async () => {
+export const runMigrations = async (pool: Pool) => {
   try {
     // Create migrations table if it doesn't exist
     await pool.query(`

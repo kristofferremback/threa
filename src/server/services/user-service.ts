@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { logger } from "./logger"
+import { logger } from "../lib/logger"
 
 export interface User {
   id: string
@@ -31,7 +31,7 @@ export class UserService {
          VALUES ($1, $2, $3)
          ON CONFLICT (id) DO UPDATE
          SET email = EXCLUDED.email, name = EXCLUDED.name`,
-        [workosUser.id, workosUser.email, name]
+        [workosUser.id, workosUser.email, name],
       )
 
       logger.debug({ user_id: workosUser.id, email: workosUser.email }, "User synced to database")
@@ -50,7 +50,7 @@ export class UserService {
         `SELECT id, email, name, created_at
          FROM users
          WHERE id = $1`,
-        [userId]
+        [userId],
       )
 
       return result.rows[0] || null
@@ -65,10 +65,7 @@ export class UserService {
    */
   async getUserEmail(userId: string): Promise<string | null> {
     try {
-      const result = await this.pool.query<{ email: string }>(
-        `SELECT email FROM users WHERE id = $1`,
-        [userId]
-      )
+      const result = await this.pool.query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [userId])
 
       return result.rows[0]?.email || null
     } catch (error) {
@@ -80,7 +77,7 @@ export class UserService {
   /**
    * Get or create default workspace and channel for MVP
    * Returns channel ID
-   * 
+   *
    * @deprecated Use WorkspaceService.getOrCreateDefaultChannel() instead
    */
   async getDefaultChannel(): Promise<string> {
@@ -101,7 +98,7 @@ export class UserService {
       // Check if default channel exists
       const channelResult = await this.pool.query(
         "SELECT id FROM channels WHERE workspace_id = $1 AND name = '#general'",
-        [workspaceId]
+        [workspaceId],
       )
 
       let channelId: string
@@ -109,7 +106,7 @@ export class UserService {
         // Create default channel
         const channelIdResult = await this.pool.query(
           "INSERT INTO channels (id, workspace_id, name, description) VALUES ('chan_general', $1, '#general', 'General discussion') RETURNING id",
-          [workspaceId]
+          [workspaceId],
         )
         channelId = channelIdResult.rows[0].id
         logger.info("Created default channel")
@@ -129,10 +126,7 @@ export class UserService {
    */
   async getWorkspaceIdForChannel(channelId: string): Promise<string | null> {
     try {
-      const result = await this.pool.query(
-        "SELECT workspace_id FROM channels WHERE id = $1",
-        [channelId]
-      )
+      const result = await this.pool.query("SELECT workspace_id FROM channels WHERE id = $1", [channelId])
       return result.rows[0]?.workspace_id || null
     } catch (error) {
       logger.error({ err: error, channel_id: channelId }, "Failed to get workspace ID for channel")
@@ -140,4 +134,3 @@ export class UserService {
     }
   }
 }
-

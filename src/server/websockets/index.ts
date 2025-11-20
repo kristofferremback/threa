@@ -1,28 +1,42 @@
 import { Server as SocketIOServer } from "socket.io"
 import type { Server as HTTPServer } from "http"
 import { createAdapter } from "@socket.io/redis-adapter"
-import { AuthService } from "../lib/auth-service"
-import { UserService } from "../lib/user-service"
-import { MessageService } from "../lib/messages"
-import { ConversationService } from "../lib/conversation-service"
-import { parseCookies } from "../lib/cookie-utils"
+import { AuthService } from "../services/auth-service"
+import { UserService } from "../services/user-service"
+import { MessageService } from "../services/messages"
+import { ConversationService } from "../services/conversation-service"
+import { WorkspaceService } from "../services/workspace-service"
+import { parseCookies } from "../lib/cookies"
 import { logger } from "../lib/logger"
 import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
+import { Pool } from "pg"
 
 interface SocketData {
   userId: string
   email: string
 }
 
-export const createSocketIOServer = async (
-  server: HTTPServer,
-  authService: AuthService,
-  userService: UserService,
-  messageService: MessageService,
-  conversationService: ConversationService,
-  redisPubClient: RedisClient,
-  redisSubClient: RedisClient,
-) => {
+export const createSocketIOServer = async ({
+  server,
+  pool,
+  authService,
+  userService,
+  messageService,
+  conversationService,
+  workspaceService,
+  redisPubClient,
+  redisSubClient,
+}: {
+  server: HTTPServer
+  pool: Pool
+  authService: AuthService
+  userService: UserService
+  messageService: MessageService
+  conversationService: ConversationService
+  workspaceService: WorkspaceService
+  redisPubClient: RedisClient
+  redisSubClient: RedisClient
+}) => {
   const io = new SocketIOServer<any, any, any, SocketData>(server, {
     cors: {
       origin: ["http://localhost:3000", "http://localhost:3001"],
@@ -54,13 +68,29 @@ export const createSocketIOServer = async (
 
         // Get author email and broadcast via Socket.IO
         const email = await userService.getUserEmail(author_id)
-        io.emit("message", {
+        const messageData = {
           id,
           userId: author_id,
           email: email || "unknown",
           message: content,
           timestamp: new Date().toISOString(),
-        })
+          channelId: channel_id,
+          conversationId: event.conversation_id,
+          replyToMessageId: event.reply_to_message_id,
+        }
+
+        // Emit to channel
+        io.to(`channel:${channel_id}`).emit("message", messageData)
+
+        // Emit to conversation if exists
+        if (event.conversation_id) {
+          io.to(`conversation:${event.conversation_id}`).emit("message", messageData)
+        }
+
+        // Emit to thread root if replying (handles first reply case)
+        if (event.reply_to_message_id) {
+          io.to(`thread:${event.reply_to_message_id}`).emit("message", messageData)
+        }
 
         logger.debug({ message_id: id, channel_id }, "Message broadcast via Socket.IO")
       } catch (error) {
@@ -110,7 +140,23 @@ export const createSocketIOServer = async (
       lastName: null,
     })
 
-    const channelId = await userService.getDefaultChannel()
+    // Get user's workspace from workspace_members
+    const workspaceMemberResult = await pool.query(
+      "SELECT workspace_id FROM workspace_members WHERE user_id = $1 LIMIT 1",
+      [userId],
+    )
+
+    if (workspaceMemberResult.rows.length === 0) {
+      logger.error({ userId }, "User is not a member of any workspace")
+      socket.emit("error", { message: "User is not a member of any workspace" })
+      socket.disconnect()
+      return
+    }
+
+    const workspaceId = workspaceMemberResult.rows[0].workspace_id
+
+    // Get or create default channel for the workspace
+    const channelId = await workspaceService.getOrCreateDefaultChannel(workspaceId)
 
     // Load recent messages
     const messagesWithAuthors = await messageService.getMessagesWithAuthors(channelId, 50)
@@ -184,12 +230,36 @@ export const createSocketIOServer = async (
       },
     )
 
+    socket.on("join", (room: string) => {
+      logger.debug({ userId, room }, "Joining room")
+      socket.join(room)
+    })
+
+    socket.on("leave", (room: string) => {
+      logger.debug({ userId, room }, "Leaving room")
+      socket.leave(room)
+    })
+
     // Handle loading conversation messages
-    socket.on("loadConversation", async (data: { conversationId: string }) => {
+    socket.on("loadThread", async (data: { messageId: string }) => {
       try {
-        const messages = await messageService.getMessagesByConversation(data.conversationId)
+        const targetMessage = await messageService.getMessageById(data.messageId)
+        if (!targetMessage) {
+          socket.emit("error", { message: "Message not found" })
+          return
+        }
+
+        let conversationMessages: any[] = []
+
+        if (targetMessage.conversation_id) {
+          conversationMessages = await messageService.getMessagesByConversation(targetMessage.conversation_id)
+        } else {
+          // If no conversation yet, the thread is just the message itself acting as root
+          conversationMessages = [targetMessage]
+        }
+
         const messagesWithAuthors = await Promise.all(
-          messages.map(async (msg) => {
+          conversationMessages.map(async (msg) => {
             const email = await userService.getUserEmail(msg.author_id)
             return {
               id: msg.id,
@@ -202,10 +272,33 @@ export const createSocketIOServer = async (
             }
           }),
         )
-        socket.emit("conversationMessages", { conversationId: data.conversationId, messages: messagesWithAuthors })
+
+        // Fetch ancestors
+        const ancestors = await messageService.getMessageAncestors(data.messageId)
+        const ancestorsWithAuthors = await Promise.all(
+          ancestors.map(async (msg) => {
+            const email = await userService.getUserEmail(msg.author_id)
+            return {
+              id: msg.id,
+              userId: msg.author_id,
+              email: email || "unknown",
+              message: msg.content,
+              timestamp: msg.created_at.toISOString(),
+              conversationId: msg.conversation_id,
+              replyToMessageId: msg.reply_to_message_id,
+            }
+          }),
+        )
+
+        socket.emit("threadMessages", {
+          rootMessageId: data.messageId,
+          conversationId: targetMessage.conversation_id,
+          messages: messagesWithAuthors,
+          ancestors: ancestorsWithAuthors,
+        })
       } catch (error) {
-        logger.error({ err: error }, "Failed to load conversation")
-        socket.emit("error", { message: "Failed to load conversation" })
+        logger.error({ err: error }, "Failed to load thread")
+        socket.emit("error", { message: "Failed to load thread" })
       }
     })
 
