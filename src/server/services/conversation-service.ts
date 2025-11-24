@@ -70,6 +70,28 @@ export class ConversationService {
       // Update root message to be part of conversation
       await client.query(`UPDATE messages SET conversation_id = $1 WHERE id = $2`, [conversationId, rootMessageId])
 
+      // Insert outbox event for conversation creation
+      const outboxId = generateId("outbox")
+      const allChannelIds = [primaryChannelId, ...(additionalChannelIds || [])]
+      await client.query(
+        `INSERT INTO outbox (id, event_type, payload)
+         VALUES ($1, $2, $3)`,
+        [
+          outboxId,
+          "conversation.created",
+          JSON.stringify({
+            id: conversationId,
+            workspace_id: workspaceId,
+            root_message_id: rootMessageId,
+            channel_ids: allChannelIds,
+            created_at: new Date().toISOString(),
+          }),
+        ],
+      )
+
+      // NOTIFY to wake up outbox listener (within transaction)
+      await client.query(`NOTIFY outbox_event, $1`, [outboxId])
+
       await client.query("COMMIT")
 
       logger.info(

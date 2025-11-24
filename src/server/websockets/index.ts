@@ -79,8 +79,18 @@ export const createSocketIOServer = async ({
           replyToMessageId: event.reply_to_message_id,
         }
 
-        // Emit to channel
+        // Emit to channel room - need to get channel slug for slug-based rooms
+        // Get channel slug to support both ID-based and slug-based rooms
+        const { sql } = await import("../lib/db")
+        const channelSlugResult = await pool.query(sql`SELECT slug FROM channels WHERE id = ${channel_id}`)
+        const channelSlug = channelSlugResult.rows[0]?.slug
+
+        // Emit to ID-based room
         io.to(`channel:${channel_id}`).emit("message", messageData)
+        // Also emit to slug-based room if slug exists (for frontend compatibility)
+        if (channelSlug) {
+          io.to(`channel:${channelSlug}`).emit("message", messageData)
+        }
 
         // Emit to conversation if exists
         if (event.conversation_id) {
@@ -95,6 +105,37 @@ export const createSocketIOServer = async ({
         logger.debug({ message_id: id, channel_id }, "Message broadcast via Socket.IO")
       } catch (error) {
         logger.error({ err: error }, "Failed to process Redis message event")
+      }
+    })()
+  })
+
+  // Subscribe to conversation creation events
+  await messageSubscriber.subscribe("event:conversation.created", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { id, root_message_id, channel_ids } = event
+
+        const eventData = {
+          type: "conversation_created",
+          conversationId: id,
+          rootMessageId: root_message_id,
+          channelIds: channel_ids,
+          timestamp: event.created_at,
+        }
+
+        // Broadcast to all involved channels so they can update the root message UI
+        for (const channelId of channel_ids) {
+          io.to(`channel:${channelId}`).emit("conversation_created", eventData)
+        }
+
+        // Also emit to the root message thread room if anyone is listening
+        // (e.g., someone viewing the thread before it was officially a conversation)
+        io.to(`thread:${root_message_id}`).emit("conversation_created", eventData)
+
+        logger.debug({ conversation_id: id, channels: channel_ids }, "Conversation created broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis conversation.created event")
       }
     })()
   })
@@ -156,23 +197,64 @@ export const createSocketIOServer = async ({
     const workspaceId = workspaceMemberResult.rows[0].workspace_id
 
     // Get or create default channel for the workspace
-    const channelId = await workspaceService.getOrCreateDefaultChannel(workspaceId)
+    const defaultChannelId = await workspaceService.getOrCreateDefaultChannel(workspaceId)
+
+    // Get channel slug for room names (frontend uses slug-based rooms)
+    const channelResult = await pool.query("SELECT slug FROM channels WHERE id = $1", [defaultChannelId])
+    const channelSlug = channelResult.rows[0]?.slug || "general"
+
+    // Join default channel room by slug (frontend uses slug-based rooms)
+    socket.join(`channel:${channelSlug}`)
+    // Also join by ID for backwards compatibility
+    socket.join(`channel:${defaultChannelId}`)
 
     // Load recent messages
-    const messagesWithAuthors = await messageService.getMessagesWithAuthors(channelId, 50)
+    const messagesWithAuthors = await messageService.getMessagesWithAuthors(defaultChannelId, 50)
     socket.emit("messages", messagesWithAuthors)
-    socket.emit("connected", { message: "Connected to Threa", channelId })
+    socket.emit("connected", { message: "Connected to Threa", channelId: defaultChannelId, channelSlug })
 
     // Handle incoming messages
     // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
     socket.on(
       "message",
-      async (data: { message: string; replyToMessageId?: string; conversationId?: string; channelIds?: string[] }) => {
+      async (data: {
+        message: string
+        channelId?: string
+        replyToMessageId?: string
+        conversationId?: string
+        channelIds?: string[]
+      }) => {
         try {
-          // Get workspace ID for channel
-          const workspaceId = await userService.getWorkspaceIdForChannel(channelId)
-          if (!workspaceId) {
-            throw new Error("Failed to get workspace ID for channel")
+          // Use provided channelId or fall back to default channel
+          let targetChannelId = data.channelId || defaultChannelId
+          let workspaceId: string | null
+
+          // Resolve slug to channel ID if needed (channelId might be a slug like "general")
+          if (targetChannelId && !targetChannelId.startsWith("chan_")) {
+            // It's a slug, need to resolve to actual channel ID
+            // First get workspace ID to narrow search
+            workspaceId = await userService.getWorkspaceIdForChannel(targetChannelId)
+            if (!workspaceId) {
+              throw new Error(`Channel with slug "${targetChannelId}" not found`)
+            }
+
+            // Now resolve slug to channel ID
+            const channelResult = await pool.query("SELECT id FROM channels WHERE workspace_id = $1 AND slug = $2", [
+              workspaceId,
+              targetChannelId,
+            ])
+
+            if (channelResult.rows.length === 0) {
+              throw new Error(`Channel with slug "${targetChannelId}" not found in workspace`)
+            }
+
+            targetChannelId = channelResult.rows[0].id
+          } else {
+            // It's already a channel ID, get workspace ID
+            workspaceId = await userService.getWorkspaceIdForChannel(targetChannelId)
+            if (!workspaceId) {
+              throw new Error("Failed to get workspace ID for channel")
+            }
           }
 
           let conversationId = data.conversationId || null
@@ -181,7 +263,7 @@ export const createSocketIOServer = async ({
           // If replying to a message, check if conversation exists or create one
           if (replyToMessageId && !conversationId) {
             // Get the message being replied to
-            const allMessages = await messageService.getMessagesByChannel(channelId, 1000, 0) // Get enough to find the message
+            const allMessages = await messageService.getMessagesByChannel(targetChannelId, 1000, 0) // Get enough to find the message
             const targetMessage = allMessages.find((m) => m.id === replyToMessageId)
 
             if (targetMessage) {
@@ -194,7 +276,7 @@ export const createSocketIOServer = async ({
                 const conversation = await conversationService.createConversation(
                   workspaceId,
                   replyToMessageId,
-                  channelId,
+                  targetChannelId,
                   data.channelIds || [],
                 )
                 conversationId = conversation.id
@@ -206,7 +288,7 @@ export const createSocketIOServer = async ({
           // The outbox listener will publish to Redis, which triggers Socket.IO emit
           await messageService.createMessage({
             workspaceId,
-            channelId,
+            channelId: targetChannelId,
             authorId: userId,
             content: data.message,
             conversationId,
@@ -216,7 +298,7 @@ export const createSocketIOServer = async ({
           // If this is a new conversation and has multiple channels, add them
           if (conversationId && data.channelIds && data.channelIds.length > 0) {
             for (const additionalChannelId of data.channelIds) {
-              if (additionalChannelId !== channelId) {
+              if (additionalChannelId !== targetChannelId) {
                 await conversationService.addChannelToConversation(conversationId, additionalChannelId)
               }
             }

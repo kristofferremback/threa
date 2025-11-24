@@ -123,13 +123,21 @@ export class UserService {
 
   /**
    * Get workspace ID for a channel
+   * Accepts either channel ID (chan_...) or channel slug (general)
    */
-  async getWorkspaceIdForChannel(channelId: string): Promise<string | null> {
+  async getWorkspaceIdForChannel(channelIdOrSlug: string): Promise<string | null> {
     try {
-      const result = await this.pool.query("SELECT workspace_id FROM channels WHERE id = $1", [channelId])
+      // Try as ID first (starts with chan_)
+      let result
+      if (channelIdOrSlug.startsWith("chan_")) {
+        result = await this.pool.query("SELECT workspace_id FROM channels WHERE id = $1", [channelIdOrSlug])
+      } else {
+        // Try as slug
+        result = await this.pool.query("SELECT workspace_id FROM channels WHERE slug = $1", [channelIdOrSlug])
+      }
       return result.rows[0]?.workspace_id || null
     } catch (error) {
-      logger.error({ err: error, channel_id: channelId }, "Failed to get workspace ID for channel")
+      logger.error({ err: error, channel_id: channelIdOrSlug }, "Failed to get workspace ID for channel")
       return null
     }
   }

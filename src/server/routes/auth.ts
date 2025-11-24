@@ -58,7 +58,7 @@ export const createAuthRoutes = (authService: AuthService) => {
     }
   })
 
-  routes.post("/logout", async (req: Request, res: Response) => {
+  routes.get("/logout", async (req: Request, res: Response) => {
     const sealedSession = req.cookies["wos_session"]
     if (!sealedSession) {
       return res.status(400).json({ error: "No session found" })

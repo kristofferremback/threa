@@ -5,13 +5,15 @@ import { DebounceWithMaxWait } from "./debounce"
 import { NotifyClient } from "./notify-client"
 
 const DEBOUNCE_MS = 50 // Debounce window for grouping multiple events
-const MAX_WAIT_MS = 500 // Maximum wait time before processing even if messages keep coming
+const MAX_WAIT_MS = 200 // Maximum wait time before processing even if messages keep coming
+const POLL_INTERVAL_MS = 1000 // Fallback polling interval (1 second)
 
 export class OutboxListener {
   private isListening = false
   private notifyClient: NotifyClient | null = null
   private redisClient: RedisClient | null = null
   private debouncedNotificationProcessor: DebounceWithMaxWait
+  private pollInterval: NodeJS.Timeout | null = null
 
   constructor(private pool: Pool) {
     this.debouncedNotificationProcessor = new DebounceWithMaxWait(
@@ -58,11 +60,18 @@ export class OutboxListener {
       // Subscribe to NOTIFY channel
       await this.notifyClient.listen("outbox_event")
 
+      // Start fallback polling (every 1s)
+      this.pollInterval = setInterval(() => {
+        this.processOutboxBatch().catch((error) => {
+          logger.error({ err: error }, "Error in polling outbox batch")
+        })
+      }, POLL_INTERVAL_MS)
+
       // On init: immediately check and process pending events
       await this.processOutboxBatch()
 
       this.isListening = true
-      logger.info("Outbox listener started")
+      logger.info("Outbox listener started (NOTIFY + polling)")
     } catch (error) {
       logger.error({ err: error }, "Failed to start outbox listener")
       throw error
@@ -118,6 +127,12 @@ export class OutboxListener {
     try {
       // Clear debounce timers
       this.debouncedNotificationProcessor.cancel()
+
+      // Clear polling interval
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval)
+        this.pollInterval = null
+      }
 
       if (this.notifyClient) {
         await this.notifyClient.unlisten("outbox_event")

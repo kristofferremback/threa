@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:deps && concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "bun dev:deps && concurrently \"bun dev:server\" \"bun dev:client\"",
     "dev:deps": "docker compose up -d",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
-    "build": "npm run build:client && npm run build:server",
+    "build": "bun build:client && bun build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/index.js",
@@ -36,6 +36,7 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "sonner": "^2.0.7",
+    "squid": "^0.5.2",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

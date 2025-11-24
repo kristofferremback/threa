@@ -1,6 +1,17 @@
 import { Pool, type PoolConfig } from "pg"
+import { sql } from "squid/pg"
 import { DATABASE_URL } from "../config"
 import { logger } from "./logger"
+
+// Re-export squid's sql template tag - a battle-tested library that properly escapes values
+// to prevent SQL injection. Returns { text, values } with PostgreSQL placeholders ($1, $2, etc.)
+// which is directly compatible with pg.query()
+//
+// Usage:
+//   const result = await pool.query(sql`SELECT * FROM users WHERE email = ${email}`)
+//
+// For Bun scripts, use Bun's built-in sql directly: import { sql } from "bun"
+export { sql }
 
 /**
  * Create a database connection pool with consistent configuration
