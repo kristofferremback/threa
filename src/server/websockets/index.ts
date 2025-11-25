@@ -194,6 +194,45 @@ export const createSocketIOServer = async ({
     })()
   })
 
+  // Subscribe to channel member added events
+  await messageSubscriber.subscribe("event:channel.member_added", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { channelId, workspaceId, userId, addedByUserId, eventType } = event
+
+        // Get channel details to send to the user
+        const channel = await chatService.getChannelById(channelId)
+        if (!channel) {
+          logger.warn({ channelId }, "Channel not found for member_added event")
+          return
+        }
+
+        // Notify the added user so they can update their channel list
+        io.to(`user:${userId}`).emit("channelMemberAdded", {
+          channel: {
+            id: channel.id,
+            name: channel.name,
+            slug: channel.slug,
+            description: channel.description,
+            topic: channel.topic,
+            visibility: channel.visibility,
+            is_member: true,
+            unread_count: 0,
+            last_read_at: new Date().toISOString(),
+            notify_level: "default",
+          },
+          addedByUserId,
+          eventType,
+        })
+
+        logger.debug({ channel_id: channelId, user_id: userId }, "Channel member added broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis channel.member_added event")
+      }
+    })()
+  })
+
   // Subscribe to channel member removed events
   await messageSubscriber.subscribe("event:channel.member_removed", (message: string) => {
     ;(async () => {

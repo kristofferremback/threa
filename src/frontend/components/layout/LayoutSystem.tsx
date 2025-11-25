@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "../../auth"
-import { useBootstrap, usePaneManager } from "../../hooks"
+import { useBootstrap, usePaneManager, useWorkspaceSocket } from "../../hooks"
 import { ChatInterface } from "../ChatInterface"
 import { Sidebar } from "./Sidebar"
 import { PaneSystem } from "./PaneSystem"
@@ -30,6 +30,8 @@ export function LayoutSystem() {
     addChannel,
     updateChannel,
     removeChannel,
+    incrementUnreadCount,
+    resetUnreadCount,
   } = useBootstrap({
     enabled: isAuthenticated && state === "loaded",
   })
@@ -56,6 +58,43 @@ export function LayoutSystem() {
     }
   }, [bootstrapData, initializeFromUrl])
 
+  // Handle being removed from a channel
+  const handleChannelRemoved = useCallback(
+    (channelId: string) => {
+      removeChannel(channelId)
+
+      // If we're currently viewing this channel, navigate away
+      if (bootstrapData && activeChannelSlug) {
+        const removedChannel = bootstrapData.channels.find(
+          (c) => c.id === channelId || c.slug === channelId,
+        )
+        if (removedChannel && (removedChannel.slug === activeChannelSlug || removedChannel.id === activeChannelSlug)) {
+          // Find another channel to navigate to
+          const remainingChannels = bootstrapData.channels.filter(
+            (c) => c.id !== channelId && c.is_member,
+          )
+          if (remainingChannels.length > 0) {
+            selectChannel(remainingChannels[0])
+          } else {
+            // No channels left - clear the pane
+            // For now, just leave it - the user will see an empty state
+          }
+        }
+      }
+    },
+    [removeChannel, bootstrapData, activeChannelSlug, selectChannel],
+  )
+
+  // Workspace-level WebSocket for real-time updates
+  useWorkspaceSocket({
+    enabled: isAuthenticated && !!bootstrapData,
+    workspaceId: bootstrapData?.workspace.id,
+    activeChannelId: activeChannelSlug || undefined,
+    onChannelAdded: addChannel,
+    onChannelRemoved: handleChannelRemoved,
+    onUnreadCountUpdate: incrementUnreadCount,
+  })
+
   // Global keyboard shortcut for command palette
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,6 +107,15 @@ export function LayoutSystem() {
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  // Wrapper for selectChannel that also resets unread count
+  const handleSelectChannel = useCallback(
+    (channel: Channel) => {
+      selectChannel(channel)
+      resetUnreadCount(channel.id)
+    },
+    [selectChannel, resetUnreadCount],
+  )
 
   // Handle channel selection from command palette
   const handleCommandPaletteSelect = useCallback(
@@ -90,9 +138,9 @@ export function LayoutSystem() {
           console.error("Failed to join channel:", error)
         }
       }
-      selectChannel(channel)
+      handleSelectChannel(channel)
     },
-    [selectChannel, bootstrapData, user?.id, updateChannel],
+    [handleSelectChannel, bootstrapData, user?.id, updateChannel],
   )
 
   // Helper to get channel name from slug
@@ -149,7 +197,7 @@ export function LayoutSystem() {
           // Navigate away if we're viewing the removed channel
           if (tab.data?.channelId === removedChannelId) {
             const firstChannel = bootstrapData.channels.find((c) => c.id !== removedChannelId)
-            if (firstChannel) selectChannel(firstChannel)
+            if (firstChannel) handleSelectChannel(firstChannel)
           }
         }}
       />
@@ -199,7 +247,7 @@ export function LayoutSystem() {
         workspace={bootstrapData.workspace}
         channels={bootstrapData.channels}
         activeChannelSlug={activeChannelSlug}
-        onSelectChannel={selectChannel}
+        onSelectChannel={handleSelectChannel}
         onCreateChannel={() => setShowCreateChannel(true)}
         onChannelSettings={(channel) => setChannelToEdit(channel)}
         onInvitePeople={() => setShowInviteModal(true)}
@@ -214,7 +262,7 @@ export function LayoutSystem() {
         onCreated={(channel: Channel) => {
           setShowCreateChannel(false)
           addChannel(channel)
-          selectChannel(channel)
+          handleSelectChannel(channel)
         }}
       />
 
@@ -235,7 +283,7 @@ export function LayoutSystem() {
           // If we're viewing the archived channel, navigate away
           if (activeChannelSlug === channelToEdit?.slug) {
             const firstChannel = bootstrapData.channels.find((c) => c.id !== channelId)
-            if (firstChannel) selectChannel(firstChannel)
+            if (firstChannel) handleSelectChannel(firstChannel)
           }
         }}
       />

@@ -8,7 +8,6 @@ interface UseChatOptions {
   channelId?: string
   threadId?: string
   enabled?: boolean
-  onChannelRemoved?: (channelId: string, channelName: string) => void
 }
 
 interface UseChatReturn {
@@ -33,7 +32,6 @@ export function useChat({
   channelId,
   threadId,
   enabled = true,
-  onChannelRemoved,
 }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [rootMessage, setRootMessage] = useState<Message | null>(null)
@@ -156,12 +154,6 @@ export function useChat({
 
     socket.on("connect_error", () => {
       toast.error("Failed to connect to server")
-    })
-
-    // Handle being removed from a channel
-    socket.on("channelMemberRemoved", (data: { channelId: string; channelName: string; removedByUserId?: string }) => {
-      toast.error(`You were removed from #${data.channelName.replace("#", "")}`)
-      onChannelRemoved?.(data.channelId, data.channelName)
     })
 
     // Function to subscribe and fetch data

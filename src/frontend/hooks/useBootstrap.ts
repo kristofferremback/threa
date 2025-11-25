@@ -14,6 +14,8 @@ interface UseBootstrapReturn {
   addChannel: (channel: Channel) => void
   updateChannel: (channel: Channel) => void
   removeChannel: (channelId: string) => void
+  incrementUnreadCount: (channelId: string, increment?: number) => void
+  resetUnreadCount: (channelId: string) => void
 }
 
 export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseBootstrapReturn {
@@ -91,6 +93,28 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     })
   }, [])
 
+  // Increment unread count for a channel
+  const incrementUnreadCount = useCallback((channelId: string, increment: number = 1) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const channels = prev.channels.map((c) =>
+        c.id === channelId || c.slug === channelId ? { ...c, unread_count: c.unread_count + increment } : c,
+      )
+      return { ...prev, channels }
+    })
+  }, [])
+
+  // Reset unread count for a channel (when user views it)
+  const resetUnreadCount = useCallback((channelId: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const channels = prev.channels.map((c) =>
+        c.id === channelId || c.slug === channelId ? { ...c, unread_count: 0 } : c,
+      )
+      return { ...prev, channels }
+    })
+  }, [])
+
   return {
     data,
     isLoading,
@@ -100,5 +124,7 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     addChannel,
     updateChannel,
     removeChannel,
+    incrementUnreadCount,
+    resetUnreadCount,
   }
 }
