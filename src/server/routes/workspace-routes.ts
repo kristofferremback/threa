@@ -761,5 +761,99 @@ export function createWorkspaceRoutes(
     }
   })
 
+  // ==========================================================================
+  // Invitations
+  // ==========================================================================
+
+  // Create an invitation
+  router.post("/:workspaceId/invitations", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { email, role } = req.body
+
+      if (!email || typeof email !== "string" || !email.includes("@")) {
+        res.status(400).json({ error: "Valid email is required" })
+        return
+      }
+
+      const validRoles = ["admin", "member", "guest"]
+      const inviteRole = validRoles.includes(role) ? role : "member"
+
+      const invitation = await workspaceService.createInvitation(
+        workspaceId,
+        email.toLowerCase().trim(),
+        userId,
+        inviteRole,
+      )
+
+      res.status(201).json({
+        id: invitation.id,
+        token: invitation.token,
+        expiresAt: invitation.expiresAt,
+        inviteUrl: `/invite/${invitation.token}`,
+      })
+    } catch (error: any) {
+      if (error.message?.includes("already a member")) {
+        res.status(409).json({ error: error.message })
+        return
+      }
+      if (error.message?.includes("seat limit")) {
+        res.status(403).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to create invitation")
+      next(error)
+    }
+  })
+
+  // Get pending invitations for a workspace
+  router.get("/:workspaceId/invitations", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const invitations = await workspaceService.getPendingInvitations(workspaceId)
+      res.json({ invitations })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get invitations")
+      next(error)
+    }
+  })
+
+  // Revoke an invitation
+  router.delete("/:workspaceId/invitations/:invitationId", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { invitationId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await workspaceService.revokeInvitation(invitationId, userId)
+      res.json({ success: true })
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to revoke invitation")
+      next(error)
+    }
+  })
+
   return router
 }

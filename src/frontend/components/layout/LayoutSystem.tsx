@@ -7,6 +7,7 @@ import { PaneSystem } from "./PaneSystem"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 import { CreateChannelModal } from "./CreateChannelModal"
 import { ChannelSettingsModal } from "./ChannelSettingsModal"
+import { InviteModal } from "../InviteModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import type { Tab, Channel } from "../../types"
 
@@ -14,6 +15,7 @@ export function LayoutSystem() {
   const { isAuthenticated, state, logout } = useAuth()
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [showInviteModal, setShowInviteModal] = useState(false)
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
 
   // Bootstrap data
@@ -150,6 +152,7 @@ export function LayoutSystem() {
         onSelectChannel={selectChannel}
         onCreateChannel={() => setShowCreateChannel(true)}
         onChannelSettings={(channel) => setChannelToEdit(channel)}
+        onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
       />
 
@@ -182,6 +185,13 @@ export function LayoutSystem() {
             if (firstChannel) selectChannel(firstChannel)
           }
         }}
+      />
+
+      <InviteModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        workspaceId={bootstrapData.workspace.id}
+        workspaceName={bootstrapData.workspace.name}
       />
 
       <div className="flex-1 min-w-0">

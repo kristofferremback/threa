@@ -1,4 +1,4 @@
-import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin } from "lucide-react"
+import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin, UserPlus } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
 import type { Channel, Workspace } from "../../types"
@@ -10,6 +10,7 @@ interface SidebarProps {
   onSelectChannel: (channel: Channel) => void
   onCreateChannel: () => void
   onChannelSettings: (channel: Channel) => void
+  onInvitePeople: () => void
   onLogout: () => void
 }
 
@@ -20,6 +21,7 @@ export function Sidebar({
   onSelectChannel,
   onCreateChannel,
   onChannelSettings,
+  onInvitePeople,
   onLogout,
 }: SidebarProps) {
   return (
@@ -27,7 +29,7 @@ export function Sidebar({
       className="w-64 flex-none flex flex-col h-full"
       style={{ background: "var(--bg-secondary)", borderRight: "1px solid var(--border-subtle)" }}
     >
-      <WorkspaceHeader workspace={workspace} />
+      <WorkspaceHeader workspace={workspace} onInvitePeople={onInvitePeople} />
       <ChannelList
         channels={channels}
         activeChannelSlug={activeChannelSlug}
@@ -42,17 +44,18 @@ export function Sidebar({
 
 interface WorkspaceHeaderProps {
   workspace: Workspace
+  onInvitePeople: () => void
 }
 
-function WorkspaceHeader({ workspace }: WorkspaceHeaderProps) {
+function WorkspaceHeader({ workspace, onInvitePeople }: WorkspaceHeaderProps) {
   return (
     <div
-      className="p-4 flex items-center justify-between cursor-pointer hover:bg-[var(--hover-overlay)] transition-colors"
+      className="p-4 flex items-center justify-between"
       style={{ borderBottom: "1px solid var(--border-subtle)" }}
     >
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-[var(--hover-overlay)] -m-2 p-2 rounded-lg transition-colors">
         <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-sm"
+          className="w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-sm flex-shrink-0"
           style={{ background: "var(--gradient-accent)" }}
         >
           {workspace.name.charAt(0).toUpperCase()}
@@ -69,7 +72,16 @@ function WorkspaceHeader({ workspace }: WorkspaceHeaderProps) {
           </div>
         </div>
       </div>
-      <ChevronDown className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+      <button
+        onClick={onInvitePeople}
+        className="p-2 rounded-lg transition-colors flex-shrink-0"
+        style={{ color: "var(--text-muted)" }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay-strong)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        title="Invite people"
+      >
+        <UserPlus className="h-4 w-4" />
+      </button>
     </div>
   )
 }

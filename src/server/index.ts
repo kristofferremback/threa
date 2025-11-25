@@ -7,6 +7,7 @@ import type { Server as HTTPServer } from "http"
 import pinoHttp from "pino-http"
 import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
 import { createWorkspaceRoutes } from "./routes/workspace-routes"
+import { createInvitationRoutes } from "./routes/invitation-routes"
 import { createSocketIOServer } from "./websockets"
 import { PORT } from "./config"
 import { logger } from "./lib/logger"
@@ -100,9 +101,12 @@ export async function createApp(): Promise<AppContext> {
   const authMiddleware = createAuthMiddleware(authService)
   const authRoutes = createAuthRoutes(authService, authMiddleware)
   const workspaceRoutes = createWorkspaceRoutes(chatService, workspaceService, pool)
+  const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
 
   app.use("/api/auth", authRoutes)
   app.use("/api/workspace", authMiddleware, workspaceRoutes)
+  // Invitation routes - get is public, accept requires auth
+  app.use("/api/invite", invitationRoutes)
 
   // Error handling middleware (must be last)
   app.use(createErrorHandler())

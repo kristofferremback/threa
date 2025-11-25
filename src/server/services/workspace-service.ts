@@ -263,15 +263,20 @@ export class WorkspaceService {
     }
   }
 
+  // ==========================================================================
+  // Invitations
+  // ==========================================================================
+
   /**
-   * Invite a user to a workspace
+   * Create an invitation to a workspace
    */
-  async inviteUserToWorkspace(
+  async createInvitation(
     workspaceId: string,
     email: string,
-    role: "admin" | "member" = "member",
     invitedByUserId: string,
-  ): Promise<void> {
+    role: "admin" | "member" | "guest" = "member",
+    expiresInDays: number = 7,
+  ): Promise<{ id: string; token: string; expiresAt: Date }> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -279,48 +284,248 @@ export class WorkspaceService {
       // Check seat limits
       await this.checkSeatLimit(client, workspaceId)
 
-      // Check if user already exists in users table
-      const userRes = await client.query("SELECT id FROM users WHERE email = $1", [email])
-      let userId = userRes.rows[0]?.id
+      // Check if user is already an active member
+      const existingMember = await client.query(
+        `SELECT wm.status FROM workspace_members wm
+         INNER JOIN users u ON wm.user_id = u.id
+         WHERE wm.workspace_id = $1 AND u.email = $2`,
+        [workspaceId, email],
+      )
 
-      if (!userId) {
-        // Pre-create user if they don't exist yet
-        userId = generateId("usr")
-        // We'll assume name will be filled in when they actually sign up/in via WorkOS
-        // For now, use email as placeholder name
-        await client.query("INSERT INTO users (id, email, name) VALUES ($1, $2, $3)", [
-          userId,
-          email,
-          email.split("@")[0],
-        ])
+      if (existingMember.rows[0]?.status === "active") {
+        throw new Error("User is already a member of this workspace")
       }
 
-      // Add to workspace_members with 'invited' status
-      // If they are already a member, this might be a re-invite or upgrade
+      // Check for existing pending invitation
+      const existingInvite = await client.query(
+        `SELECT id FROM workspace_invitations
+         WHERE workspace_id = $1 AND email = $2 AND status = 'pending'`,
+        [workspaceId, email],
+      )
+
+      if (existingInvite.rows.length > 0) {
+        // Revoke old invitation
+        await client.query(
+          `UPDATE workspace_invitations SET status = 'revoked', updated_at = NOW()
+           WHERE id = $1`,
+          [existingInvite.rows[0].id],
+        )
+      }
+
+      // Generate invitation
+      const invitationId = generateId("inv")
+      const token = this.generateInviteToken()
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + expiresInDays)
+
       await client.query(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, status, invited_at)
-         VALUES ($1, $2, $3, 'invited', NOW())
-         ON CONFLICT (workspace_id, user_id) DO UPDATE
-         SET role = EXCLUDED.role,
-             status = CASE
-               WHEN workspace_members.status = 'active' THEN 'active' -- Don't demote active users to invited
-               ELSE 'invited'
-             END,
-             invited_at = COALESCE(workspace_members.invited_at, NOW())`,
-        [workspaceId, userId, role],
+        `INSERT INTO workspace_invitations (id, workspace_id, email, role, token, invited_by_user_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [invitationId, workspaceId, email, role, token, invitedByUserId, expiresAt],
       )
 
       await client.query("COMMIT")
-      logger.info({ workspace_id: workspaceId, email, invited_by: invitedByUserId }, "User invited to workspace")
 
-      // TODO: Trigger email notification via outbox event
+      logger.info({ workspace_id: workspaceId, email, invited_by: invitedByUserId }, "Invitation created")
+
+      return { id: invitationId, token, expiresAt }
     } catch (error) {
       await client.query("ROLLBACK")
-      logger.error({ err: error, workspace_id: workspaceId, email }, "Failed to invite user")
+      logger.error({ err: error, workspace_id: workspaceId, email }, "Failed to create invitation")
       throw error
     } finally {
       client.release()
     }
+  }
+
+  /**
+   * Get invitation by token
+   */
+  async getInvitationByToken(token: string): Promise<{
+    id: string
+    workspaceId: string
+    workspaceName: string
+    email: string
+    role: string
+    status: string
+    expiresAt: Date
+    invitedByEmail: string
+  } | null> {
+    const result = await this.pool.query(
+      `SELECT i.id, i.workspace_id, w.name as workspace_name, i.email, i.role, i.status, i.expires_at,
+              u.email as invited_by_email
+       FROM workspace_invitations i
+       INNER JOIN workspaces w ON i.workspace_id = w.id
+       INNER JOIN users u ON i.invited_by_user_id = u.id
+       WHERE i.token = $1`,
+      [token],
+    )
+
+    const row = result.rows[0]
+    if (!row) return null
+
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      workspaceName: row.workspace_name,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      expiresAt: row.expires_at,
+      invitedByEmail: row.invited_by_email,
+    }
+  }
+
+  /**
+   * Accept an invitation
+   */
+  async acceptInvitation(token: string, userId: string): Promise<{ workspaceId: string }> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get invitation
+      const inviteRes = await client.query(
+        `SELECT id, workspace_id, email, role, status, expires_at
+         FROM workspace_invitations
+         WHERE token = $1`,
+        [token],
+      )
+
+      const invitation = inviteRes.rows[0]
+      if (!invitation) {
+        throw new Error("Invitation not found")
+      }
+
+      if (invitation.status !== "pending") {
+        throw new Error(`Invitation has already been ${invitation.status}`)
+      }
+
+      if (new Date(invitation.expires_at) < new Date()) {
+        await client.query(
+          `UPDATE workspace_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`,
+          [invitation.id],
+        )
+        await client.query("COMMIT")
+        throw new Error("Invitation has expired")
+      }
+
+      // Verify user email matches invitation
+      const userRes = await client.query("SELECT email FROM users WHERE id = $1", [userId])
+      const userEmail = userRes.rows[0]?.email
+
+      if (userEmail?.toLowerCase() !== invitation.email.toLowerCase()) {
+        throw new Error("This invitation was sent to a different email address")
+      }
+
+      // Check seat limits again
+      await this.checkSeatLimit(client, invitation.workspace_id)
+
+      // Add user to workspace
+      await client.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, status, joined_at)
+         VALUES ($1, $2, $3, 'active', NOW())
+         ON CONFLICT (workspace_id, user_id) DO UPDATE
+         SET role = EXCLUDED.role, status = 'active', joined_at = NOW()`,
+        [invitation.workspace_id, userId, invitation.role],
+      )
+
+      // Mark invitation as accepted
+      await client.query(
+        `UPDATE workspace_invitations
+         SET status = 'accepted', accepted_at = NOW(), accepted_by_user_id = $2, updated_at = NOW()
+         WHERE id = $1`,
+        [invitation.id, userId],
+      )
+
+      // Add user to default channel
+      const defaultChannel = await client.query(
+        "SELECT id FROM channels WHERE workspace_id = $1 AND slug = 'general'",
+        [invitation.workspace_id],
+      )
+
+      if (defaultChannel.rows[0]) {
+        await client.query(
+          `INSERT INTO channel_members (channel_id, user_id, added_at, updated_at, notify_level, last_read_at)
+           VALUES ($1, $2, NOW(), NOW(), 'default', NOW())
+           ON CONFLICT (channel_id, user_id) DO NOTHING`,
+          [defaultChannel.rows[0].id, userId],
+        )
+      }
+
+      await client.query("COMMIT")
+
+      logger.info({ invitation_id: invitation.id, user_id: userId }, "Invitation accepted")
+
+      return { workspaceId: invitation.workspace_id }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error, token }, "Failed to accept invitation")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Revoke an invitation
+   */
+  async revokeInvitation(invitationId: string, revokedByUserId: string): Promise<void> {
+    const result = await this.pool.query(
+      `UPDATE workspace_invitations
+       SET status = 'revoked', updated_at = NOW()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING id`,
+      [invitationId],
+    )
+
+    if (result.rows.length === 0) {
+      throw new Error("Invitation not found or already processed")
+    }
+
+    logger.info({ invitation_id: invitationId, revoked_by: revokedByUserId }, "Invitation revoked")
+  }
+
+  /**
+   * Get pending invitations for a workspace
+   */
+  async getPendingInvitations(workspaceId: string): Promise<
+    Array<{
+      id: string
+      email: string
+      role: string
+      expiresAt: Date
+      invitedByEmail: string
+      createdAt: Date
+    }>
+  > {
+    const result = await this.pool.query(
+      `SELECT i.id, i.email, i.role, i.expires_at, i.created_at, u.email as invited_by_email
+       FROM workspace_invitations i
+       INNER JOIN users u ON i.invited_by_user_id = u.id
+       WHERE i.workspace_id = $1 AND i.status = 'pending'
+       ORDER BY i.created_at DESC`,
+      [workspaceId],
+    )
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      expiresAt: row.expires_at,
+      invitedByEmail: row.invited_by_email,
+      createdAt: row.created_at,
+    }))
+  }
+
+  private generateInviteToken(): string {
+    // Generate a URL-safe random token
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    let token = ""
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return token
   }
 
   private generateSlug(name: string): string {
