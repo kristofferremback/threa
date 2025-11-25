@@ -164,7 +164,7 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
       }}
       className={clsx(
         "flex items-center gap-2 px-3 py-2 text-xs font-medium cursor-pointer min-w-fit h-full select-none transition-colors",
-        isActive ? "bg-white/5" : "hover:bg-white/5",
+        isActive ? "bg-[var(--hover-overlay)]" : "hover:bg-[var(--hover-overlay)]",
       )}
       style={{
         color: isActive ? "var(--text-primary)" : "var(--text-muted)",
@@ -178,7 +178,7 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
           e.stopPropagation()
           onClose()
         }}
-        className="rounded p-0.5 hover:bg-white/10 transition-colors"
+        className="rounded p-0.5 hover:bg-[var(--hover-overlay-strong)] transition-colors"
         style={{ color: "var(--text-muted)" }}
       >
         <X className="h-3 w-3" />

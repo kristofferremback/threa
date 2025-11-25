@@ -2,6 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { Toaster } from "sonner"
 import { AuthProvider } from "./auth"
+import { ThemeProvider } from "./contexts/ThemeContext"
 import { LayoutSystem } from "./components/layout/LayoutSystem"
 import "./index.css"
 
@@ -17,8 +18,10 @@ function App() {
 const root = createRoot(document.getElementById("root")!)
 root.render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

@@ -13,8 +13,11 @@
 :root {
   --font-sans: "Outfit", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+}
 
-  /* Palette: Deep ocean with electric accents */
+/* Dark theme (default) */
+:root,
+:root.dark {
   --bg-primary: #0a0e14;
   --bg-secondary: #0d1117;
   --bg-tertiary: #161b22;
@@ -39,6 +42,44 @@
 
   --gradient-accent: linear-gradient(135deg, #58a6ff 0%, #a371f7 100%);
   --gradient-bg: radial-gradient(ellipse at top, #161b22 0%, #0a0e14 50%);
+
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --hover-overlay-strong: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb: var(--border-default);
+  --scrollbar-thumb-hover: var(--border-emphasis);
+}
+
+/* Light theme */
+:root.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --bg-elevated: #ffffff;
+
+  --border-subtle: #d8dee4;
+  --border-default: #d0d7de;
+  --border-emphasis: #8c959f;
+
+  --text-primary: #1f2328;
+  --text-secondary: #57606a;
+  --text-tertiary: #6e7781;
+  --text-muted: #8c959f;
+
+  --accent-primary: #0969da;
+  --accent-secondary: #0550ae;
+  --accent-glow: rgba(9, 105, 218, 0.1);
+
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --danger: #cf222e;
+
+  --gradient-accent: linear-gradient(135deg, #0969da 0%, #8250df 100%);
+  --gradient-bg: radial-gradient(ellipse at top, #f6f8fa 0%, #ffffff 50%);
+
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+  --hover-overlay-strong: rgba(0, 0, 0, 0.08);
+  --scrollbar-thumb: #d0d7de;
+  --scrollbar-thumb-hover: #8c959f;
 }
 
 body {
@@ -48,6 +89,7 @@ body {
   height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {
@@ -65,12 +107,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-default);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-emphasis);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Hide scrollbar but keep functionality */
@@ -91,7 +133,7 @@ body {
 }
 
 .glow-subtle {
-  box-shadow: 0 0 30px rgba(88, 166, 255, 0.05);
+  box-shadow: 0 0 30px var(--accent-glow);
 }
 
 /* Animations */
@@ -136,7 +178,7 @@ body {
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  background: linear-gradient(90deg, transparent, var(--hover-overlay), transparent);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -153,4 +195,20 @@ body {
 }
 .stagger-4 {
   animation-delay: 0.4s;
+}
+
+/* Theme transition for smooth switching */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: 0.15s;
+  transition-timing-function: ease-out;
+}
+
+/* Disable transitions during initial load to prevent flash */
+.no-transitions *,
+.no-transitions *::before,
+.no-transitions *::after {
+  transition: none !important;
 }

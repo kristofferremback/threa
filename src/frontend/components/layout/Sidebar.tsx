@@ -1,6 +1,6 @@
 import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin } from "lucide-react"
 import { clsx } from "clsx"
-import { Avatar, Dropdown, DropdownItem, DropdownDivider } from "../ui"
+import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
 import type { Channel, Workspace } from "../../types"
 
 interface SidebarProps {
@@ -47,7 +47,7 @@ interface WorkspaceHeaderProps {
 function WorkspaceHeader({ workspace }: WorkspaceHeaderProps) {
   return (
     <div
-      className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+      className="p-4 flex items-center justify-between cursor-pointer hover:bg-[var(--hover-overlay)] transition-colors"
       style={{ borderBottom: "1px solid var(--border-subtle)" }}
     >
       <div className="flex items-center gap-2 min-w-0">
@@ -97,7 +97,7 @@ function ChannelList({
         </span>
         <button
           onClick={onCreateChannel}
-          className="p-1 rounded hover:bg-white/10 transition-colors"
+          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
           style={{ color: "var(--text-muted)" }}
           title="Add channel"
         >
@@ -135,7 +135,7 @@ function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProp
     <div
       className={clsx(
         "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
-        isActive ? "bg-white/10" : "hover:bg-white/5",
+        isActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
       )}
     >
       <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0">
@@ -167,7 +167,7 @@ function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProp
         <Dropdown
           align="left"
           trigger={
-            <button className="p-1 rounded hover:bg-white/10 transition-colors" style={{ color: "var(--text-muted)" }}>
+            <button className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors" style={{ color: "var(--text-muted)" }}>
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
           }
@@ -208,7 +208,7 @@ function UserFooter({ onLogout }: UserFooterProps) {
           direction="up"
           trigger={
             <button
-              className="p-1.5 rounded hover:bg-white/10 transition-colors"
+              className="p-1.5 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
               style={{ color: "var(--text-muted)" }}
               title="Settings"
             >
@@ -216,6 +216,8 @@ function UserFooter({ onLogout }: UserFooterProps) {
             </button>
           }
         >
+          <ThemeSelector />
+          <DropdownDivider />
           <DropdownItem onClick={() => {}} icon={<Settings className="h-4 w-4" />}>
             Preferences
           </DropdownItem>

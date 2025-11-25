@@ -117,10 +117,12 @@ export function DropdownItem({ onClick, children, variant = "default", icon }: D
   return (
     <button
       onClick={onClick}
-      className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors hover:bg-white/5"
+      className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors"
       style={{
         color: variant === "danger" ? "var(--danger)" : "var(--text-primary)",
       }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       {icon && <span style={{ color: variant === "danger" ? "var(--danger)" : "var(--text-muted)" }}>{icon}</span>}
       {children}
