@@ -1,0 +1,166 @@
+import { Hash, Plus, Settings, ChevronDown } from "lucide-react"
+import { clsx } from "clsx"
+import { Avatar } from "../ui"
+import type { Channel, Workspace } from "../../types"
+
+interface SidebarProps {
+  workspace: Workspace
+  channels: Channel[]
+  activeChannelSlug: string | null
+  onSelectChannel: (channel: Channel) => void
+}
+
+export function Sidebar({ workspace, channels, activeChannelSlug, onSelectChannel }: SidebarProps) {
+  return (
+    <div
+      className="w-64 flex-none flex flex-col h-full"
+      style={{ background: "var(--bg-secondary)", borderRight: "1px solid var(--border-subtle)" }}
+    >
+      {/* Workspace Header */}
+      <WorkspaceHeader workspace={workspace} />
+
+      {/* Channels */}
+      <ChannelList channels={channels} activeChannelSlug={activeChannelSlug} onSelectChannel={onSelectChannel} />
+
+      {/* User Footer */}
+      <UserFooter />
+    </div>
+  )
+}
+
+interface WorkspaceHeaderProps {
+  workspace: Workspace
+}
+
+function WorkspaceHeader({ workspace }: WorkspaceHeaderProps) {
+  return (
+    <div
+      className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+      style={{ borderBottom: "1px solid var(--border-subtle)" }}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-sm"
+          style={{ background: "var(--gradient-accent)" }}
+        >
+          {workspace.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <div
+            className="font-semibold text-sm truncate"
+            style={{ color: "var(--text-primary)", fontFamily: "var(--font-sans)" }}
+          >
+            {workspace.name}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+            {workspace.plan_tier}
+          </div>
+        </div>
+      </div>
+      <ChevronDown className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+    </div>
+  )
+}
+
+interface ChannelListProps {
+  channels: Channel[]
+  activeChannelSlug: string | null
+  onSelectChannel: (channel: Channel) => void
+}
+
+function ChannelList({ channels, activeChannelSlug, onSelectChannel }: ChannelListProps) {
+  return (
+    <div className="flex-1 overflow-y-auto p-2">
+      <div className="mb-2 px-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          Channels
+        </span>
+        <button
+          className="p-1 rounded hover:bg-white/10 transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Add channel"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="space-y-0.5">
+        {channels.map((channel) => (
+          <ChannelItem
+            key={channel.id}
+            channel={channel}
+            isActive={activeChannelSlug === channel.slug}
+            onClick={() => onSelectChannel(channel)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface ChannelItemProps {
+  channel: Channel
+  isActive: boolean
+  onClick: () => void
+}
+
+function ChannelItem({ channel, isActive, onClick }: ChannelItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
+        isActive ? "bg-white/10" : "hover:bg-white/5",
+      )}
+    >
+      <Hash
+        className="h-4 w-4 flex-shrink-0"
+        style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
+      />
+      <span
+        className="text-sm truncate flex-1"
+        style={{
+          color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+          fontWeight: channel.unread_count > 0 ? 600 : 400,
+        }}
+      >
+        {channel.name.replace("#", "")}
+      </span>
+      {channel.unread_count > 0 && (
+        <span
+          className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+          style={{ background: "var(--accent-secondary)", color: "white" }}
+        >
+          {channel.unread_count}
+        </span>
+      )}
+    </button>
+  )
+}
+
+function UserFooter() {
+  return (
+    <div className="p-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+      <div className="flex items-center gap-2">
+        <Avatar name="U" size="md" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
+            You
+          </div>
+          <div className="text-xs flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full" style={{ background: "var(--success)" }} />
+            <span style={{ color: "var(--text-muted)" }}>Online</span>
+          </div>
+        </div>
+        <button
+          className="p-1.5 rounded hover:bg-white/10 transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
