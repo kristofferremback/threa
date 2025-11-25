@@ -5,19 +5,19 @@ import { fileURLToPath } from "url"
 import http from "http"
 import type { Server as HTTPServer } from "http"
 import pinoHttp from "pino-http"
-import { createAuthRoutes, createAuthMiddleware } from "./routes/auth"
+import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
+import { createWorkspaceRoutes } from "./routes/workspace-routes"
 import { createSocketIOServer } from "./websockets"
 import { PORT } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
-import { createDatabasePool, closeDatabasePool } from "./lib/db"
+import { createDatabasePool } from "./lib/db"
 import { Pool } from "pg"
 import { AuthService } from "./services/auth-service"
 import { UserService } from "./services/user-service"
-import { MessageService } from "./services/messages"
-import { ConversationService } from "./services/conversation-service"
 import { WorkspaceService } from "./services/workspace-service"
+import { ChatService } from "./services/chat-service"
 import { validateEnv } from "./lib/env-validator"
 import { createErrorHandler } from "./middleware/error-handler"
 import { createSocketIORedisClients, type RedisClient } from "./lib/redis"
@@ -33,8 +33,7 @@ export interface AppContext {
   pool: Pool
   authService: AuthService
   userService: UserService
-  messageService: MessageService
-  conversationService: ConversationService
+  chatService: ChatService
   workspaceService: WorkspaceService
   redisPubClient: RedisClient
   redisSubClient: RedisClient
@@ -90,20 +89,20 @@ export async function createApp(): Promise<AppContext> {
   const pool = createDatabasePool()
 
   const authService = new AuthService()
+  const chatService = new ChatService(pool)
   const userService = new UserService(pool)
-  const messageService = new MessageService(pool, userService)
-  const conversationService = new ConversationService(pool)
   const workspaceService = new WorkspaceService(pool)
   const outboxListener = new OutboxListener(pool)
 
   // Create Redis clients for Socket.IO
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
 
-  const authRoutes = createAuthRoutes(authService)
   const authMiddleware = createAuthMiddleware(authService)
+  const authRoutes = createAuthRoutes(authService, authMiddleware)
+  const workspaceRoutes = createWorkspaceRoutes(chatService, workspaceService, pool)
 
   app.use("/api/auth", authRoutes)
-  app.use("/api/", authMiddleware)
+  app.use("/api/workspace", authMiddleware, workspaceRoutes)
 
   // Error handling middleware (must be last)
   app.use(createErrorHandler())
@@ -124,8 +123,7 @@ export async function createApp(): Promise<AppContext> {
     pool,
     authService,
     userService,
-    messageService,
-    conversationService,
+    chatService,
     workspaceService,
     redisPubClient,
     redisSubClient,
@@ -153,9 +151,7 @@ export async function startServer(context: AppContext): Promise<void> {
       pool: context.pool,
       authService: context.authService,
       userService: context.userService,
-      messageService: context.messageService,
-      conversationService: context.conversationService,
-      workspaceService: context.workspaceService,
+      chatService: context.chatService,
       redisPubClient: context.redisPubClient,
       redisSubClient: context.redisSubClient,
     })

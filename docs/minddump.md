@@ -3,11 +3,10 @@ IDs use a resource prefix + ulid.
 - workspace: `ws_`
 - user: `usr_`
 - message: `msg_`
-- message_revision: `msgrev_`
-- message_reaction: `msg_<message_id>_rev_<revision_number>_reaction_<reaction_id>`
+- message_revision: `msg_:<rev>`
+- message_reaction: `msgr_`
 - channel: `chan_`
 - conversation: `conv_`
-- inbox: `inbx_`
 
 websocket plan:
 

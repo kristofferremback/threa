@@ -1,30 +1,61 @@
 import { Pool } from "pg"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
-
-export interface Workspace {
-  id: string
-  name: string
-  slug: string
-  workos_organization_id: string | null
-  stripe_customer_id: string | null
-  plan_tier: "free" | "pro" | "enterprise"
-  billing_status: string
-  seat_limit: number | null
-  ai_budget_limit: number | null
-  created_at: Date
-}
-
-export interface WorkspaceMember {
-  workspace_id: string
-  user_id: string
-  role: "admin" | "member" | "guest"
-  status: "active" | "invited" | "suspended"
-  joined_at: Date
-}
+import type { Workspace, WorkspaceMember } from "../lib/types"
 
 export class WorkspaceService {
   constructor(private pool: Pool) {}
+
+  /**
+   * Create a new workspace
+   */
+  async createWorkspace(name: string, creatorUserId: string): Promise<Workspace> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      const workspaceId = generateId("ws")
+      const slug = this.generateSlug(name) + "-" + workspaceId.slice(-6)
+
+      await client.query(
+        `INSERT INTO workspaces (id, name, slug, plan_tier, seat_limit)
+         VALUES ($1, $2, $3, 'free', 5)`,
+        [workspaceId, name, slug],
+      )
+
+      // Create default channel
+      const channelId = generateId("chan")
+      await client.query(
+        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
+         VALUES ($1, $2, 'general', 'general', 'General discussion', 'public')`,
+        [channelId, workspaceId],
+      )
+
+      await client.query("COMMIT")
+
+      logger.info({ workspace_id: workspaceId, creator: creatorUserId }, "Created workspace")
+
+      const result = await this.pool.query<Workspace>(
+        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+         FROM workspaces
+         WHERE id = $1`,
+        [workspaceId],
+      )
+
+      const workspace = result.rows[0]
+      if (!workspace) {
+        throw new Error("Failed to create workspace")
+      }
+
+      return workspace
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error }, "Failed to create workspace")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
 
   /**
    * Get or create workspace for a WorkOS organization
@@ -37,8 +68,8 @@ export class WorkspaceService {
 
       // Try to find existing workspace
       const existingResult = await client.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at 
-         FROM workspaces 
+        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+         FROM workspaces
          WHERE workos_organization_id = $1`,
         [workosOrganizationId],
       )
@@ -55,7 +86,7 @@ export class WorkspaceService {
       const slug = this.generateSlug(name)
 
       await client.query(
-        `INSERT INTO workspaces (id, name, slug, workos_organization_id, plan_tier, seat_limit) 
+        `INSERT INTO workspaces (id, name, slug, workos_organization_id, plan_tier, seat_limit)
          VALUES ($1, $2, $3, $4, 'free', 5)`, // Default seat limit for free tier
         [workspaceId, name, slug, workosOrganizationId],
       )
@@ -63,7 +94,7 @@ export class WorkspaceService {
       // Create default channel immediately
       const channelId = generateId("chan")
       await client.query(
-        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility) 
+        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
          VALUES ($1, $2, '#general', 'general', 'General discussion', 'public')`,
         [channelId, workspaceId],
       )
@@ -76,8 +107,8 @@ export class WorkspaceService {
       )
 
       const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at 
-         FROM workspaces 
+        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+         FROM workspaces
          WHERE id = $1`,
         [workspaceId],
       )
@@ -103,8 +134,8 @@ export class WorkspaceService {
   async getWorkspace(workspaceId: string): Promise<Workspace | null> {
     try {
       const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at 
-         FROM workspaces 
+        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+         FROM workspaces
          WHERE id = $1`,
         [workspaceId],
       )
@@ -122,8 +153,8 @@ export class WorkspaceService {
   async getWorkspaceByOrganization(workosOrganizationId: string): Promise<Workspace | null> {
     try {
       const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at 
-         FROM workspaces 
+        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+         FROM workspaces
          WHERE workos_organization_id = $1`,
         [workosOrganizationId],
       )
@@ -157,7 +188,7 @@ export class WorkspaceService {
         }
 
         await client.query(
-          `UPDATE workspace_members SET role = $3, status = 'active'
+          `UPDATE workspace_members SET role = $3, status = 'active', joined_at = COALESCE(joined_at, NOW())
            WHERE workspace_id = $1 AND user_id = $2`,
           [workspaceId, userId, role],
         )
@@ -166,8 +197,8 @@ export class WorkspaceService {
         await this.checkSeatLimit(client, workspaceId)
 
         await client.query(
-          `INSERT INTO workspace_members (workspace_id, user_id, role, status)
-           VALUES ($1, $2, $3, 'active')`,
+          `INSERT INTO workspace_members (workspace_id, user_id, role, status, joined_at)
+           VALUES ($1, $2, $3, 'active', NOW())`,
           [workspaceId, userId, role],
         )
       }
@@ -219,7 +250,7 @@ export class WorkspaceService {
       // Create default channel
       const channelId = generateId("chan")
       await this.pool.query(
-        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility) 
+        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
          VALUES ($1, $2, '#general', 'general', 'General discussion', 'public')`,
         [channelId, workspaceId],
       )
@@ -267,13 +298,15 @@ export class WorkspaceService {
       // Add to workspace_members with 'invited' status
       // If they are already a member, this might be a re-invite or upgrade
       await client.query(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, status)
-         VALUES ($1, $2, $3, 'invited')
+        `INSERT INTO workspace_members (workspace_id, user_id, role, status, invited_at)
+         VALUES ($1, $2, $3, 'invited', NOW())
          ON CONFLICT (workspace_id, user_id) DO UPDATE
-         SET role = EXCLUDED.role, status = CASE 
-            WHEN workspace_members.status = 'active' THEN 'active' -- Don't demote active users to invited
-            ELSE 'invited'
-         END`,
+         SET role = EXCLUDED.role,
+             status = CASE
+               WHEN workspace_members.status = 'active' THEN 'active' -- Don't demote active users to invited
+               ELSE 'invited'
+             END,
+             invited_at = COALESCE(workspace_members.invited_at, NOW())`,
         [workspaceId, userId, role],
       )
 

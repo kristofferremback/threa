@@ -13,9 +13,11 @@
     "build:server": "tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server/index.js",
     "preview": "vite preview",
-    "stop:deps": "docker compose down"
+    "stop:deps": "docker compose down",
+    "clear:deps": "docker compose down -v"
   },
   "dependencies": {
+    "@socket.io/bun-engine": "^0.1.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@workos-inc/authkit-react": "^0.13.0",
     "@workos-inc/node": "^7.20.0",

@@ -3,9 +3,7 @@ import type { Server as HTTPServer } from "http"
 import { createAdapter } from "@socket.io/redis-adapter"
 import { AuthService } from "../services/auth-service"
 import { UserService } from "../services/user-service"
-import { MessageService } from "../services/messages"
-import { ConversationService } from "../services/conversation-service"
-import { WorkspaceService } from "../services/workspace-service"
+import { ChatService } from "../services/chat-service"
 import { parseCookies } from "../lib/cookies"
 import { logger } from "../lib/logger"
 import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
@@ -21,9 +19,7 @@ export const createSocketIOServer = async ({
   pool,
   authService,
   userService,
-  messageService,
-  conversationService,
-  workspaceService,
+  chatService,
   redisPubClient,
   redisSubClient,
 }: {
@@ -31,9 +27,7 @@ export const createSocketIOServer = async ({
   pool: Pool
   authService: AuthService
   userService: UserService
-  messageService: MessageService
-  conversationService: ConversationService
-  workspaceService: WorkspaceService
+  chatService: ChatService
   redisPubClient: RedisClient
   redisSubClient: RedisClient
 }) => {
@@ -64,10 +58,10 @@ export const createSocketIOServer = async ({
     ;(async () => {
       try {
         const event = JSON.parse(message)
-        const { id, channel_id, author_id, content } = event
+        const { id, channel_id, author_id, content, workspace_id } = event
 
         // Get author email and broadcast via Socket.IO
-        const email = await userService.getUserEmail(author_id)
+        const email = await chatService.getUserEmail(author_id)
         const messageData = {
           id,
           userId: author_id,
@@ -79,27 +73,46 @@ export const createSocketIOServer = async ({
           replyToMessageId: event.reply_to_message_id,
         }
 
-        // Emit to channel room - need to get channel slug for slug-based rooms
-        // Get channel slug to support both ID-based and slug-based rooms
-        const { sql } = await import("../lib/db")
-        const channelSlugResult = await pool.query(sql`SELECT slug FROM channels WHERE id = ${channel_id}`)
-        const channelSlug = channelSlugResult.rows[0]?.slug
+        // Get channel info for slug-based rooms
+        const channel = await chatService.getChannelById(channel_id)
+        const channelSlug = channel?.slug
 
-        // Emit to ID-based room
-        io.to(`channel:${channel_id}`).emit("message", messageData)
+        // Emit to workspace room (lightweight notification for unread counts)
+        io.to(`ws:${workspace_id}`).emit("notification", {
+          type: "message",
+          channelId: channel_id,
+          channelSlug,
+          conversationId: event.conversation_id,
+        })
+
+        // Emit to ID-based room (full message for active viewers)
+        io.to(`chan:${channel_id}`).emit("message", messageData)
         // Also emit to slug-based room if slug exists (for frontend compatibility)
         if (channelSlug) {
-          io.to(`channel:${channelSlug}`).emit("message", messageData)
+          io.to(`chan:${channelSlug}`).emit("message", messageData)
         }
 
-        // Emit to conversation if exists
+        // Emit to conversation room if exists
         if (event.conversation_id) {
-          io.to(`conversation:${event.conversation_id}`).emit("message", messageData)
+          io.to(`conv:${event.conversation_id}`).emit("message", messageData)
         }
 
         // Emit to thread root if replying (handles first reply case)
         if (event.reply_to_message_id) {
           io.to(`thread:${event.reply_to_message_id}`).emit("message", messageData)
+
+          // Emit reply count update to channel viewers so they can update the parent message's indicator
+          const replyCount = await chatService.getReplyCount(event.reply_to_message_id)
+          io.to(`chan:${channel_id}`).emit("replyCountUpdate", {
+            messageId: event.reply_to_message_id,
+            replyCount,
+          })
+          if (channelSlug) {
+            io.to(`chan:${channelSlug}`).emit("replyCountUpdate", {
+              messageId: event.reply_to_message_id,
+              replyCount,
+            })
+          }
         }
 
         logger.debug({ message_id: id, channel_id }, "Message broadcast via Socket.IO")
@@ -114,7 +127,7 @@ export const createSocketIOServer = async ({
     ;(async () => {
       try {
         const event = JSON.parse(message)
-        const { id, root_message_id, channel_ids } = event
+        const { id, root_message_id, channel_ids, workspace_id } = event
 
         const eventData = {
           type: "conversation_created",
@@ -124,13 +137,19 @@ export const createSocketIOServer = async ({
           timestamp: event.created_at,
         }
 
+        // Broadcast to workspace room
+        io.to(`ws:${workspace_id}`).emit("notification", {
+          type: "conversation_created",
+          conversationId: id,
+          rootMessageId: root_message_id,
+        })
+
         // Broadcast to all involved channels so they can update the root message UI
         for (const channelId of channel_ids) {
-          io.to(`channel:${channelId}`).emit("conversation_created", eventData)
+          io.to(`chan:${channelId}`).emit("conversation_created", eventData)
         }
 
         // Also emit to the root message thread room if anyone is listening
-        // (e.g., someone viewing the thread before it was officially a conversation)
         io.to(`thread:${root_message_id}`).emit("conversation_created", eventData)
 
         logger.debug({ conversation_id: id, channels: channel_ids }, "Conversation created broadcast via Socket.IO")
@@ -173,7 +192,7 @@ export const createSocketIOServer = async ({
 
     logger.info({ email, userId }, "Socket.IO connected")
 
-    // Ensure user exists and get default channel
+    // Ensure user exists
     await userService.ensureUser({
       id: userId,
       email,
@@ -196,122 +215,25 @@ export const createSocketIOServer = async ({
 
     const workspaceId = workspaceMemberResult.rows[0].workspace_id
 
-    // Get or create default channel for the workspace
-    const defaultChannelId = await workspaceService.getOrCreateDefaultChannel(workspaceId)
+    // Join the workspace room for notifications
+    socket.join(`ws:${workspaceId}`)
 
-    // Get channel slug for room names (frontend uses slug-based rooms)
-    const channelResult = await pool.query("SELECT slug FROM channels WHERE id = $1", [defaultChannelId])
-    const channelSlug = channelResult.rows[0]?.slug || "general"
+    // Join the user's private room for direct notifications
+    socket.join(`user:${userId}`)
 
-    // Join default channel room by slug (frontend uses slug-based rooms)
-    socket.join(`channel:${channelSlug}`)
-    // Also join by ID for backwards compatibility
-    socket.join(`channel:${defaultChannelId}`)
+    // Emit connected event with workspace info
+    socket.emit("connected", {
+      message: "Connected to Threa",
+      workspaceId,
+    })
 
-    // Load recent messages
-    const messagesWithAuthors = await messageService.getMessagesWithAuthors(defaultChannelId, 50)
-    socket.emit("messages", messagesWithAuthors)
-    socket.emit("connected", { message: "Connected to Threa", channelId: defaultChannelId, channelSlug })
+    // NOTE: WebSocket is only for:
+    // - Real-time push (receiving messages via Redis subscription)
+    // - Ephemeral events (typing indicators, read cursors)
+    // - Room management (join/leave)
+    // All resource fetching (messages, threads, etc.) is done via HTTP
 
-    // Handle incoming messages
-    // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
-    socket.on(
-      "message",
-      async (data: {
-        message: string
-        channelId?: string
-        replyToMessageId?: string
-        conversationId?: string
-        channelIds?: string[]
-      }) => {
-        try {
-          // Use provided channelId or fall back to default channel
-          let targetChannelId = data.channelId || defaultChannelId
-          let workspaceId: string | null
-
-          // Resolve slug to channel ID if needed (channelId might be a slug like "general")
-          if (targetChannelId && !targetChannelId.startsWith("chan_")) {
-            // It's a slug, need to resolve to actual channel ID
-            // First get workspace ID to narrow search
-            workspaceId = await userService.getWorkspaceIdForChannel(targetChannelId)
-            if (!workspaceId) {
-              throw new Error(`Channel with slug "${targetChannelId}" not found`)
-            }
-
-            // Now resolve slug to channel ID
-            const channelResult = await pool.query("SELECT id FROM channels WHERE workspace_id = $1 AND slug = $2", [
-              workspaceId,
-              targetChannelId,
-            ])
-
-            if (channelResult.rows.length === 0) {
-              throw new Error(`Channel with slug "${targetChannelId}" not found in workspace`)
-            }
-
-            targetChannelId = channelResult.rows[0].id
-          } else {
-            // It's already a channel ID, get workspace ID
-            workspaceId = await userService.getWorkspaceIdForChannel(targetChannelId)
-            if (!workspaceId) {
-              throw new Error("Failed to get workspace ID for channel")
-            }
-          }
-
-          let conversationId = data.conversationId || null
-          let replyToMessageId = data.replyToMessageId || null
-
-          // If replying to a message, check if conversation exists or create one
-          if (replyToMessageId && !conversationId) {
-            // Get the message being replied to
-            const allMessages = await messageService.getMessagesByChannel(targetChannelId, 1000, 0) // Get enough to find the message
-            const targetMessage = allMessages.find((m) => m.id === replyToMessageId)
-
-            if (targetMessage) {
-              if (targetMessage.conversation_id) {
-                // Message is already in a conversation, use that
-                conversationId = targetMessage.conversation_id
-              } else {
-                // Create new conversation from this reply
-                // The root message is the one being replied to
-                const conversation = await conversationService.createConversation(
-                  workspaceId,
-                  replyToMessageId,
-                  targetChannelId,
-                  data.channelIds || [],
-                )
-                conversationId = conversation.id
-              }
-            }
-          }
-
-          // Persist message to PostgreSQL (creates outbox event)
-          // The outbox listener will publish to Redis, which triggers Socket.IO emit
-          await messageService.createMessage({
-            workspaceId,
-            channelId: targetChannelId,
-            authorId: userId,
-            content: data.message,
-            conversationId,
-            replyToMessageId,
-          })
-
-          // If this is a new conversation and has multiple channels, add them
-          if (conversationId && data.channelIds && data.channelIds.length > 0) {
-            for (const additionalChannelId of data.channelIds) {
-              if (additionalChannelId !== targetChannelId) {
-                await conversationService.addChannelToConversation(conversationId, additionalChannelId)
-              }
-            }
-          }
-
-          // No direct emit - message will be broadcast via Redis subscription
-        } catch (error) {
-          logger.error({ err: error }, "Failed to process message")
-          socket.emit("error", { message: "Failed to send message" })
-        }
-      },
-    )
-
+    // Room management - client joins/leaves rooms as needed
     socket.on("join", (room: string) => {
       logger.debug({ userId, room }, "Joining room")
       socket.join(room)
@@ -322,65 +244,25 @@ export const createSocketIOServer = async ({
       socket.leave(room)
     })
 
-    // Handle loading conversation messages
-    socket.on("loadThread", async (data: { messageId: string }) => {
+    // Handle read receipts (ephemeral)
+    socket.on("read_cursor", async (data: { channelId?: string; conversationId?: string; messageId: string }) => {
       try {
-        const targetMessage = await messageService.getMessageById(data.messageId)
-        if (!targetMessage) {
-          socket.emit("error", { message: "Message not found" })
-          return
+        if (data.channelId) {
+          await chatService.updateChannelReadCursor(data.channelId, userId, data.messageId)
+        } else if (data.conversationId) {
+          await chatService.updateConversationReadCursor(data.conversationId, userId, data.messageId)
         }
-
-        let conversationMessages: any[] = []
-
-        if (targetMessage.conversation_id) {
-          conversationMessages = await messageService.getMessagesByConversation(targetMessage.conversation_id)
-        } else {
-          // If no conversation yet, the thread is just the message itself acting as root
-          conversationMessages = [targetMessage]
-        }
-
-        const messagesWithAuthors = await Promise.all(
-          conversationMessages.map(async (msg) => {
-            const email = await userService.getUserEmail(msg.author_id)
-            return {
-              id: msg.id,
-              userId: msg.author_id,
-              email: email || "unknown",
-              message: msg.content,
-              timestamp: msg.created_at.toISOString(),
-              conversationId: msg.conversation_id,
-              replyToMessageId: msg.reply_to_message_id,
-            }
-          }),
-        )
-
-        // Fetch ancestors
-        const ancestors = await messageService.getMessageAncestors(data.messageId)
-        const ancestorsWithAuthors = await Promise.all(
-          ancestors.map(async (msg) => {
-            const email = await userService.getUserEmail(msg.author_id)
-            return {
-              id: msg.id,
-              userId: msg.author_id,
-              email: email || "unknown",
-              message: msg.content,
-              timestamp: msg.created_at.toISOString(),
-              conversationId: msg.conversation_id,
-              replyToMessageId: msg.reply_to_message_id,
-            }
-          }),
-        )
-
-        socket.emit("threadMessages", {
-          rootMessageId: data.messageId,
-          conversationId: targetMessage.conversation_id,
-          messages: messagesWithAuthors,
-          ancestors: ancestorsWithAuthors,
-        })
       } catch (error) {
-        logger.error({ err: error }, "Failed to load thread")
-        socket.emit("error", { message: "Failed to load thread" })
+        logger.error({ err: error }, "Failed to update read cursor")
+      }
+    })
+
+    // Handle typing indicators
+    socket.on("typing", (data: { channelId?: string; conversationId?: string }) => {
+      if (data.channelId) {
+        socket.to(`chan:${data.channelId}`).emit("user_typing", { userId, email })
+      } else if (data.conversationId) {
+        socket.to(`conv:${data.conversationId}`).emit("user_typing", { userId, email })
       }
     })
 

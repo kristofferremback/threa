@@ -5,6 +5,7 @@
     "": {
       "name": "threa",
       "dependencies": {
+        "@socket.io/bun-engine": "^0.1.0",
         "@socket.io/redis-adapter": "^8.3.0",
         "@workos-inc/authkit-react": "^0.13.0",
         "@workos-inc/node": "^7.20.0",
@@ -224,6 +225,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.53.2", "", { "os": "win32", "cpu": "x64" }, "sha512-S6YojNVrHybQis2lYov1sd+uj7K0Q05NxHcGktuMMdIQ2VixGwAfbJ23NnlvvVV1bdpR2m5MsNBViHJKcA4ADw=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.53.2", "", { "os": "win32", "cpu": "x64" }, "sha512-k+/Rkcyx//P6fetPoLMb8pBeqJBNGx81uuf7iljX9++yNBVRDQgD04L+SVXmXmh5ZP4/WOp4mWF0kmi06PW2tA=="],
+
+    "@socket.io/bun-engine": ["@socket.io/bun-engine@0.1.0", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-B1z6GuAxZlfvjgaa3BHZBOfqHJNfnpebTw15p+Un1HuBL4YM7wUxO9sJa7K4NDTe7XbUBeqLIwTDA5tOOjffog=="],
 
     "@socket.io/component-emitter": ["@socket.io/component-emitter@3.1.2", "", {}, "sha512-9BCxFwvbGg/RsZK9tjXd8s4UcwR0MWeFQ1XEKIQVVvAGJyINdrqKMcTRyLoK8Rse1GjzLV9cwjWV1olXRWEXVA=="],
 

@@ -31,15 +31,15 @@ export const seedDatabase = async (pool: Pool) => {
     // Create test user
     const userId = generateId("usr")
     await client.query(
-      `INSERT INTO users (id, email, name)
-       VALUES ($1, $2, $3)`,
+      `INSERT INTO users (id, email, name, updated_at)
+       VALUES ($1, $2, $3, NOW())`,
       [userId, "dev@example.com", "Dev User"],
     )
 
     // Add user as admin to workspace
     await client.query(
-      `INSERT INTO workspace_members (workspace_id, user_id, role, status)
-       VALUES ($1, $2, 'admin', 'active')`,
+      `INSERT INTO workspace_members (workspace_id, user_id, role, status, joined_at)
+       VALUES ($1, $2, 'admin', 'active', NOW())`,
       [workspaceId, userId],
     )
 

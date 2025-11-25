@@ -1,12 +1,6 @@
 import { Pool } from "pg"
 import { logger } from "../lib/logger"
-
-export interface User {
-  id: string
-  email: string
-  name: string
-  created_at: Date
-}
+import type { User } from "../lib/types"
 
 export interface WorkOSUser {
   id: string
@@ -27,11 +21,11 @@ export class UserService {
       const name = [workosUser.firstName, workosUser.lastName].filter(Boolean).join(" ") || workosUser.email
 
       await this.pool.query(
-        `INSERT INTO users (id, email, name)
-         VALUES ($1, $2, $3)
+        `INSERT INTO users (id, email, name, workos_user_id, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (id) DO UPDATE
-         SET email = EXCLUDED.email, name = EXCLUDED.name`,
-        [workosUser.id, workosUser.email, name],
+         SET email = EXCLUDED.email, name = EXCLUDED.name, workos_user_id = EXCLUDED.workos_user_id, updated_at = NOW()`,
+        [workosUser.id, workosUser.email, name, workosUser.id],
       )
 
       logger.debug({ user_id: workosUser.id, email: workosUser.email }, "User synced to database")
@@ -47,9 +41,9 @@ export class UserService {
   async getUserById(userId: string): Promise<User | null> {
     try {
       const result = await this.pool.query<User>(
-        `SELECT id, email, name, created_at
+        `SELECT id, email, name, workos_user_id, timezone, locale, created_at, updated_at, deleted_at, archived_at
          FROM users
-         WHERE id = $1`,
+         WHERE id = $1 AND deleted_at IS NULL`,
         [userId],
       )
 

@@ -2,8 +2,11 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { AuthService } from "../services/auth-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { logger } from "../lib/logger"
+import { User } from "@workos-inc/node"
 
-export const createAuthMiddleware = (authService: AuthService) => {
+export function createAuthMiddleware(
+  authService: AuthService,
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   return async (req: Request, res: Response, next: NextFunction) => {
     const sealedSession = req.cookies["wos_session"]
 
@@ -27,7 +30,10 @@ export const createAuthMiddleware = (authService: AuthService) => {
   }
 }
 
-export const createAuthRoutes = (authService: AuthService) => {
+export function createAuthRoutes(
+  authService: AuthService,
+  authMiddleware: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+): Router {
   const routes = Router()
 
   routes.get("/login", (req: Request, res: Response) => {
@@ -74,29 +80,14 @@ export const createAuthRoutes = (authService: AuthService) => {
     }
   })
 
-  routes.get("/me", async (req: Request, res: Response) => {
-    const sealedSession = req.cookies["wos_session"]
+  routes.get("/me", authMiddleware, async (req: Request, res: Response) => {
+    const user = req.user as User
 
-    if (!sealedSession) {
-      logger.debug("No session cookie in /me request")
-      return res.status(401).json({ error: "No session found" })
+    if (!user) {
+      return res.status(401).json({ error: "Not authenticated" })
     }
 
-    const result = await authService.authenticateSession(sealedSession)
-
-    if (result.success && result.user) {
-      // If session was refreshed, update the cookie
-      if (result.refreshed && result.sealedSession) {
-        res.cookie("wos_session", result.sealedSession, SESSION_COOKIE_CONFIG)
-      }
-
-      logger.debug({ email: result.user.email, refreshed: result.refreshed }, "User session verified")
-      res.json(result.user)
-    } else {
-      logger.debug({ reason: result.reason }, "Session not authenticated")
-      res.clearCookie("wos_session")
-      res.status(401).json({ error: "Not authenticated" })
-    }
+    res.json(user)
   })
 
   return routes
