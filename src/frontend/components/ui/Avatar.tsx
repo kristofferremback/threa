@@ -30,3 +30,4 @@ export function Avatar({ name, size = "sm", className }: AvatarProps) {
   )
 }
 
+

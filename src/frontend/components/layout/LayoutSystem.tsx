@@ -45,14 +45,24 @@ export function LayoutSystem() {
     }
   }, [bootstrapData, initializeFromUrl])
 
+  // Helper to get channel name from slug
+  const getChannelName = (channelSlug?: string) => {
+    if (!channelSlug || !bootstrapData) return undefined
+    const channel = bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
+    return channel?.name.replace("#", "")
+  }
+
   // Render content for a tab
   const renderTabContent = (tab: Tab) => {
     if (!bootstrapData) return null
+
+    const channelName = getChannelName(tab.data?.channelId)
 
     return (
       <ChatInterface
         workspaceId={bootstrapData.workspace.id}
         channelId={tab.data?.channelId}
+        channelName={channelName}
         threadId={tab.data?.threadId}
         title={tab.title}
         onOpenThread={(msgId, msgChannelId, mode) => {
@@ -62,6 +72,21 @@ export function LayoutSystem() {
               title: "Thread",
               type: "thread",
               data: { threadId: msgId, channelId: msgChannelId },
+            },
+            mode,
+          )
+        }}
+        onGoToChannel={(channelId, mode) => {
+          const channel = bootstrapData.channels.find((c) => c.slug === channelId || c.id === channelId)
+          const channelSlug = channel?.slug || channelId
+          const name = channel?.name.replace("#", "") || channelSlug
+
+          setFocusedPane(panes.find((p) => p.tabs.some((t) => t.id === tab.id))?.id || "")
+          openItem(
+            {
+              title: `#${name}`,
+              type: "channel",
+              data: { channelId: channelSlug },
             },
             mode,
           )

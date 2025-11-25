@@ -35,3 +35,4 @@ export function ChatHeader({ title, isThread = false, isConnected }: ChatHeaderP
   )
 }
 
+

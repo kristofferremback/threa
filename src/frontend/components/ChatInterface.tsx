@@ -6,12 +6,22 @@ import type { OpenMode } from "../types"
 interface ChatInterfaceProps {
   workspaceId: string
   channelId?: string
+  channelName?: string
   threadId?: string
   title?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
+  onGoToChannel?: (channelId: string, mode: OpenMode) => void
 }
 
-export function ChatInterface({ workspaceId, channelId, threadId, title, onOpenThread }: ChatInterfaceProps) {
+export function ChatInterface({
+  workspaceId,
+  channelId,
+  channelName,
+  threadId,
+  title,
+  onOpenThread,
+  onGoToChannel,
+}: ChatInterfaceProps) {
   const { isAuthenticated } = useAuth()
 
   const { messages, rootMessage, ancestors, isLoading, isConnected, connectionError, sendMessage } = useChat({
@@ -34,20 +44,19 @@ export function ChatInterface({ workspaceId, channelId, threadId, title, onOpenT
 
   return (
     <div className="flex h-full w-full flex-col" style={{ background: "var(--bg-primary)", minHeight: "100%" }}>
-      {/* Header */}
       <ChatHeader title={displayTitle} isThread={isThread} isConnected={isConnected} />
 
-      {/* Thread Context Area */}
       {isThread && (
         <ThreadContext
           rootMessage={rootMessage}
           ancestors={ancestors}
+          channelName={channelName}
           isLoading={isLoading && !rootMessage}
           onOpenThread={onOpenThread}
+          onGoToChannel={onGoToChannel}
         />
       )}
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {connectionError ? (
           <ConnectionError message={connectionError} />
@@ -62,7 +71,6 @@ export function ChatInterface({ workspaceId, channelId, threadId, title, onOpenT
         )}
       </div>
 
-      {/* Input */}
       <ChatInput
         onSend={sendMessage}
         placeholder={isThread ? "Reply to thread..." : `Message ${displayTitle}`}
@@ -72,5 +80,4 @@ export function ChatInterface({ workspaceId, channelId, threadId, title, onOpenT
   )
 }
 
-// Re-export OpenMode for convenience
 export type { OpenMode }
