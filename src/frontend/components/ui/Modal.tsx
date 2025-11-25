@@ -1,15 +1,26 @@
 import { useEffect, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 
 interface ModalProps {
-  open: boolean
+  open?: boolean
+  isOpen?: boolean
   onClose: () => void
   children: ReactNode
+  size?: "sm" | "md" | "lg" | "xl"
 }
 
-export function Modal({ open, onClose, children }: ModalProps) {
-  // Handle escape key
+const sizeClasses = {
+  sm: "max-w-sm",
+  md: "max-w-lg",
+  lg: "max-w-4xl",
+  xl: "max-w-6xl",
+}
+
+export function Modal({ open, isOpen, onClose, children, size = "md" }: ModalProps) {
+  const isVisible = open ?? isOpen ?? false
+
   useEffect(() => {
-    if (!open) return
+    if (!isVisible) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -19,25 +30,26 @@ export function Modal({ open, onClose, children }: ModalProps) {
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [open, onClose])
+  }, [isVisible, onClose])
 
-  if (!open) return null
+  if (!isVisible) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.8)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
     >
       <div
-        className="w-full max-w-md rounded-2xl p-6 animate-fade-in"
+        className={`w-full ${sizeClasses[size]} rounded-2xl animate-fade-in overflow-hidden`}
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

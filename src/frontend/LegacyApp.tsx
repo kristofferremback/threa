@@ -1,10 +1,10 @@
 import { StrictMode, useState, useEffect, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import { io, Socket } from "socket.io-client"
-import { formatDistanceToNow } from "date-fns"
 import { Send, LogOut, MessageCircle, Circle } from "lucide-react"
 import { Toaster, toast } from "sonner"
 import { AuthProvider, useAuth } from "./auth"
+import { RelativeTime } from "./components/ui"
 import "./index.css"
 
 function App() {
@@ -161,9 +161,7 @@ function App() {
               <div key={msg.id || msg.timestamp} className="mb-2 rounded-md bg-zinc-800 p-3">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-sm font-medium text-blue-400">{msg.email}</span>
-                  <span className="text-xs text-gray-500">
-                    {formatDistanceToNow(new Date(msg.timestamp), { addSuffix: true })}
-                  </span>
+                  <RelativeTime date={msg.timestamp} className="text-xs text-gray-500" />
                 </div>
                 <div className="text-sm text-gray-200">{msg.message}</div>
               </div>

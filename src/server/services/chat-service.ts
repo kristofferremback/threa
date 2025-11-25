@@ -70,6 +70,8 @@ export interface MessageWithAuthor {
   conversationId?: string | null
   replyToMessageId?: string | null
   replyCount?: number
+  isEdited?: boolean
+  updatedAt?: string
 }
 
 // ============================================================================
@@ -343,24 +345,24 @@ export class ChatService {
     limit: number = 50,
     offset: number = 0,
   ): Promise<MessageWithAuthor[]> {
-    // Join messages with users to get author info in one query
-    // Show messages that are NOT replies (same logic as getMessagesByChannel)
-    // Include reply count: number of messages that directly reply to this message
     const result = await this.pool.query<{
       id: string
       author_id: string
       email: string
       content: string
       created_at: Date
+      updated_at: Date | null
       channel_id: string
       conversation_id: string | null
       reply_to_message_id: string | null
-      reply_count: string // PostgreSQL returns COUNT as string
+      reply_count: string
+      revision_count: string
     }>(
       sql`SELECT
-            m.id, m.author_id, u.email, m.content, m.created_at,
+            m.id, m.author_id, u.email, m.content, m.created_at, m.updated_at,
             m.channel_id, m.conversation_id, m.reply_to_message_id,
-            (SELECT COUNT(*) FROM messages r WHERE r.reply_to_message_id = m.id AND r.deleted_at IS NULL) as reply_count
+            (SELECT COUNT(*) FROM messages r WHERE r.reply_to_message_id = m.id AND r.deleted_at IS NULL) as reply_count,
+            (SELECT COUNT(*) FROM message_revisions mr WHERE mr.message_id = m.id AND mr.deleted_at IS NULL) as revision_count
           FROM messages m
           INNER JOIN users u ON m.author_id = u.id
           WHERE m.channel_id = ${channelId}
@@ -380,6 +382,8 @@ export class ChatService {
       conversationId: row.conversation_id,
       replyToMessageId: row.reply_to_message_id,
       replyCount: parseInt(row.reply_count, 10),
+      isEdited: parseInt(row.revision_count, 10) > 0,
+      updatedAt: row.updated_at?.toISOString(),
     }))
   }
 
@@ -567,6 +571,101 @@ export class ChatService {
          SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
          WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
     )
+  }
+
+  async editMessage(
+    messageId: string,
+    userId: string,
+    newContent: string,
+  ): Promise<{ message: Message; revisionId: string }> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get the current message
+      const currentMessage = await client.query<Message>(
+        sql`SELECT id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at
+            FROM messages
+            WHERE id = ${messageId} AND deleted_at IS NULL`,
+      )
+
+      const message = currentMessage.rows[0]
+      if (!message) {
+        throw new Error("Message not found")
+      }
+
+      // Check ownership
+      if (message.author_id !== userId) {
+        throw new Error("You can only edit your own messages")
+      }
+
+      // Create a revision with the OLD content
+      const revisionId = generateId("rev")
+      await client.query(
+        sql`INSERT INTO message_revisions (id, message_id, content, created_at, updated_at)
+            VALUES (${revisionId}, ${messageId}, ${message.content}, ${message.created_at}, NOW())`,
+      )
+
+      // Update the message with new content
+      const updatedMessage = await client.query<Message>(
+        sql`UPDATE messages
+            SET content = ${newContent}, updated_at = NOW()
+            WHERE id = ${messageId}
+            RETURNING id, workspace_id, channel_id, conversation_id, reply_to_message_id, author_id, content, created_at, updated_at, deleted_at`,
+      )
+
+      const updated = updatedMessage.rows[0]
+      if (!updated) {
+        throw new Error("Failed to update message")
+      }
+
+      // Create outbox event for real-time broadcast
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"message.edited"}, ${JSON.stringify({
+              id: messageId,
+              workspace_id: updated.workspace_id,
+              channel_id: updated.channel_id,
+              conversation_id: updated.conversation_id,
+              author_id: updated.author_id,
+              content: newContent,
+              revision_id: revisionId,
+              updated_at: updated.updated_at,
+            })})`,
+      )
+
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ message_id: messageId, revision_id: revisionId }, "Message edited")
+
+      return { message: updated, revisionId }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error }, "Failed to edit message")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async getMessageRevisions(messageId: string): Promise<Array<{ id: string; content: string; created_at: Date }>> {
+    const result = await this.pool.query<{ id: string; content: string; created_at: Date }>(
+      sql`SELECT id, content, created_at
+          FROM message_revisions
+          WHERE message_id = ${messageId} AND deleted_at IS NULL
+          ORDER BY created_at DESC`,
+    )
+    return result.rows
+  }
+
+  async hasRevisions(messageId: string): Promise<boolean> {
+    const result = await this.pool.query<{ count: string }>(
+      sql`SELECT COUNT(*) as count FROM message_revisions WHERE message_id = ${messageId} AND deleted_at IS NULL`,
+    )
+    return parseInt(result.rows[0]?.count || "0", 10) > 0
   }
 
   // ==========================================================================

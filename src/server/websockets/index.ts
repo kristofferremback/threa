@@ -122,6 +122,41 @@ export const createSocketIOServer = async ({
     })()
   })
 
+  // Subscribe to message edit events
+  await messageSubscriber.subscribe("event:message.edited", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { id, channel_id, conversation_id, content, updated_at, workspace_id } = event
+
+        const editData = {
+          id,
+          content,
+          updatedAt: updated_at,
+        }
+
+        // Get channel info for slug-based rooms
+        const channel = await chatService.getChannelById(channel_id)
+        const channelSlug = channel?.slug
+
+        // Emit to channel rooms
+        io.to(`chan:${channel_id}`).emit("messageEdited", editData)
+        if (channelSlug) {
+          io.to(`chan:${channelSlug}`).emit("messageEdited", editData)
+        }
+
+        // Emit to conversation room if exists
+        if (conversation_id) {
+          io.to(`conv:${conversation_id}`).emit("messageEdited", editData)
+        }
+
+        logger.debug({ message_id: id }, "Message edit broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis message.edited event")
+      }
+    })()
+  })
+
   // Subscribe to conversation creation events
   await messageSubscriber.subscribe("event:conversation.created", (message: string) => {
     ;(async () => {
@@ -221,10 +256,16 @@ export const createSocketIOServer = async ({
     // Join the user's private room for direct notifications
     socket.join(`user:${userId}`)
 
-    // Emit connected event with workspace info
+    // Emit connected event with workspace info and user ID
     socket.emit("connected", {
       message: "Connected to Threa",
       workspaceId,
+    })
+
+    // Emit authenticated event with user info for frontend
+    socket.emit("authenticated", {
+      userId,
+      email,
     })
 
     // NOTE: WebSocket is only for:

@@ -116,6 +116,73 @@ export function createWorkspaceRoutes(
   // Messages
   // ==========================================================================
 
+  // Get message revisions
+  router.get("/:workspaceId/messages/:messageId/revisions", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { messageId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const revisions = await chatService.getMessageRevisions(messageId)
+      res.json({ revisions })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get message revisions")
+      next(error)
+    }
+  })
+
+  // Edit a message
+  router.patch("/:workspaceId/messages/:messageId", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { messageId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { content } = req.body
+
+      if (!content || typeof content !== "string" || content.trim().length === 0) {
+        res.status(400).json({ error: "Message content is required" })
+        return
+      }
+
+      const { message, revisionId } = await chatService.editMessage(messageId, userId, content.trim())
+
+      const email = await chatService.getUserEmail(userId)
+      res.json({
+        id: message.id,
+        userId: message.author_id,
+        email: email || "unknown",
+        message: message.content,
+        timestamp: message.created_at.toISOString(),
+        channelId: message.channel_id,
+        conversationId: message.conversation_id,
+        replyToMessageId: message.reply_to_message_id,
+        isEdited: true,
+        updatedAt: message.updated_at?.toISOString(),
+        revisionId,
+      })
+    } catch (error: any) {
+      if (error.message === "Message not found") {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      if (error.message === "You can only edit your own messages") {
+        res.status(403).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to edit message")
+      next(error)
+    }
+  })
+
   // Send a message (channel message or reply)
   router.post("/:workspaceId/messages", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -498,10 +565,11 @@ export function createWorkspaceRoutes(
     try {
       const { messageId } = req.params
 
-      const [message, ancestors, conversation] = await Promise.all([
+      const [message, ancestors, conversation, rootIsEdited] = await Promise.all([
         chatService.getMessageById(messageId),
         chatService.getMessageAncestors(messageId),
         chatService.getConversationByRootMessage(messageId),
+        chatService.hasRevisions(messageId),
       ])
 
       if (!message) {
@@ -509,34 +577,38 @@ export function createWorkspaceRoutes(
         return
       }
 
-      // Get author email for root message
       const rootEmail = await chatService.getUserEmail(message.author_id)
 
-      // Get replies if a conversation exists
       let replies: any[] = []
       if (conversation) {
         const conversationMessages = await chatService.getMessagesByConversation(conversation.id)
-        // Get emails for all replies
         replies = await Promise.all(
           conversationMessages
-            .filter((r) => r.id !== messageId) // Exclude root from replies
+            .filter((r) => r.id !== messageId)
             .map(async (r) => {
-              const email = await chatService.getUserEmail(r.author_id)
+              const [email, isEdited] = await Promise.all([
+                chatService.getUserEmail(r.author_id),
+                chatService.hasRevisions(r.id),
+              ])
               return {
                 ...r,
                 email: email || "unknown",
+                isEdited,
               }
             }),
         )
       }
 
-      // Get emails for ancestors
       const ancestorsWithEmail = await Promise.all(
         ancestors.map(async (a) => {
-          const email = await chatService.getUserEmail(a.author_id)
+          const [email, isEdited] = await Promise.all([
+            chatService.getUserEmail(a.author_id),
+            chatService.hasRevisions(a.id),
+          ])
           return {
             ...a,
             email: email || "unknown",
+            isEdited,
           }
         }),
       )
@@ -545,6 +617,7 @@ export function createWorkspaceRoutes(
         rootMessage: {
           ...message,
           email: rootEmail || "unknown",
+          isEdited: rootIsEdited,
         },
         ancestors: ancestorsWithEmail,
         replies,

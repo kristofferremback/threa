@@ -11,7 +11,6 @@ interface UseChatOptions {
 }
 
 interface UseChatReturn {
-  // State
   messages: Message[]
   rootMessage: Message | null
   ancestors: Message[]
@@ -20,9 +19,9 @@ interface UseChatReturn {
   isConnected: boolean
   connectionError: string | null
   isSending: boolean
-
-  // Actions
+  currentUserId: string | null
   sendMessage: (content: string) => Promise<void>
+  editMessage: (messageId: string, newContent: string) => Promise<void>
 }
 
 export function useChat({ workspaceId, channelId, threadId, enabled = true }: UseChatOptions): UseChatReturn {
@@ -34,6 +33,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
   const [isConnected, setIsConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const socketRef = useRef<Socket | null>(null)
   const conversationIdRef = useRef<string | null>(null)
@@ -113,6 +113,24 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
       )
     })
 
+    // Handle message edits
+    socket.on("messageEdited", (data: { id: string; content: string; updatedAt: string }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === data.id ? { ...msg, message: data.content, isEdited: true, updatedAt: data.updatedAt } : msg,
+        ),
+      )
+      // Also update root message if it was edited
+      setRootMessage((prev) =>
+        prev?.id === data.id ? { ...prev, message: data.content, isEdited: true, updatedAt: data.updatedAt } : prev,
+      )
+    })
+
+    // Get current user ID from socket auth
+    socket.on("authenticated", (data: { userId: string }) => {
+      setCurrentUserId(data.userId)
+    })
+
     socket.on("disconnect", () => {
       setIsConnected(false)
     })
@@ -173,7 +191,6 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         if (!res.ok) throw new Error("Failed to fetch thread")
         const data = await res.json()
 
-        // Set root message
         if (data.rootMessage) {
           const rootMsg: Message = {
             id: data.rootMessage.id,
@@ -184,11 +201,11 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
             channelId: data.rootMessage.channel_id,
             conversationId: data.rootMessage.conversation_id,
             replyToMessageId: data.rootMessage.reply_to_message_id,
+            isEdited: data.rootMessage.isEdited,
           }
           setRootMessage(rootMsg)
         }
 
-        // Set ancestors
         if (data.ancestors) {
           setAncestors(
             data.ancestors.map((a: any) => ({
@@ -200,17 +217,16 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
               channelId: a.channel_id,
               conversationId: a.conversation_id,
               replyToMessageId: a.reply_to_message_id,
+              isEdited: a.isEdited,
             })),
           )
         }
 
-        // Set conversation ID and join room if exists
         if (data.conversationId) {
           setConversationId(data.conversationId)
           socket.emit("join", `conv:${data.conversationId}`)
         }
 
-        // Merge replies with any that arrived via socket
         if (data.replies) {
           const replies: Message[] = data.replies.map((r: any) => ({
             id: r.id,
@@ -221,6 +237,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
             channelId: r.channel_id,
             conversationId: r.conversation_id,
             replyToMessageId: r.reply_to_message_id,
+            isEdited: r.isEdited,
           }))
 
           setMessages((prev) => {
@@ -301,6 +318,48 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     [workspaceId, channelId, threadId, isSending],
   )
 
+  const editMessage = useCallback(
+    async (messageId: string, newContent: string) => {
+      if (!newContent.trim()) return
+
+      try {
+        const response = await fetch(`/api/workspace/${workspaceId}/messages/${messageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ content: newContent.trim() }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || "Failed to edit message")
+        }
+
+        const updatedMessage = await response.json()
+
+        // Optimistically update local state
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, message: updatedMessage.message, isEdited: true, updatedAt: updatedMessage.updatedAt }
+              : msg,
+          ),
+        )
+
+        // Also update root message if it was edited
+        setRootMessage((prev) =>
+          prev?.id === messageId
+            ? { ...prev, message: updatedMessage.message, isEdited: true, updatedAt: updatedMessage.updatedAt }
+            : prev,
+        )
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to edit message")
+        throw error
+      }
+    },
+    [workspaceId],
+  )
+
   return {
     messages,
     rootMessage,
@@ -310,6 +369,8 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     isConnected,
     connectionError,
     isSending,
+    currentUserId,
     sendMessage,
+    editMessage,
   }
 }

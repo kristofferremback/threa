@@ -15,6 +15,8 @@ export interface Message {
   replyCount?: number
   conversationId?: string | null
   replyToMessageId?: string | null
+  isEdited?: boolean
+  updatedAt?: string
 }
 
 export interface ThreadData {

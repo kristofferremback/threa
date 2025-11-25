@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { formatDistanceToNow } from "date-fns"
 import { ChevronRight, ChevronDown, PanelRightOpen, Hash, ArrowLeft } from "lucide-react"
-import { Avatar, Spinner } from "../ui"
+import { Avatar, Spinner, RelativeTime } from "../ui"
 import type { Message, OpenMode } from "../../types"
 import { getOpenMode } from "../../types"
 
@@ -100,9 +99,11 @@ function AncestorMessage({ message, onOpenThread }: AncestorMessageProps) {
           <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
             {message.email}
           </span>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
-          </span>
+          <RelativeTime
+            date={message.timestamp}
+            className="text-xs"
+            style={{ color: "var(--text-muted)" }}
+          />
         </div>
         <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
           {message.message}
@@ -143,9 +144,11 @@ function RootMessageDisplay({ message, onOpenThread }: RootMessageDisplayProps) 
         <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
           {message.email}
         </span>
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-          {formatDistanceToNow(new Date(message.timestamp), { addSuffix: true })}
-        </span>
+        <RelativeTime
+          date={message.timestamp}
+          className="text-xs"
+          style={{ color: "var(--text-muted)" }}
+        />
       </div>
       <p className="pl-8 text-sm" style={{ color: "var(--text-primary)" }}>
         {message.message}

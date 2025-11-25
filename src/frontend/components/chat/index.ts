@@ -1,5 +1,7 @@
 export { MessageItem } from "./MessageItem"
 export { MessageList } from "./MessageList"
+export { MessageContextMenu } from "./MessageContextMenu"
+export { MessageRevisionsModal } from "./MessageRevisionsModal"
 export { ChatHeader } from "./ChatHeader"
 export { ChatInput } from "./ChatInput"
 export { ThreadContext } from "./ThreadContext"
