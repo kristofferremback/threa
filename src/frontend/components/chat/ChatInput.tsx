@@ -51,5 +51,3 @@ export function ChatInput({ onSend, placeholder = "Type a message...", disabled 
     </form>
   )
 }
-
-

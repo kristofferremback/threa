@@ -35,9 +35,7 @@ export function MessageList({
   // Empty states
   if (messages.length === 0) {
     if (isThread && hasRootMessage) {
-      return (
-        <EmptyState icon={MessageCircle} description="No replies yet. Start the conversation!" />
-      )
+      return <EmptyState icon={MessageCircle} description="No replies yet. Start the conversation!" />
     }
 
     if (!isThread) {
@@ -60,5 +58,3 @@ export function MessageList({
     </div>
   )
 }
-
-

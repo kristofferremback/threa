@@ -60,5 +60,3 @@ interface ModalFooterProps {
 export function ModalFooter({ children }: ModalFooterProps) {
   return <div className="flex gap-3 pt-2">{children}</div>
 }
-
-

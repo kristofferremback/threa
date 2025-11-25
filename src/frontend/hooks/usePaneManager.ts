@@ -17,7 +17,7 @@ interface UsePaneManagerReturn {
   setActiveTab: (paneId: string, tabId: string) => void
   closeTab: (paneId: string, tabId: string) => void
   selectChannel: (channel: Channel) => void
-  openItem: (item: Omit<Tab, "id">, mode?: OpenMode) => void
+  openItem: (item: Omit<Tab, "id">, mode?: OpenMode, sourcePaneId?: string) => void
 
   // Initialize from URL
   initializeFromUrl: () => boolean
@@ -79,9 +79,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     }
 
     // Initialize with default channel
-    const defaultChannel = defaultChannelSlug
-      ? channels.find((c) => c.slug === defaultChannelSlug)
-      : channels[0]
+    const defaultChannel = defaultChannelSlug ? channels.find((c) => c.slug === defaultChannelSlug) : channels[0]
 
     if (defaultChannel) {
       setActiveChannelSlug(defaultChannel.slug)
@@ -107,15 +105,17 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     return false
   }, [channels, defaultChannelSlug])
 
-  // Open item in a new pane to the side
+  // Open item in a new pane to the side of the source pane
   const openItemToSide = useCallback(
-    (item: Omit<Tab, "id">) => {
+    (item: Omit<Tab, "id">, sourcePaneId?: string) => {
       shouldPushHistory.current = true
       setPanes((prev) => {
-        const focusedIndex = prev.findIndex((p) => p.id === focusedPaneId)
-        if (focusedIndex === -1) return prev
+        // Use sourcePaneId if provided, otherwise fall back to focusedPaneId
+        const targetPaneId = sourcePaneId || focusedPaneId
+        const sourceIndex = prev.findIndex((p) => p.id === targetPaneId)
+        if (sourceIndex === -1) return prev
 
-        const targetIndex = focusedIndex + 1
+        const targetIndex = sourceIndex + 1
         const newTabId = `${item.type}-${Date.now()}`
         const newTab: Tab = { ...item, id: newTabId }
 
@@ -137,19 +137,21 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     [focusedPaneId],
   )
 
-  // Replace current tab in focused pane
+  // Replace current tab in the source pane
   const openItemInPlace = useCallback(
-    (item: Omit<Tab, "id">) => {
+    (item: Omit<Tab, "id">, sourcePaneId?: string) => {
       shouldPushHistory.current = true
       setPanes((prev) => {
-        const focusedIndex = prev.findIndex((p) => p.id === focusedPaneId)
-        if (focusedIndex === -1) return prev
+        // Use sourcePaneId if provided, otherwise fall back to focusedPaneId
+        const targetPaneId = sourcePaneId || focusedPaneId
+        const sourceIndex = prev.findIndex((p) => p.id === targetPaneId)
+        if (sourceIndex === -1) return prev
 
         const newTabId = `${item.type}-${Date.now()}`
         const newTab: Tab = { ...item, id: newTabId }
 
         return prev.map((pane, index) => {
-          if (index === focusedIndex) {
+          if (index === sourceIndex) {
             const newTabs = pane.tabs.map((tab) => (tab.id === pane.activeTabId ? newTab : tab))
             return { ...pane, tabs: newTabs, activeTabId: newTabId }
           }
@@ -160,18 +162,18 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     [focusedPaneId],
   )
 
-  // Open item based on mode
+  // Open item based on mode, optionally specifying which pane initiated the action
   const openItem = useCallback(
-    (item: Omit<Tab, "id">, mode: OpenMode = "side") => {
+    (item: Omit<Tab, "id">, mode: OpenMode = "side", sourcePaneId?: string) => {
       if (mode === "newTab") {
         window.open(buildNewTabUrl(item), "_blank")
         return
       }
 
       if (mode === "replace") {
-        openItemInPlace(item)
+        openItemInPlace(item, sourcePaneId)
       } else {
-        openItemToSide(item)
+        openItemToSide(item, sourcePaneId)
       }
     },
     [openItemInPlace, openItemToSide],
@@ -250,5 +252,3 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     initializeFromUrl,
   }
 }
-
-

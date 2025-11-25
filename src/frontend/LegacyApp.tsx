@@ -9,7 +9,9 @@ import "./index.css"
 
 function App() {
   const { isAuthenticated, user } = useAuth()
-  const [messages, setMessages] = useState<Array<{ id?: string; userId?: string; email: string; message: string; timestamp: string }>>([])
+  const [messages, setMessages] = useState<
+    Array<{ id?: string; userId?: string; email: string; message: string; timestamp: string }>
+  >([])
   const [inputMessage, setInputMessage] = useState("")
   const [isConnected, setIsConnected] = useState(false)
   const socketRef = useRef<Socket | null>(null)

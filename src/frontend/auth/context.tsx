@@ -6,12 +6,14 @@ type AuthContextValue = {
   user: User | null
   state: "new" | "loading" | "loaded" | "error"
   error?: Error
+  logout: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue>({
   isAuthenticated: false,
   user: null,
   state: "new",
+  logout: async () => {},
 })
 
 export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
@@ -61,20 +63,20 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const originalFetch = window.fetch
     window.fetch = async (...args) => {
       const response = await originalFetch(...args)
-      
+
       // If we get a 401, mark user as logged out (not an error state)
       // Only redirect if we're not already showing the login screen
       if (response.status === 401) {
         setUser(null)
         setState("loaded")
-        
+
         // Redirect to login only if we're not already on a page that shows login
         const currentPath = window.location.pathname
         if (!currentPath.includes("/api/auth/login") && currentPath !== "/") {
           window.location.href = "/api/auth/login"
         }
       }
-      
+
       return response
     }
 
@@ -84,6 +86,21 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch (err) {
+      console.error("Logout error:", err)
+    } finally {
+      setUser(null)
+      setState("loaded")
+      window.location.href = "/api/auth/login"
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -91,6 +108,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
         user,
         state,
         error,
+        logout,
       }}
     >
       {children}

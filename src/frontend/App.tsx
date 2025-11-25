@@ -22,4 +22,3 @@ root.render(
     </AuthProvider>
   </StrictMode>,
 )
-

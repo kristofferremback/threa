@@ -3,8 +3,8 @@ IDs use a resource prefix + ulid.
 - workspace: `ws_`
 - user: `usr_`
 - message: `msg_`
-- message_revision: `msg_:<rev>`
-- message_reaction: `msgr_`
+- message*revision: `msg*:<rev>`
+- message*reaction: `msgr*`
 - channel: `chan_`
 - conversation: `conv_`
 
@@ -16,20 +16,21 @@ websocket plan:
 Rooms:
 
 - `ws.{workspaceId}` - **Global Workspace Room**.
-    - **Active:** Always, while app is open.
-    - **Content:** Lightweight notifications ("New message in #general"), unread count updates, user presence changes ("User X came online"), typing indicators.
-    - **No** full message content.
+  - **Active:** Always, while app is open.
+  - **Content:** Lightweight notifications ("New message in #general"), unread count updates, user presence changes ("User X came online"), typing indicators.
+  - **No** full message content.
 - `ws.{workspaceId}.chan.{channelId}` - **Active Channel Room**.
-    - **Active:** Only when user is viewing this specific channel.
-    - **Content:** Full message payloads, edits, deletions, reactions *for this channel*.
+  - **Active:** Only when user is viewing this specific channel.
+  - **Content:** Full message payloads, edits, deletions, reactions _for this channel_.
 - `ws.{workspaceId}.conv.{conversationId}` - **Active Thread Room**.
-    - **Active:** Only when user has this specific thread open in the sidebar.
-    - **Content:** Full reply payloads for this thread.
+  - **Active:** Only when user has this specific thread open in the sidebar.
+  - **Content:** Full reply payloads for this thread.
 - `user.{userId}` - **Private User Room**.
-    - **Active:** Always.
-    - **Content:** System alerts ("You were kicked"), force logout, critical errors.
+  - **Active:** Always.
+  - **Content:** System alerts ("You were kicked"), force logout, critical errors.
 
 From Gemini:
+
 ```
 Room Name	Scope	Content	Active When...
 ws:123	Global	Notifications, Counts, Presence	App is open
@@ -169,8 +170,6 @@ conversation_members:
   notify_level: default | all | mentions | muted
   last_read_message_id?: msg_1234567890
   last_read_at?: 2025-01-01T00:00:00Z
-
-
 ```
 
 Notes on workspaces:
@@ -190,11 +189,17 @@ GET /api/auth/workos/callback # workos callback
 GET /api/workspaces # list all workspaces the user is a member of
 
 GET /api/workspaces/{workspaceId}/bootstrap # bootstrap the chosen workspace for the client
+
 # - lists all channels the user is a member of, including last read messages & UNREAD COUNTS
+
 # - get a list of conversations the user is a member of, with UNREAD COUNTS
+
 # - get a list of users in the workspace (for auto-complete)
+
 # - get the user's workspace settings
+
 # - get the user's pinned channels
+
 # - default channel to open if the client doesn't have a last opened channel
 
 GET /api/workspaces/{workspaceId}/channels # list all channels in the workspace the user can see (e.g., exclude hidden channels they are not a member of)
@@ -238,4 +243,5 @@ POST /api/workspaces/{workspaceId}/conversations/{conversationId}/notify-level #
 ```
 
 Local state in the UI:
+
 - Last opened channels/conversations

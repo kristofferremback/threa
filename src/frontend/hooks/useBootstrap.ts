@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import type { BootstrapData } from "../types"
+import type { BootstrapData, Channel } from "../types"
 
 interface UseBootstrapOptions {
   enabled?: boolean
@@ -11,6 +11,9 @@ interface UseBootstrapReturn {
   error: string | null
   noWorkspace: boolean
   refetch: () => void
+  addChannel: (channel: Channel) => void
+  updateChannel: (channel: Channel) => void
+  removeChannel: (channelId: string) => void
 }
 
 export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseBootstrapReturn {
@@ -58,13 +61,44 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     }
   }, [enabled, fetchBootstrap])
 
+  // Add a channel to the local state (after creation)
+  const addChannel = useCallback((channel: Channel) => {
+    setData((prev) => {
+      if (!prev) return prev
+      // Insert in alphabetical order
+      const channels = [...prev.channels, channel].sort((a, b) => a.name.localeCompare(b.name))
+      return { ...prev, channels }
+    })
+  }, [])
+
+  // Update a channel in the local state
+  const updateChannel = useCallback((channel: Channel) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const channels = prev.channels
+        .map((c) => (c.id === channel.id ? { ...c, ...channel } : c))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      return { ...prev, channels }
+    })
+  }, [])
+
+  // Remove a channel from the local state (after archiving)
+  const removeChannel = useCallback((channelId: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const channels = prev.channels.filter((c) => c.id !== channelId)
+      return { ...prev, channels }
+    })
+  }, [])
+
   return {
     data,
     isLoading,
     error,
     noWorkspace,
     refetch: fetchBootstrap,
+    addChannel,
+    updateChannel,
+    removeChannel,
   }
 }
-
-

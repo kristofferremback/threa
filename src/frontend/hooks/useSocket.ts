@@ -79,5 +79,3 @@ export function useSocket({ enabled = true, onConnect, onDisconnect }: UseSocket
     leave,
   }
 }
-
-

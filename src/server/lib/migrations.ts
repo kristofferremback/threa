@@ -22,9 +22,7 @@ export const runMigrations = async (pool: Pool) => {
 
     // Get list of migration files
     const files = await readdir(migrationsDir)
-    const migrationFiles = files
-      .filter((f) => f.endsWith(".sql"))
-      .sort() // Execute in order
+    const migrationFiles = files.filter((f) => f.endsWith(".sql")).sort() // Execute in order
 
     logger.info({ count: migrationFiles.length }, "Found migration files")
 
@@ -67,4 +65,3 @@ export const runMigrations = async (pool: Pool) => {
     throw error
   }
 }
-

@@ -19,5 +19,3 @@ export function ErrorScreen({ message, onRetry }: ErrorScreenProps) {
     </div>
   )
 }
-
-

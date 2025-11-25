@@ -5,12 +5,16 @@ import { ChatInterface } from "../ChatInterface"
 import { Sidebar } from "./Sidebar"
 import { PaneSystem } from "./PaneSystem"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
+import { CreateChannelModal } from "./CreateChannelModal"
+import { ChannelSettingsModal } from "./ChannelSettingsModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
-import type { Tab, OpenMode } from "../../types"
+import type { Tab, Channel } from "../../types"
 
 export function LayoutSystem() {
-  const { isAuthenticated, state } = useAuth()
+  const { isAuthenticated, state, logout } = useAuth()
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
+  const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
 
   // Bootstrap data
   const {
@@ -19,6 +23,9 @@ export function LayoutSystem() {
     error: bootstrapError,
     noWorkspace,
     refetch: refetchBootstrap,
+    addChannel,
+    updateChannel,
+    removeChannel,
   } = useBootstrap({
     enabled: isAuthenticated && state === "loaded",
   })
@@ -53,7 +60,7 @@ export function LayoutSystem() {
   }
 
   // Render content for a tab
-  const renderTabContent = (tab: Tab) => {
+  const renderTabContent = (tab: Tab, paneId: string) => {
     if (!bootstrapData) return null
 
     const channelName = getChannelName(tab.data?.channelId)
@@ -66,7 +73,7 @@ export function LayoutSystem() {
         threadId={tab.data?.threadId}
         title={tab.title}
         onOpenThread={(msgId, msgChannelId, mode) => {
-          setFocusedPane(panes.find((p) => p.tabs.some((t) => t.id === tab.id))?.id || "")
+          // Pass the pane ID where the click originated so the thread opens relative to that pane
           openItem(
             {
               title: "Thread",
@@ -74,6 +81,7 @@ export function LayoutSystem() {
               data: { threadId: msgId, channelId: msgChannelId },
             },
             mode,
+            paneId,
           )
         }}
         onGoToChannel={(channelId, mode) => {
@@ -81,7 +89,7 @@ export function LayoutSystem() {
           const channelSlug = channel?.slug || channelId
           const name = channel?.name.replace("#", "") || channelSlug
 
-          setFocusedPane(panes.find((p) => p.tabs.some((t) => t.id === tab.id))?.id || "")
+          // Pass the pane ID where the click originated
           openItem(
             {
               title: `#${name}`,
@@ -89,6 +97,7 @@ export function LayoutSystem() {
               data: { channelId: channelSlug },
             },
             mode,
+            paneId,
           )
         }}
       />
@@ -127,20 +136,54 @@ export function LayoutSystem() {
   }
 
   if (bootstrapError || !bootstrapData) {
-    return <ErrorScreen message={bootstrapError || "Failed to load workspace"} onRetry={() => window.location.reload()} />
+    return (
+      <ErrorScreen message={bootstrapError || "Failed to load workspace"} onRetry={() => window.location.reload()} />
+    )
   }
 
   return (
     <div className="flex h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
-      {/* Sidebar */}
       <Sidebar
         workspace={bootstrapData.workspace}
         channels={bootstrapData.channels}
         activeChannelSlug={activeChannelSlug}
         onSelectChannel={selectChannel}
+        onCreateChannel={() => setShowCreateChannel(true)}
+        onChannelSettings={(channel) => setChannelToEdit(channel)}
+        onLogout={logout}
       />
 
-      {/* Main Layout Area */}
+      <CreateChannelModal
+        open={showCreateChannel}
+        workspaceId={bootstrapData.workspace.id}
+        onClose={() => setShowCreateChannel(false)}
+        onCreated={(channel: Channel) => {
+          setShowCreateChannel(false)
+          addChannel(channel)
+          selectChannel(channel)
+        }}
+      />
+
+      <ChannelSettingsModal
+        open={channelToEdit !== null}
+        channel={channelToEdit}
+        workspaceId={bootstrapData.workspace.id}
+        onClose={() => setChannelToEdit(null)}
+        onUpdated={(channel) => {
+          updateChannel(channel)
+          setChannelToEdit(null)
+        }}
+        onArchived={(channelId) => {
+          removeChannel(channelId)
+          setChannelToEdit(null)
+          // If we're viewing the archived channel, navigate away
+          if (activeChannelSlug === channelToEdit?.slug) {
+            const firstChannel = bootstrapData.channels.find((c) => c.id !== channelId)
+            if (firstChannel) selectChannel(firstChannel)
+          }
+        }}
+      />
+
       <div className="flex-1 min-w-0">
         <PaneSystem
           panes={panes}

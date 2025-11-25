@@ -5,5 +5,4 @@ export { StatusIndicator } from "./StatusIndicator"
 export { EmptyState } from "./EmptyState"
 export { Spinner, LoadingState } from "./Spinner"
 export { Modal, ModalHeader, ModalFooter } from "./Modal"
-
-
+export { Dropdown, DropdownItem, DropdownDivider } from "./Dropdown"

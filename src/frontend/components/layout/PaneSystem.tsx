@@ -9,7 +9,7 @@ interface PaneSystemProps {
   onFocusPane: (paneId: string) => void
   onSetActiveTab: (paneId: string, tabId: string) => void
   onCloseTab: (paneId: string, tabId: string) => void
-  renderContent: (tab: Tab) => React.ReactNode
+  renderContent: (tab: Tab, paneId: string) => React.ReactNode
 }
 
 export function PaneSystem({
@@ -62,10 +62,19 @@ interface PaneItemProps {
   onFocus: () => void
   onSetActiveTab: (tabId: string) => void
   onCloseTab: (tabId: string) => void
-  renderContent: (tab: Tab) => React.ReactNode
+  renderContent: (tab: Tab, paneId: string) => React.ReactNode
 }
 
-function PaneItem({ pane, index, isLast, isFocused, onFocus, onSetActiveTab, onCloseTab, renderContent }: PaneItemProps) {
+function PaneItem({
+  pane,
+  index,
+  isLast,
+  isFocused,
+  onFocus,
+  onSetActiveTab,
+  onCloseTab,
+  renderContent,
+}: PaneItemProps) {
   return (
     <div className="contents">
       {index > 0 && <PaneResizeHandle />}
@@ -80,12 +89,7 @@ function PaneItem({ pane, index, isLast, isFocused, onFocus, onSetActiveTab, onC
         onClick={onFocus}
       >
         {/* Tabs Header */}
-        <TabBar
-          tabs={pane.tabs}
-          activeTabId={pane.activeTabId}
-          onSelectTab={onSetActiveTab}
-          onCloseTab={onCloseTab}
-        />
+        <TabBar tabs={pane.tabs} activeTabId={pane.activeTabId} onSelectTab={onSetActiveTab} onCloseTab={onCloseTab} />
 
         {/* Content */}
         <div className="flex-1 relative min-h-0" style={{ background: "var(--bg-primary)" }}>
@@ -98,7 +102,7 @@ function PaneItem({ pane, index, isLast, isFocused, onFocus, onSetActiveTab, onC
                 flexDirection: "column",
               }}
             >
-              {renderContent(tab)}
+              {renderContent(tab, pane.id)}
             </div>
           ))}
         </div>
@@ -182,5 +186,3 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
     </div>
   )
 }
-
-

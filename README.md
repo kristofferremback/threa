@@ -99,6 +99,7 @@ docker compose up -d
 ```
 
 This starts:
+
 - PostgreSQL on port 5433 (host) → 5432 (container)
 - Redis on port 6380 (host) → 6379 (container)
 

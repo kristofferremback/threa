@@ -58,5 +58,3 @@ export function NoWorkspaceScreen({ onCreateWorkspace }: NoWorkspaceScreenProps)
     </div>
   )
 }
-
-

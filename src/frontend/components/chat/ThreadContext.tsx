@@ -28,10 +28,7 @@ export function ThreadContext({
     <div style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border-subtle)" }}>
       {/* Channel breadcrumb */}
       {rootMessage && onGoToChannel && (
-        <div
-          className="flex items-center gap-2 px-4 py-2"
-          style={{ borderBottom: "1px solid var(--border-subtle)" }}
-        >
+        <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
           <button
             onClick={(e) => onGoToChannel(rootMessage.channelId, getOpenMode(e))}
             className="flex items-center gap-1.5 text-xs transition-colors hover:underline"

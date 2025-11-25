@@ -25,20 +25,22 @@ export const createRedisClient = (options?: {
   onError?: (err: Error) => void
 }): ReturnType<typeof createClient> => {
   const { host, port, url } = parseRedisUrl()
-  
+
   logger.debug({ redis_url: url, host, port }, "Creating Redis client")
-  
+
   const client = createClient({
     socket: {
       host,
       port,
-      reconnectStrategy: options?.reconnectStrategy || ((retries) => {
-        if (retries > 10) {
-          logger.error("Redis reconnection failed after 10 retries")
-          return new Error("Redis reconnection failed")
-        }
-        return Math.min(retries * 100, 3000)
-      }),
+      reconnectStrategy:
+        options?.reconnectStrategy ||
+        ((retries) => {
+          if (retries > 10) {
+            logger.error("Redis reconnection failed after 10 retries")
+            return new Error("Redis reconnection failed")
+          }
+          return Math.min(retries * 100, 3000)
+        }),
     },
     disableClientInfo: true,
   })
@@ -57,10 +59,7 @@ export const createRedisClient = (options?: {
 /**
  * Connect to Redis and return connected client
  */
-export const connectRedisClient = async (
-  client: RedisClient,
-  context: string = "Redis"
-): Promise<void> => {
+export const connectRedisClient = async (client: RedisClient, context: string = "Redis"): Promise<void> => {
   try {
     await client.connect()
     await client.ping()
@@ -93,4 +92,3 @@ export const createSocketIORedisClients = async (): Promise<{
 
   return { pubClient, subClient }
 }
-

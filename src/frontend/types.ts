@@ -80,5 +80,3 @@ export function getOpenMode(e: React.MouseEvent): OpenMode {
   // Regular click = replace current
   return "replace"
 }
-
-

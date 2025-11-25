@@ -120,5 +120,3 @@ export function buildNewTabUrl(item: Omit<Tab, "id">): string {
   }
   return url.toString()
 }
-
-

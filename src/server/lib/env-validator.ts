@@ -35,4 +35,3 @@ export function validateEnv(): void {
 
   logger.debug("Environment variables validated")
 }
-

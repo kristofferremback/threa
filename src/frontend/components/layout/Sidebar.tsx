@@ -1,6 +1,6 @@
-import { Hash, Plus, Settings, ChevronDown } from "lucide-react"
+import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin } from "lucide-react"
 import { clsx } from "clsx"
-import { Avatar } from "../ui"
+import { Avatar, Dropdown, DropdownItem, DropdownDivider } from "../ui"
 import type { Channel, Workspace } from "../../types"
 
 interface SidebarProps {
@@ -8,22 +8,34 @@ interface SidebarProps {
   channels: Channel[]
   activeChannelSlug: string | null
   onSelectChannel: (channel: Channel) => void
+  onCreateChannel: () => void
+  onChannelSettings: (channel: Channel) => void
+  onLogout: () => void
 }
 
-export function Sidebar({ workspace, channels, activeChannelSlug, onSelectChannel }: SidebarProps) {
+export function Sidebar({
+  workspace,
+  channels,
+  activeChannelSlug,
+  onSelectChannel,
+  onCreateChannel,
+  onChannelSettings,
+  onLogout,
+}: SidebarProps) {
   return (
     <div
       className="w-64 flex-none flex flex-col h-full"
       style={{ background: "var(--bg-secondary)", borderRight: "1px solid var(--border-subtle)" }}
     >
-      {/* Workspace Header */}
       <WorkspaceHeader workspace={workspace} />
-
-      {/* Channels */}
-      <ChannelList channels={channels} activeChannelSlug={activeChannelSlug} onSelectChannel={onSelectChannel} />
-
-      {/* User Footer */}
-      <UserFooter />
+      <ChannelList
+        channels={channels}
+        activeChannelSlug={activeChannelSlug}
+        onSelectChannel={onSelectChannel}
+        onCreateChannel={onCreateChannel}
+        onChannelSettings={onChannelSettings}
+      />
+      <UserFooter onLogout={onLogout} />
     </div>
   )
 }
@@ -66,9 +78,17 @@ interface ChannelListProps {
   channels: Channel[]
   activeChannelSlug: string | null
   onSelectChannel: (channel: Channel) => void
+  onCreateChannel: () => void
+  onChannelSettings: (channel: Channel) => void
 }
 
-function ChannelList({ channels, activeChannelSlug, onSelectChannel }: ChannelListProps) {
+function ChannelList({
+  channels,
+  activeChannelSlug,
+  onSelectChannel,
+  onCreateChannel,
+  onChannelSettings,
+}: ChannelListProps) {
   return (
     <div className="flex-1 overflow-y-auto p-2">
       <div className="mb-2 px-2 flex items-center justify-between">
@@ -76,6 +96,7 @@ function ChannelList({ channels, activeChannelSlug, onSelectChannel }: ChannelLi
           Channels
         </span>
         <button
+          onClick={onCreateChannel}
           className="p-1 rounded hover:bg-white/10 transition-colors"
           style={{ color: "var(--text-muted)" }}
           title="Add channel"
@@ -91,6 +112,7 @@ function ChannelList({ channels, activeChannelSlug, onSelectChannel }: ChannelLi
             channel={channel}
             isActive={activeChannelSlug === channel.slug}
             onClick={() => onSelectChannel(channel)}
+            onSettings={() => onChannelSettings(channel)}
           />
         ))}
       </div>
@@ -102,43 +124,72 @@ interface ChannelItemProps {
   channel: Channel
   isActive: boolean
   onClick: () => void
+  onSettings: () => void
 }
 
-function ChannelItem({ channel, isActive, onClick }: ChannelItemProps) {
+function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProps) {
+  const isPrivate = channel.visibility === "private"
+  const Icon = isPrivate ? Lock : Hash
+
   return (
-    <button
-      onClick={onClick}
+    <div
       className={clsx(
         "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
         isActive ? "bg-white/10" : "hover:bg-white/5",
       )}
     >
-      <Hash
-        className="h-4 w-4 flex-shrink-0"
-        style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
-      />
-      <span
-        className="text-sm truncate flex-1"
-        style={{
-          color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
-          fontWeight: channel.unread_count > 0 ? 600 : 400,
-        }}
-      >
-        {channel.name.replace("#", "")}
-      </span>
+      <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0">
+        <Icon
+          className="h-4 w-4 flex-shrink-0"
+          style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
+        />
+        <span
+          className="text-sm truncate flex-1 text-left"
+          style={{
+            color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+            fontWeight: channel.unread_count > 0 ? 600 : 400,
+          }}
+        >
+          {channel.name.replace("#", "")}
+        </span>
+      </button>
+
       {channel.unread_count > 0 && (
         <span
-          className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+          className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
           style={{ background: "var(--accent-secondary)", color: "white" }}
         >
           {channel.unread_count}
         </span>
       )}
-    </button>
+
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <Dropdown
+          align="left"
+          trigger={
+            <button className="p-1 rounded hover:bg-white/10 transition-colors" style={{ color: "var(--text-muted)" }}>
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          }
+        >
+          <DropdownItem onClick={() => {}} icon={<Pin className="h-4 w-4" />}>
+            Pin channel
+          </DropdownItem>
+          <DropdownDivider />
+          <DropdownItem onClick={onSettings} icon={<Settings className="h-4 w-4" />}>
+            Channel settings
+          </DropdownItem>
+        </Dropdown>
+      </div>
+    </div>
   )
 }
 
-function UserFooter() {
+interface UserFooterProps {
+  onLogout: () => void
+}
+
+function UserFooter({ onLogout }: UserFooterProps) {
   return (
     <div className="p-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
       <div className="flex items-center gap-2">
@@ -152,16 +203,28 @@ function UserFooter() {
             <span style={{ color: "var(--text-muted)" }}>Online</span>
           </div>
         </div>
-        <button
-          className="p-1.5 rounded hover:bg-white/10 transition-colors"
-          style={{ color: "var(--text-muted)" }}
-          title="Settings"
+        <Dropdown
+          align="right"
+          direction="up"
+          trigger={
+            <button
+              className="p-1.5 rounded hover:bg-white/10 transition-colors"
+              style={{ color: "var(--text-muted)" }}
+              title="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          }
         >
-          <Settings className="h-4 w-4" />
-        </button>
+          <DropdownItem onClick={() => {}} icon={<Settings className="h-4 w-4" />}>
+            Preferences
+          </DropdownItem>
+          <DropdownDivider />
+          <DropdownItem onClick={onLogout} icon={<LogOut className="h-4 w-4" />} variant="danger">
+            Sign out
+          </DropdownItem>
+        </Dropdown>
       </div>
     </div>
   )
 }
-
-

@@ -86,5 +86,3 @@ export function MessageItem({ message, onOpenThread, animationDelay = 0, showThr
     </div>
   )
 }
-
-

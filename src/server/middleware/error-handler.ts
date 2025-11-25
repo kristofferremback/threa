@@ -36,12 +36,11 @@ export const createErrorHandler = () => {
         ? "Internal server error"
         : err.message || "An error occurred"
 
+    // Return simple error string for frontend compatibility
     res.status(statusCode).json({
-      error: {
-        code,
-        message,
-        ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
-      },
+      error: message,
+      code,
+      ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
     })
   }
 }

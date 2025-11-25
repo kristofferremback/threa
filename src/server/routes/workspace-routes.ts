@@ -3,6 +3,7 @@ import { ChatService } from "../services/chat-service"
 import { WorkspaceService } from "../services/workspace-service"
 import { logger } from "../lib/logger"
 import { Pool } from "pg"
+import { createValidSlug } from "../../shared/slug"
 
 // Extend Express Request to include user
 declare global {
@@ -16,7 +17,11 @@ declare global {
   }
 }
 
-export function createWorkspaceRoutes(chatService: ChatService, workspaceService: WorkspaceService, pool: Pool): Router {
+export function createWorkspaceRoutes(
+  chatService: ChatService,
+  workspaceService: WorkspaceService,
+  pool: Pool,
+): Router {
   const router = Router()
 
   // ==========================================================================
@@ -164,12 +169,7 @@ export function createWorkspaceRoutes(chatService: ChatService, workspaceService
           conversationId = existingConversation.id
         } else {
           // No conversation exists yet - create one branching from this message
-          const conversation = await chatService.createConversation(
-            workspaceId,
-            replyToMessageId,
-            targetChannelId,
-            [],
-          )
+          const conversation = await chatService.createConversation(workspaceId, replyToMessageId, targetChannelId, [])
           conversationId = conversation.id
 
           // Auto-follow the conversation for the replier
@@ -208,6 +208,162 @@ export function createWorkspaceRoutes(chatService: ChatService, workspaceService
   // ==========================================================================
   // Channels
   // ==========================================================================
+
+  // Check if a channel slug exists (for UI validation)
+  router.get("/:workspaceId/channels/check-slug", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+      const name = req.query.name as string
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      if (!name || typeof name !== "string") {
+        res.status(400).json({ error: "Name is required" })
+        return
+      }
+
+      // Generate and validate slug from name
+      const { slug, valid, error } = createValidSlug(name)
+
+      // If the slug is invalid, return that info
+      if (!valid) {
+        res.json({
+          exists: false,
+          slug,
+          slugValid: false,
+          slugError: error,
+        })
+        return
+      }
+
+      const result = await chatService.checkChannelSlugExists(workspaceId, slug, userId)
+      res.json({
+        ...result,
+        slug,
+        slugValid: true,
+      })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to check channel slug")
+      next(error)
+    }
+  })
+
+  // Create a channel
+  router.post("/:workspaceId/channels", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { name, description, visibility } = req.body
+
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        res.status(400).json({ error: "Channel name is required" })
+        return
+      }
+
+      const channel = await chatService.createChannel(workspaceId, name.trim(), userId, {
+        description: description?.trim() || undefined,
+        visibility: visibility === "private" ? "private" : "public",
+      })
+
+      res.status(201).json(channel)
+    } catch (error: any) {
+      if (error.message?.includes("already exists")) {
+        res.status(409).json({ error: error.message })
+        return
+      }
+      // Handle PostgreSQL unique constraint violation (code 23505)
+      if (error.code === "23505" && error.constraint === "channels_workspace_id_slug_key") {
+        res.status(409).json({ error: "A channel with this name already exists (it may be archived)" })
+        return
+      }
+      logger.error({ err: error }, "Failed to create channel")
+      next(error)
+    }
+  })
+
+  // Update a channel
+  router.patch("/:workspaceId/channels/:channelId", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { name, topic, description } = req.body
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      const channel = await chatService.updateChannel(targetChannelId, { name, topic, description })
+      res.json(channel)
+    } catch (error: any) {
+      if (error.message?.includes("already exists")) {
+        res.status(409).json({ error: error.message })
+        return
+      }
+      if (error.message?.includes("not found")) {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to update channel")
+      next(error)
+    }
+  })
+
+  // Archive a channel
+  router.delete("/:workspaceId/channels/:channelId", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      await chatService.archiveChannel(targetChannelId)
+      res.json({ success: true })
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to archive channel")
+      next(error)
+    }
+  })
 
   // Get messages for a channel
   router.get("/:workspaceId/channels/:channelId/messages", async (req: Request, res: Response, next: NextFunction) => {

@@ -2,6 +2,7 @@ import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
+import { createValidSlug } from "../../shared/slug"
 import type { Message, Channel, Conversation, User, Workspace, NotificationLevel } from "../lib/types"
 
 // ============================================================================
@@ -586,6 +587,49 @@ export class ChatService {
     return result.rows[0] || null
   }
 
+  /**
+   * Check if a channel slug exists in the workspace (including archived channels).
+   * Returns info about the channel for UI warnings.
+   */
+  async checkChannelSlugExists(
+    workspaceId: string,
+    slug: string,
+    userId: string,
+  ): Promise<{
+    exists: boolean
+    isArchived?: boolean
+    isPrivate?: boolean
+    isMember?: boolean
+    channelName?: string
+  }> {
+    const result = await this.pool.query<{
+      id: string
+      name: string
+      visibility: string
+      archived_at: Date | null
+      is_member: boolean
+    }>(
+      sql`SELECT
+            c.id, c.name, c.visibility, c.archived_at,
+            EXISTS(SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ${userId} AND cm.removed_at IS NULL) as is_member
+          FROM channels c
+          WHERE c.workspace_id = ${workspaceId} AND c.slug = ${slug}`,
+    )
+
+    const channel = result.rows[0]
+    if (!channel) {
+      return { exists: false }
+    }
+
+    return {
+      exists: true,
+      isArchived: channel.archived_at !== null,
+      isPrivate: channel.visibility === "private",
+      isMember: channel.is_member,
+      channelName: channel.name,
+    }
+  }
+
   async getChannelById(channelId: string): Promise<Channel | null> {
     const result = await this.pool.query<Channel>(
       sql`SELECT id, workspace_id, name, slug, description, topic, visibility, created_at, updated_at, archived_at
@@ -593,5 +637,212 @@ export class ChatService {
          WHERE id = ${channelId} AND archived_at IS NULL`,
     )
     return result.rows[0] || null
+  }
+
+  // ==========================================================================
+  // Channel Management
+  // ==========================================================================
+
+  async createChannel(
+    workspaceId: string,
+    name: string,
+    creatorId: string,
+    options?: {
+      description?: string
+      visibility?: "public" | "private"
+    },
+  ): Promise<Channel> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      const channelId = generateId("chan")
+      const { slug, valid, error } = createValidSlug(name)
+      const visibility = options?.visibility || "public"
+      const description = options?.description || null
+
+      // Validate slug
+      if (!valid) {
+        throw new Error(error || "Invalid channel name")
+      }
+
+      // Check if slug already exists in workspace
+      const existingChannel = await client.query(
+        sql`SELECT id FROM channels WHERE workspace_id = ${workspaceId} AND slug = ${slug} AND archived_at IS NULL`,
+      )
+
+      if (existingChannel.rows.length > 0) {
+        throw new Error(`Channel with name "${name}" already exists`)
+      }
+
+      const channelResult = await client.query<Channel>(
+        sql`INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
+            VALUES (${channelId}, ${workspaceId}, ${name}, ${slug}, ${description}, ${visibility})
+            RETURNING id, workspace_id, name, slug, description, topic, visibility, created_at, updated_at, archived_at`,
+      )
+
+      const channel = channelResult.rows[0]
+      if (!channel) {
+        throw new Error("Failed to create channel")
+      }
+
+      // Add creator as member
+      await client.query(
+        sql`INSERT INTO channel_members (channel_id, user_id, added_at, updated_at, notify_level, last_read_at)
+            VALUES (${channelId}, ${creatorId}, NOW(), NOW(), 'all', NOW())`,
+      )
+
+      // Create outbox event
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"channel.created"}, ${JSON.stringify({
+              id: channelId,
+              workspace_id: workspaceId,
+              name,
+              slug,
+              description,
+              visibility,
+              creator_id: creatorId,
+            })})`,
+      )
+
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ channel_id: channelId, workspace_id: workspaceId, name }, "Channel created")
+
+      return channel
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error }, "Failed to create channel")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async updateChannel(
+    channelId: string,
+    updates: {
+      name?: string
+      topic?: string
+      description?: string
+    },
+  ): Promise<Channel> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get current channel
+      const current = await this.getChannelById(channelId)
+      if (!current) {
+        throw new Error("Channel not found")
+      }
+
+      // Build update fields
+      const newName = updates.name?.trim() || current.name
+      let newSlug = current.slug
+
+      // Validate new slug if name is being updated
+      if (updates.name) {
+        const slugResult = createValidSlug(updates.name)
+        if (!slugResult.valid) {
+          throw new Error(slugResult.error || "Invalid channel name")
+        }
+        newSlug = slugResult.slug
+      }
+
+      const newTopic = updates.topic !== undefined ? updates.topic.trim() || null : current.topic
+      const newDescription =
+        updates.description !== undefined ? updates.description.trim() || null : current.description
+
+      // Check for slug conflict if name changed
+      if (updates.name && newSlug !== current.slug) {
+        const existingChannel = await client.query(
+          sql`SELECT id FROM channels WHERE workspace_id = ${current.workspace_id} AND slug = ${newSlug} AND id != ${channelId} AND archived_at IS NULL`,
+        )
+        if (existingChannel.rows.length > 0) {
+          throw new Error(`Channel with name "${updates.name}" already exists`)
+        }
+      }
+
+      const result = await client.query<Channel>(
+        sql`UPDATE channels
+            SET name = ${newName}, slug = ${newSlug}, topic = ${newTopic}, description = ${newDescription}, updated_at = NOW()
+            WHERE id = ${channelId}
+            RETURNING id, workspace_id, name, slug, description, topic, visibility, created_at, updated_at, archived_at`,
+      )
+
+      const channel = result.rows[0]
+      if (!channel) {
+        throw new Error("Failed to update channel")
+      }
+
+      // Create outbox event
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"channel.updated"}, ${JSON.stringify({
+              id: channelId,
+              workspace_id: current.workspace_id,
+              name: newName,
+              slug: newSlug,
+              topic: newTopic,
+              description: newDescription,
+            })})`,
+      )
+
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ channel_id: channelId, updates }, "Channel updated")
+
+      return channel
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error }, "Failed to update channel")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async archiveChannel(channelId: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      const current = await this.getChannelById(channelId)
+      if (!current) {
+        throw new Error("Channel not found")
+      }
+
+      await client.query(sql`UPDATE channels SET archived_at = NOW(), updated_at = NOW() WHERE id = ${channelId}`)
+
+      // Create outbox event
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"channel.archived"}, ${JSON.stringify({
+              id: channelId,
+              workspace_id: current.workspace_id,
+            })})`,
+      )
+
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ channel_id: channelId }, "Channel archived")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      logger.error({ err: error }, "Failed to archive channel")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 }
