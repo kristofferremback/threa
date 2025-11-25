@@ -573,6 +573,86 @@ export class ChatService {
     )
   }
 
+  async getChannelReadCursor(
+    channelId: string,
+    userId: string,
+  ): Promise<{ lastReadMessageId: string | null; lastReadAt: Date | null }> {
+    const result = await this.pool.query<{ last_read_message_id: string | null; last_read_at: Date | null }>(
+      sql`SELECT last_read_message_id, last_read_at
+          FROM channel_members
+          WHERE channel_id = ${channelId} AND user_id = ${userId}`,
+    )
+    const row = result.rows[0]
+    return {
+      lastReadMessageId: row?.last_read_message_id || null,
+      lastReadAt: row?.last_read_at || null,
+    }
+  }
+
+  async getConversationReadCursor(
+    conversationId: string,
+    userId: string,
+  ): Promise<{ lastReadMessageId: string | null; lastReadAt: Date | null }> {
+    const result = await this.pool.query<{ last_read_message_id: string | null; last_read_at: Date | null }>(
+      sql`SELECT last_read_message_id, last_read_at
+          FROM conversation_members
+          WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
+    )
+    const row = result.rows[0]
+    return {
+      lastReadMessageId: row?.last_read_message_id || null,
+      lastReadAt: row?.last_read_at || null,
+    }
+  }
+
+  async markMessageAsUnread(channelId: string, userId: string, messageId: string): Promise<void> {
+    // To mark as unread, we set the last_read_message_id to the message BEFORE this one
+    // If no previous message, we clear the last_read_message_id
+    const previousMessage = await this.pool.query<{ id: string }>(
+      sql`SELECT id FROM messages
+          WHERE channel_id = ${channelId}
+            AND deleted_at IS NULL
+            AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
+          ORDER BY created_at DESC
+          LIMIT 1`,
+    )
+
+    const previousMessageId = previousMessage.rows[0]?.id || null
+
+    await this.pool.query(
+      sql`UPDATE channel_members
+          SET last_read_message_id = ${previousMessageId},
+              last_read_at = ${previousMessageId ? new Date() : null},
+              updated_at = NOW()
+          WHERE channel_id = ${channelId} AND user_id = ${userId}`,
+    )
+  }
+
+  async markConversationMessageAsUnread(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+  ): Promise<void> {
+    const previousMessage = await this.pool.query<{ id: string }>(
+      sql`SELECT id FROM messages
+          WHERE conversation_id = ${conversationId}
+            AND deleted_at IS NULL
+            AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
+          ORDER BY created_at DESC
+          LIMIT 1`,
+    )
+
+    const previousMessageId = previousMessage.rows[0]?.id || null
+
+    await this.pool.query(
+      sql`UPDATE conversation_members
+          SET last_read_message_id = ${previousMessageId},
+              last_read_at = ${previousMessageId ? new Date() : null},
+              updated_at = NOW()
+          WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
+    )
+  }
+
   async editMessage(
     messageId: string,
     userId: string,

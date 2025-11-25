@@ -12,8 +12,11 @@ interface MessageItemProps {
   isOwnMessage?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
+  onMarkAsRead?: (messageId: string) => void
+  onMarkAsUnread?: (messageId: string) => void
   animationDelay?: number
   showThreadActions?: boolean
+  visibilityRef?: React.RefObject<HTMLDivElement>
 }
 
 export function MessageItem({
@@ -22,8 +25,11 @@ export function MessageItem({
   isOwnMessage = false,
   onOpenThread,
   onEdit,
+  onMarkAsRead,
+  onMarkAsUnread,
   animationDelay = 0,
   showThreadActions = true,
+  visibilityRef,
 }: MessageItemProps) {
   const hasReplies = message.replyCount && message.replyCount > 0
   const [isEditing, setIsEditing] = useState(false)
@@ -89,6 +95,7 @@ export function MessageItem({
 
   return (
     <div
+      ref={visibilityRef}
       className="group mb-1 rounded-lg p-3 -mx-2 transition-colors animate-fade-in"
       style={{ animationDelay: `${animationDelay}ms`, background: isEditing ? "var(--hover-overlay)" : undefined }}
       onMouseEnter={(e) => !isEditing && (e.currentTarget.style.background = "var(--hover-overlay)")}
@@ -256,6 +263,8 @@ export function MessageItem({
           onEdit={isOwnMessage && onEdit ? handleStartEdit : undefined}
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}
           onReplyInThread={() => onOpenThread?.(message.id, message.channelId, "replace")}
+          onMarkAsRead={onMarkAsRead ? () => onMarkAsRead(message.id) : undefined}
+          onMarkAsUnread={onMarkAsUnread ? () => onMarkAsUnread(message.id) : undefined}
         />
       )}
 

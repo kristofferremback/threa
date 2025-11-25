@@ -24,7 +24,7 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const { isAuthenticated } = useAuth()
 
-  const { messages, rootMessage, ancestors, isLoading, isConnected, connectionError, currentUserId, sendMessage, editMessage } = useChat({
+  const { messages, rootMessage, ancestors, conversationId, isLoading, isConnected, connectionError, currentUserId, sendMessage, editMessage } = useChat({
     workspaceId,
     channelId,
     threadId,
@@ -64,6 +64,8 @@ export function ChatInterface({
           <MessageList
             messages={messages}
             workspaceId={workspaceId}
+            channelId={channelId}
+            conversationId={conversationId || undefined}
             isLoading={isLoading}
             isThread={isThread}
             hasRootMessage={Boolean(rootMessage)}

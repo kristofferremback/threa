@@ -458,6 +458,80 @@ export function createWorkspaceRoutes(
     }
   })
 
+  // Mark messages as read in a channel
+  router.post("/:workspaceId/channels/:channelId/read", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { messageId } = req.body
+
+      if (!messageId) {
+        res.status(400).json({ error: "Message ID is required" })
+        return
+      }
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      await chatService.updateChannelReadCursor(targetChannelId, userId, messageId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to mark channel messages as read")
+      next(error)
+    }
+  })
+
+  // Mark a message as unread in a channel
+  router.post("/:workspaceId/channels/:channelId/unread", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { messageId } = req.body
+
+      if (!messageId) {
+        res.status(400).json({ error: "Message ID is required" })
+        return
+      }
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      await chatService.markMessageAsUnread(targetChannelId, userId, messageId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to mark message as unread")
+      next(error)
+    }
+  })
+
   // Join a channel
   router.post("/:workspaceId/channels/:channelId/join", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -511,6 +585,64 @@ export function createWorkspaceRoutes(
         res.json({ messages })
       } catch (error) {
         logger.error({ err: error }, "Failed to get conversation messages")
+        next(error)
+      }
+    },
+  )
+
+  // Mark messages as read in a conversation
+  router.post(
+    "/:workspaceId/conversations/:conversationId/read",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { conversationId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const { messageId } = req.body
+
+        if (!messageId) {
+          res.status(400).json({ error: "Message ID is required" })
+          return
+        }
+
+        await chatService.updateConversationReadCursor(conversationId, userId, messageId)
+        res.json({ success: true })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to mark conversation messages as read")
+        next(error)
+      }
+    },
+  )
+
+  // Mark a message as unread in a conversation
+  router.post(
+    "/:workspaceId/conversations/:conversationId/unread",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { conversationId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const { messageId } = req.body
+
+        if (!messageId) {
+          res.status(400).json({ error: "Message ID is required" })
+          return
+        }
+
+        await chatService.markConversationMessageAsUnread(conversationId, userId, messageId)
+        res.json({ success: true })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to mark conversation message as unread")
         next(error)
       }
     },

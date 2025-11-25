@@ -1,4 +1,5 @@
 export { MessageItem } from "./MessageItem"
+export { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 export { MessageList } from "./MessageList"
 export { MessageContextMenu } from "./MessageContextMenu"
 export { MessageRevisionsModal } from "./MessageRevisionsModal"

@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom"
-import { Pencil, Bell, Smile, Pin, Share2, MessageCircle, History } from "lucide-react"
+import { Pencil, Bell, Smile, Pin, Share2, MessageCircle, History, Check, Circle } from "lucide-react"
 
 interface MessageContextMenuProps {
   x: number
@@ -15,6 +15,8 @@ interface MessageContextMenuProps {
   onPinMessage?: () => void
   onShareToConversation?: () => void
   onReplyInThread?: () => void
+  onMarkAsRead?: () => void
+  onMarkAsUnread?: () => void
 }
 
 interface MenuItemProps {
@@ -73,6 +75,8 @@ export function MessageContextMenu({
   onPinMessage,
   onShareToConversation,
   onReplyInThread,
+  onMarkAsRead,
+  onMarkAsUnread,
 }: MessageContextMenuProps) {
   const menuWidth = 220
   const menuHeight = 320
@@ -140,6 +144,20 @@ export function MessageContextMenu({
           icon={<Share2 className="h-4 w-4" />}
           label="Share to channel"
           disabled
+        />
+
+        <MenuDivider />
+
+        <MenuItem
+          icon={<Check className="h-4 w-4" />}
+          label="Mark as read"
+          onClick={() => { onMarkAsRead?.(); onClose(); }}
+        />
+
+        <MenuItem
+          icon={<Circle className="h-4 w-4" />}
+          label="Mark as unread"
+          onClick={() => { onMarkAsUnread?.(); onClose(); }}
         />
       </div>
     </>,

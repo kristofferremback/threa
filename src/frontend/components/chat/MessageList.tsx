@@ -1,12 +1,16 @@
 import { useRef, useEffect } from "react"
 import { Hash, MessageCircle } from "lucide-react"
 import { MessageItem } from "./MessageItem"
+import { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 import { EmptyState, LoadingState } from "../ui"
+import { useReadReceipts } from "../../hooks"
 import type { Message, OpenMode } from "../../types"
 
 interface MessageListProps {
   messages: Message[]
   workspaceId: string
+  channelId?: string
+  conversationId?: string
   isLoading: boolean
   isThread?: boolean
   hasRootMessage?: boolean
@@ -19,6 +23,8 @@ interface MessageListProps {
 export function MessageList({
   messages,
   workspaceId,
+  channelId,
+  conversationId,
   isLoading,
   isThread = false,
   hasRootMessage = false,
@@ -28,6 +34,13 @@ export function MessageList({
   showThreadActions = true,
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const { onMessageVisible, onMessageHidden, markAsRead, markAsUnread } = useReadReceipts({
+    workspaceId,
+    channelId,
+    conversationId,
+    enabled: Boolean(channelId || conversationId),
+  })
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -50,13 +63,17 @@ export function MessageList({
   return (
     <div className="flex-1 overflow-y-auto p-4 min-h-0">
       {messages.map((msg, idx) => (
-        <MessageItem
+        <MessageItemWithVisibility
           key={msg.id || msg.timestamp}
           message={msg}
           workspaceId={workspaceId}
           isOwnMessage={currentUserId ? msg.userId === currentUserId : false}
           onOpenThread={onOpenThread}
           onEdit={onEditMessage}
+          onMarkAsRead={markAsRead}
+          onMarkAsUnread={markAsUnread}
+          onMessageVisible={onMessageVisible}
+          onMessageHidden={onMessageHidden}
           animationDelay={Math.min(idx * 30, 300)}
           showThreadActions={showThreadActions}
         />
