@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "../../auth"
 import { useBootstrap, usePaneManager } from "../../hooks"
 import { ChatInterface } from "../ChatInterface"
@@ -7,15 +7,17 @@ import { PaneSystem } from "./PaneSystem"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 import { CreateChannelModal } from "./CreateChannelModal"
 import { ChannelSettingsModal } from "./ChannelSettingsModal"
+import { CommandPalette } from "./CommandPalette"
 import { InviteModal } from "../InviteModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import type { Tab, Channel } from "../../types"
 
 export function LayoutSystem() {
-  const { isAuthenticated, state, logout } = useAuth()
+  const { isAuthenticated, state, logout, user } = useAuth()
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
 
   // Bootstrap data
@@ -53,6 +55,45 @@ export function LayoutSystem() {
       initializeFromUrl()
     }
   }, [bootstrapData, initializeFromUrl])
+
+  // Global keyboard shortcut for command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setShowCommandPalette((prev) => !prev)
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  // Handle channel selection from command palette
+  const handleCommandPaletteSelect = useCallback(
+    async (channel: Channel) => {
+      // If not a member, join the channel first
+      if (!channel.is_member && bootstrapData) {
+        try {
+          const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/channels/${channel.id}/members`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ userId: user?.id }),
+          })
+
+          if (res.ok) {
+            // Update the channel in bootstrap data to reflect membership
+            updateChannel({ ...channel, is_member: true })
+          }
+        } catch (error) {
+          console.error("Failed to join channel:", error)
+        }
+      }
+      selectChannel(channel)
+    },
+    [selectChannel, bootstrapData, user?.id, updateChannel],
+  )
 
   // Helper to get channel name from slug
   const getChannelName = (channelSlug?: string) => {
@@ -101,6 +142,15 @@ export function LayoutSystem() {
             mode,
             paneId,
           )
+        }}
+        onChannelRemoved={(removedChannelId) => {
+          // Remove the channel from the sidebar
+          removeChannel(removedChannelId)
+          // Navigate away if we're viewing the removed channel
+          if (tab.data?.channelId === removedChannelId) {
+            const firstChannel = bootstrapData.channels.find((c) => c.id !== removedChannelId)
+            if (firstChannel) selectChannel(firstChannel)
+          }
         }}
       />
     )
@@ -154,6 +204,7 @@ export function LayoutSystem() {
         onChannelSettings={(channel) => setChannelToEdit(channel)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
+        onOpenCommandPalette={() => setShowCommandPalette(true)}
       />
 
       <CreateChannelModal
@@ -171,6 +222,8 @@ export function LayoutSystem() {
         open={channelToEdit !== null}
         channel={channelToEdit}
         workspaceId={bootstrapData.workspace.id}
+        currentUserId={user?.id}
+        isWorkspaceOwner={bootstrapData.user_role === "owner"}
         onClose={() => setChannelToEdit(null)}
         onUpdated={(channel) => {
           updateChannel(channel)
@@ -204,6 +257,13 @@ export function LayoutSystem() {
           renderContent={renderTabContent}
         />
       </div>
+
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        channels={bootstrapData.channels}
+        onSelectChannel={handleCommandPaletteSelect}
+      />
     </div>
   )
 }

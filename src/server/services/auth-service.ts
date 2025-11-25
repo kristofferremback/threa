@@ -129,12 +129,14 @@ export class AuthService {
 
   /**
    * Get the authorization URL for login
+   * @param redirectTo - Optional URL to redirect to after successful login
    */
-  getAuthorizationUrl(): string {
+  getAuthorizationUrl(redirectTo?: string): string {
     return this.workos.userManagement.getAuthorizationUrl({
       provider: "authkit",
       redirectUri: this.redirectUri,
       clientId: this.clientId,
+      state: redirectTo ? Buffer.from(redirectTo).toString("base64") : undefined,
     })
   }
 

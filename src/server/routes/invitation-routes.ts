@@ -40,14 +40,20 @@ export function createInvitationRoutes(
   const acceptHandler = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { token } = req.params
-      const userId = req.user?.id
+      const user = req.user
 
-      if (!userId) {
+      if (!user?.id || !user?.email) {
         res.status(401).json({ error: "Please log in to accept this invitation" })
         return
       }
 
-      const result = await workspaceService.acceptInvitation(token, userId)
+      const result = await workspaceService.acceptInvitation(
+        token,
+        user.id,
+        user.email,
+        user.firstName,
+        user.lastName,
+      )
 
       res.json({
         success: true,

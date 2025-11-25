@@ -11,6 +11,7 @@ interface ChatInterfaceProps {
   title?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
+  onChannelRemoved?: (channelId: string, channelName: string) => void
 }
 
 export function ChatInterface({
@@ -21,14 +22,27 @@ export function ChatInterface({
   title,
   onOpenThread,
   onGoToChannel,
+  onChannelRemoved,
 }: ChatInterfaceProps) {
   const { isAuthenticated } = useAuth()
 
-  const { messages, rootMessage, ancestors, conversationId, isLoading, isConnected, connectionError, currentUserId, sendMessage, editMessage } = useChat({
+  const {
+    messages,
+    rootMessage,
+    ancestors,
+    conversationId,
+    isLoading,
+    isConnected,
+    connectionError,
+    currentUserId,
+    sendMessage,
+    editMessage,
+  } = useChat({
     workspaceId,
     channelId,
     threadId,
     enabled: isAuthenticated,
+    onChannelRemoved,
   })
 
   if (!isAuthenticated) {

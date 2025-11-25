@@ -379,7 +379,13 @@ export class WorkspaceService {
   /**
    * Accept an invitation
    */
-  async acceptInvitation(token: string, userId: string): Promise<{ workspaceId: string }> {
+  async acceptInvitation(
+    token: string,
+    userId: string,
+    userEmail: string,
+    userFirstName?: string,
+    userLastName?: string,
+  ): Promise<{ workspaceId: string }> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -402,21 +408,31 @@ export class WorkspaceService {
       }
 
       if (new Date(invitation.expires_at) < new Date()) {
-        await client.query(
-          `UPDATE workspace_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`,
-          [invitation.id],
-        )
+        await client.query(`UPDATE workspace_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`, [
+          invitation.id,
+        ])
         await client.query("COMMIT")
         throw new Error("Invitation has expired")
       }
 
       // Verify user email matches invitation
-      const userRes = await client.query("SELECT email FROM users WHERE id = $1", [userId])
-      const userEmail = userRes.rows[0]?.email
-
       if (userEmail?.toLowerCase() !== invitation.email.toLowerCase()) {
         throw new Error("This invitation was sent to a different email address")
       }
+
+      // Build user's display name from first/last name or use email prefix
+      const userName = [userFirstName, userLastName].filter(Boolean).join(" ") || userEmail.split("@")[0]
+
+      // Ensure user exists in the users table (they may be new)
+      await client.query(
+        `INSERT INTO users (id, email, name, created_at, updated_at)
+         VALUES ($1, $2, $3, NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           email = EXCLUDED.email,
+           name = COALESCE(NULLIF(EXCLUDED.name, ''), users.name),
+           updated_at = NOW()`,
+        [userId, userEmail, userName],
+      )
 
       // Check seat limits again
       await this.checkSeatLimit(client, invitation.workspace_id)

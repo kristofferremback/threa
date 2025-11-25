@@ -7,6 +7,7 @@ interface MessageContextMenuProps {
   isOwnMessage: boolean
   hasConversation: boolean
   isEdited: boolean
+  isRead: boolean
   onClose: () => void
   onEdit?: () => void
   onShowRevisions?: () => void
@@ -67,6 +68,7 @@ export function MessageContextMenu({
   isOwnMessage,
   hasConversation,
   isEdited,
+  isRead,
   onClose,
   onEdit,
   onShowRevisions,
@@ -148,17 +150,19 @@ export function MessageContextMenu({
 
         <MenuDivider />
 
-        <MenuItem
-          icon={<Check className="h-4 w-4" />}
-          label="Mark as read"
-          onClick={() => { onMarkAsRead?.(); onClose(); }}
-        />
-
-        <MenuItem
-          icon={<Circle className="h-4 w-4" />}
-          label="Mark as unread"
-          onClick={() => { onMarkAsUnread?.(); onClose(); }}
-        />
+        {isRead ? (
+          <MenuItem
+            icon={<Circle className="h-4 w-4" />}
+            label="Mark as unread"
+            onClick={() => { onMarkAsUnread?.(); onClose(); }}
+          />
+        ) : (
+          <MenuItem
+            icon={<Check className="h-4 w-4" />}
+            label="Mark as read"
+            onClick={() => { onMarkAsRead?.(); onClose(); }}
+          />
+        )}
       </div>
     </>,
     document.body,

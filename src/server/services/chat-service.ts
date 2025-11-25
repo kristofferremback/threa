@@ -100,26 +100,34 @@ export class ChatService {
             WHERE w.id = ${workspaceId} AND wm.user_id = ${userId}`,
         ),
 
-        // 2. Channels the user is a member of + unread counts
+        // 2. All accessible channels: public channels + private channels user is a member of
+        // Includes is_member flag and unread counts for member channels
         client.query(
           sql`SELECT
               c.id, c.name, c.slug, c.description, c.topic, c.visibility,
+              CASE WHEN cm.user_id IS NOT NULL THEN true ELSE false END as is_member,
               cm.last_read_at,
-              cm.notify_level,
-              COALESCE(
-                (SELECT COUNT(*)::int FROM messages m
-                 WHERE m.channel_id = c.id
-                 AND m.created_at > COALESCE(cm.last_read_at, '1970-01-01'::timestamptz)
-                 AND m.deleted_at IS NULL
-                 AND m.reply_to_message_id IS NULL),
-                0
-              ) as unread_count
+              COALESCE(cm.notify_level, 'default') as notify_level,
+              CASE WHEN cm.user_id IS NOT NULL THEN
+                COALESCE(
+                  (SELECT COUNT(*)::int FROM messages m
+                   WHERE m.channel_id = c.id
+                   AND m.created_at > COALESCE(cm.last_read_at, '1970-01-01'::timestamptz)
+                   AND m.deleted_at IS NULL
+                   AND m.reply_to_message_id IS NULL),
+                  0
+                )
+              ELSE 0 END as unread_count
             FROM channels c
-            INNER JOIN channel_members cm ON c.id = cm.channel_id
-            WHERE c.workspace_id = ${workspaceId}
+            LEFT JOIN channel_members cm ON c.id = cm.channel_id
               AND cm.user_id = ${userId}
               AND cm.removed_at IS NULL
+            WHERE c.workspace_id = ${workspaceId}
               AND c.archived_at IS NULL
+              AND (
+                c.visibility = 'public'
+                OR (c.visibility = 'private' AND cm.user_id IS NOT NULL)
+              )
             ORDER BY c.name ASC`,
         ),
 
@@ -182,6 +190,7 @@ export class ChatService {
           description: row.description,
           topic: row.topic,
           visibility: row.visibility,
+          is_member: row.is_member,
           unread_count: row.unread_count,
           last_read_at: row.last_read_at,
           notify_level: row.notify_level,
@@ -349,6 +358,7 @@ export class ChatService {
       id: string
       author_id: string
       email: string
+      author_name: string
       content: string
       created_at: Date
       updated_at: Date | null
@@ -357,10 +367,14 @@ export class ChatService {
       reply_to_message_id: string | null
       reply_count: string
       revision_count: string
+      message_type: string
+      metadata: any
     }>(
       sql`SELECT
-            m.id, m.author_id, u.email, m.content, m.created_at, m.updated_at,
+            m.id, m.author_id, u.email, u.name as author_name, m.content, m.created_at, m.updated_at,
             m.channel_id, m.conversation_id, m.reply_to_message_id,
+            COALESCE(m.message_type, 'message') as message_type,
+            m.metadata,
             (SELECT COUNT(*) FROM messages r WHERE r.reply_to_message_id = m.id AND r.deleted_at IS NULL) as reply_count,
             (SELECT COUNT(*) FROM message_revisions mr WHERE mr.message_id = m.id AND mr.deleted_at IS NULL) as revision_count
           FROM messages m
@@ -372,19 +386,55 @@ export class ChatService {
           LIMIT ${limit} OFFSET ${offset}`,
     )
 
-    return result.rows.reverse().map((row) => ({
-      id: row.id,
-      userId: row.author_id,
-      email: row.email,
-      message: row.content,
-      timestamp: row.created_at.toISOString(),
-      channelId: row.channel_id,
-      conversationId: row.conversation_id,
-      replyToMessageId: row.reply_to_message_id,
-      replyCount: parseInt(row.reply_count, 10),
-      isEdited: parseInt(row.revision_count, 10) > 0,
-      updatedAt: row.updated_at?.toISOString(),
-    }))
+    // For system messages, we need to fetch additional user info
+    const messagesWithSystemInfo = await Promise.all(
+      result.rows.reverse().map(async (row) => {
+        const base = {
+          id: row.id,
+          userId: row.author_id,
+          email: row.email,
+          message: row.content,
+          timestamp: row.created_at.toISOString(),
+          channelId: row.channel_id,
+          conversationId: row.conversation_id,
+          replyToMessageId: row.reply_to_message_id,
+          replyCount: parseInt(row.reply_count, 10),
+          isEdited: parseInt(row.revision_count, 10) > 0,
+          updatedAt: row.updated_at?.toISOString(),
+          messageType: row.message_type as "message" | "system",
+          metadata: row.metadata,
+        }
+
+        // For system messages, enrich with user names
+        if (row.message_type === "system" && row.metadata) {
+          const metadata = row.metadata
+          if (metadata.addedByUserId && metadata.addedByUserId !== metadata.userId) {
+            const addedByUser = await this.pool.query<{ email: string; name: string }>(
+              sql`SELECT email, name FROM users WHERE id = ${metadata.addedByUserId}`,
+            )
+            if (addedByUser.rows[0]) {
+              base.metadata = {
+                ...metadata,
+                addedByEmail: addedByUser.rows[0].email,
+                addedByName: addedByUser.rows[0].name,
+                userName: row.author_name,
+                userEmail: row.email,
+              }
+            }
+          } else {
+            base.metadata = {
+              ...metadata,
+              userName: row.author_name,
+              userEmail: row.email,
+            }
+          }
+        }
+
+        return base
+      }),
+    )
+
+    return messagesWithSystemInfo
   }
 
   // ==========================================================================
@@ -508,13 +558,8 @@ export class ChatService {
   // ==========================================================================
 
   async joinChannel(channelId: string, userId: string): Promise<void> {
-    await this.pool.query(
-      sql`INSERT INTO channel_members (channel_id, user_id, added_at, updated_at, notify_level, last_read_at)
-         VALUES (${channelId}, ${userId}, NOW(), NOW(), 'default', NOW())
-         ON CONFLICT (channel_id, user_id) DO UPDATE
-         SET removed_at = NULL, updated_at = NOW()`,
-    )
-
+    // Use addChannelMember with the user as both the member and the adder (self-join)
+    await this.addChannelMember(channelId, userId, userId)
     logger.debug({ channel_id: channelId, user_id: userId }, "User joined channel")
   }
 
@@ -526,6 +571,205 @@ export class ChatService {
     )
 
     logger.debug({ channel_id: channelId, user_id: userId }, "User left channel")
+  }
+
+  async getChannelMembers(channelId: string): Promise<
+    Array<{
+      userId: string
+      email: string
+      name: string
+      role: string
+    }>
+  > {
+    const result = await this.pool.query<{
+      user_id: string
+      email: string
+      name: string
+      role: string
+    }>(
+      sql`SELECT cm.user_id, u.email, u.name, COALESCE(cm.role, 'member') as role
+          FROM channel_members cm
+          INNER JOIN users u ON cm.user_id = u.id
+          WHERE cm.channel_id = ${channelId}
+            AND cm.removed_at IS NULL
+          ORDER BY cm.added_at ASC`,
+    )
+
+    return result.rows.map((row) => ({
+      userId: row.user_id,
+      email: row.email,
+      name: row.name,
+      role: row.role || "member",
+    }))
+  }
+
+  async addChannelMember(
+    channelId: string,
+    userId: string,
+    addedByUserId?: string,
+    role: string = "member",
+  ): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Add the member
+      await client.query(
+        sql`INSERT INTO channel_members (channel_id, user_id, role, added_at, updated_at, notify_level, last_read_at)
+           VALUES (${channelId}, ${userId}, ${role}, NOW(), NOW(), 'default', NOW())
+           ON CONFLICT (channel_id, user_id) DO UPDATE
+           SET removed_at = NULL, role = ${role}, updated_at = NOW()`,
+      )
+
+      // Get channel info for the system message
+      const channelResult = await client.query<{ workspace_id: string }>(
+        sql`SELECT workspace_id FROM channels WHERE id = ${channelId}`,
+      )
+      const channel = channelResult.rows[0]
+
+      if (channel) {
+        // Create system message for the event
+        const messageId = generateId("msg")
+        const isJoining = !addedByUserId || addedByUserId === userId
+        const eventType = isJoining ? "member_joined" : "member_added"
+
+        const metadata = {
+          event: eventType,
+          userId,
+          addedByUserId: addedByUserId || userId,
+        }
+
+        await client.query(
+          sql`INSERT INTO messages (id, workspace_id, channel_id, author_id, content, message_type, metadata, created_at)
+             VALUES (${messageId}, ${channel.workspace_id}, ${channelId}, ${userId}, '', 'system', ${JSON.stringify(metadata)}, NOW())`,
+        )
+
+        // Create outbox event for real-time
+        const outboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${outboxId}, ${"channel.member_added"}, ${JSON.stringify({
+                channelId,
+                workspaceId: channel.workspace_id,
+                messageId,
+                userId,
+                addedByUserId: addedByUserId || userId,
+                eventType,
+              })})`,
+        )
+      }
+
+      await client.query("COMMIT")
+      logger.debug({ channel_id: channelId, user_id: userId, role, added_by: addedByUserId }, "Added member to channel")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async removeChannelMember(channelId: string, userId: string, removedByUserId: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Remove the member
+      await client.query(
+        sql`UPDATE channel_members
+           SET removed_at = NOW(), updated_at = NOW()
+           WHERE channel_id = ${channelId} AND user_id = ${userId}`,
+      )
+
+      // Get channel info for the outbox event
+      const channelResult = await client.query<{ workspace_id: string; name: string }>(
+        sql`SELECT workspace_id, name FROM channels WHERE id = ${channelId}`,
+      )
+      const channel = channelResult.rows[0]
+
+      if (channel) {
+        // Create outbox event for real-time notification
+        const outboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${outboxId}, ${"channel.member_removed"}, ${JSON.stringify({
+                channelId,
+                channelName: channel.name,
+                workspaceId: channel.workspace_id,
+                userId,
+                removedByUserId,
+              })})`,
+        )
+      }
+
+      await client.query("COMMIT")
+      logger.debug(
+        { channel_id: channelId, user_id: userId, removed_by: removedByUserId },
+        "Removed member from channel",
+      )
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async findUserByEmailInWorkspace(
+    workspaceId: string,
+    email: string,
+  ): Promise<{ id: string; email: string; name: string } | null> {
+    const result = await this.pool.query<{ id: string; email: string; name: string }>(
+      sql`SELECT u.id, u.email, u.name
+          FROM users u
+          INNER JOIN workspace_members wm ON u.id = wm.user_id
+          WHERE wm.workspace_id = ${workspaceId}
+            AND LOWER(u.email) = LOWER(${email})
+            AND wm.status = 'active'
+          LIMIT 1`,
+    )
+
+    return result.rows[0] || null
+  }
+
+  async searchWorkspaceMembers(
+    workspaceId: string,
+    query: string,
+    excludeChannelId?: string,
+  ): Promise<Array<{ id: string; email: string; name: string }>> {
+    const searchPattern = `%${query.toLowerCase()}%`
+
+    // If excludeChannelId is provided, exclude users who are already members of that channel
+    if (excludeChannelId) {
+      const result = await this.pool.query<{ id: string; email: string; name: string }>(
+        sql`SELECT u.id, u.email, u.name
+            FROM users u
+            INNER JOIN workspace_members wm ON u.id = wm.user_id
+            WHERE wm.workspace_id = ${workspaceId}
+              AND wm.status = 'active'
+              AND (LOWER(u.email) LIKE ${searchPattern} OR LOWER(u.name) LIKE ${searchPattern})
+              AND u.id NOT IN (
+                SELECT cm.user_id FROM channel_members cm
+                WHERE cm.channel_id = ${excludeChannelId}
+                  AND cm.removed_at IS NULL
+              )
+            ORDER BY u.name ASC, u.email ASC
+            LIMIT 10`,
+      )
+      return result.rows
+    }
+
+    const result = await this.pool.query<{ id: string; email: string; name: string }>(
+      sql`SELECT u.id, u.email, u.name
+          FROM users u
+          INNER JOIN workspace_members wm ON u.id = wm.user_id
+          WHERE wm.workspace_id = ${workspaceId}
+            AND wm.status = 'active'
+            AND (LOWER(u.email) LIKE ${searchPattern} OR LOWER(u.name) LIKE ${searchPattern})
+          ORDER BY u.name ASC, u.email ASC
+          LIMIT 10`,
+    )
+    return result.rows
   }
 
   // ==========================================================================
@@ -628,11 +872,7 @@ export class ChatService {
     )
   }
 
-  async markConversationMessageAsUnread(
-    conversationId: string,
-    userId: string,
-    messageId: string,
-  ): Promise<void> {
+  async markConversationMessageAsUnread(conversationId: string, userId: string, messageId: string): Promise<void> {
     const previousMessage = await this.pool.query<{ id: string }>(
       sql`SELECT id FROM messages
           WHERE conversation_id = ${conversationId}
@@ -865,10 +1105,10 @@ export class ChatService {
         throw new Error("Failed to create channel")
       }
 
-      // Add creator as member
+      // Add creator as admin member
       await client.query(
-        sql`INSERT INTO channel_members (channel_id, user_id, added_at, updated_at, notify_level, last_read_at)
-            VALUES (${channelId}, ${creatorId}, NOW(), NOW(), 'all', NOW())`,
+        sql`INSERT INTO channel_members (channel_id, user_id, role, added_at, updated_at, notify_level, last_read_at)
+            VALUES (${channelId}, ${creatorId}, 'admin', NOW(), NOW(), 'all', NOW())`,
       )
 
       // Create outbox event

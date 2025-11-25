@@ -194,6 +194,34 @@ export const createSocketIOServer = async ({
     })()
   })
 
+  // Subscribe to channel member removed events
+  await messageSubscriber.subscribe("event:channel.member_removed", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { channelId, channelName, workspaceId, userId, removedByUserId } = event
+
+        // Notify the removed user directly
+        io.to(`user:${userId}`).emit("channelMemberRemoved", {
+          channelId,
+          channelName,
+          removedByUserId,
+        })
+
+        // Also emit to the channel room so other members can update their UI
+        io.to(`chan:${channelId}`).emit("channelMemberRemoved", {
+          channelId,
+          userId,
+          removedByUserId,
+        })
+
+        logger.debug({ channel_id: channelId, user_id: userId }, "Channel member removed broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis channel.member_removed event")
+      }
+    })()
+  })
+
   logger.info("Subscribed to Redis message events")
 
   // Authentication middleware

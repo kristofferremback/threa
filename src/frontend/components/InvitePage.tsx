@@ -77,9 +77,9 @@ export function InvitePage({ token }: InvitePageProps) {
   }
 
   const handleLogin = () => {
-    // Store the invite URL to redirect back after login
-    sessionStorage.setItem("postLoginRedirect", window.location.href)
-    window.location.href = "/api/auth/login"
+    // Pass the invite URL as a redirect parameter
+    const redirectUrl = encodeURIComponent(window.location.pathname)
+    window.location.href = `/api/auth/login?redirect=${redirectUrl}`
   }
 
   // Loading state

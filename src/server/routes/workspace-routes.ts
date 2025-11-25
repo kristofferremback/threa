@@ -46,8 +46,8 @@ export function createWorkspaceRoutes(
       // Create workspace (this also creates the default #general channel)
       const workspace = await workspaceService.createWorkspace(name.trim(), userId)
 
-      // Add creator as admin
-      await workspaceService.ensureWorkspaceMember(workspace.id, userId, "admin")
+      // Add creator as owner
+      await workspaceService.ensureWorkspaceMember(workspace.id, userId, "owner")
 
       // Add user to the default channel
       const defaultChannelId = await workspaceService.getOrCreateDefaultChannel(workspace.id)
@@ -108,6 +108,31 @@ export function createWorkspaceRoutes(
       res.json(result)
     } catch (error) {
       logger.error({ err: error }, "Bootstrap failed")
+      next(error)
+    }
+  })
+
+  // ==========================================================================
+  // Members
+  // ==========================================================================
+
+  // Search workspace members (for typeahead)
+  router.get("/:workspaceId/members/search", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+      const query = (req.query.q as string) || ""
+      const excludeChannelId = req.query.excludeChannelId as string | undefined
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const members = await chatService.searchWorkspaceMembers(workspaceId, query, excludeChannelId)
+      res.json({ members })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to search workspace members")
       next(error)
     }
   })
@@ -436,6 +461,7 @@ export function createWorkspaceRoutes(
   router.get("/:workspaceId/channels/:channelId/messages", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
       const limit = parseInt(req.query.limit as string) || 50
       const offset = parseInt(req.query.offset as string) || 0
 
@@ -451,7 +477,15 @@ export function createWorkspaceRoutes(
       }
 
       const messages = await chatService.getMessagesWithAuthors(targetChannelId, limit, offset)
-      res.json({ messages })
+
+      // Get the user's read cursor for this channel
+      let lastReadMessageId: string | null = null
+      if (userId) {
+        const readCursor = await chatService.getChannelReadCursor(targetChannelId, userId)
+        lastReadMessageId = readCursor.lastReadMessageId
+      }
+
+      res.json({ messages, lastReadMessageId })
     } catch (error) {
       logger.error({ err: error }, "Failed to get channel messages")
       next(error)
@@ -569,6 +603,105 @@ export function createWorkspaceRoutes(
       next(error)
     }
   })
+
+  // Get channel members (for private channels)
+  router.get("/:workspaceId/channels/:channelId/members", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      const members = await chatService.getChannelMembers(targetChannelId)
+      res.json({ members })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get channel members")
+      next(error)
+    }
+  })
+
+  // Add member to channel (for private channels)
+  router.post("/:workspaceId/channels/:channelId/members", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, channelId } = req.params
+      const userId = req.user?.id
+      const { userId: targetUserId } = req.body
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      if (!targetUserId) {
+        res.status(400).json({ error: "User ID is required" })
+        return
+      }
+
+      // Resolve slug to channel ID if needed
+      let targetChannelId = channelId
+      if (!channelId.startsWith("chan_")) {
+        const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+        if (!channel) {
+          res.status(404).json({ error: `Channel "${channelId}" not found` })
+          return
+        }
+        targetChannelId = channel.id
+      }
+
+      await chatService.addChannelMember(targetChannelId, targetUserId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to add channel member")
+      next(error)
+    }
+  })
+
+  // Remove member from channel
+  router.delete(
+    "/:workspaceId/channels/:channelId/members/:memberId",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { workspaceId, channelId, memberId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        // Resolve slug to channel ID if needed
+        let targetChannelId = channelId
+        if (!channelId.startsWith("chan_")) {
+          const channel = await chatService.getChannelBySlug(workspaceId, channelId)
+          if (!channel) {
+            res.status(404).json({ error: `Channel "${channelId}" not found` })
+            return
+          }
+          targetChannelId = channel.id
+        }
+
+        await chatService.removeChannelMember(targetChannelId, memberId, userId)
+        res.json({ success: true })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to remove channel member")
+        next(error)
+      }
+    },
+  )
 
   // ==========================================================================
   // Conversations (Threads)
@@ -696,6 +829,7 @@ export function createWorkspaceRoutes(
   router.get("/:workspaceId/threads/:messageId", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { messageId } = req.params
+      const userId = req.user?.id
 
       const [message, ancestors, conversation, rootIsEdited] = await Promise.all([
         chatService.getMessageById(messageId),
@@ -712,6 +846,8 @@ export function createWorkspaceRoutes(
       const rootEmail = await chatService.getUserEmail(message.author_id)
 
       let replies: any[] = []
+      let lastReadMessageId: string | null = null
+
       if (conversation) {
         const conversationMessages = await chatService.getMessagesByConversation(conversation.id)
         replies = await Promise.all(
@@ -729,6 +865,12 @@ export function createWorkspaceRoutes(
               }
             }),
         )
+
+        // Get read cursor for this conversation
+        if (userId) {
+          const readCursor = await chatService.getConversationReadCursor(conversation.id, userId)
+          lastReadMessageId = readCursor.lastReadMessageId
+        }
       }
 
       const ancestorsWithEmail = await Promise.all(
@@ -754,6 +896,7 @@ export function createWorkspaceRoutes(
         ancestors: ancestorsWithEmail,
         replies,
         conversationId: conversation?.id || null,
+        lastReadMessageId,
       })
     } catch (error) {
       logger.error({ err: error }, "Failed to get thread")

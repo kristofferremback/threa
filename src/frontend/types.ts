@@ -5,6 +5,18 @@
 export type OpenMode = "replace" | "side" | "newTab"
 
 // Message types
+export type MessageType = "message" | "system"
+
+export interface SystemMessageMetadata {
+  event: "member_joined" | "member_added" | "member_removed"
+  userId: string
+  userName?: string
+  userEmail?: string
+  addedByUserId?: string
+  addedByName?: string
+  addedByEmail?: string
+}
+
 export interface Message {
   id: string
   userId?: string
@@ -17,6 +29,8 @@ export interface Message {
   replyToMessageId?: string | null
   isEdited?: boolean
   updatedAt?: string
+  messageType?: MessageType
+  metadata?: SystemMessageMetadata
 }
 
 export interface ThreadData {
@@ -34,6 +48,7 @@ export interface Channel {
   description: string | null
   topic: string | null
   visibility: "public" | "private" | "direct"
+  is_member: boolean
   unread_count: number
   last_read_at: string | null
   notify_level: string

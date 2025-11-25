@@ -6,6 +6,7 @@ interface MessageItemWithVisibilityProps {
   message: Message
   workspaceId: string
   isOwnMessage?: boolean
+  isRead?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
@@ -20,6 +21,7 @@ export function MessageItemWithVisibility({
   message,
   workspaceId,
   isOwnMessage,
+  isRead,
   onOpenThread,
   onEdit,
   onMarkAsRead,
@@ -36,6 +38,7 @@ export function MessageItemWithVisibility({
       message={message}
       workspaceId={workspaceId}
       isOwnMessage={isOwnMessage}
+      isRead={isRead}
       onOpenThread={onOpenThread}
       onEdit={onEdit}
       onMarkAsRead={onMarkAsRead}

@@ -1,6 +1,7 @@
-import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin, UserPlus } from "lucide-react"
+import { useState } from "react"
+import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin, UserPlus, Search, Command } from "lucide-react"
 import { clsx } from "clsx"
-import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
+import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector, Input } from "../ui"
 import type { Channel, Workspace } from "../../types"
 
 interface SidebarProps {
@@ -12,6 +13,7 @@ interface SidebarProps {
   onChannelSettings: (channel: Channel) => void
   onInvitePeople: () => void
   onLogout: () => void
+  onOpenCommandPalette: () => void
 }
 
 export function Sidebar({
@@ -23,6 +25,7 @@ export function Sidebar({
   onChannelSettings,
   onInvitePeople,
   onLogout,
+  onOpenCommandPalette,
 }: SidebarProps) {
   return (
     <div
@@ -30,6 +33,7 @@ export function Sidebar({
       style={{ background: "var(--bg-secondary)", borderRight: "1px solid var(--border-subtle)" }}
     >
       <WorkspaceHeader workspace={workspace} onInvitePeople={onInvitePeople} />
+      <ChannelSearch onOpenCommandPalette={onOpenCommandPalette} />
       <ChannelList
         channels={channels}
         activeChannelSlug={activeChannelSlug}
@@ -38,6 +42,37 @@ export function Sidebar({
         onChannelSettings={onChannelSettings}
       />
       <UserFooter onLogout={onLogout} />
+    </div>
+  )
+}
+
+interface ChannelSearchProps {
+  onOpenCommandPalette: () => void
+}
+
+function ChannelSearch({ onOpenCommandPalette }: ChannelSearchProps) {
+  return (
+    <div className="px-3 py-2">
+      <button
+        onClick={onOpenCommandPalette}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+        style={{
+          background: "var(--bg-tertiary)",
+          color: "var(--text-muted)",
+          border: "1px solid var(--border-subtle)",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-strong)")}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-subtle)")}
+      >
+        <Search className="h-4 w-4" />
+        <span className="flex-1 text-left">Find channels...</span>
+        <kbd
+          className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded"
+          style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}
+        >
+          <Command className="h-3 w-3" />K
+        </kbd>
+      </button>
     </div>
   )
 }
@@ -118,7 +153,7 @@ function ChannelList({
       </div>
 
       <div className="space-y-0.5">
-        {channels.map((channel) => (
+        {channels.filter((c) => c.is_member).map((channel) => (
           <ChannelItem
             key={channel.id}
             channel={channel}

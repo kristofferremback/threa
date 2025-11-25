@@ -51,6 +51,9 @@
   --hover-overlay-strong: rgba(255, 255, 255, 0.1);
   --scrollbar-thumb: var(--border-default);
   --scrollbar-thumb-hover: var(--border-emphasis);
+
+  --unread-bg: rgba(88, 166, 255, 0.08);
+  --unread-bg-hover: rgba(88, 166, 255, 0.12);
 }
 
 /* Light theme */
@@ -88,6 +91,9 @@
   --hover-overlay-strong: rgba(0, 0, 0, 0.08);
   --scrollbar-thumb: #d0d7de;
   --scrollbar-thumb-hover: #8c959f;
+
+  --unread-bg: rgba(9, 105, 218, 0.06);
+  --unread-bg-hover: rgba(9, 105, 218, 0.1);
 }
 
 body {
@@ -97,7 +103,9 @@ body {
   height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 #root {

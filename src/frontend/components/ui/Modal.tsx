@@ -43,7 +43,7 @@ export function Modal({ open, isOpen, onClose, children, size = "md" }: ModalPro
       }}
     >
       <div
-        className={`w-full ${sizeClasses[size]} rounded-2xl animate-fade-in overflow-hidden`}
+        className={`w-full ${sizeClasses[size]} rounded-2xl animate-fade-in overflow-hidden p-6`}
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
       >
         {children}

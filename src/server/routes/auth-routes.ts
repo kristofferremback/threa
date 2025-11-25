@@ -42,12 +42,15 @@ export function createAuthRoutes(
       res.clearCookie("wos_session")
     }
 
-    const authorizationUrl = authService.getAuthorizationUrl()
+    // Support redirect URL via query param (e.g., /api/auth/login?redirect=/invite/abc123)
+    const redirectTo = req.query.redirect as string | undefined
+    const authorizationUrl = authService.getAuthorizationUrl(redirectTo)
     res.redirect(authorizationUrl)
   })
 
   routes.all("/callback", async (req: Request, res: Response) => {
     const code = req.query.code as string
+    const state = req.query.state as string | undefined
 
     if (!code) {
       return res.status(400).json({ error: "No code provided" })
@@ -57,7 +60,22 @@ export function createAuthRoutes(
 
     if (result.success && result.sealedSession) {
       res.cookie("wos_session", result.sealedSession, SESSION_COOKIE_CONFIG)
-      res.redirect("/")
+
+      // Decode redirect URL from state if present
+      let redirectUrl = "/"
+      if (state) {
+        try {
+          const decoded = Buffer.from(state, "base64").toString("utf-8")
+          // Only allow relative paths or same-origin URLs for security
+          if (decoded.startsWith("/")) {
+            redirectUrl = decoded
+          }
+        } catch {
+          // Invalid state, ignore
+        }
+      }
+
+      res.redirect(redirectUrl)
     } else {
       logger.error({ reason: result.reason }, "Authentication failed")
       res.status(401).json({ error: "Authentication failed" })

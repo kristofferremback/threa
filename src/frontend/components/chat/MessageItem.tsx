@@ -10,6 +10,7 @@ interface MessageItemProps {
   message: Message
   workspaceId: string
   isOwnMessage?: boolean
+  isRead?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
@@ -23,6 +24,7 @@ export function MessageItem({
   message,
   workspaceId,
   isOwnMessage = false,
+  isRead = true,
   onOpenThread,
   onEdit,
   onMarkAsRead,
@@ -97,9 +99,13 @@ export function MessageItem({
     <div
       ref={visibilityRef}
       className="group mb-1 rounded-lg p-3 -mx-2 transition-colors animate-fade-in"
-      style={{ animationDelay: `${animationDelay}ms`, background: isEditing ? "var(--hover-overlay)" : undefined }}
-      onMouseEnter={(e) => !isEditing && (e.currentTarget.style.background = "var(--hover-overlay)")}
-      onMouseLeave={(e) => !isEditing && (e.currentTarget.style.background = "transparent")}
+      style={{
+        animationDelay: `${animationDelay}ms`,
+        background: isEditing ? "var(--hover-overlay)" : !isRead ? "var(--unread-bg)" : undefined,
+        borderLeft: !isRead ? "3px solid var(--accent-primary)" : "3px solid transparent",
+      }}
+      onMouseEnter={(e) => !isEditing && (e.currentTarget.style.background = isRead ? "var(--hover-overlay)" : "var(--unread-bg-hover)")}
+      onMouseLeave={(e) => !isEditing && (e.currentTarget.style.background = !isRead ? "var(--unread-bg)" : "transparent")}
       onContextMenu={handleContextMenu}
     >
       <div className="mb-1 flex items-center gap-2">
@@ -259,6 +265,7 @@ export function MessageItem({
           isOwnMessage={isOwnMessage}
           hasConversation={Boolean(message.conversationId)}
           isEdited={Boolean(message.isEdited)}
+          isRead={isRead}
           onClose={() => setContextMenu(null)}
           onEdit={isOwnMessage && onEdit ? handleStartEdit : undefined}
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}

@@ -8,6 +8,7 @@ interface UseChatOptions {
   channelId?: string
   threadId?: string
   enabled?: boolean
+  onChannelRemoved?: (channelId: string, channelName: string) => void
 }
 
 interface UseChatReturn {
@@ -15,6 +16,7 @@ interface UseChatReturn {
   rootMessage: Message | null
   ancestors: Message[]
   conversationId: string | null
+  lastReadMessageId: string | null
   isLoading: boolean
   isConnected: boolean
   connectionError: string | null
@@ -22,13 +24,22 @@ interface UseChatReturn {
   currentUserId: string | null
   sendMessage: (content: string) => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
+  setLastReadMessageId: (messageId: string | null) => void
+  markAllAsRead: () => Promise<void>
 }
 
-export function useChat({ workspaceId, channelId, threadId, enabled = true }: UseChatOptions): UseChatReturn {
+export function useChat({
+  workspaceId,
+  channelId,
+  threadId,
+  enabled = true,
+  onChannelRemoved,
+}: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [rootMessage, setRootMessage] = useState<Message | null>(null)
   const [ancestors, setAncestors] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [lastReadMessageId, setLastReadMessageId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
@@ -60,6 +71,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     setRootMessage(null)
     setAncestors([])
     setConversationId(null)
+    setLastReadMessageId(null)
     setIsLoading(true)
 
     socket.on("connect", () => {
@@ -146,6 +158,12 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
       toast.error("Failed to connect to server")
     })
 
+    // Handle being removed from a channel
+    socket.on("channelMemberRemoved", (data: { channelId: string; channelName: string; removedByUserId?: string }) => {
+      toast.error(`You were removed from #${data.channelName.replace("#", "")}`)
+      onChannelRemoved?.(data.channelId, data.channelName)
+    })
+
     // Function to subscribe and fetch data
     const subscribeAndFetch = async () => {
       if (threadId) {
@@ -168,6 +186,11 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         })
         if (!res.ok) throw new Error("Failed to fetch messages")
         const data = await res.json()
+
+        // Set the last read message ID from server
+        if (data.lastReadMessageId) {
+          setLastReadMessageId(data.lastReadMessageId)
+        }
 
         // Merge with any messages that arrived via socket during fetch
         setMessages((prev) => {
@@ -225,6 +248,11 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         if (data.conversationId) {
           setConversationId(data.conversationId)
           socket.emit("join", `conv:${data.conversationId}`)
+        }
+
+        // Set the last read message ID from server
+        if (data.lastReadMessageId) {
+          setLastReadMessageId(data.lastReadMessageId)
         }
 
         if (data.replies) {
@@ -360,11 +388,39 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     [workspaceId],
   )
 
+  const markAllAsRead = useCallback(async () => {
+    if (messages.length === 0) return
+
+    // Get the last message in the list
+    const lastMessage = messages[messages.length - 1]
+    if (!lastMessage) return
+
+    try {
+      const endpoint = conversationIdRef.current
+        ? `/api/workspace/${workspaceId}/conversations/${conversationIdRef.current}/read`
+        : `/api/workspace/${workspaceId}/channels/${channelId}/read`
+
+      await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ messageId: lastMessage.id }),
+      })
+
+      // Update local state
+      setLastReadMessageId(lastMessage.id)
+    } catch (error) {
+      console.error("Failed to mark all as read:", error)
+      toast.error("Failed to mark all as read")
+    }
+  }, [workspaceId, channelId, messages])
+
   return {
     messages,
     rootMessage,
     ancestors,
     conversationId,
+    lastReadMessageId,
     isLoading,
     isConnected,
     connectionError,
@@ -372,5 +428,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     currentUserId,
     sendMessage,
     editMessage,
+    setLastReadMessageId,
+    markAllAsRead,
   }
 }
