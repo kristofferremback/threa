@@ -1,9 +1,9 @@
-import { useRef, useEffect, useMemo, useCallback, useState } from "react"
+import { useRef, useEffect, useLayoutEffect, useMemo, useCallback, useState } from "react"
 import { Hash, MessageCircle, ChevronUp, CheckCheck } from "lucide-react"
 import { MessageItem } from "./MessageItem"
 import { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 import { SystemMessage } from "./SystemMessage"
-import { EmptyState, LoadingState } from "../ui"
+import { EmptyState } from "../ui"
 import { useReadReceipts } from "../../hooks"
 import type { Message, OpenMode } from "../../types"
 
@@ -67,7 +67,12 @@ export function MessageList({
   // Track locally seen messages for immediate UI update
   const [locallySeenIds, setLocallySeenIds] = useState<Set<string>>(new Set())
 
-  const { onMessageVisible: baseOnMessageVisible, onMessageHidden, markAsRead, markAsUnread } = useReadReceipts({
+  const {
+    onMessageVisible: baseOnMessageVisible,
+    onMessageHidden,
+    markAsRead,
+    markAsUnread,
+  } = useReadReceipts({
     workspaceId,
     channelId,
     conversationId,
@@ -228,8 +233,9 @@ export function MessageList({
     }
   }, [isLoadingMore, messages])
 
-  // Scroll handling - runs once after render
-  useEffect(() => {
+  // Scroll handling - use useLayoutEffect to scroll BEFORE browser paints
+  // This prevents the visual "flash" where content appears at wrong scroll position
+  useLayoutEffect(() => {
     if (messages.length === 0) return
 
     // Create a key based on channel/conversation to detect switches
@@ -244,23 +250,21 @@ export function MessageList({
     if (isChannelSwitch) {
       hasScrolledToUnreadRef.current = false
       // Channel switch: check if there are unread messages to scroll to
-      requestAnimationFrame(() => {
-        if (firstUnreadIndex > 0 && !hasScrolledToUnreadRef.current) {
-          // Scroll to the first unread message
-          const firstUnreadMsg = messages[firstUnreadIndex]
-          if (firstUnreadMsg) {
-            const element = messageRefsMap.current.get(firstUnreadMsg.id)
-            if (element) {
-              element.scrollIntoView({ behavior: "instant", block: "center" })
-              hasScrolledToUnreadRef.current = true
-              return
-            }
+      if (firstUnreadIndex > 0 && !hasScrolledToUnreadRef.current) {
+        // Scroll to the first unread message
+        const firstUnreadMsg = messages[firstUnreadIndex]
+        if (firstUnreadMsg) {
+          const element = messageRefsMap.current.get(firstUnreadMsg.id)
+          if (element) {
+            element.scrollIntoView({ behavior: "instant", block: "center" })
+            hasScrolledToUnreadRef.current = true
+            return
           }
         }
-        // No unread messages or new channel - scroll to bottom
-        messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
-        hasScrolledToUnreadRef.current = true
-      })
+      }
+      // No unread messages or new channel - scroll to bottom
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
+      hasScrolledToUnreadRef.current = true
     } else if (isNewMessages && isNearBottom()) {
       // New messages while near bottom: smooth scroll
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -311,7 +315,20 @@ export function MessageList({
   }, [])
 
   if (isLoading) {
-    return <LoadingState message="Loading messages..." />
+    // Use same container structure as message list to prevent layout shift
+    return (
+      <div className="flex-1 overflow-y-auto p-4 min-h-0 flex items-center justify-center">
+        <div className="text-center">
+          <div
+            className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent mx-auto mb-2"
+            style={{ borderColor: "var(--text-muted)", borderTopColor: "transparent" }}
+          />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Loading messages...
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (messages.length === 0) {
@@ -325,7 +342,12 @@ export function MessageList({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 min-h-0" onScroll={handleScroll}>
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto p-4 min-h-0"
+      style={{ overflowAnchor: "none" }} // Disable scroll anchoring to prevent browser interference
+      onScroll={handleScroll}
+    >
       {/* Loading indicator at top */}
       {isLoadingMore && (
         <div className="flex justify-center py-3">
@@ -360,11 +382,7 @@ export function MessageList({
           <div key={msg.id || msg.timestamp}>
             {/* Unread divider */}
             {showUnreadDivider && (
-              <div
-                ref={unreadDividerRef}
-                className="flex items-center gap-3 my-3"
-                style={{ color: "var(--error)" }}
-              >
+              <div ref={unreadDividerRef} className="flex items-center gap-3 my-3" style={{ color: "var(--error)" }}>
                 <div className="flex-1 h-px" style={{ background: "var(--error)" }} />
                 <span className="text-xs font-medium uppercase">New messages</span>
                 <div className="flex-1 h-px" style={{ background: "var(--error)" }} />

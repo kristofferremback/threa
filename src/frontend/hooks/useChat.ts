@@ -74,6 +74,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     socketRef.current = socket
 
     // Reset state when view changes
+    // Clear messages first to avoid showing stale content from previous channel
     setMessages([])
     setRootMessage(null)
     setAncestors([])
@@ -210,24 +211,24 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         if (!res.ok) throw new Error("Failed to fetch messages")
         const data = await res.json()
 
-        // Set the last read message ID from server
-        if (data.lastReadMessageId) {
-          setLastReadMessageId(data.lastReadMessageId)
-        }
+        // Batch all state updates together using React.startTransition or flushSync alternative
+        // By using functional updates and setting loading last, we minimize visual flash
+        const hasMore = data.messages.length >= MESSAGE_PAGE_SIZE
 
-        // Check if there are more messages to load
-        setHasMoreMessages(data.messages.length >= MESSAGE_PAGE_SIZE)
-
-        // Merge with any messages that arrived via socket during fetch
+        // Batch state updates - React 18+ batches these automatically
         setMessages((prev) => {
           const allMessages = [...data.messages, ...prev]
           const unique = allMessages.filter((msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx)
           return unique.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
         })
+        setHasMoreMessages(hasMore)
+        if (data.lastReadMessageId) {
+          setLastReadMessageId(data.lastReadMessageId)
+        }
+        setIsLoading(false)
       } catch (error) {
         console.error("Failed to fetch channel messages:", error)
         toast.error("Failed to load messages")
-      } finally {
         setIsLoading(false)
       }
     }
@@ -311,14 +312,9 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
     // Subscribe when socket is connected
     if (socket.connected) {
-      console.log("[useChat] Socket already connected, subscribing now")
       subscribeAndFetch()
     } else {
-      console.log("[useChat] Socket not yet connected, waiting for connect event")
-      socket.once("connect", () => {
-        console.log("[useChat] Socket connected, subscribing now")
-        subscribeAndFetch()
-      })
+      socket.once("connect", subscribeAndFetch)
     }
 
     // Cleanup

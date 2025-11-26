@@ -82,7 +82,7 @@ function PaneItem({
       <Panel
         minSize={20}
         defaultSize={100}
-        className={clsx("flex flex-col transition-all duration-200 outline-none")}
+        className={clsx("flex flex-col outline-none")}
         style={{
           borderRight: !isLast ? "1px solid var(--border-subtle)" : undefined,
         }}

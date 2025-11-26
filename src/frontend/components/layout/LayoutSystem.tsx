@@ -232,16 +232,6 @@ export function LayoutSystem() {
     const actualChannelId = channel?.id || tab.data?.channelSlug
     const channelName = channel?.name.replace("#", "")
 
-    // Debug: log channel lookup
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[LayoutSystem] Channel lookup:", {
-        tabChannelSlug: tab.data?.channelSlug,
-        foundChannel: channel ? { id: channel.id, slug: channel.slug } : null,
-        actualChannelId,
-        allChannelSlugs: bootstrapData.channels.map((c) => c.slug),
-      })
-    }
-
     return (
       <ChatInterface
         workspaceId={bootstrapData.workspace.id}

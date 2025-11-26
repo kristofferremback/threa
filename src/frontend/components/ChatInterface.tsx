@@ -1,4 +1,3 @@
-import { useAuth } from "../auth"
 import { useChat } from "../hooks"
 import { ChatHeader, ChatInput, MessageList, ThreadContext, ConnectionError } from "./chat"
 import type { OpenMode } from "../types"
@@ -28,8 +27,8 @@ export function ChatInterface({
   users = [],
   channels = [],
 }: ChatInterfaceProps) {
-  const { isAuthenticated } = useAuth()
-
+  // Note: Authentication is already handled by LayoutSystem - this component
+  // is only rendered when the user is authenticated
   const {
     messages,
     rootMessage,
@@ -49,16 +48,8 @@ export function ChatInterface({
     workspaceId,
     channelId,
     threadId,
-    enabled: isAuthenticated,
+    enabled: true, // Always enabled - LayoutSystem guards authentication
   })
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex h-full w-full items-center justify-center" style={{ background: "var(--bg-primary)" }}>
-        <p style={{ color: "var(--text-muted)" }}>Please log in to continue</p>
-      </div>
-    )
-  }
 
   const isThread = Boolean(threadId)
   const displayTitle = title || "General"
@@ -79,7 +70,7 @@ export function ChatInterface({
         />
       )}
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col">
         {connectionError ? (
           <ConnectionError message={connectionError} />
         ) : (

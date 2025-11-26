@@ -34,14 +34,15 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
       blocks.push(
         <pre
           key={key++}
-          className="p-3 rounded-lg text-sm font-mono my-2 overflow-x-auto bg-zinc-800/70 border border-zinc-700/50"
+          className="p-3 rounded-lg text-sm font-mono my-2 overflow-x-auto"
+          style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)" }}
         >
           {language && (
-            <div className="text-xs text-zinc-500 mb-2 pb-2 border-b border-zinc-700/50">
+            <div className="text-xs mb-2 pb-2" style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}>
               {language}
             </div>
           )}
-          <code className="text-zinc-300">{codeLines.join("\n")}</code>
+          <code style={{ color: "var(--text-primary)" }}>{codeLines.join("\n")}</code>
         </pre>
       )
       continue
@@ -57,7 +58,8 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
       blocks.push(
         <blockquote
           key={key++}
-          className="border-l-2 border-zinc-600 pl-3 my-2 text-zinc-400 italic"
+          className="pl-3 my-2 italic"
+          style={{ borderLeft: "2px solid var(--border-emphasis)", color: "var(--text-secondary)" }}
         >
           {quoteLines.map((ql, idx) => (
             <div key={idx}>{parseInlineWithMentions(ql, mentions, onUserMentionClick, onChannelClick)}</div>
@@ -75,9 +77,9 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
         i++
       }
       blocks.push(
-        <ul key={key++} className="list-disc list-inside my-2 space-y-1">
+        <ul key={key++} className="list-disc list-inside my-2 space-y-1" style={{ color: "var(--text-primary)" }}>
           {listItems.map((item, idx) => (
-            <li key={idx} className="text-zinc-300">
+            <li key={idx}>
               {parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}
             </li>
           ))}
@@ -94,9 +96,9 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
         i++
       }
       blocks.push(
-        <ol key={key++} className="list-decimal list-inside my-2 space-y-1">
+        <ol key={key++} className="list-decimal list-inside my-2 space-y-1" style={{ color: "var(--text-primary)" }}>
           {listItems.map((item, idx) => (
-            <li key={idx} className="text-zinc-300">
+            <li key={idx}>
               {parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}
             </li>
           ))}
@@ -107,7 +109,7 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
 
     // Horizontal rule
     if (line.trim() === "---" || line.trim() === "***" || line.trim() === "___") {
-      blocks.push(<hr key={key++} className="border-t border-zinc-700 my-4" />)
+      blocks.push(<hr key={key++} className="my-4" style={{ borderColor: "var(--border-default)" }} />)
       i++
       continue
     }
@@ -120,7 +122,7 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
 
     // Regular paragraph
     blocks.push(
-      <p key={key++} className="text-zinc-300">
+      <p key={key++} style={{ color: "var(--text-primary)" }}>
         {parseInlineWithMentions(line, mentions, onUserMentionClick, onChannelClick)}
       </p>
     )
@@ -173,7 +175,8 @@ function parseInlineWithMentions(
           <button
             key={index}
             onClick={() => onUserMentionClick?.(mention.id)}
-            className="inline-flex items-center px-1.5 py-0.5 rounded text-sm font-medium transition-colors hover:opacity-80 bg-indigo-500/15 text-indigo-400"
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-sm font-medium transition-colors hover:opacity-80"
+            style={{ background: "rgba(99, 102, 241, 0.15)", color: "var(--accent-primary)" }}
           >
             @{mention.label}
           </button>
@@ -184,11 +187,11 @@ function parseInlineWithMentions(
           <button
             key={index}
             onClick={() => onChannelClick?.(mention.slug || mention.label)}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-sm font-medium transition-colors hover:opacity-80 ${
-              isCrosspost
-                ? "bg-indigo-500/15 text-indigo-400"
-                : "bg-zinc-800/50 text-zinc-200"
-            }`}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-sm font-medium transition-colors hover:opacity-80"
+            style={{
+              background: isCrosspost ? "rgba(99, 102, 241, 0.15)" : "var(--bg-tertiary)",
+              color: isCrosspost ? "var(--accent-primary)" : "var(--text-secondary)",
+            }}
           >
             <Hash className="w-3 h-3" />
             {isCrosspost && "+"}
@@ -215,7 +218,8 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <code
           key={key++}
-          className="px-1.5 py-0.5 rounded text-sm font-mono bg-zinc-800/50 text-indigo-400"
+          className="px-1.5 py-0.5 rounded text-sm font-mono"
+          style={{ background: "var(--bg-tertiary)", color: "var(--accent-primary)" }}
         >
           {match[1]}
         </code>
@@ -228,7 +232,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
     match = remaining.match(/^\*\*(.+?)\*\*/) || remaining.match(/^__(.+?)__/)
     if (match) {
       nodes.push(
-        <strong key={key++} className="font-semibold text-zinc-100">
+        <strong key={key++} className="font-semibold" style={{ color: "var(--text-primary)" }}>
           {match[1]}
         </strong>
       )
@@ -252,7 +256,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
     match = remaining.match(/^~~(.+?)~~/)
     if (match) {
       nodes.push(
-        <span key={key++} className="line-through text-zinc-500">
+        <span key={key++} className="line-through" style={{ color: "var(--text-muted)" }}>
           {match[1]}
         </span>
       )
@@ -269,7 +273,8 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           href={match[2]}
           target="_blank"
           rel="noopener noreferrer"
-          className="underline hover:opacity-80 text-indigo-400"
+          className="underline hover:opacity-80"
+          style={{ color: "var(--accent-primary)" }}
         >
           {match[1]}
         </a>
@@ -287,7 +292,8 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           href={match[1]}
           target="_blank"
           rel="noopener noreferrer"
-          className="underline hover:opacity-80 text-indigo-400"
+          className="underline hover:opacity-80"
+          style={{ color: "var(--accent-primary)" }}
         >
           {match[1]}
         </a>
