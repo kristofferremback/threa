@@ -68,6 +68,19 @@ export function ChatInterface({
 
         if (!res.ok) {
           const data = await res.json()
+          // If already shared, just show info toast and update local state
+          if (data.error === "Message is already shared to this channel") {
+            // Find the channel to update local state
+            const msg = messages.find((m) => m.id === messageId)
+            if (msg && channelId) {
+              const channel = channels.find((c) => c.id === channelId || c.id === msg.channelId)
+              if (channel) {
+                addLinkedChannel(messageId, channel)
+              }
+            }
+            toast.info("Message is already shared to this channel")
+            return
+          }
           throw new Error(data.error || "Failed to share message")
         }
 
@@ -85,7 +98,7 @@ export function ChatInterface({
         toast.error(error instanceof Error ? error.message : "Failed to share message")
       }
     },
-    [workspaceId, addLinkedChannel],
+    [workspaceId, channelId, messages, channels, addLinkedChannel],
   )
 
   // Handler for cross-posting to another channel
@@ -101,6 +114,15 @@ export function ChatInterface({
 
         if (!res.ok) {
           const data = await res.json()
+          // If already cross-posted, just show info toast and update local state
+          if (data.error === "Message is already cross-posted to this channel") {
+            const channel = channels.find((c) => c.id === targetChannelId)
+            if (channel) {
+              addLinkedChannel(messageId, channel)
+            }
+            toast.info("Message is already cross-posted to this channel")
+            return
+          }
           throw new Error(data.error || "Failed to cross-post message")
         }
 
@@ -118,7 +140,7 @@ export function ChatInterface({
         toast.error(error instanceof Error ? error.message : "Failed to cross-post message")
       }
     },
-    [workspaceId, addLinkedChannel],
+    [workspaceId, channels, addLinkedChannel],
   )
 
   return (
