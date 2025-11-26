@@ -25,6 +25,7 @@ interface UseChatReturn {
   currentUserId: string | null
   sendMessage: (content: string, mentions?: MessageMention[]) => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
+  addLinkedChannel: (messageId: string, channel: { id: string; name: string; slug: string }) => void
   loadMoreMessages: () => Promise<void>
   setLastReadMessageId: (messageId: string | null) => void
   markAllAsRead: () => Promise<void>
@@ -417,6 +418,36 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     [workspaceId],
   )
 
+  // Add a linked channel to a message (used after cross-posting)
+  const addLinkedChannel = useCallback(
+    (messageId: string, channel: { id: string; name: string; slug: string }) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== messageId) return msg
+          const existingChannels = msg.linkedChannels || []
+          // Don't add if already exists
+          if (existingChannels.some((c) => c.id === channel.id)) return msg
+          return {
+            ...msg,
+            linkedChannels: [...existingChannels, channel],
+          }
+        }),
+      )
+
+      // Also update root message if applicable
+      setRootMessage((prev) => {
+        if (prev?.id !== messageId) return prev
+        const existingChannels = prev.linkedChannels || []
+        if (existingChannels.some((c) => c.id === channel.id)) return prev
+        return {
+          ...prev,
+          linkedChannels: [...existingChannels, channel],
+        }
+      })
+    },
+    [],
+  )
+
   const markAllAsRead = useCallback(async () => {
     if (messages.length === 0) return
 
@@ -513,6 +544,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     currentUserId,
     sendMessage,
     editMessage,
+    addLinkedChannel,
     loadMoreMessages,
     setLastReadMessageId,
     markAllAsRead,

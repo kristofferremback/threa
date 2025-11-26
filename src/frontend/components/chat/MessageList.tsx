@@ -458,9 +458,7 @@ function CrosspostModal({
 }) {
   const [search, setSearch] = useState("")
   const filteredChannels = channels.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.slug.toLowerCase().includes(search.toLowerCase()),
+    (c) => c.name.toLowerCase().includes(search.toLowerCase()) || c.slug.toLowerCase().includes(search.toLowerCase()),
   )
 
   return (

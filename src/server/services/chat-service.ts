@@ -1789,7 +1789,10 @@ export class ChatService {
    * Share a thread reply to its parent channel (like Slack's "Also send to channel")
    * This makes the reply visible in the channel feed as well as the thread
    */
-  async shareToChannel(messageId: string, userId: string): Promise<{ channelId: string; channelSlug: string }> {
+  async shareToChannel(
+    messageId: string,
+    userId: string,
+  ): Promise<{ channelId: string; channelName: string; channelSlug: string }> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -1832,8 +1835,8 @@ export class ChatService {
       )
 
       // Get channel info for response
-      const channelResult = await client.query<{ slug: string }>(
-        sql`SELECT slug FROM channels WHERE id = ${message.channel_id}`,
+      const channelResult = await client.query<{ name: string; slug: string }>(
+        sql`SELECT name, slug FROM channels WHERE id = ${message.channel_id}`,
       )
 
       // Create outbox event for real-time update
@@ -1856,6 +1859,7 @@ export class ChatService {
 
       return {
         channelId: message.channel_id,
+        channelName: channelResult.rows[0]?.name || "",
         channelSlug: channelResult.rows[0]?.slug || "",
       }
     } catch (error) {
@@ -1873,7 +1877,7 @@ export class ChatService {
     messageId: string,
     targetChannelId: string,
     userId: string,
-  ): Promise<{ channelId: string; channelSlug: string }> {
+  ): Promise<{ channelId: string; channelName: string; channelSlug: string }> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -1902,8 +1906,8 @@ export class ChatService {
       }
 
       // Verify target channel exists and is in the same workspace
-      const targetResult = await client.query<{ id: string; slug: string; workspace_id: string }>(
-        sql`SELECT id, slug, workspace_id FROM channels
+      const targetResult = await client.query<{ id: string; name: string; slug: string; workspace_id: string }>(
+        sql`SELECT id, name, slug, workspace_id FROM channels
             WHERE id = ${targetChannelId} AND archived_at IS NULL`,
       )
 
@@ -1954,6 +1958,7 @@ export class ChatService {
 
       return {
         channelId: targetChannelId,
+        channelName: targetChannel.name,
         channelSlug: targetChannel.slug,
       }
     } catch (error) {

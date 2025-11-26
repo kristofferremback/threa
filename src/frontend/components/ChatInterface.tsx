@@ -45,6 +45,7 @@ export function ChatInterface({
     currentUserId,
     sendMessage,
     editMessage,
+    addLinkedChannel,
     loadMoreMessages,
   } = useChat({
     workspaceId,
@@ -71,12 +72,20 @@ export function ChatInterface({
         }
 
         const result = await res.json()
+
+        // Update the message's linked channels locally
+        addLinkedChannel(messageId, {
+          id: result.channelId,
+          name: result.channelName,
+          slug: result.channelSlug,
+        })
+
         toast.success(`Shared to #${result.channelSlug}`)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to share message")
       }
     },
-    [workspaceId],
+    [workspaceId, addLinkedChannel],
   )
 
   // Handler for cross-posting to another channel
@@ -96,12 +105,20 @@ export function ChatInterface({
         }
 
         const result = await res.json()
+
+        // Update the message's linked channels locally
+        addLinkedChannel(messageId, {
+          id: result.channelId,
+          name: result.channelName,
+          slug: result.channelSlug,
+        })
+
         toast.success(`Cross-posted to #${result.channelSlug}`)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to cross-post message")
       }
     },
-    [workspaceId],
+    [workspaceId, addLinkedChannel],
   )
 
   return (
