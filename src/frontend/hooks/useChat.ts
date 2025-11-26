@@ -311,9 +311,14 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
     // Subscribe when socket is connected
     if (socket.connected) {
+      console.log("[useChat] Socket already connected, subscribing now")
       subscribeAndFetch()
     } else {
-      socket.once("connect", subscribeAndFetch)
+      console.log("[useChat] Socket not yet connected, waiting for connect event")
+      socket.once("connect", () => {
+        console.log("[useChat] Socket connected, subscribing now")
+        subscribeAndFetch()
+      })
     }
 
     // Cleanup

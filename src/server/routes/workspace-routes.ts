@@ -381,7 +381,19 @@ export function createWorkspaceRoutes(
         visibility: visibility === "private" ? "private" : "public",
       })
 
-      res.status(201).json(channel)
+      // Return channel with all fields expected by frontend (matching bootstrap format)
+      res.status(201).json({
+        id: channel.id,
+        name: channel.name,
+        slug: channel.slug,
+        description: channel.description,
+        topic: channel.topic,
+        visibility: channel.visibility,
+        is_member: true, // Creator is always a member
+        unread_count: 0, // New channel has no unread messages
+        last_read_at: new Date().toISOString(),
+        notify_level: "all",
+      })
     } catch (error: any) {
       if (error.message?.includes("already exists")) {
         res.status(409).json({ error: error.message })

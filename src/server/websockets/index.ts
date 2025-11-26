@@ -382,6 +382,31 @@ export const createSocketIOServer = async ({
 
     logger.info({ email, userId }, "Socket.IO connected")
 
+    // IMPORTANT: Register event handlers IMMEDIATELY before any async operations
+    // Otherwise events sent during async operations will be lost
+
+    // Queue to hold events that arrive before setup is complete
+    const pendingJoins: string[] = []
+    let setupComplete = false
+
+    // Room management - client joins/leaves rooms as needed
+    // Client sends room names with workspace prefix: ws:${workspaceId}:chan:${channelId}
+    socket.on("join", (roomName: string) => {
+      if (setupComplete) {
+        logger.info({ userId, room: roomName }, "Client joining room")
+        socket.join(roomName)
+      } else {
+        // Queue the join until setup is complete
+        logger.info({ userId, room: roomName }, "Queueing room join (setup in progress)")
+        pendingJoins.push(roomName)
+      }
+    })
+
+    socket.on("leave", (roomName: string) => {
+      logger.debug({ userId, room: roomName }, "Leaving room")
+      socket.leave(roomName)
+    })
+
     // Ensure user exists
     await userService.ensureUser({
       id: userId,
@@ -411,6 +436,13 @@ export const createSocketIOServer = async ({
     // Join the user's private room for direct notifications (workspace-scoped)
     socket.join(room.user(workspaceId, userId))
 
+    // Setup complete - process any pending joins
+    setupComplete = true
+    for (const roomName of pendingJoins) {
+      logger.info({ userId, room: roomName }, "Processing queued room join")
+      socket.join(roomName)
+    }
+
     // Emit connected event with workspace info and user ID
     socket.emit("connected", {
       message: "Connected to Threa",
@@ -428,18 +460,6 @@ export const createSocketIOServer = async ({
     // - Ephemeral events (typing indicators, read cursors)
     // - Room management (join/leave)
     // All resource fetching (messages, threads, etc.) is done via HTTP
-
-    // Room management - client joins/leaves rooms as needed
-    // Client sends room names with workspace prefix: ws:${workspaceId}:chan:${channelId}
-    socket.on("join", (roomName: string) => {
-      logger.debug({ userId, room: roomName }, "Joining room")
-      socket.join(roomName)
-    })
-
-    socket.on("leave", (roomName: string) => {
-      logger.debug({ userId, room: roomName }, "Leaving room")
-      socket.leave(roomName)
-    })
 
     // Handle read receipts (ephemeral)
     socket.on("read_cursor", async (data: { channelId?: string; conversationId?: string; messageId: string }) => {
