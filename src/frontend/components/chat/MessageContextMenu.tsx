@@ -50,7 +50,10 @@ function MenuItem({ icon, label, onClick, disabled = false, shortcut }: MenuItem
         </span>
       )}
       {disabled && (
-        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>
+        <span
+          className="text-xs px-1.5 py-0.5 rounded"
+          style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}
+        >
           Soon
         </span>
       )}
@@ -87,7 +90,14 @@ export function MessageContextMenu({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+      <div
+        className="fixed inset-0 z-[9998]"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onClose()
+        }}
+      />
       <div
         className="fixed z-[9999] py-1 rounded-lg shadow-lg min-w-[200px]"
         style={{
@@ -100,7 +110,10 @@ export function MessageContextMenu({
         <MenuItem
           icon={<MessageCircle className="h-4 w-4" />}
           label="Reply in thread"
-          onClick={() => { onReplyInThread?.(); onClose(); }}
+          onClick={() => {
+            onReplyInThread?.()
+            onClose()
+          }}
         />
 
         <MenuDivider />
@@ -110,7 +123,10 @@ export function MessageContextMenu({
             icon={<Pencil className="h-4 w-4" />}
             label="Edit message"
             shortcut="E"
-            onClick={() => { onEdit?.(); onClose(); }}
+            onClick={() => {
+              onEdit?.()
+              onClose()
+            }}
           />
         )}
 
@@ -118,15 +134,14 @@ export function MessageContextMenu({
           <MenuItem
             icon={<History className="h-4 w-4" />}
             label="View edit history"
-            onClick={() => { onShowRevisions?.(); onClose(); }}
+            onClick={() => {
+              onShowRevisions?.()
+              onClose()
+            }}
           />
         )}
 
-        <MenuItem
-          icon={<Smile className="h-4 w-4" />}
-          label="Add reaction"
-          disabled
-        />
+        <MenuItem icon={<Smile className="h-4 w-4" />} label="Add reaction" disabled />
 
         <MenuDivider />
 
@@ -136,17 +151,9 @@ export function MessageContextMenu({
           disabled
         />
 
-        <MenuItem
-          icon={<Pin className="h-4 w-4" />}
-          label="Pin message"
-          disabled
-        />
+        <MenuItem icon={<Pin className="h-4 w-4" />} label="Pin message" disabled />
 
-        <MenuItem
-          icon={<Share2 className="h-4 w-4" />}
-          label="Share to channel"
-          disabled
-        />
+        <MenuItem icon={<Share2 className="h-4 w-4" />} label="Share to channel" disabled />
 
         <MenuDivider />
 
@@ -154,13 +161,19 @@ export function MessageContextMenu({
           <MenuItem
             icon={<Circle className="h-4 w-4" />}
             label="Mark as unread"
-            onClick={() => { onMarkAsUnread?.(); onClose(); }}
+            onClick={() => {
+              onMarkAsUnread?.()
+              onClose()
+            }}
           />
         ) : (
           <MenuItem
             icon={<Check className="h-4 w-4" />}
             label="Mark as read"
-            onClick={() => { onMarkAsRead?.(); onClose(); }}
+            onClick={() => {
+              onMarkAsRead?.()
+              onClose()
+            }}
           />
         )}
       </div>

@@ -1,5 +1,17 @@
 import { useState } from "react"
-import { Hash, Lock, Plus, Settings, ChevronDown, MoreHorizontal, LogOut, Pin, UserPlus, Search, Command } from "lucide-react"
+import {
+  Hash,
+  Lock,
+  Plus,
+  Settings,
+  ChevronDown,
+  MoreHorizontal,
+  LogOut,
+  Pin,
+  UserPlus,
+  Search,
+  Command,
+} from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector, Input } from "../ui"
 import type { Channel, Workspace } from "../../types"
@@ -84,10 +96,7 @@ interface WorkspaceHeaderProps {
 
 function WorkspaceHeader({ workspace, onInvitePeople }: WorkspaceHeaderProps) {
   return (
-    <div
-      className="p-4 flex items-center justify-between"
-      style={{ borderBottom: "1px solid var(--border-subtle)" }}
-    >
+    <div className="p-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
       <div className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:bg-[var(--hover-overlay)] -m-2 p-2 rounded-lg transition-colors">
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center font-semibold text-sm flex-shrink-0"
@@ -153,15 +162,17 @@ function ChannelList({
       </div>
 
       <div className="space-y-0.5">
-        {channels.filter((c) => c.is_member).map((channel) => (
-          <ChannelItem
-            key={channel.id}
-            channel={channel}
-            isActive={activeChannelSlug === channel.slug}
-            onClick={() => onSelectChannel(channel)}
-            onSettings={() => onChannelSettings(channel)}
-          />
-        ))}
+        {channels
+          .filter((c) => c.is_member)
+          .map((channel) => (
+            <ChannelItem
+              key={channel.id}
+              channel={channel}
+              isActive={activeChannelSlug === channel.slug}
+              onClick={() => onSelectChannel(channel)}
+              onSettings={() => onChannelSettings(channel)}
+            />
+          ))}
       </div>
     </div>
   )
@@ -214,7 +225,10 @@ function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProp
         <Dropdown
           align="left"
           trigger={
-            <button className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors" style={{ color: "var(--text-muted)" }}>
+            <button
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              style={{ color: "var(--text-muted)" }}
+            >
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
           }

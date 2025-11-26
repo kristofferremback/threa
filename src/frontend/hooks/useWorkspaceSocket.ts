@@ -37,17 +37,20 @@ export function useWorkspaceSocket({
     socketRef.current = socket
 
     // Handle notification events (new messages in channels)
-    socket.on("notification", (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string }) => {
-      if (data.type === "message") {
-        // Don't increment unread count if we're currently viewing this channel
-        const isActiveChannel =
-          activeChannelIdRef.current === data.channelId || activeChannelIdRef.current === data.channelSlug
+    socket.on(
+      "notification",
+      (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string }) => {
+        if (data.type === "message") {
+          // Don't increment unread count if we're currently viewing this channel
+          const isActiveChannel =
+            activeChannelIdRef.current === data.channelId || activeChannelIdRef.current === data.channelSlug
 
-        if (!isActiveChannel) {
-          onUnreadCountUpdate?.(data.channelId, 1)
+          if (!isActiveChannel) {
+            onUnreadCountUpdate?.(data.channelId, 1)
+          }
         }
-      }
-    })
+      },
+    )
 
     // Handle being added to a channel
     socket.on("channelMemberAdded", (data: { channel: Channel; addedByUserId: string; eventType: string }) => {

@@ -65,14 +65,10 @@ export function LayoutSystem() {
 
       // If we're currently viewing this channel, navigate away
       if (bootstrapData && activeChannelSlug) {
-        const removedChannel = bootstrapData.channels.find(
-          (c) => c.id === channelId || c.slug === channelId,
-        )
+        const removedChannel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
         if (removedChannel && (removedChannel.slug === activeChannelSlug || removedChannel.id === activeChannelSlug)) {
           // Find another channel to navigate to
-          const remainingChannels = bootstrapData.channels.filter(
-            (c) => c.id !== channelId && c.is_member,
-          )
+          const remainingChannels = bootstrapData.channels.filter((c) => c.id !== channelId && c.is_member)
           if (remainingChannels.length > 0) {
             selectChannel(remainingChannels[0])
           } else {

@@ -6,16 +6,16 @@
     <title>Threa</title>
     <script>
       // Prevent flash of wrong theme
-      (function() {
-        const stored = localStorage.getItem('threa-theme');
-        let theme = stored || 'system';
-        if (theme === 'system') {
-          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      ;(function () {
+        const stored = localStorage.getItem("threa-theme")
+        let theme = stored || "system"
+        if (theme === "system") {
+          theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
         }
-        document.documentElement.classList.remove('light', 'dark');
-        document.documentElement.classList.add(theme);
-        document.documentElement.style.colorScheme = theme;
-      })();
+        document.documentElement.classList.remove("light", "dark")
+        document.documentElement.classList.add(theme)
+        document.documentElement.style.colorScheme = theme
+      })()
     </script>
   </head>
 

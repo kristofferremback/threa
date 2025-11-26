@@ -640,7 +640,10 @@ export function ChannelSettingsModal({
               <label className="block text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
                 Topic
               </label>
-              <p className="px-3 py-2 rounded-lg" style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)" }}>
+              <p
+                className="px-3 py-2 rounded-lg"
+                style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)" }}
+              >
                 {channel.topic}
               </p>
             </div>
@@ -651,7 +654,10 @@ export function ChannelSettingsModal({
               <label className="block text-sm mb-2" style={{ color: "var(--text-secondary)" }}>
                 Description
               </label>
-              <p className="px-3 py-2 rounded-lg" style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)" }}>
+              <p
+                className="px-3 py-2 rounded-lg"
+                style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)" }}
+              >
                 {channel.description}
               </p>
             </div>

@@ -67,4 +67,3 @@ export function SystemMessage({ message, animationDelay = 0 }: SystemMessageProp
     </div>
   )
 }
-

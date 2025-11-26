@@ -80,4 +80,3 @@ export function useTheme() {
     isSystem: theme === "system",
   }
 }
-

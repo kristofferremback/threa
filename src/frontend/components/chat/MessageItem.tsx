@@ -104,8 +104,12 @@ export function MessageItem({
         background: isEditing ? "var(--hover-overlay)" : !isRead ? "var(--unread-bg)" : undefined,
         borderLeft: !isRead ? "3px solid var(--accent-primary)" : "3px solid transparent",
       }}
-      onMouseEnter={(e) => !isEditing && (e.currentTarget.style.background = isRead ? "var(--hover-overlay)" : "var(--unread-bg-hover)")}
-      onMouseLeave={(e) => !isEditing && (e.currentTarget.style.background = !isRead ? "var(--unread-bg)" : "transparent")}
+      onMouseEnter={(e) =>
+        !isEditing && (e.currentTarget.style.background = isRead ? "var(--hover-overlay)" : "var(--unread-bg-hover)")
+      }
+      onMouseLeave={(e) =>
+        !isEditing && (e.currentTarget.style.background = !isRead ? "var(--unread-bg)" : "transparent")
+      }
       onContextMenu={handleContextMenu}
     >
       <div className="mb-1 flex items-center gap-2">

@@ -205,10 +205,7 @@ export function InviteModal({ isOpen, onClose, workspaceId, workspaceName }: Inv
             </div>
 
             {error && (
-              <div
-                className="p-3 rounded-lg text-sm"
-                style={{ background: "var(--error-bg)", color: "var(--error)" }}
-              >
+              <div className="p-3 rounded-lg text-sm" style={{ background: "var(--error-bg)", color: "var(--error)" }}>
                 {error}
               </div>
             )}
@@ -228,4 +225,3 @@ export function InviteModal({ isOpen, onClose, workspaceId, workspaceName }: Inv
     </Modal>
   )
 }
-

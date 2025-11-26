@@ -27,12 +27,7 @@ interface UseChatReturn {
   markAllAsRead: () => Promise<void>
 }
 
-export function useChat({
-  workspaceId,
-  channelId,
-  threadId,
-  enabled = true,
-}: UseChatOptions): UseChatReturn {
+export function useChat({ workspaceId, channelId, threadId, enabled = true }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [rootMessage, setRootMessage] = useState<Message | null>(null)
   const [ancestors, setAncestors] = useState<Message[]>([])

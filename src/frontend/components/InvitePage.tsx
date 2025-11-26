@@ -85,10 +85,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Loading state
   if (isLoading || state === "loading" || state === "new") {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
         <Spinner size="lg" />
       </div>
     )
@@ -97,10 +94,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Error state
   if (error && !invitation) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
         <div
           className="max-w-md w-full p-8 rounded-2xl text-center"
           style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -128,10 +122,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Expired invitation
   if (invitation?.status === "expired") {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
         <div
           className="max-w-md w-full p-8 rounded-2xl text-center"
           style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -146,8 +137,8 @@ export function InvitePage({ token }: InvitePageProps) {
             Invitation Expired
           </h1>
           <p className="mb-6" style={{ color: "var(--text-secondary)" }}>
-            This invitation to <strong>{invitation.workspaceName}</strong> has expired.
-            Please ask the workspace admin for a new invitation.
+            This invitation to <strong>{invitation.workspaceName}</strong> has expired. Please ask the workspace admin
+            for a new invitation.
           </p>
           <Button onClick={() => (window.location.href = "/")} variant="secondary">
             Go to Home
@@ -160,10 +151,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Already accepted
   if (invitation?.status === "accepted") {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
         <div
           className="max-w-md w-full p-8 rounded-2xl text-center"
           style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -191,10 +179,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Success state
   if (accepted) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
         <div
           className="max-w-md w-full p-8 rounded-2xl text-center"
           style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -220,10 +205,7 @@ export function InvitePage({ token }: InvitePageProps) {
   // Not authenticated - show login prompt
   if (!isAuthenticated) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center p-4"
-        style={{ background: "var(--bg-primary)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
         <div
           className="max-w-md w-full p-8 rounded-2xl"
           style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -283,10 +265,7 @@ export function InvitePage({ token }: InvitePageProps) {
 
   // Authenticated - show accept button
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: "var(--bg-primary)" }}
-    >
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "var(--bg-primary)" }}>
       <div
         className="max-w-md w-full p-8 rounded-2xl"
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}
@@ -340,10 +319,7 @@ export function InvitePage({ token }: InvitePageProps) {
         </div>
 
         {error && (
-          <div
-            className="p-3 rounded-lg mb-4 text-sm"
-            style={{ background: "var(--error-bg)", color: "var(--error)" }}
-          >
+          <div className="p-3 rounded-lg mb-4 text-sm" style={{ background: "var(--error-bg)", color: "var(--error)" }}>
             {error}
           </div>
         )}
@@ -361,4 +337,3 @@ export function InvitePage({ token }: InvitePageProps) {
     </div>
   )
 }
-

@@ -231,4 +231,3 @@ export function useMessageVisibility(
 
   return elementRef
 }
-

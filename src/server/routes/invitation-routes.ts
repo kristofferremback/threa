@@ -2,10 +2,7 @@ import { Router, Request, Response, NextFunction, RequestHandler } from "express
 import { WorkspaceService } from "../services/workspace-service"
 import { logger } from "../lib/logger"
 
-export function createInvitationRoutes(
-  workspaceService: WorkspaceService,
-  authMiddleware?: RequestHandler,
-): Router {
+export function createInvitationRoutes(workspaceService: WorkspaceService, authMiddleware?: RequestHandler): Router {
   const router = Router()
 
   // Get invitation details by token (public - no auth required)
@@ -47,13 +44,7 @@ export function createInvitationRoutes(
         return
       }
 
-      const result = await workspaceService.acceptInvitation(
-        token,
-        user.id,
-        user.email,
-        user.firstName,
-        user.lastName,
-      )
+      const result = await workspaceService.acceptInvitation(token, user.id, user.email, user.firstName, user.lastName)
 
       res.json({
         success: true,
@@ -94,4 +85,3 @@ export function createInvitationRoutes(
 
   return router
 }
-
