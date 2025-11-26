@@ -67,7 +67,7 @@ export const createSocketIOServer = async ({
     ;(async () => {
       try {
         const event = JSON.parse(message)
-        const { id, channel_id, author_id, content, workspace_id } = event
+        const { id, channel_id, author_id, content, workspace_id, mentions } = event
 
         // Get author email and broadcast via Socket.IO
         const email = await chatService.getUserEmail(author_id)
@@ -79,7 +79,9 @@ export const createSocketIOServer = async ({
           timestamp: new Date().toISOString(),
           channelId: channel_id,
           conversationId: event.conversation_id,
+          authorId: author_id,
           replyToMessageId: event.reply_to_message_id,
+          mentions: mentions || [],
         }
 
         const channel = await chatService.getChannelById(channel_id)
@@ -90,6 +92,7 @@ export const createSocketIOServer = async ({
           channelId: channel_id,
           channelSlug: channel?.slug,
           conversationId: event.conversation_id,
+          authorId: author_id,
         })
 
         // Emit to channel room (full message for active viewers)

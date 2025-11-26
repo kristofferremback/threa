@@ -7,6 +7,7 @@ interface UseWorkspaceSocketOptions {
   enabled?: boolean
   workspaceId?: string
   activeChannelSlug?: string
+  currentUserId?: string
   onChannelAdded?: (channel: Channel) => void
   onChannelRemoved?: (channelId: string) => void
   onUnreadCountUpdate?: (channelId: string, increment: number) => void
@@ -16,17 +17,23 @@ export function useWorkspaceSocket({
   enabled = true,
   workspaceId,
   activeChannelSlug,
+  currentUserId,
   onChannelAdded,
   onChannelRemoved,
   onUnreadCountUpdate,
 }: UseWorkspaceSocketOptions) {
   const socketRef = useRef<Socket | null>(null)
   const activeChannelSlugRef = useRef(activeChannelSlug)
+  const currentUserIdRef = useRef(currentUserId)
 
-  // Keep ref in sync
+  // Keep refs in sync
   useEffect(() => {
     activeChannelSlugRef.current = activeChannelSlug
   }, [activeChannelSlug])
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
 
   useEffect(() => {
     if (!enabled || !workspaceId) {
@@ -39,8 +46,13 @@ export function useWorkspaceSocket({
     // Handle notification events (new messages in channels)
     socket.on(
       "notification",
-      (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string }) => {
+      (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string; authorId?: string }) => {
         if (data.type === "message") {
+          // Don't increment unread count for the user's own messages
+          if (data.authorId && data.authorId === currentUserIdRef.current) {
+            return
+          }
+
           // Don't increment unread count if we're currently viewing this channel
           // Compare against both slug and ID since we track by slug but server may send ID
           const isActiveChannel =

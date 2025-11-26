@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { io, Socket } from "socket.io-client"
 import { toast } from "sonner"
-import type { Message } from "../types"
+import type { Message, MessageMention } from "../types"
 
 interface UseChatOptions {
   workspaceId: string
@@ -21,7 +21,7 @@ interface UseChatReturn {
   connectionError: string | null
   isSending: boolean
   currentUserId: string | null
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, mentions?: MessageMention[]) => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
   setLastReadMessageId: (messageId: string | null) => void
   markAllAsRead: () => Promise<void>
@@ -302,7 +302,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
   // Send message action
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, mentions?: MessageMention[]) => {
       if (!content.trim() || isSending) return
 
       setIsSending(true)
@@ -316,6 +316,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
             content: content.trim(),
             channelId,
             replyToMessageId: threadId || undefined,
+            mentions: mentions || [],
           }),
         })
 

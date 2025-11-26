@@ -201,7 +201,7 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
   // Global keyboard shortcut
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault()
         if (open) {
           onClose()

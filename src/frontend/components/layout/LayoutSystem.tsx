@@ -9,6 +9,7 @@ import { CreateChannelModal } from "./CreateChannelModal"
 import { ChannelSettingsModal } from "./ChannelSettingsModal"
 import { CommandPalette } from "./CommandPalette"
 import { InviteModal } from "../InviteModal"
+import { InboxView } from "./InboxView"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import type { Tab, Channel } from "../../types"
 
@@ -19,6 +20,8 @@ export function LayoutSystem() {
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
+  const [showInbox, setShowInbox] = useState(false)
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
   // Bootstrap data
   const {
@@ -86,17 +89,48 @@ export function LayoutSystem() {
     enabled: isAuthenticated && !!bootstrapData,
     workspaceId: bootstrapData?.workspace.id,
     activeChannelSlug: activeChannelSlug || undefined,
+    currentUserId: user?.id,
     onChannelAdded: addChannel,
     onChannelRemoved: handleChannelRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
   })
 
-  // Global keyboard shortcut for command palette
+  // Fetch inbox unread count
+  useEffect(() => {
+    if (!bootstrapData?.workspace.id) return
+
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/notifications/count`, {
+          credentials: "include",
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setInboxUnreadCount(data.count)
+        }
+      } catch (err) {
+        console.error("Failed to fetch notification count:", err)
+      }
+    }
+
+    fetchUnreadCount()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000)
+    return () => clearInterval(interval)
+  }, [bootstrapData?.workspace.id])
+
+  // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      // Cmd/Ctrl+P for command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault()
         setShowCommandPalette((prev) => !prev)
+      }
+      // Cmd/Ctrl+Shift+I for inbox
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
+        e.preventDefault()
+        setShowInbox((prev) => !prev)
       }
     }
 
@@ -162,6 +196,8 @@ export function LayoutSystem() {
         channelName={channelName}
         threadId={tab.data?.threadId}
         title={tab.title}
+        users={bootstrapData.users}
+        channels={bootstrapData.channels.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
         onOpenThread={(msgId, msgChannelId, mode) => {
           // Pass the pane ID where the click originated so the thread opens relative to that pane
           openItem(
@@ -236,13 +272,19 @@ export function LayoutSystem() {
       <Sidebar
         workspace={bootstrapData.workspace}
         channels={bootstrapData.channels}
-        activeChannelSlug={activeChannelSlug}
-        onSelectChannel={handleSelectChannel}
+        activeChannelSlug={showInbox ? null : activeChannelSlug}
+        onSelectChannel={(channel) => {
+          setShowInbox(false)
+          handleSelectChannel(channel)
+        }}
         onCreateChannel={() => setShowCreateChannel(true)}
         onChannelSettings={(channel) => setChannelToEdit(channel)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
+        onOpenInbox={() => setShowInbox(true)}
+        isInboxActive={showInbox}
+        inboxUnreadCount={inboxUnreadCount}
       />
 
       <CreateChannelModal
@@ -286,14 +328,37 @@ export function LayoutSystem() {
       />
 
       <div className="flex-1 min-w-0">
-        <PaneSystem
-          panes={panes}
-          focusedPaneId={focusedPaneId}
-          onFocusPane={setFocusedPane}
-          onSetActiveTab={setActiveTab}
-          onCloseTab={closeTab}
-          renderContent={renderTabContent}
-        />
+        {showInbox ? (
+          <InboxView
+            workspaceId={bootstrapData.workspace.id}
+            onNavigateToChannel={(channelSlug) => {
+              setShowInbox(false)
+              const channel = bootstrapData.channels.find((c) => c.slug === channelSlug)
+              if (channel) handleSelectChannel(channel)
+            }}
+            onNavigateToThread={(messageId, channelId) => {
+              setShowInbox(false)
+              const channel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
+              openItem(
+                {
+                  title: "Thread",
+                  type: "thread",
+                  data: { threadId: messageId, channelSlug: channel?.slug || channelId },
+                },
+                "replace",
+              )
+            }}
+          />
+        ) : (
+          <PaneSystem
+            panes={panes}
+            focusedPaneId={focusedPaneId}
+            onFocusPane={setFocusedPane}
+            onSetActiveTab={setActiveTab}
+            onCloseTab={closeTab}
+            renderContent={renderTabContent}
+          />
+        )}
       </div>
 
       <CommandPalette

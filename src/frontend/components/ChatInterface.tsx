@@ -11,6 +11,8 @@ interface ChatInterfaceProps {
   title?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
+  users?: Array<{ id: string; name: string; email: string }>
+  channels?: Array<{ id: string; name: string; slug: string }>
 }
 
 export function ChatInterface({
@@ -21,6 +23,8 @@ export function ChatInterface({
   title,
   onOpenThread,
   onGoToChannel,
+  users = [],
+  channels = [],
 }: ChatInterfaceProps) {
   const { isAuthenticated } = useAuth()
 
@@ -65,6 +69,7 @@ export function ChatInterface({
           isLoading={isLoading && !rootMessage}
           onOpenThread={onOpenThread}
           onGoToChannel={onGoToChannel}
+          onChannelClick={(slug) => onGoToChannel?.(slug, "replace")}
         />
       )}
 
@@ -83,6 +88,9 @@ export function ChatInterface({
             currentUserId={currentUserId}
             onOpenThread={onOpenThread}
             onEditMessage={editMessage}
+            onChannelClick={(slug) => onGoToChannel?.(slug, "replace")}
+            users={users}
+            channels={channels}
           />
         )}
       </div>
@@ -91,6 +99,8 @@ export function ChatInterface({
         onSend={sendMessage}
         placeholder={isThread ? "Reply to thread..." : `Message ${displayTitle}`}
         disabled={!isConnected}
+        users={users}
+        channels={channels}
       />
     </div>
   )

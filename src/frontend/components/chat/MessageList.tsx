@@ -21,7 +21,11 @@ interface MessageListProps {
   onEditMessage?: (messageId: string, newContent: string) => Promise<void>
   onMarkAllAsRead?: () => Promise<void>
   onUpdateLastRead?: (messageId: string | null) => void
+  onUserMentionClick?: (userId: string) => void
+  onChannelClick?: (channelSlug: string) => void
   showThreadActions?: boolean
+  users?: Array<{ id: string; name: string; email: string }>
+  channels?: Array<{ id: string; name: string; slug: string }>
 }
 
 export function MessageList({
@@ -38,7 +42,11 @@ export function MessageList({
   onEditMessage,
   onMarkAllAsRead,
   onUpdateLastRead,
+  onUserMentionClick,
+  onChannelClick,
   showThreadActions = true,
+  users = [],
+  channels = [],
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const unreadDividerRef = useRef<HTMLDivElement>(null)
@@ -116,9 +124,42 @@ export function MessageList({
     unreadDividerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
   }, [])
 
+  // Check if user is near the bottom of the scroll container
+  const isNearBottom = () => {
+    const container = containerRef.current
+    if (!container) return true
+    const threshold = 150 // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+  }
+
+  // Track previous message count to detect new messages vs channel switch
+  const prevMessageCountRef = useRef(0)
+  const prevMessagesKeyRef = useRef("")
+
+  // Scroll handling - runs once after render
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    if (messages.length === 0) return
+
+    // Create a key based on channel/conversation to detect switches
+    const currentKey = `${channelId || ""}-${conversationId || ""}`
+    const isChannelSwitch = currentKey !== prevMessagesKeyRef.current
+    const isNewMessages = messages.length > prevMessageCountRef.current
+
+    // Update refs
+    prevMessagesKeyRef.current = currentKey
+    prevMessageCountRef.current = messages.length
+
+    if (isChannelSwitch) {
+      // Channel switch: instant scroll to bottom, use RAF to ensure DOM is ready
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
+      })
+    } else if (isNewMessages && isNearBottom()) {
+      // New messages while near bottom: smooth scroll
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+    // If not near bottom and not a channel switch, don't auto-scroll
+  }, [messages, channelId, conversationId])
 
   if (isLoading) {
     return <LoadingState message="Loading messages..." />
@@ -135,7 +176,7 @@ export function MessageList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 min-h-0">
+    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 min-h-0">
       {messages.map((msg, idx) =>
         msg.messageType === "system" ? (
           <SystemMessage key={msg.id || msg.timestamp} message={msg} animationDelay={Math.min(idx * 30, 300)} />
@@ -144,15 +185,20 @@ export function MessageList({
             key={msg.id || msg.timestamp}
             message={msg}
             workspaceId={workspaceId}
+            currentChannelId={channelId}
             isOwnMessage={currentUserId ? msg.userId === currentUserId : false}
             onOpenThread={onOpenThread}
             onEdit={onEditMessage}
             onMarkAsRead={markAsRead}
             onMarkAsUnread={markAsUnread}
+            onUserMentionClick={onUserMentionClick}
+            onChannelClick={onChannelClick}
             onMessageVisible={onMessageVisible}
             onMessageHidden={onMessageHidden}
             animationDelay={Math.min(idx * 30, 300)}
             showThreadActions={showThreadActions}
+            users={users}
+            channels={channels}
           />
         ),
       )}

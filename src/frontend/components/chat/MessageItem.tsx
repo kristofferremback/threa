@@ -1,37 +1,49 @@
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal } from "lucide-react"
+import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash } from "lucide-react"
 import { Avatar, RelativeTime } from "../ui"
 import { MessageContextMenu } from "./MessageContextMenu"
 import { MessageRevisionsModal } from "./MessageRevisionsModal"
-import type { Message, OpenMode } from "../../types"
+import { MessageContent, type MessageMention } from "./MessageContent"
+import { RichTextEditor, type RichTextEditorRef } from "./RichTextEditor"
+import type { Message, OpenMode, LinkedChannel } from "../../types"
 import { getOpenMode } from "../../types"
 
 interface MessageItemProps {
   message: Message
   workspaceId: string
+  currentChannelId?: string
   isOwnMessage?: boolean
   isRead?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
   onMarkAsUnread?: (messageId: string) => void
+  onUserMentionClick?: (userId: string) => void
+  onChannelClick?: (channelSlug: string) => void
   animationDelay?: number
   showThreadActions?: boolean
   visibilityRef?: React.RefObject<HTMLDivElement>
+  users?: Array<{ id: string; name: string; email: string }>
+  channels?: Array<{ id: string; name: string; slug: string }>
 }
 
 export function MessageItem({
   message,
   workspaceId,
+  currentChannelId,
   isOwnMessage = false,
   isRead = true,
   onOpenThread,
   onEdit,
   onMarkAsRead,
   onMarkAsUnread,
+  onUserMentionClick,
+  onChannelClick,
   animationDelay = 0,
   showThreadActions = true,
   visibilityRef,
+  users = [],
+  channels = [],
 }: MessageItemProps) {
   const hasReplies = message.replyCount && message.replyCount > 0
   const [isEditing, setIsEditing] = useState(false)
@@ -39,12 +51,11 @@ export function MessageItem({
   const [isSaving, setIsSaving] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showRevisions, setShowRevisions] = useState(false)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<RichTextEditorRef>(null)
 
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.setSelectionRange(editContent.length, editContent.length)
+    if (isEditing && editorRef.current) {
+      editorRef.current.focus()
     }
   }, [isEditing])
 
@@ -59,28 +70,20 @@ export function MessageItem({
   }
 
   const handleSaveEdit = async () => {
-    if (!onEdit || editContent.trim() === message.message || !editContent.trim()) {
+    const content = editorRef.current?.getContent()?.trim()
+    if (!onEdit || !content || content === message.message) {
       handleCancelEdit()
       return
     }
 
     setIsSaving(true)
     try {
-      await onEdit(message.id, editContent.trim())
+      await onEdit(message.id, content)
       setIsEditing(false)
     } catch {
       // Error handled in onEdit
     } finally {
       setIsSaving(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      handleCancelEdit()
-    } else if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSaveEdit()
     }
   }
 
@@ -161,21 +164,31 @@ export function MessageItem({
 
       <div className="pl-8">
         {isEditing ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              ref={inputRef}
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="w-full px-3 py-2 text-sm rounded-md resize-none"
-              style={{
-                background: "var(--bg-primary)",
-                border: "1px solid var(--border-default)",
-                color: "var(--text-primary)",
-                outline: "none",
-              }}
-              rows={Math.min(editContent.split("\n").length + 1, 6)}
+          <div
+            className="flex flex-col gap-2"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault()
+                handleCancelEdit()
+              }
+            }}
+          >
+            <RichTextEditor
+              ref={editorRef}
+              initialContent={message.message}
+              initialMentions={message.mentions?.map(m => ({
+                type: m.type,
+                id: m.id,
+                label: m.label,
+                slug: m.slug,
+              }))}
+              placeholder="Edit message..."
               disabled={isSaving}
+              onSubmit={handleSaveEdit}
+              onChange={setEditContent}
+              users={users}
+              channels={channels}
+              autofocus
             />
             <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
               <span>Press Enter to save, Escape to cancel</span>
@@ -196,7 +209,7 @@ export function MessageItem({
                   style={{ color: "var(--success)" }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay-strong)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  disabled={isSaving || !editContent.trim() || editContent.trim() === message.message}
+                  disabled={isSaving}
                 >
                   <Check className="h-4 w-4" />
                 </button>
@@ -204,9 +217,21 @@ export function MessageItem({
             </div>
           </div>
         ) : (
-          <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>
-            {message.message}
-          </div>
+          <MessageContent
+            content={message.message}
+            mentions={message.mentions as MessageMention[] | undefined}
+            onUserMentionClick={onUserMentionClick}
+            onChannelClick={onChannelClick}
+          />
+        )}
+
+        {/* Multi-channel badges */}
+        {message.linkedChannels && message.linkedChannels.length > 1 && (
+          <ChannelBadges
+            channels={message.linkedChannels}
+            currentChannelId={currentChannelId}
+            onChannelClick={onChannelClick}
+          />
         )}
       </div>
 
@@ -289,6 +314,61 @@ export function MessageItem({
           workspaceId={workspaceId}
         />
       )}
+    </div>
+  )
+}
+
+// Channel badges component for multi-channel conversations
+interface ChannelBadgesProps {
+  channels: LinkedChannel[]
+  currentChannelId?: string
+  onChannelClick?: (channelSlug: string) => void
+}
+
+function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBadgesProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        In:
+      </span>
+      {channels.map((channel) => {
+        const isCurrent = channel.id === currentChannelId
+        return (
+          <button
+            key={channel.id}
+            onClick={() => !isCurrent && onChannelClick?.(channel.slug)}
+            disabled={isCurrent}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium transition-colors"
+            style={{
+              // Current channel: warm amber/gold, Other channels: neutral with blue hover
+              background: isCurrent
+                ? "rgba(245, 158, 11, 0.15)"
+                : "var(--bg-tertiary)",
+              color: isCurrent
+                ? "rgb(245, 158, 11)"
+                : "var(--text-secondary)",
+              cursor: isCurrent ? "default" : "pointer",
+              border: isCurrent ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid transparent",
+            }}
+            onMouseEnter={(e) => {
+              if (!isCurrent) {
+                e.currentTarget.style.background = "var(--accent-primary-muted)"
+                e.currentTarget.style.color = "var(--accent-primary)"
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isCurrent) {
+                e.currentTarget.style.background = "var(--bg-tertiary)"
+                e.currentTarget.style.color = "var(--text-secondary)"
+              }
+            }}
+            title={isCurrent ? "Current channel" : `Go to #${channel.slug}`}
+          >
+            <Hash className="w-3 h-3" />
+            {channel.slug}
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { ChevronRight, ChevronDown, PanelRightOpen, Hash, ArrowLeft } from "lucide-react"
 import { Avatar, Spinner, RelativeTime } from "../ui"
+import { MessageContent } from "./MessageContent"
 import type { Message, OpenMode } from "../../types"
 import { getOpenMode } from "../../types"
 
@@ -11,6 +12,7 @@ interface ThreadContextProps {
   isLoading: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
+  onChannelClick?: (channelSlug: string) => void
 }
 
 export function ThreadContext({
@@ -20,6 +22,7 @@ export function ThreadContext({
   isLoading,
   onOpenThread,
   onGoToChannel,
+  onChannelClick,
 }: ThreadContextProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
@@ -56,7 +59,7 @@ export function ThreadContext({
           {isExpanded && (
             <div className="px-4 pb-3 space-y-3">
               {ancestors.map((parent) => (
-                <AncestorMessage key={parent.id} message={parent} onOpenThread={onOpenThread} />
+                <AncestorMessage key={parent.id} message={parent} onOpenThread={onOpenThread} onChannelClick={onChannelClick} />
               ))}
             </div>
           )}
@@ -79,7 +82,7 @@ export function ThreadContext({
             <span className="text-sm">Loading...</span>
           </div>
         ) : rootMessage ? (
-          <RootMessageDisplay message={rootMessage} onOpenThread={onOpenThread} />
+          <RootMessageDisplay message={rootMessage} onOpenThread={onOpenThread} onChannelClick={onChannelClick} />
         ) : null}
       </div>
     </div>
@@ -89,9 +92,10 @@ export function ThreadContext({
 interface AncestorMessageProps {
   message: Message
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
+  onChannelClick?: (channelSlug: string) => void
 }
 
-function AncestorMessage({ message, onOpenThread }: AncestorMessageProps) {
+function AncestorMessage({ message, onOpenThread, onChannelClick }: AncestorMessageProps) {
   return (
     <div className="flex gap-3 pl-3 opacity-60" style={{ borderLeft: "2px solid var(--border-default)" }}>
       <div className="flex-1">
@@ -101,9 +105,9 @@ function AncestorMessage({ message, onOpenThread }: AncestorMessageProps) {
           </span>
           <RelativeTime date={message.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
         </div>
-        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          {message.message}
-        </p>
+        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          <MessageContent content={message.message} mentions={message.mentions} onChannelClick={onChannelClick} />
+        </div>
         <div className="flex items-center gap-2 mt-1">
           <button
             onClick={(e) => onOpenThread?.(message.id, message.channelId, getOpenMode(e))}
@@ -130,9 +134,10 @@ function AncestorMessage({ message, onOpenThread }: AncestorMessageProps) {
 interface RootMessageDisplayProps {
   message: Message
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
+  onChannelClick?: (channelSlug: string) => void
 }
 
-function RootMessageDisplay({ message, onOpenThread }: RootMessageDisplayProps) {
+function RootMessageDisplay({ message, onOpenThread, onChannelClick }: RootMessageDisplayProps) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
@@ -142,9 +147,9 @@ function RootMessageDisplay({ message, onOpenThread }: RootMessageDisplayProps) 
         </span>
         <RelativeTime date={message.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
       </div>
-      <p className="pl-8 text-sm" style={{ color: "var(--text-primary)" }}>
-        {message.message}
-      </p>
+      <div className="pl-8 text-sm" style={{ color: "var(--text-primary)" }}>
+        <MessageContent content={message.message} mentions={message.mentions} onChannelClick={onChannelClick} />
+      </div>
       {/* Allow branching from root message too */}
       <div className="pl-8 mt-1 opacity-0 hover:opacity-100 transition-opacity">
         <button

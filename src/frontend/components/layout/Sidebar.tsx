@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Hash,
   Lock,
@@ -11,6 +11,7 @@ import {
   UserPlus,
   Search,
   Command,
+  Bell,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector, Input } from "../ui"
@@ -26,6 +27,9 @@ interface SidebarProps {
   onInvitePeople: () => void
   onLogout: () => void
   onOpenCommandPalette: () => void
+  onOpenInbox?: () => void
+  isInboxActive?: boolean
+  inboxUnreadCount?: number
 }
 
 export function Sidebar({
@@ -38,6 +42,9 @@ export function Sidebar({
   onInvitePeople,
   onLogout,
   onOpenCommandPalette,
+  onOpenInbox,
+  isInboxActive = false,
+  inboxUnreadCount = 0,
 }: SidebarProps) {
   return (
     <div
@@ -46,6 +53,39 @@ export function Sidebar({
     >
       <WorkspaceHeader workspace={workspace} onInvitePeople={onInvitePeople} />
       <ChannelSearch onOpenCommandPalette={onOpenCommandPalette} />
+
+      <div className="px-2 py-1">
+        <button
+          onClick={onOpenInbox}
+          className={clsx(
+            "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors",
+            isInboxActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
+          )}
+        >
+          <Bell
+            className="h-4 w-4 flex-shrink-0"
+            style={{ color: isInboxActive ? "var(--accent-primary)" : "var(--text-muted)" }}
+          />
+          <span
+            className="text-sm flex-1"
+            style={{
+              color: isInboxActive ? "var(--text-primary)" : "var(--text-secondary)",
+              fontWeight: inboxUnreadCount > 0 ? 600 : 400,
+            }}
+          >
+            Activity
+          </span>
+          {inboxUnreadCount > 0 && (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+              style={{ background: "var(--accent-primary)", color: "white" }}
+            >
+              {inboxUnreadCount > 99 ? "99+" : inboxUnreadCount}
+            </span>
+          )}
+        </button>
+      </div>
+
       <ChannelList
         channels={channels}
         activeChannelSlug={activeChannelSlug}
@@ -82,7 +122,7 @@ function ChannelSearch({ onOpenCommandPalette }: ChannelSearchProps) {
           className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded"
           style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}
         >
-          <Command className="h-3 w-3" />K
+          <Command className="h-3 w-3" />P
         </kbd>
       </button>
     </div>

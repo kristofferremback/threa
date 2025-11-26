@@ -17,6 +17,20 @@ export interface SystemMessageMetadata {
   addedByEmail?: string
 }
 
+export interface MessageMention {
+  type: "user" | "channel" | "crosspost"
+  id: string
+  label: string
+  slug?: string
+}
+
+export interface LinkedChannel {
+  id: string
+  slug: string
+  name: string
+  isPrimary: boolean
+}
+
 export interface Message {
   id: string
   userId?: string
@@ -31,6 +45,8 @@ export interface Message {
   updatedAt?: string
   messageType?: MessageType
   metadata?: SystemMessageMetadata
+  mentions?: MessageMention[]
+  linkedChannels?: LinkedChannel[]
 }
 
 export interface ThreadData {

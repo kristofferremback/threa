@@ -219,7 +219,7 @@ export function createWorkspaceRoutes(
         return
       }
 
-      const { content, channelId, replyToMessageId } = req.body
+      const { content, channelId, replyToMessageId, mentions } = req.body
 
       if (!content || typeof content !== "string" || content.trim().length === 0) {
         res.status(400).json({ error: "Message content is required" })
@@ -269,6 +269,18 @@ export function createWorkspaceRoutes(
         }
       }
 
+      // Validate and normalize mentions if provided
+      const validatedMentions = Array.isArray(mentions)
+        ? mentions.filter(
+            (m: any) =>
+              m &&
+              typeof m === "object" &&
+              ["user", "channel", "crosspost"].includes(m.type) &&
+              typeof m.id === "string" &&
+              typeof m.label === "string",
+          )
+        : []
+
       // Persist message to PostgreSQL (creates outbox event for real-time push)
       const message = await chatService.createMessage({
         workspaceId,
@@ -277,6 +289,7 @@ export function createWorkspaceRoutes(
         content: content.trim(),
         conversationId,
         replyToMessageId: replyToMessageId || null,
+        mentions: validatedMentions,
       })
 
       // Return the created message with author info
@@ -290,6 +303,7 @@ export function createWorkspaceRoutes(
         channelId: message.channel_id,
         conversationId: message.conversation_id,
         replyToMessageId: message.reply_to_message_id,
+        mentions: validatedMentions,
       })
     } catch (error) {
       logger.error({ err: error }, "Failed to send message")
@@ -902,6 +916,89 @@ export function createWorkspaceRoutes(
       })
     } catch (error) {
       logger.error({ err: error }, "Failed to get thread")
+      next(error)
+    }
+  })
+
+  // ==========================================================================
+  // Notifications / Activity Feed
+  // ==========================================================================
+
+  // Get notifications for user
+  router.get("/:workspaceId/notifications", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+      const limit = parseInt(req.query.limit as string) || 50
+      const offset = parseInt(req.query.offset as string) || 0
+      const unreadOnly = req.query.unreadOnly === "true"
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const result = await chatService.getNotifications(workspaceId, userId, { limit, offset, unreadOnly })
+      res.json(result)
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get notifications")
+      next(error)
+    }
+  })
+
+  // Get unread notification count
+  router.get("/:workspaceId/notifications/count", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const count = await chatService.getUnreadNotificationCount(workspaceId, userId)
+      res.json({ count })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get notification count")
+      next(error)
+    }
+  })
+
+  // Mark a notification as read
+  router.post("/:workspaceId/notifications/:notificationId/read", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { notificationId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await chatService.markNotificationAsRead(notificationId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to mark notification as read")
+      next(error)
+    }
+  })
+
+  // Mark all notifications as read
+  router.post("/:workspaceId/notifications/read-all", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await chatService.markAllNotificationsAsRead(workspaceId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to mark all notifications as read")
       next(error)
     }
   })
