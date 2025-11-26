@@ -51,6 +51,15 @@ export const createSocketIOServer = async ({
   })
   await connectRedisClient(messageSubscriber, "Message subscriber")
 
+  // Helper to build room names with workspace prefix
+  const room = {
+    workspace: (workspaceId: string) => `ws:${workspaceId}`,
+    channel: (workspaceId: string, channelId: string) => `ws:${workspaceId}:chan:${channelId}`,
+    conversation: (workspaceId: string, conversationId: string) => `ws:${workspaceId}:conv:${conversationId}`,
+    thread: (workspaceId: string, messageId: string) => `ws:${workspaceId}:thread:${messageId}`,
+    user: (workspaceId: string, userId: string) => `ws:${workspaceId}:user:${userId}`,
+  }
+
   // Subscribe to Redis events for message broadcasting
   // Message flow: persist to PostgreSQL -> outbox NOTIFY -> Redis publish -> Socket.IO emit
   await messageSubscriber.subscribe("event:message.created", (message: string) => {
@@ -76,32 +85,30 @@ export const createSocketIOServer = async ({
         const channel = await chatService.getChannelById(channel_id)
 
         // Emit to workspace room (lightweight notification for unread counts)
-        io.to(`ws:${workspace_id}`).emit("notification", {
+        io.to(room.workspace(workspace_id)).emit("notification", {
           type: "message",
           channelId: channel_id,
           channelSlug: channel?.slug,
           conversationId: event.conversation_id,
         })
 
-        // Emit to ID-based room (full message for active viewers)
-        io.to(`chan:${channel_id}`).emit("message", messageData)
+        // Emit to channel room (full message for active viewers)
+        io.to(room.channel(workspace_id, channel_id)).emit("message", messageData)
 
         // Emit to conversation room if exists
         if (event.conversation_id) {
-          io.to(`conv:${event.conversation_id}`).emit("message", messageData)
+          io.to(room.conversation(workspace_id, event.conversation_id)).emit("message", messageData)
         }
 
         // Emit to thread root if replying (handles first reply case)
         if (event.reply_to_message_id) {
-          io.to(`thread:${event.reply_to_message_id}`).emit("message", messageData)
+          io.to(room.thread(workspace_id, event.reply_to_message_id)).emit("message", messageData)
 
           // Emit reply count update to channel viewers so they can update the parent message's indicator
-          logger.info({ reply_to_message_id: event.reply_to_message_id, channel_id, conversation_id: event.conversation_id }, "About to get reply count")
           const replyCount = await chatService.getReplyCount(event.reply_to_message_id)
-          logger.info({ replyCount, messageId: event.reply_to_message_id, room: `chan:${channel_id}` }, "Emitting replyCountUpdate to channel")
           
           // Emit to channel room (for channel view)
-          io.to(`chan:${channel_id}`).emit("replyCountUpdate", {
+          io.to(room.channel(workspace_id, channel_id)).emit("replyCountUpdate", {
             messageId: event.reply_to_message_id,
             replyCount,
           })
@@ -112,7 +119,7 @@ export const createSocketIOServer = async ({
             // If parent message is itself a reply, emit to its parent's thread room
             // so viewers of that thread see the reply count update
             if (parentMessage.reply_to_message_id) {
-              io.to(`thread:${parentMessage.reply_to_message_id}`).emit("replyCountUpdate", {
+              io.to(room.thread(workspace_id, parentMessage.reply_to_message_id)).emit("replyCountUpdate", {
                 messageId: event.reply_to_message_id,
                 replyCount,
               })
@@ -120,7 +127,7 @@ export const createSocketIOServer = async ({
             
             // Also emit to the parent's conversation room if it exists
             if (parentMessage.conversation_id) {
-              io.to(`conv:${parentMessage.conversation_id}`).emit("replyCountUpdate", {
+              io.to(room.conversation(workspace_id, parentMessage.conversation_id)).emit("replyCountUpdate", {
                 messageId: event.reply_to_message_id,
                 replyCount,
               })
@@ -129,7 +136,7 @@ export const createSocketIOServer = async ({
 
           // Also emit to the new message's conversation room (if exists)
           if (event.conversation_id) {
-            io.to(`conv:${event.conversation_id}`).emit("replyCountUpdate", {
+            io.to(room.conversation(workspace_id, event.conversation_id)).emit("replyCountUpdate", {
               messageId: event.reply_to_message_id,
               replyCount,
             })
@@ -155,15 +162,12 @@ export const createSocketIOServer = async ({
           updatedAt: updated_at,
         }
 
-        // Get channel info for slug-based rooms
-        const channel = await chatService.getChannelById(channel_id)
-
-        // Emit to channel rooms
-        io.to(`chan:${channel_id}`).emit("messageEdited", editData)
+        // Emit to channel room
+        io.to(room.channel(workspace_id, channel_id)).emit("messageEdited", editData)
 
         // Emit to conversation room if exists
         if (conversation_id) {
-          io.to(`conv:${conversation_id}`).emit("messageEdited", editData)
+          io.to(room.conversation(workspace_id, conversation_id)).emit("messageEdited", editData)
         }
 
         logger.debug({ message_id: id }, "Message edit broadcast via Socket.IO")
@@ -189,7 +193,7 @@ export const createSocketIOServer = async ({
         }
 
         // Broadcast to workspace room
-        io.to(`ws:${workspace_id}`).emit("notification", {
+        io.to(room.workspace(workspace_id)).emit("notification", {
           type: "conversation_created",
           conversationId: id,
           rootMessageId: root_message_id,
@@ -197,11 +201,11 @@ export const createSocketIOServer = async ({
 
         // Broadcast to all involved channels so they can update the root message UI
         for (const channelId of channel_ids) {
-          io.to(`chan:${channelId}`).emit("conversation_created", eventData)
+          io.to(room.channel(workspace_id, channelId)).emit("conversation_created", eventData)
         }
 
         // Also emit to the root message thread room if anyone is listening
-        io.to(`thread:${root_message_id}`).emit("conversation_created", eventData)
+        io.to(room.thread(workspace_id, root_message_id)).emit("conversation_created", eventData)
 
         logger.debug({ conversation_id: id, channels: channel_ids }, "Conversation created broadcast via Socket.IO")
       } catch (error) {
@@ -225,7 +229,7 @@ export const createSocketIOServer = async ({
         }
 
         // Notify the added user so they can update their channel list
-        io.to(`user:${userId}`).emit("channelMemberAdded", {
+        io.to(room.user(workspaceId, userId)).emit("channelMemberAdded", {
           channel: {
             id: channel.id,
             name: channel.name,
@@ -257,14 +261,14 @@ export const createSocketIOServer = async ({
         const { channelId, channelName, workspaceId, userId, removedByUserId } = event
 
         // Notify the removed user directly
-        io.to(`user:${userId}`).emit("channelMemberRemoved", {
+        io.to(room.user(workspaceId, userId)).emit("channelMemberRemoved", {
           channelId,
           channelName,
           removedByUserId,
         })
 
         // Also emit to the channel room so other members can update their UI
-        io.to(`chan:${channelId}`).emit("channelMemberRemoved", {
+        io.to(room.channel(workspaceId, channelId)).emit("channelMemberRemoved", {
           channelId,
           userId,
           removedByUserId,
@@ -334,10 +338,10 @@ export const createSocketIOServer = async ({
     const workspaceId = workspaceMemberResult.rows[0].workspace_id
 
     // Join the workspace room for notifications
-    socket.join(`ws:${workspaceId}`)
+    socket.join(room.workspace(workspaceId))
 
-    // Join the user's private room for direct notifications
-    socket.join(`user:${userId}`)
+    // Join the user's private room for direct notifications (workspace-scoped)
+    socket.join(room.user(workspaceId, userId))
 
     // Emit connected event with workspace info and user ID
     socket.emit("connected", {
@@ -358,14 +362,15 @@ export const createSocketIOServer = async ({
     // All resource fetching (messages, threads, etc.) is done via HTTP
 
     // Room management - client joins/leaves rooms as needed
-    socket.on("join", (room: string) => {
-      logger.debug({ userId, room }, "Joining room")
-      socket.join(room)
+    // Client sends room names with workspace prefix: ws:${workspaceId}:chan:${channelId}
+    socket.on("join", (roomName: string) => {
+      logger.debug({ userId, room: roomName }, "Joining room")
+      socket.join(roomName)
     })
 
-    socket.on("leave", (room: string) => {
-      logger.debug({ userId, room }, "Leaving room")
-      socket.leave(room)
+    socket.on("leave", (roomName: string) => {
+      logger.debug({ userId, room: roomName }, "Leaving room")
+      socket.leave(roomName)
     })
 
     // Handle read receipts (ephemeral)
@@ -384,9 +389,9 @@ export const createSocketIOServer = async ({
     // Handle typing indicators
     socket.on("typing", (data: { channelId?: string; conversationId?: string }) => {
       if (data.channelId) {
-        socket.to(`chan:${data.channelId}`).emit("user_typing", { userId, email })
+        socket.to(room.channel(workspaceId, data.channelId)).emit("user_typing", { userId, email })
       } else if (data.conversationId) {
-        socket.to(`conv:${data.conversationId}`).emit("user_typing", { userId, email })
+        socket.to(room.conversation(workspaceId, data.conversationId)).emit("user_typing", { userId, email })
       }
     })
 

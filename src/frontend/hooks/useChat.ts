@@ -27,6 +27,13 @@ interface UseChatReturn {
   markAllAsRead: () => Promise<void>
 }
 
+// Helper to build room names with workspace prefix
+const room = {
+  channel: (workspaceId: string, channelId: string) => `ws:${workspaceId}:chan:${channelId}`,
+  conversation: (workspaceId: string, conversationId: string) => `ws:${workspaceId}:conv:${conversationId}`,
+  thread: (workspaceId: string, messageId: string) => `ws:${workspaceId}:thread:${messageId}`,
+}
+
 export function useChat({ workspaceId, channelId, threadId, enabled = true }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [rootMessage, setRootMessage] = useState<Message | null>(null)
@@ -92,7 +99,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
           // If this is the first reply, a conversation was just created - join it
           if (data.conversationId && !conversationIdRef.current) {
             setConversationId(data.conversationId)
-            socket.emit("join", `conv:${data.conversationId}`)
+            socket.emit("join", room.conversation(workspaceId, data.conversationId))
           }
         }
       } else if (currentChannelId) {
@@ -113,15 +120,9 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
     // Handle reply count updates
     socket.on("replyCountUpdate", (data: { messageId: string; replyCount: number }) => {
-      console.log("[useChat] Received replyCountUpdate:", data)
-      setMessages((prev) => {
-        const updated = prev.map((msg) => (msg.id === data.messageId ? { ...msg, replyCount: data.replyCount } : msg))
-        console.log(
-          "[useChat] Messages after update:",
-          updated.map((m) => ({ id: m.id, replyCount: m.replyCount })),
-        )
-        return updated
-      })
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === data.messageId ? { ...msg, replyCount: data.replyCount } : msg)),
+      )
     })
 
     // Handle message edits
@@ -161,13 +162,11 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     const subscribeAndFetch = async () => {
       if (threadId) {
         // Subscribe to thread room FIRST (to catch any messages during fetch)
-        console.log("[useChat] Joining thread room:", `thread:${threadId}`)
-        socket.emit("join", `thread:${threadId}`)
+        socket.emit("join", room.thread(workspaceId, threadId))
         await fetchThreadData()
       } else if (channelId) {
         // Subscribe to channel room FIRST
-        console.log("[useChat] Joining channel room:", `chan:${channelId}`)
-        socket.emit("join", `chan:${channelId}`)
+        socket.emit("join", room.channel(workspaceId, channelId))
         await fetchChannelMessages()
       } else {
         setIsLoading(false)
@@ -242,7 +241,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
         if (data.conversationId) {
           setConversationId(data.conversationId)
-          socket.emit("join", `conv:${data.conversationId}`)
+          socket.emit("join", room.conversation(workspaceId, data.conversationId))
         }
 
         // Set the last read message ID from server
@@ -289,12 +288,12 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     return () => {
       if (socket.connected) {
         if (threadId) {
-          socket.emit("leave", `thread:${threadId}`)
+          socket.emit("leave", room.thread(workspaceId, threadId))
           if (conversationIdRef.current) {
-            socket.emit("leave", `conv:${conversationIdRef.current}`)
+            socket.emit("leave", room.conversation(workspaceId, conversationIdRef.current))
           }
         } else if (channelId) {
-          socket.emit("leave", `chan:${channelId}`)
+          socket.emit("leave", room.channel(workspaceId, channelId))
         }
       }
       socket.disconnect()
@@ -330,7 +329,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         // If this was a reply and we didn't have a conversation ID, we now do
         if (threadId && sentMessage.conversationId && !conversationIdRef.current) {
           setConversationId(sentMessage.conversationId)
-          socketRef.current?.emit("join", `conv:${sentMessage.conversationId}`)
+          socketRef.current?.emit("join", room.conversation(workspaceId, sentMessage.conversationId))
         }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Failed to send message")
