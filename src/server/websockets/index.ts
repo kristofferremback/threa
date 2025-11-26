@@ -8,6 +8,7 @@ import { parseCookies } from "../lib/cookies"
 import { logger } from "../lib/logger"
 import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
 import { Pool } from "pg"
+import { sql } from "../lib/db"
 
 interface SocketData {
   userId: string
@@ -109,7 +110,7 @@ export const createSocketIOServer = async ({
 
           // Emit reply count update to channel viewers so they can update the parent message's indicator
           const replyCount = await chatService.getReplyCount(event.reply_to_message_id)
-          
+
           // Emit to channel room (for channel view)
           io.to(room.channel(workspace_id, channel_id)).emit("replyCountUpdate", {
             messageId: event.reply_to_message_id,
@@ -127,7 +128,7 @@ export const createSocketIOServer = async ({
                 replyCount,
               })
             }
-            
+
             // Also emit to the parent's conversation room if it exists
             if (parentMessage.conversation_id) {
               io.to(room.conversation(workspace_id, parentMessage.conversation_id)).emit("replyCountUpdate", {
@@ -213,6 +214,48 @@ export const createSocketIOServer = async ({
         logger.debug({ conversation_id: id, channels: channel_ids }, "Conversation created broadcast via Socket.IO")
       } catch (error) {
         logger.error({ err: error }, "Failed to process Redis conversation.created event")
+      }
+    })()
+  })
+
+  // Subscribe to notification created events (mentions, etc.)
+  await messageSubscriber.subscribe("event:notification.created", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { workspace_id, user_id, notification_type, message_id, channel_id, conversation_id, actor_id, preview, id } = event
+
+        // Get actor details
+        const actorResult = await pool.query(
+          sql`SELECT name, email FROM users WHERE id = ${actor_id}`,
+        )
+        const actor = actorResult.rows[0]
+
+        // Get channel details
+        const channel = channel_id ? await chatService.getChannelById(channel_id) : null
+
+        logger.debug({ notification_id: id, user_id, type: notification_type }, "Processing notification.created event")
+
+        // Emit to the user's private room
+        io.to(room.user(workspace_id, user_id)).emit("notification:new", {
+          id,
+          type: notification_type,
+          messageId: message_id,
+          channelId: channel_id,
+          channelName: channel?.name || null,
+          channelSlug: channel?.slug || null,
+          conversationId: conversation_id,
+          actorId: actor_id,
+          actorName: actor?.name || null,
+          actorEmail: actor?.email || null,
+          preview,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+        })
+
+        logger.debug({ notification_id: id, user_id, type: notification_type }, "Notification broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis notification.created event")
       }
     })()
   })

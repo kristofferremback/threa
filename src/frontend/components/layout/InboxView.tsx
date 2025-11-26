@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { Bell, CheckCheck, AtSign, MessageCircle, Hash, UserPlus } from "lucide-react"
 import { Avatar, RelativeTime, Spinner, Button } from "../ui"
+import { getOpenMode, type OpenMode } from "../../types"
+import type { Socket } from "socket.io-client"
 
 interface Notification {
   id: string
@@ -18,16 +20,27 @@ interface Notification {
   createdAt: string
 }
 
+type TabType = "unread" | "all"
+
 interface InboxViewProps {
   workspaceId: string
-  onNavigateToChannel?: (channelSlug: string) => void
-  onNavigateToThread?: (messageId: string, channelId: string) => void
+  socket?: Socket | null
+  onNavigateToChannel?: (channelSlug: string, mode?: OpenMode) => void
+  onNavigateToThread?: (messageId: string, channelId: string, mode?: OpenMode) => void
+  onUnreadCountChange?: (count: number) => void
 }
 
-export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread }: InboxViewProps) {
+export function InboxView({
+  workspaceId,
+  socket,
+  onNavigateToChannel,
+  onNavigateToThread,
+  onUnreadCountChange,
+}: InboxViewProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<TabType>("unread")
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -49,46 +62,86 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
     fetchNotifications()
   }, [fetchNotifications])
 
+  // Listen for real-time notifications
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewNotification = (notification: Notification) => {
+      setNotifications((prev) => {
+        // Check if notification already exists
+        if (prev.some((n) => n.id === notification.id)) {
+          return prev
+        }
+        // Add new notification at the top
+        const updated = [notification, ...prev]
+        // Notify parent of new unread count
+        const newUnreadCount = updated.filter((n) => !n.readAt).length
+        onUnreadCountChange?.(newUnreadCount)
+        return updated
+      })
+    }
+
+    socket.on("notification:new", handleNewNotification)
+
+    return () => {
+      socket.off("notification:new", handleNewNotification)
+    }
+  }, [socket, onUnreadCountChange])
+
+  // Notify parent when unread count changes
+  const unreadCount = notifications.filter((n) => !n.readAt).length
+  useEffect(() => {
+    onUnreadCountChange?.(unreadCount)
+  }, [unreadCount, onUnreadCountChange])
+
   const handleMarkAllRead = async () => {
     try {
       await fetch(`/api/workspace/${workspaceId}/notifications/read-all`, {
         method: "POST",
         credentials: "include",
       })
-      setNotifications((prev) =>
-        prev.map((n) => ({
+      setNotifications((prev) => {
+        const updated = prev.map((n) => ({
           ...n,
           readAt: n.readAt || new Date().toISOString(),
-        })),
-      )
+        }))
+        // Immediately notify parent of new count (0 since all are read)
+        onUnreadCountChange?.(0)
+        return updated
+      })
     } catch (err) {
       console.error("Failed to mark all as read:", err)
     }
   }
 
-  const handleNotificationClick = async (notification: Notification) => {
-    // Mark as read
+  const handleNotificationClick = async (notification: Notification, e: React.MouseEvent) => {
+    const mode = getOpenMode(e)
+
+    // Mark as read (optimistically update UI first)
     if (!notification.readAt) {
-      try {
-        await fetch(`/api/workspace/${workspaceId}/notifications/${notification.id}/read`, {
-          method: "POST",
-          credentials: "include",
-        })
-        setNotifications((prev) =>
-          prev.map((n) =>
-            n.id === notification.id ? { ...n, readAt: new Date().toISOString() } : n,
-          ),
+      // Optimistic update - update state immediately
+      setNotifications((prev) => {
+        const updated = prev.map((n) =>
+          n.id === notification.id ? { ...n, readAt: new Date().toISOString() } : n,
         )
-      } catch (err) {
-        console.error("Failed to mark notification as read:", err)
-      }
+        // Immediately notify parent of new count
+        const newUnreadCount = updated.filter((n) => !n.readAt).length
+        onUnreadCountChange?.(newUnreadCount)
+        return updated
+      })
+
+      // Then persist to server (fire and forget)
+      fetch(`/api/workspace/${workspaceId}/notifications/${notification.id}/read`, {
+        method: "POST",
+        credentials: "include",
+      }).catch((err) => console.error("Failed to mark notification as read:", err))
     }
 
     // Navigate to the relevant location
     if (notification.conversationId && notification.messageId && notification.channelId) {
-      onNavigateToThread?.(notification.messageId, notification.channelId)
+      onNavigateToThread?.(notification.messageId, notification.channelId, mode)
     } else if (notification.channelSlug) {
-      onNavigateToChannel?.(notification.channelSlug)
+      onNavigateToChannel?.(notification.channelSlug, mode)
     }
   }
 
@@ -136,7 +189,11 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
     }
   }
 
-  const unreadCount = notifications.filter((n) => !n.readAt).length
+  // Filter notifications based on active tab
+  const filteredNotifications =
+    activeTab === "unread" ? notifications.filter((n) => !n.readAt) : notifications
+
+  const readCount = notifications.filter((n) => n.readAt).length
 
   if (isLoading) {
     return (
@@ -152,7 +209,7 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
         <div className="text-center">
           <p style={{ color: "var(--text-muted)" }}>{error}</p>
           <Button variant="ghost" onClick={fetchNotifications} className="mt-2">
-            Try again
+            Retry
           </Button>
         </div>
       </div>
@@ -161,6 +218,7 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
 
   return (
     <div className="flex h-full flex-col" style={{ background: "var(--bg-primary)" }}>
+      {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 flex-shrink-0"
         style={{ borderBottom: "1px solid var(--border-subtle)" }}
@@ -170,50 +228,90 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
           <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
             Activity
           </h2>
-          {unreadCount > 0 && (
-            <span
-              className="px-2 py-0.5 text-xs font-medium rounded-full"
-              style={{ background: "var(--accent-primary)", color: "white" }}
-            >
-              {unreadCount}
-            </span>
-          )}
         </div>
         {unreadCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleMarkAllRead}
-            icon={<CheckCheck className="h-4 w-4" />}
-          >
+          <Button variant="ghost" size="sm" onClick={handleMarkAllRead} icon={<CheckCheck className="h-4 w-4" />}>
             Mark all read
           </Button>
         )}
       </div>
 
+      {/* Sub-tabs */}
+      <div
+        className="flex items-center gap-1 px-4 py-2 flex-shrink-0"
+        style={{ borderBottom: "1px solid var(--border-subtle)" }}
+      >
+        <button
+          onClick={() => setActiveTab("unread")}
+          className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+          style={{
+            background: activeTab === "unread" ? "var(--accent-primary)" : "transparent",
+            color: activeTab === "unread" ? "white" : "var(--text-muted)",
+          }}
+        >
+          Unread
+          {unreadCount > 0 && (
+            <span
+              className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full"
+              style={{
+                background: activeTab === "unread" ? "rgba(255,255,255,0.2)" : "var(--accent-primary)",
+                color: activeTab === "unread" ? "white" : "white",
+              }}
+            >
+              {unreadCount}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab("all")}
+          className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+          style={{
+            background: activeTab === "all" ? "var(--bg-tertiary)" : "transparent",
+            color: activeTab === "all" ? "var(--text-primary)" : "var(--text-muted)",
+          }}
+        >
+          All
+          {readCount > 0 && (
+            <span
+              className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full"
+              style={{
+                background: "var(--bg-secondary)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {notifications.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Notification list */}
       <div className="flex-1 overflow-y-auto">
-        {notifications.length === 0 ? (
+        {filteredNotifications.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <Bell className="h-12 w-12 mx-auto mb-4 opacity-30" style={{ color: "var(--text-muted)" }} />
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                No notifications yet
+                {activeTab === "unread" ? "All caught up!" : "No notifications yet"}
               </p>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                You'll see @mentions and thread replies here
+                {activeTab === "unread"
+                  ? "You have no unread notifications"
+                  : "You'll see @mentions and thread replies here"}
               </p>
             </div>
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-            {notifications.map((notification) => (
+            {filteredNotifications.map((notification) => (
               <button
                 key={notification.id}
-                onClick={() => handleNotificationClick(notification)}
+                onClick={(e) => handleNotificationClick(notification, e)}
                 className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--hover-overlay)] flex gap-3"
                 style={{
                   background: notification.readAt ? "transparent" : "var(--unread-bg, rgba(99, 102, 241, 0.05))",
                 }}
+                title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
               >
                 <div className="flex-shrink-0 mt-0.5">
                   {notification.actorEmail ? (
@@ -241,10 +339,7 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
                   </div>
 
                   {notification.preview && (
-                    <p
-                      className="text-sm mt-1 truncate"
-                      style={{ color: "var(--text-muted)" }}
-                    >
+                    <p className="text-sm mt-1 truncate" style={{ color: "var(--text-muted)" }}>
                       "{notification.preview}"
                     </p>
                   )}
@@ -273,4 +368,3 @@ export function InboxView({ workspaceId, onNavigateToChannel, onNavigateToThread
     </div>
   )
 }
-

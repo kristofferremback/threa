@@ -286,6 +286,23 @@ export class ChatService {
               VALUES (${notificationId}, ${params.workspaceId}, ${mention.id}, ${"mention"}, ${messageId}, ${params.channelId}, ${params.conversationId || null}, ${params.authorId}, ${preview})
               ON CONFLICT (workspace_id, user_id, notification_type, message_id, actor_id) DO NOTHING`,
         )
+
+        // Create outbox event to notify the mentioned user in real-time
+        const mentionOutboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${mentionOutboxId}, ${"notification.created"}, ${JSON.stringify({
+                id: notificationId,
+                workspace_id: params.workspaceId,
+                user_id: mention.id,
+                notification_type: "mention",
+                message_id: messageId,
+                channel_id: params.channelId,
+                conversation_id: params.conversationId || null,
+                actor_id: params.authorId,
+                preview,
+              })})`,
+        )
       }
 
       // Create outbox event for real-time broadcast to primary channel
@@ -1494,37 +1511,65 @@ export class ChatService {
   }> {
     const { limit = 50, offset = 0, unreadOnly = false } = options
 
-    const unreadCondition = unreadOnly ? sql`AND n.read_at IS NULL` : sql``
-
-    const result = await this.pool.query<{
-      id: string
-      notification_type: string
-      message_id: string | null
-      channel_id: string | null
-      channel_name: string | null
-      channel_slug: string | null
-      conversation_id: string | null
-      actor_id: string | null
-      actor_name: string | null
-      actor_email: string | null
-      preview: string | null
-      read_at: Date | null
-      created_at: Date
-    }>(
-      sql`SELECT
-            n.id, n.notification_type, n.message_id, n.channel_id, n.conversation_id,
-            n.actor_id, n.preview, n.read_at, n.created_at,
-            c.name as channel_name, c.slug as channel_slug,
-            u.name as actor_name, u.email as actor_email
-          FROM notifications n
-          LEFT JOIN channels c ON n.channel_id = c.id
-          LEFT JOIN users u ON n.actor_id = u.id
-          WHERE n.workspace_id = ${workspaceId}
-            AND n.user_id = ${userId}
-            ${unreadCondition}
-          ORDER BY n.created_at DESC
-          LIMIT ${limit} OFFSET ${offset}`,
-    )
+    // Build the query based on unreadOnly flag
+    const result = unreadOnly
+      ? await this.pool.query<{
+          id: string
+          notification_type: string
+          message_id: string | null
+          channel_id: string | null
+          channel_name: string | null
+          channel_slug: string | null
+          conversation_id: string | null
+          actor_id: string | null
+          actor_name: string | null
+          actor_email: string | null
+          preview: string | null
+          read_at: Date | null
+          created_at: Date
+        }>(
+          sql`SELECT
+                n.id, n.notification_type, n.message_id, n.channel_id, n.conversation_id,
+                n.actor_id, n.preview, n.read_at, n.created_at,
+                c.name as channel_name, c.slug as channel_slug,
+                u.name as actor_name, u.email as actor_email
+              FROM notifications n
+              LEFT JOIN channels c ON n.channel_id = c.id
+              LEFT JOIN users u ON n.actor_id = u.id
+              WHERE n.workspace_id = ${workspaceId}
+                AND n.user_id = ${userId}
+                AND n.read_at IS NULL
+              ORDER BY n.created_at DESC
+              LIMIT ${limit} OFFSET ${offset}`,
+        )
+      : await this.pool.query<{
+          id: string
+          notification_type: string
+          message_id: string | null
+          channel_id: string | null
+          channel_name: string | null
+          channel_slug: string | null
+          conversation_id: string | null
+          actor_id: string | null
+          actor_name: string | null
+          actor_email: string | null
+          preview: string | null
+          read_at: Date | null
+          created_at: Date
+        }>(
+          sql`SELECT
+                n.id, n.notification_type, n.message_id, n.channel_id, n.conversation_id,
+                n.actor_id, n.preview, n.read_at, n.created_at,
+                c.name as channel_name, c.slug as channel_slug,
+                u.name as actor_name, u.email as actor_email
+              FROM notifications n
+              LEFT JOIN channels c ON n.channel_id = c.id
+              LEFT JOIN users u ON n.actor_id = u.id
+              WHERE n.workspace_id = ${workspaceId}
+                AND n.user_id = ${userId}
+              ORDER BY n.created_at DESC
+              LIMIT ${limit} OFFSET ${offset}`,
+        )
 
     // Get unread count
     const countResult = await this.pool.query<{ count: string }>(

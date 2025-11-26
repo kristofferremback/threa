@@ -91,7 +91,7 @@ export interface BootstrapData {
 export interface Tab {
   id: string
   title: string
-  type: "channel" | "thread"
+  type: "channel" | "thread" | "activity"
   data?: {
     channelSlug?: string
     threadId?: string

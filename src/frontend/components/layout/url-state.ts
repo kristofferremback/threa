@@ -26,6 +26,8 @@ export function serializePanesToUrl(panes: Pane[]): string {
             return `c:${tab.data?.channelSlug || ""}`
           } else if (tab.type === "thread") {
             return `t:${tab.data?.threadId || ""}:${tab.data?.channelSlug || ""}`
+          } else if (tab.type === "activity") {
+            return "a:activity"
           }
           return ""
         })
@@ -71,6 +73,14 @@ export function deserializePanesFromUrl(param: string, channels: Channel[]): Pan
                 title: "Thread",
                 type: "thread",
                 data: { threadId, channelSlug },
+              } as Tab
+            } else if (parts[0] === "a") {
+              // Activity: a:activity
+              return {
+                id: `activity-${paneIndex}-${tabIndex}`,
+                title: "Activity",
+                type: "activity",
+                data: {},
               } as Tab
             }
             return null

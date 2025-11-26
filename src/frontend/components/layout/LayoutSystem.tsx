@@ -20,7 +20,6 @@ export function LayoutSystem() {
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
-  const [showInbox, setShowInbox] = useState(false)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
   // Bootstrap data
@@ -61,6 +60,12 @@ export function LayoutSystem() {
     }
   }, [bootstrapData, initializeFromUrl])
 
+  // Check if activity view is active
+  const isActivityActive = panes.some((pane) => {
+    const activeTab = pane.tabs.find((t) => t.id === pane.activeTabId)
+    return activeTab?.type === "activity"
+  })
+
   // Handle being removed from a channel
   const handleChannelRemoved = useCallback(
     (channelId: string) => {
@@ -85,7 +90,7 @@ export function LayoutSystem() {
   )
 
   // Workspace-level WebSocket for real-time updates
-  useWorkspaceSocket({
+  const { socket } = useWorkspaceSocket({
     enabled: isAuthenticated && !!bootstrapData,
     workspaceId: bootstrapData?.workspace.id,
     activeChannelSlug: activeChannelSlug || undefined,
@@ -93,6 +98,7 @@ export function LayoutSystem() {
     onChannelAdded: addChannel,
     onChannelRemoved: handleChannelRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
+    onNewNotification: () => setInboxUnreadCount((prev) => prev + 1),
   })
 
   // Fetch inbox unread count
@@ -183,6 +189,39 @@ export function LayoutSystem() {
   const renderTabContent = (tab: Tab, paneId: string) => {
     if (!bootstrapData) return null
 
+    // Handle activity tab
+    if (tab.type === "activity") {
+      return (
+        <InboxView
+          workspaceId={bootstrapData.workspace.id}
+          socket={socket}
+          onUnreadCountChange={setInboxUnreadCount}
+          onNavigateToChannel={(channelSlug, mode = "replace") => {
+            const channel = bootstrapData.channels.find((c) => c.slug === channelSlug)
+            if (channel) {
+              openItem(
+                { title: `#${channel.name.replace("#", "")}`, type: "channel", data: { channelSlug } },
+                mode,
+                paneId,
+              )
+            }
+          }}
+          onNavigateToThread={(messageId, channelId, mode = "replace") => {
+            const channel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
+            openItem(
+              {
+                title: "Thread",
+                type: "thread",
+                data: { threadId: messageId, channelSlug: channel?.slug || channelId },
+              },
+              mode,
+              paneId,
+            )
+          }}
+        />
+      )
+    }
+
     // Look up actual channel from slug stored in tab data
     const channel = getChannelFromSlug(tab.data?.channelSlug)
     // Use actual channel ID for socket connections, fall back to slug for backwards compatibility
@@ -272,18 +311,15 @@ export function LayoutSystem() {
       <Sidebar
         workspace={bootstrapData.workspace}
         channels={bootstrapData.channels}
-        activeChannelSlug={showInbox ? null : activeChannelSlug}
-        onSelectChannel={(channel) => {
-          setShowInbox(false)
-          handleSelectChannel(channel)
-        }}
+        activeChannelSlug={isActivityActive ? null : activeChannelSlug}
+        onSelectChannel={handleSelectChannel}
         onCreateChannel={() => setShowCreateChannel(true)}
         onChannelSettings={(channel) => setChannelToEdit(channel)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
-        onOpenInbox={() => setShowInbox(true)}
-        isInboxActive={showInbox}
+        onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
+        isInboxActive={isActivityActive}
         inboxUnreadCount={inboxUnreadCount}
       />
 
@@ -328,37 +364,14 @@ export function LayoutSystem() {
       />
 
       <div className="flex-1 min-w-0">
-        {showInbox ? (
-          <InboxView
-            workspaceId={bootstrapData.workspace.id}
-            onNavigateToChannel={(channelSlug) => {
-              setShowInbox(false)
-              const channel = bootstrapData.channels.find((c) => c.slug === channelSlug)
-              if (channel) handleSelectChannel(channel)
-            }}
-            onNavigateToThread={(messageId, channelId) => {
-              setShowInbox(false)
-              const channel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
-              openItem(
-                {
-                  title: "Thread",
-                  type: "thread",
-                  data: { threadId: messageId, channelSlug: channel?.slug || channelId },
-                },
-                "replace",
-              )
-            }}
-          />
-        ) : (
-          <PaneSystem
-            panes={panes}
-            focusedPaneId={focusedPaneId}
-            onFocusPane={setFocusedPane}
-            onSetActiveTab={setActiveTab}
-            onCloseTab={closeTab}
-            renderContent={renderTabContent}
-          />
-        )}
+        <PaneSystem
+          panes={panes}
+          focusedPaneId={focusedPaneId}
+          onFocusPane={setFocusedPane}
+          onSetActiveTab={setActiveTab}
+          onCloseTab={closeTab}
+          renderContent={renderTabContent}
+        />
       </div>
 
       <CommandPalette

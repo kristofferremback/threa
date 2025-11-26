@@ -1,5 +1,5 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels"
-import { X, Hash, MessageCircle } from "lucide-react"
+import { X, Hash, MessageCircle, Bell } from "lucide-react"
 import { clsx } from "clsx"
 import type { Pane, Tab } from "../../types"
 
@@ -171,7 +171,13 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
         borderBottom: isActive ? "2px solid var(--accent-primary)" : "2px solid transparent",
       }}
     >
-      {tab.type === "channel" ? <Hash className="h-3.5 w-3.5" /> : <MessageCircle className="h-3.5 w-3.5" />}
+      {tab.type === "channel" ? (
+        <Hash className="h-3.5 w-3.5" />
+      ) : tab.type === "activity" ? (
+        <Bell className="h-3.5 w-3.5" />
+      ) : (
+        <MessageCircle className="h-3.5 w-3.5" />
+      )}
       <span className="truncate max-w-[120px]">{tab.title}</span>
       <button
         onClick={(e) => {
