@@ -51,8 +51,8 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
         setFocusedPaneId(restoredPanes[0].id)
 
         const firstChannelTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "channel")
-        if (firstChannelTab?.data?.channelId) {
-          setActiveChannelSlug(firstChannelTab.data.channelId)
+        if (firstChannelTab?.data?.channelSlug) {
+          setActiveChannelSlug(firstChannelTab.data.channelSlug)
         }
       }
     }
@@ -72,8 +72,8 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
       setFocusedPaneId(restoredPanes[0].id)
 
       const firstChannelTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "channel")
-      if (firstChannelTab?.data?.channelId) {
-        setActiveChannelSlug(firstChannelTab.data.channelId)
+      if (firstChannelTab?.data?.channelSlug) {
+        setActiveChannelSlug(firstChannelTab.data.channelSlug)
       }
       return true
     }
@@ -91,7 +91,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
               id: defaultChannel.slug,
               title: `#${defaultChannel.name.replace("#", "")}`,
               type: "channel",
-              data: { channelId: defaultChannel.slug },
+              data: { channelSlug: defaultChannel.slug },
             },
           ],
           activeTabId: defaultChannel.slug,
@@ -214,7 +214,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
                 id: channel.slug,
                 title: `#${channel.name.replace("#", "")}`,
                 type: "channel",
-                data: { channelId: channel.slug },
+                data: { channelSlug: channel.slug },
               },
             ],
             activeTabId: channel.slug,
@@ -223,7 +223,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
       }
       return prev.map((pane, idx) => {
         if (idx === 0) {
-          const existingTab = pane.tabs.find((t) => t.data?.channelId === channel.slug)
+          const existingTab = pane.tabs.find((t) => t.data?.channelSlug === channel.slug)
           if (existingTab) {
             return { ...pane, activeTabId: existingTab.id }
           }
@@ -231,7 +231,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
             id: channel.slug,
             title: `#${channel.name.replace("#", "")}`,
             type: "channel",
-            data: { channelId: channel.slug },
+            data: { channelSlug: channel.slug },
           }
           return { ...pane, tabs: [newTab, ...pane.tabs.slice(1)], activeTabId: newTab.id }
         }

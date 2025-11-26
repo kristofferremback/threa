@@ -73,24 +73,18 @@ export const createSocketIOServer = async ({
           replyToMessageId: event.reply_to_message_id,
         }
 
-        // Get channel info for slug-based rooms
         const channel = await chatService.getChannelById(channel_id)
-        const channelSlug = channel?.slug
 
         // Emit to workspace room (lightweight notification for unread counts)
         io.to(`ws:${workspace_id}`).emit("notification", {
           type: "message",
           channelId: channel_id,
-          channelSlug,
+          channelSlug: channel?.slug,
           conversationId: event.conversation_id,
         })
 
         // Emit to ID-based room (full message for active viewers)
         io.to(`chan:${channel_id}`).emit("message", messageData)
-        // Also emit to slug-based room if slug exists (for frontend compatibility)
-        if (channelSlug) {
-          io.to(`chan:${channelSlug}`).emit("message", messageData)
-        }
 
         // Emit to conversation room if exists
         if (event.conversation_id) {
@@ -102,19 +96,45 @@ export const createSocketIOServer = async ({
           io.to(`thread:${event.reply_to_message_id}`).emit("message", messageData)
 
           // Emit reply count update to channel viewers so they can update the parent message's indicator
+          logger.info({ reply_to_message_id: event.reply_to_message_id, channel_id, conversation_id: event.conversation_id }, "About to get reply count")
           const replyCount = await chatService.getReplyCount(event.reply_to_message_id)
+          logger.info({ replyCount, messageId: event.reply_to_message_id, room: `chan:${channel_id}` }, "Emitting replyCountUpdate to channel")
+          
+          // Emit to channel room (for channel view)
           io.to(`chan:${channel_id}`).emit("replyCountUpdate", {
             messageId: event.reply_to_message_id,
             replyCount,
           })
-          if (channelSlug) {
-            io.to(`chan:${channelSlug}`).emit("replyCountUpdate", {
+
+          // Get the parent message to find which thread it belongs to (for branched conversations)
+          const parentMessage = await chatService.getMessageById(event.reply_to_message_id)
+          if (parentMessage) {
+            // If parent message is itself a reply, emit to its parent's thread room
+            // so viewers of that thread see the reply count update
+            if (parentMessage.reply_to_message_id) {
+              io.to(`thread:${parentMessage.reply_to_message_id}`).emit("replyCountUpdate", {
+                messageId: event.reply_to_message_id,
+                replyCount,
+              })
+            }
+            
+            // Also emit to the parent's conversation room if it exists
+            if (parentMessage.conversation_id) {
+              io.to(`conv:${parentMessage.conversation_id}`).emit("replyCountUpdate", {
+                messageId: event.reply_to_message_id,
+                replyCount,
+              })
+            }
+          }
+
+          // Also emit to the new message's conversation room (if exists)
+          if (event.conversation_id) {
+            io.to(`conv:${event.conversation_id}`).emit("replyCountUpdate", {
               messageId: event.reply_to_message_id,
               replyCount,
             })
           }
         }
-
         logger.debug({ message_id: id, channel_id }, "Message broadcast via Socket.IO")
       } catch (error) {
         logger.error({ err: error }, "Failed to process Redis message event")
@@ -137,13 +157,9 @@ export const createSocketIOServer = async ({
 
         // Get channel info for slug-based rooms
         const channel = await chatService.getChannelById(channel_id)
-        const channelSlug = channel?.slug
 
         // Emit to channel rooms
         io.to(`chan:${channel_id}`).emit("messageEdited", editData)
-        if (channelSlug) {
-          io.to(`chan:${channelSlug}`).emit("messageEdited", editData)
-        }
 
         // Emit to conversation room if exists
         if (conversation_id) {

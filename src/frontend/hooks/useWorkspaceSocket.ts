@@ -6,7 +6,7 @@ import type { Channel } from "../types"
 interface UseWorkspaceSocketOptions {
   enabled?: boolean
   workspaceId?: string
-  activeChannelId?: string
+  activeChannelSlug?: string
   onChannelAdded?: (channel: Channel) => void
   onChannelRemoved?: (channelId: string) => void
   onUnreadCountUpdate?: (channelId: string, increment: number) => void
@@ -15,18 +15,18 @@ interface UseWorkspaceSocketOptions {
 export function useWorkspaceSocket({
   enabled = true,
   workspaceId,
-  activeChannelId,
+  activeChannelSlug,
   onChannelAdded,
   onChannelRemoved,
   onUnreadCountUpdate,
 }: UseWorkspaceSocketOptions) {
   const socketRef = useRef<Socket | null>(null)
-  const activeChannelIdRef = useRef(activeChannelId)
+  const activeChannelSlugRef = useRef(activeChannelSlug)
 
   // Keep ref in sync
   useEffect(() => {
-    activeChannelIdRef.current = activeChannelId
-  }, [activeChannelId])
+    activeChannelSlugRef.current = activeChannelSlug
+  }, [activeChannelSlug])
 
   useEffect(() => {
     if (!enabled || !workspaceId) {
@@ -42,8 +42,9 @@ export function useWorkspaceSocket({
       (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string }) => {
         if (data.type === "message") {
           // Don't increment unread count if we're currently viewing this channel
+          // Compare against both slug and ID since we track by slug but server may send ID
           const isActiveChannel =
-            activeChannelIdRef.current === data.channelId || activeChannelIdRef.current === data.channelSlug
+            activeChannelSlugRef.current === data.channelSlug || activeChannelSlugRef.current === data.channelId
 
           if (!isActiveChannel) {
             onUnreadCountUpdate?.(data.channelId, 1)
@@ -78,4 +79,3 @@ export function useWorkspaceSocket({
     socket: socketRef.current,
   }
 }
-

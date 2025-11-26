@@ -77,7 +77,7 @@ export interface Tab {
   title: string
   type: "channel" | "thread"
   data?: {
-    channelId?: string
+    channelSlug?: string
     threadId?: string
   }
 }

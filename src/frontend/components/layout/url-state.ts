@@ -23,9 +23,9 @@ export function serializePanesToUrl(panes: Pane[]): string {
       return sortedTabs
         .map((tab) => {
           if (tab.type === "channel") {
-            return `c:${tab.data?.channelId || ""}`
+            return `c:${tab.data?.channelSlug || ""}`
           } else if (tab.type === "thread") {
-            return `t:${tab.data?.threadId || ""}:${tab.data?.channelId || ""}`
+            return `t:${tab.data?.threadId || ""}:${tab.data?.channelSlug || ""}`
           }
           return ""
         })
@@ -59,19 +59,19 @@ export function deserializePanesFromUrl(param: string, channels: Channel[]): Pan
               return {
                 id: `channel-${paneIndex}-${tabIndex}`,
                 title: channel ? `#${channel.name.replace("#", "")}` : `#${channelSlug}`,
-                type: "channel" as const,
-                data: { channelId: channelSlug },
-              }
+                type: "channel",
+                data: { channelSlug },
+              } as Tab
             } else if (parts[0] === "t" && parts[1]) {
-              // Thread: t:threadId:channelId
+              // Thread: t:threadId:channelSlug
               const threadId = parts[1]
-              const channelId = parts[2] || ""
+              const channelSlug = parts[2] || ""
               return {
                 id: `thread-${paneIndex}-${tabIndex}`,
                 title: "Thread",
-                type: "thread" as const,
-                data: { threadId, channelId },
-              }
+                type: "thread",
+                data: { threadId, channelSlug },
+              } as Tab
             }
             return null
           })
@@ -114,9 +114,9 @@ export function updateUrlWithPanes(panes: Pane[], pushHistory = false) {
 export function buildNewTabUrl(item: Omit<Tab, "id">): string {
   const url = new URL(window.location.origin)
   if (item.type === "thread" && item.data?.threadId) {
-    url.searchParams.set("p", `t:${item.data.threadId}:${item.data.channelId || ""}`)
-  } else if (item.type === "channel" && item.data?.channelId) {
-    url.searchParams.set("p", `c:${item.data.channelId}`)
+    url.searchParams.set("p", `t:${item.data.threadId}:${item.data.channelSlug || ""}`)
+  } else if (item.type === "channel" && item.data?.channelSlug) {
+    url.searchParams.set("p", `c:${item.data.channelSlug}`)
   }
   return url.toString()
 }

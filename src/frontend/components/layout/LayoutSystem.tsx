@@ -85,7 +85,7 @@ export function LayoutSystem() {
   useWorkspaceSocket({
     enabled: isAuthenticated && !!bootstrapData,
     workspaceId: bootstrapData?.workspace.id,
-    activeChannelId: activeChannelSlug || undefined,
+    activeChannelSlug: activeChannelSlug || undefined,
     onChannelAdded: addChannel,
     onChannelRemoved: handleChannelRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
@@ -139,23 +139,26 @@ export function LayoutSystem() {
     [handleSelectChannel, bootstrapData, user?.id, updateChannel],
   )
 
-  // Helper to get channel name from slug
-  const getChannelName = (channelSlug?: string) => {
+  // Helper to get channel from slug or ID
+  const getChannelFromSlug = (channelSlug?: string) => {
     if (!channelSlug || !bootstrapData) return undefined
-    const channel = bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
-    return channel?.name.replace("#", "")
+    return bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
   }
 
   // Render content for a tab
   const renderTabContent = (tab: Tab, paneId: string) => {
     if (!bootstrapData) return null
 
-    const channelName = getChannelName(tab.data?.channelId)
+    // Look up actual channel from slug stored in tab data
+    const channel = getChannelFromSlug(tab.data?.channelSlug)
+    // Use actual channel ID for socket connections, fall back to slug for backwards compatibility
+    const actualChannelId = channel?.id || tab.data?.channelSlug
+    const channelName = channel?.name.replace("#", "")
 
     return (
       <ChatInterface
         workspaceId={bootstrapData.workspace.id}
-        channelId={tab.data?.channelId}
+        channelId={actualChannelId}
         channelName={channelName}
         threadId={tab.data?.threadId}
         title={tab.title}
@@ -165,36 +168,27 @@ export function LayoutSystem() {
             {
               title: "Thread",
               type: "thread",
-              data: { threadId: msgId, channelId: msgChannelId },
+              data: { threadId: msgId, channelSlug: msgChannelId },
             },
             mode,
             paneId,
           )
         }}
-        onGoToChannel={(channelId, mode) => {
-          const channel = bootstrapData.channels.find((c) => c.slug === channelId || c.id === channelId)
-          const channelSlug = channel?.slug || channelId
-          const name = channel?.name.replace("#", "") || channelSlug
+        onGoToChannel={(channelSlug, mode) => {
+          const channel = bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
+          const slug = channel?.slug || channelSlug
+          const name = channel?.name.replace("#", "") || slug
 
           // Pass the pane ID where the click originated
           openItem(
             {
               title: `#${name}`,
               type: "channel",
-              data: { channelId: channelSlug },
+              data: { channelSlug: slug },
             },
             mode,
             paneId,
           )
-        }}
-        onChannelRemoved={(removedChannelId) => {
-          // Remove the channel from the sidebar
-          removeChannel(removedChannelId)
-          // Navigate away if we're viewing the removed channel
-          if (tab.data?.channelId === removedChannelId) {
-            const firstChannel = bootstrapData.channels.find((c) => c.id !== removedChannelId)
-            if (firstChannel) handleSelectChannel(firstChannel)
-          }
         }}
       />
     )

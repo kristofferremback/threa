@@ -854,14 +854,16 @@ export function createWorkspaceRoutes(
           conversationMessages
             .filter((r) => r.id !== messageId)
             .map(async (r) => {
-              const [email, isEdited] = await Promise.all([
+              const [email, isEdited, replyCount] = await Promise.all([
                 chatService.getUserEmail(r.author_id),
                 chatService.hasRevisions(r.id),
+                chatService.getReplyCount(r.id),
               ])
               return {
                 ...r,
                 email: email || "unknown",
                 isEdited,
+                replyCount,
               }
             }),
         )

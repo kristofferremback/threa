@@ -113,9 +113,15 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
     // Handle reply count updates
     socket.on("replyCountUpdate", (data: { messageId: string; replyCount: number }) => {
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === data.messageId ? { ...msg, replyCount: data.replyCount } : msg)),
-      )
+      console.log("[useChat] Received replyCountUpdate:", data)
+      setMessages((prev) => {
+        const updated = prev.map((msg) => (msg.id === data.messageId ? { ...msg, replyCount: data.replyCount } : msg))
+        console.log(
+          "[useChat] Messages after update:",
+          updated.map((m) => ({ id: m.id, replyCount: m.replyCount })),
+        )
+        return updated
+      })
     })
 
     // Handle message edits
@@ -155,10 +161,12 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     const subscribeAndFetch = async () => {
       if (threadId) {
         // Subscribe to thread room FIRST (to catch any messages during fetch)
+        console.log("[useChat] Joining thread room:", `thread:${threadId}`)
         socket.emit("join", `thread:${threadId}`)
         await fetchThreadData()
       } else if (channelId) {
         // Subscribe to channel room FIRST
+        console.log("[useChat] Joining channel room:", `chan:${channelId}`)
         socket.emit("join", `chan:${channelId}`)
         await fetchChannelMessages()
       } else {
@@ -253,6 +261,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
             conversationId: r.conversation_id,
             replyToMessageId: r.reply_to_message_id,
             isEdited: r.isEdited,
+            replyCount: r.replyCount || 0,
           }))
 
           setMessages((prev) => {
