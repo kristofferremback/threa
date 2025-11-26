@@ -1780,4 +1780,201 @@ export class ChatService {
           WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND read_at IS NULL`,
     )
   }
+
+  // ==========================================================================
+  // Message Sharing / Cross-posting
+  // ==========================================================================
+
+  /**
+   * Share a thread reply to its parent channel (like Slack's "Also send to channel")
+   * This makes the reply visible in the channel feed as well as the thread
+   */
+  async shareToChannel(messageId: string, userId: string): Promise<{ channelId: string; channelSlug: string }> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get the message and verify it's a thread reply
+      const messageResult = await client.query<{
+        id: string
+        channel_id: string
+        reply_to_message_id: string | null
+        author_id: string
+        content: string
+      }>(
+        sql`SELECT id, channel_id, reply_to_message_id, author_id, content
+            FROM messages WHERE id = ${messageId} AND deleted_at IS NULL`,
+      )
+
+      const message = messageResult.rows[0]
+      if (!message) {
+        throw new Error("Message not found")
+      }
+
+      if (!message.reply_to_message_id) {
+        throw new Error("Only thread replies can be shared to channel")
+      }
+
+      // Check if already shared to this channel
+      const existingResult = await client.query(
+        sql`SELECT 1 FROM message_channels
+            WHERE message_id = ${messageId} AND channel_id = ${message.channel_id}`,
+      )
+
+      if (existingResult.rows.length > 0) {
+        throw new Error("Message is already shared to this channel")
+      }
+
+      // Add to message_channels (not primary since the message belongs to the thread)
+      await client.query(
+        sql`INSERT INTO message_channels (message_id, channel_id, is_primary)
+            VALUES (${messageId}, ${message.channel_id}, false)`,
+      )
+
+      // Get channel info for response
+      const channelResult = await client.query<{ slug: string }>(
+        sql`SELECT slug FROM channels WHERE id = ${message.channel_id}`,
+      )
+
+      // Create outbox event for real-time update
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"message.shared_to_channel"}, ${JSON.stringify({
+              message_id: messageId,
+              channel_id: message.channel_id,
+              shared_by_user_id: userId,
+              content: message.content,
+              author_id: message.author_id,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ messageId, channelId: message.channel_id }, "Message shared to channel")
+
+      return {
+        channelId: message.channel_id,
+        channelSlug: channelResult.rows[0]?.slug || "",
+      }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Cross-post a message to another channel
+   */
+  async crosspostToChannel(
+    messageId: string,
+    targetChannelId: string,
+    userId: string,
+  ): Promise<{ channelId: string; channelSlug: string }> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get the message
+      const messageResult = await client.query<{
+        id: string
+        channel_id: string
+        author_id: string
+        content: string
+        workspace_id: string
+      }>(
+        sql`SELECT m.id, m.channel_id, m.author_id, m.content, c.workspace_id
+            FROM messages m
+            INNER JOIN channels c ON m.channel_id = c.id
+            WHERE m.id = ${messageId} AND m.deleted_at IS NULL`,
+      )
+
+      const message = messageResult.rows[0]
+      if (!message) {
+        throw new Error("Message not found")
+      }
+
+      if (message.channel_id === targetChannelId) {
+        throw new Error("Cannot cross-post to the same channel")
+      }
+
+      // Verify target channel exists and is in the same workspace
+      const targetResult = await client.query<{ id: string; slug: string; workspace_id: string }>(
+        sql`SELECT id, slug, workspace_id FROM channels
+            WHERE id = ${targetChannelId} AND archived_at IS NULL`,
+      )
+
+      const targetChannel = targetResult.rows[0]
+      if (!targetChannel) {
+        throw new Error("Target channel not found")
+      }
+
+      if (targetChannel.workspace_id !== message.workspace_id) {
+        throw new Error("Cannot cross-post to a channel in a different workspace")
+      }
+
+      // Check if already cross-posted to this channel
+      const existingResult = await client.query(
+        sql`SELECT 1 FROM message_channels
+            WHERE message_id = ${messageId} AND channel_id = ${targetChannelId}`,
+      )
+
+      if (existingResult.rows.length > 0) {
+        throw new Error("Message is already cross-posted to this channel")
+      }
+
+      // Add to message_channels
+      await client.query(
+        sql`INSERT INTO message_channels (message_id, channel_id, is_primary)
+            VALUES (${messageId}, ${targetChannelId}, false)`,
+      )
+
+      // Create outbox event for real-time update in the target channel
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"message.created"}, ${JSON.stringify({
+              id: messageId,
+              workspace_id: message.workspace_id,
+              channel_id: targetChannelId,
+              author_id: message.author_id,
+              content: message.content,
+              is_crosspost: true,
+              original_channel_id: message.channel_id,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ messageId, targetChannelId }, "Message cross-posted to channel")
+
+      return {
+        channelId: targetChannelId,
+        channelSlug: targetChannel.slug,
+      }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Get channels a message is shared/cross-posted to (excluding primary)
+   */
+  async getMessageSharedChannels(messageId: string): Promise<Array<{ id: string; name: string; slug: string }>> {
+    const result = await this.pool.query<{ id: string; name: string; slug: string }>(
+      sql`SELECT c.id, c.name, c.slug
+          FROM message_channels mc
+          INNER JOIN channels c ON mc.channel_id = c.id
+          WHERE mc.message_id = ${messageId}
+          ORDER BY mc.added_at ASC`,
+    )
+    return result.rows
+  }
 }

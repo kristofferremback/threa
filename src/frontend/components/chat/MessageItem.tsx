@@ -20,6 +20,8 @@ interface MessageItemProps {
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
   onMarkAsUnread?: (messageId: string) => void
+  onShareToChannel?: (messageId: string) => Promise<void>
+  onCrosspostToChannel?: (messageId: string) => void // Opens channel selector
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string) => void
   animationDelay?: number
@@ -41,6 +43,8 @@ export function MessageItem({
   onEdit,
   onMarkAsRead,
   onMarkAsUnread,
+  onShareToChannel,
+  onCrosspostToChannel,
   onUserMentionClick,
   onChannelClick,
   animationDelay = 0,
@@ -325,10 +329,20 @@ export function MessageItem({
           hasConversation={Boolean(message.conversationId)}
           isEdited={Boolean(message.isEdited)}
           isRead={isServerRead}
+          isThreadReply={Boolean(message.replyToMessageId)}
+          isAlreadySharedToChannel={Boolean(
+            message.linkedChannels?.some((c) => c.id === message.channelId),
+          )}
           onClose={() => setContextMenu(null)}
           onEdit={isOwnMessage && onEdit ? handleStartEdit : undefined}
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}
           onReplyInThread={() => onOpenThread?.(message.id, message.channelId, "replace")}
+          onShareToChannel={
+            message.replyToMessageId && onShareToChannel
+              ? () => onShareToChannel(message.id)
+              : undefined
+          }
+          onCrosspostToChannel={onCrosspostToChannel ? () => onCrosspostToChannel(message.id) : undefined}
           onMarkAsRead={onMarkAsRead ? () => onMarkAsRead(message.id) : undefined}
           onMarkAsUnread={onMarkAsUnread ? () => onMarkAsUnread(message.id) : undefined}
         />

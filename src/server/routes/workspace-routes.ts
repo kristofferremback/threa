@@ -208,6 +208,79 @@ export function createWorkspaceRoutes(
     }
   })
 
+  // Share a thread reply to its parent channel (like Slack's "Also send to channel")
+  router.post(
+    "/:workspaceId/messages/:messageId/share-to-channel",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { messageId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const result = await chatService.shareToChannel(messageId, userId)
+        res.json(result)
+      } catch (error: any) {
+        if (error.message === "Message not found") {
+          res.status(404).json({ error: error.message })
+          return
+        }
+        if (
+          error.message === "Only thread replies can be shared to channel" ||
+          error.message === "Message is already shared to this channel"
+        ) {
+          res.status(400).json({ error: error.message })
+          return
+        }
+        logger.error({ err: error }, "Failed to share message to channel")
+        next(error)
+      }
+    },
+  )
+
+  // Cross-post a message to another channel
+  router.post(
+    "/:workspaceId/messages/:messageId/crosspost",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { messageId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const { targetChannelId } = req.body
+        if (!targetChannelId) {
+          res.status(400).json({ error: "Target channel ID is required" })
+          return
+        }
+
+        const result = await chatService.crosspostToChannel(messageId, targetChannelId, userId)
+        res.json(result)
+      } catch (error: any) {
+        if (error.message === "Message not found" || error.message === "Target channel not found") {
+          res.status(404).json({ error: error.message })
+          return
+        }
+        if (
+          error.message === "Cannot cross-post to the same channel" ||
+          error.message === "Message is already cross-posted to this channel" ||
+          error.message === "Cannot cross-post to a channel in a different workspace"
+        ) {
+          res.status(400).json({ error: error.message })
+          return
+        }
+        logger.error({ err: error }, "Failed to cross-post message")
+        next(error)
+      }
+    },
+  )
+
   // Send a message (channel message or reply)
   router.post("/:workspaceId/messages", async (req: Request, res: Response, next: NextFunction) => {
     try {

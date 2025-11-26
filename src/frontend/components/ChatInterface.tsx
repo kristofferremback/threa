@@ -1,3 +1,5 @@
+import { useCallback } from "react"
+import { toast } from "sonner"
 import { useChat } from "../hooks"
 import { ChatHeader, ChatInput, MessageList, ThreadContext, ConnectionError } from "./chat"
 import type { OpenMode } from "../types"
@@ -54,6 +56,54 @@ export function ChatInterface({
   const isThread = Boolean(threadId)
   const displayTitle = title || "General"
 
+  // Handler for sharing a thread reply to its parent channel
+  const handleShareToChannel = useCallback(
+    async (messageId: string) => {
+      try {
+        const res = await fetch(`/api/workspace/${workspaceId}/messages/${messageId}/share-to-channel`, {
+          method: "POST",
+          credentials: "include",
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || "Failed to share message")
+        }
+
+        const result = await res.json()
+        toast.success(`Shared to #${result.channelSlug}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to share message")
+      }
+    },
+    [workspaceId],
+  )
+
+  // Handler for cross-posting to another channel
+  const handleCrosspostToChannel = useCallback(
+    async (messageId: string, targetChannelId: string) => {
+      try {
+        const res = await fetch(`/api/workspace/${workspaceId}/messages/${messageId}/crosspost`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ targetChannelId }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || "Failed to cross-post message")
+        }
+
+        const result = await res.json()
+        toast.success(`Cross-posted to #${result.channelSlug}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to cross-post message")
+      }
+    },
+    [workspaceId],
+  )
+
   return (
     <div className="flex h-full w-full flex-col" style={{ background: "var(--bg-primary)", minHeight: "100%" }}>
       <ChatHeader title={displayTitle} isThread={isThread} isConnected={isConnected} />
@@ -90,6 +140,8 @@ export function ChatInterface({
             onOpenThread={onOpenThread}
             onEditMessage={editMessage}
             onLoadMore={loadMoreMessages}
+            onShareToChannel={handleShareToChannel}
+            onCrosspostToChannel={handleCrosspostToChannel}
             onChannelClick={(slug) => onGoToChannel?.(slug, "replace")}
             users={users}
             channels={channels}

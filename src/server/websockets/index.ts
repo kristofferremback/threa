@@ -153,6 +153,47 @@ export const createSocketIOServer = async ({
     })()
   })
 
+  // Subscribe to message shared to channel events (thread reply shared to parent channel)
+  await messageSubscriber.subscribe("event:message.shared_to_channel", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { message_id, channel_id, author_id, content, shared_by_user_id } = event
+
+        // Get workspace ID from channel
+        const channelResult = await pool.query<{ workspace_id: string }>(
+          sql`SELECT workspace_id FROM channels WHERE id = ${channel_id}`,
+        )
+        const workspace_id = channelResult.rows[0]?.workspace_id
+        if (!workspace_id) {
+          logger.warn({ channel_id }, "Channel not found for shared message event")
+          return
+        }
+
+        // Get author email
+        const email = await chatService.getUserEmail(author_id)
+
+        // Build message data for the channel viewers
+        const messageData = {
+          id: message_id,
+          userId: author_id,
+          email: email || "unknown",
+          message: content,
+          timestamp: new Date().toISOString(),
+          channelId: channel_id,
+          isSharedToChannel: true, // Flag to indicate this is a shared thread reply
+        }
+
+        // Emit to channel room
+        io.to(room.channel(workspace_id, channel_id)).emit("message", messageData)
+
+        logger.debug({ message_id, channel_id }, "Shared message broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process shared message event")
+      }
+    })()
+  })
+
   // Subscribe to message edit events
   await messageSubscriber.subscribe("event:message.edited", (message: string) => {
     ;(async () => {

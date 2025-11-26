@@ -15,6 +15,8 @@ interface MessageItemWithVisibilityProps {
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
   onMarkAsUnread?: (messageId: string) => void
+  onShareToChannel?: (messageId: string) => Promise<void>
+  onCrosspostToChannel?: (messageId: string) => void
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string) => void
   onMessageVisible: (messageId: string) => void
@@ -38,6 +40,8 @@ export function MessageItemWithVisibility({
   onEdit,
   onMarkAsRead,
   onMarkAsUnread,
+  onShareToChannel,
+  onCrosspostToChannel,
   onUserMentionClick,
   onChannelClick,
   onMessageVisible,
@@ -76,6 +80,8 @@ export function MessageItemWithVisibility({
       onEdit={onEdit}
       onMarkAsRead={onMarkAsRead}
       onMarkAsUnread={onMarkAsUnread}
+      onShareToChannel={onShareToChannel}
+      onCrosspostToChannel={onCrosspostToChannel}
       onUserMentionClick={onUserMentionClick}
       onChannelClick={onChannelClick}
       animationDelay={animationDelay}

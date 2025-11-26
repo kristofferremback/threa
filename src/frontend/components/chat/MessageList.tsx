@@ -25,6 +25,8 @@ interface MessageListProps {
   onLoadMore?: () => Promise<void>
   onMarkAllAsRead?: () => Promise<void>
   onUpdateLastRead?: (messageId: string | null) => void
+  onShareToChannel?: (messageId: string) => Promise<void>
+  onCrosspostToChannel?: (messageId: string, targetChannelId: string) => Promise<void>
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string) => void
   showThreadActions?: boolean
@@ -50,6 +52,8 @@ export function MessageList({
   onLoadMore,
   onMarkAllAsRead,
   onUpdateLastRead,
+  onShareToChannel,
+  onCrosspostToChannel,
   onUserMentionClick,
   onChannelClick,
   showThreadActions = true,
@@ -66,6 +70,9 @@ export function MessageList({
 
   // Track locally seen messages for immediate UI update
   const [locallySeenIds, setLocallySeenIds] = useState<Set<string>>(new Set())
+
+  // Cross-post modal state
+  const [crosspostModalMessageId, setCrosspostModalMessageId] = useState<string | null>(null)
 
   const {
     onMessageVisible: baseOnMessageVisible,
@@ -121,7 +128,7 @@ export function MessageList({
     let serverFirstUnread = -1
 
     for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i]
+      const msg = messages[i]!
       const isLocallyRead = locallySeenIds.has(msg.id)
 
       if (!foundLastRead) {
@@ -169,7 +176,7 @@ export function MessageList({
       // Find the message before this one to set as the new read cursor
       const msgIndex = messages.findIndex((m) => m.id === messageId)
       if (msgIndex > 0) {
-        onUpdateLastRead?.(messages[msgIndex - 1].id)
+        onUpdateLastRead?.(messages[msgIndex - 1]!.id)
       } else {
         onUpdateLastRead?.(null)
       }
@@ -404,6 +411,8 @@ export function MessageList({
                 onEdit={onEditMessage}
                 onMarkAsRead={markAsRead}
                 onMarkAsUnread={markAsUnread}
+                onShareToChannel={onShareToChannel}
+                onCrosspostToChannel={(messageId) => setCrosspostModalMessageId(messageId)}
                 onUserMentionClick={onUserMentionClick}
                 onChannelClick={onChannelClick}
                 onMessageVisible={onMessageVisible}
@@ -419,6 +428,109 @@ export function MessageList({
         )
       })}
       <div ref={messagesEndRef} />
+
+      {/* Cross-post channel selector modal */}
+      {crosspostModalMessageId && (
+        <CrosspostModal
+          channels={channels.filter((c) => c.id !== channelId)} // Exclude current channel
+          onClose={() => setCrosspostModalMessageId(null)}
+          onSelect={async (targetChannelId) => {
+            if (onCrosspostToChannel && crosspostModalMessageId) {
+              await onCrosspostToChannel(crosspostModalMessageId, targetChannelId)
+            }
+            setCrosspostModalMessageId(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Simple modal for selecting a channel to cross-post to
+function CrosspostModal({
+  channels,
+  onClose,
+  onSelect,
+}: {
+  channels: Array<{ id: string; name: string; slug: string }>
+  onClose: () => void
+  onSelect: (channelId: string) => void
+}) {
+  const [search, setSearch] = useState("")
+  const filteredChannels = channels.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.slug.toLowerCase().includes(search.toLowerCase()),
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Modal */}
+      <div
+        className="relative w-full max-w-md rounded-lg shadow-xl p-4"
+        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
+      >
+        <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+          Cross-post to channel
+        </h3>
+
+        {/* Search input */}
+        <input
+          type="text"
+          placeholder="Search channels..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg text-sm mb-3"
+          style={{
+            background: "var(--bg-tertiary)",
+            border: "1px solid var(--border-default)",
+            color: "var(--text-primary)",
+          }}
+          autoFocus
+        />
+
+        {/* Channel list */}
+        <div className="max-h-64 overflow-y-auto space-y-1">
+          {filteredChannels.length === 0 ? (
+            <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
+              No channels found
+            </p>
+          ) : (
+            filteredChannels.map((channel) => (
+              <button
+                key={channel.id}
+                onClick={() => onSelect(channel.id)}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                style={{ color: "var(--text-primary)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <Hash className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                <span>{channel.name.replace("#", "")}</span>
+                <span className="text-xs ml-auto" style={{ color: "var(--text-muted)" }}>
+                  {channel.slug}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Cancel button */}
+        <div className="flex justify-end mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

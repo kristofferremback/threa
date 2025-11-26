@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom"
-import { Pencil, Bell, Smile, Pin, Share2, MessageCircle, History, Check, Circle } from "lucide-react"
+import { Pencil, Bell, Smile, Pin, Share2, MessageCircle, History, Check, Circle, Send, Hash } from "lucide-react"
 
 interface MessageContextMenuProps {
   x: number
@@ -8,13 +8,16 @@ interface MessageContextMenuProps {
   hasConversation: boolean
   isEdited: boolean
   isRead: boolean
+  isThreadReply: boolean // Whether this message is a reply in a thread
+  isAlreadySharedToChannel: boolean // Whether already shared to channel
   onClose: () => void
   onEdit?: () => void
   onShowRevisions?: () => void
   onFollowConversation?: () => void
   onAddReaction?: () => void
   onPinMessage?: () => void
-  onShareToConversation?: () => void
+  onShareToChannel?: () => void // Share thread reply to parent channel
+  onCrosspostToChannel?: () => void // Cross-post to another channel
   onReplyInThread?: () => void
   onMarkAsRead?: () => void
   onMarkAsUnread?: () => void
@@ -72,13 +75,16 @@ export function MessageContextMenu({
   hasConversation,
   isEdited,
   isRead,
+  isThreadReply,
+  isAlreadySharedToChannel,
   onClose,
   onEdit,
   onShowRevisions,
   onFollowConversation,
   onAddReaction,
   onPinMessage,
-  onShareToConversation,
+  onShareToChannel,
+  onCrosspostToChannel,
   onReplyInThread,
   onMarkAsRead,
   onMarkAsUnread,
@@ -153,7 +159,32 @@ export function MessageContextMenu({
 
         <MenuItem icon={<Pin className="h-4 w-4" />} label="Pin message" disabled />
 
-        <MenuItem icon={<Share2 className="h-4 w-4" />} label="Share to channel" disabled />
+        <MenuDivider />
+
+        {/* Sharing options */}
+        {isThreadReply && !isAlreadySharedToChannel && (
+          <MenuItem
+            icon={<Send className="h-4 w-4" />}
+            label="Send to channel"
+            onClick={() => {
+              onShareToChannel?.()
+              onClose()
+            }}
+          />
+        )}
+
+        {isThreadReply && isAlreadySharedToChannel && (
+          <MenuItem icon={<Send className="h-4 w-4" />} label="Already in channel" disabled />
+        )}
+
+        <MenuItem
+          icon={<Hash className="h-4 w-4" />}
+          label="Cross-post to channel..."
+          onClick={() => {
+            onCrosspostToChannel?.()
+            onClose()
+          }}
+        />
 
         <MenuDivider />
 
