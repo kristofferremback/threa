@@ -342,6 +342,48 @@ export class ChatService {
         )
       }
 
+      // Auto-mark the message as read for the author (so their own messages don't appear unread)
+      // Update the read cursor to this message
+      if (params.conversationId) {
+        // For thread replies, update conversation read cursor
+        await client.query(
+          sql`UPDATE conversation_members
+             SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
+             WHERE conversation_id = ${params.conversationId} AND user_id = ${params.authorId}`,
+        )
+        // Emit outbox event for read cursor update
+        const readCursorOutboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${readCursorOutboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+                type: "conversation",
+                conversation_id: params.conversationId,
+                workspace_id: params.workspaceId,
+                user_id: params.authorId,
+                message_id: messageId,
+              })})`,
+        )
+      } else {
+        // For channel messages, update channel read cursor
+        await client.query(
+          sql`UPDATE channel_members
+             SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
+             WHERE channel_id = ${params.channelId} AND user_id = ${params.authorId}`,
+        )
+        // Emit outbox event for read cursor update
+        const readCursorOutboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${readCursorOutboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+                type: "channel",
+                channel_id: params.channelId,
+                workspace_id: params.workspaceId,
+                user_id: params.authorId,
+                message_id: messageId,
+              })})`,
+        )
+      }
+
       // NOTIFY to wake up outbox listener
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
@@ -1019,20 +1061,80 @@ export class ChatService {
   // Read Receipts
   // ==========================================================================
 
-  async updateChannelReadCursor(channelId: string, userId: string, messageId: string): Promise<void> {
-    await this.pool.query(
-      sql`UPDATE channel_members
-         SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
-         WHERE channel_id = ${channelId} AND user_id = ${userId}`,
-    )
+  async updateChannelReadCursor(
+    channelId: string,
+    userId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      await client.query(
+        sql`UPDATE channel_members
+           SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
+           WHERE channel_id = ${channelId} AND user_id = ${userId}`,
+      )
+
+      // Emit outbox event for real-time sync across devices
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+              type: "channel",
+              channel_id: channelId,
+              workspace_id: workspaceId,
+              user_id: userId,
+              message_id: messageId,
+            })})`,
+      )
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
-  async updateConversationReadCursor(conversationId: string, userId: string, messageId: string): Promise<void> {
-    await this.pool.query(
-      sql`UPDATE conversation_members
-         SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
-         WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
-    )
+  async updateConversationReadCursor(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      await client.query(
+        sql`UPDATE conversation_members
+           SET last_read_message_id = ${messageId}, last_read_at = NOW(), updated_at = NOW()
+           WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
+      )
+
+      // Emit outbox event for real-time sync across devices
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+              type: "conversation",
+              conversation_id: conversationId,
+              workspace_id: workspaceId,
+              user_id: userId,
+              message_id: messageId,
+            })})`,
+      )
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async getChannelReadCursor(
@@ -1067,48 +1169,108 @@ export class ChatService {
     }
   }
 
-  async markMessageAsUnread(channelId: string, userId: string, messageId: string): Promise<void> {
-    // To mark as unread, we set the last_read_message_id to the message BEFORE this one
-    // If no previous message, we clear the last_read_message_id
-    const previousMessage = await this.pool.query<{ id: string }>(
-      sql`SELECT id FROM messages
-          WHERE channel_id = ${channelId}
-            AND deleted_at IS NULL
-            AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
-          ORDER BY created_at DESC
-          LIMIT 1`,
-    )
+  async markMessageAsUnread(
+    channelId: string,
+    userId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
 
-    const previousMessageId = previousMessage.rows[0]?.id || null
+      // To mark as unread, we set the last_read_message_id to the message BEFORE this one
+      // If no previous message, we clear the last_read_message_id
+      const previousMessage = await client.query<{ id: string }>(
+        sql`SELECT id FROM messages
+            WHERE channel_id = ${channelId}
+              AND deleted_at IS NULL
+              AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
+            ORDER BY created_at DESC
+            LIMIT 1`,
+      )
 
-    await this.pool.query(
-      sql`UPDATE channel_members
-          SET last_read_message_id = ${previousMessageId},
-              last_read_at = ${previousMessageId ? new Date() : null},
-              updated_at = NOW()
-          WHERE channel_id = ${channelId} AND user_id = ${userId}`,
-    )
+      const previousMessageId = previousMessage.rows[0]?.id || null
+
+      await client.query(
+        sql`UPDATE channel_members
+            SET last_read_message_id = ${previousMessageId},
+                last_read_at = ${previousMessageId ? new Date() : null},
+                updated_at = NOW()
+            WHERE channel_id = ${channelId} AND user_id = ${userId}`,
+      )
+
+      // Emit outbox event for real-time sync across devices
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+              type: "channel",
+              channel_id: channelId,
+              workspace_id: workspaceId,
+              user_id: userId,
+              message_id: previousMessageId, // The new read cursor position
+            })})`,
+      )
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
-  async markConversationMessageAsUnread(conversationId: string, userId: string, messageId: string): Promise<void> {
-    const previousMessage = await this.pool.query<{ id: string }>(
-      sql`SELECT id FROM messages
-          WHERE conversation_id = ${conversationId}
-            AND deleted_at IS NULL
-            AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
-          ORDER BY created_at DESC
-          LIMIT 1`,
-    )
+  async markConversationMessageAsUnread(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
 
-    const previousMessageId = previousMessage.rows[0]?.id || null
+      const previousMessage = await client.query<{ id: string }>(
+        sql`SELECT id FROM messages
+            WHERE conversation_id = ${conversationId}
+              AND deleted_at IS NULL
+              AND created_at < (SELECT created_at FROM messages WHERE id = ${messageId})
+            ORDER BY created_at DESC
+            LIMIT 1`,
+      )
 
-    await this.pool.query(
-      sql`UPDATE conversation_members
-          SET last_read_message_id = ${previousMessageId},
-              last_read_at = ${previousMessageId ? new Date() : null},
-              updated_at = NOW()
-          WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
-    )
+      const previousMessageId = previousMessage.rows[0]?.id || null
+
+      await client.query(
+        sql`UPDATE conversation_members
+            SET last_read_message_id = ${previousMessageId},
+                last_read_at = ${previousMessageId ? new Date() : null},
+                updated_at = NOW()
+            WHERE conversation_id = ${conversationId} AND user_id = ${userId}`,
+      )
+
+      // Emit outbox event for real-time sync across devices
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, ${"read_cursor.updated"}, ${JSON.stringify({
+              type: "conversation",
+              conversation_id: conversationId,
+              workspace_id: workspaceId,
+              user_id: userId,
+              message_id: previousMessageId, // The new read cursor position
+            })})`,
+      )
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async editMessage(

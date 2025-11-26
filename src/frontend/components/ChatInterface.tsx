@@ -8,6 +8,7 @@ interface ChatInterfaceProps {
   channelId?: string
   channelName?: string
   threadId?: string
+  highlightMessageId?: string
   title?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
@@ -20,6 +21,7 @@ export function ChatInterface({
   channelId,
   channelName,
   threadId,
+  highlightMessageId,
   title,
   onOpenThread,
   onGoToChannel,
@@ -33,12 +35,16 @@ export function ChatInterface({
     rootMessage,
     ancestors,
     conversationId,
+    lastReadMessageId,
     isLoading,
+    isLoadingMore,
+    hasMoreMessages,
     isConnected,
     connectionError,
     currentUserId,
     sendMessage,
     editMessage,
+    loadMoreMessages,
   } = useChat({
     workspaceId,
     channelId,
@@ -82,12 +88,17 @@ export function ChatInterface({
             workspaceId={workspaceId}
             channelId={channelId}
             conversationId={conversationId || undefined}
+            lastReadMessageId={lastReadMessageId}
             isLoading={isLoading}
+            isLoadingMore={isLoadingMore}
+            hasMoreMessages={hasMoreMessages}
             isThread={isThread}
             hasRootMessage={Boolean(rootMessage)}
             currentUserId={currentUserId}
+            highlightMessageId={highlightMessageId}
             onOpenThread={onOpenThread}
             onEditMessage={editMessage}
+            onLoadMore={loadMoreMessages}
             onChannelClick={(slug) => onGoToChannel?.(slug, "replace")}
             users={users}
             channels={channels}

@@ -181,6 +181,28 @@ export const createSocketIOServer = async ({
     })()
   })
 
+  // Subscribe to read cursor updates (for multi-device sync)
+  await messageSubscriber.subscribe("event:read_cursor.updated", (message: string) => {
+    ;(async () => {
+      try {
+        const event = JSON.parse(message)
+        const { type, channel_id, conversation_id, workspace_id, user_id, message_id } = event
+
+        // Emit to the user's private room so all their devices get the update
+        io.to(room.user(workspace_id, user_id)).emit("readCursorUpdated", {
+          type,
+          channelId: channel_id,
+          conversationId: conversation_id,
+          messageId: message_id,
+        })
+
+        logger.debug({ type, user_id, message_id }, "Read cursor update broadcast via Socket.IO")
+      } catch (error) {
+        logger.error({ err: error }, "Failed to process Redis read_cursor.updated event")
+      }
+    })()
+  })
+
   // Subscribe to conversation creation events
   await messageSubscriber.subscribe("event:conversation.created", (message: string) => {
     ;(async () => {

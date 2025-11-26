@@ -534,8 +534,13 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
     }
 
     useImperativeHandle(ref, () => ({
-      focus: () => editor?.commands.focus(),
-      clear: () => editor?.commands.clearContent(),
+      focus: () => {
+        // Use 'end' to place cursor at end, and ensure the editor view is focused
+        editor?.commands.focus("end")
+      },
+      clear: () => {
+        editor?.commands.clearContent()
+      },
       getContent: () => (editor ? getMarkdownContent(editor) : ""),
       isEmpty: () => editor?.isEmpty ?? true,
       getMentions,

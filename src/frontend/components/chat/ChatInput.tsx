@@ -29,7 +29,11 @@ export function ChatInput({
     if (!content || isSending || disabled) return
 
     const mentions = editorRef.current?.getMentions() || []
+
+    // Clear and immediately refocus to maintain cursor position
     editorRef.current?.clear()
+    editorRef.current?.focus()
+
     setIsSending(true)
 
     try {
@@ -38,7 +42,10 @@ export function ChatInput({
       // Error is handled by onSend
     } finally {
       setIsSending(false)
-      editorRef.current?.focus()
+      // Ensure focus is maintained after send completes
+      requestAnimationFrame(() => {
+        editorRef.current?.focus()
+      })
     }
   }
 

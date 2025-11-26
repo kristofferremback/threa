@@ -535,7 +535,7 @@ export function createWorkspaceRoutes(
         targetChannelId = channel.id
       }
 
-      await chatService.updateChannelReadCursor(targetChannelId, userId, messageId)
+      await chatService.updateChannelReadCursor(targetChannelId, userId, messageId, workspaceId)
       res.json({ success: true })
     } catch (error) {
       logger.error({ err: error }, "Failed to mark channel messages as read")
@@ -572,7 +572,7 @@ export function createWorkspaceRoutes(
         targetChannelId = channel.id
       }
 
-      await chatService.markMessageAsUnread(targetChannelId, userId, messageId)
+      await chatService.markMessageAsUnread(targetChannelId, userId, messageId, workspaceId)
       res.json({ success: true })
     } catch (error) {
       logger.error({ err: error }, "Failed to mark message as unread")
@@ -742,7 +742,7 @@ export function createWorkspaceRoutes(
     "/:workspaceId/conversations/:conversationId/read",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { conversationId } = req.params
+        const { workspaceId, conversationId } = req.params
         const userId = req.user?.id
 
         if (!userId) {
@@ -757,7 +757,7 @@ export function createWorkspaceRoutes(
           return
         }
 
-        await chatService.updateConversationReadCursor(conversationId, userId, messageId)
+        await chatService.updateConversationReadCursor(conversationId, userId, messageId, workspaceId)
         res.json({ success: true })
       } catch (error) {
         logger.error({ err: error }, "Failed to mark conversation messages as read")
@@ -771,7 +771,7 @@ export function createWorkspaceRoutes(
     "/:workspaceId/conversations/:conversationId/unread",
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { conversationId } = req.params
+        const { workspaceId, conversationId } = req.params
         const userId = req.user?.id
 
         if (!userId) {
@@ -786,7 +786,7 @@ export function createWorkspaceRoutes(
           return
         }
 
-        await chatService.markConversationMessageAsUnread(conversationId, userId, messageId)
+        await chatService.markConversationMessageAsUnread(conversationId, userId, messageId, workspaceId)
         res.json({ success: true })
       } catch (error) {
         logger.error({ err: error }, "Failed to mark conversation message as unread")

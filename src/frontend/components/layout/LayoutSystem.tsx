@@ -196,23 +196,27 @@ export function LayoutSystem() {
           workspaceId={bootstrapData.workspace.id}
           socket={socket}
           onUnreadCountChange={setInboxUnreadCount}
-          onNavigateToChannel={(channelSlug, mode = "replace") => {
+          onNavigateToChannel={(channelSlug, mode = "replace", highlightMessageId) => {
             const channel = bootstrapData.channels.find((c) => c.slug === channelSlug)
             if (channel) {
               openItem(
-                { title: `#${channel.name.replace("#", "")}`, type: "channel", data: { channelSlug } },
+                {
+                  title: `#${channel.name.replace("#", "")}`,
+                  type: "channel",
+                  data: { channelSlug, highlightMessageId },
+                },
                 mode,
                 paneId,
               )
             }
           }}
-          onNavigateToThread={(messageId, channelId, mode = "replace") => {
+          onNavigateToThread={(threadId, channelId, mode = "replace", highlightMessageId) => {
             const channel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
             openItem(
               {
                 title: "Thread",
                 type: "thread",
-                data: { threadId: messageId, channelSlug: channel?.slug || channelId },
+                data: { threadId, channelSlug: channel?.slug || channelId, highlightMessageId },
               },
               mode,
               paneId,
@@ -234,6 +238,7 @@ export function LayoutSystem() {
         channelId={actualChannelId}
         channelName={channelName}
         threadId={tab.data?.threadId}
+        highlightMessageId={tab.data?.highlightMessageId}
         title={tab.title}
         users={bootstrapData.users}
         channels={bootstrapData.channels.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}

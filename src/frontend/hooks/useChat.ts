@@ -17,12 +17,15 @@ interface UseChatReturn {
   conversationId: string | null
   lastReadMessageId: string | null
   isLoading: boolean
+  isLoadingMore: boolean
+  hasMoreMessages: boolean
   isConnected: boolean
   connectionError: string | null
   isSending: boolean
   currentUserId: string | null
   sendMessage: (content: string, mentions?: MessageMention[]) => Promise<void>
   editMessage: (messageId: string, newContent: string) => Promise<void>
+  loadMoreMessages: () => Promise<void>
   setLastReadMessageId: (messageId: string | null) => void
   markAllAsRead: () => Promise<void>
 }
@@ -34,6 +37,8 @@ const room = {
   thread: (workspaceId: string, messageId: string) => `ws:${workspaceId}:thread:${messageId}`,
 }
 
+const MESSAGE_PAGE_SIZE = 50
+
 export function useChat({ workspaceId, channelId, threadId, enabled = true }: UseChatOptions): UseChatReturn {
   const [messages, setMessages] = useState<Message[]>([])
   const [rootMessage, setRootMessage] = useState<Message | null>(null)
@@ -41,6 +46,8 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [lastReadMessageId, setLastReadMessageId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
@@ -73,6 +80,7 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     setConversationId(null)
     setLastReadMessageId(null)
     setIsLoading(true)
+    setHasMoreMessages(true)
 
     socket.on("connect", () => {
       setIsConnected(true)
@@ -138,6 +146,24 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
       )
     })
 
+    // Handle read cursor updates (multi-device sync)
+    socket.on(
+      "readCursorUpdated",
+      (data: { type: string; channelId?: string; conversationId?: string; messageId: string }) => {
+        const { threadId: currentThreadId, channelId: currentChannelId } = currentViewRef.current
+
+        // Check if this update is for the current view
+        if (currentThreadId && data.conversationId) {
+          // We're viewing a thread - update if it matches
+          // Note: We'd need to track conversation ID to channel mapping
+          setLastReadMessageId(data.messageId)
+        } else if (currentChannelId && data.channelId === currentChannelId) {
+          // We're viewing a channel - update if it matches
+          setLastReadMessageId(data.messageId)
+        }
+      },
+    )
+
     // Get current user ID from socket auth
     socket.on("authenticated", (data: { userId: string }) => {
       setCurrentUserId(data.userId)
@@ -175,9 +201,12 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
 
     const fetchChannelMessages = async () => {
       try {
-        const res = await fetch(`/api/workspace/${workspaceId}/channels/${channelId}/messages?limit=50`, {
-          credentials: "include",
-        })
+        const res = await fetch(
+          `/api/workspace/${workspaceId}/channels/${channelId}/messages?limit=${MESSAGE_PAGE_SIZE}`,
+          {
+            credentials: "include",
+          },
+        )
         if (!res.ok) throw new Error("Failed to fetch messages")
         const data = await res.json()
 
@@ -185,6 +214,9 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
         if (data.lastReadMessageId) {
           setLastReadMessageId(data.lastReadMessageId)
         }
+
+        // Check if there are more messages to load
+        setHasMoreMessages(data.messages.length >= MESSAGE_PAGE_SIZE)
 
         // Merge with any messages that arrived via socket during fetch
         setMessages((prev) => {
@@ -411,6 +443,60 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     }
   }, [workspaceId, channelId, messages])
 
+  // Load more (older) messages
+  const loadMoreMessages = useCallback(async () => {
+    if (isLoadingMore || !hasMoreMessages || messages.length === 0) return
+
+    setIsLoadingMore(true)
+
+    try {
+      const offset = messages.length
+      let url: string
+
+      if (threadId) {
+        url = `/api/workspace/${workspaceId}/threads/${threadId}?offset=${offset}&limit=${MESSAGE_PAGE_SIZE}`
+      } else if (channelId) {
+        url = `/api/workspace/${workspaceId}/channels/${channelId}/messages?offset=${offset}&limit=${MESSAGE_PAGE_SIZE}`
+      } else {
+        return
+      }
+
+      const res = await fetch(url, { credentials: "include" })
+      if (!res.ok) throw new Error("Failed to fetch older messages")
+      const data = await res.json()
+
+      const olderMessages: Message[] = threadId
+        ? (data.replies || []).map((r: any) => ({
+            id: r.id,
+            userId: r.author_id,
+            email: r.email || "unknown",
+            message: r.content,
+            timestamp: r.created_at,
+            channelId: r.channel_id,
+            conversationId: r.conversation_id,
+            replyToMessageId: r.reply_to_message_id,
+            isEdited: r.isEdited,
+            replyCount: r.replyCount || 0,
+          }))
+        : data.messages || []
+
+      // Check if there are more messages
+      setHasMoreMessages(olderMessages.length >= MESSAGE_PAGE_SIZE)
+
+      // Prepend older messages
+      setMessages((prev) => {
+        const allMessages = [...olderMessages, ...prev]
+        const unique = allMessages.filter((msg, idx, arr) => arr.findIndex((m) => m.id === msg.id) === idx)
+        return unique.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      })
+    } catch (error) {
+      console.error("Failed to load more messages:", error)
+      toast.error("Failed to load older messages")
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [workspaceId, channelId, threadId, messages.length, isLoadingMore, hasMoreMessages])
+
   return {
     messages,
     rootMessage,
@@ -418,12 +504,15 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
     conversationId,
     lastReadMessageId,
     isLoading,
+    isLoadingMore,
+    hasMoreMessages,
     isConnected,
     connectionError,
     isSending,
     currentUserId,
     sendMessage,
     editMessage,
+    loadMoreMessages,
     setLastReadMessageId,
     markAllAsRead,
   }

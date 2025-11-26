@@ -95,6 +95,7 @@ export interface Tab {
   data?: {
     channelSlug?: string
     threadId?: string
+    highlightMessageId?: string // Message to scroll to and highlight
   }
 }
 

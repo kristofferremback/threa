@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import { Bell, CheckCheck, AtSign, MessageCircle, Hash, UserPlus } from "lucide-react"
+import { Bell, CheckCheck, AtSign, MessageCircle, Hash, UserPlus, PanelRightOpen } from "lucide-react"
 import { Avatar, RelativeTime, Spinner, Button } from "../ui"
 import { getOpenMode, type OpenMode } from "../../types"
 import type { Socket } from "socket.io-client"
@@ -25,8 +25,8 @@ type TabType = "unread" | "all"
 interface InboxViewProps {
   workspaceId: string
   socket?: Socket | null
-  onNavigateToChannel?: (channelSlug: string, mode?: OpenMode) => void
-  onNavigateToThread?: (messageId: string, channelId: string, mode?: OpenMode) => void
+  onNavigateToChannel?: (channelSlug: string, mode?: OpenMode, highlightMessageId?: string) => void
+  onNavigateToThread?: (threadId: string, channelId: string, mode?: OpenMode, highlightMessageId?: string) => void
   onUnreadCountChange?: (count: number) => void
 }
 
@@ -138,9 +138,19 @@ export function InboxView({
     }
 
     // Navigate to the relevant location
-    if (notification.conversationId && notification.messageId && notification.channelId) {
-      onNavigateToThread?.(notification.messageId, notification.channelId, mode)
+    if (notification.conversationId && notification.channelId) {
+      // Thread notification: open the thread and highlight the specific message
+      onNavigateToThread?.(
+        notification.conversationId,
+        notification.channelId,
+        mode,
+        notification.messageId || undefined,
+      )
+    } else if (notification.channelSlug && notification.messageId) {
+      // Channel notification: open the channel and highlight the specific message
+      onNavigateToChannel?.(notification.channelSlug, mode, notification.messageId)
     } else if (notification.channelSlug) {
+      // Just navigate to the channel
       onNavigateToChannel?.(notification.channelSlug, mode)
     }
   }
@@ -307,7 +317,7 @@ export function InboxView({
               <button
                 key={notification.id}
                 onClick={(e) => handleNotificationClick(notification, e)}
-                className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--hover-overlay)] flex gap-3"
+                className="group w-full px-4 py-3 text-left transition-colors hover:bg-[var(--hover-overlay)] flex gap-3"
                 style={{
                   background: notification.readAt ? "transparent" : "var(--unread-bg, rgba(99, 102, 241, 0.05))",
                 }}
@@ -354,12 +364,25 @@ export function InboxView({
                   )}
                 </div>
 
-                {!notification.readAt && (
-                  <div
-                    className="w-2 h-2 rounded-full flex-shrink-0 mt-2"
-                    style={{ background: "var(--accent-primary)" }}
-                  />
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {!notification.readAt && (
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ background: "var(--accent-primary)" }}
+                    />
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleNotificationClick(notification, { ...e, altKey: true } as React.MouseEvent)
+                    }}
+                    className="p-1 rounded hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ color: "var(--text-muted)" }}
+                    title="Open to side"
+                  >
+                    <PanelRightOpen className="h-4 w-4" />
+                  </button>
+                </div>
               </button>
             ))}
           </div>

@@ -73,17 +73,17 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
         clearTimeout(debounceTimerRef.current)
       }
 
-      // Set new debounce timer (500ms minimum wait)
+      // Set new debounce timer (5s debounce)
       debounceTimerRef.current = setTimeout(() => {
         sendReadReceipt()
-      }, 500)
+      }, 5000)
 
-      // Set max wait timer if not already set (2s upper limit)
+      // Set max wait timer if not already set (10s upper limit to ensure it eventually sends)
       if (!maxWaitTimerRef.current) {
         maxWaitTimerRef.current = setTimeout(() => {
           maxWaitTimerRef.current = null
           sendReadReceipt()
-        }, 2000)
+        }, 10000)
       }
     },
     [enabled, sendReadReceipt],
@@ -97,14 +97,14 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
       const now = Date.now()
       visibleMessagesRef.current.set(messageId, now)
 
-      // After 500ms, check if still visible and schedule read receipt
+      // After 3s, check if still visible and schedule read receipt
       setTimeout(() => {
         const entryTime = visibleMessagesRef.current.get(messageId)
         if (entryTime && now === entryTime) {
-          // Message was visible for 500ms
+          // Message was visible for 3s
           scheduleReadReceipt(messageId)
         }
-      }, 500)
+      }, 3000)
     },
     [enabled, scheduleReadReceipt],
   )
@@ -136,10 +136,26 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
     }
   }, [channelId, conversationId, sendReadReceipt])
 
-  // Manual mark as read
+  // Cancel any pending debounced read receipts
+  const cancelPendingRead = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = null
+    }
+    if (maxWaitTimerRef.current) {
+      clearTimeout(maxWaitTimerRef.current)
+      maxWaitTimerRef.current = null
+    }
+    pendingReadRef.current = null
+  }, [])
+
+  // Manual mark as read - cancels pending debounce and sends immediately
   const markAsRead = useCallback(
     async (messageId: string) => {
       if (!enabled) return
+
+      // Cancel any pending debounced read receipt
+      cancelPendingRead()
 
       try {
         const endpoint = conversationId
@@ -156,13 +172,16 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
         console.error("Failed to mark as read:", error)
       }
     },
-    [workspaceId, channelId, conversationId, enabled],
+    [workspaceId, channelId, conversationId, enabled, cancelPendingRead],
   )
 
-  // Manual mark as unread
+  // Manual mark as unread - cancels pending debounce and sends immediately
   const markAsUnread = useCallback(
     async (messageId: string) => {
       if (!enabled) return
+
+      // Cancel any pending debounced read receipt
+      cancelPendingRead()
 
       try {
         const endpoint = conversationId
@@ -179,7 +198,7 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
         console.error("Failed to mark as unread:", error)
       }
     },
-    [workspaceId, channelId, conversationId, enabled],
+    [workspaceId, channelId, conversationId, enabled, cancelPendingRead],
   )
 
   return {

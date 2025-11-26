@@ -1,3 +1,4 @@
+import { useCallback } from "react"
 import { useMessageVisibility } from "../../hooks"
 import { MessageItem } from "./MessageItem"
 import type { Message, OpenMode } from "../../types"
@@ -8,6 +9,8 @@ interface MessageItemWithVisibilityProps {
   currentChannelId?: string
   isOwnMessage?: boolean
   isRead?: boolean
+  isServerRead?: boolean
+  isHighlighted?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
@@ -16,6 +19,7 @@ interface MessageItemWithVisibilityProps {
   onChannelClick?: (channelSlug: string) => void
   onMessageVisible: (messageId: string) => void
   onMessageHidden: (messageId: string) => void
+  onSetRef?: (element: HTMLDivElement | null) => void
   animationDelay?: number
   showThreadActions?: boolean
   users?: Array<{ id: string; name: string; email: string }>
@@ -28,6 +32,8 @@ export function MessageItemWithVisibility({
   currentChannelId,
   isOwnMessage,
   isRead,
+  isServerRead,
+  isHighlighted,
   onOpenThread,
   onEdit,
   onMarkAsRead,
@@ -36,12 +42,26 @@ export function MessageItemWithVisibility({
   onChannelClick,
   onMessageVisible,
   onMessageHidden,
+  onSetRef,
   animationDelay,
   showThreadActions,
   users,
   channels,
 }: MessageItemWithVisibilityProps) {
   const visibilityRef = useMessageVisibility(message.id, onMessageVisible, onMessageHidden)
+
+  // Combine visibility ref with the parent's ref callback
+  const combinedRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      // Set the visibility ref
+      if (visibilityRef) {
+        (visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = element
+      }
+      // Call parent's ref callback
+      onSetRef?.(element)
+    },
+    [visibilityRef, onSetRef],
+  )
 
   return (
     <MessageItem
@@ -50,6 +70,8 @@ export function MessageItemWithVisibility({
       currentChannelId={currentChannelId}
       isOwnMessage={isOwnMessage}
       isRead={isRead}
+      isServerRead={isServerRead}
+      isHighlighted={isHighlighted}
       onOpenThread={onOpenThread}
       onEdit={onEdit}
       onMarkAsRead={onMarkAsRead}
@@ -58,7 +80,7 @@ export function MessageItemWithVisibility({
       onChannelClick={onChannelClick}
       animationDelay={animationDelay}
       showThreadActions={showThreadActions}
-      visibilityRef={visibilityRef}
+      visibilityRef={combinedRef}
       users={users}
       channels={channels}
     />

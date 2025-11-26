@@ -54,6 +54,9 @@
 
   --unread-bg: rgba(88, 166, 255, 0.08);
   --unread-bg-hover: rgba(88, 166, 255, 0.12);
+
+  --highlight-bg: rgba(250, 204, 21, 0.15);
+  --highlight-border: rgb(250, 204, 21);
 }
 
 /* Light theme */
@@ -94,6 +97,9 @@
 
   --unread-bg: rgba(9, 105, 218, 0.06);
   --unread-bg-hover: rgba(9, 105, 218, 0.1);
+
+  --highlight-bg: rgba(234, 179, 8, 0.2);
+  --highlight-border: rgb(202, 138, 4);
 }
 
 body {
@@ -185,6 +191,16 @@ body {
   }
 }
 
+@keyframes highlight-pulse {
+  0%,
+  100% {
+    background-color: var(--highlight-bg);
+  }
+  50% {
+    background-color: rgba(250, 204, 21, 0.25);
+  }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
 }
@@ -197,6 +213,10 @@ body {
   background: linear-gradient(90deg, transparent, var(--hover-overlay), transparent);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+.highlight-pulse {
+  animation: highlight-pulse 1.5s ease-in-out 3;
 }
 
 /* Staggered animations */

@@ -14,6 +14,8 @@ interface MessageItemProps {
   currentChannelId?: string
   isOwnMessage?: boolean
   isRead?: boolean
+  isServerRead?: boolean
+  isHighlighted?: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onEdit?: (messageId: string, newContent: string) => Promise<void>
   onMarkAsRead?: (messageId: string) => void
@@ -22,7 +24,7 @@ interface MessageItemProps {
   onChannelClick?: (channelSlug: string) => void
   animationDelay?: number
   showThreadActions?: boolean
-  visibilityRef?: React.RefObject<HTMLDivElement>
+  visibilityRef?: React.RefObject<HTMLDivElement> | ((el: HTMLDivElement | null) => void)
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string }>
 }
@@ -33,6 +35,8 @@ export function MessageItem({
   currentChannelId,
   isOwnMessage = false,
   isRead = true,
+  isServerRead = true,
+  isHighlighted = false,
   onOpenThread,
   onEdit,
   onMarkAsRead,
@@ -98,17 +102,43 @@ export function MessageItem({
     setContextMenu({ x: rect.right, y: rect.bottom })
   }
 
+  // Handle both RefObject and callback ref types
+  const setRef = (el: HTMLDivElement | null) => {
+    if (typeof visibilityRef === "function") {
+      visibilityRef(el)
+    } else if (visibilityRef) {
+      (visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+    }
+  }
+
+  // Determine background color based on state
+  const getBackground = () => {
+    if (isHighlighted) return "var(--highlight-bg, rgba(250, 204, 21, 0.15))"
+    if (isEditing) return "var(--hover-overlay)"
+    if (!isRead) return "var(--unread-bg)"
+    return undefined
+  }
+
+  // Determine border color based on state
+  const getBorderLeft = () => {
+    if (isHighlighted) return "3px solid var(--highlight-border, rgb(250, 204, 21))"
+    if (!isRead) return "3px solid var(--accent-primary)"
+    return "3px solid transparent"
+  }
+
   return (
     <div
-      ref={visibilityRef}
-      className="group mb-1 rounded-lg p-3 -mx-2 transition-colors animate-fade-in"
+      ref={setRef}
+      className={`group mb-1 rounded-lg p-3 -mx-2 animate-fade-in ${isHighlighted ? "highlight-pulse" : "transition-colors"}`}
       style={{
         animationDelay: `${animationDelay}ms`,
-        background: isEditing ? "var(--hover-overlay)" : !isRead ? "var(--unread-bg)" : undefined,
-        borderLeft: !isRead ? "3px solid var(--accent-primary)" : "3px solid transparent",
+        background: getBackground(),
+        borderLeft: getBorderLeft(),
       }}
       onMouseEnter={(e) =>
-        !isEditing && (e.currentTarget.style.background = isRead ? "var(--hover-overlay)" : "var(--unread-bg-hover)")
+        !isEditing &&
+        !isHighlighted &&
+        (e.currentTarget.style.background = isRead ? "var(--hover-overlay)" : "var(--unread-bg-hover)")
       }
       onMouseLeave={(e) =>
         !isEditing && (e.currentTarget.style.background = !isRead ? "var(--unread-bg)" : "transparent")
@@ -294,7 +324,7 @@ export function MessageItem({
           isOwnMessage={isOwnMessage}
           hasConversation={Boolean(message.conversationId)}
           isEdited={Boolean(message.isEdited)}
-          isRead={isRead}
+          isRead={isServerRead}
           onClose={() => setContextMenu(null)}
           onEdit={isOwnMessage && onEdit ? handleStartEdit : undefined}
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}
