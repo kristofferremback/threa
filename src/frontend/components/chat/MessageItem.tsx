@@ -329,7 +329,7 @@ export function MessageItem({
           hasConversation={Boolean(message.conversationId)}
           isEdited={Boolean(message.isEdited)}
           isRead={isServerRead}
-          isThreadReply={Boolean(message.replyToMessageId)}
+          isThreadReply={Boolean(message.replyToMessageId || message.conversationId)}
           isAlreadySharedToChannel={Boolean(
             message.linkedChannels?.some((c) => c.id === message.channelId),
           )}
@@ -338,7 +338,7 @@ export function MessageItem({
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}
           onReplyInThread={() => onOpenThread?.(message.id, message.channelId, "replace")}
           onShareToChannel={
-            message.replyToMessageId && onShareToChannel
+            (message.replyToMessageId || message.conversationId) && onShareToChannel
               ? () => onShareToChannel(message.id)
               : undefined
           }

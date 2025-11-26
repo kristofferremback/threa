@@ -419,34 +419,31 @@ export function useChat({ workspaceId, channelId, threadId, enabled = true }: Us
   )
 
   // Add a linked channel to a message (used after cross-posting)
-  const addLinkedChannel = useCallback(
-    (messageId: string, channel: { id: string; name: string; slug: string }) => {
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id !== messageId) return msg
-          const existingChannels = msg.linkedChannels || []
-          // Don't add if already exists
-          if (existingChannels.some((c) => c.id === channel.id)) return msg
-          return {
-            ...msg,
-            linkedChannels: [...existingChannels, channel],
-          }
-        }),
-      )
-
-      // Also update root message if applicable
-      setRootMessage((prev) => {
-        if (prev?.id !== messageId) return prev
-        const existingChannels = prev.linkedChannels || []
-        if (existingChannels.some((c) => c.id === channel.id)) return prev
+  const addLinkedChannel = useCallback((messageId: string, channel: { id: string; name: string; slug: string }) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg
+        const existingChannels = msg.linkedChannels || []
+        // Don't add if already exists
+        if (existingChannels.some((c) => c.id === channel.id)) return msg
         return {
-          ...prev,
+          ...msg,
           linkedChannels: [...existingChannels, channel],
         }
-      })
-    },
-    [],
-  )
+      }),
+    )
+
+    // Also update root message if applicable
+    setRootMessage((prev) => {
+      if (prev?.id !== messageId) return prev
+      const existingChannels = prev.linkedChannels || []
+      if (existingChannels.some((c) => c.id === channel.id)) return prev
+      return {
+        ...prev,
+        linkedChannels: [...existingChannels, channel],
+      }
+    })
+  }, [])
 
   const markAllAsRead = useCallback(async () => {
     if (messages.length === 0) return

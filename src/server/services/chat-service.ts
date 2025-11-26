@@ -1797,15 +1797,16 @@ export class ChatService {
     try {
       await client.query("BEGIN")
 
-      // Get the message and verify it's a thread reply
+      // Get the message and verify it's a thread reply or part of a conversation
       const messageResult = await client.query<{
         id: string
         channel_id: string
         reply_to_message_id: string | null
+        conversation_id: string | null
         author_id: string
         content: string
       }>(
-        sql`SELECT id, channel_id, reply_to_message_id, author_id, content
+        sql`SELECT id, channel_id, reply_to_message_id, conversation_id, author_id, content
             FROM messages WHERE id = ${messageId} AND deleted_at IS NULL`,
       )
 
@@ -1814,7 +1815,22 @@ export class ChatService {
         throw new Error("Message not found")
       }
 
-      if (!message.reply_to_message_id) {
+      // Message must be either a direct reply OR part of a conversation (but not the root message)
+      const isThreadReply = Boolean(message.reply_to_message_id)
+      let isConversationReplyNotRoot = false
+
+      if (!isThreadReply && message.conversation_id) {
+        // Check if this message is the root of the conversation
+        const convResult = await client.query<{ root_message_id: string }>(
+          sql`SELECT root_message_id FROM conversations WHERE id = ${message.conversation_id}`,
+        )
+        const conversation = convResult.rows[0]
+        if (conversation && conversation.root_message_id !== messageId) {
+          isConversationReplyNotRoot = true
+        }
+      }
+
+      if (!isThreadReply && !isConversationReplyNotRoot) {
         throw new Error("Only thread replies can be shared to channel")
       }
 
