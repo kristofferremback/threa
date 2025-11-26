@@ -98,23 +98,4 @@ export class NotifyClient {
       this.client.on("error", handler)
     }
   }
-
-  /**
-   * Close the connection
-   */
-  async close(): Promise<void> {
-    if (!this.client) {
-      return
-    }
-
-    try {
-      await this.client.end()
-      this.client = null
-      this.isConnected = false
-      logger.info("Notification client closed")
-    } catch (error) {
-      logger.error({ err: error }, "Error closing notification client")
-      throw error
-    }
-  }
 }

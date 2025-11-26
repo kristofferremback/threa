@@ -10,8 +10,8 @@ const POLL_INTERVAL_MS = 1000 // Fallback polling interval (1 second)
 
 export class OutboxListener {
   private isListening = false
-  private notifyClient: NotifyClient | null = null
-  private redisClient: RedisClient | null = null
+  private notifyClient: NotifyClient
+  private redisClient: RedisClient
   private debouncedNotificationProcessor: DebounceWithMaxWait
   private pollInterval: NodeJS.Timeout | null = null
 
@@ -134,15 +134,7 @@ export class OutboxListener {
         this.pollInterval = null
       }
 
-      if (this.notifyClient) {
-        await this.notifyClient.unlisten("outbox_event")
-        await this.notifyClient.close()
-        this.notifyClient = null
-      }
-      if (this.redisClient) {
-        await this.redisClient.quit()
-        this.redisClient = null
-      }
+      await this.notifyClient.unlisten("outbox_event")
       this.isListening = false
       logger.info("Outbox listener stopped")
     } catch (error) {

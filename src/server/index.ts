@@ -9,7 +9,7 @@ import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
 import { createWorkspaceRoutes } from "./routes/workspace-routes"
 import { createInvitationRoutes } from "./routes/invitation-routes"
 import { createSocketIOServer } from "./websockets"
-import { PORT } from "./config"
+import { isProduction, PORT } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
@@ -24,6 +24,8 @@ import { createErrorHandler } from "./middleware/error-handler"
 import { createSocketIORedisClients, type RedisClient } from "./lib/redis"
 import { OutboxListener } from "./lib/outbox-listener"
 import { esMain } from "./lib/is-main"
+import { promisify } from "util"
+import { attempt } from "./lib/attempt"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -39,6 +41,48 @@ export interface AppContext {
   redisPubClient: RedisClient
   redisSubClient: RedisClient
   outboxListener: OutboxListener
+
+  close(): Promise<void>
+}
+
+function gracefulShutdown({
+  context,
+  preShutdown = () => Promise.resolve(),
+  onShutdown = () => Promise.resolve(),
+  timeoutMs = 30_000,
+}: {
+  context: AppContext
+  preShutdown?: () => Promise<void> | void
+  onShutdown?: () => Promise<void> | void
+  timeoutMs: number
+}): void {
+  let isShuttingDown = false
+
+  const shutdown = async () => {
+    if (isShuttingDown) return
+    isShuttingDown = true
+
+    const timeout = setTimeout(() => {
+      logger.error({ timeoutMs }, "Server shutdown timed out, forcing exit")
+
+      process.exit(1)
+    }, timeoutMs)
+
+    try {
+      logger.info("Shutting down server gracefully")
+
+      await attempt(() => preShutdown())
+      await attempt(() => context.close())
+      await attempt(() => onShutdown())
+
+      logger.info("Server shut down gracefully")
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  process.on("SIGTERM", shutdown)
+  process.on("SIGINT", shutdown)
 }
 
 /**
@@ -83,7 +127,7 @@ export async function createApp(): Promise<AppContext> {
 
   app.get("/health", (_, res) => res.json({ status: "ok", message: "Threa API" }))
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProduction) {
     app.get("/", (_, res) => res.redirect("http://localhost:3000"))
   }
 
@@ -112,7 +156,7 @@ export async function createApp(): Promise<AppContext> {
   app.use(createErrorHandler())
 
   // Serve static files from Vite build in production
-  if (process.env.NODE_ENV === "production") {
+  if (isProduction) {
     const distPath = path.join(__dirname, "../../dist/frontend")
     app.use(express.static(distPath))
 
@@ -132,6 +176,14 @@ export async function createApp(): Promise<AppContext> {
     redisPubClient,
     redisSubClient,
     outboxListener,
+    close: async () => {
+      await attempt(() => promisify(server.close).bind(server)())
+
+      await attempt(() => outboxListener.stop())
+      await attempt(() => pool.end())
+      await attempt(() => redisPubClient.quit())
+      await attempt(() => redisSubClient.quit())
+    },
   }
 }
 
@@ -150,7 +202,7 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting outbox listener...")
     await context.outboxListener.start()
 
-    await createSocketIOServer({
+    const socketIoServer = await createSocketIOServer({
       server: context.server,
       pool: context.pool,
       authService: context.authService,
@@ -160,36 +212,33 @@ export async function startServer(context: AppContext): Promise<void> {
       redisSubClient: context.redisSubClient,
     })
 
-    context.server.listen(PORT, () => {
-      logger.info({ port: PORT }, "Server started")
-      logger.info({ url: `http://localhost:${PORT}/api/auth/login` }, "Login endpoint")
-      logger.info("Socket.IO available")
-    })
+    await promisify(context.server.listen).bind(context.server)(PORT)
 
-    process.on("SIGTERM", async () => {
-      logger.info("SIGTERM received, shutting down gracefully")
-      context.server.close()
-      await context.outboxListener.stop()
-      await context.pool.end()
-      process.exit(0)
-    })
+    logger.info({ port: PORT }, "Server started")
+    logger.info({ url: `http://localhost:${PORT}/api/auth/login` }, "Login endpoint")
+    logger.info("Socket.IO available")
 
-    process.on("SIGINT", async () => {
-      logger.info("SIGINT received, shutting down gracefully")
-      context.server.close()
-      await context.outboxListener.stop()
-      await context.pool.end()
-      process.exit(0)
+    gracefulShutdown({
+      context,
+      preShutdown: async () => {
+        await socketIoServer.close()
+      },
+      onShutdown: async () => {
+        process.exit(0)
+      },
+      timeoutMs: 30_000,
     })
   } catch (error) {
     logger.error({ err: error }, "Failed to start server")
+    await context.close()
+
     process.exit(1)
   }
 }
 
 // Start server when this file is executed
 // When imported as a module, the exports are available but server will also start
-// For testing, you can import createApp() and startServer() separately
+// For testing, y ou can import createApp() and startServer() separately
 if (esMain(import.meta.url)) {
   const context = await createApp()
   startServer(context)
