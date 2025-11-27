@@ -567,40 +567,58 @@ export class WorkspaceService {
     displayName: string | null
     title: string | null
     avatarUrl: string | null
-    role: string
+    bio: string | null
     profileManagedBySso: boolean
   } | null> {
+    // First check if user is a member
+    const memberResult = await this.pool.query(
+      `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId],
+    )
+
+    if (memberResult.rows.length === 0) return null
+
+    // Get profile (may not exist yet)
     const result = await this.pool.query(
-      `SELECT display_name, title, avatar_url, role, profile_managed_by_sso
-       FROM workspace_members
+      `SELECT display_name, title, avatar_url, bio, profile_managed_by_sso
+       FROM workspace_profiles
        WHERE workspace_id = $1 AND user_id = $2`,
       [workspaceId, userId],
     )
 
-    if (result.rows.length === 0) return null
+    if (result.rows.length === 0) {
+      // No profile yet - return empty profile
+      return {
+        displayName: null,
+        title: null,
+        avatarUrl: null,
+        bio: null,
+        profileManagedBySso: false,
+      }
+    }
 
     const row = result.rows[0]
     return {
       displayName: row.display_name,
       title: row.title,
       avatarUrl: row.avatar_url,
-      role: row.role,
-      profileManagedBySso: row.profile_managed_by_sso,
+      bio: row.bio,
+      profileManagedBySso: row.profile_managed_by_sso || false,
     }
   }
 
   /**
-   * Update a user's profile for a specific workspace
+   * Update a user's profile for a specific workspace (upsert)
    * Will fail if profile is managed by SSO
    */
   async updateWorkspaceProfile(
     workspaceId: string,
     userId: string,
-    updates: { displayName?: string; title?: string; avatarUrl?: string },
+    updates: { displayName?: string; title?: string; avatarUrl?: string; bio?: string },
   ): Promise<boolean> {
-    // Check if profile is managed by SSO
+    // Check if user is a member
     const memberResult = await this.pool.query(
-      `SELECT profile_managed_by_sso FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
       [workspaceId, userId],
     )
 
@@ -608,43 +626,27 @@ export class WorkspaceService {
       throw new Error("User is not a member of this workspace")
     }
 
-    if (memberResult.rows[0].profile_managed_by_sso) {
+    // Check if profile is managed by SSO
+    const profileResult = await this.pool.query(
+      `SELECT profile_managed_by_sso FROM workspace_profiles WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId],
+    )
+
+    if (profileResult.rows.length > 0 && profileResult.rows[0].profile_managed_by_sso) {
       throw new Error("Profile is managed by SSO and cannot be edited")
     }
 
-    const setClauses: string[] = ["updated_at = NOW()"]
-    const values: any[] = []
-    let paramIndex = 1
-
-    if (updates.displayName !== undefined) {
-      setClauses.push(`display_name = $${paramIndex}`)
-      values.push(updates.displayName)
-      paramIndex++
-    }
-
-    if (updates.title !== undefined) {
-      setClauses.push(`title = $${paramIndex}`)
-      values.push(updates.title)
-      paramIndex++
-    }
-
-    if (updates.avatarUrl !== undefined) {
-      setClauses.push(`avatar_url = $${paramIndex}`)
-      values.push(updates.avatarUrl)
-      paramIndex++
-    }
-
-    if (setClauses.length === 1) {
-      // Only updated_at, nothing to update
-      return true
-    }
-
-    values.push(workspaceId, userId)
-
+    // Upsert the profile
     await this.pool.query(
-      `UPDATE workspace_members SET ${setClauses.join(", ")}
-       WHERE workspace_id = $${paramIndex} AND user_id = $${paramIndex + 1}`,
-      values,
+      `INSERT INTO workspace_profiles (workspace_id, user_id, display_name, title, avatar_url, bio, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (workspace_id, user_id) DO UPDATE SET
+         display_name = COALESCE($3, workspace_profiles.display_name),
+         title = COALESCE($4, workspace_profiles.title),
+         avatar_url = COALESCE($5, workspace_profiles.avatar_url),
+         bio = COALESCE($6, workspace_profiles.bio),
+         updated_at = NOW()`,
+      [workspaceId, userId, updates.displayName, updates.title, updates.avatarUrl, updates.bio],
     )
 
     logger.info({ workspaceId, userId, updates }, "Workspace profile updated")
@@ -654,17 +656,21 @@ export class WorkspaceService {
   /**
    * Check if user needs to set up their profile for this workspace
    */
-  needsProfileSetup(workspaceId: string, userId: string): Promise<boolean> {
-    return this.pool
-      .query(
-        `SELECT display_name, profile_managed_by_sso FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
-        [workspaceId, userId],
-      )
-      .then((result) => {
-        if (result.rows.length === 0) return false // Not a member
-        const row = result.rows[0]
-        // Needs setup if: not SSO-managed AND display_name is null or empty
-        return !row.profile_managed_by_sso && (!row.display_name || row.display_name.trim() === "")
-      })
+  async needsProfileSetup(workspaceId: string, userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT wp.display_name, wp.profile_managed_by_sso
+       FROM workspace_members wm
+       LEFT JOIN workspace_profiles wp ON wm.workspace_id = wp.workspace_id AND wm.user_id = wp.user_id
+       WHERE wm.workspace_id = $1 AND wm.user_id = $2`,
+      [workspaceId, userId],
+    )
+
+    if (result.rows.length === 0) return false // Not a member
+
+    const row = result.rows[0]
+    // Needs setup if: not SSO-managed AND display_name is null or empty
+    const isSsoManaged = row.profile_managed_by_sso || false
+    const hasDisplayName = row.display_name && row.display_name.trim() !== ""
+    return !isSsoManaged && !hasDisplayName
   }
 }

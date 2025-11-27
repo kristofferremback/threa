@@ -240,24 +240,26 @@ export class StreamService {
         client.query(
           sql`SELECT 
               u.id, u.email,
-              COALESCE(wm.display_name, u.name) as name,
-              wm.title,
-              wm.avatar_url,
+              COALESCE(wp.display_name, u.name) as name,
+              wp.title,
+              wp.avatar_url,
               wm.role
             FROM users u
             INNER JOIN workspace_members wm ON u.id = wm.user_id
+            LEFT JOIN workspace_profiles wp ON wp.workspace_id = wm.workspace_id AND wp.user_id = wm.user_id
             WHERE wm.workspace_id = ${workspaceId}
               AND wm.status = 'active'
               AND u.deleted_at IS NULL
-            ORDER BY COALESCE(wm.display_name, u.name)`,
+            ORDER BY COALESCE(wp.display_name, u.name)`,
         ),
 
         // 4. Current user's profile for this workspace
         client.query(
           sql`SELECT 
-              wm.display_name, wm.title, wm.avatar_url,
-              wm.profile_managed_by_sso
+              wp.display_name, wp.title, wp.avatar_url,
+              COALESCE(wp.profile_managed_by_sso, false) as profile_managed_by_sso
             FROM workspace_members wm
+            LEFT JOIN workspace_profiles wp ON wp.workspace_id = wm.workspace_id AND wp.user_id = wm.user_id
             WHERE wm.workspace_id = ${workspaceId}
               AND wm.user_id = ${userId}`,
         ),
@@ -1168,7 +1170,7 @@ export class StreamService {
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
             u.email as actor_email,
-            COALESCE(wm.display_name, u.name) as actor_name,
+            COALESCE(wp.display_name, u.name) as actor_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1179,7 +1181,7 @@ export class StreamService {
           FROM stream_events e
           INNER JOIN streams s ON e.stream_id = s.id
           INNER JOIN users u ON e.actor_id = u.id
-          LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
+          LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.stream_id = ${streamId}
@@ -1200,12 +1202,12 @@ export class StreamService {
               e.id, e.stream_id, e.event_type, e.actor_id,
               e.content_type, e.content_id, e.created_at,
               u.email as actor_email,
-              COALESCE(wm.display_name, u.name) as actor_name,
+              COALESCE(wp.display_name, u.name) as actor_name,
               tm.content, tm.mentions
             FROM stream_events e
             INNER JOIN streams s ON e.stream_id = s.id
             INNER JOIN users u ON e.actor_id = u.id
-            LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
+            LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
             LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ANY(${originalIds})`,
       )
@@ -1229,7 +1231,7 @@ export class StreamService {
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
             u.email as actor_email,
-            COALESCE(wm.display_name, u.name) as actor_name,
+            COALESCE(wp.display_name, u.name) as actor_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1240,7 +1242,7 @@ export class StreamService {
           FROM stream_events e
           INNER JOIN streams s ON e.stream_id = s.id
           INNER JOIN users u ON e.actor_id = u.id
-          LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
+          LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.id = ${eventId}`,
@@ -1663,13 +1665,13 @@ export class StreamService {
       sql`SELECT
             n.*,
             u.email as actor_email,
-            COALESCE(wm.display_name, u.name) as actor_name,
+            COALESCE(wp.display_name, u.name) as actor_name,
             s.name as stream_name,
             s.slug as stream_slug,
             s.stream_type
           FROM notifications n
           LEFT JOIN users u ON n.actor_id = u.id
-          LEFT JOIN workspace_members wm ON wm.workspace_id = ${workspaceId} AND wm.user_id = n.actor_id
+          LEFT JOIN workspace_profiles wp ON wp.workspace_id = ${workspaceId} AND wp.user_id = n.actor_id
           LEFT JOIN streams s ON n.stream_id = s.id
           WHERE n.workspace_id = ${workspaceId}
             AND n.user_id = ${userId}
