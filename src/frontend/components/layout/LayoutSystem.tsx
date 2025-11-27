@@ -550,6 +550,7 @@ export function LayoutSystem() {
         onCreateChannel={() => setShowCreateChannel(true)}
         onCreateDM={() => setShowNewDM(true)}
         onStreamSettings={(stream) => setStreamToEdit(stream)}
+        onEditProfile={() => setShowProfileSetup(true)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
@@ -560,6 +561,7 @@ export function LayoutSystem() {
         onLeaveStream={handleLeaveStream}
         isInboxActive={isActivityActive}
         inboxUnreadCount={inboxUnreadCount}
+        currentUserProfile={bootstrapData.userProfile}
       />
 
       <CreateChannelModal

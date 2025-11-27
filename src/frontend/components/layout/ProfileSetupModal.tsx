@@ -30,11 +30,15 @@ export function ProfileSetupModal({
   const [error, setError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
+  // Sync state when modal opens or profile changes
   useEffect(() => {
-    if (isOpen && nameInputRef.current) {
-      nameInputRef.current.focus()
+    if (isOpen) {
+      setDisplayName(currentProfile?.displayName || "")
+      setTitle(currentProfile?.title || "")
+      setError(null)
+      nameInputRef.current?.focus()
     }
-  }, [isOpen])
+  }, [isOpen, currentProfile])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -95,7 +99,7 @@ export function ProfileSetupModal({
             </div>
             <div>
               <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
-                Set up your profile
+                {currentProfile?.displayName ? "Edit your profile" : "Set up your profile"}
               </h2>
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                 for {workspaceName}

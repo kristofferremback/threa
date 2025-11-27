@@ -16,6 +16,7 @@ import {
   Compass,
   PanelRightOpen,
   MessageCircle,
+  User,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
@@ -28,17 +29,24 @@ interface User {
   email: string
 }
 
+interface UserProfile {
+  displayName: string | null
+  title: string | null
+}
+
 interface SidebarProps {
   workspace: Workspace
   streams: Stream[]
   users: User[]
   activeStreamSlug: string | null
   currentUserId?: string
+  currentUserProfile?: UserProfile | null
   onSelectStream: (stream: Stream, mode: OpenMode) => void
   onStartDM: (userId: string) => void
   onCreateChannel: () => void
   onCreateDM?: () => void
   onStreamSettings: (stream: Stream) => void
+  onEditProfile?: () => void
   onInvitePeople: () => void
   onLogout: () => void
   onOpenCommandPalette: () => void
@@ -62,6 +70,7 @@ export function Sidebar({
   onCreateChannel,
   onCreateDM,
   onStreamSettings,
+  onEditProfile,
   onInvitePeople,
   onLogout,
   onOpenCommandPalette,
@@ -72,6 +81,7 @@ export function Sidebar({
   onLeaveStream,
   isInboxActive = false,
   inboxUnreadCount = 0,
+  currentUserProfile,
 }: SidebarProps) {
   // Filter to only show channels the user is a member of
   const memberChannels = streams.filter((s) => s.streamType === "channel" && s.isMember)
@@ -174,7 +184,7 @@ export function Sidebar({
         />
       </div>
 
-      <UserFooter onLogout={onLogout} />
+      <UserFooter onLogout={onLogout} onEditProfile={onEditProfile} profile={currentUserProfile} />
     </div>
   )
 }
@@ -794,21 +804,32 @@ function UserDMItem({ user, dm, isActive, onClick, onPin, onUnpin }: UserDMItemP
 
 interface UserFooterProps {
   onLogout: () => void
+  onEditProfile?: () => void
+  profile?: UserProfile | null
 }
 
-function UserFooter({ onLogout }: UserFooterProps) {
+function UserFooter({ onLogout, onEditProfile, profile }: UserFooterProps) {
+  const displayName = profile?.displayName || "You"
+  const title = profile?.title
+
   return (
     <div className="p-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
       <div className="flex items-center gap-2">
-        <Avatar name="U" size="md" />
+        <Avatar name={displayName} size="md" />
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>
-            You
+            {displayName}
           </div>
-          <div className="text-xs flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: "var(--success)" }} />
-            <span style={{ color: "var(--text-muted)" }}>Online</span>
-          </div>
+          {title ? (
+            <div className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+              {title}
+            </div>
+          ) : (
+            <div className="text-xs flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: "var(--success)" }} />
+              <span style={{ color: "var(--text-muted)" }}>Online</span>
+            </div>
+          )}
         </div>
         <Dropdown
           align="right"
@@ -825,6 +846,11 @@ function UserFooter({ onLogout }: UserFooterProps) {
         >
           <ThemeSelector />
           <DropdownDivider />
+          {onEditProfile && (
+            <DropdownItem onClick={onEditProfile} icon={<User className="h-4 w-4" />}>
+              Edit profile
+            </DropdownItem>
+          )}
           <DropdownItem onClick={() => {}} icon={<Settings className="h-4 w-4" />}>
             Preferences
           </DropdownItem>

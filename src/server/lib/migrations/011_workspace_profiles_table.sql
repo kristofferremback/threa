@@ -10,21 +10,21 @@
 CREATE TABLE IF NOT EXISTS workspace_profiles (
     workspace_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
-    
+
     -- Profile data
     display_name TEXT,
     title TEXT,
     avatar_url TEXT,
     bio TEXT,
-    
+
     -- SSO management
     workos_membership_id TEXT UNIQUE,
     profile_managed_by_sso BOOLEAN NOT NULL DEFAULT false,
-    
+
     -- Timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     PRIMARY KEY (workspace_id, user_id)
 );
 

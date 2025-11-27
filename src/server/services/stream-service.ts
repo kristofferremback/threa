@@ -238,7 +238,7 @@ export class StreamService {
 
         // 3. All workspace members (with workspace-scoped profile)
         client.query(
-          sql`SELECT 
+          sql`SELECT
               u.id, u.email,
               COALESCE(wp.display_name, u.name) as name,
               wp.title,
@@ -255,7 +255,7 @@ export class StreamService {
 
         // 4. Current user's profile for this workspace
         client.query(
-          sql`SELECT 
+          sql`SELECT
               wp.display_name, wp.title, wp.avatar_url,
               COALESCE(wp.profile_managed_by_sso, false) as profile_managed_by_sso
             FROM workspace_members wm
