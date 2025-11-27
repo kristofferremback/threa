@@ -272,7 +272,9 @@ export class StreamService {
 
       const userProfile = userProfileRes?.rows[0]
       const needsProfileSetup =
-        userProfile && !userProfile.profile_managed_by_sso && (!userProfile.display_name || userProfile.display_name.trim() === "")
+        userProfile &&
+        !userProfile.profile_managed_by_sso &&
+        (!userProfile.display_name || userProfile.display_name.trim() === "")
 
       return {
         workspace: {
@@ -494,9 +496,7 @@ export class StreamService {
     }
 
     // Get participant names for DM name
-    const usersResult = await this.pool.query(
-      sql`SELECT id, name, email FROM users WHERE id = ANY(${allParticipants})`,
-    )
+    const usersResult = await this.pool.query(sql`SELECT id, name, email FROM users WHERE id = ANY(${allParticipants})`)
     const users = usersResult.rows
 
     // Generate name from participants (excluding creator for display)
