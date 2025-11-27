@@ -679,9 +679,11 @@ export class ChatService {
 
     // Attach linked channels to messages (prefer message_channels, fallback to conversation_channels)
     const messagesWithLinkedChannels = messagesWithSystemInfo.map(msg => {
-      // Check message_channels first (for cross-posted messages)
+      // Check message_channels first (for cross-posted messages or "shared to channel")
       const messageChannels = messageLinkedChannelsMap.get(msg.id)
-      if (messageChannels && messageChannels.length > 1) {
+      if (messageChannels && messageChannels.length > 0) {
+        // Always include linkedChannels if there are any entries in message_channels
+        // This is needed for the "isAlreadySharedToChannel" check on the frontend
         return { ...msg, linkedChannels: messageChannels }
       }
       // Fall back to conversation_channels for multi-channel conversations
@@ -1815,16 +1817,6 @@ export class ChatService {
         throw new Error("Message not found")
       }
 
-      logger.debug(
-        {
-          messageId,
-          channel_id: message.channel_id,
-          reply_to_message_id: message.reply_to_message_id,
-          conversation_id: message.conversation_id,
-        },
-        "shareToChannel: checking message",
-      )
-
       // Message must be either a direct reply OR part of a conversation (but not the root message)
       const isThreadReply = Boolean(message.reply_to_message_id)
       let isConversationReplyNotRoot = false
@@ -1835,16 +1827,10 @@ export class ChatService {
           sql`SELECT root_message_id FROM conversations WHERE id = ${message.conversation_id}`,
         )
         const conversation = convResult.rows[0]
-        logger.debug(
-          { conversation_id: message.conversation_id, root_message_id: conversation?.root_message_id, messageId },
-          "shareToChannel: checking conversation root",
-        )
         if (conversation && conversation.root_message_id !== messageId) {
           isConversationReplyNotRoot = true
         }
       }
-
-      logger.debug({ isThreadReply, isConversationReplyNotRoot }, "shareToChannel: eligibility check")
 
       if (!isThreadReply && !isConversationReplyNotRoot) {
         throw new Error("Only thread replies can be shared to channel")
@@ -1854,11 +1840,6 @@ export class ChatService {
       const existingResult = await client.query(
         sql`SELECT 1 FROM message_channels
             WHERE message_id = ${messageId} AND channel_id = ${message.channel_id}`,
-      )
-
-      logger.debug(
-        { messageId, channel_id: message.channel_id, alreadyShared: existingResult.rows.length > 0 },
-        "shareToChannel: checking if already shared",
       )
 
       if (existingResult.rows.length > 0) {
