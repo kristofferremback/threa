@@ -1,60 +1,60 @@
 import { useEffect, useRef, useState } from "react"
 import { io, Socket } from "socket.io-client"
 import { toast } from "sonner"
-import type { Channel } from "../types"
+import type { Stream } from "../types"
 
 interface UseWorkspaceSocketOptions {
   enabled?: boolean
   workspaceId?: string
-  activeChannelSlug?: string
+  activeStreamSlug?: string
   currentUserId?: string
-  onChannelAdded?: (channel: Channel) => void
-  onChannelRemoved?: (channelId: string) => void
-  onUnreadCountUpdate?: (channelId: string, increment: number) => void
+  onStreamAdded?: (stream: Stream) => void
+  onStreamRemoved?: (streamId: string) => void
+  onUnreadCountUpdate?: (streamId: string, increment: number) => void
   onNewNotification?: () => void
 }
 
 export function useWorkspaceSocket({
   enabled = true,
   workspaceId,
-  activeChannelSlug,
+  activeStreamSlug,
   currentUserId,
-  onChannelAdded,
-  onChannelRemoved,
+  onStreamAdded,
+  onStreamRemoved,
   onUnreadCountUpdate,
   onNewNotification,
 }: UseWorkspaceSocketOptions) {
   const [socket, setSocket] = useState<Socket | null>(null)
-  const activeChannelSlugRef = useRef(activeChannelSlug)
+  const activeStreamSlugRef = useRef(activeStreamSlug)
   const currentUserIdRef = useRef(currentUserId)
-  
+
   // Use refs for callbacks to avoid reconnecting when they change
-  const onChannelAddedRef = useRef(onChannelAdded)
-  const onChannelRemovedRef = useRef(onChannelRemoved)
+  const onStreamAddedRef = useRef(onStreamAdded)
+  const onStreamRemovedRef = useRef(onStreamRemoved)
   const onUnreadCountUpdateRef = useRef(onUnreadCountUpdate)
   const onNewNotificationRef = useRef(onNewNotification)
 
   // Keep refs in sync
   useEffect(() => {
-    activeChannelSlugRef.current = activeChannelSlug
-  }, [activeChannelSlug])
+    activeStreamSlugRef.current = activeStreamSlug
+  }, [activeStreamSlug])
 
   useEffect(() => {
     currentUserIdRef.current = currentUserId
   }, [currentUserId])
-  
+
   useEffect(() => {
-    onChannelAddedRef.current = onChannelAdded
-  }, [onChannelAdded])
-  
+    onStreamAddedRef.current = onStreamAdded
+  }, [onStreamAdded])
+
   useEffect(() => {
-    onChannelRemovedRef.current = onChannelRemoved
-  }, [onChannelRemoved])
-  
+    onStreamRemovedRef.current = onStreamRemoved
+  }, [onStreamRemoved])
+
   useEffect(() => {
     onUnreadCountUpdateRef.current = onUnreadCountUpdate
   }, [onUnreadCountUpdate])
-  
+
   useEffect(() => {
     onNewNotificationRef.current = onNewNotification
   }, [onNewNotification])
@@ -67,42 +67,86 @@ export function useWorkspaceSocket({
     const newSocket = io({ withCredentials: true })
     setSocket(newSocket)
 
-    // Handle notification events (new messages in channels)
+    // Handle notification events (new events in streams)
     newSocket.on(
       "notification",
-      (data: { type: string; channelId: string; channelSlug?: string; conversationId?: string; authorId?: string }) => {
-        if (data.type === "message") {
-          // Don't increment unread count for the user's own messages
-          if (data.authorId && data.authorId === currentUserIdRef.current) {
+      (data: { type: string; streamId: string; streamSlug?: string; actorId?: string }) => {
+        if (data.type === "event") {
+          // Don't increment unread count for the user's own events
+          if (data.actorId && data.actorId === currentUserIdRef.current) {
             return
           }
 
-          // Don't increment unread count if we're currently viewing this channel
-          // Compare against both slug and ID since we track by slug but server may send ID
-          const isActiveChannel =
-            activeChannelSlugRef.current === data.channelSlug || activeChannelSlugRef.current === data.channelId
+          // Don't increment unread count if we're currently viewing this stream
+          const isActiveStream =
+            activeStreamSlugRef.current === data.streamSlug || activeStreamSlugRef.current === data.streamId
 
-          if (!isActiveChannel) {
-            onUnreadCountUpdateRef.current?.(data.channelId, 1)
+          if (!isActiveStream) {
+            onUnreadCountUpdateRef.current?.(data.streamId, 1)
           }
         }
       },
     )
 
-    // Handle being added to a channel
-    newSocket.on("channelMemberAdded", (data: { channel: Channel; addedByUserId: string; eventType: string }) => {
-      const isJoining = data.eventType === "member_joined"
-      if (!isJoining) {
-        // Only show toast if someone else added us
-        toast.success(`You were added to #${data.channel.name.replace("#", "")}`)
-      }
-      onChannelAddedRef.current?.(data.channel)
-    })
+    // Handle stream created (new channel visible)
+    newSocket.on(
+      "stream:created",
+      (data: { id: string; streamType: string; name: string; slug: string; visibility: string; creatorId: string }) => {
+        // Add the new stream to the list
+        if (data.streamType === "channel" && data.visibility === "public") {
+          const newStream: Stream = {
+            id: data.id,
+            workspaceId: workspaceId,
+            streamType: data.streamType as any,
+            name: data.name,
+            slug: data.slug,
+            description: null,
+            topic: null,
+            parentStreamId: null,
+            branchedFromEventId: null,
+            visibility: data.visibility as any,
+            status: "active",
+            isMember: data.creatorId === currentUserIdRef.current,
+            unreadCount: 0,
+            lastReadAt: null,
+            notifyLevel: "default",
+          }
+          onStreamAddedRef.current?.(newStream)
+        }
+      },
+    )
 
-    // Handle being removed from a channel
-    newSocket.on("channelMemberRemoved", (data: { channelId: string; channelName: string; removedByUserId?: string }) => {
-      toast.error(`You were removed from #${data.channelName.replace("#", "")}`)
-      onChannelRemovedRef.current?.(data.channelId)
+    // Handle being added to a stream
+    newSocket.on(
+      "stream:member:added",
+      (data: { streamId: string; streamName: string; streamSlug: string; addedByUserId: string }) => {
+        toast.success(`You were added to #${data.streamName.replace("#", "")}`)
+        // Create a minimal stream object for the sidebar
+        const newStream: Stream = {
+          id: data.streamId,
+          workspaceId: workspaceId,
+          streamType: "channel",
+          name: data.streamName,
+          slug: data.streamSlug,
+          description: null,
+          topic: null,
+          parentStreamId: null,
+          branchedFromEventId: null,
+          visibility: "private",
+          status: "active",
+          isMember: true,
+          unreadCount: 0,
+          lastReadAt: null,
+          notifyLevel: "default",
+        }
+        onStreamAddedRef.current?.(newStream)
+      },
+    )
+
+    // Handle being removed from a stream
+    newSocket.on("stream:member:removed", (data: { streamId: string; streamName: string; removedByUserId?: string }) => {
+      toast.error(`You were removed from #${data.streamName.replace("#", "")}`)
+      onStreamRemovedRef.current?.(data.streamId)
     })
 
     // Handle new notifications (mentions, etc.)
@@ -114,7 +158,7 @@ export function useWorkspaceSocket({
       newSocket.disconnect()
       setSocket(null)
     }
-  }, [enabled, workspaceId]) // Only reconnect when enabled or workspaceId changes
+  }, [enabled, workspaceId])
 
   return {
     socket,

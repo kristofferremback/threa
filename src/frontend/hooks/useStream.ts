@@ -43,6 +43,11 @@ interface UseStreamReturn {
 
 const EVENT_PAGE_SIZE = 50
 
+// Helper to detect if an ID is an event ID (pending thread) vs stream ID
+const isPendingThread = (id: string | undefined): boolean => {
+  return id?.startsWith("event_") === true
+}
+
 // ==========================================================================
 // Hook
 // ==========================================================================
@@ -66,6 +71,11 @@ export function useStream({
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+  // For pending threads: the event ID we're replying to
+  const [pendingEventId, setPendingEventId] = useState<string | null>(null)
+  // For pending threads: the parent stream ID to use in reply endpoint
+  const [parentStreamIdForReply, setParentStreamIdForReply] = useState<string | null>(null)
 
   // Refs
   const socketRef = useRef<Socket | null>(null)
@@ -175,7 +185,107 @@ export function useStream({
     try {
       setIsLoading(true)
 
-      // Fetch stream info
+      // Check if this is a pending thread (streamId is actually an eventId)
+      if (isPendingThread(streamId)) {
+        // This is a pending thread - we're opening a thread view for an event that doesn't have a thread yet
+        const eventId = streamId
+
+        // First, check if a thread was created since we opened
+        const threadRes = await fetch(
+          `/api/workspace/${workspaceId}/streams/by-event/${eventId}/thread`,
+          { credentials: "include" },
+        )
+
+        if (threadRes.ok) {
+          const threadData = await threadRes.json()
+          if (threadData.thread) {
+            // Thread exists now! Use it instead
+            setStream(threadData.thread)
+            setPendingEventId(null)
+            setParentStreamIdForReply(null)
+            // Continue to fetch events for this stream
+            const eventsRes = await fetch(
+              `/api/workspace/${workspaceId}/streams/${threadData.thread.id}/events?limit=${EVENT_PAGE_SIZE}`,
+              { credentials: "include" },
+            )
+            if (eventsRes.ok) {
+              const eventsData = await eventsRes.json()
+              setEvents(eventsData.events || [])
+              setLastReadEventId(eventsData.lastReadEventId || null)
+              setHasMoreEvents(eventsData.hasMore || false)
+            }
+            // Fetch parent stream
+            if (threadData.thread.parentStreamId) {
+              const parentRes = await fetch(
+                `/api/workspace/${workspaceId}/streams/${threadData.thread.parentStreamId}`,
+                { credentials: "include" },
+              )
+              if (parentRes.ok) {
+                const parentData = await parentRes.json()
+                setParentStream(parentData)
+                setParentStreamIdForReply(parentData.id)
+              }
+            }
+            // Fetch root event
+            if (threadData.rootEvent) {
+              setRootEvent(threadData.rootEvent)
+            }
+            setIsLoading(false)
+            return
+          }
+        }
+
+        // No thread exists yet - this is a pending thread
+        setPendingEventId(eventId)
+        setEvents([]) // No replies yet
+        setHasMoreEvents(false)
+
+        // We need to fetch the original event and its parent stream
+        // The event fetch endpoint should return both
+        const eventInfoRes = await fetch(
+          `/api/workspace/${workspaceId}/events/${eventId}`,
+          { credentials: "include" },
+        )
+
+        if (eventInfoRes.ok) {
+          const eventInfo = await eventInfoRes.json()
+          setRootEvent(eventInfo.event)
+          setParentStream(eventInfo.stream)
+          setParentStreamIdForReply(eventInfo.stream?.id || null)
+          // Create a "virtual" thread stream for the UI
+          setStream({
+            id: `pending_${eventId}`,
+            workspaceId,
+            streamType: "thread",
+            name: null,
+            slug: null,
+            description: null,
+            topic: null,
+            parentStreamId: eventInfo.stream?.id || null,
+            branchedFromEventId: eventId,
+            visibility: "inherit",
+            status: "active",
+            isMember: true,
+            unreadCount: 0,
+            lastReadAt: null,
+            notifyLevel: "default",
+            members: [],
+          })
+        } else {
+          throw new Error("Failed to fetch event info")
+        }
+
+        // Get current user
+        const authRes = await fetch("/api/auth/me", { credentials: "include" })
+        if (authRes.ok) {
+          const authData = await authRes.json()
+          setCurrentUserId(authData.user?.id || null)
+        }
+        setIsLoading(false)
+        return
+      }
+
+      // Normal stream fetch
       const streamRes = await fetch(`/api/workspace/${workspaceId}/streams/${streamId}`, {
         credentials: "include",
       })
@@ -186,6 +296,7 @@ export function useStream({
 
       const streamData = await streamRes.json()
       setStream(streamData)
+      setPendingEventId(null)
 
       // If this is a thread, fetch parent info
       if (streamData.parentStreamId) {
@@ -193,7 +304,9 @@ export function useStream({
           credentials: "include",
         })
         if (parentRes.ok) {
-          setParentStream(await parentRes.json())
+          const parentData = await parentRes.json()
+          setParentStream(parentData)
+          setParentStreamIdForReply(parentData.id)
         }
 
         // Fetch root event if branched from one
@@ -273,6 +386,55 @@ export function useStream({
 
       setIsSending(true)
       try {
+        // Check if this is a pending thread by:
+        // 1. pendingEventId state is set, OR
+        // 2. streamId starts with "event_" (fallback check)
+        const isPostingToPendingThread = pendingEventId || isPendingThread(streamId)
+        const eventIdToReplyTo = pendingEventId || (isPendingThread(streamId) ? streamId : null)
+        const parentId = parentStreamIdForReply || parentStream?.id
+
+        if (isPostingToPendingThread && eventIdToReplyTo) {
+          if (!parentId) {
+            throw new Error("Cannot post to thread: parent stream not found. Please refresh and try again.")
+          }
+          const res = await fetch(
+            `/api/workspace/${workspaceId}/streams/${parentId}/events/${eventIdToReplyTo}/reply`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ content: content.trim(), mentions }),
+            },
+          )
+
+          if (!res.ok) {
+            const error = await res.json()
+            throw new Error(error.error || "Failed to post reply")
+          }
+
+          const data = await res.json()
+
+          // Thread was created! Update our state to use the real stream
+          if (data.threadCreated && data.stream) {
+            setStream(data.stream)
+            setPendingEventId(null)
+            // Update the currentStreamRef so websocket events work
+            currentStreamRef.current = data.stream.id
+            // Join the new stream's room
+            if (socketRef.current) {
+              socketRef.current.emit("join", room.stream(workspaceId, data.stream.id))
+            }
+          }
+
+          // Add the event to our list
+          if (data.event) {
+            setEvents((prev) => [...prev, data.event])
+          }
+
+          return
+        }
+
+        // Normal post to existing stream
         const res = await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/events`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -293,7 +455,7 @@ export function useStream({
         setIsSending(false)
       }
     },
-    [workspaceId, streamId, isSending],
+    [workspaceId, streamId, isSending, pendingEventId, parentStreamIdForReply, parentStream],
   )
 
   const editEvent = useCallback(

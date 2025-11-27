@@ -126,6 +126,8 @@ export interface Workspace {
   name: string
   slug: string
   planTier: string
+  // Legacy alias for backwards compatibility
+  plan_tier?: string
 }
 
 export interface WorkspaceUser {
@@ -185,8 +187,18 @@ export interface Tab {
     streamId?: string
     streamSlug?: string
     highlightEventId?: string
+    // Legacy fields for backwards compatibility
+    channelSlug?: string
+    threadId?: string
+    highlightMessageId?: string
   }
 }
+
+// Type alias for backwards compatibility
+export type MessageMention = Mention
+
+// Legacy Channel type - maps to Stream for migration
+export type Channel = Stream
 
 export interface Pane {
   id: string

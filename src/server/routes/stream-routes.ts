@@ -1,7 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express"
 import { StreamService, CreateStreamParams, CreateEventParams } from "../services/stream-service"
+import { WorkspaceService } from "../services/workspace-service"
 import { logger } from "../lib/logger"
 import { createValidSlug } from "../../shared/slug"
+import { Pool } from "pg"
 
 // Extend Express Request to include user
 declare module "express-serve-static-core" {
@@ -10,12 +12,91 @@ declare module "express-serve-static-core" {
   }
 }
 
-export function createStreamRoutes(streamService: StreamService): Router {
+export function createStreamRoutes(
+  streamService: StreamService,
+  workspaceService: WorkspaceService,
+  pool: Pool,
+): Router {
   const router = Router()
+
+  // ==========================================================================
+  // Workspace Creation
+  // ==========================================================================
+
+  router.post("/", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { name } = req.body
+
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        res.status(400).json({ error: "Workspace name is required" })
+        return
+      }
+
+      // Create workspace
+      const workspace = await workspaceService.createWorkspace(name.trim(), userId)
+
+      // Add creator as owner
+      await workspaceService.ensureWorkspaceMember(workspace.id, userId, "owner")
+
+      // Create default #general stream (channel)
+      const generalSlug = "general"
+      await streamService.createStream({
+        workspaceId: workspace.id,
+        streamType: "channel",
+        creatorId: userId,
+        name: "General",
+        slug: generalSlug,
+        description: "General discussion",
+        visibility: "public",
+      })
+
+      res.status(201).json(workspace)
+    } catch (error) {
+      logger.error({ err: error }, "Failed to create workspace")
+      next(error)
+    }
+  })
 
   // ==========================================================================
   // Bootstrap
   // ==========================================================================
+
+  // Special route: Get default workspace for user
+  router.get("/default/bootstrap", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Get user's first workspace
+      const memberResult = await pool.query(
+        "SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND status = 'active' LIMIT 1",
+        [userId],
+      )
+
+      if (memberResult.rows.length === 0) {
+        res.status(404).json({ error: "No workspace found" })
+        return
+      }
+
+      const workspaceId = memberResult.rows[0].workspace_id
+      const data = await streamService.bootstrap(workspaceId, userId)
+      res.json(data)
+    } catch (error) {
+      logger.error({ err: error }, "Default bootstrap failed")
+      next(error)
+    }
+  })
 
   router.get("/:workspaceId/bootstrap", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -42,6 +123,30 @@ export function createStreamRoutes(streamService: StreamService): Router {
   // ==========================================================================
   // Stream CRUD
   // ==========================================================================
+
+  // Check if slug is available - MUST be before /:streamId route
+  router.get("/:workspaceId/streams/check-slug", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const { slug, name, excludeId } = req.query
+
+      if (!slug && !name) {
+        res.status(400).json({ error: "Either slug or name is required" })
+        return
+      }
+
+      const slugToCheck = (slug as string) || (await createValidSlug(name as string))
+      const exists = await streamService.checkSlugExists(workspaceId, slugToCheck, excludeId as string)
+
+      res.json({
+        slug: slugToCheck,
+        available: !exists,
+      })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to check slug")
+      next(error)
+    }
+  })
 
   // Get a single stream
   router.get("/:workspaceId/streams/:streamId", async (req: Request, res: Response, next: NextFunction) => {
@@ -153,30 +258,6 @@ export function createStreamRoutes(streamService: StreamService): Router {
       res.status(204).send()
     } catch (error) {
       logger.error({ err: error }, "Failed to archive stream")
-      next(error)
-    }
-  })
-
-  // Check if slug is available
-  router.get("/:workspaceId/streams/check-slug", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { workspaceId } = req.params
-      const { slug, name, excludeId } = req.query
-
-      if (!slug && !name) {
-        res.status(400).json({ error: "Either slug or name is required" })
-        return
-      }
-
-      const slugToCheck = slug as string || await createValidSlug(name as string)
-      const exists = await streamService.checkSlugExists(workspaceId, slugToCheck, excludeId as string)
-
-      res.json({
-        slug: slugToCheck,
-        available: !exists,
-      })
-    } catch (error) {
-      logger.error({ err: error }, "Failed to check slug")
       next(error)
     }
   })
@@ -340,7 +421,135 @@ export function createStreamRoutes(streamService: StreamService): Router {
   // Threads & Sharing
   // ==========================================================================
 
-  // Create a thread from an event
+  // Reply to an event (creates thread if needed, then posts message)
+  // This is the primary way to start/continue a thread
+  router.post(
+    "/:workspaceId/streams/:streamId/events/:eventId/reply",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { workspaceId, streamId, eventId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const { content, mentions } = req.body
+
+        if (!content || typeof content !== "string" || content.trim().length === 0) {
+          res.status(400).json({ error: "Content is required" })
+          return
+        }
+
+        const result = await streamService.replyToEvent({
+          workspaceId,
+          parentStreamId: streamId,
+          eventId,
+          actorId: userId,
+          content: content.trim(),
+          mentions,
+        })
+
+        res.status(201).json({
+          stream: result.stream,
+          event: mapEventToResponse(result.event),
+          threadCreated: result.threadCreated,
+        })
+      } catch (error: any) {
+        if (error.message === "Event not found") {
+          res.status(404).json({ error: error.message })
+          return
+        }
+        logger.error({ err: error }, "Failed to reply to event")
+        next(error)
+      }
+    },
+  )
+
+  // Get thread for an event by eventId only (simpler route for pending thread checks)
+  router.get(
+    "/:workspaceId/streams/by-event/:eventId/thread",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { workspaceId, eventId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const thread = await streamService.getThreadForEvent(eventId)
+
+        // Also get the root event if thread exists
+        let rootEvent = null
+        if (thread && thread.branchedFromEventId) {
+          rootEvent = await streamService.getEventWithDetails(thread.branchedFromEventId)
+        }
+
+        res.json({ thread, rootEvent: rootEvent ? mapEventToResponse(rootEvent) : null })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to get thread by event")
+        next(error)
+      }
+    },
+  )
+
+  // Get event details (for pending thread UI)
+  router.get("/:workspaceId/events/:eventId", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, eventId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const event = await streamService.getEventWithDetails(eventId)
+      if (!event) {
+        res.status(404).json({ error: "Event not found" })
+        return
+      }
+
+      // Get the stream this event belongs to
+      const stream = await streamService.getStream(event.streamId)
+
+      res.json({
+        event: mapEventToResponse(event),
+        stream,
+      })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get event")
+      next(error)
+    }
+  })
+
+  // Get thread for an event (returns null if no thread exists yet)
+  router.get(
+    "/:workspaceId/streams/:streamId/events/:eventId/thread",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { eventId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        const thread = await streamService.getThreadForEvent(eventId)
+        res.json({ thread })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to get thread")
+        next(error)
+      }
+    },
+  )
+
+  // Legacy: Create a thread from an event (kept for backwards compatibility)
+  // Prefer using POST /events/:eventId/reply instead
   router.post(
     "/:workspaceId/streams/:streamId/thread",
     async (req: Request, res: Response, next: NextFunction) => {
@@ -359,15 +568,20 @@ export function createStreamRoutes(streamService: StreamService): Router {
           return
         }
 
+        // Check if thread already exists
+        const existingThread = await streamService.getThreadForEvent(eventId)
+        if (existingThread) {
+          res.status(200).json({ stream: existingThread, event: null })
+          return
+        }
+
+        // For backwards compat, create thread without a message
+        // But this is not the recommended flow
         const { stream, event } = await streamService.createThreadFromEvent(eventId, userId)
-        res.status(201).json({ stream, event: mapEventToResponse(event) })
+        res.status(201).json({ stream, event: event ? mapEventToResponse(event) : null })
       } catch (error: any) {
         if (error.message === "Event not found") {
           res.status(404).json({ error: error.message })
-          return
-        }
-        if (error.message?.includes("already exists")) {
-          res.status(400).json({ error: error.message })
           return
         }
         logger.error({ err: error }, "Failed to create thread")
@@ -626,6 +840,90 @@ export function createStreamRoutes(streamService: StreamService): Router {
       res.json({ success: true })
     } catch (error) {
       logger.error({ err: error }, "Failed to mark as unread")
+      next(error)
+    }
+  })
+
+  // ==========================================================================
+  // Notifications
+  // ==========================================================================
+
+  // Get notification count
+  router.get("/:workspaceId/notifications/count", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const count = await streamService.getNotificationCount(workspaceId, userId)
+      res.json({ count })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get notification count")
+      next(error)
+    }
+  })
+
+  // Get notifications
+  router.get("/:workspaceId/notifications", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100)
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const notifications = await streamService.getNotifications(workspaceId, userId, limit)
+      res.json(notifications)
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get notifications")
+      next(error)
+    }
+  })
+
+  // Mark notification as read
+  router.post(
+    "/:workspaceId/notifications/:notificationId/read",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { notificationId } = req.params
+        const userId = req.user?.id
+
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        await streamService.markNotificationAsRead(notificationId, userId)
+        res.json({ success: true })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to mark notification as read")
+        next(error)
+      }
+    },
+  )
+
+  // Mark all notifications as read
+  router.post("/:workspaceId/notifications/read-all", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await streamService.markAllNotificationsAsRead(workspaceId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to mark all notifications as read")
       next(error)
     }
   })

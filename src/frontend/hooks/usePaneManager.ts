@@ -1,32 +1,32 @@
 import { useState, useCallback, useRef, useEffect } from "react"
-import type { Pane, Tab, Channel, OpenMode } from "../types"
+import type { Pane, Tab, Stream, OpenMode } from "../types"
 import { deserializePanesFromUrl, updateUrlWithPanes, buildNewTabUrl } from "../components/layout/url-state"
 
 interface UsePaneManagerOptions {
-  channels: Channel[]
-  defaultChannelSlug?: string
+  streams: Stream[]
+  defaultStreamSlug?: string
 }
 
 interface UsePaneManagerReturn {
   panes: Pane[]
   focusedPaneId: string | null
-  activeChannelSlug: string | null
+  activeStreamSlug: string | null
 
   // Actions
   setFocusedPane: (paneId: string) => void
   setActiveTab: (paneId: string, tabId: string) => void
   closeTab: (paneId: string, tabId: string) => void
-  selectChannel: (channel: Channel) => void
+  selectStream: (stream: Stream) => void
   openItem: (item: Omit<Tab, "id">, mode?: OpenMode, sourcePaneId?: string) => void
 
   // Initialize from URL
   initializeFromUrl: () => boolean
 }
 
-export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerOptions): UsePaneManagerReturn {
+export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOptions): UsePaneManagerReturn {
   const [panes, setPanes] = useState<Pane[]>([])
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
-  const [activeChannelSlug, setActiveChannelSlug] = useState<string | null>(null)
+  const [activeStreamSlug, setActiveStreamSlug] = useState<string | null>(null)
   const shouldPushHistory = useRef(false)
 
   // Sync pane changes to URL
@@ -39,62 +39,65 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
 
   // Handle browser back/forward navigation
   useEffect(() => {
-    if (channels.length === 0) return
+    if (streams.length === 0) return
 
     const handlePopState = () => {
       const urlParams = new URLSearchParams(window.location.search)
       const paneParam = urlParams.get("p")
-      const restoredPanes = deserializePanesFromUrl(paneParam || "", channels)
+      const restoredPanes = deserializePanesFromUrl(paneParam || "", streams)
 
       if (restoredPanes && restoredPanes.length > 0) {
         setPanes(restoredPanes)
         setFocusedPaneId(restoredPanes[0].id)
 
-        const firstChannelTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "channel")
-        if (firstChannelTab?.data?.channelSlug) {
-          setActiveChannelSlug(firstChannelTab.data.channelSlug)
+        const firstStreamTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "stream")
+        if (firstStreamTab?.data?.streamSlug || firstStreamTab?.data?.streamId) {
+          setActiveStreamSlug(firstStreamTab.data.streamSlug || firstStreamTab.data.streamId || null)
         }
       }
     }
 
     window.addEventListener("popstate", handlePopState)
     return () => window.removeEventListener("popstate", handlePopState)
-  }, [channels])
+  }, [streams])
 
   // Initialize from URL
   const initializeFromUrl = useCallback((): boolean => {
     const urlParams = new URLSearchParams(window.location.search)
     const paneParam = urlParams.get("p")
-    const restoredPanes = deserializePanesFromUrl(paneParam || "", channels)
+    const restoredPanes = deserializePanesFromUrl(paneParam || "", streams)
 
     if (restoredPanes && restoredPanes.length > 0) {
       setPanes(restoredPanes)
       setFocusedPaneId(restoredPanes[0].id)
 
-      const firstChannelTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "channel")
-      if (firstChannelTab?.data?.channelSlug) {
-        setActiveChannelSlug(firstChannelTab.data.channelSlug)
+      const firstStreamTab = restoredPanes.flatMap((p) => p.tabs).find((t) => t.type === "stream")
+      if (firstStreamTab?.data?.streamSlug) {
+        setActiveStreamSlug(firstStreamTab.data.streamSlug)
       }
       return true
     }
 
-    // Initialize with default channel
-    const defaultChannel = defaultChannelSlug ? channels.find((c) => c.slug === defaultChannelSlug) : channels[0]
+    // Initialize with default stream (first channel)
+    const defaultStream =
+      defaultStreamSlug
+        ? streams.find((s) => s.slug === defaultStreamSlug)
+        : streams.find((s) => s.streamType === "channel")
 
-    if (defaultChannel) {
-      setActiveChannelSlug(defaultChannel.slug)
+    if (defaultStream) {
+      setActiveStreamSlug(defaultStream.slug)
       const defaultPanes: Pane[] = [
         {
           id: "pane-0",
           tabs: [
             {
-              id: defaultChannel.slug,
-              title: `#${defaultChannel.name.replace("#", "")}`,
-              type: "channel",
-              data: { channelSlug: defaultChannel.slug },
+              id: defaultStream.slug || defaultStream.id,
+              title: `#${(defaultStream.name || "").replace("#", "")}`,
+              type: "stream",
+              data: { streamSlug: defaultStream.slug || undefined, streamId: defaultStream.id },
             },
           ],
-          activeTabId: defaultChannel.slug,
+          activeTabId: defaultStream.slug || defaultStream.id,
         },
       ]
       setPanes(defaultPanes)
@@ -103,7 +106,7 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     }
 
     return false
-  }, [channels, defaultChannelSlug])
+  }, [streams, defaultStreamSlug])
 
   // Open item in a new pane to the side of the source pane
   const openItemToSide = useCallback(
@@ -201,8 +204,8 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
     setFocusedPaneId(paneId)
   }, [])
 
-  const selectChannel = useCallback((channel: Channel) => {
-    setActiveChannelSlug(channel.slug)
+  const selectStream = useCallback((stream: Stream) => {
+    setActiveStreamSlug(stream.slug)
     shouldPushHistory.current = true
     setPanes((prev) => {
       if (prev.length === 0) {
@@ -211,27 +214,27 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
             id: "pane-0",
             tabs: [
               {
-                id: channel.slug,
-                title: `#${channel.name.replace("#", "")}`,
-                type: "channel",
-                data: { channelSlug: channel.slug },
+                id: stream.slug || stream.id,
+                title: `#${(stream.name || "").replace("#", "")}`,
+                type: "stream",
+                data: { streamSlug: stream.slug || undefined, streamId: stream.id },
               },
             ],
-            activeTabId: channel.slug,
+            activeTabId: stream.slug || stream.id,
           },
         ]
       }
       return prev.map((pane, idx) => {
         if (idx === 0) {
-          const existingTab = pane.tabs.find((t) => t.data?.channelSlug === channel.slug)
+          const existingTab = pane.tabs.find((t) => t.data?.streamSlug === stream.slug || t.data?.streamId === stream.id)
           if (existingTab) {
             return { ...pane, activeTabId: existingTab.id }
           }
           const newTab: Tab = {
-            id: channel.slug,
-            title: `#${channel.name.replace("#", "")}`,
-            type: "channel",
-            data: { channelSlug: channel.slug },
+            id: stream.slug || stream.id,
+            title: `#${(stream.name || "").replace("#", "")}`,
+            type: "stream",
+            data: { streamSlug: stream.slug || undefined, streamId: stream.id },
           }
           return { ...pane, tabs: [newTab, ...pane.tabs.slice(1)], activeTabId: newTab.id }
         }
@@ -243,11 +246,11 @@ export function usePaneManager({ channels, defaultChannelSlug }: UsePaneManagerO
   return {
     panes,
     focusedPaneId,
-    activeChannelSlug,
+    activeStreamSlug,
     setFocusedPane: setFocusedPaneId,
     setActiveTab,
     closeTab,
-    selectChannel,
+    selectStream,
     openItem,
     initializeFromUrl,
   }

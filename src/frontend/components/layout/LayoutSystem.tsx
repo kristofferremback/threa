@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "../../auth"
 import { useBootstrap, usePaneManager, useWorkspaceSocket } from "../../hooks"
-import { ChatInterface } from "../ChatInterface"
+import { StreamInterface } from "../StreamInterface"
 import { Sidebar } from "./Sidebar"
 import { PaneSystem } from "./PaneSystem"
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
@@ -11,7 +11,7 @@ import { CommandPalette } from "./CommandPalette"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
-import type { Tab, Channel } from "../../types"
+import type { Tab, Stream } from "../../types"
 
 export function LayoutSystem() {
   const { isAuthenticated, state, logout, user } = useAuth()
@@ -19,7 +19,7 @@ export function LayoutSystem() {
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
-  const [channelToEdit, setChannelToEdit] = useState<Channel | null>(null)
+  const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
   // Bootstrap data
@@ -29,9 +29,9 @@ export function LayoutSystem() {
     error: bootstrapError,
     noWorkspace,
     refetch: refetchBootstrap,
-    addChannel,
-    updateChannel,
-    removeChannel,
+    addStream,
+    updateStream,
+    removeStream,
     incrementUnreadCount,
     resetUnreadCount,
   } = useBootstrap({
@@ -42,15 +42,15 @@ export function LayoutSystem() {
   const {
     panes,
     focusedPaneId,
-    activeChannelSlug,
+    activeStreamSlug,
     setFocusedPane,
     setActiveTab,
     closeTab,
-    selectChannel,
+    selectStream,
     openItem,
     initializeFromUrl,
   } = usePaneManager({
-    channels: bootstrapData?.channels || [],
+    streams: bootstrapData?.streams || [],
   })
 
   // Initialize panes from URL when bootstrap data is ready
@@ -66,37 +66,37 @@ export function LayoutSystem() {
     return activeTab?.type === "activity"
   })
 
-  // Handle being removed from a channel
-  const handleChannelRemoved = useCallback(
-    (channelId: string) => {
-      removeChannel(channelId)
+  // Handle being removed from a stream
+  const handleStreamRemoved = useCallback(
+    (streamId: string) => {
+      removeStream(streamId)
 
-      // If we're currently viewing this channel, navigate away
-      if (bootstrapData && activeChannelSlug) {
-        const removedChannel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
-        if (removedChannel && (removedChannel.slug === activeChannelSlug || removedChannel.id === activeChannelSlug)) {
+      // If we're currently viewing this stream, navigate away
+      if (bootstrapData && activeStreamSlug) {
+        const removedStream = bootstrapData.streams.find((s) => s.id === streamId || s.slug === streamId)
+        if (removedStream && (removedStream.slug === activeStreamSlug || removedStream.id === activeStreamSlug)) {
           // Find another channel to navigate to
-          const remainingChannels = bootstrapData.channels.filter((c) => c.id !== channelId && c.is_member)
-          if (remainingChannels.length > 0) {
-            selectChannel(remainingChannels[0])
-          } else {
-            // No channels left - clear the pane
-            // For now, just leave it - the user will see an empty state
+          const remainingStreams = bootstrapData.streams.filter(
+            (s) => s.id !== streamId && s.isMember && s.streamType === "channel",
+          )
+          const firstStream = remainingStreams[0]
+          if (firstStream) {
+            selectStream(firstStream)
           }
         }
       }
     },
-    [removeChannel, bootstrapData, activeChannelSlug, selectChannel],
+    [removeStream, bootstrapData, activeStreamSlug, selectStream],
   )
 
   // Workspace-level WebSocket for real-time updates
   const { socket } = useWorkspaceSocket({
     enabled: isAuthenticated && !!bootstrapData,
     workspaceId: bootstrapData?.workspace.id,
-    activeChannelSlug: activeChannelSlug || undefined,
+    activeStreamSlug: activeStreamSlug || undefined,
     currentUserId: user?.id,
-    onChannelAdded: addChannel,
-    onChannelRemoved: handleChannelRemoved,
+    onStreamAdded: addStream,
+    onStreamRemoved: handleStreamRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
     onNewNotification: () => setInboxUnreadCount((prev) => prev + 1),
   })
@@ -133,56 +133,50 @@ export function LayoutSystem() {
         e.preventDefault()
         setShowCommandPalette((prev) => !prev)
       }
-      // Cmd/Ctrl+Shift+I for inbox
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
-        e.preventDefault()
-        setShowInbox((prev) => !prev)
-      }
     }
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  // Wrapper for selectChannel that also resets unread count
-  const handleSelectChannel = useCallback(
-    (channel: Channel) => {
-      selectChannel(channel)
-      resetUnreadCount(channel.id)
+  // Wrapper for selectStream that also resets unread count
+  const handleSelectStream = useCallback(
+    (stream: Stream) => {
+      selectStream(stream)
+      resetUnreadCount(stream.id)
     },
-    [selectChannel, resetUnreadCount],
+    [selectStream, resetUnreadCount],
   )
 
-  // Handle channel selection from command palette
+  // Handle stream selection from command palette
   const handleCommandPaletteSelect = useCallback(
-    async (channel: Channel) => {
-      // If not a member, join the channel first
-      if (!channel.is_member && bootstrapData) {
+    async (stream: Stream) => {
+      // If not a member, join the stream first
+      if (!stream.isMember && bootstrapData) {
         try {
-          const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/channels/${channel.id}/members`, {
+          const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${stream.id}/join`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ userId: user?.id }),
           })
 
           if (res.ok) {
-            // Update the channel in bootstrap data to reflect membership
-            updateChannel({ ...channel, is_member: true })
+            // Update the stream in bootstrap data to reflect membership
+            updateStream({ ...stream, isMember: true })
           }
         } catch (error) {
-          console.error("Failed to join channel:", error)
+          console.error("Failed to join stream:", error)
         }
       }
-      handleSelectChannel(channel)
+      handleSelectStream(stream)
     },
-    [handleSelectChannel, bootstrapData, user?.id, updateChannel],
+    [handleSelectStream, bootstrapData, updateStream],
   )
 
-  // Helper to get channel from slug or ID
-  const getChannelFromSlug = (channelSlug?: string) => {
-    if (!channelSlug || !bootstrapData) return undefined
-    return bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
+  // Helper to get stream from slug or ID
+  const getStreamFromSlug = (streamSlug?: string) => {
+    if (!streamSlug || !bootstrapData) return undefined
+    return bootstrapData.streams.find((s) => s.slug === streamSlug || s.id === streamSlug)
   }
 
   // Render content for a tab
@@ -196,27 +190,27 @@ export function LayoutSystem() {
           workspaceId={bootstrapData.workspace.id}
           socket={socket}
           onUnreadCountChange={setInboxUnreadCount}
-          onNavigateToChannel={(channelSlug, mode = "replace", highlightMessageId) => {
-            const channel = bootstrapData.channels.find((c) => c.slug === channelSlug)
-            if (channel) {
+          onNavigateToChannel={(streamSlug, mode = "replace", highlightEventId) => {
+            const stream = bootstrapData.streams.find((s) => s.slug === streamSlug)
+            if (stream) {
               openItem(
                 {
-                  title: `#${channel.name.replace("#", "")}`,
-                  type: "channel",
-                  data: { channelSlug, highlightMessageId },
+                  title: `#${(stream.name || "").replace("#", "")}`,
+                  type: "stream",
+                  data: { streamSlug, highlightEventId },
                 },
                 mode,
                 paneId,
               )
             }
           }}
-          onNavigateToThread={(threadId, channelId, mode = "replace", highlightMessageId) => {
-            const channel = bootstrapData.channels.find((c) => c.id === channelId || c.slug === channelId)
+          onNavigateToThread={(threadId, parentStreamId, mode = "replace", highlightEventId) => {
+            const parentStream = bootstrapData.streams.find((s) => s.id === parentStreamId || s.slug === parentStreamId)
             openItem(
               {
                 title: "Thread",
-                type: "thread",
-                data: { threadId, channelSlug: channel?.slug || channelId, highlightMessageId },
+                type: "stream",
+                data: { streamId: threadId, streamSlug: parentStream?.slug || parentStreamId, highlightEventId },
               },
               mode,
               paneId,
@@ -226,45 +220,54 @@ export function LayoutSystem() {
       )
     }
 
-    // Look up actual channel from slug stored in tab data
-    const channel = getChannelFromSlug(tab.data?.channelSlug)
-    // Use actual channel ID for socket connections, fall back to slug for backwards compatibility
-    const actualChannelId = channel?.id || tab.data?.channelSlug
-    const channelName = channel?.name.replace("#", "")
+    // Look up stream from slug stored in tab data
+    const stream = getStreamFromSlug(tab.data?.streamSlug) || getStreamFromSlug(tab.data?.streamId)
+    const actualStreamId = stream?.id || tab.data?.streamSlug || tab.data?.streamId
+    const streamName = (stream?.name || "").replace("#", "")
 
     return (
-      <ChatInterface
+      <StreamInterface
         workspaceId={bootstrapData.workspace.id}
-        channelId={actualChannelId}
-        channelName={channelName}
-        threadId={tab.data?.threadId}
-        highlightMessageId={tab.data?.highlightMessageId}
+        streamId={actualStreamId}
+        streamName={streamName}
+        highlightEventId={tab.data?.highlightEventId}
         title={tab.title}
         users={bootstrapData.users}
-        channels={bootstrapData.channels.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
-        onOpenThread={(msgId, msgChannelId, mode) => {
-          // Pass the pane ID where the click originated so the thread opens relative to that pane
+        streams={bootstrapData.streams.map((s) => ({
+          id: s.id,
+          name: s.name || "",
+          slug: s.slug || "",
+          branchedFromEventId: s.branchedFromEventId,
+        }))}
+        onOpenThread={(threadIdOrEventId, parentStreamId, mode) => {
+          // Find the parent stream to get its slug
+          const parentStream = bootstrapData.streams.find((s) => s.id === parentStreamId)
+          // For threads, we store the thread/event ID as streamId
+          // The parentStreamId is used only for context, not for URL
           openItem(
             {
               title: "Thread",
-              type: "thread",
-              data: { threadId: msgId, channelSlug: msgChannelId },
+              type: "stream",
+              data: {
+                streamId: threadIdOrEventId,
+                // Don't use parentStreamId as slug - it's an ID, not a slug
+                streamSlug: undefined,
+              },
             },
             mode,
             paneId,
           )
         }}
-        onGoToChannel={(channelSlug, mode) => {
-          const channel = bootstrapData.channels.find((c) => c.slug === channelSlug || c.id === channelSlug)
-          const slug = channel?.slug || channelSlug
-          const name = channel?.name.replace("#", "") || slug
+        onGoToStream={(streamSlug, mode) => {
+          const targetStream = bootstrapData.streams.find((s) => s.slug === streamSlug || s.id === streamSlug)
+          const slug = targetStream?.slug || streamSlug
+          const name = (targetStream?.name || "").replace("#", "") || slug
 
-          // Pass the pane ID where the click originated
           openItem(
             {
               title: `#${name}`,
-              type: "channel",
-              data: { channelSlug: slug },
+              type: "stream",
+              data: { streamSlug: slug },
             },
             mode,
             paneId,
@@ -315,11 +318,11 @@ export function LayoutSystem() {
     <div className="flex h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       <Sidebar
         workspace={bootstrapData.workspace}
-        channels={bootstrapData.channels}
-        activeChannelSlug={isActivityActive ? null : activeChannelSlug}
-        onSelectChannel={handleSelectChannel}
+        streams={bootstrapData.streams}
+        activeStreamSlug={isActivityActive ? null : activeStreamSlug}
+        onSelectStream={handleSelectStream}
         onCreateChannel={() => setShowCreateChannel(true)}
-        onChannelSettings={(channel) => setChannelToEdit(channel)}
+        onStreamSettings={(stream) => setStreamToEdit(stream)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
@@ -332,31 +335,31 @@ export function LayoutSystem() {
         open={showCreateChannel}
         workspaceId={bootstrapData.workspace.id}
         onClose={() => setShowCreateChannel(false)}
-        onCreated={(channel: Channel) => {
+        onCreated={(stream: Stream) => {
           setShowCreateChannel(false)
-          addChannel(channel)
-          handleSelectChannel(channel)
+          addStream(stream)
+          handleSelectStream(stream)
         }}
       />
 
       <ChannelSettingsModal
-        open={channelToEdit !== null}
-        channel={channelToEdit}
+        open={streamToEdit !== null}
+        channel={streamToEdit}
         workspaceId={bootstrapData.workspace.id}
         currentUserId={user?.id}
-        isWorkspaceOwner={bootstrapData.user_role === "owner"}
-        onClose={() => setChannelToEdit(null)}
-        onUpdated={(channel) => {
-          updateChannel(channel)
-          setChannelToEdit(null)
+        isWorkspaceOwner={bootstrapData.userRole === "admin"}
+        onClose={() => setStreamToEdit(null)}
+        onUpdated={(stream) => {
+          updateStream(stream)
+          setStreamToEdit(null)
         }}
-        onArchived={(channelId) => {
-          removeChannel(channelId)
-          setChannelToEdit(null)
-          // If we're viewing the archived channel, navigate away
-          if (activeChannelSlug === channelToEdit?.slug) {
-            const firstChannel = bootstrapData.channels.find((c) => c.id !== channelId)
-            if (firstChannel) handleSelectChannel(firstChannel)
+        onArchived={(streamId) => {
+          removeStream(streamId)
+          setStreamToEdit(null)
+          // If we're viewing the archived stream, navigate away
+          if (activeStreamSlug === streamToEdit?.slug) {
+            const firstStream = bootstrapData.streams.find((s) => s.id !== streamId && s.streamType === "channel")
+            if (firstStream) handleSelectStream(firstStream)
           }
         }}
       />
@@ -382,8 +385,8 @@ export function LayoutSystem() {
       <CommandPalette
         open={showCommandPalette}
         onClose={() => setShowCommandPalette(false)}
-        channels={bootstrapData.channels}
-        onSelectChannel={handleCommandPaletteSelect}
+        streams={bootstrapData.streams}
+        onSelectStream={handleCommandPaletteSelect}
       />
     </div>
   )

@@ -12,39 +12,39 @@
 CREATE TABLE IF NOT EXISTS streams (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
-    
+
     -- Stream type determines behavior and visibility
     stream_type TEXT NOT NULL,  -- 'channel', 'thread', 'dm', 'incident'
-    
+
     -- Identity (required for channels/incidents, optional for threads)
     name TEXT,
     slug TEXT,  -- Unique per workspace for named streams
     description TEXT,
     topic TEXT,
-    
+
     -- Branching relationship (for threads)
     parent_stream_id TEXT,          -- The stream this branched from
     branched_from_event_id TEXT,    -- The specific event that started this thread
-    
+
     -- Visibility and state
     visibility TEXT NOT NULL DEFAULT 'public',  -- 'public', 'private', 'inherit'
     status TEXT NOT NULL DEFAULT 'active',      -- 'active', 'archived', 'resolved'
-    
+
     -- Promotion tracking (when thread becomes channel/incident)
     promoted_at TIMESTAMPTZ,
     promoted_by TEXT,
-    
+
     -- Flexible metadata (incident severity, DM participant cache, etc.)
     metadata JSONB DEFAULT '{}',
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived_at TIMESTAMPTZ
 );
 
 -- Unique slug per workspace (only for named streams)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_workspace_slug 
-    ON streams(workspace_id, slug) 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_streams_workspace_slug
+    ON streams(workspace_id, slug)
     WHERE slug IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_streams_workspace ON streams(workspace_id);
@@ -59,24 +59,24 @@ CREATE INDEX IF NOT EXISTS idx_streams_branched_from ON streams(branched_from_ev
 CREATE TABLE IF NOT EXISTS stream_members (
     stream_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
-    
+
     -- Role within the stream
     role TEXT NOT NULL DEFAULT 'member',  -- 'owner', 'admin', 'member'
-    
+
     -- Notification preferences
     notify_level TEXT NOT NULL DEFAULT 'default',  -- 'all', 'mentions', 'muted', 'default'
-    
+
     -- Read state
     last_read_event_id TEXT,
     last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- Membership tracking
     added_by_user_id TEXT,
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     left_at TIMESTAMPTZ,
-    
+
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     PRIMARY KEY (stream_id, user_id)
 );
 
@@ -90,18 +90,18 @@ CREATE INDEX IF NOT EXISTS idx_stream_members_stream ON stream_members(stream_id
 CREATE TABLE IF NOT EXISTS stream_events (
     id TEXT PRIMARY KEY,
     stream_id TEXT NOT NULL,
-    
+
     -- Event classification
     event_type TEXT NOT NULL,  -- 'message', 'shared', 'member_joined', 'member_left', 'poll', 'file', 'thread_started'
     actor_id TEXT NOT NULL,    -- Who performed this action
-    
+
     -- Polymorphic content reference
     content_type TEXT,   -- 'text_message', 'shared_ref', 'poll', 'file'
     content_id TEXT,     -- FK to the content table
-    
+
     -- Inline payload for simple events (member_joined, thread_started, etc.)
     payload JSONB,
-    
+
     -- Timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     edited_at TIMESTAMPTZ,
@@ -120,13 +120,13 @@ CREATE INDEX IF NOT EXISTS idx_stream_events_content ON stream_events(content_ty
 CREATE TABLE IF NOT EXISTS text_messages (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
-    
+
     -- Structured mentions
     mentions JSONB DEFAULT '[]',  -- [{type: 'user'|'channel'|'crosspost', id, label, slug}]
-    
+
     -- Future: block-based formatting
     formatting JSONB,
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS shared_refs (
     id TEXT PRIMARY KEY,
     original_event_id TEXT NOT NULL,  -- The event being shared
     context TEXT,                      -- Optional commentary from sharer
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -151,7 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_shared_refs_original ON shared_refs(original_even
 -- Keep the existing message_revisions table structure but it will now
 -- reference text_message IDs instead of message IDs
 -- The table already exists, just add an index if needed
-CREATE INDEX IF NOT EXISTS idx_message_revisions_message_created 
+CREATE INDEX IF NOT EXISTS idx_message_revisions_message_created
     ON message_revisions(message_id, created_at DESC);
 
 -- ============================================================================
@@ -162,7 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_message_revisions_message_created
 -- to use stream_id + event_id instead of channel_id + message_id
 
 -- Add new columns if they don't exist
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'notifications' AND column_name = 'stream_id') THEN
         ALTER TABLE notifications ADD COLUMN stream_id TEXT;

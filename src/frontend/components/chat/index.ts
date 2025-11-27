@@ -1,6 +1,7 @@
 export { MessageItem } from "./MessageItem"
 export { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 export { MessageList } from "./MessageList"
+export { EventList } from "./EventList"
 export { MessageContextMenu } from "./MessageContextMenu"
 export { MessageRevisionsModal } from "./MessageRevisionsModal"
 export { SystemMessage } from "./SystemMessage"

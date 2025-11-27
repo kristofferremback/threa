@@ -1,24 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { Hash, Lock, Search, X, UserCheck, UserPlus } from "lucide-react"
-import type { Channel } from "../../types"
+import type { Stream } from "../../types"
 
 interface CommandPaletteProps {
   open: boolean
   onClose: () => void
-  channels: Channel[]
-  onSelectChannel: (channel: Channel) => void
+  streams: Stream[]
+  onSelectStream: (stream: Stream) => void
 }
 
-interface ScoredChannel {
-  channel: Channel
+interface ScoredStream {
+  stream: Stream
   score: number
   matchType: "exact" | "startsWith" | "contains" | "fuzzy"
   matchedField: "name" | "slug" | "topic" | "description"
 }
 
 // Fuzzy matching score calculator
-function calculateFuzzyScore(query: string, text: string): { score: number; matchType: ScoredChannel["matchType"] } {
+function calculateFuzzyScore(query: string, text: string): { score: number; matchType: ScoredStream["matchType"] } {
   const lowerQuery = query.toLowerCase()
   const lowerText = text.toLowerCase()
 
@@ -67,28 +67,28 @@ function calculateFuzzyScore(query: string, text: string): { score: number; matc
   return { score: 0, matchType: "fuzzy" }
 }
 
-// Score a channel against the query
-function scoreChannel(channel: Channel, query: string): ScoredChannel | null {
+// Score a stream against the query
+function scoreStream(stream: Stream, query: string): ScoredStream | null {
   if (!query.trim()) {
-    // No query - return all channels sorted by membership
+    // No query - return all streams sorted by membership
     return {
-      channel,
-      score: channel.is_member ? 100 : 50,
+      stream,
+      score: stream.isMember ? 100 : 50,
       matchType: "exact",
       matchedField: "name",
     }
   }
 
-  const fieldsToSearch: Array<{ field: ScoredChannel["matchedField"]; text: string | null; weight: number }> = [
-    { field: "name", text: channel.name.replace("#", ""), weight: 1.0 },
-    { field: "slug", text: channel.slug, weight: 0.9 },
-    { field: "topic", text: channel.topic, weight: 0.6 },
-    { field: "description", text: channel.description, weight: 0.5 },
+  const fieldsToSearch: Array<{ field: ScoredStream["matchedField"]; text: string | null; weight: number }> = [
+    { field: "name", text: (stream.name || "").replace("#", ""), weight: 1.0 },
+    { field: "slug", text: stream.slug, weight: 0.9 },
+    { field: "topic", text: stream.topic, weight: 0.6 },
+    { field: "description", text: stream.description, weight: 0.5 },
   ]
 
   let bestScore = 0
-  let bestMatchType: ScoredChannel["matchType"] = "fuzzy"
-  let bestMatchedField: ScoredChannel["matchedField"] = "name"
+  let bestMatchType: ScoredStream["matchType"] = "fuzzy"
+  let bestMatchedField: ScoredStream["matchedField"] = "name"
 
   for (const { field, text, weight } of fieldsToSearch) {
     if (!text) continue
@@ -109,29 +109,32 @@ function scoreChannel(channel: Channel, query: string): ScoredChannel | null {
   }
 
   // Apply membership multiplier (1.5x for members)
-  const membershipMultiplier = channel.is_member ? 1.5 : 1.0
+  const membershipMultiplier = stream.isMember ? 1.5 : 1.0
   const finalScore = bestScore * membershipMultiplier
 
   return {
-    channel,
+    stream,
     score: finalScore,
     matchType: bestMatchType,
     matchedField: bestMatchedField,
   }
 }
 
-export function CommandPalette({ open, onClose, channels, onSelectChannel }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, streams, onSelectStream }: CommandPaletteProps) {
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Filter and score channels based on query
-  const scoredChannels = useMemo(() => {
-    const results: ScoredChannel[] = []
+  // Filter to only show channels and score based on query
+  const scoredStreams = useMemo(() => {
+    const results: ScoredStream[] = []
 
-    for (const channel of channels) {
-      const scored = scoreChannel(channel, query)
+    for (const stream of streams) {
+      // Only show channels in the palette
+      if (stream.streamType !== "channel") continue
+
+      const scored = scoreStream(stream, query)
       if (scored) {
         results.push(scored)
       }
@@ -142,11 +145,11 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
       if (b.score !== a.score) {
         return b.score - a.score
       }
-      return a.channel.name.localeCompare(b.channel.name)
+      return (a.stream.name || "").localeCompare(b.stream.name || "")
     })
 
     return results
-  }, [channels, query])
+  }, [streams, query])
 
   // Reset state when opening
   useEffect(() => {
@@ -159,10 +162,10 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
 
   // Keep selected index in bounds
   useEffect(() => {
-    if (selectedIndex >= scoredChannels.length) {
-      setSelectedIndex(Math.max(0, scoredChannels.length - 1))
+    if (selectedIndex >= scoredStreams.length) {
+      setSelectedIndex(Math.max(0, scoredStreams.length - 1))
     }
-  }, [scoredChannels.length, selectedIndex])
+  }, [scoredStreams.length, selectedIndex])
 
   // Scroll selected item into view
   useEffect(() => {
@@ -176,7 +179,7 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault()
-          setSelectedIndex((prev) => Math.min(prev + 1, scoredChannels.length - 1))
+          setSelectedIndex((prev) => Math.min(prev + 1, scoredStreams.length - 1))
           break
         case "ArrowUp":
           e.preventDefault()
@@ -184,8 +187,8 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
           break
         case "Enter":
           e.preventDefault()
-          if (scoredChannels[selectedIndex]) {
-            onSelectChannel(scoredChannels[selectedIndex].channel)
+          if (scoredStreams[selectedIndex]) {
+            onSelectStream(scoredStreams[selectedIndex].stream)
             onClose()
           }
           break
@@ -195,7 +198,7 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
           break
       }
     },
-    [scoredChannels, selectedIndex, onSelectChannel, onClose],
+    [scoredStreams, selectedIndex, onSelectStream, onClose],
   )
 
   // Global keyboard shortcut
@@ -214,7 +217,7 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
   }, [open, onClose])
 
   // Highlight matching text
-  const highlightMatch = (text: string, matchedField: ScoredChannel["matchedField"], field: string) => {
+  const highlightMatch = (text: string, matchedField: ScoredStream["matchedField"], field: string) => {
     if (!query || matchedField !== field) {
       return <span>{text}</span>
     }
@@ -286,24 +289,24 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
 
         {/* Results */}
         <div ref={listRef} className="max-h-80 overflow-y-auto py-2">
-          {scoredChannels.length === 0 ? (
+          {scoredStreams.length === 0 ? (
             <div className="px-4 py-8 text-center" style={{ color: "var(--text-muted)" }}>
               {query ? `No channels matching "${query}"` : "No channels available"}
             </div>
           ) : (
-            scoredChannels.map((scored, index) => {
-              const { channel, matchedField } = scored
-              const isPrivate = channel.visibility === "private"
+            scoredStreams.map((scored, index) => {
+              const { stream, matchedField } = scored
+              const isPrivate = stream.visibility === "private"
               const Icon = isPrivate ? Lock : Hash
               const isSelected = index === selectedIndex
-              const isMember = channel.is_member
+              const isMember = stream.isMember
               const MemberIcon = isMember ? UserCheck : UserPlus
 
               return (
                 <button
-                  key={channel.id}
+                  key={stream.id}
                   onClick={() => {
-                    onSelectChannel(channel)
+                    onSelectStream(stream)
                     onClose()
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
@@ -322,7 +325,7 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
                         className="font-medium truncate"
                         style={{ color: isSelected ? "var(--text-primary)" : "var(--text-secondary)" }}
                       >
-                        {highlightMatch(channel.name.replace("#", ""), matchedField, "name")}
+                        {highlightMatch((stream.name || "").replace("#", ""), matchedField, "name")}
                       </span>
                       {isPrivate && (
                         <span
@@ -333,13 +336,13 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
                         </span>
                       )}
                     </div>
-                    {(channel.topic || channel.description) && (
+                    {(stream.topic || stream.description) && (
                       <p className="text-sm truncate" style={{ color: "var(--text-muted)" }}>
-                        {matchedField === "topic" && channel.topic
-                          ? highlightMatch(channel.topic, matchedField, "topic")
-                          : matchedField === "description" && channel.description
-                            ? highlightMatch(channel.description, matchedField, "description")
-                            : channel.topic || channel.description}
+                        {matchedField === "topic" && stream.topic
+                          ? highlightMatch(stream.topic, matchedField, "topic")
+                          : matchedField === "description" && stream.description
+                            ? highlightMatch(stream.description, matchedField, "description")
+                            : stream.topic || stream.description}
                       </p>
                     )}
                   </div>
@@ -384,9 +387,9 @@ export function CommandPalette({ open, onClose, channels, onSelectChannel }: Com
               Close
             </span>
           </div>
-          {scoredChannels.length > 0 && (
+          {scoredStreams.length > 0 && (
             <span>
-              {scoredChannels.length} result{scoredChannels.length !== 1 ? "s" : ""}
+              {scoredStreams.length} result{scoredStreams.length !== 1 ? "s" : ""}
             </span>
           )}
         </div>

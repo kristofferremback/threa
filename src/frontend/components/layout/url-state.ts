@@ -1,12 +1,12 @@
-import type { Pane, Tab, Channel } from "../../types"
+import type { Pane, Tab, Stream } from "../../types"
 
 // ============================================================================
 // URL State Serialization
 // ============================================================================
-// URL format: ?p=channel:general,thread:msg_123:general|thread:msg_456:general
+// URL format: ?p=s:general,s:stream_123|a:activity
 // - Pipes (|) separate panes
 // - Commas (,) separate tabs within a pane (first tab is active)
-// - Colons (:) separate type:id:channelId
+// - Colons (:) separate type:slug
 
 export function serializePanesToUrl(panes: Pane[]): string {
   if (panes.length === 0) return ""
@@ -22,10 +22,18 @@ export function serializePanesToUrl(panes: Pane[]): string {
 
       return sortedTabs
         .map((tab) => {
-          if (tab.type === "channel") {
-            return `c:${tab.data?.channelSlug || ""}`
-          } else if (tab.type === "thread") {
-            return `t:${tab.data?.threadId || ""}:${tab.data?.channelSlug || ""}`
+          if (tab.type === "stream") {
+            // Use slug if available, otherwise ID
+            // Ensure we only serialize strings, not objects
+            const slug = tab.data?.streamSlug
+            const id = tab.data?.streamId
+            const value = (typeof slug === "string" ? slug : null) || (typeof id === "string" ? id : null) || ""
+            // Skip if value looks like JSON (malformed data)
+            if (value.startsWith("{") || value.startsWith("[")) {
+              console.warn("Skipping malformed stream data in URL serialization:", value)
+              return ""
+            }
+            return value ? `s:${value}` : ""
           } else if (tab.type === "activity") {
             return "a:activity"
           }
@@ -40,7 +48,7 @@ export function serializePanesToUrl(panes: Pane[]): string {
   return serialized
 }
 
-export function deserializePanesFromUrl(param: string, channels: Channel[]): Pane[] | null {
+export function deserializePanesFromUrl(param: string, streams: Stream[]): Pane[] | null {
   if (!param) return null
 
   try {
@@ -54,25 +62,22 @@ export function deserializePanesFromUrl(param: string, channels: Channel[]): Pan
           .map((tabStr, tabIndex) => {
             const parts = tabStr.split(":")
 
-            if (parts[0] === "c" && parts[1]) {
-              // Channel: c:slug
-              const channelSlug = parts[1]
-              const channel = channels.find((c) => c.slug === channelSlug)
+            if (parts[0] === "s" && parts[1]) {
+              // Stream: s:slug or s:streamId
+              const streamSlugOrId = parts[1]
+
+              // Skip invalid slugs (malformed JSON, etc.)
+              if (streamSlugOrId.startsWith("{") || streamSlugOrId.startsWith("[")) {
+                return null
+              }
+
+              const stream = streams.find((s) => s.slug === streamSlugOrId || s.id === streamSlugOrId)
+              const isThread = stream?.streamType === "thread"
               return {
-                id: `channel-${paneIndex}-${tabIndex}`,
-                title: channel ? `#${channel.name.replace("#", "")}` : `#${channelSlug}`,
-                type: "channel",
-                data: { channelSlug },
-              } as Tab
-            } else if (parts[0] === "t" && parts[1]) {
-              // Thread: t:threadId:channelSlug
-              const threadId = parts[1]
-              const channelSlug = parts[2] || ""
-              return {
-                id: `thread-${paneIndex}-${tabIndex}`,
-                title: "Thread",
-                type: "thread",
-                data: { threadId, channelSlug },
+                id: `stream-${paneIndex}-${tabIndex}`,
+                title: stream ? (isThread ? "Thread" : `#${(stream.name || "").replace("#", "")}`) : `#${streamSlugOrId}`,
+                type: "stream",
+                data: { streamSlug: stream?.slug || streamSlugOrId, streamId: stream?.id },
               } as Tab
             } else if (parts[0] === "a") {
               // Activity: a:activity
@@ -89,10 +94,13 @@ export function deserializePanesFromUrl(param: string, channels: Channel[]): Pan
 
         if (tabs.length === 0) return null
 
+        const firstTab = tabs[0]
+        if (!firstTab) return null
+
         return {
           id: `pane-${paneIndex}`,
           tabs,
-          activeTabId: tabs[0].id, // First tab is active
+          activeTabId: firstTab.id, // First tab is active
         }
       })
       .filter((p): p is Pane => p !== null)
@@ -123,10 +131,16 @@ export function updateUrlWithPanes(panes: Pane[], pushHistory = false) {
 
 export function buildNewTabUrl(item: Omit<Tab, "id">): string {
   const url = new URL(window.location.origin)
-  if (item.type === "thread" && item.data?.threadId) {
-    url.searchParams.set("p", `t:${item.data.threadId}:${item.data.channelSlug || ""}`)
-  } else if (item.type === "channel" && item.data?.channelSlug) {
-    url.searchParams.set("p", `c:${item.data.channelSlug}`)
+  if (item.type === "stream") {
+    // Ensure we only serialize strings, not objects
+    const slug = item.data?.streamSlug
+    const id = item.data?.streamId
+    const value = (typeof slug === "string" ? slug : null) || (typeof id === "string" ? id : null) || ""
+    if (value && !value.startsWith("{") && !value.startsWith("[")) {
+      url.searchParams.set("p", `s:${value}`)
+    }
+  } else if (item.type === "activity") {
+    url.searchParams.set("p", "a:activity")
   }
   return url.toString()
 }

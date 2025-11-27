@@ -10,8 +10,7 @@ import type { Message, OpenMode } from "../../types"
 interface MessageListProps {
   messages: Message[]
   workspaceId: string
-  channelId?: string
-  conversationId?: string
+  channelId?: string // Now treated as streamId
   lastReadMessageId?: string | null
   isLoading: boolean
   isLoadingMore?: boolean
@@ -37,8 +36,7 @@ interface MessageListProps {
 export function MessageList({
   messages,
   workspaceId,
-  channelId,
-  conversationId,
+  channelId, // Now treated as streamId
   lastReadMessageId,
   isLoading,
   isLoadingMore = false,
@@ -81,9 +79,8 @@ export function MessageList({
     markAsUnread,
   } = useReadReceipts({
     workspaceId,
-    channelId,
-    conversationId,
-    enabled: Boolean(channelId || conversationId),
+    streamId: channelId,
+    enabled: Boolean(channelId),
   })
 
   // Wrap onMessageVisible to also update local state for immediate UI feedback
@@ -102,10 +99,10 @@ export function MessageList({
     [baseOnMessageVisible],
   )
 
-  // Reset locally seen messages when channel changes
+  // Reset locally seen messages when stream changes
   useEffect(() => {
     setLocallySeenIds(new Set())
-  }, [channelId, conversationId])
+  }, [channelId])
 
   // Calculate which messages are read/unread
   // We track TWO sets:
@@ -245,8 +242,8 @@ export function MessageList({
   useLayoutEffect(() => {
     if (messages.length === 0) return
 
-    // Create a key based on channel/conversation to detect switches
-    const currentKey = `${channelId || ""}-${conversationId || ""}`
+    // Create a key based on stream to detect switches
+    const currentKey = channelId || ""
     const isChannelSwitch = currentKey !== prevMessagesKeyRef.current
     const isNewMessages = messages.length > prevMessageCountRef.current
 
@@ -277,7 +274,7 @@ export function MessageList({
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
     // If not near bottom and not a channel switch, don't auto-scroll
-  }, [messages, channelId, conversationId, firstUnreadIndex])
+  }, [messages, channelId, firstUnreadIndex])
 
   // Handle scrolling to and highlighting a specific message
   useEffect(() => {

@@ -171,12 +171,17 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
         borderBottom: isActive ? "2px solid var(--accent-primary)" : "2px solid transparent",
       }}
     >
-      {tab.type === "channel" ? (
-        <Hash className="h-3.5 w-3.5" />
+      {tab.type === "stream" ? (
+        // Check if it's a thread by title or data
+        tab.title === "Thread" || tab.data?.streamId?.includes("thread") ? (
+          <MessageCircle className="h-3.5 w-3.5" />
+        ) : (
+          <Hash className="h-3.5 w-3.5" />
+        )
       ) : tab.type === "activity" ? (
         <Bell className="h-3.5 w-3.5" />
       ) : (
-        <MessageCircle className="h-3.5 w-3.5" />
+        <Hash className="h-3.5 w-3.5" />
       )}
       <span className="truncate max-w-[120px]">{tab.title}</span>
       <button

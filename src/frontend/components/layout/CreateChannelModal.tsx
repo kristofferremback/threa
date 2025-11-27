@@ -1,24 +1,18 @@
 import { useState, useEffect, useRef } from "react"
 import { Hash, Lock, AlertTriangle, Loader2, Check } from "lucide-react"
 import { Modal, ModalHeader, ModalFooter, Button, Input } from "../ui"
-import type { Channel } from "../../types"
+import type { Stream } from "../../types"
 
 interface SlugCheckResult {
-  exists: boolean
   slug: string
-  slugValid: boolean
-  slugError?: string
-  isArchived?: boolean
-  isPrivate?: boolean
-  isMember?: boolean
-  channelName?: string
+  available: boolean
 }
 
 interface CreateChannelModalProps {
   open: boolean
   workspaceId: string
   onClose: () => void
-  onCreated: (channel: Channel) => void
+  onCreated: (stream: Stream) => void
 }
 
 export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: CreateChannelModalProps) {
@@ -62,7 +56,7 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
 
       try {
         const res = await fetch(
-          `/api/workspace/${workspaceId}/channels/check-slug?name=${encodeURIComponent(name.trim())}`,
+          `/api/workspace/${workspaceId}/streams/check-slug?name=${encodeURIComponent(name.trim())}`,
           {
             credentials: "include",
             signal: controller.signal,
@@ -109,13 +103,13 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
   }, [open])
 
   const handleCreate = async () => {
-    if (!name.trim() || isCreating || !slugCheck?.slugValid || slugCheck?.exists) return
+    if (!name.trim() || isCreating || !slugCheck?.available) return
 
     setIsCreating(true)
     setError(null)
 
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -123,6 +117,7 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
           name: name.trim(),
           description: description.trim() || undefined,
           visibility,
+          streamType: "channel",
         }),
       })
 
@@ -131,8 +126,8 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
         throw new Error(data.error || "Failed to create channel")
       }
 
-      const channel = await res.json()
-      onCreated(channel)
+      const stream = await res.json()
+      onCreated(stream)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -141,7 +136,7 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && slugCheck?.slugValid && !slugCheck?.exists) {
+    if (e.key === "Enter" && !e.shiftKey && slugCheck?.available) {
       e.preventDefault()
       handleCreate()
     }
@@ -155,32 +150,10 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
   const getSlugMessage = (): { message: string; type: "success" | "warning" | "error" } | null => {
     if (!slugCheck) return null
 
-    // Invalid slug (too short, no valid chars, etc.)
-    if (!slugCheck.slugValid) {
+    // Slug not available
+    if (!slugCheck.available) {
       return {
-        message: slugCheck.slugError || "Invalid channel name",
-        type: "error",
-      }
-    }
-
-    // Slug exists - show appropriate message
-    if (slugCheck.exists) {
-      if (slugCheck.isArchived) {
-        return {
-          message: `An archived channel "${slugCheck.channelName}" already uses this name. You'll need to choose a different name or unarchive the existing channel.`,
-          type: "error",
-        }
-      }
-
-      if (slugCheck.isPrivate && !slugCheck.isMember) {
-        return {
-          message: "A private channel with this name already exists.",
-          type: "error",
-        }
-      }
-
-      return {
-        message: `A channel "${slugCheck.channelName}" already exists with this name.`,
+        message: `A channel with this name already exists.`,
         type: "error",
       }
     }
@@ -193,7 +166,7 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
   }
 
   const slugMessage = getSlugMessage()
-  const canCreate = name.trim() && slugCheck?.slugValid && !slugCheck?.exists && !isCheckingSlug
+  const canCreate = name.trim() && slugCheck?.available && !isCheckingSlug
 
   return (
     <Modal open={open} onClose={handleClose}>

@@ -2,8 +2,7 @@ import { useRef, useCallback, useEffect } from "react"
 
 interface UseReadReceiptsOptions {
   workspaceId: string
-  channelId?: string
-  conversationId?: string
+  streamId?: string
   enabled?: boolean
 }
 
@@ -12,7 +11,12 @@ interface PendingRead {
   timestamp: number
 }
 
-export function useReadReceipts({ workspaceId, channelId, conversationId, enabled = true }: UseReadReceiptsOptions) {
+export function useReadReceipts({
+  workspaceId,
+  streamId,
+  enabled = true,
+}: UseReadReceiptsOptions) {
+
   // Track messages that have been visible for 500ms+
   const visibleMessagesRef = useRef<Map<string, number>>(new Map())
   // Track the most recent message ID that should be marked as read
@@ -25,7 +29,7 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
   const lastSentRef = useRef<number>(0)
 
   const sendReadReceipt = useCallback(async () => {
-    if (!pendingReadRef.current || !enabled) return
+    if (!pendingReadRef.current || !enabled || !streamId) return
 
     const { messageId, timestamp } = pendingReadRef.current
 
@@ -46,20 +50,16 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
     }
 
     try {
-      const endpoint = conversationId
-        ? `/api/workspace/${workspaceId}/conversations/${conversationId}/read`
-        : `/api/workspace/${workspaceId}/channels/${channelId}/read`
-
-      await fetch(endpoint, {
+      await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/read`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ messageId }),
+        body: JSON.stringify({ eventId: messageId }),
       })
     } catch (error) {
       console.error("Failed to send read receipt:", error)
     }
-  }, [workspaceId, channelId, conversationId, enabled])
+  }, [workspaceId, streamId, enabled])
 
   const scheduleReadReceipt = useCallback(
     (messageId: string) => {
@@ -126,7 +126,7 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
     }
   }, [])
 
-  // Send any pending read receipt when channel/conversation changes
+  // Send any pending read receipt when stream changes
   useEffect(() => {
     return () => {
       // Flush pending read receipt when context changes
@@ -134,7 +134,7 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
         sendReadReceipt()
       }
     }
-  }, [channelId, conversationId, sendReadReceipt])
+  }, [streamId, sendReadReceipt])
 
   // Cancel any pending debounced read receipts
   const cancelPendingRead = useCallback(() => {
@@ -152,53 +152,45 @@ export function useReadReceipts({ workspaceId, channelId, conversationId, enable
   // Manual mark as read - cancels pending debounce and sends immediately
   const markAsRead = useCallback(
     async (messageId: string) => {
-      if (!enabled) return
+      if (!enabled || !streamId) return
 
       // Cancel any pending debounced read receipt
       cancelPendingRead()
 
       try {
-        const endpoint = conversationId
-          ? `/api/workspace/${workspaceId}/conversations/${conversationId}/read`
-          : `/api/workspace/${workspaceId}/channels/${channelId}/read`
-
-        await fetch(endpoint, {
+        await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/read`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ messageId }),
+          body: JSON.stringify({ eventId: messageId }),
         })
       } catch (error) {
         console.error("Failed to mark as read:", error)
       }
     },
-    [workspaceId, channelId, conversationId, enabled, cancelPendingRead],
+    [workspaceId, streamId, enabled, cancelPendingRead],
   )
 
   // Manual mark as unread - cancels pending debounce and sends immediately
   const markAsUnread = useCallback(
     async (messageId: string) => {
-      if (!enabled) return
+      if (!enabled || !streamId) return
 
       // Cancel any pending debounced read receipt
       cancelPendingRead()
 
       try {
-        const endpoint = conversationId
-          ? `/api/workspace/${workspaceId}/conversations/${conversationId}/unread`
-          : `/api/workspace/${workspaceId}/channels/${channelId}/unread`
-
-        await fetch(endpoint, {
+        await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/unread`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ messageId }),
+          body: JSON.stringify({ eventId: messageId }),
         })
       } catch (error) {
         console.error("Failed to mark as unread:", error)
       }
     },
-    [workspaceId, channelId, conversationId, enabled, cancelPendingRead],
+    [workspaceId, streamId, enabled, cancelPendingRead],
   )
 
   return {

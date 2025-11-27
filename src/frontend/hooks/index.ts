@@ -1,5 +1,4 @@
 export { useSocket } from "./useSocket"
-export { useChat } from "./useChat"
 export { useStream } from "./useStream"
 export { usePaneManager } from "./usePaneManager"
 export { useBootstrap } from "./useBootstrap"

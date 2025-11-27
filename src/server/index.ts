@@ -6,9 +6,9 @@ import http from "http"
 import type { Server as HTTPServer } from "http"
 import pinoHttp from "pino-http"
 import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
-import { createWorkspaceRoutes } from "./routes/workspace-routes"
+import { createStreamRoutes } from "./routes/stream-routes"
 import { createInvitationRoutes } from "./routes/invitation-routes"
-import { createSocketIOServer } from "./websockets"
+import { setupStreamWebSocket } from "./websockets/stream-socket"
 import { isProduction, PORT } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
@@ -18,7 +18,7 @@ import { Pool } from "pg"
 import { AuthService } from "./services/auth-service"
 import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
-import { ChatService } from "./services/chat-service"
+import { StreamService } from "./services/stream-service"
 import { validateEnv } from "./lib/env-validator"
 import { createErrorHandler } from "./middleware/error-handler"
 import { createSocketIORedisClients, type RedisClient } from "./lib/redis"
@@ -36,7 +36,7 @@ export interface AppContext {
   pool: Pool
   authService: AuthService
   userService: UserService
-  chatService: ChatService
+  streamService: StreamService
   workspaceService: WorkspaceService
   redisPubClient: RedisClient
   redisSubClient: RedisClient
@@ -134,7 +134,7 @@ export async function createApp(): Promise<AppContext> {
   const pool = createDatabasePool()
 
   const authService = new AuthService()
-  const chatService = new ChatService(pool)
+  const streamService = new StreamService(pool)
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
   const outboxListener = new OutboxListener(pool)
@@ -144,11 +144,11 @@ export async function createApp(): Promise<AppContext> {
 
   const authMiddleware = createAuthMiddleware(authService)
   const authRoutes = createAuthRoutes(authService, authMiddleware)
-  const workspaceRoutes = createWorkspaceRoutes(chatService, workspaceService, pool)
+  const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
   const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
 
   app.use("/api/auth", authRoutes)
-  app.use("/api/workspace", authMiddleware, workspaceRoutes)
+  app.use("/api/workspace", authMiddleware, streamRoutes)
   // Invitation routes - get is public, accept requires auth
   app.use("/api/invite", invitationRoutes)
 
@@ -171,7 +171,7 @@ export async function createApp(): Promise<AppContext> {
     pool,
     authService,
     userService,
-    chatService,
+    streamService,
     workspaceService,
     redisPubClient,
     redisSubClient,
@@ -202,15 +202,11 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting outbox listener...")
     await context.outboxListener.start()
 
-    const socketIoServer = await createSocketIOServer({
-      server: context.server,
-      pool: context.pool,
-      authService: context.authService,
-      userService: context.userService,
-      chatService: context.chatService,
-      redisPubClient: context.redisPubClient,
-      redisSubClient: context.redisSubClient,
-    })
+    const socketIoServer = await setupStreamWebSocket(
+      context.server,
+      context.pool,
+      context.streamService,
+    )
 
     await promisify(context.server.listen).bind(context.server)(PORT)
 

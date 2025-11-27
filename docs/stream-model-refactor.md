@@ -1,7 +1,7 @@
 # Stream Model Refactor
 
-> **Status**: Planning  
-> **Created**: 2025-11-27  
+> **Status**: ✅ Infrastructure Complete (Frontend migration in progress)
+> **Created**: 2025-11-27
 > **Goal**: Replace channels/conversations with a unified stream model
 
 ---
@@ -107,29 +107,29 @@ CREATE TABLE streams (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
     stream_type TEXT NOT NULL,        -- 'channel', 'thread', 'dm', 'incident'
-    
+
     -- Identity (required for channels, optional for threads)
     name TEXT,
     slug TEXT,                        -- unique per workspace for named streams
     description TEXT,
-    
+
     -- Branching relationship
     parent_stream_id TEXT,            -- thread's parent channel
     branched_from_event_id TEXT,      -- the event this thread started from
-    
+
     -- State
     visibility TEXT DEFAULT 'public', -- 'public', 'private', 'inherit'
     status TEXT DEFAULT 'active',     -- 'active', 'archived', 'resolved'
-    
+
     -- Promotion tracking
     promoted_at TIMESTAMPTZ,
     promoted_by TEXT,
-    
+
     metadata JSONB,                   -- flexible: incident severity, etc.
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived_at TIMESTAMPTZ,
-    
+
     UNIQUE (workspace_id, slug) WHERE slug IS NOT NULL
 );
 
@@ -139,14 +139,14 @@ CREATE TABLE stream_events (
     stream_id TEXT NOT NULL,
     event_type TEXT NOT NULL,         -- 'message', 'shared', 'poll', 'member_joined'
     actor_id TEXT NOT NULL,
-    
+
     -- Polymorphic content reference
     content_type TEXT,                -- 'text_message', 'shared_ref', 'poll'
     content_id TEXT,
-    
+
     -- Inline payload for simple events (member_joined, etc.)
     payload JSONB,
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     edited_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ
@@ -209,10 +209,10 @@ Three room levels for different event scopes:
 const room = {
     // Per-stream events (new events, edits, typing)
     stream: (wsId: string, streamId: string) => `ws:${wsId}:stream:${streamId}`,
-    
+
     // Workspace-wide (sidebar badges, new streams visible)
     workspace: (wsId: string) => `ws:${wsId}:workspace`,
-    
+
     // User-specific (activity feed, membership changes, read sync)
     user: (wsId: string, userId: string) => `ws:${wsId}:user:${userId}`,
 }
@@ -346,47 +346,52 @@ New: p=s:stream_123
 
 ## Implementation Phases
 
-### Phase 1: Database Schema
-- [ ] Create `008_streams.sql` migration
-- [ ] Indexes for common queries
-- [ ] Drop old tables
+### Phase 1: Database Schema ✅
+- [x] Create `008_streams.sql` migration
+- [x] Indexes for common queries
+- [x] Drop old tables
 
-### Phase 2: Backend Service
-- [ ] Create `StreamService` class
-- [ ] Bootstrap method (streams, unread counts)
-- [ ] Stream CRUD operations
-- [ ] Event operations (post, edit, delete)
-- [ ] Thread creation and promotion
-- [ ] Sharing between streams
-- [ ] Membership operations
-- [ ] Read state management
+### Phase 2: Backend Service ✅
+- [x] Create `StreamService` class
+- [x] Bootstrap method (streams, unread counts)
+- [x] Stream CRUD operations
+- [x] Event operations (post, edit, delete)
+- [x] Thread creation and promotion
+- [x] Sharing between streams
+- [x] Membership operations
+- [x] Read state management
 
-### Phase 3: API Routes
-- [ ] Refactor `workspace-routes.ts`
-- [ ] New stream-based endpoints
-- [ ] Remove old channel/conversation routes
+### Phase 3: API Routes ✅
+- [x] Create `stream-routes.ts`
+- [x] New stream-based endpoints
+- [x] Wire up to server
 
-### Phase 4: WebSocket Layer
-- [ ] Update room naming
-- [ ] Event handlers for stream events
-- [ ] Workspace and user level events
+### Phase 4: WebSocket Layer ✅
+- [x] Update room naming in `stream-socket.ts`
+- [x] Event handlers for stream events
+- [x] Workspace and user level events
+- [x] Authentication middleware
 
-### Phase 5: Frontend Types & Hooks
-- [ ] Update `types.ts`
-- [ ] Create `useStream` hook
-- [ ] Update `useWorkspaceSocket`
+### Phase 5: Frontend Types & Hooks ✅
+- [x] Update `types.ts` (Stream, StreamEvent, etc.)
+- [x] Create `useStream` hook
+- [x] Update `useWorkspaceSocket`
+- [x] Update `useBootstrap`
+- [x] Update `usePaneManager`
 
-### Phase 6: Frontend Components
-- [ ] `ChatInterface` → stream-based
-- [ ] `Sidebar` → unified stream list
-- [ ] `MessageList` → `EventList`
-- [ ] `MessageItem` → `EventItem`
-- [ ] URL state serialization
+### Phase 6: Frontend Components ✅ (with migration helpers)
+- [x] `StreamInterface` component (wraps old ChatInterface pattern)
+- [x] `Sidebar` → uses streams
+- [x] `EventList` adapter (wraps MessageList)
+- [x] `CommandPalette` → uses streams
+- [x] URL state serialization (with legacy format support)
 
-### Phase 7: Cleanup
-- [ ] Remove old service methods
-- [ ] Remove old types
-- [ ] Remove old migrations (keep for reference)
+### Phase 7: Cleanup (remaining)
+- [ ] Remove old `ChatService` (once confirmed working)
+- [ ] Remove old `useChat` hook
+- [ ] Update remaining components using old Message types
+- [ ] Fix pre-existing TypeScript errors in MessageContent, RichTextEditor, etc.
+- [ ] Integration testing
 
 ---
 
@@ -395,12 +400,12 @@ New: p=s:stream_123
 ### Get streams for sidebar
 
 ```sql
-SELECT s.*, 
+SELECT s.*,
     CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
     sm.last_read_at,
     sm.notify_level,
-    (SELECT COUNT(*) FROM stream_events e 
-     WHERE e.stream_id = s.id 
+    (SELECT COUNT(*) FROM stream_events e
+     WHERE e.stream_id = s.id
      AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01')
      AND e.deleted_at IS NULL
      AND e.actor_id != $2) as unread_count
@@ -416,7 +421,7 @@ ORDER BY s.name;
 ### Get events for a stream
 
 ```sql
-SELECT e.*, 
+SELECT e.*,
     u.email as actor_email,
     u.name as actor_name,
     tm.content, tm.mentions,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import type { BootstrapData, Channel } from "../types"
+import type { BootstrapData, Stream } from "../types"
 
 interface UseBootstrapOptions {
   enabled?: boolean
@@ -11,11 +11,11 @@ interface UseBootstrapReturn {
   error: string | null
   noWorkspace: boolean
   refetch: () => void
-  addChannel: (channel: Channel) => void
-  updateChannel: (channel: Channel) => void
-  removeChannel: (channelId: string) => void
-  incrementUnreadCount: (channelId: string, increment?: number) => void
-  resetUnreadCount: (channelId: string) => void
+  addStream: (stream: Stream) => void
+  updateStream: (stream: Stream) => void
+  removeStream: (streamId: string) => void
+  incrementUnreadCount: (streamId: string, increment?: number) => void
+  resetUnreadCount: (streamId: string) => void
 }
 
 export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseBootstrapReturn {
@@ -63,55 +63,55 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     }
   }, [enabled, fetchBootstrap])
 
-  // Add a channel to the local state (after creation)
-  const addChannel = useCallback((channel: Channel) => {
+  // Add a stream to the local state (after creation)
+  const addStream = useCallback((stream: Stream) => {
     setData((prev) => {
       if (!prev) return prev
       // Insert in alphabetical order
-      const channels = [...prev.channels, channel].sort((a, b) => a.name.localeCompare(b.name))
-      return { ...prev, channels }
+      const streams = [...prev.streams, stream].sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      return { ...prev, streams }
     })
   }, [])
 
-  // Update a channel in the local state
-  const updateChannel = useCallback((channel: Channel) => {
+  // Update a stream in the local state
+  const updateStream = useCallback((stream: Stream) => {
     setData((prev) => {
       if (!prev) return prev
-      const channels = prev.channels
-        .map((c) => (c.id === channel.id ? { ...c, ...channel } : c))
-        .sort((a, b) => a.name.localeCompare(b.name))
-      return { ...prev, channels }
+      const streams = prev.streams
+        .map((s) => (s.id === stream.id ? { ...s, ...stream } : s))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      return { ...prev, streams }
     })
   }, [])
 
-  // Remove a channel from the local state (after archiving)
-  const removeChannel = useCallback((channelId: string) => {
+  // Remove a stream from the local state (after archiving)
+  const removeStream = useCallback((streamId: string) => {
     setData((prev) => {
       if (!prev) return prev
-      const channels = prev.channels.filter((c) => c.id !== channelId)
-      return { ...prev, channels }
+      const streams = prev.streams.filter((s) => s.id !== streamId)
+      return { ...prev, streams }
     })
   }, [])
 
-  // Increment unread count for a channel
-  const incrementUnreadCount = useCallback((channelId: string, increment: number = 1) => {
+  // Increment unread count for a stream
+  const incrementUnreadCount = useCallback((streamId: string, increment: number = 1) => {
     setData((prev) => {
       if (!prev) return prev
-      const channels = prev.channels.map((c) =>
-        c.id === channelId || c.slug === channelId ? { ...c, unread_count: c.unread_count + increment } : c,
+      const streams = prev.streams.map((s) =>
+        s.id === streamId || s.slug === streamId ? { ...s, unreadCount: s.unreadCount + increment } : s,
       )
-      return { ...prev, channels }
+      return { ...prev, streams }
     })
   }, [])
 
-  // Reset unread count for a channel (when user views it)
-  const resetUnreadCount = useCallback((channelId: string) => {
+  // Reset unread count for a stream (when user views it)
+  const resetUnreadCount = useCallback((streamId: string) => {
     setData((prev) => {
       if (!prev) return prev
-      const channels = prev.channels.map((c) =>
-        c.id === channelId || c.slug === channelId ? { ...c, unread_count: 0 } : c,
+      const streams = prev.streams.map((s) =>
+        s.id === streamId || s.slug === streamId ? { ...s, unreadCount: 0 } : s,
       )
-      return { ...prev, channels }
+      return { ...prev, streams }
     })
   }, [])
 
@@ -121,9 +121,9 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     error,
     noWorkspace,
     refetch: fetchBootstrap,
-    addChannel,
-    updateChannel,
-    removeChannel,
+    addStream,
+    updateStream,
+    removeStream,
     incrementUnreadCount,
     resetUnreadCount,
   }

@@ -15,15 +15,15 @@ import {
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector, Input } from "../ui"
-import type { Channel, Workspace } from "../../types"
+import type { Stream, Workspace } from "../../types"
 
 interface SidebarProps {
   workspace: Workspace
-  channels: Channel[]
-  activeChannelSlug: string | null
-  onSelectChannel: (channel: Channel) => void
+  streams: Stream[]
+  activeStreamSlug: string | null
+  onSelectStream: (stream: Stream) => void
   onCreateChannel: () => void
-  onChannelSettings: (channel: Channel) => void
+  onStreamSettings: (stream: Stream) => void
   onInvitePeople: () => void
   onLogout: () => void
   onOpenCommandPalette: () => void
@@ -34,11 +34,11 @@ interface SidebarProps {
 
 export function Sidebar({
   workspace,
-  channels,
-  activeChannelSlug,
-  onSelectChannel,
+  streams,
+  activeStreamSlug,
+  onSelectStream,
   onCreateChannel,
-  onChannelSettings,
+  onStreamSettings,
   onInvitePeople,
   onLogout,
   onOpenCommandPalette,
@@ -46,6 +46,9 @@ export function Sidebar({
   isInboxActive = false,
   inboxUnreadCount = 0,
 }: SidebarProps) {
+  // Filter to only show channels (not threads or DMs)
+  const channels = streams.filter((s) => s.streamType === "channel")
+
   return (
     <div
       className="w-64 flex-none flex flex-col h-full"
@@ -86,12 +89,12 @@ export function Sidebar({
         </button>
       </div>
 
-      <ChannelList
-        channels={channels}
-        activeChannelSlug={activeChannelSlug}
-        onSelectChannel={onSelectChannel}
+      <StreamList
+        streams={channels}
+        activeStreamSlug={activeStreamSlug}
+        onSelectStream={onSelectStream}
         onCreateChannel={onCreateChannel}
-        onChannelSettings={onChannelSettings}
+        onStreamSettings={onStreamSettings}
       />
       <UserFooter onLogout={onLogout} />
     </div>
@@ -170,21 +173,21 @@ function WorkspaceHeader({ workspace, onInvitePeople }: WorkspaceHeaderProps) {
   )
 }
 
-interface ChannelListProps {
-  channels: Channel[]
-  activeChannelSlug: string | null
-  onSelectChannel: (channel: Channel) => void
+interface StreamListProps {
+  streams: Stream[]
+  activeStreamSlug: string | null
+  onSelectStream: (stream: Stream) => void
   onCreateChannel: () => void
-  onChannelSettings: (channel: Channel) => void
+  onStreamSettings: (stream: Stream) => void
 }
 
-function ChannelList({
-  channels,
-  activeChannelSlug,
-  onSelectChannel,
+function StreamList({
+  streams,
+  activeStreamSlug,
+  onSelectStream,
   onCreateChannel,
-  onChannelSettings,
-}: ChannelListProps) {
+  onStreamSettings,
+}: StreamListProps) {
   return (
     <div className="flex-1 overflow-y-auto p-2">
       <div className="mb-2 px-2 flex items-center justify-between">
@@ -202,15 +205,15 @@ function ChannelList({
       </div>
 
       <div className="space-y-0.5">
-        {channels
-          .filter((c) => c.is_member)
-          .map((channel) => (
-            <ChannelItem
-              key={channel.id}
-              channel={channel}
-              isActive={activeChannelSlug === channel.slug}
-              onClick={() => onSelectChannel(channel)}
-              onSettings={() => onChannelSettings(channel)}
+        {streams
+          .filter((s) => s.isMember)
+          .map((stream) => (
+            <StreamItem
+              key={stream.id}
+              stream={stream}
+              isActive={activeStreamSlug === stream.slug}
+              onClick={() => onSelectStream(stream)}
+              onSettings={() => onStreamSettings(stream)}
             />
           ))}
       </div>
@@ -218,15 +221,15 @@ function ChannelList({
   )
 }
 
-interface ChannelItemProps {
-  channel: Channel
+interface StreamItemProps {
+  stream: Stream
   isActive: boolean
   onClick: () => void
   onSettings: () => void
 }
 
-function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProps) {
-  const isPrivate = channel.visibility === "private"
+function StreamItem({ stream, isActive, onClick, onSettings }: StreamItemProps) {
+  const isPrivate = stream.visibility === "private"
   const Icon = isPrivate ? Lock : Hash
 
   return (
@@ -245,19 +248,19 @@ function ChannelItem({ channel, isActive, onClick, onSettings }: ChannelItemProp
           className="text-sm truncate flex-1 text-left"
           style={{
             color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
-            fontWeight: channel.unread_count > 0 ? 600 : 400,
+            fontWeight: stream.unreadCount > 0 ? 600 : 400,
           }}
         >
-          {channel.name.replace("#", "")}
+          {(stream.name || "").replace("#", "")}
         </span>
       </button>
 
-      {channel.unread_count > 0 && (
+      {stream.unreadCount > 0 && (
         <span
           className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
           style={{ background: "var(--accent-secondary)", color: "white" }}
         >
-          {channel.unread_count}
+          {stream.unreadCount}
         </span>
       )}
 
