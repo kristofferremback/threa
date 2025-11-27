@@ -1,7 +1,7 @@
 # AI Features Implementation Plan
 
-**Version:** 1.0  
-**Created:** November 2025  
+**Version:** 1.0
+**Created:** November 2025
 **Status:** Planning
 
 ## Executive Summary
@@ -183,7 +183,7 @@ FROM text_messages
 ORDER BY embedding <=> query_embedding
 LIMIT 100
 
--- Full-text score (40% weight)  
+-- Full-text score (40% weight)
 SELECT id, ts_rank(search_vector, query) as text_score
 FROM text_messages
 WHERE search_vector @@ plainto_tsquery(query)
@@ -256,17 +256,17 @@ CREATE TABLE ai_usage (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
   user_id TEXT,  -- NULL for system jobs
-  
+
   job_type TEXT NOT NULL,  -- 'embed', 'classify', 'respond', 'extract'
   model TEXT NOT NULL,
-  
+
   input_tokens INT NOT NULL,
   output_tokens INT,
   cost_cents NUMERIC(10,6) NOT NULL DEFAULT 0,
-  
+
   stream_id TEXT,
   event_id TEXT,
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -274,20 +274,20 @@ CREATE TABLE ai_usage (
 CREATE TABLE knowledge (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
-  
+
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
   content TEXT NOT NULL,  -- Markdown
-  
+
   source_stream_id TEXT,  -- Thread context
   source_event_id TEXT,   -- Anchor message
-  
+
   embedding vector(1536),
   search_vector tsvector,  -- Generated from title/summary/content
-  
+
   created_by TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
   view_count INT DEFAULT 0,
   helpful_count INT DEFAULT 0,
   not_helpful_count INT DEFAULT 0
@@ -297,12 +297,12 @@ CREATE TABLE knowledge (
 CREATE TABLE ai_personas (
   id TEXT PRIMARY KEY,
   workspace_id TEXT,  -- NULL = global default
-  
+
   name TEXT NOT NULL DEFAULT 'Ariadne',
   handle TEXT NOT NULL DEFAULT '@ariadne',
   system_prompt TEXT NOT NULL,
   model_preference TEXT DEFAULT 'claude-sonnet-4',
-  
+
   is_default BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

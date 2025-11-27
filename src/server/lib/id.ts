@@ -31,3 +31,19 @@ export function messageRevisionId(messageId: string, rev: number): string {
 export function messageReactionId(): string {
   return generateId("msgr")
 }
+
+export function knowledgeId(): string {
+  return generateId("know")
+}
+
+export function aiUsageId(): string {
+  return generateId("aiu")
+}
+
+export function aiPersonaId(): string {
+  return generateId("pers")
+}
+
+export function knowledgeFeedbackId(): string {
+  return generateId("kfb")
+}

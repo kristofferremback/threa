@@ -8,6 +8,8 @@ import { logger } from "../lib/logger"
 import { StreamService } from "../services/stream-service"
 import { AuthService } from "../services/auth-service"
 import { parseCookies } from "../lib/cookies"
+import { queueEmbedding } from "../workers/embedding-worker"
+import { AIUsageService } from "../services/ai-usage-service"
 
 interface SocketData {
   userId: string
@@ -32,6 +34,7 @@ export async function setupStreamWebSocket(
   streamService: StreamService,
 ): Promise<SocketIOServer> {
   const authService = new AuthService()
+  const aiUsageService = new AIUsageService(pool)
 
   // Create Socket.IO server
   const io = new SocketIOServer<any, any, any, SocketData>(httpServer, {
@@ -141,6 +144,32 @@ export async function setupStreamWebSocket(
             streamSlug: stream_slug,
             actorId: actor_id,
           })
+
+          // Queue embedding job for message events (async, non-blocking)
+          if (event_type === "message" && content) {
+            try {
+              const isAIEnabled = await aiUsageService.isAIEnabled(workspace_id)
+              if (isAIEnabled) {
+                // Get the text_message ID from the event
+                const eventResult = await pool.query<{ content_id: string }>(
+                  sql`SELECT content_id FROM stream_events WHERE id = ${event_id}`,
+                )
+                const textMessageId = eventResult.rows[0]?.content_id
+                if (textMessageId) {
+                  await queueEmbedding({
+                    workspaceId: workspace_id,
+                    textMessageId,
+                    content,
+                    eventId: event_id,
+                  })
+                  logger.debug({ event_id, textMessageId }, "Queued embedding job")
+                }
+              }
+            } catch (err) {
+              // Don't fail the broadcast if embedding queue fails
+              logger.warn({ err, event_id }, "Failed to queue embedding job")
+            }
+          }
 
           logger.debug({ event_id, stream_id }, "Stream event broadcast via Socket.IO")
           break

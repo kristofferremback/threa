@@ -8,6 +8,8 @@ import pinoHttp from "pino-http"
 import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
 import { createStreamRoutes } from "./routes/stream-routes"
 import { createInvitationRoutes } from "./routes/invitation-routes"
+import { createSearchRoutes } from "./routes/search-routes"
+import { SearchService } from "./services/search-service"
 import { setupStreamWebSocket } from "./websockets/stream-socket"
 import { isProduction, PORT } from "./config"
 import { logger } from "./lib/logger"
@@ -26,6 +28,7 @@ import { OutboxListener } from "./lib/outbox-listener"
 import { esMain } from "./lib/is-main"
 import { promisify } from "util"
 import { attempt } from "./lib/attempt"
+import { startWorkers, stopWorkers } from "./workers"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -137,6 +140,7 @@ export async function createApp(): Promise<AppContext> {
   const streamService = new StreamService(pool)
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
+  const searchService = new SearchService(pool)
   const outboxListener = new OutboxListener(pool)
 
   // Create Redis clients for Socket.IO
@@ -146,9 +150,11 @@ export async function createApp(): Promise<AppContext> {
   const authRoutes = createAuthRoutes(authService, authMiddleware)
   const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
   const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
+  const searchRoutes = createSearchRoutes(searchService)
 
   app.use("/api/auth", authRoutes)
   app.use("/api/workspace", authMiddleware, streamRoutes)
+  app.use("/api/workspace", authMiddleware, searchRoutes)
   // Invitation routes - get is public, accept requires auth
   app.use("/api/invite", invitationRoutes)
 
@@ -202,6 +208,11 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting outbox listener...")
     await context.outboxListener.start()
 
+    // Start AI workers (embedding, classification)
+    const connectionString = process.env.DATABASE_URL || "postgresql://localhost:5432/threa"
+    logger.info("Starting AI workers...")
+    await startWorkers(context.pool, connectionString)
+
     const socketIoServer = await setupStreamWebSocket(
       context.server,
       context.pool,
@@ -218,6 +229,7 @@ export async function startServer(context: AppContext): Promise<void> {
       context,
       preShutdown: async () => {
         await socketIoServer.close()
+        await stopWorkers()
       },
       onShutdown: async () => {
         process.exit(0)
