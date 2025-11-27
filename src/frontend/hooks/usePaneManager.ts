@@ -18,6 +18,7 @@ interface UsePaneManagerReturn {
   closeTab: (paneId: string, tabId: string) => void
   selectStream: (stream: Stream) => void
   openItem: (item: Omit<Tab, "id">, mode?: OpenMode, sourcePaneId?: string) => void
+  updateTabData: (tabId: string, data: Record<string, unknown>) => void
 
   // Initialize from URL
   initializeFromUrl: () => boolean
@@ -92,10 +93,9 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     }
 
     // Initialize with default stream (first channel)
-    const defaultStream =
-      defaultStreamSlug
-        ? streams.find((s) => s.slug === defaultStreamSlug)
-        : streams.find((s) => s.streamType === "channel" && s.isMember)
+    const defaultStream = defaultStreamSlug
+      ? streams.find((s) => s.slug === defaultStreamSlug)
+      : streams.find((s) => s.streamType === "channel" && s.isMember)
 
     if (defaultStream) {
       setActiveStreamSlug(defaultStream.slug)
@@ -196,6 +196,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
   )
 
   const closeTab = useCallback((paneId: string, tabId: string) => {
+    shouldPushHistory.current = true
     setPanes((prev) => {
       const newPanes = prev
         .map((pane) => {
@@ -213,6 +214,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
   }, [])
 
   const setActiveTab = useCallback((paneId: string, tabId: string) => {
+    shouldPushHistory.current = true
     setPanes((prev) => prev.map((p) => (p.id === paneId ? { ...p, activeTabId: tabId } : p)))
     setFocusedPaneId(paneId)
   }, [])
@@ -239,7 +241,9 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
       }
       return prev.map((pane, idx) => {
         if (idx === 0) {
-          const existingTab = pane.tabs.find((t) => t.data?.streamSlug === stream.slug || t.data?.streamId === stream.id)
+          const existingTab = pane.tabs.find(
+            (t) => t.data?.streamSlug === stream.slug || t.data?.streamId === stream.id,
+          )
           if (existingTab) {
             return { ...pane, activeTabId: existingTab.id }
           }
@@ -256,6 +260,17 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     })
   }, [])
 
+  // Update a specific tab's data (e.g., for activity sub-tab changes)
+  const updateTabData = useCallback((tabId: string, data: Record<string, unknown>) => {
+    shouldPushHistory.current = true
+    setPanes((prev) =>
+      prev.map((pane) => ({
+        ...pane,
+        tabs: pane.tabs.map((tab) => (tab.id === tabId ? { ...tab, data: { ...tab.data, ...data } } : tab)),
+      })),
+    )
+  }, [])
+
   return {
     panes,
     focusedPaneId,
@@ -265,6 +280,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     closeTab,
     selectStream,
     openItem,
+    updateTabData,
     initializeFromUrl,
   }
 }

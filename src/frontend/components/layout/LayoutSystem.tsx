@@ -50,6 +50,7 @@ export function LayoutSystem() {
     closeTab,
     selectStream,
     openItem,
+    updateTabData,
     initializeFromUrl,
   } = usePaneManager({
     streams: bootstrapData?.streams || [],
@@ -332,20 +333,24 @@ export function LayoutSystem() {
         <InboxView
           workspaceId={bootstrapData.workspace.id}
           socket={socket}
+          initialSubTab={(tab.data?.subTab as "unread" | "all") || "unread"}
           onUnreadCountChange={setInboxUnreadCount}
-          onNavigateToStream={(streamSlug, mode = "replace", highlightEventId) => {
-            const stream = bootstrapData.streams.find((s) => s.slug === streamSlug)
-            if (stream) {
-              openItem(
-                {
-                  title: `#${(stream.name || "").replace("#", "")}`,
-                  type: "stream",
-                  data: { streamSlug, highlightEventId },
-                },
-                mode,
-                paneId,
-              )
-            }
+          onSubTabChange={(subTab) => {
+            // Update the tab's data with the new subTab to sync URL
+            updateTabData(tab.id, { subTab })
+          }}
+          onNavigateToStream={(streamId, mode = "replace", highlightEventId) => {
+            const stream = bootstrapData.streams.find((s) => s.id === streamId)
+            // Navigate even if stream isn't in bootstrap data (user might not be a member yet)
+            openItem(
+              {
+                title: stream ? `#${(stream.name || "").replace("#", "")}` : "Channel",
+                type: "stream",
+                data: { streamId, highlightEventId },
+              },
+              mode,
+              paneId,
+            )
           }}
         />
       )

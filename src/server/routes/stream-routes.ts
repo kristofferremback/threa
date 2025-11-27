@@ -135,7 +135,8 @@ export function createStreamRoutes(
         return
       }
 
-      const slugToCheck = (slug as string) || (await createValidSlug(name as string))
+      // createValidSlug returns {slug, valid, error} - extract just the slug
+      const slugToCheck = (slug as string) || createValidSlug(name as string).slug
       const exists = await streamService.checkSlugExists(workspaceId, slugToCheck, excludeId as string)
 
       res.json({
@@ -167,10 +168,10 @@ export function createStreamRoutes(
     }
   })
 
-  // Get a single stream
+  // Get a single stream (by ID or slug)
   router.get("/:workspaceId/streams/:streamId", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { streamId } = req.params
+      const { workspaceId, streamId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
@@ -178,16 +179,21 @@ export function createStreamRoutes(
         return
       }
 
-      // Check access
-      const access = await streamService.checkStreamAccess(streamId, userId)
-      if (!access.hasAccess) {
-        res.status(403).json({ error: access.reason || "Access denied" })
+      // Try to get stream by ID first, then by slug
+      let stream = await streamService.getStream(streamId)
+      if (!stream) {
+        stream = await streamService.getStreamBySlug(workspaceId, streamId)
+      }
+
+      if (!stream) {
+        res.status(404).json({ error: "Stream not found" })
         return
       }
 
-      const stream = await streamService.getStream(streamId)
-      if (!stream) {
-        res.status(404).json({ error: "Stream not found" })
+      // Check access using the resolved stream ID
+      const access = await streamService.checkStreamAccess(stream.id, userId)
+      if (!access.hasAccess) {
+        res.status(403).json({ error: access.reason || "Access denied" })
         return
       }
 

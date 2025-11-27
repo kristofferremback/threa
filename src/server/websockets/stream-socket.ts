@@ -234,16 +234,35 @@ export async function setupStreamWebSocket(
         }
 
         case "event:notification.created": {
-          const { workspace_id, user_id, notification_type, stream_id, event_id, actor_id, preview, id } = event
+          const {
+            workspace_id,
+            user_id,
+            notification_type,
+            stream_id,
+            stream_name,
+            stream_slug,
+            event_id,
+            actor_id,
+            actor_email,
+            actor_name,
+            preview,
+            id,
+          } = event
 
-          // Send to user's private room
+          // Send to user's private room with all fields the frontend expects
           io.to(room.user(workspace_id, user_id)).emit("notification:new", {
             id,
-            type: notification_type,
+            notificationType: notification_type,
             streamId: stream_id,
+            streamName: stream_name,
+            streamSlug: stream_slug,
             eventId: event_id,
             actorId: actor_id,
+            actorEmail: actor_email,
+            actorName: actor_name,
             preview,
+            readAt: null,
+            createdAt: new Date().toISOString(),
           })
 
           logger.debug({ notification_id: id, user_id, type: notification_type }, "Notification broadcast")

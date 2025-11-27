@@ -47,20 +47,29 @@ function getSlugString(slug: string | null | undefined | { slug?: string }): str
 interface InboxViewProps {
   workspaceId: string
   socket?: Socket | null
-  onNavigateToStream?: (streamSlug: string, mode?: OpenMode, highlightEventId?: string) => void
+  initialSubTab?: TabType
+  onNavigateToStream?: (streamId: string, mode?: OpenMode, highlightEventId?: string) => void
   onUnreadCountChange?: (count: number) => void
+  onSubTabChange?: (subTab: TabType) => void
 }
 
 export function InboxView({
   workspaceId,
   socket,
+  initialSubTab = "unread",
   onNavigateToStream,
   onUnreadCountChange,
+  onSubTabChange,
 }: InboxViewProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabType>("unread")
+  const [activeTab, setActiveTabState] = useState<TabType>(initialSubTab)
+
+  const setActiveTab = (tab: TabType) => {
+    setActiveTabState(tab)
+    onSubTabChange?.(tab)
+  }
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -93,11 +102,7 @@ export function InboxView({
           return prev
         }
         // Add new notification at the top
-        const updated = [notification, ...prev]
-        // Notify parent of new unread count
-        const newUnreadCount = updated.filter((n) => !n.readAt).length
-        onUnreadCountChange?.(newUnreadCount)
-        return updated
+        return [notification, ...prev]
       })
     }
 
@@ -106,7 +111,7 @@ export function InboxView({
     return () => {
       socket.off("notification:new", handleNewNotification)
     }
-  }, [socket, onUnreadCountChange])
+  }, [socket])
 
   // Notify parent when unread count changes
   const unreadCount = notifications.filter((n) => !n.readAt).length
@@ -157,10 +162,9 @@ export function InboxView({
       }).catch((err) => console.error("Failed to mark notification as read:", err))
     }
 
-    // Navigate to the relevant stream
-    const slug = getSlugString(notification.streamSlug)
-    if (slug) {
-      onNavigateToStream?.(slug, mode, notification.eventId || undefined)
+    // Navigate to the relevant stream by ID
+    if (notification.streamId) {
+      onNavigateToStream?.(notification.streamId, mode, notification.eventId || undefined)
     }
   }
 
@@ -360,11 +364,13 @@ export function InboxView({
                     <p className="text-sm" style={{ color: "var(--text-primary)" }}>
                       {getNotificationText(notification)}
                     </p>
-                    <RelativeTime
-                      date={notification.createdAt}
-                      className="text-xs flex-shrink-0"
-                      style={{ color: "var(--text-muted)" }}
-                    />
+                    {notification.createdAt && (
+                      <RelativeTime
+                        date={notification.createdAt}
+                        className="text-xs flex-shrink-0"
+                        style={{ color: "var(--text-muted)" }}
+                      />
+                    )}
                   </div>
 
                   {notification.preview && (

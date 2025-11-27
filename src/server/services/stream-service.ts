@@ -289,7 +289,8 @@ export class StreamService {
       await client.query("BEGIN")
 
       const streamId = generateId("stream")
-      const slug = params.slug || (params.name ? await createValidSlug(params.name) : null)
+      // createValidSlug returns {slug, valid, error} - extract just the slug
+      const slug = params.slug || (params.name ? createValidSlug(params.name).slug : null)
 
       // Check slug uniqueness if provided
       if (slug) {
@@ -619,6 +620,18 @@ export class StreamService {
 
       // Handle mentions - create notifications
       if (params.mentions && params.mentions.length > 0) {
+        // Get actor info for notification
+        const actorResult = await client.query(
+          sql`SELECT email, name FROM users WHERE id = ${params.actorId}`,
+        )
+        const actor = actorResult.rows[0]
+
+        // Get parent stream info for notification
+        const parentStreamResult = await client.query(
+          sql`SELECT name, slug FROM streams WHERE id = ${params.parentStreamId}`,
+        )
+        const parentStream = parentStreamResult.rows[0]
+
         for (const mention of params.mentions.filter((m) => m.type === "user")) {
           const notifId = generateId("notif")
           await client.query(
@@ -632,13 +645,18 @@ export class StreamService {
           await client.query(
             sql`INSERT INTO outbox (id, event_type, payload)
                 VALUES (${notifOutboxId}, 'notification.created', ${JSON.stringify({
-                  notification_id: notifId,
+                  id: notifId,
                   user_id: mention.id,
                   workspace_id: params.workspaceId,
                   stream_id: threadStream.id,
+                  stream_name: parentStream?.name || threadStream.name,
+                  stream_slug: parentStream?.slug || threadStream.slug,
                   event_id: eventId,
                   notification_type: "mention",
                   actor_id: params.actorId,
+                  actor_email: actor?.email,
+                  actor_name: actor?.name,
+                  preview: params.content.substring(0, 100),
                 })})`,
           )
           await client.query(`NOTIFY outbox_event, '${notifOutboxId.replace(/'/g, "''")}'`)
@@ -810,7 +828,7 @@ export class StreamService {
 
       // Get stream info for notifications
       const streamResult = await client.query(
-        sql`SELECT workspace_id, stream_type, parent_stream_id, slug FROM streams WHERE id = ${params.streamId}`,
+        sql`SELECT workspace_id, stream_type, parent_stream_id, slug, name FROM streams WHERE id = ${params.streamId}`,
       )
       const stream = streamResult.rows[0]
 
@@ -834,6 +852,12 @@ export class StreamService {
                 ON CONFLICT DO NOTHING`,
           )
 
+          // Get actor info for notification
+          const actorResult = await client.query(
+            sql`SELECT email, name FROM users WHERE id = ${params.actorId}`,
+          )
+          const actor = actorResult.rows[0]
+
           // Emit notification event
           const notifOutboxId = generateId("outbox")
           await client.query(
@@ -844,8 +868,12 @@ export class StreamService {
                   user_id: mention.id,
                   notification_type: "mention",
                   stream_id: params.streamId,
+                  stream_name: stream.name,
+                  stream_slug: stream.slug,
                   event_id: eventId,
                   actor_id: params.actorId,
+                  actor_email: actor?.email,
+                  actor_name: actor?.name,
                   preview: params.content?.substring(0, 100),
                 })})`,
           )
@@ -1499,9 +1527,9 @@ export class StreamService {
 
   /**
    * Check if a user has access to a stream
-   * - Members can always access their streams
-   * - Non-members cannot access private streams
-   * - Non-members cannot access public streams (they need to join first)
+   * - Members can always access their streams (read + write)
+   * - Non-members CAN read public streams but cannot post
+   * - Non-members cannot access private streams at all
    */
   async checkStreamAccess(streamId: string, userId: string): Promise<StreamAccessResult> {
     const result = await this.pool.query(
@@ -1527,12 +1555,22 @@ export class StreamService {
       return { hasAccess: true, isMember: true, canPost: true }
     }
 
-    // Non-members cannot access any stream - they need to join first
+    // Non-members can read public streams but not post
+    if (stream.visibility === "public") {
+      return {
+        hasAccess: true,
+        isMember: false,
+        canPost: false,
+        reason: "You need to join this channel to post messages",
+      }
+    }
+
+    // Non-members cannot access private streams
     return {
       hasAccess: false,
       isMember: false,
       canPost: false,
-      reason: stream.visibility === "private" ? "This is a private channel" : "You need to join this channel first",
+      reason: "This is a private channel",
     }
   }
 

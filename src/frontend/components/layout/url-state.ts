@@ -23,19 +23,22 @@ export function serializePanesToUrl(panes: Pane[]): string {
       return sortedTabs
         .map((tab) => {
           if (tab.type === "stream") {
-            // Use slug if available, otherwise ID
-            // Ensure we only serialize strings, not objects
+            // Use slug if available and valid, otherwise ID
             const slug = tab.data?.streamSlug
             const id = tab.data?.streamId
-            const value = (typeof slug === "string" ? slug : null) || (typeof id === "string" ? id : null) || ""
-            // Skip if value looks like JSON (malformed data)
-            if (value.startsWith("{") || value.startsWith("[")) {
-              console.warn("Skipping malformed stream data in URL serialization:", value)
-              return ""
-            }
+
+            // Check if slug is a valid string (not JSON or object)
+            const isValidSlug =
+              typeof slug === "string" && slug.length > 0 && !slug.startsWith("{") && !slug.startsWith("[")
+
+            // Use slug if valid, otherwise fall back to ID
+            const value = isValidSlug ? slug : typeof id === "string" ? id : ""
+
             return value ? `s:${value}` : ""
           } else if (tab.type === "activity") {
-            return "a:activity"
+            // Include the active sub-tab (unread or all)
+            const subTab = tab.data?.subTab || "unread"
+            return `a:${subTab}`
           }
           return ""
         })
@@ -75,17 +78,22 @@ export function deserializePanesFromUrl(param: string, streams: Stream[]): Pane[
               const isThread = stream?.streamType === "thread"
               return {
                 id: `stream-${paneIndex}-${tabIndex}`,
-                title: stream ? (isThread ? "Thread" : `#${(stream.name || "").replace("#", "")}`) : `#${streamSlugOrId}`,
+                title: stream
+                  ? isThread
+                    ? "Thread"
+                    : `#${(stream.name || "").replace("#", "")}`
+                  : `#${streamSlugOrId}`,
                 type: "stream",
                 data: { streamSlug: stream?.slug || streamSlugOrId, streamId: stream?.id },
               } as Tab
             } else if (parts[0] === "a") {
-              // Activity: a:activity
+              // Activity: a:unread or a:all
+              const subTab = parts[1] === "all" ? "all" : "unread"
               return {
                 id: `activity-${paneIndex}-${tabIndex}`,
                 title: "Activity",
                 type: "activity",
-                data: {},
+                data: { subTab },
               } as Tab
             }
             return null
@@ -140,7 +148,8 @@ export function buildNewTabUrl(item: Omit<Tab, "id">): string {
       url.searchParams.set("p", `s:${value}`)
     }
   } else if (item.type === "activity") {
-    url.searchParams.set("p", "a:activity")
+    const subTab = item.data?.subTab || "unread"
+    url.searchParams.set("p", `a:${subTab}`)
   }
   return url.toString()
 }
