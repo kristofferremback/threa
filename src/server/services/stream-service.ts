@@ -919,7 +919,7 @@ export class StreamService {
       }
 
       // Generate slug
-      const slug = params.slug || (await createValidSlug(params.name))
+      const slug = params.slug || createValidSlug(params.name).slug
 
       // Check slug uniqueness
       const existingSlug = await client.query(
