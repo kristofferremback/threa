@@ -76,15 +76,23 @@ export function deserializePanesFromUrl(param: string, streams: Stream[]): Pane[
 
               const stream = streams.find((s) => s.slug === streamSlugOrId || s.id === streamSlugOrId)
               const isThread = stream?.streamType === "thread"
+              // Check if this is an event ID (pending thread) or a thread stream
+              const isPendingThread = streamSlugOrId.startsWith("event_")
+
+              let title: string
+              if (stream) {
+                title = isThread ? "Thread" : `#${(stream.name || "").replace("#", "")}`
+              } else if (isPendingThread) {
+                title = "Thread"
+              } else {
+                title = `#${streamSlugOrId}`
+              }
+
               return {
                 id: `stream-${paneIndex}-${tabIndex}`,
-                title: stream
-                  ? isThread
-                    ? "Thread"
-                    : `#${(stream.name || "").replace("#", "")}`
-                  : `#${streamSlugOrId}`,
+                title,
                 type: "stream",
-                data: { streamSlug: stream?.slug || streamSlugOrId, streamId: stream?.id },
+                data: { streamSlug: stream?.slug || streamSlugOrId, streamId: stream?.id || streamSlugOrId },
               } as Tab
             } else if (parts[0] === "a") {
               // Activity: a:unread or a:all

@@ -172,8 +172,8 @@ function TabItem({ tab, isActive, onSelect, onClose }: TabItemProps) {
       }}
     >
       {tab.type === "stream" ? (
-        // Check if it's a thread by title or data
-        tab.title === "Thread" || tab.data?.streamId?.includes("thread") ? (
+        // Check if it's a thread by title or if it's an event (pending thread)
+        tab.title === "Thread" || tab.data?.streamId?.startsWith("event_") ? (
           <MessageCircle className="h-3.5 w-3.5" />
         ) : (
           <Hash className="h-3.5 w-3.5" />

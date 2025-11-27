@@ -204,6 +204,47 @@ export function createStreamRoutes(
     }
   })
 
+  // Get ancestor chain for a thread
+  router.get("/:workspaceId/streams/:streamId/ancestors", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, streamId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Try to get stream by ID first, then by slug
+      let stream = await streamService.getStream(streamId)
+      if (!stream) {
+        stream = await streamService.getStreamBySlug(workspaceId, streamId)
+      }
+
+      if (!stream) {
+        res.status(404).json({ error: "Stream not found" })
+        return
+      }
+
+      // Check access using the resolved stream ID
+      const access = await streamService.checkStreamAccess(stream.id, userId)
+      if (!access.hasAccess) {
+        res.status(403).json({ error: access.reason || "Access denied" })
+        return
+      }
+
+      const { ancestors, rootStream } = await streamService.getAncestorChain(stream.id)
+
+      res.json({
+        ancestors: ancestors.map((e) => mapEventToResponse(e)),
+        rootStream,
+      })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get ancestor chain")
+      next(error)
+    }
+  })
+
   // Create a new stream (channel or DM)
   router.post("/:workspaceId/streams", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -529,7 +570,7 @@ export function createStreamRoutes(
         const thread = await streamService.getThreadForEvent(eventId)
 
         // Also get the root event if thread exists
-        let rootEvent = null
+        let rootEvent: Awaited<ReturnType<typeof streamService.getEventWithDetails>> | null = null
         if (thread && thread.branchedFromEventId) {
           rootEvent = await streamService.getEventWithDetails(thread.branchedFromEventId)
         }

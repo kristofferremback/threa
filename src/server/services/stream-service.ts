@@ -402,6 +402,41 @@ export class StreamService {
     return result.rows[0] ? this.mapStreamRow(result.rows[0]) : null
   }
 
+  /**
+   * Get the ancestor chain for a thread - all parent events up to the root channel.
+   * Returns events in order from closest ancestor to root.
+   */
+  async getAncestorChain(
+    streamId: string,
+  ): Promise<{ ancestors: StreamEventWithDetails[]; rootStream: Stream | null }> {
+    const ancestors: StreamEventWithDetails[] = []
+    let currentStreamId = streamId
+    let rootStream: Stream | null = null
+
+    // Walk up the tree, max 10 levels to prevent infinite loops
+    for (let i = 0; i < 10; i++) {
+      const stream = await this.getStream(currentStreamId)
+      if (!stream) break
+
+      // If this stream has no parent, it's the root channel
+      if (!stream.parentStreamId || !stream.branchedFromEventId) {
+        rootStream = stream
+        break
+      }
+
+      // Get the event this thread branched from
+      const event = await this.getEventWithDetails(stream.branchedFromEventId)
+      if (event) {
+        ancestors.push(event)
+      }
+
+      // Move up to the parent stream
+      currentStreamId = stream.parentStreamId
+    }
+
+    return { ancestors, rootStream }
+  }
+
   async createThreadFromEvent(
     eventId: string,
     creatorId: string,
@@ -621,9 +656,7 @@ export class StreamService {
       // Handle mentions - create notifications
       if (params.mentions && params.mentions.length > 0) {
         // Get actor info for notification
-        const actorResult = await client.query(
-          sql`SELECT email, name FROM users WHERE id = ${params.actorId}`,
-        )
+        const actorResult = await client.query(sql`SELECT email, name FROM users WHERE id = ${params.actorId}`)
         const actor = actorResult.rows[0]
 
         // Get parent stream info for notification
@@ -853,9 +886,7 @@ export class StreamService {
           )
 
           // Get actor info for notification
-          const actorResult = await client.query(
-            sql`SELECT email, name FROM users WHERE id = ${params.actorId}`,
-          )
+          const actorResult = await client.query(sql`SELECT email, name FROM users WHERE id = ${params.actorId}`)
           const actor = actorResult.rows[0]
 
           // Emit notification event

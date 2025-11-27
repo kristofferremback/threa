@@ -52,11 +52,7 @@ const isPendingThread = (id: string | undefined): boolean => {
 // Hook
 // ==========================================================================
 
-export function useStream({
-  workspaceId,
-  streamId,
-  enabled = true,
-}: UseStreamOptions): UseStreamReturn {
+export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOptions): UseStreamReturn {
   // State
   const [stream, setStream] = useState<Stream | null>(null)
   const [events, setEvents] = useState<StreamEvent[]>([])
@@ -191,10 +187,9 @@ export function useStream({
         const eventId = streamId
 
         // First, check if a thread was created since we opened
-        const threadRes = await fetch(
-          `/api/workspace/${workspaceId}/streams/by-event/${eventId}/thread`,
-          { credentials: "include" },
-        )
+        const threadRes = await fetch(`/api/workspace/${workspaceId}/streams/by-event/${eventId}/thread`, {
+          credentials: "include",
+        })
 
         if (threadRes.ok) {
           const threadData = await threadRes.json()
@@ -214,7 +209,7 @@ export function useStream({
               setLastReadEventId(eventsData.lastReadEventId || null)
               setHasMoreEvents(eventsData.hasMore || false)
             }
-            // Fetch parent stream
+            // Fetch parent stream and ancestors
             if (threadData.thread.parentStreamId) {
               const parentRes = await fetch(
                 `/api/workspace/${workspaceId}/streams/${threadData.thread.parentStreamId}`,
@@ -224,6 +219,16 @@ export function useStream({
                 const parentData = await parentRes.json()
                 setParentStream(parentData)
                 setParentStreamIdForReply(parentData.id)
+              }
+
+              // Fetch ancestor chain
+              const ancestorsRes = await fetch(
+                `/api/workspace/${workspaceId}/streams/${threadData.thread.id}/ancestors`,
+                { credentials: "include" },
+              )
+              if (ancestorsRes.ok) {
+                const ancestorsData = await ancestorsRes.json()
+                setAncestors(ancestorsData.ancestors || [])
               }
             }
             // Fetch root event
@@ -242,16 +247,32 @@ export function useStream({
 
         // We need to fetch the original event and its parent stream
         // The event fetch endpoint should return both
-        const eventInfoRes = await fetch(
-          `/api/workspace/${workspaceId}/events/${eventId}`,
-          { credentials: "include" },
-        )
+        const eventInfoRes = await fetch(`/api/workspace/${workspaceId}/events/${eventId}`, { credentials: "include" })
 
         if (eventInfoRes.ok) {
           const eventInfo = await eventInfoRes.json()
           setRootEvent(eventInfo.event)
           setParentStream(eventInfo.stream)
           setParentStreamIdForReply(eventInfo.stream?.id || null)
+
+          // For pending threads, we need to build the ancestor chain manually
+          // The root event IS the first ancestor, and we need to fetch any ancestors of the parent stream
+          if (eventInfo.stream?.id) {
+            // If the parent stream is also a thread, fetch its ancestors
+            if (eventInfo.stream.streamType === "thread" && eventInfo.stream.parentStreamId) {
+              const ancestorsRes = await fetch(
+                `/api/workspace/${workspaceId}/streams/${eventInfo.stream.id}/ancestors`,
+                { credentials: "include" },
+              )
+              if (ancestorsRes.ok) {
+                const ancestorsData = await ancestorsRes.json()
+                // The root event (eventInfo.event) will be shown separately,
+                // so ancestors are the parent stream's ancestors
+                setAncestors(ancestorsData.ancestors || [])
+              }
+            }
+          }
+
           // Create a "virtual" thread stream for the UI
           setStream({
             id: `pending_${eventId}`,
@@ -298,7 +319,7 @@ export function useStream({
       setStream(streamData)
       setPendingEventId(null)
 
-      // If this is a thread, fetch parent info
+      // If this is a thread, fetch parent info and ancestors
       if (streamData.parentStreamId) {
         const parentRes = await fetch(`/api/workspace/${workspaceId}/streams/${streamData.parentStreamId}`, {
           credentials: "include",
@@ -311,7 +332,22 @@ export function useStream({
 
         // Fetch root event if branched from one
         if (streamData.branchedFromEventId) {
-          // TODO: Fetch root event
+          const rootEventRes = await fetch(`/api/workspace/${workspaceId}/events/${streamData.branchedFromEventId}`, {
+            credentials: "include",
+          })
+          if (rootEventRes.ok) {
+            const rootEventData = await rootEventRes.json()
+            setRootEvent(rootEventData.event)
+          }
+        }
+
+        // Fetch ancestor chain for nested threads
+        const ancestorsRes = await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/ancestors`, {
+          credentials: "include",
+        })
+        if (ancestorsRes.ok) {
+          const ancestorsData = await ancestorsRes.json()
+          setAncestors(ancestorsData.ancestors || [])
         }
       }
 
@@ -567,4 +603,3 @@ export function useStream({
     setLastReadEventId,
   }
 }
-
