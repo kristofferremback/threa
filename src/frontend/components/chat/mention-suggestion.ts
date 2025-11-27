@@ -7,7 +7,7 @@ export type MentionType = "user" | "channel" | "crosspost"
 
 export interface MentionSuggestionOptions {
   users: Array<{ id: string; name: string; email: string }>
-  channels: Array<{ id: string; name: string; slug: string }>
+  channels: Array<{ id: string; name: string; slug: string | null }>
 }
 
 // Fuzzy search helper
@@ -131,8 +131,11 @@ export function createChannelSuggestion(options: MentionSuggestionOptions): Part
 
       return options.channels
         .filter((channel) => {
+          // For crossposts, only show channels with slugs (no DMs)
+          if (isCrosspost && !channel.slug) return false
+
           if (!searchQuery) return true
-          return fuzzyMatch(searchQuery, channel.name) || fuzzyMatch(searchQuery, channel.slug)
+          return fuzzyMatch(searchQuery, channel.name) || fuzzyMatch(searchQuery, channel.slug || "")
         })
         .slice(0, 8)
         .map((channel) => ({

@@ -21,7 +21,7 @@ interface EventListProps {
   onCrosspostToStream: (eventId: string, targetStreamId: string) => Promise<void>
   onStreamClick: (slug: string, e: React.MouseEvent) => void
   users: Array<{ id: string; name: string; email: string }>
-  streams: Array<{ id: string; name: string; slug: string }>
+  streams: Array<{ id: string; name: string; slug: string | null }>
 }
 
 // System event types that should be displayed

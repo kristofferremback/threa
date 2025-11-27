@@ -25,7 +25,7 @@ interface MessageItemWithVisibilityProps {
   animationDelay?: number
   showThreadActions?: boolean
   users?: Array<{ id: string; name: string; email: string }>
-  channels?: Array<{ id: string; name: string; slug: string }>
+  channels?: Array<{ id: string; name: string; slug: string | null }>
 }
 
 export function MessageItemWithVisibility({

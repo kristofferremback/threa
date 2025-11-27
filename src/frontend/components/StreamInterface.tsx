@@ -14,7 +14,7 @@ interface StreamInterfaceProps {
   onOpenThread?: (eventId: string, parentStreamId: string, mode: OpenMode) => void
   onGoToStream?: (streamSlug: string, mode: OpenMode) => void
   users?: Array<{ id: string; name: string; email: string }>
-  streams?: Array<{ id: string; name: string; slug: string; branchedFromEventId?: string | null }>
+  streams?: Array<{ id: string; name: string; slug: string | null; branchedFromEventId?: string | null }>
 }
 
 export function StreamInterface({

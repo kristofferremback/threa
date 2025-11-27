@@ -431,7 +431,7 @@ export function LayoutSystem() {
         streams={bootstrapData.streams.map((s) => ({
           id: s.id,
           name: s.name || "",
-          slug: s.slug || "",
+          slug: s.slug, // Keep null for DMs - allows filtering in crosspost suggestions
           branchedFromEventId: s.branchedFromEventId,
         }))}
         onOpenThread={(threadIdOrEventId, parentStreamId, mode) => {

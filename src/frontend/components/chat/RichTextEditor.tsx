@@ -50,7 +50,7 @@ interface RichTextEditorProps {
   className?: string
   autofocus?: boolean
   users?: Array<{ id: string; name: string; email: string }>
-  channels?: Array<{ id: string; name: string; slug: string }>
+  channels?: Array<{ id: string; name: string; slug: string | null }>
   initialContent?: string
   initialMentions?: ExtractedMention[]
 }
