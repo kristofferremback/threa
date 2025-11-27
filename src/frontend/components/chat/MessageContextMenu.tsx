@@ -162,19 +162,16 @@ export function MessageContextMenu({
         <MenuDivider />
 
         {/* Sharing options */}
-        {isThreadReply && !isAlreadySharedToChannel && (
+        {isThreadReply && (
           <MenuItem
             icon={<Send className="h-4 w-4" />}
             label="Send to channel"
+            disabled={isAlreadySharedToChannel}
             onClick={() => {
               onShareToChannel?.()
               onClose()
             }}
           />
-        )}
-
-        {isThreadReply && isAlreadySharedToChannel && (
-          <MenuItem icon={<Send className="h-4 w-4" />} label="Already in channel" disabled />
         )}
 
         <MenuItem
