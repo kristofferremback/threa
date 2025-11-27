@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash } from "lucide-react"
+import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward } from "lucide-react"
 import { Avatar, RelativeTime } from "../ui"
 import { MessageContextMenu } from "./MessageContextMenu"
 import { MessageRevisionsModal } from "./MessageRevisionsModal"
 import { MessageContent, type MessageMention } from "./MessageContent"
 import { RichTextEditor, type RichTextEditorRef } from "./RichTextEditor"
-import type { Message, OpenMode, LinkedChannel } from "../../types"
+import type { Message, OpenMode, LinkedChannel, SharedFromInfo } from "../../types"
 import { getOpenMode, getDisplayName } from "../../types"
 
 interface MessageItemProps {
@@ -251,12 +251,17 @@ export function MessageItem({
             </div>
           </div>
         ) : (
-          <MessageContent
-            content={message.message}
-            mentions={message.mentions as MessageMention[] | undefined}
-            onUserMentionClick={onUserMentionClick}
-            onChannelClick={onChannelClick}
-          />
+          <>
+            {message.sharedFrom && (
+              <SharedFromBadge sharedFrom={message.sharedFrom} onChannelClick={onChannelClick} channels={channels} />
+            )}
+            <MessageContent
+              content={message.message}
+              mentions={message.mentions as MessageMention[] | undefined}
+              onUserMentionClick={onUserMentionClick}
+              onChannelClick={onChannelClick}
+            />
+          </>
         )}
 
         {/* Multi-channel badges */}
@@ -407,6 +412,43 @@ function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBa
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// Shared from badge for cross-posted messages
+interface SharedFromBadgeProps {
+  sharedFrom: SharedFromInfo
+  channels?: Array<{ id: string; name: string; slug: string | null }>
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
+}
+
+function SharedFromBadge({ sharedFrom, channels, onChannelClick }: SharedFromBadgeProps) {
+  const sourceChannel = channels?.find((c) => c.id === sharedFrom.streamId)
+  const sourceSlug = sourceChannel?.slug
+  const sourceName = sourceChannel?.name || "another channel"
+  const actorName = getDisplayName(sharedFrom.actorName, sharedFrom.actorEmail)
+
+  return (
+    <div
+      className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded text-xs"
+      style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}
+    >
+      <Forward className="w-3 h-3" />
+      <span>Shared by {actorName} from</span>
+      {sourceSlug ? (
+        <button
+          onClick={(e) => onChannelClick?.(sourceSlug, e)}
+          className="inline-flex items-center gap-0.5 font-medium transition-colors hover:underline"
+          style={{ color: "var(--accent-primary)" }}
+          title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
+        >
+          <Hash className="w-3 h-3" />
+          {sourceSlug}
+        </button>
+      ) : (
+        <span className="font-medium">{sourceName}</span>
+      )}
     </div>
   )
 }

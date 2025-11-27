@@ -96,10 +96,19 @@ export interface Message {
   replyToMessageId?: string | null
   isEdited?: boolean
   updatedAt?: string
-  messageType?: "message" | "system"
+  messageType?: "message" | "system" | "shared"
   metadata?: SystemMessageMetadata
   mentions?: Mention[]
   linkedChannels?: LinkedChannel[]
+  sharedFrom?: SharedFromInfo
+}
+
+export interface SharedFromInfo {
+  eventId: string
+  streamId: string
+  actorName?: string
+  actorEmail: string
+  createdAt: string
 }
 
 export interface SystemMessageMetadata {

@@ -30,20 +30,36 @@ const SYSTEM_EVENT_TYPES = ["member_joined", "member_left", "stream_created", "t
 // Convert StreamEvent to Message format for MessageList compatibility
 function eventToMessage(event: StreamEvent, streamId?: string): Message {
   const isSystemEvent = SYSTEM_EVENT_TYPES.includes(event.eventType)
+  const isSharedEvent = event.eventType === "shared"
+
+  // For shared events, use the original event's content
+  const originalEvent = event.originalEvent
+  const content = isSharedEvent && originalEvent ? originalEvent.content : event.content
+  const mentions = isSharedEvent && originalEvent ? originalEvent.mentions : event.mentions
 
   return {
     id: event.id,
     userId: event.actorId,
     email: event.actorEmail,
     name: event.actorName,
-    message: event.content || "",
+    message: content || "",
     timestamp: event.createdAt,
     channelId: streamId || event.streamId,
     replyCount: event.replyCount,
     isEdited: event.isEdited,
     updatedAt: event.editedAt,
-    messageType: isSystemEvent ? "system" : "message",
-    mentions: event.mentions,
+    messageType: isSystemEvent ? "system" : isSharedEvent ? "shared" : "message",
+    mentions: mentions,
+    // For shared events, include info about the original
+    sharedFrom: isSharedEvent && originalEvent
+      ? {
+          eventId: event.originalEventId!,
+          streamId: originalEvent.streamId,
+          actorName: originalEvent.actorName,
+          actorEmail: originalEvent.actorEmail,
+          createdAt: originalEvent.createdAt,
+        }
+      : undefined,
     // Map system event payload to metadata for SystemMessage component
     metadata: isSystemEvent
       ? {
