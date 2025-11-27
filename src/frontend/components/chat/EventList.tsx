@@ -35,6 +35,7 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
     id: event.id,
     userId: event.actorId,
     email: event.actorEmail,
+    name: event.actorName,
     message: event.content || "",
     timestamp: event.createdAt,
     channelId: streamId || event.streamId,

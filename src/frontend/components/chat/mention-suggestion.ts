@@ -46,6 +46,24 @@ export function createUserSuggestion(options: MentionSuggestionOptions): Partial
           name: user.name,
         }))
     },
+    // Custom command to pass all attributes
+    command: ({ editor, range, props }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent([
+          {
+            type: "userMention",
+            attrs: {
+              id: props.id,
+              label: props.label,
+            },
+          },
+          { type: "text", text: " " },
+        ])
+        .run()
+    },
     render: () => {
       let component: ReactRenderer<MentionListRef> | null = null
       let popup: TippyInstance[] | null = null
@@ -123,6 +141,27 @@ export function createChannelSuggestion(options: MentionSuggestionOptions): Part
           type: isCrosspost ? ("crosspost" as const) : ("channel" as const),
           slug: channel.slug,
         }))
+    },
+    // Custom command to pass all attributes including slug and type
+    command: ({ editor, range, props }) => {
+      // Delete the trigger and query text, then insert the mention node
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent([
+          {
+            type: "channelMention",
+            attrs: {
+              id: props.id,
+              label: props.label,
+              type: props.type,
+              slug: props.slug,
+            },
+          },
+          { type: "text", text: " " }, // Add space after mention
+        ])
+        .run()
     },
     render: () => {
       let component: ReactRenderer<MentionListRef> | null = null

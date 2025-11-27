@@ -256,16 +256,37 @@ export function createStreamRoutes(
         return
       }
 
-      const { name, description, visibility, streamType } = req.body
-
-      if (!name || typeof name !== "string" || name.trim().length === 0) {
-        res.status(400).json({ error: "Name is required" })
-        return
-      }
+      const { name, description, visibility, streamType, participantIds } = req.body
 
       const type = streamType || "channel"
       if (!["channel", "dm"].includes(type)) {
         res.status(400).json({ error: "Invalid stream type" })
+        return
+      }
+
+      // Handle DM creation differently
+      if (type === "dm") {
+        if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+          res.status(400).json({ error: "participantIds is required for DMs" })
+          return
+        }
+
+        const { stream, created } = await streamService.createDM(workspaceId, userId, participantIds)
+
+        res.status(created ? 201 : 200).json({
+          ...stream,
+          isMember: true,
+          unreadCount: 0,
+          lastReadAt: new Date().toISOString(),
+          notifyLevel: "all",
+          created, // Let frontend know if it was newly created
+        })
+        return
+      }
+
+      // Channel creation requires name
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        res.status(400).json({ error: "Name is required for channels" })
         return
       }
 

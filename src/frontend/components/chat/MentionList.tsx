@@ -106,15 +106,8 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(({ items
         >
           {item.type === "user" ? (
             <>
-              <Avatar name={item.email || item.name || ""} size="sm" />
-              <div className="flex flex-col min-w-0">
-                <span className="font-medium truncate">{item.name || item.label}</span>
-                {item.email && (
-                  <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
-                    {item.email}
-                  </span>
-                )}
-              </div>
+              <Avatar name={item.name || item.label || ""} size="sm" />
+              <span className="font-medium truncate">{item.name || item.label}</span>
             </>
           ) : item.type === "crosspost" ? (
             <>

@@ -87,6 +87,7 @@ export interface Message {
   id: string
   userId?: string
   email: string
+  name?: string
   message: string
   timestamp: string
   channelId: string
@@ -253,12 +254,24 @@ export function getOpenMode(e: React.MouseEvent): OpenMode {
   return "replace"
 }
 
+// Get display name (prefer name, fallback to email prefix)
+// If name looks like an email, use the prefix instead
+export function getDisplayName(name?: string | null, email?: string): string {
+  // If name exists and doesn't look like an email, use it
+  if (name && !name.includes("@")) return name
+  // Otherwise extract from email
+  if (email) return email.split("@")[0]
+  if (name) return name.split("@")[0]
+  return "Unknown"
+}
+
 // Convert StreamEvent to legacy Message format (for gradual migration)
 export function eventToMessage(event: StreamEvent, streamId: string): Message {
   return {
     id: event.id,
     userId: event.actorId,
     email: event.actorEmail,
+    name: event.actorName,
     message: event.content || "",
     timestamp: event.createdAt,
     channelId: streamId,

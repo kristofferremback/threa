@@ -6,7 +6,7 @@ import { MessageRevisionsModal } from "./MessageRevisionsModal"
 import { MessageContent, type MessageMention } from "./MessageContent"
 import { RichTextEditor, type RichTextEditorRef } from "./RichTextEditor"
 import type { Message, OpenMode, LinkedChannel } from "../../types"
-import { getOpenMode } from "../../types"
+import { getOpenMode, getDisplayName } from "../../types"
 
 interface MessageItemProps {
   message: Message
@@ -150,9 +150,9 @@ export function MessageItem({
       onContextMenu={handleContextMenu}
     >
       <div className="mb-1 flex items-center gap-2">
-        <Avatar name={message.email} size="sm" />
+        <Avatar name={getDisplayName(message.name, message.email)} size="sm" />
         <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {message.email}
+          {getDisplayName(message.name, message.email)}
         </span>
         <RelativeTime
           date={message.timestamp}

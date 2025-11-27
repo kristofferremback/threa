@@ -9,6 +9,7 @@ import { CreateChannelModal } from "./CreateChannelModal"
 import { ChannelSettingsModal } from "./ChannelSettingsModal"
 import { CommandPalette } from "./CommandPalette"
 import { BrowseChannelsModal } from "./BrowseChannelsModal"
+import { NewDMModal } from "./NewDMModal"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
@@ -18,6 +19,7 @@ export function LayoutSystem() {
   const { isAuthenticated, state, logout, user } = useAuth()
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [showNewDM, setShowNewDM] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showBrowseChannels, setShowBrowseChannels] = useState(false)
@@ -317,6 +319,54 @@ export function LayoutSystem() {
     [bootstrapData, updateStream, addStream, handleSelectStream],
   )
 
+  // Handle creating a new DM
+  const handleCreateDM = useCallback(
+    async (participantIds: string[]) => {
+      if (!bootstrapData) return
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ streamType: "dm", participantIds }),
+        })
+        if (!res.ok) {
+          const error = await res.json()
+          throw new Error(error.error || "Failed to create DM")
+        }
+        const data = await res.json()
+        const dmStream: Stream = {
+          ...data,
+          isMember: true,
+          pinnedAt: null,
+        }
+
+        // Add or update stream in local state
+        const existingStream = bootstrapData.streams.find((s) => s.id === dmStream.id)
+        if (existingStream) {
+          updateStream(dmStream)
+        } else {
+          addStream(dmStream)
+        }
+
+        // Open the DM
+        openItem(
+          {
+            title: dmStream.name || "Direct Message",
+            type: "stream",
+            data: { streamId: dmStream.id },
+          },
+          "replace",
+        )
+        setShowNewDM(false)
+      } catch (error) {
+        console.error("Failed to create DM:", error)
+        throw error
+      }
+    },
+    [bootstrapData, updateStream, addStream, openItem],
+  )
+
   // Helper to get stream from slug or ID
   const getStreamFromSlug = (streamSlug?: string) => {
     if (!streamSlug || !bootstrapData) return undefined
@@ -455,9 +505,41 @@ export function LayoutSystem() {
       <Sidebar
         workspace={bootstrapData.workspace}
         streams={bootstrapData.streams}
+        users={bootstrapData.users}
         activeStreamSlug={isActivityActive ? null : activeStreamSlug}
+        currentUserId={user?.id}
         onSelectStream={handleSelectStream}
+        onStartDM={async (userId) => {
+          // Create/find DM with this user and open it
+          try {
+            const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ streamType: "dm", participantIds: [userId] }),
+            })
+            if (!res.ok) throw new Error("Failed to create DM")
+            const data = await res.json()
+            const dmStream: Stream = { ...data, isMember: true, pinnedAt: null }
+
+            // Add or update stream in local state
+            const existingStream = bootstrapData.streams.find((s) => s.id === dmStream.id)
+            if (existingStream) {
+              updateStream(dmStream)
+            } else {
+              addStream(dmStream)
+            }
+
+            openItem(
+              { title: dmStream.name || "Direct Message", type: "stream", data: { streamId: dmStream.id } },
+              "replace",
+            )
+          } catch (error) {
+            console.error("Failed to start DM:", error)
+          }
+        }}
         onCreateChannel={() => setShowCreateChannel(true)}
+        onCreateDM={() => setShowNewDM(true)}
         onStreamSettings={(stream) => setStreamToEdit(stream)}
         onInvitePeople={() => setShowInviteModal(true)}
         onLogout={logout}
@@ -538,6 +620,14 @@ export function LayoutSystem() {
           setShowBrowseChannels(false)
           setShowCreateChannel(true)
         }}
+      />
+
+      <NewDMModal
+        isOpen={showNewDM}
+        onClose={() => setShowNewDM(false)}
+        onCreateDM={handleCreateDM}
+        users={bootstrapData.users}
+        currentUserId={user?.id || ""}
       />
     </div>
   )

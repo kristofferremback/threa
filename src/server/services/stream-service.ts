@@ -394,6 +394,133 @@ export class StreamService {
     return result.rows[0] ? this.mapStreamRow(result.rows[0]) : null
   }
 
+  /**
+   * Find an existing DM with the exact same participants.
+   * Returns null if no matching DM exists.
+   */
+  async findExistingDM(workspaceId: string, participantIds: string[]): Promise<Stream | null> {
+    if (participantIds.length < 2) {
+      return null
+    }
+
+    // Sort participant IDs for consistent comparison
+    const sortedIds = [...participantIds].sort()
+
+    // Find DM streams that have exactly these participants
+    // 1. Find DMs with the right number of members
+    // 2. Check that all participants are present
+    const result = await this.pool.query(
+      sql`SELECT s.* FROM streams s
+          WHERE s.workspace_id = ${workspaceId}
+            AND s.stream_type = 'dm'
+            AND s.archived_at IS NULL
+            AND (
+              SELECT COUNT(*) FROM stream_members sm
+              WHERE sm.stream_id = s.id AND sm.left_at IS NULL
+            ) = ${sortedIds.length}
+            AND NOT EXISTS (
+              SELECT 1 FROM unnest(${sortedIds}::text[]) as pid
+              WHERE pid NOT IN (
+                SELECT user_id FROM stream_members sm2
+                WHERE sm2.stream_id = s.id AND sm2.left_at IS NULL
+              )
+            )`,
+    )
+
+    return result.rows[0] ? this.mapStreamRow(result.rows[0]) : null
+  }
+
+  /**
+   * Create a DM or return existing one with same participants.
+   * Generates name from participant names.
+   */
+  async createDM(
+    workspaceId: string,
+    creatorId: string,
+    participantIds: string[],
+  ): Promise<{ stream: Stream; created: boolean }> {
+    // Ensure creator is in participants
+    const allParticipants = [...new Set([creatorId, ...participantIds])]
+
+    if (allParticipants.length < 2) {
+      throw new Error("DM requires at least 2 participants")
+    }
+
+    // Check for existing DM
+    const existing = await this.findExistingDM(workspaceId, allParticipants)
+    if (existing) {
+      return { stream: existing, created: false }
+    }
+
+    // Get participant names for DM name
+    const usersResult = await this.pool.query(
+      sql`SELECT id, name, email FROM users WHERE id = ANY(${allParticipants})`,
+    )
+    const users = usersResult.rows
+
+    // Generate name from participants (excluding creator for display)
+    const otherParticipants = users.filter((u) => u.id !== creatorId)
+    const dmName = otherParticipants.map((u) => u.name || u.email.split("@")[0]).join(", ")
+
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      const streamId = generateId("stream")
+
+      // Create DM stream (no slug for DMs)
+      const result = await client.query<Stream>(
+        sql`INSERT INTO streams (
+              id, workspace_id, stream_type, name, visibility, metadata
+            )
+            VALUES (
+              ${streamId}, ${workspaceId}, 'dm',
+              ${dmName}, 'private',
+              ${JSON.stringify({ participant_ids: allParticipants.sort() })}
+            )
+            RETURNING *`,
+      )
+
+      const stream = result.rows[0]
+
+      // Add all participants as members
+      for (const participantId of allParticipants) {
+        const role = participantId === creatorId ? "owner" : "member"
+        await client.query(
+          sql`INSERT INTO stream_members (stream_id, user_id, role, added_by_user_id)
+              VALUES (${streamId}, ${participantId}, ${role}, ${creatorId})`,
+        )
+      }
+
+      // Emit outbox event for DM creation
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, 'stream.created', ${JSON.stringify({
+              stream_id: streamId,
+              workspace_id: workspaceId,
+              stream_type: "dm",
+              name: dmName,
+              visibility: "private",
+              creator_id: creatorId,
+              participant_ids: allParticipants,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.info({ streamId, participantCount: allParticipants.length }, "DM created")
+
+      return { stream: this.mapStreamRow(stream), created: true }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   async getStreamBySlug(workspaceId: string, slug: string): Promise<Stream | null> {
     const result = await this.pool.query(
       sql`SELECT * FROM streams

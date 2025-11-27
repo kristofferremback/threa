@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, PanelRightOpen, Hash, ArrowLeft } from "luci
 import { Avatar, Spinner, RelativeTime } from "../ui"
 import { MessageContent } from "./MessageContent"
 import type { Message, OpenMode } from "../../types"
-import { getOpenMode } from "../../types"
+import { getOpenMode, getDisplayName } from "../../types"
 
 interface ThreadContextProps {
   rootMessage: Message | null
@@ -101,7 +101,7 @@ function AncestorMessage({ message, onOpenThread, onChannelClick }: AncestorMess
       <div className="flex-1">
         <div className="flex items-baseline justify-between mb-0.5">
           <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-            {message.email}
+            {getDisplayName(message.name, message.email)}
           </span>
           <RelativeTime date={message.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
         </div>
@@ -138,12 +138,13 @@ interface RootMessageDisplayProps {
 }
 
 function RootMessageDisplay({ message, onOpenThread, onChannelClick }: RootMessageDisplayProps) {
+  const displayName = getDisplayName(message.name, message.email)
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <Avatar name={message.email} size="sm" />
+        <Avatar name={displayName} size="sm" />
         <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {message.email}
+          {displayName}
         </span>
         <RelativeTime date={message.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
       </div>

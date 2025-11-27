@@ -15,18 +15,29 @@ import {
   LogIn,
   Compass,
   PanelRightOpen,
+  MessageCircle,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
 import type { Stream, Workspace, OpenMode } from "../../types"
 import { getOpenMode } from "../../types"
 
+interface User {
+  id: string
+  name: string | null
+  email: string
+}
+
 interface SidebarProps {
   workspace: Workspace
   streams: Stream[]
+  users: User[]
   activeStreamSlug: string | null
+  currentUserId?: string
   onSelectStream: (stream: Stream, mode: OpenMode) => void
+  onStartDM: (userId: string) => void
   onCreateChannel: () => void
+  onCreateDM?: () => void
   onStreamSettings: (stream: Stream) => void
   onInvitePeople: () => void
   onLogout: () => void
@@ -43,9 +54,13 @@ interface SidebarProps {
 export function Sidebar({
   workspace,
   streams,
+  users,
   activeStreamSlug,
+  currentUserId,
   onSelectStream,
+  onStartDM,
   onCreateChannel,
+  onCreateDM,
   onStreamSettings,
   onInvitePeople,
   onLogout,
@@ -63,6 +78,12 @@ export function Sidebar({
   // Use truthy check for pinnedAt since it might be undefined or null
   const pinnedChannels = memberChannels.filter((s) => !!s.pinnedAt)
   const unpinnedChannels = memberChannels.filter((s) => !s.pinnedAt)
+
+  // DMs the user is part of
+  const directMessages = streams.filter((s) => s.streamType === "dm" && s.isMember)
+
+  // Other users in workspace (excluding current user)
+  const otherUsers = users.filter((u) => u.id !== currentUserId)
 
   const hasNoChannels = memberChannels.length === 0
 
@@ -138,6 +159,19 @@ export function Sidebar({
             />
           </>
         )}
+
+        {/* Direct Messages Section */}
+        <DMSection
+          dmStreams={directMessages}
+          users={otherUsers}
+          activeStreamSlug={activeStreamSlug}
+          currentUserId={currentUserId}
+          onSelectStream={onSelectStream}
+          onStartDM={onStartDM}
+          onCreateDM={onCreateDM}
+          onPinStream={onPinStream}
+          onUnpinStream={onUnpinStream}
+        />
       </div>
 
       <UserFooter onLogout={onLogout} />
@@ -435,6 +469,324 @@ function StreamItem({ stream, isActive, onClick, onSettings, onPin, onUnpin, onL
             </>
           )}
         </Dropdown>
+      </div>
+    </div>
+  )
+}
+
+// ==========================================================================
+// DM Section - Shows all users, ordered by recency
+// ==========================================================================
+
+interface DMSectionProps {
+  dmStreams: Stream[]
+  users: User[]
+  activeStreamSlug: string | null
+  currentUserId?: string
+  onSelectStream: (stream: Stream, mode: OpenMode) => void
+  onStartDM: (userId: string) => void
+  onCreateDM?: () => void
+  onPinStream?: (streamId: string) => void
+  onUnpinStream?: (streamId: string) => void
+}
+
+// Helper to get the "other" user's ID from a DM's metadata
+function getDMParticipantIds(dm: Stream): string[] {
+  const metadata = dm.metadata as { participant_ids?: string[] } | undefined
+  return metadata?.participant_ids || []
+}
+
+// Get display name for user
+function getUserDisplayName(user: User): string {
+  return user.name || user.email.split("@")[0]
+}
+
+function DMSection({
+  dmStreams,
+  users,
+  activeStreamSlug,
+  currentUserId,
+  onSelectStream,
+  onStartDM,
+  onCreateDM,
+  onPinStream,
+  onUnpinStream,
+}: DMSectionProps) {
+  // Build a map of userId -> DM stream (for 1-on-1 DMs)
+  const userToDM = new Map<string, Stream>()
+  for (const dm of dmStreams) {
+    const participantIds = getDMParticipantIds(dm)
+    // Only map 1-on-1 DMs (2 participants)
+    if (participantIds.length === 2) {
+      const otherUserId = participantIds.find((id) => id !== currentUserId)
+      if (otherUserId) {
+        userToDM.set(otherUserId, dm)
+      }
+    }
+  }
+
+  // Group DMs (more than 2 participants)
+  const groupDMs = dmStreams.filter((dm) => getDMParticipantIds(dm).length > 2)
+
+  // Create sorted list: users with DMs first (by updatedAt), then users without DMs (by name)
+  const sortedUsers = [...users].sort((a, b) => {
+    const dmA = userToDM.get(a.id)
+    const dmB = userToDM.get(b.id)
+
+    // Both have DMs - sort by updatedAt descending
+    if (dmA && dmB) {
+      const timeA = dmA.updatedAt ? new Date(dmA.updatedAt).getTime() : 0
+      const timeB = dmB.updatedAt ? new Date(dmB.updatedAt).getTime() : 0
+      return timeB - timeA
+    }
+
+    // Only A has DM - A comes first
+    if (dmA && !dmB) return -1
+
+    // Only B has DM - B comes first
+    if (!dmA && dmB) return 1
+
+    // Neither has DM - sort by name
+    const nameA = getUserDisplayName(a).toLowerCase()
+    const nameB = getUserDisplayName(b).toLowerCase()
+    return nameA.localeCompare(nameB)
+  })
+
+  return (
+    <div className="mb-4">
+      <div className="mb-2 px-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          Direct messages
+        </span>
+        {onCreateDM && (
+          <button
+            onClick={onCreateDM}
+            className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+            style={{ color: "var(--text-muted)" }}
+            title="New group message"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-0.5">
+        {/* Group DMs first */}
+        {groupDMs.map((dm) => (
+          <DMItem
+            key={dm.id}
+            stream={dm}
+            displayName={dm.name || "Group"}
+            isActive={activeStreamSlug === dm.id || activeStreamSlug === dm.slug}
+            onClick={(e) => onSelectStream(dm, getOpenMode(e))}
+            onPin={onPinStream ? () => onPinStream(dm.id) : undefined}
+            onUnpin={onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
+          />
+        ))}
+
+        {/* Individual users */}
+        {sortedUsers.map((user) => {
+          const dm = userToDM.get(user.id)
+          return (
+            <UserDMItem
+              key={user.id}
+              user={user}
+              dm={dm}
+              isActive={dm ? activeStreamSlug === dm.id || activeStreamSlug === dm.slug : false}
+              onClick={(e) => {
+                if (dm) {
+                  onSelectStream(dm, getOpenMode(e))
+                } else {
+                  onStartDM(user.id)
+                }
+              }}
+              onPin={dm && onPinStream ? () => onPinStream(dm.id) : undefined}
+              onUnpin={dm && onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
+            />
+          )
+        })}
+
+        {sortedUsers.length === 0 && groupDMs.length === 0 && (
+          <div className="px-2 py-3 text-center">
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              No other users in workspace
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface DMItemProps {
+  stream: Stream
+  displayName: string
+  isActive: boolean
+  onClick: (e: React.MouseEvent) => void
+  onPin?: () => void
+  onUnpin?: () => void
+}
+
+function DMItem({ stream, displayName, isActive, onClick, onPin, onUnpin }: DMItemProps) {
+  const isPinned = !!stream.pinnedAt
+
+  return (
+    <div
+      className={clsx(
+        "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
+        isActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
+      )}
+    >
+      <button
+        onClick={onClick}
+        className="flex items-center gap-2 flex-1 min-w-0"
+        title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
+      >
+        <MessageCircle
+          className="h-4 w-4 flex-shrink-0"
+          style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
+        />
+        <span
+          className="text-sm truncate flex-1 text-left"
+          style={{
+            color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+            fontWeight: stream.unreadCount > 0 ? 600 : 400,
+          }}
+        >
+          {displayName}
+        </span>
+      </button>
+
+      {stream.unreadCount > 0 && (
+        <span
+          className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+          style={{ background: "var(--accent-secondary)", color: "white" }}
+        >
+          {stream.unreadCount}
+        </span>
+      )}
+
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex items-center gap-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick({ ...e, altKey: true } as React.MouseEvent)
+          }}
+          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Open to side"
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" />
+        </button>
+        <Dropdown
+          align="left"
+          trigger={
+            <button
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          }
+        >
+          {isPinned ? (
+            <DropdownItem onClick={onUnpin} icon={<PinOff className="h-4 w-4" />}>
+              Unpin conversation
+            </DropdownItem>
+          ) : (
+            <DropdownItem onClick={onPin} icon={<Pin className="h-4 w-4" />}>
+              Pin conversation
+            </DropdownItem>
+          )}
+        </Dropdown>
+      </div>
+    </div>
+  )
+}
+
+// Individual user item (may or may not have existing DM)
+interface UserDMItemProps {
+  user: User
+  dm: Stream | undefined
+  isActive: boolean
+  onClick: (e: React.MouseEvent) => void
+  onPin?: () => void
+  onUnpin?: () => void
+}
+
+function UserDMItem({ user, dm, isActive, onClick, onPin, onUnpin }: UserDMItemProps) {
+  const isPinned = dm ? !!dm.pinnedAt : false
+  const displayName = getUserDisplayName(user)
+  const hasUnread = dm && dm.unreadCount > 0
+
+  return (
+    <div
+      className={clsx(
+        "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
+        isActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
+      )}
+    >
+      <button
+        onClick={onClick}
+        className="flex items-center gap-2 flex-1 min-w-0"
+        title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
+      >
+        <Avatar name={displayName} size="xs" />
+        <span
+          className="text-sm truncate flex-1 text-left"
+          style={{
+            color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+            fontWeight: hasUnread ? 600 : 400,
+          }}
+        >
+          {displayName}
+        </span>
+      </button>
+
+      {hasUnread && (
+        <span
+          className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+          style={{ background: "var(--accent-secondary)", color: "white" }}
+        >
+          {dm.unreadCount}
+        </span>
+      )}
+
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex items-center gap-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick({ ...e, altKey: true } as React.MouseEvent)
+          }}
+          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Open to side"
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" />
+        </button>
+        {dm && (
+          <Dropdown
+            align="left"
+            trigger={
+              <button
+                className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            }
+          >
+            {isPinned ? (
+              <DropdownItem onClick={onUnpin} icon={<PinOff className="h-4 w-4" />}>
+                Unpin conversation
+              </DropdownItem>
+            ) : (
+              <DropdownItem onClick={onPin} icon={<Pin className="h-4 w-4" />}>
+                Pin conversation
+              </DropdownItem>
+            )}
+          </Dropdown>
+        )}
       </div>
     </div>
   )
