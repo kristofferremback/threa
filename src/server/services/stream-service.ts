@@ -338,6 +338,12 @@ export class StreamService {
               )`,
         )
 
+        // Mark as read for the creator (they created it, so they've seen it)
+        await client.query(
+          sql`UPDATE stream_members SET last_read_event_id = ${createdEventId}, last_read_at = NOW()
+              WHERE stream_id = ${streamId} AND user_id = ${params.creatorId}`,
+        )
+
         // Emit event for real-time updates
         const eventOutboxId = generateId("outbox")
         await client.query(
@@ -647,6 +653,19 @@ export class StreamService {
             DO UPDATE SET last_read_event_id = ${eventId}, last_read_at = NOW()`,
       )
 
+      // Emit read cursor update so other devices see the message as read
+      const readCursorOutboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
+              stream_id: threadStream.id,
+              user_id: params.actorId,
+              event_id: eventId,
+              workspace_id: params.workspaceId,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
+
       await client.query("COMMIT")
 
       const event = await this.getEventWithDetails(eventId)
@@ -885,11 +904,24 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      // Update read cursor for the author
+      // Update read cursor for the author (they've read their own message)
       await client.query(
         sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
             WHERE stream_id = ${params.streamId} AND user_id = ${params.actorId}`,
       )
+
+      // Emit read cursor update so other devices see the message as read
+      const readCursorOutboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
+              stream_id: params.streamId,
+              user_id: params.actorId,
+              event_id: eventId,
+              workspace_id: stream.workspace_id,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
 
       await client.query("COMMIT")
 
@@ -1112,6 +1144,12 @@ export class StreamService {
         sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, payload)
             VALUES (${eventId}, ${streamId}, 'member_joined', ${userId},
                     ${JSON.stringify({ user_id: userId })})`,
+      )
+
+      // Mark as read for the joining user (they just joined, so they've seen it)
+      await client.query(
+        sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
+            WHERE stream_id = ${streamId} AND user_id = ${userId}`,
       )
 
       // Get stream info
