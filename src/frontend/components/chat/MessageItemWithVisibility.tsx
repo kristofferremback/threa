@@ -59,7 +59,7 @@ export function MessageItemWithVisibility({
     (element: HTMLDivElement | null) => {
       // Set the visibility ref
       if (visibilityRef) {
-        (visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = element
+        ;(visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = element
       }
       // Call parent's ref callback
       onSetRef?.(element)

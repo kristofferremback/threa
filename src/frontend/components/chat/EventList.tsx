@@ -82,7 +82,9 @@ export function EventList({
   const messages = useMemo(
     () =>
       events
-        .filter((e) => e.eventType === "message" || e.eventType === "shared" || SYSTEM_EVENT_TYPES.includes(e.eventType))
+        .filter(
+          (e) => e.eventType === "message" || e.eventType === "shared" || SYSTEM_EVENT_TYPES.includes(e.eventType),
+        )
         .map((e) => eventToMessage(e, streamId)),
     [events, streamId],
   )
@@ -111,4 +113,3 @@ export function EventList({
     />
   )
 }
-

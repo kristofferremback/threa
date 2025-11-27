@@ -71,9 +71,7 @@ export function StreamInterface({
       if (!streamId) return
 
       // Check if thread already exists (by branchedFromEventId)
-      const existingThread = streams.find(
-        (s) => s.branchedFromEventId === eventId || s.id === eventId,
-      )
+      const existingThread = streams.find((s) => s.branchedFromEventId === eventId || s.id === eventId)
 
       // Pass either the existing thread ID or the event ID (for pending thread)
       onOpenThread?.(existingThread?.id || eventId, streamId, mode)
@@ -100,14 +98,11 @@ export function StreamInterface({
   )
 
   // Handler for cross-posting to another stream
-  const handleCrosspostToStream = useCallback(
-    async (_eventId: string, _targetStreamId: string) => {
-      // In the new model, this creates a shared_ref event in the target stream
-      // For now, just show a toast - full implementation would use the share endpoint
-      toast.info("Cross-post feature coming soon")
-    },
-    [],
-  )
+  const handleCrosspostToStream = useCallback(async (_eventId: string, _targetStreamId: string) => {
+    // In the new model, this creates a shared_ref event in the target stream
+    // For now, just show a toast - full implementation would use the share endpoint
+    toast.info("Cross-post feature coming soon")
+  }, [])
 
   return (
     <div className="flex h-full w-full flex-col" style={{ background: "var(--bg-primary)", minHeight: "100%" }}>
@@ -183,4 +178,3 @@ export function StreamInterface({
 }
 
 export type { OpenMode }
-

@@ -131,11 +131,11 @@ export function createChannelSuggestion(options: MentionSuggestionOptions): Part
 
       return options.channels
         .filter((channel) => {
-          // For crossposts, only show channels with slugs (no DMs)
-          if (isCrosspost && !channel.slug) return false
+          // Only show channels with slugs (no DMs) - DMs can't be referenced inline
+          if (!channel.slug) return false
 
           if (!searchQuery) return true
-          return fuzzyMatch(searchQuery, channel.name) || fuzzyMatch(searchQuery, channel.slug || "")
+          return fuzzyMatch(searchQuery, channel.name) || fuzzyMatch(searchQuery, channel.slug)
         })
         .slice(0, 8)
         .map((channel) => ({

@@ -111,7 +111,7 @@ export function MessageItem({
     if (typeof visibilityRef === "function") {
       visibilityRef(el)
     } else if (visibilityRef) {
-      (visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+      ;(visibilityRef as React.MutableRefObject<HTMLDivElement | null>).current = el
     }
   }
 
@@ -210,7 +210,7 @@ export function MessageItem({
             <RichTextEditor
               ref={editorRef}
               initialContent={message.message}
-              initialMentions={message.mentions?.map(m => ({
+              initialMentions={message.mentions?.map((m) => ({
                 type: m.type,
                 id: m.id,
                 label: m.label,
@@ -330,9 +330,7 @@ export function MessageItem({
           isEdited={Boolean(message.isEdited)}
           isRead={isServerRead}
           isThreadReply={Boolean(message.replyToMessageId || message.conversationId)}
-          isAlreadySharedToChannel={Boolean(
-            message.linkedChannels?.some((c) => c.id === message.channelId),
-          )}
+          isAlreadySharedToChannel={Boolean(message.linkedChannels?.some((c) => c.id === message.channelId))}
           onClose={() => setContextMenu(null)}
           onEdit={isOwnMessage && onEdit ? handleStartEdit : undefined}
           onShowRevisions={message.isEdited ? () => setShowRevisions(true) : undefined}
@@ -386,12 +384,8 @@ function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBa
             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium transition-colors"
             style={{
               // Current channel: warm amber/gold, Other channels: neutral with blue hover
-              background: isCurrent
-                ? "rgba(245, 158, 11, 0.15)"
-                : "var(--bg-tertiary)",
-              color: isCurrent
-                ? "rgb(245, 158, 11)"
-                : "var(--text-secondary)",
+              background: isCurrent ? "rgba(245, 158, 11, 0.15)" : "var(--bg-tertiary)",
+              color: isCurrent ? "rgb(245, 158, 11)" : "var(--text-secondary)",
               cursor: isCurrent ? "default" : "pointer",
               border: isCurrent ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid transparent",
             }}

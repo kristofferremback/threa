@@ -72,12 +72,18 @@ export function ChatInput({
       </div>
       <div className="mt-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
         <span className="opacity-60">
-          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>Enter</kbd>
-          {" "}to send,{" "}
-          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>Shift</kbd>
+          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>
+            Enter
+          </kbd>{" "}
+          to send,{" "}
+          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>
+            Shift
+          </kbd>
           +
-          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>Enter</kbd>
-          {" "}for newline • **bold** *italic* `code` @mentions #channels
+          <kbd className="px-1 py-0.5 rounded text-[10px]" style={{ background: "var(--bg-tertiary)" }}>
+            Enter
+          </kbd>{" "}
+          for newline • **bold** *italic* `code` @mentions #channels
         </span>
       </div>
     </form>
