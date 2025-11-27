@@ -4,6 +4,7 @@ import { getJobQueue, EmbedJobData, JobPriority } from "../lib/job-queue"
 import { generateEmbeddingsBatch, calculateCost, Models } from "../lib/ai-providers"
 import { AIUsageService } from "../services/ai-usage-service"
 import { logger } from "../lib/logger"
+import { getTextMessageEmbeddingTable, getEmbeddingProvider } from "../lib/embedding-tables"
 
 /**
  * Start the embedding worker.
@@ -13,7 +14,9 @@ export async function startEmbeddingWorker(pool: Pool): Promise<void> {
   const boss = getJobQueue()
   const usageService = new AIUsageService(pool)
 
-  logger.info("Starting embedding worker")
+  const embeddingTable = getTextMessageEmbeddingTable()
+  const provider = getEmbeddingProvider()
+  logger.info({ embeddingTable, provider }, "Starting embedding worker")
 
   // Process embeddings in batches of up to 50
   await boss.work<EmbedJobData>(
@@ -46,9 +49,7 @@ export async function startEmbeddingWorker(pool: Pool): Promise<void> {
           }
 
           // Filter out empty content
-          const validJobs = workspaceJobs.filter(
-            (j) => j.data.content && j.data.content.trim().length > 0,
-          )
+          const validJobs = workspaceJobs.filter((j) => j.data.content && j.data.content.trim().length > 0)
 
           if (validJobs.length === 0) continue
 
@@ -61,30 +62,28 @@ export async function startEmbeddingWorker(pool: Pool): Promise<void> {
             const job = validJobs[i]
             const embedding = embeddings[i]
 
-            // Store in database
+            // Store in the appropriate embedding table (based on EMBEDDING_PROVIDER env)
             await pool.query(
-              sql`UPDATE text_messages
-                SET embedding = ${JSON.stringify(embedding.embedding)}::vector,
-                    embedded_at = NOW()
-                WHERE id = ${job.data.textMessageId}`,
+              sql`INSERT INTO ${sql.raw(embeddingTable)} (text_message_id, embedding, model)
+                VALUES (${job.data.textMessageId}, ${JSON.stringify(embedding.embedding)}::vector, ${embedding.model})
+                ON CONFLICT (text_message_id) DO UPDATE
+                SET embedding = EXCLUDED.embedding, model = EXCLUDED.model, created_at = NOW()`,
             )
 
-            // Track usage
+            // Track usage (local models are free, API models have cost)
+            const isLocalModel = !embedding.model.startsWith("text-embedding")
             await usageService.trackUsage({
               workspaceId: job.data.workspaceId,
               jobType: "embed",
-              model: Models.EMBEDDING,
+              model: embedding.model,
               inputTokens: embedding.tokens,
-              costCents: calculateCost(Models.EMBEDDING, { inputTokens: embedding.tokens }),
+              costCents: isLocalModel ? 0 : calculateCost(Models.EMBEDDING, { inputTokens: embedding.tokens }),
               eventId: job.data.eventId,
               jobId: job.id,
             })
           }
 
-          logger.info(
-            { workspaceId, count: validJobs.length },
-            "Embeddings stored successfully",
-          )
+          logger.info({ workspaceId, count: validJobs.length }, "Embeddings stored successfully")
         } catch (err) {
           logger.error({ err, workspaceId }, "Failed to process embeddings for workspace")
           throw err // Re-throw to trigger retry
@@ -111,14 +110,14 @@ export async function queueEmbedding(params: {
     return null
   }
 
-  return await boss.send<EmbedJobData>(
+  return await boss.send(
     "ai.embed",
     {
       workspaceId: params.workspaceId,
       textMessageId: params.textMessageId,
       content: params.content,
       eventId: params.eventId,
-    },
+    } satisfies EmbedJobData,
     {
       priority: JobPriority.NORMAL,
       retryLimit: 3,
@@ -139,8 +138,9 @@ export async function backfillEmbeddings(
 ): Promise<{ queued: number; skipped: number }> {
   const batchSize = options.batchSize ?? 100
   const limit = options.limit ?? 10000
+  const embeddingTable = getTextMessageEmbeddingTable()
 
-  // Find messages without embeddings
+  // Find messages without embeddings in the current provider's table
   const result = await pool.query<{
     id: string
     content: string
@@ -150,8 +150,9 @@ export async function backfillEmbeddings(
       FROM text_messages tm
       INNER JOIN stream_events e ON e.content_id = tm.id
       INNER JOIN streams s ON e.stream_id = s.id
+      LEFT JOIN ${sql.raw(embeddingTable)} emb ON emb.text_message_id = tm.id
       WHERE s.workspace_id = ${workspaceId}
-        AND tm.embedding IS NULL
+        AND emb.text_message_id IS NULL
         AND tm.content IS NOT NULL
         AND LENGTH(tm.content) >= 20
       ORDER BY e.created_at DESC
@@ -184,4 +185,3 @@ export async function backfillEmbeddings(
   logger.info({ workspaceId, queued, skipped }, "Backfill embeddings queued")
   return { queued, skipped }
 }
-

@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express"
 import { StreamService, CreateStreamParams, CreateEventParams } from "../services/stream-service"
 import { WorkspaceService } from "../services/workspace-service"
+import { UserService } from "../services/user-service"
+import { SearchService } from "../services/search-service"
 import { logger } from "../lib/logger"
 import { createValidSlug } from "../../shared/slug"
 import { Pool } from "pg"
@@ -8,7 +10,7 @@ import { Pool } from "pg"
 // Extend Express Request to include user
 declare module "express-serve-static-core" {
   interface Request {
-    user?: { id: string; email: string }
+    user?: { id: string; email: string; firstName?: string; lastName?: string }
   }
 }
 
@@ -18,6 +20,19 @@ export function createStreamRoutes(
   pool: Pool,
 ): Router {
   const router = Router()
+  const userService = new UserService(pool)
+  const searchService = new SearchService(pool)
+
+  // Helper to ensure user exists in database
+  async function ensureUserExists(req: Request): Promise<void> {
+    if (!req.user) return
+    await userService.ensureUser({
+      id: req.user.id,
+      email: req.user.email,
+      firstName: req.user.firstName || null,
+      lastName: req.user.lastName || null,
+    })
+  }
 
   // ==========================================================================
   // Workspace Creation
@@ -31,6 +46,9 @@ export function createStreamRoutes(
         res.status(401).json({ error: "Unauthorized" })
         return
       }
+
+      // Ensure user exists in database
+      await ensureUserExists(req)
 
       const { name } = req.body
 
@@ -78,6 +96,9 @@ export function createStreamRoutes(
         return
       }
 
+      // Ensure user exists in database
+      await ensureUserExists(req)
+
       // Get user's first workspace
       const memberResult = await pool.query(
         "SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND status = 'active' LIMIT 1",
@@ -107,6 +128,9 @@ export function createStreamRoutes(
         res.status(401).json({ error: "Unauthorized" })
         return
       }
+
+      // Ensure user exists in database
+      await ensureUserExists(req)
 
       const data = await streamService.bootstrap(workspaceId, userId)
       res.json(data)
@@ -145,6 +169,43 @@ export function createStreamRoutes(
       })
     } catch (error) {
       logger.error({ err: error }, "Failed to check slug")
+      next(error)
+    }
+  })
+
+  // ==========================================================================
+  // Search
+  // ==========================================================================
+
+  router.get("/:workspaceId/search", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const query = (req.query.query as string) || ""
+      const limit = parseInt(req.query.limit as string, 10) || 20
+      const offset = parseInt(req.query.offset as string, 10) || 0
+
+      if (!query.trim()) {
+        res.json({ results: [], total: 0, parsedQuery: { filters: {}, freeText: "" } })
+        return
+      }
+
+      const results = await searchService.search(workspaceId, query, {
+        limit,
+        offset,
+        searchMessages: true,
+        searchKnowledge: true,
+      })
+
+      res.json(results)
+    } catch (error) {
+      logger.error({ err: error }, "Failed to search")
       next(error)
     }
   })
@@ -255,6 +316,9 @@ export function createStreamRoutes(
         res.status(401).json({ error: "Unauthorized" })
         return
       }
+
+      // Ensure user exists in database
+      await ensureUserExists(req)
 
       const { name, description, visibility, streamType, participantIds } = req.body
 
@@ -404,6 +468,9 @@ export function createStreamRoutes(
         res.status(401).json({ error: "Unauthorized" })
         return
       }
+
+      // Ensure user exists in database
+      await ensureUserExists(req)
 
       // Check access - must be a member to post
       const access = await streamService.checkStreamAccess(streamId, userId)

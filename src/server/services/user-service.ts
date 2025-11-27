@@ -113,7 +113,7 @@ export class UserService {
 
   /**
    * Get or create default workspace and channel for MVP
-   * Returns channel ID
+   * Returns stream ID
    *
    * @deprecated Use WorkspaceService.getOrCreateDefaultChannel() instead
    */
@@ -132,26 +132,26 @@ export class UserService {
         workspaceId = workspaceResult.rows[0].id
       }
 
-      // Check if default channel exists
-      const channelResult = await this.pool.query(
-        "SELECT id FROM channels WHERE workspace_id = $1 AND name = '#general'",
+      // Check if default channel (stream) exists
+      const streamResult = await this.pool.query(
+        "SELECT id FROM streams WHERE workspace_id = $1 AND slug = 'general' AND stream_type = 'channel'",
         [workspaceId],
       )
 
-      let channelId: string
-      if (channelResult.rows.length === 0) {
-        // Create default channel
-        const channelIdResult = await this.pool.query(
-          "INSERT INTO channels (id, workspace_id, name, description) VALUES ('chan_general', $1, '#general', 'General discussion') RETURNING id",
+      let streamId: string
+      if (streamResult.rows.length === 0) {
+        // Create default channel as a stream
+        const streamIdResult = await this.pool.query(
+          "INSERT INTO streams (id, workspace_id, stream_type, name, slug, description, visibility) VALUES ('stream_general', $1, 'channel', 'general', 'general', 'General discussion', 'public') RETURNING id",
           [workspaceId],
         )
-        channelId = channelIdResult.rows[0].id
-        logger.info("Created default channel")
+        streamId = streamIdResult.rows[0].id
+        logger.info("Created default channel (stream)")
       } else {
-        channelId = channelResult.rows[0].id
+        streamId = streamResult.rows[0].id
       }
 
-      return channelId
+      return streamId
     } catch (error) {
       logger.error({ err: error }, "Failed to get default channel")
       throw error
@@ -159,22 +159,22 @@ export class UserService {
   }
 
   /**
-   * Get workspace ID for a channel
-   * Accepts either channel ID (chan_...) or channel slug (general)
+   * Get workspace ID for a stream (channel)
+   * Accepts either stream ID (stream_...) or stream slug (general)
    */
-  async getWorkspaceIdForChannel(channelIdOrSlug: string): Promise<string | null> {
+  async getWorkspaceIdForChannel(streamIdOrSlug: string): Promise<string | null> {
     try {
-      // Try as ID first (starts with chan_)
+      // Try as ID first (starts with stream_)
       let result
-      if (channelIdOrSlug.startsWith("chan_")) {
-        result = await this.pool.query("SELECT workspace_id FROM channels WHERE id = $1", [channelIdOrSlug])
+      if (streamIdOrSlug.startsWith("stream_")) {
+        result = await this.pool.query("SELECT workspace_id FROM streams WHERE id = $1", [streamIdOrSlug])
       } else {
         // Try as slug
-        result = await this.pool.query("SELECT workspace_id FROM channels WHERE slug = $1", [channelIdOrSlug])
+        result = await this.pool.query("SELECT workspace_id FROM streams WHERE slug = $1", [streamIdOrSlug])
       }
       return result.rows[0]?.workspace_id || null
     } catch (error) {
-      logger.error({ err: error, channel_id: channelIdOrSlug }, "Failed to get workspace ID for channel")
+      logger.error({ err: error, stream_id: streamIdOrSlug }, "Failed to get workspace ID for stream")
       return null
     }
   }

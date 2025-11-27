@@ -4,6 +4,7 @@ import { generateEmbedding, estimateTokens, calculateCost, Models } from "../lib
 import { AIUsageService } from "./ai-usage-service"
 import { parseSearchQuery, SearchFilters } from "../lib/search-parser"
 import { logger } from "../lib/logger"
+import { getTextMessageEmbeddingTable, getKnowledgeEmbeddingTable } from "../lib/embedding-tables"
 
 export interface SearchResult {
   type: "message" | "knowledge"
@@ -174,6 +175,9 @@ export class SearchService {
         .filter((w) => w.length > 2)
         .join(" & ")
 
+      // Get the appropriate embedding table based on provider
+      const embeddingTable = getTextMessageEmbeddingTable()
+
       const queryText = `
         WITH filtered_events AS (
           SELECT
@@ -181,8 +185,9 @@ export class SearchService {
             e.stream_id,
             e.actor_id,
             e.created_at,
+            tm.id as text_message_id,
             tm.content,
-            tm.embedding,
+            emb.embedding,
             s.slug as stream_slug,
             s.name as stream_name,
             u.email as actor_email,
@@ -192,6 +197,7 @@ export class SearchService {
           INNER JOIN streams s ON e.stream_id = s.id
           INNER JOIN users u ON e.actor_id = u.id
           LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = s.workspace_id
+          LEFT JOIN ${embeddingTable} emb ON emb.text_message_id = tm.id
           WHERE e.deleted_at IS NULL
             AND e.event_type = 'message'
             AND ${whereClause}
@@ -356,14 +362,17 @@ export class SearchService {
       .filter((w) => w.length > 2)
       .join(" & ")
 
+    // Get the appropriate knowledge embedding table based on provider
+    const knowledgeEmbeddingTable = getKnowledgeEmbeddingTable()
+
     const result = await this.pool.query(
       sql`WITH semantic AS (
-        SELECT id, 1 - (embedding <=> ${embeddingJson}::vector) as score
-        FROM knowledge
-        WHERE workspace_id = ${workspaceId}
-          AND archived_at IS NULL
-          AND embedding IS NOT NULL
-        ORDER BY embedding <=> ${embeddingJson}::vector
+        SELECT k.id, 1 - (emb.embedding <=> ${embeddingJson}::vector) as score
+        FROM knowledge k
+        INNER JOIN ${sql.raw(knowledgeEmbeddingTable)} emb ON emb.knowledge_id = k.id
+        WHERE k.workspace_id = ${workspaceId}
+          AND k.archived_at IS NULL
+        ORDER BY emb.embedding <=> ${embeddingJson}::vector
         LIMIT 50
       ),
       fulltext AS (
@@ -425,6 +434,7 @@ export class SearchService {
   ): Promise<SearchResult[]> {
     const limit = options.limit ?? 10
     const embeddingJson = JSON.stringify(embedding)
+    const embeddingTable = getTextMessageEmbeddingTable()
 
     let query = sql`
       SELECT
@@ -437,23 +447,23 @@ export class SearchService {
         s.name as stream_name,
         u.email as actor_email,
         COALESCE(wp.display_name, u.name) as actor_name,
-        1 - (tm.embedding <=> ${embeddingJson}::vector) as score
+        1 - (emb.embedding <=> ${embeddingJson}::vector) as score
       FROM stream_events e
       INNER JOIN text_messages tm ON e.content_id = tm.id AND e.content_type = 'text_message'
+      INNER JOIN ${sql.raw(embeddingTable)} emb ON emb.text_message_id = tm.id
       INNER JOIN streams s ON e.stream_id = s.id
       INNER JOIN users u ON e.actor_id = u.id
       LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = s.workspace_id
       WHERE s.workspace_id = ${workspaceId}
         AND e.deleted_at IS NULL
-        AND e.event_type = 'message'
-        AND tm.embedding IS NOT NULL`
+        AND e.event_type = 'message'`
 
     if (options.streamId) {
       query = sql`${query} AND e.stream_id = ${options.streamId}`
     }
 
     query = sql`${query}
-      ORDER BY tm.embedding <=> ${embeddingJson}::vector
+      ORDER BY emb.embedding <=> ${embeddingJson}::vector
       LIMIT ${limit}`
 
     const result = await this.pool.query(query)

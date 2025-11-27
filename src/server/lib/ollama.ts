@@ -3,11 +3,20 @@ import { logger } from "./logger"
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434"
 const CLASSIFICATION_MODEL = process.env.OLLAMA_CLASSIFICATION_MODEL || "granite4:350m"
+const EMBEDDING_MODEL = process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text"
+
+// Track whether Ollama embedding is available
+let ollamaEmbeddingAvailable = false
 
 export interface ClassificationResult {
   isKnowledge: boolean
   confident: boolean
   rawResponse: string
+}
+
+export interface OllamaEmbeddingResult {
+  embedding: number[]
+  model: string
 }
 
 /**
@@ -56,31 +65,96 @@ Answer YES or NO, then briefly explain why in one sentence.`,
 }
 
 /**
- * Check if Ollama is available and the classification model is loaded.
+ * Check if Ollama is available and required models are loaded.
  */
 export async function checkOllamaHealth(): Promise<{
   available: boolean
-  modelLoaded: boolean
+  classificationModelLoaded: boolean
+  embeddingModelLoaded: boolean
   error?: string
 }> {
   try {
     const models = await ollama.list()
-    const modelLoaded = models.models.some(
+    const classificationModelLoaded = models.models.some(
       (m) => m.name === CLASSIFICATION_MODEL || m.name.startsWith(CLASSIFICATION_MODEL.split(":")[0]),
     )
+    const embeddingModelLoaded = models.models.some(
+      (m) => m.name === EMBEDDING_MODEL || m.name.startsWith(EMBEDDING_MODEL.split(":")[0]),
+    )
 
-    return { available: true, modelLoaded }
+    // Update availability flag
+    ollamaEmbeddingAvailable = embeddingModelLoaded
+
+    return { available: true, classificationModelLoaded, embeddingModelLoaded }
   } catch (err) {
     const error = err instanceof Error ? err.message : "Unknown error"
     logger.warn({ err, host: OLLAMA_HOST }, "Ollama health check failed")
-    return { available: false, modelLoaded: false, error }
+    ollamaEmbeddingAvailable = false
+    return { available: false, classificationModelLoaded: false, embeddingModelLoaded: false, error }
   }
 }
 
 /**
- * Pull the classification model if not already available.
+ * Check if Ollama embeddings are available.
  */
-export async function ensureClassificationModel(): Promise<void> {
+export function isOllamaEmbeddingAvailable(): boolean {
+  return ollamaEmbeddingAvailable
+}
+
+/**
+ * Generate embedding using local Ollama model.
+ * Returns null if Ollama is not available.
+ */
+export async function generateOllamaEmbedding(text: string): Promise<OllamaEmbeddingResult | null> {
+  if (!ollamaEmbeddingAvailable) {
+    return null
+  }
+
+  try {
+    const response = await ollama.embed({
+      model: EMBEDDING_MODEL,
+      input: text,
+    })
+
+    return {
+      embedding: response.embeddings[0],
+      model: EMBEDDING_MODEL,
+    }
+  } catch (err) {
+    logger.error({ err, model: EMBEDDING_MODEL }, "Ollama embedding failed")
+    return null
+  }
+}
+
+/**
+ * Generate embeddings for multiple texts using local Ollama model.
+ * Returns null if Ollama is not available.
+ */
+export async function generateOllamaEmbeddingsBatch(texts: string[]): Promise<OllamaEmbeddingResult[] | null> {
+  if (!ollamaEmbeddingAvailable || texts.length === 0) {
+    return null
+  }
+
+  try {
+    const response = await ollama.embed({
+      model: EMBEDDING_MODEL,
+      input: texts,
+    })
+
+    return response.embeddings.map((embedding) => ({
+      embedding,
+      model: EMBEDDING_MODEL,
+    }))
+  } catch (err) {
+    logger.error({ err, model: EMBEDDING_MODEL }, "Ollama batch embedding failed")
+    return null
+  }
+}
+
+/**
+ * Ensure required Ollama models are available.
+ */
+export async function ensureOllamaModels(): Promise<void> {
   const health = await checkOllamaHealth()
 
   if (!health.available) {
@@ -88,13 +162,26 @@ export async function ensureClassificationModel(): Promise<void> {
     return
   }
 
-  if (!health.modelLoaded) {
+  // Ensure classification model
+  if (!health.classificationModelLoaded) {
     logger.info({ model: CLASSIFICATION_MODEL }, "Pulling classification model...")
     try {
       await ollama.pull({ model: CLASSIFICATION_MODEL })
       logger.info({ model: CLASSIFICATION_MODEL }, "Classification model pulled successfully")
     } catch (err) {
       logger.error({ err, model: CLASSIFICATION_MODEL }, "Failed to pull classification model")
+    }
+  }
+
+  // Ensure embedding model
+  if (!health.embeddingModelLoaded) {
+    logger.info({ model: EMBEDDING_MODEL }, "Pulling embedding model...")
+    try {
+      await ollama.pull({ model: EMBEDDING_MODEL })
+      ollamaEmbeddingAvailable = true
+      logger.info({ model: EMBEDDING_MODEL }, "Embedding model pulled successfully")
+    } catch (err) {
+      logger.error({ err, model: EMBEDDING_MODEL }, "Failed to pull embedding model")
     }
   }
 }

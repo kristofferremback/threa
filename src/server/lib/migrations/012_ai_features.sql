@@ -136,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_source_event ON knowledge(source_event_
 -- Create trigger to auto-update search_vector for knowledge
 CREATE OR REPLACE FUNCTION knowledge_search_vector_trigger() RETURNS trigger AS $$
 BEGIN
-  NEW.search_vector := 
+  NEW.search_vector :=
     setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
     setweight(to_tsvector('english', COALESCE(NEW.summary, '')), 'B') ||
     setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'C');

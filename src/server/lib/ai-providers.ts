@@ -1,6 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { logger } from "./logger"
+import {
+  isOllamaEmbeddingAvailable,
+  generateOllamaEmbedding,
+  generateOllamaEmbeddingsBatch,
+} from "./ollama"
 
 // Lazy-loaded clients - only initialized when first used
 let _anthropic: Anthropic | null = null
@@ -87,8 +92,23 @@ export interface ChatResult {
 
 /**
  * Generate embedding for a single text.
+ * Uses Ollama (local) if available, falls back to OpenAI.
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
+  // Try Ollama first (free, local)
+  if (isOllamaEmbeddingAvailable()) {
+    const ollamaResult = await generateOllamaEmbedding(text)
+    if (ollamaResult) {
+      logger.debug({ model: ollamaResult.model }, "Using local Ollama embedding")
+      return {
+        embedding: ollamaResult.embedding,
+        model: ollamaResult.model,
+        tokens: estimateTokens(text), // Estimate since Ollama doesn't report tokens
+      }
+    }
+  }
+
+  // Fallback to OpenAI
   const openai = getOpenAIClient()
   const response = await openai.embeddings.create({
     model: Models.EMBEDDING,
@@ -104,11 +124,25 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
 
 /**
  * Generate embeddings for multiple texts in a single batch.
- * More efficient than calling generateEmbedding multiple times.
+ * Uses Ollama (local) if available, falls back to OpenAI.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<EmbeddingResult[]> {
   if (texts.length === 0) return []
 
+  // Try Ollama first (free, local)
+  if (isOllamaEmbeddingAvailable()) {
+    const ollamaResults = await generateOllamaEmbeddingsBatch(texts)
+    if (ollamaResults) {
+      logger.debug({ model: ollamaResults[0]?.model, count: texts.length }, "Using local Ollama embeddings")
+      return ollamaResults.map((r, i) => ({
+        embedding: r.embedding,
+        model: r.model,
+        tokens: estimateTokens(texts[i]),
+      }))
+    }
+  }
+
+  // Fallback to OpenAI
   const openai = getOpenAIClient()
 
   // OpenAI supports up to 2048 texts per batch, but we limit to 100 for memory

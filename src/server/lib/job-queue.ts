@@ -27,6 +27,13 @@ export async function initJobQueue(connectionString: string): Promise<PgBoss> {
   await boss.start()
   logger.info("pg-boss job queue started")
 
+  // Pre-create queues so workers don't error when polling empty queues
+  const queues: AIJobType[] = ["ai.embed", "ai.classify", "ai.respond", "ai.extract"]
+  for (const queue of queues) {
+    await boss.createQueue(queue)
+  }
+  logger.info({ queues }, "AI job queues created")
+
   return boss
 }
 

@@ -2,7 +2,7 @@ import { Pool } from "pg"
 import { initJobQueue, stopJobQueue } from "../lib/job-queue"
 import { startEmbeddingWorker } from "./embedding-worker"
 import { startClassificationWorker } from "./classification-worker"
-import { checkOllamaHealth, ensureClassificationModel } from "../lib/ollama"
+import { checkOllamaHealth, ensureOllamaModels } from "../lib/ollama"
 import { logger } from "../lib/logger"
 
 /**
@@ -18,17 +18,23 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
   // Check Ollama availability (non-blocking)
   const ollamaHealth = await checkOllamaHealth()
   if (ollamaHealth.available) {
-    logger.info({ modelLoaded: ollamaHealth.modelLoaded }, "Ollama is available")
-    if (!ollamaHealth.modelLoaded) {
-      // Pull model in background
-      ensureClassificationModel().catch((err) => {
-        logger.warn({ err }, "Failed to pull classification model")
+    logger.info(
+      {
+        classificationModel: ollamaHealth.classificationModelLoaded,
+        embeddingModel: ollamaHealth.embeddingModelLoaded,
+      },
+      "Ollama is available",
+    )
+    // Pull missing models in background
+    if (!ollamaHealth.classificationModelLoaded || !ollamaHealth.embeddingModelLoaded) {
+      ensureOllamaModels().catch((err) => {
+        logger.warn({ err }, "Failed to pull Ollama models")
       })
     }
   } else {
     logger.warn(
       { error: ollamaHealth.error },
-      "Ollama not available - classification will use API fallback only",
+      "Ollama not available - will use API fallback for embeddings and classification",
     )
   }
 

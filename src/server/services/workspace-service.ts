@@ -23,14 +23,6 @@ export class WorkspaceService {
         [workspaceId, name, slug],
       )
 
-      // Create default channel
-      const channelId = generateId("chan")
-      await client.query(
-        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
-         VALUES ($1, $2, 'general', 'general', 'General discussion', 'public')`,
-        [channelId, workspaceId],
-      )
-
       await client.query("COMMIT")
 
       logger.info({ workspace_id: workspaceId, creator: creatorUserId }, "Created workspace")
@@ -89,14 +81,6 @@ export class WorkspaceService {
         `INSERT INTO workspaces (id, name, slug, workos_organization_id, plan_tier, seat_limit)
          VALUES ($1, $2, $3, $4, 'free', 5)`, // Default seat limit for free tier
         [workspaceId, name, slug, workosOrganizationId],
-      )
-
-      // Create default channel immediately
-      const channelId = generateId("chan")
-      await client.query(
-        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
-         VALUES ($1, $2, '#general', 'general', 'General discussion', 'public')`,
-        [channelId, workspaceId],
       )
 
       await client.query("COMMIT")
@@ -233,30 +217,30 @@ export class WorkspaceService {
 
   /**
    * Get or create default channel for workspace
-   * Returns channel ID
+   * Returns stream ID
    */
   async getOrCreateDefaultChannel(workspaceId: string): Promise<string> {
     try {
-      // Check if default channel exists
-      const channelResult = await this.pool.query(
-        "SELECT id FROM channels WHERE workspace_id = $1 AND slug = 'general'",
+      // Check if default channel exists (as a stream)
+      const streamResult = await this.pool.query(
+        "SELECT id FROM streams WHERE workspace_id = $1 AND slug = 'general' AND stream_type = 'channel'",
         [workspaceId],
       )
 
-      if (channelResult.rows.length > 0) {
-        return channelResult.rows[0].id
+      if (streamResult.rows.length > 0) {
+        return streamResult.rows[0].id
       }
 
-      // Create default channel
-      const channelId = generateId("chan")
+      // Create default channel (as a stream)
+      const streamId = generateId("stream")
       await this.pool.query(
-        `INSERT INTO channels (id, workspace_id, name, slug, description, visibility)
-         VALUES ($1, $2, '#general', 'general', 'General discussion', 'public')`,
-        [channelId, workspaceId],
+        `INSERT INTO streams (id, workspace_id, stream_type, name, slug, description, visibility)
+         VALUES ($1, $2, 'channel', 'general', 'general', 'General discussion', 'public')`,
+        [streamId, workspaceId],
       )
 
-      logger.info({ workspace_id: workspaceId, channel_id: channelId }, "Created default channel")
-      return channelId
+      logger.info({ workspace_id: workspaceId, stream_id: streamId }, "Created default channel")
+      return streamId
     } catch (error) {
       logger.error({ err: error, workspace_id: workspaceId }, "Failed to get or create default channel")
       throw error
@@ -454,18 +438,18 @@ export class WorkspaceService {
         [invitation.id, userId],
       )
 
-      // Add user to default channel
-      const defaultChannel = await client.query(
-        "SELECT id FROM channels WHERE workspace_id = $1 AND slug = 'general'",
+      // Add user to default channel (stream)
+      const defaultStream = await client.query(
+        "SELECT id FROM streams WHERE workspace_id = $1 AND slug = 'general' AND stream_type = 'channel'",
         [invitation.workspace_id],
       )
 
-      if (defaultChannel.rows[0]) {
+      if (defaultStream.rows[0]) {
         await client.query(
-          `INSERT INTO channel_members (channel_id, user_id, added_at, updated_at, notify_level, last_read_at)
-           VALUES ($1, $2, NOW(), NOW(), 'default', NOW())
-           ON CONFLICT (channel_id, user_id) DO NOTHING`,
-          [defaultChannel.rows[0].id, userId],
+          `INSERT INTO stream_members (stream_id, user_id, role, joined_at, last_read_at)
+           VALUES ($1, $2, 'member', NOW(), NOW())
+           ON CONFLICT (stream_id, user_id) DO NOTHING`,
+          [defaultStream.rows[0].id, userId],
         )
       }
 

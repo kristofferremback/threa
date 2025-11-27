@@ -23,6 +23,7 @@ export function LayoutSystem() {
   const [showNewDM, setShowNewDM] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [commandPaletteMode, setCommandPaletteMode] = useState<"navigate" | "search">("navigate")
   const [showBrowseChannels, setShowBrowseChannels] = useState(false)
   const [showProfileSetup, setShowProfileSetup] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
@@ -69,10 +70,10 @@ export function LayoutSystem() {
 
   // Show profile setup modal if user needs to set up their profile
   useEffect(() => {
-    if (bootstrapData?.needsProfileSetup) {
-      setShowProfileSetup(true)
+    if (bootstrapData) {
+      setShowProfileSetup(bootstrapData.needsProfileSetup === true)
     }
-  }, [bootstrapData?.needsProfileSetup])
+  }, [bootstrapData])
 
   // Check if activity view is active
   const isActivityActive = panes.some((pane) => {
@@ -142,10 +143,17 @@ export function LayoutSystem() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl+P for command palette
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      // Cmd/Ctrl+P for command palette (channel navigation)
+      if ((e.metaKey || e.ctrlKey) && e.key === "p" && !e.shiftKey) {
         e.preventDefault()
+        setCommandPaletteMode("navigate")
         setShowCommandPalette((prev) => !prev)
+      }
+      // Cmd/Ctrl+Shift+F for search
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "f") {
+        e.preventDefault()
+        setCommandPaletteMode("search")
+        setShowCommandPalette(true)
       }
     }
 
@@ -617,9 +625,20 @@ export function LayoutSystem() {
 
       <CommandPalette
         open={showCommandPalette}
+        mode={commandPaletteMode}
         onClose={() => setShowCommandPalette(false)}
         streams={bootstrapData.streams}
+        workspaceId={bootstrapData.workspace.id}
         onSelectStream={handleCommandPaletteSelect}
+        onNavigateToMessage={(streamSlug, eventId, mode) => {
+          const stream = bootstrapData.streams.find((s) => s.slug === streamSlug)
+          const streamTab = {
+            title: stream ? `#${(stream.name || "").replace("#", "")}` : `#${streamSlug}`,
+            type: "stream" as const,
+            data: { streamSlug, highlightEventId: eventId },
+          }
+          openItem(streamTab, mode)
+        }}
       />
 
       <BrowseChannelsModal
