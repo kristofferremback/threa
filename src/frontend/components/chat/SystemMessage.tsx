@@ -1,4 +1,4 @@
-import { UserPlus, LogIn } from "lucide-react"
+import { UserPlus, LogIn, Hash } from "lucide-react"
 import { RelativeTime } from "../ui"
 import type { Message } from "../../types"
 
@@ -44,6 +44,36 @@ export function SystemMessage({ message, animationDelay = 0 }: SystemMessageProp
             <UserPlus className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
             <span>
               <strong style={{ color: "var(--text-primary)" }}>{userName}</strong> was removed from the channel
+            </span>
+          </>
+        )
+
+      case "member_left":
+        return (
+          <>
+            <LogIn className="h-4 w-4 rotate-180" style={{ color: "var(--text-muted)" }} />
+            <span>
+              <strong style={{ color: "var(--text-primary)" }}>{userName}</strong> left the channel
+            </span>
+          </>
+        )
+
+      case "stream_created":
+        return (
+          <>
+            <Hash className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+            <span>
+              <strong style={{ color: "var(--text-primary)" }}>{userName}</strong> created this channel
+            </span>
+          </>
+        )
+
+      case "thread_started":
+        return (
+          <>
+            <Hash className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
+            <span>
+              <strong style={{ color: "var(--text-primary)" }}>{userName}</strong> started this thread
             </span>
           </>
         )

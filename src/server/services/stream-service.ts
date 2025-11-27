@@ -324,7 +324,36 @@ export class StreamService {
             VALUES (${streamId}, ${params.creatorId}, 'owner', ${params.creatorId})`,
       )
 
-      // Emit outbox event
+      // For top-level streams (channels), create a "stream_created" event
+      if (!params.parentStreamId) {
+        const createdEventId = generateId("event")
+        await client.query(
+          sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, payload)
+              VALUES (
+                ${createdEventId},
+                ${streamId},
+                'stream_created',
+                ${params.creatorId},
+                ${JSON.stringify({ name: params.name, description: params.description })}
+              )`,
+        )
+
+        // Emit event for real-time updates
+        const eventOutboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${eventOutboxId}, 'stream_event.created', ${JSON.stringify({
+                event_id: createdEventId,
+                stream_id: streamId,
+                workspace_id: params.workspaceId,
+                event_type: "stream_created",
+                actor_id: params.creatorId,
+              })})`,
+        )
+        await client.query(`NOTIFY outbox_event, '${eventOutboxId.replace(/'/g, "''")}'`)
+      }
+
+      // Emit outbox event for stream creation
       const outboxId = generateId("outbox")
       await client.query(
         sql`INSERT INTO outbox (id, event_type, payload)

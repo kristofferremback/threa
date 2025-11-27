@@ -50,7 +50,7 @@ export interface StreamMember {
 // Event Types
 // ==========================================================================
 
-export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "poll" | "file"
+export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "stream_created" | "poll" | "file"
 
 export interface Mention {
   type: "user" | "channel" | "crosspost"
@@ -102,10 +102,12 @@ export interface Message {
 }
 
 export interface SystemMessageMetadata {
-  event: "member_joined" | "member_added" | "member_removed"
+  event: "member_joined" | "member_added" | "member_removed" | "member_left" | "stream_created" | "thread_started"
   userId: string
   userName?: string
   userEmail?: string
+  name?: string // For stream_created
+  description?: string // For stream_created
   addedByUserId?: string
   addedByName?: string
   addedByEmail?: string

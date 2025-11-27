@@ -590,132 +590,123 @@ export function createStreamRoutes(
 
   // Legacy: Create a thread from an event (kept for backwards compatibility)
   // Prefer using POST /events/:eventId/reply instead
-  router.post(
-    "/:workspaceId/streams/:streamId/thread",
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const userId = req.user?.id
+  router.post("/:workspaceId/streams/:streamId/thread", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id
 
-        if (!userId) {
-          res.status(401).json({ error: "Unauthorized" })
-          return
-        }
-
-        const { eventId } = req.body
-
-        if (!eventId) {
-          res.status(400).json({ error: "eventId is required" })
-          return
-        }
-
-        // Check if thread already exists
-        const existingThread = await streamService.getThreadForEvent(eventId)
-        if (existingThread) {
-          res.status(200).json({ stream: existingThread, event: null })
-          return
-        }
-
-        // For backwards compat, create thread without a message
-        // But this is not the recommended flow
-        const { stream, event } = await streamService.createThreadFromEvent(eventId, userId)
-        res.status(201).json({ stream, event: event ? mapEventToResponse(event) : null })
-      } catch (error: any) {
-        if (error.message === "Event not found") {
-          res.status(404).json({ error: error.message })
-          return
-        }
-        logger.error({ err: error }, "Failed to create thread")
-        next(error)
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
-    },
-  )
+
+      const { eventId } = req.body
+
+      if (!eventId) {
+        res.status(400).json({ error: "eventId is required" })
+        return
+      }
+
+      // Check if thread already exists
+      const existingThread = await streamService.getThreadForEvent(eventId)
+      if (existingThread) {
+        res.status(200).json({ stream: existingThread, event: null })
+        return
+      }
+
+      // For backwards compat, create thread without a message
+      // But this is not the recommended flow
+      const { stream, event } = await streamService.createThreadFromEvent(eventId, userId)
+      res.status(201).json({ stream, event: event ? mapEventToResponse(event) : null })
+    } catch (error: any) {
+      if (error.message === "Event not found") {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to create thread")
+      next(error)
+    }
+  })
 
   // Promote a stream (thread → channel/incident)
-  router.post(
-    "/:workspaceId/streams/:streamId/promote",
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const { streamId } = req.params
-        const userId = req.user?.id
+  router.post("/:workspaceId/streams/:streamId/promote", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { streamId } = req.params
+      const userId = req.user?.id
 
-        if (!userId) {
-          res.status(401).json({ error: "Unauthorized" })
-          return
-        }
-
-        const { name, slug, visibility, newType } = req.body
-
-        if (!name || typeof name !== "string") {
-          res.status(400).json({ error: "Name is required" })
-          return
-        }
-
-        if (!newType || !["channel", "incident"].includes(newType)) {
-          res.status(400).json({ error: "newType must be 'channel' or 'incident'" })
-          return
-        }
-
-        const stream = await streamService.promoteStream({
-          streamId,
-          userId,
-          newType,
-          name: name.trim(),
-          slug: slug?.trim(),
-          visibility,
-        })
-
-        res.json(stream)
-      } catch (error: any) {
-        if (error.message?.includes("not found")) {
-          res.status(404).json({ error: error.message })
-          return
-        }
-        if (error.message?.includes("Only threads") || error.message?.includes("already exists")) {
-          res.status(400).json({ error: error.message })
-          return
-        }
-        logger.error({ err: error }, "Failed to promote stream")
-        next(error)
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
-    },
-  )
+
+      const { name, slug, visibility, newType } = req.body
+
+      if (!name || typeof name !== "string") {
+        res.status(400).json({ error: "Name is required" })
+        return
+      }
+
+      if (!newType || !["channel", "incident"].includes(newType)) {
+        res.status(400).json({ error: "newType must be 'channel' or 'incident'" })
+        return
+      }
+
+      const stream = await streamService.promoteStream({
+        streamId,
+        userId,
+        newType,
+        name: name.trim(),
+        slug: slug?.trim(),
+        visibility,
+      })
+
+      res.json(stream)
+    } catch (error: any) {
+      if (error.message?.includes("not found")) {
+        res.status(404).json({ error: error.message })
+        return
+      }
+      if (error.message?.includes("Only threads") || error.message?.includes("already exists")) {
+        res.status(400).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to promote stream")
+      next(error)
+    }
+  })
 
   // Share an event to this stream
-  router.post(
-    "/:workspaceId/streams/:streamId/share",
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const { streamId } = req.params
-        const userId = req.user?.id
+  router.post("/:workspaceId/streams/:streamId/share", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { streamId } = req.params
+      const userId = req.user?.id
 
-        if (!userId) {
-          res.status(401).json({ error: "Unauthorized" })
-          return
-        }
-
-        const { eventId, context } = req.body
-
-        if (!eventId) {
-          res.status(400).json({ error: "eventId is required" })
-          return
-        }
-
-        const params: CreateEventParams = {
-          streamId,
-          actorId: userId,
-          eventType: "shared",
-          originalEventId: eventId,
-          shareContext: context,
-        }
-
-        const event = await streamService.createEvent(params)
-        res.status(201).json(mapEventToResponse(event))
-      } catch (error) {
-        logger.error({ err: error }, "Failed to share event")
-        next(error)
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
-    },
-  )
+
+      const { eventId, context } = req.body
+
+      if (!eventId) {
+        res.status(400).json({ error: "eventId is required" })
+        return
+      }
+
+      const params: CreateEventParams = {
+        streamId,
+        actorId: userId,
+        eventType: "shared",
+        originalEventId: eventId,
+        shareContext: context,
+      }
+
+      const event = await streamService.createEvent(params)
+      res.status(201).json(mapEventToResponse(event))
+    } catch (error) {
+      logger.error({ err: error }, "Failed to share event")
+      next(error)
+    }
+  })
 
   // ==========================================================================
   // Membership
@@ -1058,4 +1049,3 @@ function mapEventToResponse(event: any) {
     payload: event.payload,
   }
 }
-
