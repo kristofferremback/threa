@@ -111,6 +111,8 @@ export interface BootstrapUser {
   id: string
   name: string
   email: string
+  title: string | null
+  avatarUrl: string | null
   role: "admin" | "member" | "guest"
 }
 
@@ -122,6 +124,13 @@ export interface BootstrapResult {
     planTier: string
   }
   userRole: "admin" | "member" | "guest"
+  userProfile: {
+    displayName: string | null
+    title: string | null
+    avatarUrl: string | null
+    profileManagedBySso: boolean
+  } | null
+  needsProfileSetup: boolean
   streams: BootstrapStream[]
   users: BootstrapUser[]
 }
@@ -189,7 +198,7 @@ export class StreamService {
   async bootstrap(workspaceId: string, userId: string): Promise<BootstrapResult> {
     const client = await this.pool.connect()
     try {
-      const [workspaceRes, streamsRes, usersRes] = await Promise.all([
+      const [workspaceRes, streamsRes, usersRes, userProfileRes] = await Promise.all([
         // 1. Workspace info + user's role
         client.query(
           sql`SELECT
@@ -227,15 +236,30 @@ export class StreamService {
             ORDER BY sm.pinned_at DESC NULLS LAST, s.name`,
         ),
 
-        // 3. All workspace members
+        // 3. All workspace members (with workspace-scoped profile)
         client.query(
-          sql`SELECT u.id, u.name, u.email, wm.role
+          sql`SELECT 
+              u.id, u.email,
+              COALESCE(wm.display_name, u.name) as name,
+              wm.title,
+              wm.avatar_url,
+              wm.role
             FROM users u
             INNER JOIN workspace_members wm ON u.id = wm.user_id
             WHERE wm.workspace_id = ${workspaceId}
               AND wm.status = 'active'
               AND u.deleted_at IS NULL
-            ORDER BY u.name`,
+            ORDER BY COALESCE(wm.display_name, u.name)`,
+        ),
+
+        // 4. Current user's profile for this workspace
+        client.query(
+          sql`SELECT 
+              wm.display_name, wm.title, wm.avatar_url,
+              wm.profile_managed_by_sso
+            FROM workspace_members wm
+            WHERE wm.workspace_id = ${workspaceId}
+              AND wm.user_id = ${userId}`,
         ),
       ])
 
@@ -243,6 +267,10 @@ export class StreamService {
       if (!workspace) {
         throw new Error("Workspace not found or user is not a member")
       }
+
+      const userProfile = userProfileRes?.rows[0]
+      const needsProfileSetup =
+        userProfile && !userProfile.profile_managed_by_sso && (!userProfile.display_name || userProfile.display_name.trim() === "")
 
       return {
         workspace: {
@@ -252,6 +280,15 @@ export class StreamService {
           planTier: workspace.plan_tier,
         },
         userRole: workspace.role,
+        userProfile: userProfile
+          ? {
+              displayName: userProfile.display_name,
+              title: userProfile.title,
+              avatarUrl: userProfile.avatar_url,
+              profileManagedBySso: userProfile.profile_managed_by_sso,
+            }
+          : null,
+        needsProfileSetup: needsProfileSetup || false,
         streams: streamsRes.rows.map((row) => ({
           id: row.id,
           name: row.name,
@@ -271,6 +308,8 @@ export class StreamService {
           id: row.id,
           name: row.name,
           email: row.email,
+          title: row.title,
+          avatarUrl: row.avatar_url,
           role: row.role,
         })),
       }
@@ -1128,7 +1167,8 @@ export class StreamService {
             e.id, e.stream_id, e.event_type, e.actor_id,
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
-            u.email as actor_email, u.name as actor_name,
+            u.email as actor_email,
+            COALESCE(wm.display_name, u.name) as actor_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1137,7 +1177,9 @@ export class StreamService {
                AND se2.deleted_at IS NULL
                AND se2.event_type = 'message') as reply_count
           FROM stream_events e
+          INNER JOIN streams s ON e.stream_id = s.id
           INNER JOIN users u ON e.actor_id = u.id
+          LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.stream_id = ${streamId}
@@ -1157,10 +1199,13 @@ export class StreamService {
         sql`SELECT
               e.id, e.stream_id, e.event_type, e.actor_id,
               e.content_type, e.content_id, e.created_at,
-              u.email as actor_email, u.name as actor_name,
+              u.email as actor_email,
+              COALESCE(wm.display_name, u.name) as actor_name,
               tm.content, tm.mentions
             FROM stream_events e
+            INNER JOIN streams s ON e.stream_id = s.id
             INNER JOIN users u ON e.actor_id = u.id
+            LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
             LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ANY(${originalIds})`,
       )
@@ -1183,7 +1228,8 @@ export class StreamService {
             e.id, e.stream_id, e.event_type, e.actor_id,
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
-            u.email as actor_email, u.name as actor_name,
+            u.email as actor_email,
+            COALESCE(wm.display_name, u.name) as actor_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1192,7 +1238,9 @@ export class StreamService {
                AND se2.deleted_at IS NULL
                AND se2.event_type = 'message') as reply_count
           FROM stream_events e
+          INNER JOIN streams s ON e.stream_id = s.id
           INNER JOIN users u ON e.actor_id = u.id
+          LEFT JOIN workspace_members wm ON wm.workspace_id = s.workspace_id AND wm.user_id = e.actor_id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.id = ${eventId}`,
@@ -1615,12 +1663,13 @@ export class StreamService {
       sql`SELECT
             n.*,
             u.email as actor_email,
-            u.name as actor_name,
+            COALESCE(wm.display_name, u.name) as actor_name,
             s.name as stream_name,
             s.slug as stream_slug,
             s.stream_type
           FROM notifications n
           LEFT JOIN users u ON n.actor_id = u.id
+          LEFT JOIN workspace_members wm ON wm.workspace_id = ${workspaceId} AND wm.user_id = n.actor_id
           LEFT JOIN streams s ON n.stream_id = s.id
           WHERE n.workspace_id = ${workspaceId}
             AND n.user_id = ${userId}

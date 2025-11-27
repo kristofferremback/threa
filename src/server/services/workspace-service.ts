@@ -552,4 +552,119 @@ export class WorkspaceService {
         .replace(/(^-|-$)+/g, "") || "workspace"
     )
   }
+
+  // ==========================================================================
+  // Workspace Profile Methods
+  // ==========================================================================
+
+  /**
+   * Get a user's profile for a specific workspace
+   */
+  async getWorkspaceProfile(
+    workspaceId: string,
+    userId: string,
+  ): Promise<{
+    displayName: string | null
+    title: string | null
+    avatarUrl: string | null
+    role: string
+    profileManagedBySso: boolean
+  } | null> {
+    const result = await this.pool.query(
+      `SELECT display_name, title, avatar_url, role, profile_managed_by_sso
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId],
+    )
+
+    if (result.rows.length === 0) return null
+
+    const row = result.rows[0]
+    return {
+      displayName: row.display_name,
+      title: row.title,
+      avatarUrl: row.avatar_url,
+      role: row.role,
+      profileManagedBySso: row.profile_managed_by_sso,
+    }
+  }
+
+  /**
+   * Update a user's profile for a specific workspace
+   * Will fail if profile is managed by SSO
+   */
+  async updateWorkspaceProfile(
+    workspaceId: string,
+    userId: string,
+    updates: { displayName?: string; title?: string; avatarUrl?: string },
+  ): Promise<boolean> {
+    // Check if profile is managed by SSO
+    const memberResult = await this.pool.query(
+      `SELECT profile_managed_by_sso FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId],
+    )
+
+    if (memberResult.rows.length === 0) {
+      throw new Error("User is not a member of this workspace")
+    }
+
+    if (memberResult.rows[0].profile_managed_by_sso) {
+      throw new Error("Profile is managed by SSO and cannot be edited")
+    }
+
+    const setClauses: string[] = ["updated_at = NOW()"]
+    const values: any[] = []
+    let paramIndex = 1
+
+    if (updates.displayName !== undefined) {
+      setClauses.push(`display_name = $${paramIndex}`)
+      values.push(updates.displayName)
+      paramIndex++
+    }
+
+    if (updates.title !== undefined) {
+      setClauses.push(`title = $${paramIndex}`)
+      values.push(updates.title)
+      paramIndex++
+    }
+
+    if (updates.avatarUrl !== undefined) {
+      setClauses.push(`avatar_url = $${paramIndex}`)
+      values.push(updates.avatarUrl)
+      paramIndex++
+    }
+
+    if (setClauses.length === 1) {
+      // Only updated_at, nothing to update
+      return true
+    }
+
+    values.push(workspaceId, userId)
+
+    await this.pool.query(
+      `UPDATE workspace_members SET ${setClauses.join(", ")}
+       WHERE workspace_id = $${paramIndex} AND user_id = $${paramIndex + 1}`,
+      values,
+    )
+
+    logger.info({ workspaceId, userId, updates }, "Workspace profile updated")
+    return true
+  }
+
+  /**
+   * Check if user needs to set up their profile for this workspace
+   */
+  needsProfileSetup(workspaceId: string, userId: string): Promise<boolean> {
+    return this.pool
+      .query(
+        `SELECT display_name, profile_managed_by_sso FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+        [workspaceId, userId],
+      )
+      .then((result) => {
+        if (result.rows.length === 0) return false // Not a member
+        const row = result.rows[0]
+        // Needs setup if: not SSO-managed AND display_name is null or empty
+        return !row.profile_managed_by_sso && (!row.display_name || row.display_name.trim() === "")
+      })
+  }
 }

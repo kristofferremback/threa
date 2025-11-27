@@ -138,7 +138,16 @@ export interface WorkspaceUser {
   id: string
   name: string
   email: string
+  title?: string | null
+  avatarUrl?: string | null
   role: "admin" | "member" | "guest"
+}
+
+export interface WorkspaceProfile {
+  displayName: string | null
+  title: string | null
+  avatarUrl: string | null
+  profileManagedBySso: boolean
 }
 
 // ==========================================================================
@@ -148,6 +157,8 @@ export interface WorkspaceUser {
 export interface BootstrapData {
   workspace: Workspace
   userRole: "admin" | "member" | "guest"
+  userProfile: WorkspaceProfile | null
+  needsProfileSetup: boolean
   streams: Stream[]
   users: WorkspaceUser[]
 }

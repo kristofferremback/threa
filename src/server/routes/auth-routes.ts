@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express"
 import { AuthService } from "../services/auth-service"
+import { UserService } from "../services/user-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { logger } from "../lib/logger"
 import { User } from "@workos-inc/node"
@@ -33,6 +34,7 @@ export function createAuthMiddleware(
 export function createAuthRoutes(
   authService: AuthService,
   authMiddleware: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+  userService?: UserService,
 ): Router {
   const routes = Router()
 

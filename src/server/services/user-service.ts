@@ -69,6 +69,49 @@ export class UserService {
   }
 
   /**
+   * Update user profile
+   */
+  async updateProfile(userId: string, updates: { name?: string }): Promise<User | null> {
+    try {
+      const setClauses: string[] = ["updated_at = NOW()"]
+      const values: any[] = []
+      let paramIndex = 1
+
+      if (updates.name !== undefined) {
+        setClauses.push(`name = $${paramIndex}`)
+        values.push(updates.name)
+        paramIndex++
+      }
+
+      if (setClauses.length === 1) {
+        // Only updated_at, nothing to update
+        return this.getUserById(userId)
+      }
+
+      values.push(userId)
+
+      const result = await this.pool.query<User>(
+        `UPDATE users SET ${setClauses.join(", ")} WHERE id = $${paramIndex} AND deleted_at IS NULL
+         RETURNING id, email, name, workos_user_id, timezone, locale, created_at, updated_at, deleted_at, archived_at`,
+        values,
+      )
+
+      logger.info({ user_id: userId, updates }, "User profile updated")
+      return result.rows[0] || null
+    } catch (error) {
+      logger.error({ err: error, user_id: userId }, "Failed to update user profile")
+      throw error
+    }
+  }
+
+  /**
+   * Check if user needs profile setup (name is email-like)
+   */
+  needsProfileSetup(user: User): boolean {
+    return !user.name || user.name.includes("@")
+  }
+
+  /**
    * Get or create default workspace and channel for MVP
    * Returns channel ID
    *

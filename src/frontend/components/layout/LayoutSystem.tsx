@@ -10,6 +10,7 @@ import { ChannelSettingsModal } from "./ChannelSettingsModal"
 import { CommandPalette } from "./CommandPalette"
 import { BrowseChannelsModal } from "./BrowseChannelsModal"
 import { NewDMModal } from "./NewDMModal"
+import { ProfileSetupModal } from "./ProfileSetupModal"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
@@ -23,6 +24,7 @@ export function LayoutSystem() {
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showBrowseChannels, setShowBrowseChannels] = useState(false)
+  const [showProfileSetup, setShowProfileSetup] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
@@ -64,6 +66,13 @@ export function LayoutSystem() {
       initializeFromUrl()
     }
   }, [bootstrapData, initializeFromUrl])
+
+  // Show profile setup modal if user needs to set up their profile
+  useEffect(() => {
+    if (bootstrapData?.needsProfileSetup) {
+      setShowProfileSetup(true)
+    }
+  }, [bootstrapData?.needsProfileSetup])
 
   // Check if activity view is active
   const isActivityActive = panes.some((pane) => {
@@ -628,6 +637,19 @@ export function LayoutSystem() {
         onCreateDM={handleCreateDM}
         users={bootstrapData.users}
         currentUserId={user?.id || ""}
+      />
+
+      <ProfileSetupModal
+        isOpen={showProfileSetup}
+        workspaceId={bootstrapData.workspace.id}
+        workspaceName={bootstrapData.workspace.name}
+        currentProfile={bootstrapData.userProfile}
+        onComplete={() => {
+          setShowProfileSetup(false)
+          refetchBootstrap()
+        }}
+        onSkip={() => setShowProfileSetup(false)}
+        canSkip={true}
       />
     </div>
   )

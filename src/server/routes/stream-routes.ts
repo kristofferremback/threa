@@ -1090,6 +1090,66 @@ export function createStreamRoutes(
     }
   })
 
+  // ==========================================================================
+  // Profile Routes
+  // ==========================================================================
+
+  // Get current user's profile for this workspace
+  router.get("/:workspaceId/profile", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const profile = await workspaceService.getWorkspaceProfile(workspaceId, userId)
+
+      if (!profile) {
+        res.status(404).json({ error: "Profile not found" })
+        return
+      }
+
+      res.json(profile)
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get profile")
+      next(error)
+    }
+  })
+
+  // Update current user's profile for this workspace
+  router.patch("/:workspaceId/profile", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const { displayName, title, avatarUrl } = req.body
+
+      await workspaceService.updateWorkspaceProfile(workspaceId, userId, {
+        displayName,
+        title,
+        avatarUrl,
+      })
+
+      const profile = await workspaceService.getWorkspaceProfile(workspaceId, userId)
+      res.json(profile)
+    } catch (error: any) {
+      if (error.message?.includes("managed by SSO")) {
+        res.status(403).json({ error: error.message })
+        return
+      }
+      logger.error({ err: error }, "Failed to update profile")
+      next(error)
+    }
+  })
+
   return router
 }
 
