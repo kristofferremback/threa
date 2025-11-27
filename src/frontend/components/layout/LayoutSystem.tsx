@@ -333,7 +333,7 @@ export function LayoutSystem() {
           workspaceId={bootstrapData.workspace.id}
           socket={socket}
           onUnreadCountChange={setInboxUnreadCount}
-          onNavigateToChannel={(streamSlug, mode = "replace", highlightEventId) => {
+          onNavigateToStream={(streamSlug, mode = "replace", highlightEventId) => {
             const stream = bootstrapData.streams.find((s) => s.slug === streamSlug)
             if (stream) {
               openItem(
@@ -346,18 +346,6 @@ export function LayoutSystem() {
                 paneId,
               )
             }
-          }}
-          onNavigateToThread={(threadId, parentStreamId, mode = "replace", highlightEventId) => {
-            const parentStream = bootstrapData.streams.find((s) => s.id === parentStreamId || s.slug === parentStreamId)
-            openItem(
-              {
-                title: "Thread",
-                type: "stream",
-                data: { streamId: threadId, streamSlug: parentStream?.slug || parentStreamId, highlightEventId },
-              },
-              mode,
-              paneId,
-            )
           }}
         />
       )

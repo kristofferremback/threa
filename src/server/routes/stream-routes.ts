@@ -974,7 +974,7 @@ export function createStreamRoutes(
       }
 
       const notifications = await streamService.getNotifications(workspaceId, userId, limit)
-      res.json(notifications)
+      res.json({ notifications })
     } catch (error) {
       logger.error({ err: error }, "Failed to get notifications")
       next(error)

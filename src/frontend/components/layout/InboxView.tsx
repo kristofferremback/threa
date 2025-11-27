@@ -6,35 +6,55 @@ import type { Socket } from "socket.io-client"
 
 interface Notification {
   id: string
-  type: string
-  messageId: string | null
-  channelId: string | null
-  channelName: string | null
-  channelSlug: string | null
-  conversationId: string | null
+  notificationType: string
+  streamId: string | null
+  streamName: string | null
+  streamSlug: string | null
+  streamType: string | null
+  eventId: string | null
   actorId: string | null
   actorName: string | null
   actorEmail: string | null
-  preview: string | null
+  preview?: string | null
   readAt: string | null
   createdAt: string
 }
 
 type TabType = "unread" | "all"
 
+// Helper to safely extract slug string (handles legacy corrupted data)
+function getSlugString(slug: string | null | undefined | { slug?: string }): string | null {
+  if (!slug) return null
+  if (typeof slug === "string") {
+    // Check if it's a JSON string
+    if (slug.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(slug)
+        return parsed.slug || null
+      } catch {
+        return slug
+      }
+    }
+    return slug
+  }
+  // It's an object
+  if (typeof slug === "object" && "slug" in slug) {
+    return slug.slug || null
+  }
+  return null
+}
+
 interface InboxViewProps {
   workspaceId: string
   socket?: Socket | null
-  onNavigateToChannel?: (channelSlug: string, mode?: OpenMode, highlightMessageId?: string) => void
-  onNavigateToThread?: (threadId: string, channelId: string, mode?: OpenMode, highlightMessageId?: string) => void
+  onNavigateToStream?: (streamSlug: string, mode?: OpenMode, highlightEventId?: string) => void
   onUnreadCountChange?: (count: number) => void
 }
 
 export function InboxView({
   workspaceId,
   socket,
-  onNavigateToChannel,
-  onNavigateToThread,
+  onNavigateToStream,
   onUnreadCountChange,
 }: InboxViewProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -137,21 +157,10 @@ export function InboxView({
       }).catch((err) => console.error("Failed to mark notification as read:", err))
     }
 
-    // Navigate to the relevant location
-    if (notification.conversationId && notification.channelId) {
-      // Thread notification: open the thread and highlight the specific message
-      onNavigateToThread?.(
-        notification.conversationId,
-        notification.channelId,
-        mode,
-        notification.messageId || undefined,
-      )
-    } else if (notification.channelSlug && notification.messageId) {
-      // Channel notification: open the channel and highlight the specific message
-      onNavigateToChannel?.(notification.channelSlug, mode, notification.messageId)
-    } else if (notification.channelSlug) {
-      // Just navigate to the channel
-      onNavigateToChannel?.(notification.channelSlug, mode)
+    // Navigate to the relevant stream
+    const slug = getSlugString(notification.streamSlug)
+    if (slug) {
+      onNavigateToStream?.(slug, mode, notification.eventId || undefined)
     }
   }
 
@@ -169,15 +178,17 @@ export function InboxView({
   }
 
   const getNotificationText = (notification: Notification) => {
-    switch (notification.type) {
+    const streamName = getSlugString(notification.streamName) || getSlugString(notification.streamSlug)
+
+    switch (notification.notificationType) {
       case "mention":
         return (
           <>
             <strong>{notification.actorName || notification.actorEmail}</strong> mentioned you
-            {notification.channelName && (
+            {streamName && (
               <>
                 {" in "}
-                <span style={{ color: "var(--accent-primary)" }}>#{notification.channelName}</span>
+                <span style={{ color: "var(--accent-primary)" }}>#{streamName}</span>
               </>
             )}
           </>
@@ -191,7 +202,7 @@ export function InboxView({
       case "channel_join":
         return (
           <>
-            You were added to <span style={{ color: "var(--accent-primary)" }}>#{notification.channelName}</span>
+            You were added to <span style={{ color: "var(--accent-primary)" }}>#{streamName}</span>
           </>
         )
       default:
@@ -314,10 +325,18 @@ export function InboxView({
         ) : (
           <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
             {filteredNotifications.map((notification) => (
-              <button
+              <div
                 key={notification.id}
+                role="button"
+                tabIndex={0}
                 onClick={(e) => handleNotificationClick(notification, e)}
-                className="group w-full px-4 py-3 text-left transition-colors hover:bg-[var(--hover-overlay)] flex gap-3"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    handleNotificationClick(notification, e as unknown as React.MouseEvent)
+                  }
+                }}
+                className="group w-full px-4 py-3 text-left transition-colors hover:bg-[var(--hover-overlay)] flex gap-3 cursor-pointer"
                 style={{
                   background: notification.readAt ? "transparent" : "var(--unread-bg, rgba(99, 102, 241, 0.05))",
                 }}
@@ -331,7 +350,7 @@ export function InboxView({
                       className="w-8 h-8 rounded-full flex items-center justify-center"
                       style={{ background: "var(--bg-tertiary)" }}
                     >
-                      {getNotificationIcon(notification.type)}
+                      {getNotificationIcon(notification.notificationType)}
                     </div>
                   )}
                 </div>
@@ -354,11 +373,11 @@ export function InboxView({
                     </p>
                   )}
 
-                  {notification.channelSlug && (
+                  {getSlugString(notification.streamSlug) && (
                     <div className="flex items-center gap-1 mt-1">
                       <Hash className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
                       <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {notification.channelSlug}
+                        {getSlugString(notification.streamSlug)}
                       </span>
                     </div>
                   )}
@@ -383,7 +402,7 @@ export function InboxView({
                     <PanelRightOpen className="h-4 w-4" />
                   </button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
