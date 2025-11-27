@@ -28,6 +28,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
   const [activeStreamSlug, setActiveStreamSlug] = useState<string | null>(null)
   const shouldPushHistory = useRef(false)
+  const hasInitialized = useRef(false)
 
   // Sync pane changes to URL
   useEffect(() => {
@@ -61,8 +62,20 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     return () => window.removeEventListener("popstate", handlePopState)
   }, [streams])
 
-  // Initialize from URL
+  // Initialize from URL - only runs once
   const initializeFromUrl = useCallback((): boolean => {
+    // Only initialize once
+    if (hasInitialized.current) {
+      return false
+    }
+
+    // Need streams to be loaded
+    if (streams.length === 0) {
+      return false
+    }
+
+    hasInitialized.current = true
+
     const urlParams = new URLSearchParams(window.location.search)
     const paneParam = urlParams.get("p")
     const restoredPanes = deserializePanesFromUrl(paneParam || "", streams)
@@ -82,7 +95,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     const defaultStream =
       defaultStreamSlug
         ? streams.find((s) => s.slug === defaultStreamSlug)
-        : streams.find((s) => s.streamType === "channel")
+        : streams.find((s) => s.streamType === "channel" && s.isMember)
 
     if (defaultStream) {
       setActiveStreamSlug(defaultStream.slug)

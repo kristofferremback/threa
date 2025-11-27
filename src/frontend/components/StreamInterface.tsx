@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { useStream } from "../hooks"
 import { ChatHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
 import type { OpenMode, Mention } from "../types"
+import { getOpenMode } from "../types"
 
 interface StreamInterfaceProps {
   workspaceId: string
@@ -138,7 +139,7 @@ export function StreamInterface({
           isLoading={isLoading && !rootEvent}
           onOpenThread={(msgId, _channelId, mode) => handleOpenThread(msgId, mode)}
           onGoToChannel={(slug, mode) => onGoToStream?.(slug, mode)}
-          onChannelClick={(slug) => onGoToStream?.(slug, "replace")}
+          onChannelClick={(slug, e) => onGoToStream?.(slug, getOpenMode(e))}
         />
       )}
 

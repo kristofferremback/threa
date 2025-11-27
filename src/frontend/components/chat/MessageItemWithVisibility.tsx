@@ -18,7 +18,7 @@ interface MessageItemWithVisibilityProps {
   onShareToChannel?: (messageId: string) => Promise<void>
   onCrosspostToChannel?: (messageId: string) => void
   onUserMentionClick?: (userId: string) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
   onMessageVisible: (messageId: string) => void
   onMessageHidden: (messageId: string) => void
   onSetRef?: (element: HTMLDivElement | null) => void

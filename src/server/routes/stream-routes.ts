@@ -148,6 +148,25 @@ export function createStreamRoutes(
     }
   })
 
+  // Get discoverable streams (public channels user can join)
+  router.get("/:workspaceId/streams/browse", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      const streams = await streamService.getDiscoverableStreams(workspaceId, userId)
+      res.json({ streams })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to get discoverable streams")
+      next(error)
+    }
+  })
+
   // Get a single stream
   router.get("/:workspaceId/streams/:streamId", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -156,6 +175,13 @@ export function createStreamRoutes(
 
       if (!userId) {
         res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Check access
+      const access = await streamService.checkStreamAccess(streamId, userId)
+      if (!access.hasAccess) {
+        res.status(403).json({ error: access.reason || "Access denied" })
         return
       }
 
@@ -279,6 +305,13 @@ export function createStreamRoutes(
         return
       }
 
+      // Check access
+      const access = await streamService.checkStreamAccess(streamId, userId)
+      if (!access.hasAccess) {
+        res.status(403).json({ error: access.reason || "Access denied" })
+        return
+      }
+
       const events = await streamService.getStreamEvents(streamId, limit, offset)
       const lastReadEventId = await streamService.getReadCursor(streamId, userId)
 
@@ -296,11 +329,18 @@ export function createStreamRoutes(
   // Create an event (post a message)
   router.post("/:workspaceId/streams/:streamId/events", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { workspaceId, streamId } = req.params
+      const { streamId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
         res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      // Check access - must be a member to post
+      const access = await streamService.checkStreamAccess(streamId, userId)
+      if (!access.canPost) {
+        res.status(403).json({ error: access.reason || "You must be a member to post messages" })
         return
       }
 
@@ -681,7 +721,7 @@ export function createStreamRoutes(
   // Membership
   // ==========================================================================
 
-  // Join a stream
+  // Join a stream (only public channels can be self-joined)
   router.post("/:workspaceId/streams/:streamId/join", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { streamId } = req.params
@@ -692,8 +732,33 @@ export function createStreamRoutes(
         return
       }
 
-      await streamService.joinStream(streamId, userId)
-      res.json({ success: true })
+      // Check if stream is public (only public channels can be self-joined)
+      const existingStream = await streamService.getStream(streamId)
+      if (!existingStream) {
+        res.status(404).json({ error: "Stream not found" })
+        return
+      }
+
+      if (existingStream.visibility !== "public") {
+        res.status(403).json({ error: "You cannot join private channels without an invite" })
+        return
+      }
+
+      const { stream, event } = await streamService.joinStream(streamId, userId)
+
+      // Return full stream info so frontend can use it immediately
+      res.json({
+        success: true,
+        stream: {
+          ...stream,
+          isMember: true,
+          unreadCount: 0,
+          lastReadAt: new Date().toISOString(),
+          notifyLevel: "default",
+          pinnedAt: null,
+        },
+        event: mapEventToResponse(event),
+      })
     } catch (error) {
       logger.error({ err: error }, "Failed to join stream")
       next(error)
@@ -715,6 +780,44 @@ export function createStreamRoutes(
       res.json({ success: true })
     } catch (error) {
       logger.error({ err: error }, "Failed to leave stream")
+      next(error)
+    }
+  })
+
+  // Pin a stream
+  router.post("/:workspaceId/streams/:streamId/pin", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { streamId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await streamService.pinStream(streamId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to pin stream")
+      next(error)
+    }
+  })
+
+  // Unpin a stream
+  router.post("/:workspaceId/streams/:streamId/unpin", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { streamId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await streamService.unpinStream(streamId, userId)
+      res.json({ success: true })
+    } catch (error) {
+      logger.error({ err: error }, "Failed to unpin stream")
       next(error)
     }
   })

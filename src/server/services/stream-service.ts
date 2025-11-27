@@ -96,6 +96,15 @@ export interface BootstrapStream {
   lastReadAt: Date | null
   notifyLevel: NotifyLevel
   parentStreamId: string | null
+  pinnedAt: Date | null
+}
+
+// Access control result
+export interface StreamAccessResult {
+  hasAccess: boolean
+  isMember: boolean
+  canPost: boolean
+  reason?: string
 }
 
 export interface BootstrapUser {
@@ -191,36 +200,31 @@ export class StreamService {
             WHERE w.id = ${workspaceId} AND wm.user_id = ${userId}`,
         ),
 
-        // 2. All accessible streams (channels, DMs user is part of)
+        // 2. All streams user is a member of (not public streams they haven't joined)
         client.query(
           sql`SELECT
               s.id, s.name, s.slug, s.description, s.topic,
               s.stream_type, s.visibility, s.parent_stream_id,
-              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+              true as is_member,
               sm.last_read_at,
+              sm.pinned_at,
               COALESCE(sm.notify_level, 'default') as notify_level,
-              CASE WHEN sm.user_id IS NOT NULL THEN
-                COALESCE(
-                  (SELECT COUNT(*)::int FROM stream_events e
-                   WHERE e.stream_id = s.id
-                   AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01'::timestamptz)
-                   AND e.deleted_at IS NULL
-                   AND e.actor_id != ${userId}),
-                  0
-                )
-              ELSE 0 END as unread_count
+              COALESCE(
+                (SELECT COUNT(*)::int FROM stream_events e
+                 WHERE e.stream_id = s.id
+                 AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01'::timestamptz)
+                 AND e.deleted_at IS NULL
+                 AND e.actor_id != ${userId}),
+                0
+              ) as unread_count
             FROM streams s
-            LEFT JOIN stream_members sm ON s.id = sm.stream_id
+            INNER JOIN stream_members sm ON s.id = sm.stream_id
               AND sm.user_id = ${userId}
               AND sm.left_at IS NULL
             WHERE s.workspace_id = ${workspaceId}
               AND s.archived_at IS NULL
               AND s.stream_type IN ('channel', 'dm')
-              AND (
-                s.visibility = 'public'
-                OR (s.visibility = 'private' AND sm.user_id IS NOT NULL)
-              )
-            ORDER BY s.stream_type, s.name`,
+            ORDER BY sm.pinned_at DESC NULLS LAST, s.name`,
         ),
 
         // 3. All workspace members
@@ -261,6 +265,7 @@ export class StreamService {
           lastReadAt: row.last_read_at,
           notifyLevel: row.notify_level as NotifyLevel,
           parentStreamId: row.parent_stream_id,
+          pinnedAt: row.pinned_at,
         })),
         users: usersRes.rows.map((row) => ({
           id: row.id,
@@ -1061,7 +1066,7 @@ export class StreamService {
   // Membership Operations
   // ==========================================================================
 
-  async joinStream(streamId: string, userId: string): Promise<void> {
+  async joinStream(streamId: string, userId: string): Promise<{ stream: Stream; event: StreamEventWithDetails }> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -1081,20 +1086,45 @@ export class StreamService {
       )
 
       // Get stream info
-      const stream = await client.query(sql`SELECT workspace_id, slug FROM streams WHERE id = ${streamId}`)
+      const streamResult = await client.query(sql`SELECT * FROM streams WHERE id = ${streamId}`)
+      const streamRow = streamResult.rows[0]
 
-      const outboxId = generateId("outbox")
+      // Emit stream_event.created for the member_joined event (so it broadcasts to the room)
+      const eventOutboxId = generateId("outbox")
       await client.query(
         sql`INSERT INTO outbox (id, event_type, payload)
-            VALUES (${outboxId}, 'stream.member_joined', ${JSON.stringify({
+            VALUES (${eventOutboxId}, 'stream_event.created', ${JSON.stringify({
+              event_id: eventId,
               stream_id: streamId,
-              workspace_id: stream.rows[0]?.workspace_id,
-              user_id: userId,
+              workspace_id: streamRow?.workspace_id,
+              stream_slug: streamRow?.slug,
+              event_type: "member_joined",
+              actor_id: userId,
             })})`,
       )
-      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+      await client.query(`NOTIFY outbox_event, '${eventOutboxId.replace(/'/g, "''")}'`)
+
+      // Also emit stream.member_joined for sidebar/workspace-level updates
+      const memberOutboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${memberOutboxId}, 'stream.member_added', ${JSON.stringify({
+              stream_id: streamId,
+              stream_name: streamRow?.name,
+              stream_slug: streamRow?.slug,
+              workspace_id: streamRow?.workspace_id,
+              user_id: userId,
+              added_by_user_id: userId,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${memberOutboxId.replace(/'/g, "''")}'`)
 
       await client.query("COMMIT")
+
+      const stream = this.mapStreamRow(streamRow)
+      const event = await this.getEventWithDetails(eventId)
+
+      return { stream, event: event! }
     } catch (error) {
       await client.query("ROLLBACK")
       throw error
@@ -1120,18 +1150,37 @@ export class StreamService {
                     ${JSON.stringify({ user_id: userId })})`,
       )
 
-      const stream = await client.query(sql`SELECT workspace_id FROM streams WHERE id = ${streamId}`)
+      const streamResult = await client.query(sql`SELECT * FROM streams WHERE id = ${streamId}`)
+      const streamRow = streamResult.rows[0]
 
-      const outboxId = generateId("outbox")
+      // Emit stream_event.created for the member_left event (so it broadcasts to the room)
+      const eventOutboxId = generateId("outbox")
       await client.query(
         sql`INSERT INTO outbox (id, event_type, payload)
-            VALUES (${outboxId}, 'stream.member_left', ${JSON.stringify({
+            VALUES (${eventOutboxId}, 'stream_event.created', ${JSON.stringify({
+              event_id: eventId,
               stream_id: streamId,
-              workspace_id: stream.rows[0]?.workspace_id,
-              user_id: userId,
+              workspace_id: streamRow?.workspace_id,
+              stream_slug: streamRow?.slug,
+              event_type: "member_left",
+              actor_id: userId,
             })})`,
       )
-      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+      await client.query(`NOTIFY outbox_event, '${eventOutboxId.replace(/'/g, "''")}'`)
+
+      // Also emit stream.member_removed for sidebar/workspace-level updates
+      const memberOutboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${memberOutboxId}, 'stream.member_removed', ${JSON.stringify({
+              stream_id: streamId,
+              stream_name: streamRow?.name,
+              workspace_id: streamRow?.workspace_id,
+              user_id: userId,
+              removed_by_user_id: userId,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${memberOutboxId.replace(/'/g, "''")}'`)
 
       await client.query("COMMIT")
     } catch (error) {
@@ -1379,6 +1428,109 @@ export class StreamService {
             AND (${excludeStreamId}::text IS NULL OR id != ${excludeStreamId})`,
     )
     return result.rows.length > 0
+  }
+
+  /**
+   * Check if a user has access to a stream
+   * - Members can always access their streams
+   * - Non-members cannot access private streams
+   * - Non-members cannot access public streams (they need to join first)
+   */
+  async checkStreamAccess(streamId: string, userId: string): Promise<StreamAccessResult> {
+    const result = await this.pool.query(
+      sql`SELECT
+            s.id, s.visibility, s.stream_type,
+            CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member
+          FROM streams s
+          LEFT JOIN stream_members sm ON s.id = sm.stream_id
+            AND sm.user_id = ${userId}
+            AND sm.left_at IS NULL
+          WHERE s.id = ${streamId}`,
+    )
+
+    if (result.rows.length === 0) {
+      return { hasAccess: false, isMember: false, canPost: false, reason: "Stream not found" }
+    }
+
+    const stream = result.rows[0]
+    const isMember = stream.is_member
+
+    // Members always have full access
+    if (isMember) {
+      return { hasAccess: true, isMember: true, canPost: true }
+    }
+
+    // Non-members cannot access any stream - they need to join first
+    return {
+      hasAccess: false,
+      isMember: false,
+      canPost: false,
+      reason: stream.visibility === "private" ? "This is a private channel" : "You need to join this channel first",
+    }
+  }
+
+  /**
+   * Get all public channels in a workspace that the user can discover
+   */
+  async getDiscoverableStreams(workspaceId: string, userId: string): Promise<BootstrapStream[]> {
+    const result = await this.pool.query(
+      sql`SELECT
+            s.id, s.name, s.slug, s.description, s.topic,
+            s.stream_type, s.visibility, s.parent_stream_id,
+            CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+            sm.last_read_at,
+            sm.pinned_at,
+            COALESCE(sm.notify_level, 'default') as notify_level,
+            (SELECT COUNT(*)::int FROM stream_members WHERE stream_id = s.id AND left_at IS NULL) as member_count
+          FROM streams s
+          LEFT JOIN stream_members sm ON s.id = sm.stream_id
+            AND sm.user_id = ${userId}
+            AND sm.left_at IS NULL
+          WHERE s.workspace_id = ${workspaceId}
+            AND s.archived_at IS NULL
+            AND s.stream_type = 'channel'
+            AND s.visibility = 'public'
+          ORDER BY s.name`,
+    )
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      topic: row.topic,
+      streamType: row.stream_type as StreamType,
+      visibility: row.visibility as StreamVisibility,
+      isMember: row.is_member,
+      unreadCount: 0,
+      lastReadAt: row.last_read_at,
+      notifyLevel: row.notify_level as NotifyLevel,
+      parentStreamId: row.parent_stream_id,
+      pinnedAt: row.pinned_at,
+      memberCount: row.member_count,
+    }))
+  }
+
+  /**
+   * Pin a stream for a user
+   */
+  async pinStream(streamId: string, userId: string): Promise<void> {
+    await this.pool.query(
+      sql`UPDATE stream_members
+          SET pinned_at = NOW(), updated_at = NOW()
+          WHERE stream_id = ${streamId} AND user_id = ${userId}`,
+    )
+  }
+
+  /**
+   * Unpin a stream for a user
+   */
+  async unpinStream(streamId: string, userId: string): Promise<void> {
+    await this.pool.query(
+      sql`UPDATE stream_members
+          SET pinned_at = NULL, updated_at = NOW()
+          WHERE stream_id = ${streamId} AND user_id = ${userId}`,
+    )
   }
 
   // ==========================================================================

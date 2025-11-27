@@ -23,7 +23,7 @@ interface MessageItemProps {
   onShareToChannel?: (messageId: string) => Promise<void>
   onCrosspostToChannel?: (messageId: string) => void // Opens channel selector
   onUserMentionClick?: (userId: string) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
   animationDelay?: number
   showThreadActions?: boolean
   visibilityRef?: React.RefObject<HTMLDivElement> | ((el: HTMLDivElement | null) => void)
@@ -366,7 +366,7 @@ export function MessageItem({
 interface ChannelBadgesProps {
   channels: LinkedChannel[]
   currentChannelId?: string
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
 }
 
 function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBadgesProps) {
@@ -380,8 +380,9 @@ function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBa
         return (
           <button
             key={channel.id}
-            onClick={() => !isCurrent && onChannelClick?.(channel.slug)}
+            onClick={(e) => !isCurrent && onChannelClick?.(channel.slug, e)}
             disabled={isCurrent}
+            title={isCurrent ? undefined : "Click to open, ⌥+click to open to side, ⌘+click for new tab"}
             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium transition-colors"
             style={{
               // Current channel: warm amber/gold, Other channels: neutral with blue hover
@@ -406,7 +407,6 @@ function ChannelBadges({ channels, currentChannelId, onChannelClick }: ChannelBa
                 e.currentTarget.style.color = "var(--text-secondary)"
               }
             }}
-            title={isCurrent ? "Current channel" : `Go to #${channel.slug}`}
           >
             <Hash className="w-3 h-3" />
             {channel.slug}

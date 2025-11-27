@@ -147,7 +147,7 @@ export function ChannelSettingsModal({
 
     setIsLoadingMembers(true)
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels/${channel.id}/members`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams/${channel.id}/members`, {
         credentials: "include",
       })
       if (res.ok) {
@@ -167,7 +167,7 @@ export function ChannelSettingsModal({
     setMemberError(null)
 
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels/${channel.id}/members`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams/${channel.id}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -218,7 +218,7 @@ export function ChannelSettingsModal({
 
     setIsRemovingMember(true)
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels/${channel.id}/members/${memberToRemove.userId}`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams/${channel.id}/members/${memberToRemove.userId}`, {
         method: "DELETE",
         credentials: "include",
       })
@@ -244,7 +244,7 @@ export function ChannelSettingsModal({
     setError(null)
 
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels/${channel.id}`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams/${channel.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -276,7 +276,7 @@ export function ChannelSettingsModal({
     setError(null)
 
     try {
-      const res = await fetch(`/api/workspace/${workspaceId}/channels/${channel.id}`, {
+      const res = await fetch(`/api/workspace/${workspaceId}/streams/${channel.id}`, {
         method: "DELETE",
         credentials: "include",
       })

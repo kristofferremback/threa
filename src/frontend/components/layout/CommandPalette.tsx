@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { Hash, Lock, Search, X, UserCheck, UserPlus } from "lucide-react"
-import type { Stream } from "../../types"
+import { Hash, Lock, Search, X, UserCheck, UserPlus, PanelRightOpen } from "lucide-react"
+import type { Stream, OpenMode } from "../../types"
+import { getOpenMode } from "../../types"
 
 interface CommandPaletteProps {
   open: boolean
   onClose: () => void
   streams: Stream[]
-  onSelectStream: (stream: Stream) => void
+  onSelectStream: (stream: Stream, mode: OpenMode) => void
 }
 
 interface ScoredStream {
@@ -188,7 +189,11 @@ export function CommandPalette({ open, onClose, streams, onSelectStream }: Comma
         case "Enter":
           e.preventDefault()
           if (scoredStreams[selectedIndex]) {
-            onSelectStream(scoredStreams[selectedIndex].stream)
+            // Support modifier keys for open mode
+            let mode: OpenMode = "replace"
+            if (e.metaKey || e.ctrlKey) mode = "newTab"
+            else if (e.altKey) mode = "side"
+            onSelectStream(scoredStreams[selectedIndex].stream, mode)
             onClose()
           }
           break
@@ -305,15 +310,16 @@ export function CommandPalette({ open, onClose, streams, onSelectStream }: Comma
               return (
                 <button
                   key={stream.id}
-                  onClick={() => {
-                    onSelectStream(stream)
+                  onClick={(e) => {
+                    onSelectStream(stream, getOpenMode(e))
                     onClose()
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors group"
                   style={{
                     background: isSelected ? "var(--hover-overlay)" : "transparent",
                   }}
+                  title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
                 >
                   <Icon
                     className="h-4 w-4 flex-shrink-0"
@@ -346,15 +352,29 @@ export function CommandPalette({ open, onClose, streams, onSelectStream }: Comma
                       </p>
                     )}
                   </div>
-                  <div
-                    className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-full"
-                    style={{
-                      background: isMember ? "rgba(34, 197, 94, 0.15)" : "var(--bg-tertiary)",
-                      color: isMember ? "rgb(34, 197, 94)" : "var(--text-muted)",
-                    }}
-                  >
-                    <MemberIcon className="h-3 w-3" />
-                    <span>{isMember ? "Joined" : "Join"}</span>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-full"
+                      style={{
+                        background: isMember ? "rgba(34, 197, 94, 0.15)" : "var(--bg-tertiary)",
+                        color: isMember ? "rgb(34, 197, 94)" : "var(--text-muted)",
+                      }}
+                    >
+                      <MemberIcon className="h-3 w-3" />
+                      <span>{isMember ? "Joined" : "Join"}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectStream(stream, "side")
+                        onClose()
+                      }}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-all"
+                      style={{ color: "var(--text-muted)" }}
+                      title="Open to side"
+                    >
+                      <PanelRightOpen className="h-4 w-4" />
+                    </button>
                   </div>
                 </button>
               )
@@ -379,6 +399,12 @@ export function CommandPalette({ open, onClose, streams, onSelectStream }: Comma
                 Enter
               </kbd>
               Select
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded" style={{ background: "var(--bg-tertiary)" }}>
+                ⌥+Enter
+              </kbd>
+              Side
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 rounded" style={{ background: "var(--bg-tertiary)" }}>

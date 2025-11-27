@@ -12,7 +12,7 @@ interface ThreadContextProps {
   isLoading: boolean
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
 }
 
 export function ThreadContext({

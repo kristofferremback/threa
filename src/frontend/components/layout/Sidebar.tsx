@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   Hash,
   Lock,
   Plus,
   Settings,
-  ChevronDown,
   MoreHorizontal,
   LogOut,
   Pin,
@@ -12,22 +11,31 @@ import {
   Search,
   Command,
   Bell,
+  PinOff,
+  LogIn,
+  Compass,
+  PanelRightOpen,
 } from "lucide-react"
 import { clsx } from "clsx"
-import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector, Input } from "../ui"
-import type { Stream, Workspace } from "../../types"
+import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
+import type { Stream, Workspace, OpenMode } from "../../types"
+import { getOpenMode } from "../../types"
 
 interface SidebarProps {
   workspace: Workspace
   streams: Stream[]
   activeStreamSlug: string | null
-  onSelectStream: (stream: Stream) => void
+  onSelectStream: (stream: Stream, mode: OpenMode) => void
   onCreateChannel: () => void
   onStreamSettings: (stream: Stream) => void
   onInvitePeople: () => void
   onLogout: () => void
   onOpenCommandPalette: () => void
   onOpenInbox?: () => void
+  onBrowseChannels?: () => void
+  onPinStream?: (streamId: string) => void
+  onUnpinStream?: (streamId: string) => void
+  onLeaveStream?: (streamId: string) => void
   isInboxActive?: boolean
   inboxUnreadCount?: number
 }
@@ -43,11 +51,20 @@ export function Sidebar({
   onLogout,
   onOpenCommandPalette,
   onOpenInbox,
+  onBrowseChannels,
+  onPinStream,
+  onUnpinStream,
+  onLeaveStream,
   isInboxActive = false,
   inboxUnreadCount = 0,
 }: SidebarProps) {
-  // Filter to only show channels (not threads or DMs)
-  const channels = streams.filter((s) => s.streamType === "channel")
+  // Filter to only show channels the user is a member of
+  const memberChannels = streams.filter((s) => s.streamType === "channel" && s.isMember)
+  // Use truthy check for pinnedAt since it might be undefined or null
+  const pinnedChannels = memberChannels.filter((s) => !!s.pinnedAt)
+  const unpinnedChannels = memberChannels.filter((s) => !s.pinnedAt)
+
+  const hasNoChannels = memberChannels.length === 0
 
   return (
     <div
@@ -89,14 +106,90 @@ export function Sidebar({
         </button>
       </div>
 
-      <StreamList
-        streams={channels}
-        activeStreamSlug={activeStreamSlug}
-        onSelectStream={onSelectStream}
-        onCreateChannel={onCreateChannel}
-        onStreamSettings={onStreamSettings}
-      />
+      <div className="flex-1 overflow-y-auto p-2">
+        {hasNoChannels ? (
+          <EmptyChannelsState onBrowseChannels={onBrowseChannels} onCreateChannel={onCreateChannel} />
+        ) : (
+          <>
+            {pinnedChannels.length > 0 && (
+              <StreamSection
+                title="Pinned"
+                streams={pinnedChannels}
+                activeStreamSlug={activeStreamSlug}
+                onSelectStream={onSelectStream}
+                onStreamSettings={onStreamSettings}
+                onPinStream={onPinStream}
+                onUnpinStream={onUnpinStream}
+                onLeaveStream={onLeaveStream}
+              />
+            )}
+
+            <StreamSection
+              title="Channels"
+              streams={unpinnedChannels}
+              activeStreamSlug={activeStreamSlug}
+              onSelectStream={onSelectStream}
+              onCreateChannel={onCreateChannel}
+              onBrowseChannels={onBrowseChannels}
+              onStreamSettings={onStreamSettings}
+              onPinStream={onPinStream}
+              onUnpinStream={onUnpinStream}
+              onLeaveStream={onLeaveStream}
+            />
+          </>
+        )}
+      </div>
+
       <UserFooter onLogout={onLogout} />
+    </div>
+  )
+}
+
+interface EmptyChannelsStateProps {
+  onBrowseChannels?: () => void
+  onCreateChannel: () => void
+}
+
+function EmptyChannelsState({ onBrowseChannels, onCreateChannel }: EmptyChannelsStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+      <div
+        className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+        style={{ background: "var(--bg-tertiary)" }}
+      >
+        <Compass className="h-6 w-6" style={{ color: "var(--text-muted)" }} />
+      </div>
+      <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
+        No channels yet
+      </h3>
+      <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+        Join a channel to start collaborating with your team
+      </p>
+      <div className="flex flex-col gap-2 w-full">
+        <button
+          onClick={onBrowseChannels}
+          className="w-full px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          style={{
+            background: "var(--accent-primary)",
+            color: "white",
+          }}
+        >
+          <Compass className="h-4 w-4" />
+          Browse channels
+        </button>
+        <button
+          onClick={onCreateChannel}
+          className="w-full px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border-subtle)",
+          }}
+        >
+          <Plus className="h-4 w-4" />
+          Create channel
+        </button>
+      </div>
     </div>
   )
 }
@@ -173,49 +266,74 @@ function WorkspaceHeader({ workspace, onInvitePeople }: WorkspaceHeaderProps) {
   )
 }
 
-interface StreamListProps {
+interface StreamSectionProps {
+  title: string
   streams: Stream[]
   activeStreamSlug: string | null
-  onSelectStream: (stream: Stream) => void
-  onCreateChannel: () => void
+  onSelectStream: (stream: Stream, mode: OpenMode) => void
+  onCreateChannel?: () => void
+  onBrowseChannels?: () => void
   onStreamSettings: (stream: Stream) => void
+  onPinStream?: (streamId: string) => void
+  onUnpinStream?: (streamId: string) => void
+  onLeaveStream?: (streamId: string) => void
 }
 
-function StreamList({
+function StreamSection({
+  title,
   streams,
   activeStreamSlug,
   onSelectStream,
   onCreateChannel,
+  onBrowseChannels,
   onStreamSettings,
-}: StreamListProps) {
+  onPinStream,
+  onUnpinStream,
+  onLeaveStream,
+}: StreamSectionProps) {
   return (
-    <div className="flex-1 overflow-y-auto p-2">
+    <div className="mb-4">
       <div className="mb-2 px-2 flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Channels
+          {title}
         </span>
-        <button
-          onClick={onCreateChannel}
-          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
-          style={{ color: "var(--text-muted)" }}
-          title="Add channel"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onBrowseChannels && (
+            <button
+              onClick={onBrowseChannels}
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              style={{ color: "var(--text-muted)" }}
+              title="Browse channels"
+            >
+              <Compass className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onCreateChannel && (
+            <button
+              onClick={onCreateChannel}
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              style={{ color: "var(--text-muted)" }}
+              title="Add channel"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-0.5">
-        {streams
-          .filter((s) => s.isMember)
-          .map((stream) => (
-            <StreamItem
-              key={stream.id}
-              stream={stream}
-              isActive={activeStreamSlug === stream.slug}
-              onClick={() => onSelectStream(stream)}
-              onSettings={() => onStreamSettings(stream)}
-            />
-          ))}
+        {streams.map((stream) => (
+          <StreamItem
+            key={stream.id}
+            stream={stream}
+            isActive={activeStreamSlug === stream.slug}
+            onClick={(e) => onSelectStream(stream, getOpenMode(e))}
+            onSettings={() => onStreamSettings(stream)}
+            onPin={onPinStream ? () => onPinStream(stream.id) : undefined}
+            onUnpin={onUnpinStream ? () => onUnpinStream(stream.id) : undefined}
+            onLeave={onLeaveStream ? () => onLeaveStream(stream.id) : undefined}
+          />
+        ))}
       </div>
     </div>
   )
@@ -224,12 +342,16 @@ function StreamList({
 interface StreamItemProps {
   stream: Stream
   isActive: boolean
-  onClick: () => void
+  onClick: (e: React.MouseEvent) => void
   onSettings: () => void
+  onPin?: () => void
+  onUnpin?: () => void
+  onLeave?: () => void
 }
 
-function StreamItem({ stream, isActive, onClick, onSettings }: StreamItemProps) {
+function StreamItem({ stream, isActive, onClick, onSettings, onPin, onUnpin, onLeave }: StreamItemProps) {
   const isPrivate = stream.visibility === "private"
+  const isPinned = !!stream.pinnedAt
   const Icon = isPrivate ? Lock : Hash
 
   return (
@@ -239,7 +361,11 @@ function StreamItem({ stream, isActive, onClick, onSettings }: StreamItemProps) 
         isActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
       )}
     >
-      <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0">
+      <button
+        onClick={onClick}
+        className="flex items-center gap-2 flex-1 min-w-0"
+        title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
+      >
         <Icon
           className="h-4 w-4 flex-shrink-0"
           style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
@@ -264,7 +390,18 @@ function StreamItem({ stream, isActive, onClick, onSettings }: StreamItemProps) 
         </span>
       )}
 
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex items-center gap-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick({ ...e, altKey: true } as React.MouseEvent)
+          }}
+          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Open to side"
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" />
+        </button>
         <Dropdown
           align="left"
           trigger={
@@ -276,13 +413,27 @@ function StreamItem({ stream, isActive, onClick, onSettings }: StreamItemProps) 
             </button>
           }
         >
-          <DropdownItem onClick={() => {}} icon={<Pin className="h-4 w-4" />}>
-            Pin channel
-          </DropdownItem>
+          {isPinned ? (
+            <DropdownItem onClick={onUnpin} icon={<PinOff className="h-4 w-4" />}>
+              Unpin channel
+            </DropdownItem>
+          ) : (
+            <DropdownItem onClick={onPin} icon={<Pin className="h-4 w-4" />}>
+              Pin channel
+            </DropdownItem>
+          )}
           <DropdownDivider />
           <DropdownItem onClick={onSettings} icon={<Settings className="h-4 w-4" />}>
             Channel settings
           </DropdownItem>
+          {onLeave && (
+            <>
+              <DropdownDivider />
+              <DropdownItem onClick={onLeave} icon={<LogOut className="h-4 w-4" />} variant="danger">
+                Leave channel
+              </DropdownItem>
+            </>
+          )}
         </Dropdown>
       </div>
     </div>

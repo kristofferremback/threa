@@ -67,6 +67,15 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
   const addStream = useCallback((stream: Stream) => {
     setData((prev) => {
       if (!prev) return prev
+      // Check if stream already exists - if so, update instead of adding
+      const existingIndex = prev.streams.findIndex((s) => s.id === stream.id)
+      if (existingIndex >= 0) {
+        // Stream already exists, update it
+        const streams = prev.streams
+          .map((s) => (s.id === stream.id ? { ...s, ...stream } : s))
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        return { ...prev, streams }
+      }
       // Insert in alphabetical order
       const streams = [...prev.streams, stream].sort((a, b) => (a.name || "").localeCompare(b.name || ""))
       return { ...prev, streams }

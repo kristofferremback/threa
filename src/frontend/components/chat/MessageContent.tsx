@@ -6,13 +6,13 @@ interface MessageContentProps {
   content: string
   mentions?: MessageMention[]
   onUserMentionClick?: (userId: string) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
 }
 
 export type { MessageMention }
 
 // Parse markdown into blocks first, then handle inline formatting
-function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionClick?: (id: string) => void, onChannelClick?: (slug: string) => void): React.ReactNode[] {
+function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionClick?: (id: string) => void, onChannelClick?: (slug: string, e: React.MouseEvent) => void): React.ReactNode[] {
   const lines = text.split("\n")
   const blocks: React.ReactNode[] = []
   let key = 0
@@ -137,7 +137,7 @@ function parseInlineWithMentions(
   text: string,
   mentions: MessageMention[],
   onUserMentionClick?: (id: string) => void,
-  onChannelClick?: (slug: string) => void
+  onChannelClick?: (slug: string, e: React.MouseEvent) => void
 ): React.ReactNode[] {
   if (mentions.length === 0) {
     return parseInlineMarkdown(text)
@@ -186,8 +186,9 @@ function parseInlineWithMentions(
         return (
           <button
             key={index}
-            onClick={() => onChannelClick?.(mention.slug || mention.label)}
+            onClick={(e) => onChannelClick?.(mention.slug || mention.label, e)}
             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-sm font-medium transition-colors hover:opacity-80"
+            title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
             style={{
               background: isCrosspost ? "rgba(99, 102, 241, 0.15)" : "var(--bg-tertiary)",
               color: isCrosspost ? "var(--accent-primary)" : "var(--text-secondary)",

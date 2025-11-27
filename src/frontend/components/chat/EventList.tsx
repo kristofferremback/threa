@@ -19,7 +19,7 @@ interface EventListProps {
   onLoadMore: () => Promise<void>
   onShareToStream: (eventId: string) => Promise<void>
   onCrosspostToStream: (eventId: string, targetStreamId: string) => Promise<void>
-  onStreamClick: (slug: string) => void
+  onStreamClick: (slug: string, e: React.MouseEvent) => void
   users: Array<{ id: string; name: string; email: string }>
   streams: Array<{ id: string; name: string; slug: string }>
 }

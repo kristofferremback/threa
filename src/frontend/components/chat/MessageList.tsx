@@ -27,7 +27,7 @@ interface MessageListProps {
   onShareToChannel?: (messageId: string) => Promise<void>
   onCrosspostToChannel?: (messageId: string, targetChannelId: string) => Promise<void>
   onUserMentionClick?: (userId: string) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
   showThreadActions?: boolean
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string }>

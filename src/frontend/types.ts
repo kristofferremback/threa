@@ -31,6 +31,7 @@ export interface Stream {
   unreadCount: number
   lastReadAt: string | null
   notifyLevel: NotifyLevel
+  pinnedAt: string | null
 }
 
 export interface StreamMember {

@@ -8,10 +8,11 @@ import { CreateWorkspaceModal } from "./CreateWorkspaceModal"
 import { CreateChannelModal } from "./CreateChannelModal"
 import { ChannelSettingsModal } from "./ChannelSettingsModal"
 import { CommandPalette } from "./CommandPalette"
+import { BrowseChannelsModal } from "./BrowseChannelsModal"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
-import type { Tab, Stream } from "../../types"
+import type { Tab, Stream, OpenMode } from "../../types"
 
 export function LayoutSystem() {
   const { isAuthenticated, state, logout, user } = useAuth()
@@ -19,6 +20,7 @@ export function LayoutSystem() {
   const [showCreateChannel, setShowCreateChannel] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [showBrowseChannels, setShowBrowseChannels] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
@@ -139,18 +141,28 @@ export function LayoutSystem() {
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 
-  // Wrapper for selectStream that also resets unread count
+  // Wrapper for selectStream that also resets unread count and supports open modes
   const handleSelectStream = useCallback(
-    (stream: Stream) => {
-      selectStream(stream)
+    (stream: Stream, mode: OpenMode = "replace") => {
+      const streamTab = {
+        title: `#${(stream.name || "").replace("#", "")}`,
+        type: "stream" as const,
+        data: { streamSlug: stream.slug || undefined, streamId: stream.id },
+      }
+
+      if (mode === "replace") {
+        selectStream(stream)
+      } else {
+        openItem(streamTab, mode)
+      }
       resetUnreadCount(stream.id)
     },
-    [selectStream, resetUnreadCount],
+    [selectStream, openItem, resetUnreadCount],
   )
 
   // Handle stream selection from command palette
   const handleCommandPaletteSelect = useCallback(
-    async (stream: Stream) => {
+    async (stream: Stream, mode: OpenMode = "replace") => {
       // If not a member, join the stream first
       if (!stream.isMember && bootstrapData) {
         try {
@@ -161,16 +173,147 @@ export function LayoutSystem() {
           })
 
           if (res.ok) {
-            // Update the stream in bootstrap data to reflect membership
-            updateStream({ ...stream, isMember: true })
+            const data = await res.json()
+            const joinedStream: Stream = data.stream
+              ? {
+                  ...data.stream,
+                  isMember: true,
+                  pinnedAt: null,
+                }
+              : { ...stream, isMember: true, pinnedAt: null }
+
+            // Check if stream already exists in list
+            const existingStream = bootstrapData.streams.find((s) => s.id === stream.id)
+            if (existingStream) {
+              updateStream(joinedStream)
+            } else {
+              addStream(joinedStream)
+            }
+
+            handleSelectStream(joinedStream, mode)
+            return
           }
         } catch (error) {
           console.error("Failed to join stream:", error)
         }
       }
-      handleSelectStream(stream)
+      handleSelectStream(stream, mode)
     },
-    [handleSelectStream, bootstrapData, updateStream],
+    [handleSelectStream, bootstrapData, updateStream, addStream],
+  )
+
+  // Handle pinning a stream
+  const handlePinStream = useCallback(
+    async (streamId: string) => {
+      if (!bootstrapData) return
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${streamId}/pin`, {
+          method: "POST",
+          credentials: "include",
+        })
+        if (res.ok) {
+          const stream = bootstrapData.streams.find((s) => s.id === streamId)
+          if (stream) {
+            updateStream({ ...stream, pinnedAt: new Date().toISOString() })
+          }
+        }
+      } catch (error) {
+        console.error("Failed to pin stream:", error)
+      }
+    },
+    [bootstrapData, updateStream],
+  )
+
+  // Handle unpinning a stream
+  const handleUnpinStream = useCallback(
+    async (streamId: string) => {
+      if (!bootstrapData) return
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${streamId}/unpin`, {
+          method: "POST",
+          credentials: "include",
+        })
+        if (res.ok) {
+          const stream = bootstrapData.streams.find((s) => s.id === streamId)
+          if (stream) {
+            updateStream({ ...stream, pinnedAt: null })
+          }
+        }
+      } catch (error) {
+        console.error("Failed to unpin stream:", error)
+      }
+    },
+    [bootstrapData, updateStream],
+  )
+
+  // Handle leaving a stream
+  const handleLeaveStream = useCallback(
+    async (streamId: string) => {
+      if (!bootstrapData) return
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${streamId}/leave`, {
+          method: "POST",
+          credentials: "include",
+        })
+        if (res.ok) {
+          const stream = bootstrapData.streams.find((s) => s.id === streamId)
+          if (stream) {
+            updateStream({ ...stream, isMember: false })
+            // If we're viewing this stream, navigate away
+            if (activeStreamSlug === stream.slug) {
+              const remainingStreams = bootstrapData.streams.filter(
+                (s) => s.id !== streamId && s.isMember && s.streamType === "channel",
+              )
+              const firstStream = remainingStreams[0]
+              if (firstStream) {
+                selectStream(firstStream)
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to leave stream:", error)
+      }
+    },
+    [bootstrapData, updateStream, activeStreamSlug, selectStream],
+  )
+
+  // Handle joining a stream from browse modal
+  const handleJoinStream = useCallback(
+    async (stream: Stream) => {
+      if (!bootstrapData) return
+      try {
+        const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${stream.id}/join`, {
+          method: "POST",
+          credentials: "include",
+        })
+        if (res.ok) {
+          const data = await res.json()
+          // Use the stream data from the response if available, otherwise use passed stream
+          const joinedStream: Stream = data.stream
+            ? {
+                ...data.stream,
+                isMember: true,
+                pinnedAt: null,
+              }
+            : { ...stream, isMember: true, pinnedAt: null }
+
+          // Check if stream already exists in list (user might have had it from before)
+          const existingStream = bootstrapData.streams.find((s) => s.id === stream.id)
+          if (existingStream) {
+            updateStream(joinedStream)
+          } else {
+            addStream(joinedStream)
+          }
+
+          handleSelectStream(joinedStream)
+          setShowBrowseChannels(false)
+        }
+      } catch (error) {
+        console.error("Failed to join stream:", error)
+      }
+    },
+    [bootstrapData, updateStream, addStream, handleSelectStream],
   )
 
   // Helper to get stream from slug or ID
@@ -327,6 +470,10 @@ export function LayoutSystem() {
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
         onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
+        onBrowseChannels={() => setShowBrowseChannels(true)}
+        onPinStream={handlePinStream}
+        onUnpinStream={handleUnpinStream}
+        onLeaveStream={handleLeaveStream}
         isInboxActive={isActivityActive}
         inboxUnreadCount={inboxUnreadCount}
       />
@@ -387,6 +534,17 @@ export function LayoutSystem() {
         onClose={() => setShowCommandPalette(false)}
         streams={bootstrapData.streams}
         onSelectStream={handleCommandPaletteSelect}
+      />
+
+      <BrowseChannelsModal
+        open={showBrowseChannels}
+        workspaceId={bootstrapData.workspace.id}
+        onClose={() => setShowBrowseChannels(false)}
+        onJoinStream={handleJoinStream}
+        onCreateChannel={() => {
+          setShowBrowseChannels(false)
+          setShowCreateChannel(true)
+        }}
       />
     </div>
   )
