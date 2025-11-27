@@ -4,6 +4,9 @@
 -- Adds: embeddings, knowledge base, AI usage tracking, personas
 -- ============================================================================
 
+-- Enable pgvector extension for vector similarity search
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- ============================================================================
 -- 1. EMBEDDINGS ON TEXT_MESSAGES
 -- ============================================================================
@@ -14,16 +17,33 @@ ALTER TABLE text_messages ADD COLUMN IF NOT EXISTS embedded_at TIMESTAMPTZ;
 
 -- IVFFlat index for approximate nearest neighbor search
 -- lists=100 is good for up to ~1M vectors
-CREATE INDEX IF NOT EXISTS idx_text_messages_embedding 
-    ON text_messages USING ivfflat (embedding vector_cosine_ops) 
+CREATE INDEX IF NOT EXISTS idx_text_messages_embedding
+    ON text_messages USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
 -- Full-text search vector for hybrid search
-ALTER TABLE text_messages ADD COLUMN IF NOT EXISTS search_vector tsvector
-    GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+-- Note: We use a regular column instead of GENERATED because to_tsvector isn't immutable
+ALTER TABLE text_messages ADD COLUMN IF NOT EXISTS search_vector tsvector;
 
-CREATE INDEX IF NOT EXISTS idx_text_messages_search 
+CREATE INDEX IF NOT EXISTS idx_text_messages_search
     ON text_messages USING gin(search_vector);
+
+-- Create trigger to auto-update search_vector
+CREATE OR REPLACE FUNCTION text_messages_search_vector_trigger() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english', COALESCE(NEW.content, ''));
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS text_messages_search_vector_update ON text_messages;
+CREATE TRIGGER text_messages_search_vector_update
+  BEFORE INSERT OR UPDATE OF content ON text_messages
+  FOR EACH ROW EXECUTE FUNCTION text_messages_search_vector_trigger();
+
+-- Backfill existing records
+UPDATE text_messages SET search_vector = to_tsvector('english', COALESCE(content, ''))
+WHERE search_vector IS NULL;
 
 -- ============================================================================
 -- 2. AI USAGE TRACKING
@@ -33,34 +53,35 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
     user_id TEXT,  -- NULL for system-triggered jobs (e.g., embeddings)
-    
+
     -- Job classification
     job_type TEXT NOT NULL,  -- 'embed', 'classify', 'respond', 'extract'
     model TEXT NOT NULL,     -- 'granite4:350m', 'claude-sonnet-4', 'text-embedding-3-small', etc.
-    
+
     -- Token usage
     input_tokens INT NOT NULL DEFAULT 0,
     output_tokens INT,  -- NULL for embeddings
-    
+
     -- Cost tracking (in cents, with precision for cheap operations)
     cost_cents NUMERIC(10,6) NOT NULL DEFAULT 0,
-    
+
     -- Context (what was this job for?)
     stream_id TEXT,
     event_id TEXT,
     job_id TEXT,  -- Reference to pg-boss job if applicable
-    
+
     -- Metadata for debugging/analysis
     metadata JSONB DEFAULT '{}',
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ai_usage_workspace_month 
-    ON ai_usage(workspace_id, DATE_TRUNC('month', created_at));
-CREATE INDEX IF NOT EXISTS idx_ai_usage_user 
+-- Simple index for workspace filtering (use SQL to group by month in queries)
+CREATE INDEX IF NOT EXISTS idx_ai_usage_workspace_created
+    ON ai_usage(workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user
     ON ai_usage(user_id, created_at) WHERE user_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_ai_usage_job_type 
+CREATE INDEX IF NOT EXISTS idx_ai_usage_job_type
     ON ai_usage(job_type, created_at);
 
 COMMENT ON TABLE ai_usage IS 'Tracks all AI API calls and costs for billing and analytics';
@@ -73,48 +94,60 @@ COMMENT ON COLUMN ai_usage.cost_cents IS 'Cost in cents with 6 decimal precision
 CREATE TABLE IF NOT EXISTS knowledge (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
-    
+
     -- Content
     title TEXT NOT NULL,
     summary TEXT NOT NULL,
     content TEXT NOT NULL,  -- Markdown
-    
+
     -- Source tracking
     source_stream_id TEXT,  -- The stream/thread this was extracted from
     source_event_id TEXT,   -- The anchor message
-    
+
     -- Search indexes
     embedding vector(1536),
-    search_vector tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', title), 'A') ||
-        setweight(to_tsvector('english', summary), 'B') ||
-        setweight(to_tsvector('english', content), 'C')
-    ) STORED,
-    
+    search_vector tsvector,  -- Updated via trigger
+
     -- Authorship
     created_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ,
-    
+
     -- Feedback and usage
     view_count INT NOT NULL DEFAULT 0,
     helpful_count INT NOT NULL DEFAULT 0,
     not_helpful_count INT NOT NULL DEFAULT 0,
-    
+
     -- For future versioning/staleness tracking
     last_verified_at TIMESTAMPTZ,
     archived_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_workspace ON knowledge(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_workspace_active 
+CREATE INDEX IF NOT EXISTS idx_knowledge_workspace_active
     ON knowledge(workspace_id, created_at DESC) WHERE archived_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_knowledge_embedding 
+CREATE INDEX IF NOT EXISTS idx_knowledge_embedding
     ON knowledge USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX IF NOT EXISTS idx_knowledge_search 
+CREATE INDEX IF NOT EXISTS idx_knowledge_search
     ON knowledge USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_knowledge_source_stream ON knowledge(source_stream_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_source_event ON knowledge(source_event_id);
+
+-- Create trigger to auto-update search_vector for knowledge
+CREATE OR REPLACE FUNCTION knowledge_search_vector_trigger() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := 
+    setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+    setweight(to_tsvector('english', COALESCE(NEW.summary, '')), 'B') ||
+    setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'C');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS knowledge_search_vector_update ON knowledge;
+CREATE TRIGGER knowledge_search_vector_update
+  BEFORE INSERT OR UPDATE OF title, summary, content ON knowledge
+  FOR EACH ROW EXECUTE FUNCTION knowledge_search_vector_trigger();
 
 COMMENT ON TABLE knowledge IS 'Extracted institutional knowledge from conversations';
 COMMENT ON COLUMN knowledge.search_vector IS 'Weighted tsvector: title (A), summary (B), content (C)';
@@ -126,30 +159,30 @@ COMMENT ON COLUMN knowledge.search_vector IS 'Weighted tsvector: title (A), summ
 CREATE TABLE IF NOT EXISTS ai_personas (
     id TEXT PRIMARY KEY,
     workspace_id TEXT,  -- NULL = global default persona
-    
+
     -- Identity
     name TEXT NOT NULL DEFAULT 'Ariadne',
     handle TEXT NOT NULL DEFAULT 'ariadne',  -- Without @ prefix
     avatar_url TEXT,
-    
+
     -- Behavior
     system_prompt TEXT NOT NULL,
     custom_instructions TEXT,  -- Workspace-specific additions
-    
+
     -- Model preferences
     model_preference TEXT NOT NULL DEFAULT 'claude-sonnet-4',
     temperature NUMERIC(2,1) DEFAULT 0.7,
     max_tool_calls INT DEFAULT 5,
-    
+
     -- State
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_personas_workspace_default 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_personas_workspace_default
     ON ai_personas(workspace_id) WHERE is_default = TRUE;
 CREATE INDEX IF NOT EXISTS idx_ai_personas_workspace ON ai_personas(workspace_id);
 
@@ -209,15 +242,15 @@ CREATE TABLE IF NOT EXISTS knowledge_feedback (
     id TEXT PRIMARY KEY,
     knowledge_id TEXT NOT NULL REFERENCES knowledge(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL,
-    
+
     feedback_type TEXT NOT NULL,  -- 'helpful', 'not_helpful', 'outdated', 'incorrect'
     comment TEXT,
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_feedback_knowledge ON knowledge_feedback(knowledge_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_feedback_user_knowledge 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_feedback_user_knowledge
     ON knowledge_feedback(knowledge_id, user_id, feedback_type);
 
 COMMENT ON TABLE knowledge_feedback IS 'User feedback on knowledge quality';

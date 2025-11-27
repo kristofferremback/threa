@@ -176,7 +176,7 @@ export class SearchService {
 
       const queryText = `
         WITH filtered_events AS (
-          SELECT 
+          SELECT
             e.id,
             e.stream_id,
             e.actor_id,
@@ -209,11 +209,11 @@ export class SearchService {
           WHERE to_tsvector('english', content) @@ to_tsquery('english', $${paramIndex - 1})
           LIMIT 100
         )
-        SELECT 
+        SELECT
           f.*,
           'message' as type,
           COALESCE(s.score, 0) * 0.6 + COALESCE(t.score, 0) * 0.4 as combined_score,
-          ts_headline('english', f.content, to_tsquery('english', $${paramIndex++}), 
+          ts_headline('english', f.content, to_tsquery('english', $${paramIndex++}),
             'MaxWords=50, MinWords=20, StartSel=**, StopSel=**') as highlights
         FROM filtered_events f
         LEFT JOIN semantic s ON f.id = s.id
@@ -247,7 +247,7 @@ export class SearchService {
     } else {
       // No free text - just filter and return by recency
       const queryText = `
-        SELECT 
+        SELECT
           e.id,
           e.stream_id,
           e.actor_id,
@@ -304,7 +304,7 @@ export class SearchService {
     if (!freeText.trim()) {
       // No free text - return recent knowledge
       const result = await this.pool.query(
-        sql`SELECT 
+        sql`SELECT
           k.id, k.title, k.summary, k.content, k.created_at,
           k.source_stream_id as stream_id,
           s.slug as stream_slug, s.name as stream_name,
@@ -374,7 +374,7 @@ export class SearchService {
           AND search_vector @@ to_tsquery('english', ${tsQuery})
         LIMIT 50
       )
-      SELECT 
+      SELECT
         k.id, k.title, k.summary, k.content, k.created_at,
         k.source_stream_id as stream_id,
         s.slug as stream_slug, s.name as stream_name,
@@ -427,7 +427,7 @@ export class SearchService {
     const embeddingJson = JSON.stringify(embedding)
 
     let query = sql`
-      SELECT 
+      SELECT
         e.id,
         e.stream_id,
         e.actor_id,

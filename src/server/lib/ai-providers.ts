@@ -2,9 +2,41 @@ import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { logger } from "./logger"
 
-// Initialize clients (they read API keys from env automatically)
-const anthropic = new Anthropic()
-const openai = new OpenAI()
+// Lazy-loaded clients - only initialized when first used
+let _anthropic: Anthropic | null = null
+let _openai: OpenAI | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is not set")
+    }
+    _anthropic = new Anthropic({ apiKey })
+  }
+  return _anthropic
+}
+
+function getOpenAIClient(): OpenAI {
+  if (!_openai) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY environment variable is not set")
+    }
+    _openai = new OpenAI({ apiKey })
+  }
+  return _openai
+}
+
+/**
+ * Check if AI providers are configured.
+ */
+export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
+  return {
+    openai: !!process.env.OPENAI_API_KEY,
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+  }
+}
 
 // Model constants
 export const Models = {
@@ -57,6 +89,7 @@ export interface ChatResult {
  * Generate embedding for a single text.
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
+  const openai = getOpenAIClient()
   const response = await openai.embeddings.create({
     model: Models.EMBEDDING,
     input: text,
@@ -76,13 +109,15 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
 export async function generateEmbeddingsBatch(texts: string[]): Promise<EmbeddingResult[]> {
   if (texts.length === 0) return []
 
+  const openai = getOpenAIClient()
+
   // OpenAI supports up to 2048 texts per batch, but we limit to 100 for memory
   const maxBatchSize = 100
   const results: EmbeddingResult[] = []
 
   for (let i = 0; i < texts.length; i += maxBatchSize) {
     const batch = texts.slice(i, i + maxBatchSize)
-    
+
     const response = await openai.embeddings.create({
       model: Models.EMBEDDING,
       input: batch,
@@ -114,6 +149,7 @@ export async function chat(params: {
   maxTokens?: number
   temperature?: number
 }): Promise<ChatResult> {
+  const anthropic = getAnthropicClient()
   const modelId = params.model === "claude-haiku" ? Models.CLAUDE_HAIKU : Models.CLAUDE_SONNET
 
   const response = await anthropic.messages.create({

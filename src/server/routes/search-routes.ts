@@ -7,9 +7,9 @@ export function createSearchRoutes(searchService: SearchService): Router {
 
   /**
    * GET /api/workspace/:workspaceId/search
-   * 
+   *
    * Search messages and knowledge base.
-   * 
+   *
    * Query parameters:
    * - q: Search query (supports filters like from:@user, in:#channel, etc.)
    * - limit: Max results (default 50)
@@ -65,7 +65,7 @@ export function createSearchRoutes(searchService: SearchService): Router {
 
   /**
    * GET /api/workspace/:workspaceId/search/suggestions
-   * 
+   *
    * Get search suggestions based on recent activity.
    * For autocomplete in the search UI.
    */

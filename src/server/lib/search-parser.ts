@@ -1,6 +1,6 @@
 /**
  * Search Query Parser
- * 
+ *
  * Parses Slack-like search syntax:
  * - from:@username - messages from a user
  * - in:#channel - messages in a channel/stream
@@ -10,7 +10,7 @@
  * - has:link - messages containing links
  * - is:thread - thread root messages
  * - is:knowledge - search knowledge base only
- * 
+ *
  * Free text is used for semantic + full-text search.
  */
 

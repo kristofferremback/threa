@@ -1,4 +1,4 @@
-import PgBoss from "pg-boss"
+import { PgBoss } from "pg-boss"
 import { logger } from "./logger"
 
 let boss: PgBoss | null = null

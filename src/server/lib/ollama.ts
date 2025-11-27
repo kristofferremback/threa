@@ -13,7 +13,7 @@ export interface ClassificationResult {
 /**
  * Classify content using a local SLM (Small Language Model) via Ollama.
  * Returns whether the content is knowledge-worthy and if the model was confident.
- * 
+ *
  * Uses granite4:350m by default - a hybrid Mamba-2/Transformer model optimized
  * for edge deployment and classification tasks.
  */
@@ -106,4 +106,3 @@ export async function ensureClassificationModel(): Promise<void> {
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
-

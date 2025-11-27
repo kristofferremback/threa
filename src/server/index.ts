@@ -209,7 +209,7 @@ export async function startServer(context: AppContext): Promise<void> {
     await context.outboxListener.start()
 
     // Start AI workers (embedding, classification)
-    const connectionString = process.env.DATABASE_URL || "postgresql://localhost:5432/threa"
+    const connectionString = process.env.DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa"
     logger.info("Starting AI workers...")
     await startWorkers(context.pool, connectionString)
 
