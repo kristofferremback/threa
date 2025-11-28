@@ -29,6 +29,7 @@ import { esMain } from "./lib/is-main"
 import { promisify } from "util"
 import { attempt } from "./lib/attempt"
 import { startWorkers, stopWorkers } from "./workers"
+import { initLangfuse, shutdownLangfuse } from "./lib/langfuse"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -293,6 +294,9 @@ export async function startServer(context: AppContext): Promise<void> {
     // Validate environment variables first
     validateEnv()
 
+    // Initialize Langfuse tracing early (before any LangChain usage)
+    initLangfuse()
+
     logger.info("Running database migrations...")
     await runMigrations(context.pool)
 
@@ -317,6 +321,7 @@ export async function startServer(context: AppContext): Promise<void> {
       preShutdown: async () => {
         await socketIoServer.closeWithCleanup()
         await stopWorkers()
+        await shutdownLangfuse()
       },
       onShutdown: async () => {
         process.exit(0)

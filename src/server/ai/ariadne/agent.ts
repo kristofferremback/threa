@@ -4,9 +4,11 @@ import { BaseMessageLike } from "@langchain/core/messages"
 import { RunnableConfig } from "@langchain/core/runnables"
 import { MessagesAnnotation } from "@langchain/langgraph"
 import { Pool } from "pg"
+import { CallbackHandler } from "@langfuse/langchain"
 import { createAriadneTools } from "./tools"
 import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "./prompts"
 import { logger } from "../../lib/logger"
+import { isLangfuseEnabled } from "../../lib/langfuse"
 import type { AriadneMode } from "../../lib/job-queue"
 
 export interface ConversationMessage {
@@ -112,6 +114,22 @@ export async function invokeAriadne(
   messages.push({ role: "user", content: question })
 
   try {
+    // Create Langfuse callback handler for tracing if enabled
+    const callbacks: CallbackHandler[] = []
+    if (isLangfuseEnabled()) {
+      callbacks.push(
+        new CallbackHandler({
+          sessionId: context.streamId,
+          userId: context.mentionedBy,
+          tags: ["ariadne", context.mode || "retrieval"],
+          traceMetadata: {
+            workspaceId: context.workspaceId,
+            streamId: context.streamId,
+          },
+        }),
+      )
+    }
+
     const result = await agent.invoke(
       { messages },
       {
@@ -119,6 +137,7 @@ export async function invokeAriadne(
           customInstructions,
           mentionedByName: context.mentionedByName || "someone",
         },
+        callbacks,
       },
     )
 
@@ -158,6 +177,22 @@ export async function* streamAriadne(
   const agent = createAriadneAgent(pool, context)
 
   try {
+    // Create Langfuse callback handler for tracing if enabled
+    const callbacks: CallbackHandler[] = []
+    if (isLangfuseEnabled()) {
+      callbacks.push(
+        new CallbackHandler({
+          sessionId: context.streamId,
+          userId: context.mentionedBy,
+          tags: ["ariadne", context.mode || "retrieval", "streaming"],
+          traceMetadata: {
+            workspaceId: context.workspaceId,
+            streamId: context.streamId,
+          },
+        }),
+      )
+    }
+
     const stream = await agent.stream(
       {
         messages: [{ role: "user", content: question }],
@@ -168,6 +203,7 @@ export async function* streamAriadne(
           mentionedByName: context.mentionedByName || "someone",
         },
         streamMode: "values",
+        callbacks,
       },
     )
 

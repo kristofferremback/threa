@@ -13,13 +13,19 @@
     "start": "NODE_ENV=production bun src/server/index.ts",
     "preview": "vite preview",
     "stop:deps": "docker compose down",
-    "clear:deps": "docker compose down -v"
+    "clear:deps": "docker compose down -v",
+    "langfuse": "docker compose -f docker-compose.langfuse.yml up -d",
+    "langfuse:stop": "docker compose -f docker-compose.langfuse.yml down",
+    "langfuse:clear": "docker compose -f docker-compose.langfuse.yml down -v"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "@langchain/anthropic": "^1.1.3",
     "@langchain/core": "^1.1.0",
     "@langchain/langgraph": "^1.0.2",
+    "@langfuse/langchain": "^4.4.2",
+    "@langfuse/otel": "^4.4.2",
+    "@opentelemetry/sdk-node": "^0.208.0",
     "@socket.io/bun-engine": "^0.1.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@tiptap/extension-code-block-lowlight": "^3.11.0",
@@ -42,6 +48,7 @@
     "express": "^4.21.2",
     "ioredis": "^5.8.2",
     "langchain": "^1.1.1",
+    "langfuse": "^3.38.6",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.554.0",
     "ollama": "^0.6.3",
