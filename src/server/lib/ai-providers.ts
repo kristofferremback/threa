@@ -1,9 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { logger } from "./logger"
-import { isOllamaEmbeddingAvailable, generateOllamaEmbedding, generateOllamaEmbeddingsBatch } from "./ollama"
+import {
+  isOllamaEmbeddingAvailable,
+  generateOllamaEmbedding,
+  generateOllamaEmbeddingsBatch,
+  type OllamaTraceOptions,
+} from "./ollama"
+import type { AITraceService, TraceContext, Span } from "../services/ai-trace-service"
 
-// Lazy-loaded clients - only initialized when first used
 let _anthropic: Anthropic | null = null
 let _openai: OpenAI | null = null
 
@@ -39,18 +44,16 @@ export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
   }
 }
 
-// Model constants
 export const Models = {
   EMBEDDING: "text-embedding-3-small",
   CLAUDE_SONNET: "claude-sonnet-4-5-20250929",
   CLAUDE_HAIKU: "claude-haiku-4-5-20251001",
 } as const
 
-// Cost per 1M tokens (in cents)
 export const ModelCosts = {
-  [Models.EMBEDDING]: { input: 2, output: 0 }, // $0.02/1M
-  [Models.CLAUDE_SONNET]: { input: 300, output: 1500 }, // $3/1M in, $15/1M out
-  [Models.CLAUDE_HAIKU]: { input: 25, output: 125 }, // $0.25/1M in, $1.25/1M out
+  [Models.EMBEDDING]: { input: 2, output: 0 },
+  [Models.CLAUDE_SONNET]: { input: 300, output: 1500 },
+  [Models.CLAUDE_HAIKU]: { input: 25, output: 125 },
 } as const
 
 export interface EmbeddingResult {
@@ -86,35 +89,70 @@ export interface ChatResult {
   stopReason: string
 }
 
+export interface AIProviderTraceOptions {
+  traceService?: AITraceService
+  context?: TraceContext
+  parentSpan?: Span
+}
+
 /**
  * Generate embedding for a single text.
  * Uses Ollama (local) if available, falls back to OpenAI.
  */
-export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
+export async function generateEmbedding(
+  text: string,
+  traceOptions?: AIProviderTraceOptions,
+): Promise<EmbeddingResult> {
   // Try Ollama first (free, local)
   if (isOllamaEmbeddingAvailable()) {
-    const ollamaResult = await generateOllamaEmbedding(text)
+    const ollamaTraceOptions: OllamaTraceOptions | undefined = traceOptions
+      ? { traceService: traceOptions.traceService, context: traceOptions.context, parentSpan: traceOptions.parentSpan }
+      : undefined
+
+    const ollamaResult = await generateOllamaEmbedding(text, ollamaTraceOptions)
     if (ollamaResult) {
       logger.debug({ model: ollamaResult.model }, "Using local Ollama embedding")
       return {
         embedding: ollamaResult.embedding,
         model: ollamaResult.model,
-        tokens: estimateTokens(text), // Estimate since Ollama doesn't report tokens
+        tokens: estimateTokens(text),
       }
     }
   }
 
   // Fallback to OpenAI
-  const openai = getOpenAIClient()
-  const response = await openai.embeddings.create({
+  const span = await startSpan(traceOptions, {
+    operation: "openai.embed",
+    provider: "openai",
     model: Models.EMBEDDING,
     input: text,
   })
 
-  return {
-    embedding: response.data[0].embedding,
-    model: Models.EMBEDDING,
-    tokens: response.usage.total_tokens,
+  try {
+    const openai = getOpenAIClient()
+    const response = await openai.embeddings.create({
+      model: Models.EMBEDDING,
+      input: text,
+    })
+
+    await endSpan(span, {
+      status: "success",
+      inputTokens: response.usage.total_tokens,
+      metadata: { embeddingDimension: response.data[0].embedding.length },
+    })
+
+    return {
+      embedding: response.data[0].embedding,
+      model: Models.EMBEDDING,
+      tokens: response.usage.total_tokens,
+    }
+  } catch (err) {
+    await endSpan(span, {
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorCode: err instanceof Error ? err.name : undefined,
+    })
+    throw err
   }
 }
 
@@ -122,12 +160,19 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResult> 
  * Generate embeddings for multiple texts in a single batch.
  * Uses Ollama (local) if available, falls back to OpenAI.
  */
-export async function generateEmbeddingsBatch(texts: string[]): Promise<EmbeddingResult[]> {
+export async function generateEmbeddingsBatch(
+  texts: string[],
+  traceOptions?: AIProviderTraceOptions,
+): Promise<EmbeddingResult[]> {
   if (texts.length === 0) return []
 
   // Try Ollama first (free, local)
   if (isOllamaEmbeddingAvailable()) {
-    const ollamaResults = await generateOllamaEmbeddingsBatch(texts)
+    const ollamaTraceOptions: OllamaTraceOptions | undefined = traceOptions
+      ? { traceService: traceOptions.traceService, context: traceOptions.context, parentSpan: traceOptions.parentSpan }
+      : undefined
+
+    const ollamaResults = await generateOllamaEmbeddingsBatch(texts, ollamaTraceOptions)
     if (ollamaResults) {
       logger.debug({ model: ollamaResults[0]?.model, count: texts.length }, "Using local Ollama embeddings")
       return ollamaResults.map((r, i) => ({
@@ -139,81 +184,144 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<Embeddin
   }
 
   // Fallback to OpenAI
-  const openai = getOpenAIClient()
+  const span = await startSpan(traceOptions, {
+    operation: "openai.embed_batch",
+    provider: "openai",
+    model: Models.EMBEDDING,
+    input: `[${texts.length} texts]`,
+    metadata: { batchSize: texts.length },
+  })
 
-  // OpenAI supports up to 2048 texts per batch, but we limit to 100 for memory
-  const maxBatchSize = 100
-  const results: EmbeddingResult[] = []
+  try {
+    const openai = getOpenAIClient()
+    const maxBatchSize = 100
+    const results: EmbeddingResult[] = []
+    let totalTokens = 0
 
-  for (let i = 0; i < texts.length; i += maxBatchSize) {
-    const batch = texts.slice(i, i + maxBatchSize)
+    for (let i = 0; i < texts.length; i += maxBatchSize) {
+      const batch = texts.slice(i, i + maxBatchSize)
 
-    const response = await openai.embeddings.create({
-      model: Models.EMBEDDING,
-      input: batch,
+      const response = await openai.embeddings.create({
+        model: Models.EMBEDDING,
+        input: batch,
+      })
+
+      totalTokens += response.usage.total_tokens
+      const avgTokens = response.usage.total_tokens / batch.length
+
+      for (const data of response.data) {
+        results.push({
+          embedding: data.embedding,
+          model: Models.EMBEDDING,
+          tokens: Math.ceil(avgTokens),
+        })
+      }
+    }
+
+    await endSpan(span, {
+      status: "success",
+      inputTokens: totalTokens,
+      metadata: {
+        batchSize: texts.length,
+        embeddingDimension: results[0]?.embedding.length,
+      },
     })
 
-    const avgTokens = response.usage.total_tokens / batch.length
-
-    for (const data of response.data) {
-      results.push({
-        embedding: data.embedding,
-        model: Models.EMBEDDING,
-        tokens: Math.ceil(avgTokens),
-      })
-    }
+    return results
+  } catch (err) {
+    await endSpan(span, {
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorCode: err instanceof Error ? err.name : undefined,
+    })
+    throw err
   }
-
-  return results
 }
 
 /**
  * Chat with Claude (Sonnet or Haiku).
  * Supports tool use for agentic interactions.
  */
-export async function chat(params: {
-  model: "claude-sonnet-4" | "claude-haiku"
-  systemPrompt: string
-  messages: ChatMessage[]
-  tools?: ToolDefinition[]
-  maxTokens?: number
-  temperature?: number
-}): Promise<ChatResult> {
-  const anthropic = getAnthropicClient()
+export async function chat(
+  params: {
+    model: "claude-sonnet-4" | "claude-haiku"
+    systemPrompt: string
+    messages: ChatMessage[]
+    tools?: ToolDefinition[]
+    maxTokens?: number
+    temperature?: number
+  },
+  traceOptions?: AIProviderTraceOptions,
+): Promise<ChatResult> {
   const modelId = params.model === "claude-haiku" ? Models.CLAUDE_HAIKU : Models.CLAUDE_SONNET
 
-  const response = await anthropic.messages.create({
+  const inputPreview = params.messages.length > 0 ? params.messages[params.messages.length - 1].content : ""
+
+  const span = await startSpan(traceOptions, {
+    operation: "anthropic.chat",
+    provider: "anthropic",
     model: modelId,
-    max_tokens: params.maxTokens ?? 1024,
-    system: params.systemPrompt,
-    messages: params.messages,
-    tools: params.tools as Anthropic.Tool[],
-    temperature: params.temperature,
+    input: inputPreview,
+    metadata: {
+      messageCount: params.messages.length,
+      hasTools: !!params.tools?.length,
+      toolCount: params.tools?.length || 0,
+    },
   })
 
-  // Extract text content
-  const textContent = response.content
-    .filter((c): c is Anthropic.TextBlock => c.type === "text")
-    .map((c) => c.text)
-    .join("")
+  try {
+    const anthropic = getAnthropicClient()
 
-  // Extract tool calls
-  const toolCalls = response.content
-    .filter((c): c is Anthropic.ToolUseBlock => c.type === "tool_use")
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      input: c.input as Record<string, unknown>,
-    }))
+    const response = await anthropic.messages.create({
+      model: modelId,
+      max_tokens: params.maxTokens ?? 1024,
+      system: params.systemPrompt,
+      messages: params.messages,
+      tools: params.tools as Anthropic.Tool[],
+      temperature: params.temperature,
+    })
 
-  return {
-    content: textContent,
-    usage: {
+    const textContent = response.content
+      .filter((c): c is Anthropic.TextBlock => c.type === "text")
+      .map((c) => c.text)
+      .join("")
+
+    const toolCalls = response.content
+      .filter((c): c is Anthropic.ToolUseBlock => c.type === "tool_use")
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        input: c.input as Record<string, unknown>,
+      }))
+
+    await endSpan(span, {
+      status: "success",
+      output: textContent,
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
-    },
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    stopReason: response.stop_reason || "end_turn",
+      metadata: {
+        stopReason: response.stop_reason,
+        toolCallCount: toolCalls.length,
+        toolCalls: toolCalls.map((t) => t.name),
+      },
+    })
+
+    return {
+      content: textContent,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      stopReason: response.stop_reason || "end_turn",
+    }
+  } catch (err) {
+    await endSpan(span, {
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorCode: err instanceof Error ? err.name : undefined,
+    })
+    throw err
   }
 }
 
@@ -223,15 +331,26 @@ export async function chat(params: {
 export async function classifyWithHaiku(
   content: string,
   reactionCount?: number,
+  traceOptions?: AIProviderTraceOptions,
 ): Promise<{
   isKnowledge: boolean
   confidence: number
   suggestedTitle: string | null
   usage: { inputTokens: number; outputTokens: number }
 }> {
-  const result = await chat({
-    model: "claude-haiku",
-    systemPrompt: `You are a content classifier. Analyze messages to determine if they contain reusable knowledge that would help others in the future.
+  const span = await startSpan(traceOptions, {
+    operation: "anthropic.classify",
+    provider: "anthropic",
+    model: Models.CLAUDE_HAIKU,
+    input: content.slice(0, 500),
+    metadata: { reactionCount },
+  })
+
+  try {
+    const result = await chat(
+      {
+        model: "claude-haiku",
+        systemPrompt: `You are a content classifier. Analyze messages to determine if they contain reusable knowledge that would help others in the future.
 
 Knowledge includes:
 - How-to guides and explanations
@@ -248,10 +367,10 @@ NOT knowledge:
 - Context-dependent discussions
 
 Respond with JSON only, no other text.`,
-    messages: [
-      {
-        role: "user",
-        content: `Classify this message:
+        messages: [
+          {
+            role: "user",
+            content: `Classify this message:
 
 ${content.slice(0, 2000)}
 
@@ -259,33 +378,53 @@ ${reactionCount && reactionCount > 0 ? `Note: ${reactionCount} people reacted po
 
 Respond with JSON:
 {"isKnowledge": boolean, "confidence": 0.0-1.0, "suggestedTitle": "string or null"}`,
+          },
+        ],
+        maxTokens: 150,
+        temperature: 0,
       },
-    ],
-    maxTokens: 150,
-    temperature: 0,
-  })
+      // Don't pass traceOptions to inner chat call - we're tracing at this level
+    )
 
-  try {
-    // Extract JSON from response (handle potential markdown wrapping)
     const jsonMatch = result.content.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       throw new Error("No JSON found in response")
     }
 
     const parsed = JSON.parse(jsonMatch[0])
-    return {
+    const classification = {
       isKnowledge: parsed.isKnowledge === true,
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
       suggestedTitle: typeof parsed.suggestedTitle === "string" ? parsed.suggestedTitle : null,
       usage: result.usage,
     }
+
+    await endSpan(span, {
+      status: "success",
+      output: result.content,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      metadata: {
+        isKnowledge: classification.isKnowledge,
+        confidence: classification.confidence,
+      },
+    })
+
+    return classification
   } catch (err) {
-    logger.error({ err, response: result.content }, "Failed to parse Haiku classification response")
+    logger.error({ err }, "Failed to parse Haiku classification response")
+
+    await endSpan(span, {
+      status: "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorCode: err instanceof Error ? err.name : undefined,
+    })
+
     return {
       isKnowledge: false,
       confidence: 0,
       suggestedTitle: null,
-      usage: result.usage,
+      usage: { inputTokens: 0, outputTokens: 0 },
     }
   }
 }
@@ -305,8 +444,68 @@ export function calculateCost(
 
 /**
  * Estimate tokens for a text (rough approximation).
- * Claude uses ~4 chars per token on average.
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
+}
+
+// Helper functions for optional tracing
+
+interface SpanStartOptions {
+  operation: string
+  provider: "anthropic" | "openai"
+  model: string
+  input?: string
+  metadata?: Record<string, unknown>
+}
+
+interface SpanEndOptions {
+  status: "success" | "error"
+  output?: string
+  inputTokens?: number
+  outputTokens?: number
+  errorMessage?: string
+  errorCode?: string
+  metadata?: Record<string, unknown>
+}
+
+async function startSpan(
+  traceOptions: AIProviderTraceOptions | undefined,
+  options: SpanStartOptions,
+): Promise<Span | null> {
+  if (!traceOptions?.traceService || !traceOptions?.context) {
+    return null
+  }
+
+  if (traceOptions.parentSpan) {
+    return traceOptions.parentSpan.child({
+      operation: options.operation,
+      provider: options.provider,
+      model: options.model,
+      input: options.input,
+      metadata: options.metadata,
+    })
+  }
+
+  return traceOptions.traceService.startSpan(traceOptions.context, {
+    operation: options.operation,
+    provider: options.provider,
+    model: options.model,
+    input: options.input,
+    metadata: options.metadata,
+  })
+}
+
+async function endSpan(span: Span | null, options: SpanEndOptions): Promise<void> {
+  if (!span) return
+
+  await span.end({
+    status: options.status,
+    output: options.output,
+    inputTokens: options.inputTokens,
+    outputTokens: options.outputTokens,
+    errorMessage: options.errorMessage,
+    errorCode: options.errorCode,
+    metadata: options.metadata,
+  })
 }
