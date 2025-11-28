@@ -1,11 +1,16 @@
 import { Pool } from "pg"
 import { initJobQueue, stopJobQueue } from "../lib/job-queue"
-import { startEmbeddingWorker } from "./embedding-worker"
-import { startClassificationWorker } from "./classification-worker"
-import { startAriadneWorker } from "./ariadne-worker"
-import { startAriadneTrigger, stopAriadneTrigger } from "./ariadne-trigger"
+import { EmbeddingWorker } from "./embedding-worker"
+import { ClassificationWorker } from "./classification-worker"
+import { AriadneWorker } from "./ariadne-worker"
+import { AriadneTrigger } from "./ariadne-trigger"
 import { checkOllamaHealth, ensureOllamaModels } from "../lib/ollama"
 import { logger } from "../lib/logger"
+
+let embeddingWorker: EmbeddingWorker | null = null
+let classificationWorker: ClassificationWorker | null = null
+let ariadneWorker: AriadneWorker | null = null
+let ariadneTrigger: AriadneTrigger | null = null
 
 /**
  * Initialize and start all AI workers.
@@ -40,13 +45,19 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
     )
   }
 
-  // Start workers
-  await startEmbeddingWorker(pool)
-  await startClassificationWorker(pool)
-  await startAriadneWorker(pool)
+  // Create AriadneTrigger first since AriadneWorker depends on it
+  ariadneTrigger = new AriadneTrigger(pool)
 
-  // Start Ariadne trigger (Redis subscriber for async AI invocation)
-  await startAriadneTrigger(pool)
+  // Create worker instances
+  embeddingWorker = new EmbeddingWorker(pool)
+  classificationWorker = new ClassificationWorker(pool)
+  ariadneWorker = new AriadneWorker(pool, ariadneTrigger)
+
+  // Start workers
+  await embeddingWorker.start()
+  await classificationWorker.start()
+  await ariadneWorker.start()
+  await ariadneTrigger.start()
 
   logger.info("AI workers started successfully")
 }
@@ -56,8 +67,18 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
  */
 export async function stopWorkers(): Promise<void> {
   logger.info("Stopping AI workers...")
-  await stopAriadneTrigger()
+
+  if (ariadneTrigger) {
+    await ariadneTrigger.stop()
+    ariadneTrigger = null
+  }
+
   await stopJobQueue()
+
+  embeddingWorker = null
+  classificationWorker = null
+  ariadneWorker = null
+
   logger.info("AI workers stopped")
 }
 
