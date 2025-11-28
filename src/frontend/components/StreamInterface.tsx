@@ -57,7 +57,11 @@ export function StreamInterface({
   })
 
   const isThread = stream?.streamType === "thread"
-  const displayTitle = title || streamName || (stream?.name || "").replace("#", "") || "General"
+  // For threads, prefer the actual stream name over the static "Thread" title
+  const streamDisplayName = (stream?.name || "").replace("#", "")
+  const displayTitle = isThread
+    ? streamDisplayName || title || "Thread"
+    : title || streamName || streamDisplayName || "General"
 
   // Handler for sending messages
   const handleSend = useCallback(

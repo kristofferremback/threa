@@ -247,6 +247,7 @@ export class AriadneTrigger {
     }
 
     const isThinkingSpace = event.stream_type === "thinking_space"
+    const isThread = event.stream_type === "thread"
     const ariadneMentioned = event.mentions?.some(
       (m) => m.type === "user" && m.label?.toLowerCase() === "ariadne",
     )
@@ -254,9 +255,10 @@ export class AriadneTrigger {
     let shouldTrigger = isThinkingSpace || ariadneMentioned
     let mode: AriadneMode = isThinkingSpace ? "thinking_partner" : "retrieval"
 
-    // If not explicitly triggered, check for auto-engagement
-    if (!shouldTrigger) {
-      // Check if Ariadne has participated in this stream before
+    // Auto-engagement only in threads (not channels - channels require explicit @Ariadne)
+    // Thinking spaces already trigger automatically above
+    if (!shouldTrigger && isThread) {
+      // Check if Ariadne has participated in this thread before
       const hasParticipated = await this.hasAriadneParticipated(event.stream_id)
 
       if (hasParticipated) {

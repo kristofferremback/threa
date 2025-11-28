@@ -82,7 +82,8 @@ export function deserializePanesFromUrl(param: string, streams: Stream[]): Pane[
               let title: string
               if (stream) {
                 title = isThread ? "Thread" : `#${(stream.name || "").replace("#", "")}`
-              } else if (isPendingThread) {
+              } else if (isPendingThread || streamSlugOrId.startsWith("stream_")) {
+                // Pending threads (event_xxx) or thread streams (stream_xxx) not in bootstrap
                 title = "Thread"
               } else {
                 title = `#${streamSlugOrId}`

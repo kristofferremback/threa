@@ -305,6 +305,7 @@ export async function setupStreamWebSocket(
           if (stream_type === "thread" && parent_stream_id && branched_from_event_id) {
             const threadCreatedPayload = {
               threadId: stream_id,
+              name,
               parentStreamId: parent_stream_id,
               branchedFromEventId: branched_from_event_id,
             }

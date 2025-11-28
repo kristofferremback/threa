@@ -637,11 +637,13 @@ export class StreamService {
     try {
       await client.query("BEGIN")
 
-      // Get the original event and its stream
+      // Get the original event and its stream (including message content for auto-naming)
       const eventResult = await client.query(
-        sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id
+        sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id,
+                   tm.content as message_content
             FROM stream_events e
             INNER JOIN streams s ON e.stream_id = s.id
+            LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ${eventId}`,
       )
 
@@ -690,6 +692,21 @@ export class StreamService {
               AND left_at IS NULL`,
       )
 
+      // Auto-name thread based on original message content
+      let threadName: string | null = null
+      if (originalEvent.message_content) {
+        try {
+          const nameResult = await generateAutoName(originalEvent.message_content)
+          if (nameResult.success && nameResult.name) {
+            await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${streamId}`)
+            threadName = nameResult.name
+            logger.debug({ streamId, name: nameResult.name }, "Thread auto-named")
+          }
+        } catch (err) {
+          logger.warn({ err, streamId }, "Failed to auto-name thread")
+        }
+      }
+
       // Create a "thread_started" event in the parent stream
       const threadEventId = generateId("event")
       await client.query(
@@ -698,7 +715,7 @@ export class StreamService {
                     ${creatorId}, ${JSON.stringify({ thread_id: streamId, original_event_id: eventId })})`,
       )
 
-      // Emit outbox event
+      // Emit outbox event (include name so frontend receives it)
       const outboxId = generateId("outbox")
       await client.query(
         sql`INSERT INTO outbox (id, event_type, payload)
@@ -706,6 +723,7 @@ export class StreamService {
               stream_id: streamId,
               workspace_id: originalEvent.workspace_id,
               stream_type: "thread",
+              name: threadName,
               parent_stream_id: originalEvent.parent_stream_id,
               branched_from_event_id: eventId,
               creator_id: creatorId,
@@ -716,6 +734,7 @@ export class StreamService {
       await client.query("COMMIT")
 
       const stream = this.mapStreamRow(streamResult.rows[0])
+      stream.name = threadName
       const event = await this.getEventWithDetails(threadEventId)
 
       logger.info({ streamId, parentStreamId: originalEvent.parent_stream_id }, "Thread created")
@@ -815,7 +834,7 @@ export class StreamService {
           }
         }
 
-        // Emit stream.created event
+        // Emit stream.created event (include name so frontend receives it)
         const streamOutboxId = generateId("outbox")
         await client.query(
           sql`INSERT INTO outbox (id, event_type, payload)
@@ -823,6 +842,7 @@ export class StreamService {
                 stream_id: streamId,
                 workspace_id: originalEvent.workspace_id,
                 stream_type: "thread",
+                name: threadStream.name,
                 parent_stream_id: params.parentStreamId,
                 branched_from_event_id: params.eventId,
                 creator_id: params.actorId,
