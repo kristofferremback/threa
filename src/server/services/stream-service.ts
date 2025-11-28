@@ -235,7 +235,7 @@ export class StreamService {
               AND sm.left_at IS NULL
             WHERE s.workspace_id = ${workspaceId}
               AND s.archived_at IS NULL
-              AND s.stream_type IN ('channel', 'dm')
+              AND s.stream_type IN ('channel', 'dm', 'thinking_space')
             ORDER BY sm.pinned_at DESC NULLS LAST, s.name`,
         ),
 
