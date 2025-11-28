@@ -25,7 +25,9 @@ interface EventListProps {
 }
 
 // System event types that should be displayed
-const SYSTEM_EVENT_TYPES = ["member_joined", "member_left", "stream_created", "thread_started"]
+// Note: thread_started is excluded - it's stored in the parent channel but only
+// useful as metadata (threads are shown via reply counts on messages instead)
+const SYSTEM_EVENT_TYPES = ["member_joined", "member_left", "stream_created"]
 
 // Convert StreamEvent to Message format for MessageList compatibility
 function eventToMessage(event: StreamEvent, streamId?: string): Message {
