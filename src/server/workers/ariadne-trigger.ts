@@ -263,21 +263,34 @@ export class AriadneTrigger {
         // Get recent context for engagement check
         const context = await this.getRecentContext(event.stream_id, event.event_id)
 
-        // Use granite4 to check if message is directed at Ariadne
-        const engagementResult = await checkAriadneEngagement(
-          event.content,
-          context.recentMessages,
-          context.ariadneLastResponse,
-        )
+        // Simple heuristic: if Ariadne asked a question, user is likely responding to her
+        const ariadneAskedQuestion = context.ariadneLastResponse?.trim().endsWith("?")
+
+        let isDirected = false
+        let topicChanged = false
+
+        if (ariadneAskedQuestion) {
+          // Ariadne asked a question - assume user is responding unless clearly off-topic
+          isDirected = true
+          logger.debug(
+            { eventId: event.event_id, streamId: event.stream_id },
+            "Ariadne asked a question, assuming follow-up is directed at her",
+          )
+        } else {
+          // Use SLM to check if message is directed at Ariadne
+          const engagementResult = await checkAriadneEngagement(
+            event.content,
+            context.recentMessages,
+            context.ariadneLastResponse,
+          )
+          isDirected = engagementResult.isDirectedAtAriadne
+          topicChanged = engagementResult.topicChanged
+        }
 
         // Check if Ariadne should leave this conversation
-        const shouldLeave = await this.shouldAriadneLeave(
-          event.stream_id,
-          engagementResult.isDirectedAtAriadne,
-          engagementResult.topicChanged,
-        )
+        const shouldLeave = await this.shouldAriadneLeave(event.stream_id, isDirected, topicChanged)
 
-        if (!shouldLeave && engagementResult.isDirectedAtAriadne) {
+        if (!shouldLeave && isDirected) {
           shouldTrigger = true
           mode = "retrieval"
 
@@ -310,6 +323,9 @@ export class AriadneTrigger {
           retryLimit: 2,
           retryDelay: 10,
           expireInSeconds: 300,
+          // Prevent duplicate jobs for the same event
+          singletonKey: event.event_id,
+          singletonSeconds: 300,
         },
       )
 
@@ -352,6 +368,9 @@ export async function queueAriadneResponse(params: {
         retryLimit: 2,
         retryDelay: 10,
         expireInSeconds: 300,
+        // Prevent duplicate jobs for the same event
+        singletonKey: params.eventId,
+        singletonSeconds: 300,
       },
     )
   } catch (err) {

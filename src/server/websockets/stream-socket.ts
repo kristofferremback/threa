@@ -223,6 +223,41 @@ export async function setupStreamWebSocket(
             }
           }
 
+          // Update reply count for threads - emit to parent stream
+          if (event_type === "message") {
+            try {
+              const streamResult = await pool.query<{
+                stream_type: string
+                parent_stream_id: string | null
+                branched_from_event_id: string | null
+              }>(
+                sql`SELECT stream_type, parent_stream_id, branched_from_event_id
+                    FROM streams WHERE id = ${stream_id}`,
+              )
+              const streamInfo = streamResult.rows[0]
+
+              if (streamInfo?.stream_type === "thread" && streamInfo.parent_stream_id && streamInfo.branched_from_event_id) {
+                // Count replies in this thread
+                const countResult = await pool.query<{ count: string }>(
+                  sql`SELECT COUNT(*) as count FROM stream_events
+                      WHERE stream_id = ${stream_id}
+                        AND event_type = 'message'
+                        AND deleted_at IS NULL`,
+                )
+                const replyCount = parseInt(countResult.rows[0]?.count || "0", 10)
+
+                // Emit to parent stream so channel view updates
+                io.to(room.stream(workspace_id, streamInfo.parent_stream_id)).emit("replyCount:updated", {
+                  eventId: streamInfo.branched_from_event_id,
+                  replyCount,
+                })
+                logger.debug({ event_id: streamInfo.branched_from_event_id, replyCount }, "Reply count updated")
+              }
+            } catch (err) {
+              logger.warn({ err, stream_id }, "Failed to update reply count")
+            }
+          }
+
           logger.debug({ event_id, stream_id }, "Stream event broadcast via Socket.IO")
           break
         }
@@ -252,7 +287,7 @@ export async function setupStreamWebSocket(
         }
 
         case "event:stream.created": {
-          const { stream_id, workspace_id, stream_type, name, slug, visibility, creator_id } = event
+          const { stream_id, workspace_id, stream_type, name, slug, visibility, creator_id, parent_stream_id, branched_from_event_id } = event
 
           // For public channels, broadcast to workspace
           if (visibility === "public" && stream_type === "channel") {
@@ -264,6 +299,20 @@ export async function setupStreamWebSocket(
               visibility,
               creatorId: creator_id,
             })
+          }
+
+          // For threads, broadcast to parent stream and pending thread room
+          if (stream_type === "thread" && parent_stream_id && branched_from_event_id) {
+            const threadCreatedPayload = {
+              threadId: stream_id,
+              parentStreamId: parent_stream_id,
+              branchedFromEventId: branched_from_event_id,
+            }
+            // Emit to parent stream (for reply count badges)
+            io.to(room.stream(workspace_id, parent_stream_id)).emit("thread:created", threadCreatedPayload)
+            // Emit to pending thread room (for users viewing the pending thread)
+            io.to(room.stream(workspace_id, branched_from_event_id)).emit("thread:created", threadCreatedPayload)
+            logger.debug({ stream_id, parent_stream_id, branched_from_event_id }, "Thread created broadcast to parent stream and pending thread")
           }
 
           logger.debug({ stream_id }, "Stream created broadcast via Socket.IO")

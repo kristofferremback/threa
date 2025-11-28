@@ -80,15 +80,24 @@ export class OutboxListener {
 
   /**
    * Process a batch of outbox events
-   * Reads unprocessed events from the outbox table, publishes them, and acks them
+   * Reads unprocessed events from the outbox table, publishes them, and acks them.
+   * Uses FOR UPDATE SKIP LOCKED to ensure exactly-once processing across multiple instances.
    */
   private async processOutboxBatch(): Promise<void> {
+    const client = await this.pool.connect()
     try {
-      const result = await this.pool.query<{ id: string; event_type: string; payload: any }>(
-        "SELECT id, event_type, payload FROM outbox WHERE processed_at IS NULL ORDER BY created_at LIMIT 100",
+      await client.query("BEGIN")
+
+      // FOR UPDATE SKIP LOCKED ensures:
+      // 1. Rows are locked for this transaction
+      // 2. Other instances skip already-locked rows (no waiting/blocking)
+      // 3. Each event is processed exactly once across all instances
+      const result = await client.query<{ id: string; event_type: string; payload: any }>(
+        "SELECT id, event_type, payload FROM outbox WHERE processed_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED",
       )
 
       if (result.rows.length === 0) {
+        await client.query("COMMIT")
         return
       }
 
@@ -103,21 +112,25 @@ export class OutboxListener {
           }
 
           // Ack: mark as processed
-          await this.pool.query("UPDATE outbox SET processed_at = NOW() WHERE id = $1", [row.id])
+          await client.query("UPDATE outbox SET processed_at = NOW() WHERE id = $1", [row.id])
         } catch (error) {
           logger.error({ err: error, event_id: row.id }, "Error processing outbox event")
           // Update retry count on failure
-          await this.pool.query("UPDATE outbox SET retry_count = retry_count + 1, last_error = $1 WHERE id = $2", [
+          await client.query("UPDATE outbox SET retry_count = retry_count + 1, last_error = $1 WHERE id = $2", [
             error instanceof Error ? error.message : String(error),
             row.id,
           ])
         }
       }
 
+      await client.query("COMMIT")
       logger.debug({ count: result.rows.length }, "Completed processing outbox batch")
     } catch (error) {
+      await client.query("ROLLBACK")
       logger.error({ err: error }, "Error processing outbox batch")
       throw error
+    } finally {
+      client.release()
     }
   }
 

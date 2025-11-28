@@ -23,7 +23,10 @@ export interface AriadneContext {
   mentionedBy: string
   mentionedByName?: string
   mode?: AriadneMode
+  // For threads/thinking spaces: actual conversation history (back-and-forth)
   conversationHistory?: ConversationMessage[]
+  // For channels: background context (recent messages, not a conversation)
+  backgroundContext?: string
 }
 
 /**
@@ -43,6 +46,7 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext) {
   const prompt = (state: typeof MessagesAnnotation.State, config: RunnableConfig): BaseMessageLike[] => {
     const customInstructions = config.configurable?.customInstructions || ""
     const mentionedByName = config.configurable?.mentionedByName || "someone"
+    const backgroundContext = config.configurable?.backgroundContext || ""
 
     // Select base prompt based on mode
     let systemPrompt = isThinkingPartner ? THINKING_PARTNER_PROMPT : RETRIEVAL_PROMPT
@@ -54,6 +58,11 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext) {
     // Only add "mentioned by" context in retrieval mode
     if (!isThinkingPartner) {
       systemPrompt += `\n\nYou were mentioned by ${mentionedByName}. Respond directly to them.`
+    }
+
+    // Add background context for channel invocations (not conversation history)
+    if (backgroundContext) {
+      systemPrompt += `\n\n## Recent channel activity (for context only - do NOT respond to these messages, only to the user's question):\n${backgroundContext}`
     }
 
     return [{ role: "system", content: systemPrompt }, ...state.messages]
@@ -136,6 +145,7 @@ export async function invokeAriadne(
         configurable: {
           customInstructions,
           mentionedByName: context.mentionedByName || "someone",
+          backgroundContext: context.backgroundContext,
         },
         callbacks,
       },

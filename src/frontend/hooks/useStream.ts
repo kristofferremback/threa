@@ -153,6 +153,49 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
       setEvents((prev) => prev.filter((e) => e.id !== data.id))
     })
 
+    // Handle reply count updates (when someone replies to a message in this stream)
+    socket.on("replyCount:updated", (data: { eventId: string; replyCount: number }) => {
+      setEvents((prev) =>
+        prev.map((e) => (e.id === data.eventId ? { ...e, replyCount: data.replyCount } : e)),
+      )
+    })
+
+    // Handle thread creation (when viewing a pending thread and it gets created)
+    socket.on("thread:created", async (data: { threadId: string; parentStreamId: string; branchedFromEventId: string }) => {
+      // Check if we're viewing this pending thread
+      const currentId = currentStreamRef.current
+      if (!currentId) return
+
+      // If we're viewing this event as a pending thread, switch to the real thread
+      if (isPendingThread(currentId) && currentId === data.branchedFromEventId) {
+        // Fetch the real thread data
+        try {
+          const res = await fetch(`/api/workspace/${workspaceId}/streams/${data.threadId}`, {
+            credentials: "include",
+          })
+          if (res.ok) {
+            const threadData = await res.json()
+            setStream(threadData)
+            setPendingEventId(null)
+            currentStreamRef.current = data.threadId
+            // Join the new thread's room
+            socket.emit("join", room.stream(workspaceId, data.threadId))
+            // Fetch events
+            const eventsRes = await fetch(
+              `/api/workspace/${workspaceId}/streams/${data.threadId}/events?limit=50`,
+              { credentials: "include" },
+            )
+            if (eventsRes.ok) {
+              const eventsData = await eventsRes.json()
+              setEvents(eventsData.events || [])
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch thread after creation:", err)
+        }
+      }
+    })
+
     // Handle read cursor updates from other devices
     socket.on("readCursor:updated", (data: { streamId: string; eventId: string }) => {
       if (data.streamId === currentStreamRef.current) {
@@ -242,6 +285,12 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
             setStream(threadData.thread)
             setPendingEventId(null)
             setParentStreamIdForReply(null)
+            // Update the ref so websocket events are received
+            currentStreamRef.current = threadData.thread.id
+            // Join the real thread's room
+            if (socketRef.current) {
+              socketRef.current.emit("join", room.stream(workspaceId, threadData.thread.id))
+            }
             // Continue to fetch events for this stream
             const eventsRes = await fetch(
               `/api/workspace/${workspaceId}/streams/${threadData.thread.id}/events?limit=${EVENT_PAGE_SIZE}`,

@@ -1,6 +1,6 @@
 import { Pool } from "pg"
 import { sql } from "../lib/db"
-import { getJobQueue, RespondJobData, JobPriority } from "../lib/job-queue"
+import { getJobQueue, RespondJobData } from "../lib/job-queue"
 import { invokeAriadne, AriadneContext, ConversationMessage } from "../ai/ariadne/agent"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
@@ -94,8 +94,12 @@ export class AriadneWorker {
       const stream = await this.streamService.getStream(streamId)
       const streamType = stream?.streamType || "channel"
 
-      // Fetch conversation history based on stream type
-      const conversationHistory = await this.fetchConversationContext(streamId, eventId, streamType)
+      // Fetch context based on stream type
+      // - Channels: background context (not a conversation, just recent activity)
+      // - Threads/Thinking spaces: conversation history (actual back-and-forth)
+      const isChannel = streamType === "channel"
+      const conversationHistory = isChannel ? [] : await this.fetchConversationHistory(streamId, eventId)
+      const backgroundContext = isChannel ? await this.fetchBackgroundContext(streamId, eventId) : undefined
 
       const context: AriadneContext = {
         workspaceId,
@@ -104,15 +108,18 @@ export class AriadneWorker {
         mentionedByName,
         mode: mode || "retrieval",
         conversationHistory,
+        backgroundContext,
       }
 
       logger.info(
         {
           job: job.id,
           streamId,
+          streamType,
           mentionedBy: mentionedByName,
           mode: mode || "retrieval",
           historyMessages: conversationHistory.length,
+          hasBackgroundContext: !!backgroundContext,
         },
         "Processing Ariadne request",
       )
@@ -179,101 +186,90 @@ export class AriadneWorker {
   }
 
   /**
-   * Fetch conversation history for context.
-   * - Thinking spaces: All messages in the stream
-   * - Threads: Full thread history
-   * - Channels: Surrounding N messages around the triggering event
+   * Fetch conversation history for threads and thinking spaces.
+   * These are focused conversations where all messages are part of the same discussion.
    */
-  private async fetchConversationContext(
-    streamId: string,
-    eventId: string,
-    streamType: string,
-  ): Promise<ConversationMessage[]> {
+  private async fetchConversationHistory(streamId: string, eventId: string): Promise<ConversationMessage[]> {
     const conversationHistory: ConversationMessage[] = []
 
     try {
-      if (streamType === "thinking_space" || streamType === "thread") {
-        const events = await this.streamService.getStreamEvents(streamId, 50)
+      const events = await this.streamService.getStreamEvents(streamId, 50)
 
-        for (const event of events) {
-          if (event.eventType !== "message" || !event.content) continue
-          if (event.id === eventId) continue
+      for (const event of events) {
+        if (event.eventType !== "message" || !event.content) continue
+        if (event.id === eventId) continue
 
-          const isAriadne = event.agentId === ARIADNE_PERSONA_ID
-          conversationHistory.push({
-            role: isAriadne ? "assistant" : "user",
-            name: isAriadne ? "Ariadne" : event.actorName || event.actorEmail || "User",
-            content: event.content,
-          })
-        }
-      } else {
-        const eventResult = await this.pool.query<{ created_at: Date }>(
-          sql`SELECT created_at FROM stream_events WHERE id = ${eventId}`,
-        )
-        const eventTimestamp = eventResult.rows[0]?.created_at
-
-        if (eventTimestamp) {
-          const beforeEvents = await this.pool.query<{
-            id: string
-            content: string
-            actor_id: string | null
-            agent_id: string | null
-            actor_name: string | null
-            actor_email: string | null
-          }>(
-            sql`SELECT e.id, tm.content, e.actor_id, e.agent_id,
-                       COALESCE(wp.display_name, u.name) as actor_name, u.email as actor_email
-                FROM stream_events e
-                INNER JOIN streams s ON e.stream_id = s.id
-                LEFT JOIN users u ON e.actor_id = u.id
-                LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
-                LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
-                WHERE e.stream_id = ${streamId}
-                  AND e.event_type = 'message'
-                  AND e.deleted_at IS NULL
-                  AND e.created_at < ${eventTimestamp}
-                  AND e.id != ${eventId}
-                ORDER BY e.created_at DESC
-                LIMIT ${Math.floor(CHANNEL_CONTEXT_MESSAGES / 2)}`,
-          )
-
-          for (const event of beforeEvents.rows.reverse()) {
-            if (!event.content) continue
-            const isAriadne = event.agent_id === ARIADNE_PERSONA_ID
-            conversationHistory.push({
-              role: isAriadne ? "assistant" : "user",
-              name: isAriadne ? "Ariadne" : event.actor_name || event.actor_email || "User",
-              content: event.content,
-            })
-          }
-        }
+        const isAriadne = event.agentId === ARIADNE_PERSONA_ID
+        conversationHistory.push({
+          role: isAriadne ? "assistant" : "user",
+          name: isAriadne ? "Ariadne" : event.actorName || event.actorEmail || "User",
+          content: event.content,
+        })
       }
 
-      logger.debug({ streamId, eventId, streamType, historyCount: conversationHistory.length }, "Fetched conversation context")
+      logger.debug({ streamId, eventId, historyCount: conversationHistory.length }, "Fetched conversation history")
     } catch (err) {
-      logger.error({ err, streamId, eventId }, "Failed to fetch conversation context")
+      logger.error({ err, streamId, eventId }, "Failed to fetch conversation history")
     }
 
     return conversationHistory
   }
+
+  /**
+   * Fetch background context for channel invocations.
+   * Channel messages are typically unrelated discussions - they provide context
+   * but should not be treated as a conversation to respond to.
+   */
+  private async fetchBackgroundContext(streamId: string, eventId: string): Promise<string | undefined> {
+    try {
+      const eventResult = await this.pool.query<{ created_at: Date }>(
+        sql`SELECT created_at FROM stream_events WHERE id = ${eventId}`,
+      )
+      const eventTimestamp = eventResult.rows[0]?.created_at
+      if (!eventTimestamp) return undefined
+
+      const recentEvents = await this.pool.query<{
+        content: string
+        actor_name: string | null
+        actor_email: string | null
+        agent_id: string | null
+      }>(
+        sql`SELECT tm.content,
+                   COALESCE(wp.display_name, u.name) as actor_name, u.email as actor_email,
+                   e.agent_id
+            FROM stream_events e
+            INNER JOIN streams s ON e.stream_id = s.id
+            LEFT JOIN users u ON e.actor_id = u.id
+            LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
+            LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
+            WHERE e.stream_id = ${streamId}
+              AND e.event_type = 'message'
+              AND e.deleted_at IS NULL
+              AND e.created_at < ${eventTimestamp}
+              AND e.id != ${eventId}
+            ORDER BY e.created_at DESC
+            LIMIT ${CHANNEL_CONTEXT_MESSAGES}`,
+      )
+
+      if (recentEvents.rows.length === 0) return undefined
+
+      // Format as simple text context (not conversation format)
+      const contextLines = recentEvents.rows.reverse().map((event) => {
+        if (!event.content) return null
+        const name = event.agent_id === ARIADNE_PERSONA_ID ? "Ariadne" : event.actor_name || event.actor_email || "User"
+        return `[${name}]: ${event.content}`
+      }).filter(Boolean)
+
+      if (contextLines.length === 0) return undefined
+
+      logger.debug({ streamId, eventId, contextLines: contextLines.length }, "Fetched background context")
+      return contextLines.join("\n")
+    } catch (err) {
+      logger.error({ err, streamId, eventId }, "Failed to fetch background context")
+      return undefined
+    }
+  }
 }
 
-/**
- * Queue an Ariadne response job when @ariadne is mentioned.
- */
-export async function queueAriadneResponse(params: {
-  workspaceId: string
-  streamId: string
-  eventId: string
-  mentionedBy: string
-  question: string
-}): Promise<string | null> {
-  const boss = getJobQueue()
-
-  return await boss.send("ai.respond", params, {
-    priority: JobPriority.URGENT,
-    retryLimit: 2,
-    retryDelay: 10,
-    expireInSeconds: 300,
-  })
-}
+// Re-export from ariadne-trigger for backwards compatibility
+export { queueAriadneResponse } from "./ariadne-trigger"
