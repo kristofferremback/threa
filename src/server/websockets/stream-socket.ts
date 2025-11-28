@@ -10,6 +10,7 @@ import { AuthService } from "../services/auth-service"
 import { parseCookies } from "../lib/cookies"
 import { queueEmbedding } from "../workers/embedding-worker"
 import { AIUsageService } from "../services/ai-usage-service"
+import { shutdownCoordinator } from "../index"
 
 interface SocketData {
   userId: string
@@ -82,6 +83,11 @@ export async function setupStreamWebSocket(
 
   // Authentication middleware
   io.use(async (socket, next) => {
+    // Reject new connections during shutdown
+    if (shutdownCoordinator.isShuttingDown) {
+      return next(new Error("Server is shutting down"))
+    }
+
     const cookieHeader = socket.handshake.headers.cookie
     const cookies = parseCookies(cookieHeader || "")
     const sealedSession = cookies["wos_session"]

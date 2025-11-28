@@ -33,6 +33,73 @@ import { startWorkers, stopWorkers } from "./workers"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// =============================================================================
+// Shutdown Coordinator
+// =============================================================================
+
+interface ShutdownConfig {
+  // How often the LB checks health (default: 10s)
+  healthCheckIntervalMs: number
+  // How many failed checks before LB considers unhealthy (default: 2)
+  failedChecksToUnhealthy: number
+}
+
+const DEFAULT_SHUTDOWN_CONFIG: ShutdownConfig = {
+  healthCheckIntervalMs: 10_000,
+  failedChecksToUnhealthy: 2,
+}
+
+class ShutdownCoordinator {
+  private _isShuttingDown = false
+  private _shutdownStartedAt: Date | null = null
+  private config: ShutdownConfig
+
+  constructor(config: Partial<ShutdownConfig> = {}) {
+    this.config = { ...DEFAULT_SHUTDOWN_CONFIG, ...config }
+  }
+
+  get isShuttingDown(): boolean {
+    return this._isShuttingDown
+  }
+
+  get shutdownStartedAt(): Date | null {
+    return this._shutdownStartedAt
+  }
+
+  // Time to wait for LB to stop sending traffic
+  get lbDrainTimeMs(): number {
+    return this.config.healthCheckIntervalMs * this.config.failedChecksToUnhealthy
+  }
+
+  startShutdown(): void {
+    if (this._isShuttingDown) return
+    this._isShuttingDown = true
+    this._shutdownStartedAt = new Date()
+    logger.info({ lbDrainTimeMs: this.lbDrainTimeMs }, "Shutdown initiated, waiting for LB to drain")
+  }
+
+  // Wait for LB to stop sending traffic
+  async waitForLbDrain(): Promise<void> {
+    if (!this._isShuttingDown) return
+    logger.info({ waitMs: this.lbDrainTimeMs }, "Waiting for load balancer to drain connections")
+    await new Promise((resolve) => setTimeout(resolve, this.lbDrainTimeMs))
+    logger.info("LB drain period complete")
+  }
+}
+
+// Helper to parse env var as number, falling back if invalid
+function parseEnvNumber(value: string | undefined, fallback: number): number {
+  if (value === undefined || value.trim() === "") return fallback
+  const num = Number(value)
+  return isNaN(num) ? fallback : num
+}
+
+// Global shutdown coordinator
+export const shutdownCoordinator = new ShutdownCoordinator({
+  healthCheckIntervalMs: parseEnvNumber(process.env.HEALTH_CHECK_INTERVAL_MS, 10_000),
+  failedChecksToUnhealthy: parseEnvNumber(process.env.HEALTH_CHECK_FAILURES_TO_UNHEALTHY, 2),
+})
+
 export interface AppContext {
   app: express.Application
   server: HTTPServer
@@ -59,11 +126,10 @@ function gracefulShutdown({
   onShutdown?: () => Promise<void> | void
   timeoutMs: number
 }): void {
-  let isShuttingDown = false
-
   const shutdown = async () => {
-    if (isShuttingDown) return
-    isShuttingDown = true
+    // Use the coordinator to track shutdown state (prevents double-shutdown)
+    if (shutdownCoordinator.isShuttingDown) return
+    shutdownCoordinator.startShutdown()
 
     const timeout = setTimeout(() => {
       logger.error({ timeoutMs }, "Server shutdown timed out, forcing exit")
@@ -73,6 +139,9 @@ function gracefulShutdown({
 
     try {
       logger.info("Shutting down server gracefully")
+
+      // Wait for LB to stop sending traffic (health check returns 503)
+      await shutdownCoordinator.waitForLbDrain()
 
       await attempt(() => preShutdown())
       await attempt(() => context.close())
@@ -128,7 +197,12 @@ export async function createApp(): Promise<AppContext> {
     }),
   )
 
-  app.get("/health", (_, res) => res.json({ status: "ok", message: "Threa API" }))
+  app.get("/health", (_, res) => {
+    if (shutdownCoordinator.isShuttingDown) {
+      return res.status(503).json({ status: "shutting_down", message: "Server is shutting down" })
+    }
+    return res.json({ status: "ok", message: "Threa API" })
+  })
 
   if (!isProduction) {
     app.get("/", (_, res) => res.redirect("http://localhost:3000"))
@@ -230,11 +304,7 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting AI workers...")
     await startWorkers(context.pool, connectionString)
 
-    const socketIoServer = await setupStreamWebSocket(
-      context.server,
-      context.pool,
-      context.streamService,
-    )
+    const socketIoServer = await setupStreamWebSocket(context.server, context.pool, context.streamService)
 
     await promisify(context.server.listen).bind(context.server)(PORT)
 
