@@ -298,6 +298,46 @@ export function LayoutSystem() {
     [bootstrapData, updateStream, activeStreamSlug, selectStream],
   )
 
+  // Handle archiving a stream (e.g., thinking space)
+  const handleArchiveStream = useCallback(
+    async (streamId: string) => {
+      if (!bootstrapData) return
+
+      // If this is a draft thinking space, just remove it locally (no API call needed)
+      const isDraft = streamId.startsWith("draft_thinking_space_")
+
+      if (!isDraft) {
+        try {
+          const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams/${streamId}`, {
+            method: "DELETE",
+            credentials: "include",
+          })
+          if (!res.ok) {
+            console.error("Failed to archive stream")
+            return
+          }
+        } catch (error) {
+          console.error("Failed to archive stream:", error)
+          return
+        }
+      }
+
+      removeStream(streamId)
+      // If we're viewing this stream, navigate away
+      const stream = bootstrapData.streams.find((s) => s.id === streamId)
+      if (stream && activeStreamSlug === stream.slug) {
+        const remainingStreams = bootstrapData.streams.filter(
+          (s) => s.id !== streamId && s.isMember && s.streamType === "channel",
+        )
+        const firstStream = remainingStreams[0]
+        if (firstStream) {
+          selectStream(firstStream)
+        }
+      }
+    },
+    [bootstrapData, removeStream, activeStreamSlug, selectStream],
+  )
+
   // Handle joining a stream from browse modal
   const handleJoinStream = useCallback(
     async (stream: Stream) => {
@@ -384,41 +424,42 @@ export function LayoutSystem() {
     [bootstrapData, updateStream, addStream, openItem],
   )
 
-  // Handle creating a new thinking space
-  const handleCreateThinkingSpace = useCallback(async () => {
+  // Handle creating a new thinking space (virtual until first message)
+  const handleCreateThinkingSpace = useCallback(() => {
     if (!bootstrapData) return
-    try {
-      const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/thinking-spaces`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({}),
-      })
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || "Failed to create thinking space")
-      }
-      const data = await res.json()
-      const thinkingSpace: Stream = {
-        ...data,
-        isMember: true,
-        pinnedAt: null,
-      }
 
-      addStream(thinkingSpace)
-
-      // Open the thinking space
-      openItem(
-        {
-          title: thinkingSpace.name || "New thinking space",
-          type: "stream",
-          data: { streamId: thinkingSpace.id },
-        },
-        "replace",
-      )
-    } catch (error) {
-      console.error("Failed to create thinking space:", error)
+    // Create a draft/virtual thinking space - not persisted until first message
+    const draftId = `draft_thinking_space_${Date.now()}`
+    const draftThinkingSpace: Stream = {
+      id: draftId,
+      workspaceId: bootstrapData.workspace.id,
+      streamType: "thinking_space",
+      name: null, // Will be auto-named on first message
+      slug: draftId,
+      description: null,
+      topic: null,
+      parentStreamId: null,
+      branchedFromEventId: null,
+      visibility: "private",
+      status: "active",
+      isMember: true,
+      unreadCount: 0,
+      lastReadAt: new Date().toISOString(),
+      notifyLevel: "all",
+      pinnedAt: null,
     }
+
+    addStream(draftThinkingSpace)
+
+    // Open the draft thinking space
+    openItem(
+      {
+        title: "New thinking space",
+        type: "stream",
+        data: { streamId: draftId },
+      },
+      "replace",
+    )
   }, [bootstrapData, addStream, openItem])
 
   // Helper to get stream from slug or ID
@@ -513,6 +554,13 @@ export function LayoutSystem() {
             paneId,
           )
         }}
+        onStreamMaterialized={(draftId, realStream) => {
+          // Draft thinking space was materialized - update bootstrap and tab data
+          removeStream(draftId)
+          addStream(realStream)
+          // Update the current tab to point to the real stream
+          updateTabData(tab.id, { streamId: realStream.id, streamSlug: realStream.slug })
+        }}
       />
     )
   }
@@ -605,6 +653,7 @@ export function LayoutSystem() {
         onPinStream={handlePinStream}
         onUnpinStream={handleUnpinStream}
         onLeaveStream={handleLeaveStream}
+        onArchiveStream={handleArchiveStream}
         isInboxActive={isActivityActive}
         inboxUnreadCount={inboxUnreadCount}
         currentUserProfile={bootstrapData.userProfile}

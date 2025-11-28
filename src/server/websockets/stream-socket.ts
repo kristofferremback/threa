@@ -142,14 +142,32 @@ export async function setupStreamWebSocket(
             stream_slug,
             event_type,
             actor_id,
+            agent_id,
             content,
             mentions,
             is_crosspost,
             original_stream_id,
           } = event
 
-          // Get actor info
-          const email = await streamService.getUserEmail(actor_id)
+          // Get actor or agent info
+          let actorEmail = "unknown"
+          let actorName: string | null = null
+          let agentId: string | null = null
+          let agentName: string | null = null
+
+          if (agent_id) {
+            // This is an agent message (e.g., Ariadne)
+            agentId = agent_id
+            const agentResult = await pool.query<{ name: string }>(
+              sql`SELECT name FROM ai_personas WHERE id = ${agent_id}`,
+            )
+            agentName = agentResult.rows[0]?.name || "AI Assistant"
+            actorName = agentName
+            actorEmail = `${agentName?.toLowerCase().replace(/\s+/g, "")}@threa.ai`
+          } else if (actor_id) {
+            // This is a user message
+            actorEmail = (await streamService.getUserEmail(actor_id)) || "unknown"
+          }
 
           // Build event data for clients
           const eventData = {
@@ -157,7 +175,10 @@ export async function setupStreamWebSocket(
             streamId: stream_id,
             eventType: event_type,
             actorId: actor_id,
-            actorEmail: email || "unknown",
+            actorEmail,
+            actorName,
+            agentId,
+            agentName,
             content,
             mentions,
             createdAt: new Date().toISOString(),

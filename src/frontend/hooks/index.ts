@@ -1,5 +1,6 @@
 export { useSocket } from "./useSocket"
 export { useStream } from "./useStream"
+export type { MaterializedStreamResult } from "./useStream"
 export { usePaneManager } from "./usePaneManager"
 export { useBootstrap } from "./useBootstrap"
 export { useWorkspaceSocket } from "./useWorkspaceSocket"

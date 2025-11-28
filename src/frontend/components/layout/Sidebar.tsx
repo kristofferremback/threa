@@ -18,6 +18,7 @@ import {
   MessageCircle,
   User,
   Brain,
+  Archive,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
@@ -57,6 +58,7 @@ interface SidebarProps {
   onPinStream?: (streamId: string) => void
   onUnpinStream?: (streamId: string) => void
   onLeaveStream?: (streamId: string) => void
+  onArchiveStream?: (streamId: string) => void
   isInboxActive?: boolean
   inboxUnreadCount?: number
 }
@@ -82,6 +84,7 @@ export function Sidebar({
   onPinStream,
   onUnpinStream,
   onLeaveStream,
+  onArchiveStream,
   isInboxActive = false,
   inboxUnreadCount = 0,
   currentUserProfile,
@@ -182,6 +185,7 @@ export function Sidebar({
           activeStreamSlug={activeStreamSlug}
           onSelectStream={onSelectStream}
           onCreateThinkingSpace={onCreateThinkingSpace}
+          onArchiveStream={onArchiveStream}
         />
 
         {/* Direct Messages Section */}
@@ -507,6 +511,7 @@ interface ThinkingSpacesSectionProps {
   activeStreamSlug: string | null
   onSelectStream: (stream: Stream, mode: OpenMode) => void
   onCreateThinkingSpace?: () => void
+  onArchiveStream?: (streamId: string) => void
 }
 
 function ThinkingSpacesSection({
@@ -514,6 +519,7 @@ function ThinkingSpacesSection({
   activeStreamSlug,
   onSelectStream,
   onCreateThinkingSpace,
+  onArchiveStream,
 }: ThinkingSpacesSectionProps) {
   return (
     <div className="mb-4">
@@ -551,6 +557,7 @@ function ThinkingSpacesSection({
               space={space}
               isActive={activeStreamSlug === space.slug || activeStreamSlug === space.id}
               onClick={(e) => onSelectStream(space, getOpenMode(e))}
+              onArchive={onArchiveStream ? () => onArchiveStream(space.id) : undefined}
             />
           ))
         )}
@@ -563,9 +570,10 @@ interface ThinkingSpaceItemProps {
   space: Stream
   isActive: boolean
   onClick: (e: React.MouseEvent) => void
+  onArchive?: () => void
 }
 
-function ThinkingSpaceItem({ space, isActive, onClick }: ThinkingSpaceItemProps) {
+function ThinkingSpaceItem({ space, isActive, onClick, onArchive }: ThinkingSpaceItemProps) {
   return (
     <div
       className={clsx(
@@ -598,7 +606,7 @@ function ThinkingSpaceItem({ space, isActive, onClick }: ThinkingSpaceItemProps)
         </span>
       )}
 
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex items-center gap-0.5">
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -610,6 +618,23 @@ function ThinkingSpaceItem({ space, isActive, onClick }: ThinkingSpaceItemProps)
         >
           <PanelRightOpen className="h-3.5 w-3.5" />
         </button>
+        <Dropdown
+          align="left"
+          trigger={
+            <button
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          }
+        >
+          {onArchive && (
+            <DropdownItem onClick={onArchive} icon={<Archive className="h-4 w-4" />} variant="danger">
+              Archive space
+            </DropdownItem>
+          )}
+        </Dropdown>
       </div>
     </div>
   )

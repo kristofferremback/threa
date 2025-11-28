@@ -18,6 +18,11 @@ interface UseStreamOptions {
   enabled?: boolean
 }
 
+export interface MaterializedStreamResult {
+  draftId: string
+  realStream: Stream
+}
+
 interface UseStreamReturn {
   stream: Stream | null
   events: StreamEvent[]
@@ -32,7 +37,7 @@ interface UseStreamReturn {
   connectionError: string | null
   isSending: boolean
   currentUserId: string | null
-  postMessage: (content: string, mentions?: Mention[]) => Promise<void>
+  postMessage: (content: string, mentions?: Mention[]) => Promise<MaterializedStreamResult | void>
   editEvent: (eventId: string, newContent: string) => Promise<void>
   shareEvent: (eventId: string, context?: string) => Promise<void>
   createThread: (eventId: string) => Promise<Stream>
@@ -46,6 +51,11 @@ const EVENT_PAGE_SIZE = 50
 // Helper to detect if an ID is an event ID (pending thread) vs stream ID
 const isPendingThread = (id: string | undefined): boolean => {
   return id?.startsWith("event_") === true
+}
+
+// Helper to detect if an ID is a draft thinking space
+const isDraftThinkingSpace = (id: string | undefined): boolean => {
+  return id?.startsWith("draft_thinking_space_") === true
 }
 
 // ==========================================================================
@@ -181,6 +191,40 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
     try {
       setIsLoading(true)
 
+      // Check if this is a draft thinking space (not yet created on server)
+      if (isDraftThinkingSpace(streamId)) {
+        // Create a virtual stream for the UI - will be materialized on first message
+        setStream({
+          id: streamId,
+          workspaceId,
+          streamType: "thinking_space",
+          name: null,
+          slug: streamId,
+          description: null,
+          topic: null,
+          parentStreamId: null,
+          branchedFromEventId: null,
+          visibility: "private",
+          status: "active",
+          isMember: true,
+          unreadCount: 0,
+          lastReadAt: new Date().toISOString(),
+          notifyLevel: "all",
+          pinnedAt: null,
+        })
+        setEvents([])
+        setHasMoreEvents(false)
+
+        // Get current user
+        const authRes = await fetch("/api/auth/me", { credentials: "include" })
+        if (authRes.ok) {
+          const authData = await authRes.json()
+          setCurrentUserId(authData.user?.id || null)
+        }
+        setIsLoading(false)
+        return
+      }
+
       // Check if this is a pending thread (streamId is actually an eventId)
       if (isPendingThread(streamId)) {
         // This is a pending thread - we're opening a thread view for an event that doesn't have a thread yet
@@ -290,7 +334,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
             unreadCount: 0,
             lastReadAt: null,
             notifyLevel: "default",
-            members: [],
+            pinnedAt: null,
           })
         } else {
           throw new Error("Failed to fetch event info")
@@ -417,11 +461,56 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
   // ==========================================================================
 
   const postMessage = useCallback(
-    async (content: string, mentions?: Mention[]) => {
+    async (content: string, mentions?: Mention[]): Promise<MaterializedStreamResult | void> => {
       if (!streamId || !content.trim() || isSending) return
 
       setIsSending(true)
       try {
+        // Check if this is a draft thinking space that needs to be materialized
+        if (isDraftThinkingSpace(streamId)) {
+          const draftId = streamId
+
+          // First, create the real thinking space
+          const createRes = await fetch(`/api/workspace/${workspaceId}/thinking-spaces`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({}), // Name will be auto-generated from first message
+          })
+
+          if (!createRes.ok) {
+            const error = await createRes.json()
+            throw new Error(error.error || "Failed to create thinking space")
+          }
+
+          const realStream: Stream = await createRes.json()
+
+          // Update local state to use the real stream
+          setStream(realStream)
+          currentStreamRef.current = realStream.id
+
+          // Join the new stream's websocket room
+          if (socketRef.current) {
+            socketRef.current.emit("join", room.stream(workspaceId, realStream.id))
+          }
+
+          // Now post the message to the real stream
+          const postRes = await fetch(`/api/workspace/${workspaceId}/streams/${realStream.id}/events`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ content: content.trim(), mentions }),
+          })
+
+          if (!postRes.ok) {
+            const error = await postRes.json()
+            throw new Error(error.error || "Failed to post message")
+          }
+
+          // Return info about the materialized stream so caller can update parent state
+          return { draftId, realStream }
+        }
+
         // Check if this is a pending thread by:
         // 1. pendingEventId state is set, OR
         // 2. streamId starts with "event_" (fallback check)

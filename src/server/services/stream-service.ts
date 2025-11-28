@@ -3,6 +3,7 @@ import { sql } from "../lib/db"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
+import { generateAutoName } from "../lib/ollama"
 
 // ============================================================================
 // Types
@@ -744,13 +745,15 @@ export class StreamService {
     try {
       await client.query("BEGIN")
 
-      // Get the original event with lock to prevent race conditions
+      // Get the original event with content and lock to prevent race conditions
       const eventResult = await client.query(
-        sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id
+        sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id,
+                   tm.content as message_content
             FROM stream_events e
             INNER JOIN streams s ON e.stream_id = s.id
+            LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ${params.eventId}
-            FOR UPDATE`,
+            FOR UPDATE OF e`,
       )
 
       const originalEvent = eventResult.rows[0]
@@ -795,6 +798,21 @@ export class StreamService {
 
         threadStream = this.mapStreamRow(streamResult.rows[0])
         threadCreated = true
+
+        // Auto-name thread based on original message content (async, non-blocking)
+        if (originalEvent.message_content) {
+          try {
+            const nameResult = await generateAutoName(originalEvent.message_content)
+            if (nameResult.success && nameResult.name) {
+              await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${streamId}`)
+              threadStream.name = nameResult.name
+              logger.debug({ streamId, name: nameResult.name }, "Thread auto-named")
+            }
+          } catch (err) {
+            // Don't fail thread creation if auto-naming fails
+            logger.warn({ err, streamId }, "Failed to auto-name thread")
+          }
+        }
 
         // Emit stream.created event
         const streamOutboxId = generateId("outbox")
@@ -1065,6 +1083,22 @@ export class StreamService {
 
       if (!stream) {
         throw new Error(`Stream not found: ${params.streamId}`)
+      }
+
+      // Auto-name thinking spaces on first message (if name is empty or placeholder)
+      const isPlaceholderName = !stream.name || stream.name === "New thinking space"
+      if (stream.stream_type === "thinking_space" && isPlaceholderName && params.content) {
+        try {
+          const nameResult = await generateAutoName(params.content)
+          if (nameResult.success && nameResult.name) {
+            await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${params.streamId}`)
+            stream.name = nameResult.name
+            logger.debug({ streamId: params.streamId, name: nameResult.name }, "Thinking space auto-named")
+          }
+        } catch (err) {
+          // Don't fail event creation if auto-naming fails
+          logger.warn({ err, streamId: params.streamId }, "Failed to auto-name thinking space")
+        }
       }
 
       // Handle mentions - create notifications (only for user-created events)

@@ -1,11 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { logger } from "./logger"
-import {
-  isOllamaEmbeddingAvailable,
-  generateOllamaEmbedding,
-  generateOllamaEmbeddingsBatch,
-} from "./ollama"
+import { isOllamaEmbeddingAvailable, generateOllamaEmbedding, generateOllamaEmbeddingsBatch } from "./ollama"
 
 // Lazy-loaded clients - only initialized when first used
 let _anthropic: Anthropic | null = null
@@ -47,7 +43,7 @@ export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
 export const Models = {
   EMBEDDING: "text-embedding-3-small",
   CLAUDE_SONNET: "claude-sonnet-4-5-20250929",
-  CLAUDE_HAIKU: "claude-3-5-haiku-20241022",
+  CLAUDE_HAIKU: "claude-haiku-4-5-20251001",
 } as const
 
 // Cost per 1M tokens (in cents)
@@ -314,4 +310,3 @@ export function calculateCost(
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
-

@@ -9,12 +9,19 @@ import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "./prompts"
 import { logger } from "../../lib/logger"
 import type { AriadneMode } from "../../lib/job-queue"
 
+export interface ConversationMessage {
+  role: "user" | "assistant"
+  name: string
+  content: string
+}
+
 export interface AriadneContext {
   workspaceId: string
   streamId: string
   mentionedBy: string
   mentionedByName?: string
   mode?: AriadneMode
+  conversationHistory?: ConversationMessage[]
 }
 
 /**
@@ -25,7 +32,7 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext) {
   const isThinkingPartner = context.mode === "thinking_partner"
 
   const model = new ChatAnthropic({
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-haiku-4-5-20251001",
     temperature: isThinkingPartner ? 0.8 : 0.7, // Slightly higher temperature for thinking partner
     maxTokens: isThinkingPartner ? 4096 : 2048, // Allow longer responses in thinking mode
   })
@@ -71,18 +78,42 @@ export async function invokeAriadne(
   response: string
   usage: { inputTokens: number; outputTokens: number }
 }> {
+  const historyLength = context.conversationHistory?.length || 0
   logger.info(
-    { workspaceId: context.workspaceId, streamId: context.streamId, questionLength: question.length, mode: context.mode || "retrieval" },
+    {
+      workspaceId: context.workspaceId,
+      streamId: context.streamId,
+      questionLength: question.length,
+      mode: context.mode || "retrieval",
+      historyMessages: historyLength,
+    },
     "Invoking Ariadne",
   )
 
   const agent = createAriadneAgent(pool, context)
 
+  // Build message array from conversation history
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = []
+
+  // Add conversation history if available
+  if (context.conversationHistory && context.conversationHistory.length > 0) {
+    for (const msg of context.conversationHistory) {
+      // Format message with name prefix for context
+      const formattedContent = msg.role === "user" ? `[${msg.name}]: ${msg.content}` : msg.content
+
+      messages.push({
+        role: msg.role,
+        content: formattedContent,
+      })
+    }
+  }
+
+  // Add the current question as the final user message
+  messages.push({ role: "user", content: question })
+
   try {
     const result = await agent.invoke(
-      {
-        messages: [{ role: "user", content: question }],
-      },
+      { messages },
       {
         configurable: {
           customInstructions,
@@ -92,8 +123,8 @@ export async function invokeAriadne(
     )
 
     // Extract the final response
-    const messages = result.messages
-    const lastMessage = messages[messages.length - 1]
+    const resultMessages = result.messages
+    const lastMessage = resultMessages[resultMessages.length - 1]
     const response = typeof lastMessage.content === "string" ? lastMessage.content : JSON.stringify(lastMessage.content)
 
     // Estimate token usage (LangGraph doesn't expose this directly from Anthropic)

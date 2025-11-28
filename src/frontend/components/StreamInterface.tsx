@@ -1,8 +1,9 @@
 import { useCallback } from "react"
 import { toast } from "sonner"
 import { useStream } from "../hooks"
+import type { MaterializedStreamResult } from "../hooks"
 import { ChatHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
-import type { OpenMode, Mention } from "../types"
+import type { OpenMode, Mention, Stream } from "../types"
 import { getOpenMode } from "../types"
 
 interface StreamInterfaceProps {
@@ -13,6 +14,7 @@ interface StreamInterfaceProps {
   title?: string
   onOpenThread?: (eventId: string, parentStreamId: string, mode: OpenMode) => void
   onGoToStream?: (streamSlug: string, mode: OpenMode) => void
+  onStreamMaterialized?: (draftId: string, realStream: Stream) => void
   users?: Array<{ id: string; name: string; email: string }>
   streams?: Array<{ id: string; name: string; slug: string | null; branchedFromEventId?: string | null }>
 }
@@ -25,6 +27,7 @@ export function StreamInterface({
   title,
   onOpenThread,
   onGoToStream,
+  onStreamMaterialized,
   users = [],
   streams = [],
 }: StreamInterfaceProps) {
@@ -59,9 +62,14 @@ export function StreamInterface({
   // Handler for sending messages
   const handleSend = useCallback(
     async (content: string, mentions?: Mention[]) => {
-      await postMessage(content, mentions)
+      const result = await postMessage(content, mentions)
+
+      // If a draft thinking space was materialized, notify parent
+      if (result && onStreamMaterialized) {
+        onStreamMaterialized(result.draftId, result.realStream)
+      }
     },
-    [postMessage],
+    [postMessage, onStreamMaterialized],
   )
 
   // Handler for opening a thread - no longer creates the thread, just opens the view

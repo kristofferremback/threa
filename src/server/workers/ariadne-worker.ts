@@ -1,13 +1,15 @@
 import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData, JobPriority } from "../lib/job-queue"
-import { invokeAriadne, AriadneContext } from "../ai/ariadne/agent"
+import { invokeAriadne, AriadneContext, ConversationMessage } from "../ai/ariadne/agent"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
 import { logger } from "../lib/logger"
 import { Models, calculateCost } from "../lib/ai-providers"
+import { resetEngagementTracking } from "./ariadne-trigger"
 
 const ARIADNE_PERSONA_ID = "pers_default_ariadne"
+const CHANNEL_CONTEXT_MESSAGES = 10 // Number of surrounding messages for channel context
 
 /**
  * Start the Ariadne response worker.
@@ -60,6 +62,19 @@ export async function startAriadneWorker(pool: Pool): Promise<void> {
           )
           const mentionedByName = userResult.rows[0]?.name || userResult.rows[0]?.email || "someone"
 
+          // Get stream type to determine context strategy
+          const stream = await streamService.getStream(streamId)
+          const streamType = stream?.streamType || "channel"
+
+          // Fetch conversation history based on stream type
+          const conversationHistory = await fetchConversationContext(
+            streamService,
+            pool,
+            streamId,
+            eventId,
+            streamType,
+          )
+
           // Custom instructions can be added later via workspace settings
           const customInstructions: string | undefined = undefined
 
@@ -69,20 +84,30 @@ export async function startAriadneWorker(pool: Pool): Promise<void> {
             mentionedBy,
             mentionedByName,
             mode: mode || "retrieval",
+            conversationHistory,
           }
 
-          logger.info({ job: job.id, streamId, mentionedBy: mentionedByName, mode: mode || "retrieval" }, "Processing Ariadne request")
+          logger.info(
+            {
+              job: job.id,
+              streamId,
+              mentionedBy: mentionedByName,
+              mode: mode || "retrieval",
+              historyMessages: conversationHistory.length,
+            },
+            "Processing Ariadne request",
+          )
 
           // Invoke Ariadne
           const result = await invokeAriadne(pool, context, question, customInstructions)
 
           // Track usage
-          const costCents = calculateCost(Models.CLAUDE_SONNET, result.usage)
+          const costCents = calculateCost(Models.CLAUDE_HAIKU, result.usage)
           await usageService.trackUsage({
             workspaceId,
             userId: mentionedBy,
             jobType: "respond",
-            model: Models.CLAUDE_SONNET,
+            model: Models.CLAUDE_HAIKU,
             inputTokens: result.usage.inputTokens,
             outputTokens: result.usage.outputTokens,
             costCents,
@@ -107,6 +132,9 @@ export async function startAriadneWorker(pool: Pool): Promise<void> {
 
           // Post the response
           await postAriadneResponse(streamService, responseStreamId, result.response)
+
+          // Reset engagement tracking - Ariadne is back in the conversation
+          await resetEngagementTracking(responseStreamId)
 
           logger.info({ job: job.id, responseLength: result.response.length, costCents }, "Ariadne response posted")
         } catch (err) {
@@ -142,6 +170,96 @@ async function postAriadneResponse(streamService: StreamService, streamId: strin
     content,
     mentions: [],
   })
+}
+
+/**
+ * Fetch conversation history for context.
+ * - Thinking spaces: All messages in the stream
+ * - Threads: Full thread history
+ * - Channels: Surrounding N messages around the triggering event
+ */
+async function fetchConversationContext(
+  streamService: StreamService,
+  pool: Pool,
+  streamId: string,
+  eventId: string,
+  streamType: string,
+): Promise<ConversationMessage[]> {
+  const conversationHistory: ConversationMessage[] = []
+
+  try {
+    if (streamType === "thinking_space" || streamType === "thread") {
+      // For thinking spaces and threads, get all messages (up to a reasonable limit)
+      const events = await streamService.getStreamEvents(streamId, 50)
+
+      for (const event of events) {
+        if (event.eventType !== "message" || !event.content) continue
+        // Skip the current event - it's the question being asked
+        if (event.id === eventId) continue
+
+        const isAriadne = event.agentId === ARIADNE_PERSONA_ID
+        conversationHistory.push({
+          role: isAriadne ? "assistant" : "user",
+          name: isAriadne ? "Ariadne" : event.actorName || event.actorEmail || "User",
+          content: event.content,
+        })
+      }
+    } else {
+      // For channels, get surrounding messages around the triggering event
+      // First, find the position of the triggering event
+      const eventResult = await pool.query<{ created_at: Date }>(
+        sql`SELECT created_at FROM stream_events WHERE id = ${eventId}`,
+      )
+      const eventTimestamp = eventResult.rows[0]?.created_at
+
+      if (eventTimestamp) {
+        // Get messages before and after the triggering event
+        const beforeEvents = await pool.query<{
+          id: string
+          content: string
+          actor_id: string | null
+          agent_id: string | null
+          actor_name: string | null
+          actor_email: string | null
+        }>(
+          sql`SELECT e.id, tm.content, e.actor_id, e.agent_id,
+                     COALESCE(wp.display_name, u.name) as actor_name, u.email as actor_email
+              FROM stream_events e
+              INNER JOIN streams s ON e.stream_id = s.id
+              LEFT JOIN users u ON e.actor_id = u.id
+              LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
+              LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
+              WHERE e.stream_id = ${streamId}
+                AND e.event_type = 'message'
+                AND e.deleted_at IS NULL
+                AND e.created_at < ${eventTimestamp}
+                AND e.id != ${eventId}
+              ORDER BY e.created_at DESC
+              LIMIT ${Math.floor(CHANNEL_CONTEXT_MESSAGES / 2)}`,
+        )
+
+        // Add messages in chronological order (reverse the DESC order)
+        for (const event of beforeEvents.rows.reverse()) {
+          if (!event.content) continue
+          const isAriadne = event.agent_id === ARIADNE_PERSONA_ID
+          conversationHistory.push({
+            role: isAriadne ? "assistant" : "user",
+            name: isAriadne ? "Ariadne" : event.actor_name || event.actor_email || "User",
+            content: event.content,
+          })
+        }
+      }
+    }
+
+    logger.debug(
+      { streamId, eventId, streamType, historyCount: conversationHistory.length },
+      "Fetched conversation context",
+    )
+  } catch (err) {
+    logger.error({ err, streamId, eventId }, "Failed to fetch conversation context")
+  }
+
+  return conversationHistory
 }
 
 /**

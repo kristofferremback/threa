@@ -242,44 +242,64 @@ export function MessageList({
     }
   }, [isLoadingMore, messages])
 
-  // Scroll handling - use useLayoutEffect to scroll BEFORE browser paints
-  // This prevents the visual "flash" where content appears at wrong scroll position
-  useLayoutEffect(() => {
+  // Track if we've completed initial scroll after loading
+  const hasCompletedInitialScrollRef = useRef(false)
+
+  // Reset initial scroll flag when loading starts
+  useEffect(() => {
+    if (isLoading) {
+      hasCompletedInitialScrollRef.current = false
+    }
+  }, [isLoading])
+
+  // Scroll handling - use useEffect with requestAnimationFrame to ensure layout is complete
+  useEffect(() => {
     if (messages.length === 0) return
 
     // Create a key based on stream to detect switches
     const currentKey = channelId || ""
     const isChannelSwitch = currentKey !== prevMessagesKeyRef.current
     const isNewMessages = messages.length > prevMessageCountRef.current
+    const isInitialLoad = !hasCompletedInitialScrollRef.current
 
     // Update refs
     prevMessagesKeyRef.current = currentKey
     prevMessageCountRef.current = messages.length
 
-    if (isChannelSwitch) {
-      hasScrolledToUnreadRef.current = false
-      // Channel switch: check if there are unread messages to scroll to
-      if (firstUnreadIndex > 0 && !hasScrolledToUnreadRef.current) {
-        // Scroll to the first unread message
-        const firstUnreadMsg = messages[firstUnreadIndex]
-        if (firstUnreadMsg) {
-          const element = messageRefsMap.current.get(firstUnreadMsg.id)
-          if (element) {
-            element.scrollIntoView({ behavior: "instant", block: "center" })
-            hasScrolledToUnreadRef.current = true
-            return
+    // Use requestAnimationFrame to ensure DOM layout is complete before scrolling
+    const scrollToPosition = () => {
+      if (isChannelSwitch || isInitialLoad) {
+        hasScrolledToUnreadRef.current = false
+        hasCompletedInitialScrollRef.current = true
+
+        // Channel switch or initial load: check if there are unread messages to scroll to
+        if (firstUnreadIndex > 0 && !hasScrolledToUnreadRef.current) {
+          // Scroll to the first unread message
+          const firstUnreadMsg = messages[firstUnreadIndex]
+          if (firstUnreadMsg) {
+            const element = messageRefsMap.current.get(firstUnreadMsg.id)
+            if (element) {
+              element.scrollIntoView({ behavior: "instant", block: "center" })
+              hasScrolledToUnreadRef.current = true
+              return
+            }
           }
         }
+        // No unread messages or new channel - scroll to bottom
+        messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
+        hasScrolledToUnreadRef.current = true
+      } else if (isNewMessages && wasAtBottomRef.current) {
+        // New messages while user was at bottom: smooth scroll to stay at bottom
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
       }
-      // No unread messages or new channel - scroll to bottom
-      messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
-      hasScrolledToUnreadRef.current = true
-    } else if (isNewMessages && wasAtBottomRef.current) {
-      // New messages while user was at bottom: smooth scroll to stay at bottom
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+      // If user wasn't at bottom and not a channel switch, don't auto-scroll (preserve their position)
     }
-    // If user wasn't at bottom and not a channel switch, don't auto-scroll (preserve their position)
-  }, [messages, channelId, firstUnreadIndex])
+
+    // Use double requestAnimationFrame to ensure layout is fully computed
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToPosition)
+    })
+  }, [messages, channelId, firstUnreadIndex, isLoading])
 
   // Handle scrolling to and highlighting a specific message
   useEffect(() => {
