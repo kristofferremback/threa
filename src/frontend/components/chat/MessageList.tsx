@@ -206,9 +206,14 @@ export function MessageList({
   const prevMessagesKeyRef = useRef("")
   const hasScrolledToUnreadRef = useRef(false)
   const prevScrollStateRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
+  // Track if user was at bottom BEFORE new messages arrive (updated on scroll)
+  const wasAtBottomRef = useRef(true)
 
-  // Handle scroll for infinite loading
+  // Handle scroll for infinite loading and tracking bottom state
   const handleScroll = useCallback(() => {
+    // Update bottom state on every scroll - this captures state BEFORE new messages arrive
+    wasAtBottomRef.current = isNearBottom()
+
     if (isNearTop() && hasMoreMessages && !isLoadingMore && onLoadMore) {
       const container = containerRef.current
       if (container) {
@@ -269,11 +274,11 @@ export function MessageList({
       // No unread messages or new channel - scroll to bottom
       messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
       hasScrolledToUnreadRef.current = true
-    } else if (isNewMessages && isNearBottom()) {
-      // New messages while near bottom: smooth scroll
+    } else if (isNewMessages && wasAtBottomRef.current) {
+      // New messages while user was at bottom: smooth scroll to stay at bottom
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-    // If not near bottom and not a channel switch, don't auto-scroll
+    // If user wasn't at bottom and not a channel switch, don't auto-scroll (preserve their position)
   }, [messages, channelId, firstUnreadIndex])
 
   // Handle scrolling to and highlighting a specific message

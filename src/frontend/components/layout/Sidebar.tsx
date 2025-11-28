@@ -17,6 +17,7 @@ import {
   PanelRightOpen,
   MessageCircle,
   User,
+  Brain,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
@@ -45,6 +46,7 @@ interface SidebarProps {
   onStartDM: (userId: string) => void
   onCreateChannel: () => void
   onCreateDM?: () => void
+  onCreateThinkingSpace?: () => void
   onStreamSettings: (stream: Stream) => void
   onEditProfile?: () => void
   onInvitePeople: () => void
@@ -69,6 +71,7 @@ export function Sidebar({
   onStartDM,
   onCreateChannel,
   onCreateDM,
+  onCreateThinkingSpace,
   onStreamSettings,
   onEditProfile,
   onInvitePeople,
@@ -88,6 +91,9 @@ export function Sidebar({
   // Use truthy check for pinnedAt since it might be undefined or null
   const pinnedChannels = memberChannels.filter((s) => !!s.pinnedAt)
   const unpinnedChannels = memberChannels.filter((s) => !s.pinnedAt)
+
+  // Thinking spaces
+  const thinkingSpaces = streams.filter((s) => s.streamType === "thinking_space" && s.isMember)
 
   // DMs the user is part of
   const directMessages = streams.filter((s) => s.streamType === "dm" && s.isMember)
@@ -169,6 +175,14 @@ export function Sidebar({
             />
           </>
         )}
+
+        {/* Thinking Spaces Section */}
+        <ThinkingSpacesSection
+          thinkingSpaces={thinkingSpaces}
+          activeStreamSlug={activeStreamSlug}
+          onSelectStream={onSelectStream}
+          onCreateThinkingSpace={onCreateThinkingSpace}
+        />
 
         {/* Direct Messages Section */}
         <DMSection
@@ -479,6 +493,123 @@ function StreamItem({ stream, isActive, onClick, onSettings, onPin, onUnpin, onL
             </>
           )}
         </Dropdown>
+      </div>
+    </div>
+  )
+}
+
+// ==========================================================================
+// Thinking Spaces Section
+// ==========================================================================
+
+interface ThinkingSpacesSectionProps {
+  thinkingSpaces: Stream[]
+  activeStreamSlug: string | null
+  onSelectStream: (stream: Stream, mode: OpenMode) => void
+  onCreateThinkingSpace?: () => void
+}
+
+function ThinkingSpacesSection({
+  thinkingSpaces,
+  activeStreamSlug,
+  onSelectStream,
+  onCreateThinkingSpace,
+}: ThinkingSpacesSectionProps) {
+  return (
+    <div className="mb-4">
+      <div className="mb-2 px-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          Thinking Spaces
+        </span>
+        {onCreateThinkingSpace && (
+          <button
+            onClick={onCreateThinkingSpace}
+            className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+            style={{ color: "var(--text-muted)" }}
+            title="New thinking space"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-0.5">
+        {thinkingSpaces.length === 0 ? (
+          <button
+            onClick={onCreateThinkingSpace}
+            className="w-full text-left px-2 py-2 rounded-lg flex items-center gap-2 transition-colors hover:bg-[var(--hover-overlay)]"
+          >
+            <Brain className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Start thinking with Ariadne...
+            </span>
+          </button>
+        ) : (
+          thinkingSpaces.map((space) => (
+            <ThinkingSpaceItem
+              key={space.id}
+              space={space}
+              isActive={activeStreamSlug === space.slug || activeStreamSlug === space.id}
+              onClick={(e) => onSelectStream(space, getOpenMode(e))}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface ThinkingSpaceItemProps {
+  space: Stream
+  isActive: boolean
+  onClick: (e: React.MouseEvent) => void
+}
+
+function ThinkingSpaceItem({ space, isActive, onClick }: ThinkingSpaceItemProps) {
+  return (
+    <div
+      className={clsx(
+        "w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors group",
+        isActive ? "bg-[var(--hover-overlay-strong)]" : "hover:bg-[var(--hover-overlay)]",
+      )}
+    >
+      <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0">
+        <Brain
+          className="h-4 w-4 flex-shrink-0"
+          style={{ color: isActive ? "var(--accent-primary)" : "var(--text-muted)" }}
+        />
+        <span
+          className="text-sm truncate flex-1 text-left"
+          style={{
+            color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+            fontWeight: space.unreadCount > 0 ? 600 : 400,
+          }}
+        >
+          {space.name || "Untitled thinking space"}
+        </span>
+      </button>
+
+      {space.unreadCount > 0 && (
+        <span
+          className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+          style={{ background: "var(--accent-secondary)", color: "white" }}
+        >
+          {space.unreadCount}
+        </span>
+      )}
+
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick({ ...e, altKey: true } as React.MouseEvent)
+          }}
+          className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+          style={{ color: "var(--text-muted)" }}
+          title="Open to side"
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   )

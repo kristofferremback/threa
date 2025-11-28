@@ -8,7 +8,7 @@ export type OpenMode = "replace" | "side" | "newTab"
 // Stream Types
 // ==========================================================================
 
-export type StreamType = "channel" | "thread" | "dm" | "incident"
+export type StreamType = "channel" | "thread" | "dm" | "incident" | "thinking_space"
 export type StreamVisibility = "public" | "private" | "inherit"
 export type StreamStatus = "active" | "archived" | "resolved"
 export type NotifyLevel = "all" | "mentions" | "muted" | "default"

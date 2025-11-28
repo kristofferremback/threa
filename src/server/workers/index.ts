@@ -2,6 +2,8 @@ import { Pool } from "pg"
 import { initJobQueue, stopJobQueue } from "../lib/job-queue"
 import { startEmbeddingWorker } from "./embedding-worker"
 import { startClassificationWorker } from "./classification-worker"
+import { startAriadneWorker } from "./ariadne-worker"
+import { startAriadneTrigger, stopAriadneTrigger } from "./ariadne-trigger"
 import { checkOllamaHealth, ensureOllamaModels } from "../lib/ollama"
 import { logger } from "../lib/logger"
 
@@ -41,6 +43,10 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
   // Start workers
   await startEmbeddingWorker(pool)
   await startClassificationWorker(pool)
+  await startAriadneWorker(pool)
+
+  // Start Ariadne trigger (Redis subscriber for async AI invocation)
+  await startAriadneTrigger(pool)
 
   logger.info("AI workers started successfully")
 }
@@ -50,6 +56,7 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
  */
 export async function stopWorkers(): Promise<void> {
   logger.info("Stopping AI workers...")
+  await stopAriadneTrigger()
   await stopJobQueue()
   logger.info("AI workers stopped")
 }
@@ -57,4 +64,4 @@ export async function stopWorkers(): Promise<void> {
 // Re-export utilities
 export { queueEmbedding, backfillEmbeddings } from "./embedding-worker"
 export { maybeQueueClassification, shouldClassifyStream } from "./classification-worker"
-
+export { queueAriadneResponse } from "./ariadne-worker"

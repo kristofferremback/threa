@@ -382,6 +382,47 @@ export function createStreamRoutes(
     }
   })
 
+  // Create a thinking space
+  router.post("/:workspaceId/thinking-spaces", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" })
+        return
+      }
+
+      await ensureUserExists(req)
+
+      const { name } = req.body
+
+      // Generate a unique slug suffix for thinking spaces
+      const uniqueSuffix = Date.now().toString(36)
+      const spaceName = name?.trim() || "New thinking space"
+
+      const stream = await streamService.createStream({
+        workspaceId,
+        streamType: "thinking_space",
+        creatorId: userId,
+        name: spaceName,
+        slug: createValidSlug(spaceName).slug + "-" + uniqueSuffix,
+        visibility: "private",
+      })
+
+      res.status(201).json({
+        ...stream,
+        isMember: true,
+        unreadCount: 0,
+        lastReadAt: new Date().toISOString(),
+        notifyLevel: "all",
+      })
+    } catch (error: any) {
+      logger.error({ err: error }, "Failed to create thinking space")
+      next(error)
+    }
+  })
+
   // Update a stream
   router.patch("/:workspaceId/streams/:streamId", async (req: Request, res: Response, next: NextFunction) => {
     try {

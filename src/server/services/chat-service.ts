@@ -38,17 +38,45 @@ export interface BootstrapUser {
   role: "admin" | "member" | "guest"
 }
 
+export interface BootstrapStream {
+  id: string
+  workspaceId: string
+  streamType: "channel" | "thread" | "dm" | "incident" | "thinking_space"
+  name: string | null
+  slug: string | null
+  description: string | null
+  topic: string | null
+  parentStreamId: string | null
+  branchedFromEventId: string | null
+  visibility: "public" | "private" | "inherit"
+  status: "active" | "archived" | "resolved"
+  isMember: boolean
+  unreadCount: number
+  lastReadAt: string | null
+  notifyLevel: string
+  pinnedAt: string | null
+}
+
 export interface BootstrapResult {
   workspace: {
     id: string
     name: string
     slug: string
-    plan_tier: string
+    planTier: string
   }
-  user_role: "admin" | "member" | "guest"
+  userRole: "admin" | "member" | "guest"
+  userProfile: {
+    displayName: string | null
+    title: string | null
+    avatarUrl: string | null
+    profileManagedBySso: boolean
+  } | null
+  needsProfileSetup: boolean
+  streams: BootstrapStream[]
+  users: BootstrapUser[]
+  // Legacy fields for backwards compatibility
   channels: BootstrapChannel[]
   conversations: BootstrapConversation[]
-  users: BootstrapUser[]
 }
 
 export interface MessageMention {
@@ -108,7 +136,7 @@ export class ChatService {
     const client = await this.pool.connect()
     try {
       // Run queries in parallel for speed
-      const [workspaceRes, channelsRes, conversationsRes, usersRes] = await Promise.all([
+      const [workspaceRes, channelsRes, conversationsRes, usersRes, streamsRes] = await Promise.all([
         // 1. Workspace info + user's role
         client.query(
           sql`SELECT
@@ -189,6 +217,32 @@ export class ChatService {
               AND u.deleted_at IS NULL
             ORDER BY u.name ASC`,
         ),
+
+        // 5. Streams from new streams table (thinking_space, dm)
+        // User must be a member to see these
+        client.query(
+          sql`SELECT
+              s.id, s.stream_type, s.name, s.slug, s.description, s.topic,
+              s.visibility, s.parent_stream_id, s.branched_from_event_id,
+              sm.last_read_at, sm.pinned_at,
+              COALESCE(sm.notify_level, 'default') as notify_level,
+              COALESCE(
+                (SELECT COUNT(*)::int FROM stream_events e
+                 WHERE e.stream_id = s.id
+                 AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01'::timestamptz)
+                 AND e.event_type = 'message'
+                 AND e.actor_id != ${userId}),
+                0
+              ) as unread_count
+            FROM streams s
+            INNER JOIN stream_members sm ON s.id = sm.stream_id
+              AND sm.user_id = ${userId}
+              AND sm.left_at IS NULL
+            WHERE s.workspace_id = ${workspaceId}
+              AND s.archived_at IS NULL
+              AND s.stream_type IN ('thinking_space', 'dm')
+            ORDER BY s.name ASC`,
+        ),
       ])
 
       const workspace = workspaceRes.rows[0]
@@ -196,14 +250,64 @@ export class ChatService {
         throw new Error("Workspace not found or user is not a member")
       }
 
+      // Transform channels to Stream format
+      const channelStreams = channelsRes.rows.map((row) => ({
+        id: row.id,
+        workspaceId,
+        streamType: "channel" as const,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        topic: row.topic,
+        parentStreamId: null,
+        branchedFromEventId: null,
+        visibility: row.visibility,
+        status: "active" as const,
+        isMember: row.is_member,
+        unreadCount: row.unread_count,
+        lastReadAt: row.last_read_at,
+        notifyLevel: row.notify_level,
+        pinnedAt: null,
+      }))
+
+      // Transform streams (thinking_space, dm) to Stream format
+      const otherStreams = streamsRes.rows.map((row) => ({
+        id: row.id,
+        workspaceId,
+        streamType: row.stream_type as "thinking_space" | "dm",
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        topic: row.topic,
+        parentStreamId: row.parent_stream_id,
+        branchedFromEventId: row.branched_from_event_id,
+        visibility: row.visibility,
+        status: "active" as const,
+        isMember: true, // Only member streams are returned
+        unreadCount: row.unread_count,
+        lastReadAt: row.last_read_at,
+        notifyLevel: row.notify_level,
+        pinnedAt: row.pinned_at,
+      }))
+
       return {
         workspace: {
           id: workspace.id,
           name: workspace.name,
           slug: workspace.slug,
-          plan_tier: workspace.plan_tier,
+          planTier: workspace.plan_tier,
         },
-        user_role: workspace.role,
+        userRole: workspace.role,
+        userProfile: null, // TODO: Add user profile query
+        needsProfileSetup: false, // TODO: Check if profile is set up
+        streams: [...channelStreams, ...otherStreams],
+        users: usersRes.rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          role: row.role,
+        })),
+        // Legacy fields for backwards compatibility
         channels: channelsRes.rows.map((row) => ({
           id: row.id,
           name: row.name,
@@ -224,7 +328,6 @@ export class ChatService {
           root_message_preview: row.root_message_preview ? row.root_message_preview.substring(0, 100) : null,
           root_message_author_id: row.root_message_author_id,
         })),
-        users: usersRes.rows,
       }
     } finally {
       client.release()

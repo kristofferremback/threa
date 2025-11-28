@@ -160,6 +160,16 @@ export class AIUsageService {
   }
 
   /**
+   * Get the monthly AI budget for a workspace (in cents).
+   */
+  async getWorkspaceBudget(workspaceId: string): Promise<number> {
+    const result = await this.pool.query<{ ai_budget_cents_monthly: number }>(
+      sql`SELECT ai_budget_cents_monthly FROM workspaces WHERE id = ${workspaceId}`,
+    )
+    return result.rows[0]?.ai_budget_cents_monthly ?? 10000 // Default $100/month
+  }
+
+  /**
    * Get usage statistics for the AI admin dashboard.
    */
   async getUsageStats(
@@ -245,4 +255,3 @@ export class AIUsageService {
     }
   }
 }
-

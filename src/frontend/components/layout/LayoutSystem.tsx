@@ -384,6 +384,43 @@ export function LayoutSystem() {
     [bootstrapData, updateStream, addStream, openItem],
   )
 
+  // Handle creating a new thinking space
+  const handleCreateThinkingSpace = useCallback(async () => {
+    if (!bootstrapData) return
+    try {
+      const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/thinking-spaces`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || "Failed to create thinking space")
+      }
+      const data = await res.json()
+      const thinkingSpace: Stream = {
+        ...data,
+        isMember: true,
+        pinnedAt: null,
+      }
+
+      addStream(thinkingSpace)
+
+      // Open the thinking space
+      openItem(
+        {
+          title: thinkingSpace.name || "New thinking space",
+          type: "stream",
+          data: { streamId: thinkingSpace.id },
+        },
+        "replace",
+      )
+    } catch (error) {
+      console.error("Failed to create thinking space:", error)
+    }
+  }, [bootstrapData, addStream, openItem])
+
   // Helper to get stream from slug or ID
   const getStreamFromSlug = (streamSlug?: string) => {
     if (!streamSlug || !bootstrapData) return undefined
@@ -557,6 +594,7 @@ export function LayoutSystem() {
         }}
         onCreateChannel={() => setShowCreateChannel(true)}
         onCreateDM={() => setShowNewDM(true)}
+        onCreateThinkingSpace={handleCreateThinkingSpace}
         onStreamSettings={(stream) => setStreamToEdit(stream)}
         onEditProfile={() => setShowProfileSetup(true)}
         onInvitePeople={() => setShowInviteModal(true)}

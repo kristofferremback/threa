@@ -8,7 +8,7 @@ import { createValidSlug } from "../../shared/slug"
 // Types
 // ============================================================================
 
-export type StreamType = "channel" | "thread" | "dm" | "incident"
+export type StreamType = "channel" | "thread" | "dm" | "incident" | "thinking_space"
 export type StreamVisibility = "public" | "private" | "inherit"
 export type StreamStatus = "active" | "archived" | "resolved"
 export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "poll" | "file"
@@ -58,7 +58,8 @@ export interface StreamEvent {
   id: string
   streamId: string
   eventType: EventType
-  actorId: string
+  actorId: string | null // null when agentId is set
+  agentId: string | null // AI agent/persona ID (mutually exclusive with actorId)
   contentType: string | null
   contentId: string | null
   payload: Record<string, unknown> | null
@@ -68,8 +69,9 @@ export interface StreamEvent {
 }
 
 export interface StreamEventWithDetails extends StreamEvent {
-  actorEmail: string
-  actorName: string
+  actorEmail: string | null
+  actorName: string | null
+  agentName: string | null // AI agent name when agentId is set
   // For message events
   content?: string
   mentions?: Mention[]
@@ -151,7 +153,8 @@ export interface CreateStreamParams {
 
 export interface CreateEventParams {
   streamId: string
-  actorId: string
+  actorId?: string // User who created the event (required unless agentId is set)
+  agentId?: string // AI agent/persona who created the event (alternative to actorId)
   eventType: EventType
   content?: string
   mentions?: Mention[]
@@ -276,6 +279,32 @@ export class StreamService {
         !userProfile.profile_managed_by_sso &&
         (!userProfile.display_name || userProfile.display_name.trim() === "")
 
+      // Check if AI is enabled for this workspace
+      const aiEnabledRes = await client.query(sql`SELECT ai_enabled FROM workspaces WHERE id = ${workspaceId}`)
+      const aiEnabled = aiEnabledRes.rows[0]?.ai_enabled ?? false
+
+      // Build users list, optionally including Ariadne if AI is enabled
+      const users = usersRes.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        title: row.title,
+        avatarUrl: row.avatar_url,
+        role: row.role,
+      }))
+
+      // Add Ariadne to the users list if AI is enabled
+      if (aiEnabled && !users.some((u) => u.email === "ariadne@threa.ai")) {
+        users.push({
+          id: `ariadne_${workspaceId}`,
+          name: "Ariadne",
+          email: "ariadne@threa.ai",
+          title: "AI Assistant",
+          avatarUrl: null,
+          role: "bot",
+        })
+      }
+
       return {
         workspace: {
           id: workspace.id,
@@ -308,14 +337,7 @@ export class StreamService {
           parentStreamId: row.parent_stream_id,
           pinnedAt: row.pinned_at,
         })),
-        users: usersRes.rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          title: row.title,
-          avatarUrl: row.avatar_url,
-          role: row.role,
-        })),
+        users,
       }
     } finally {
       client.release()
@@ -834,6 +856,9 @@ export class StreamService {
         const parentStream = parentStreamResult.rows[0]
 
         for (const mention of params.mentions.filter((m) => m.type === "user")) {
+          if (mention.id === params.actorId) continue // Don't notify self
+          if (mention.id?.startsWith("ariadne_")) continue // Ariadne is handled via job queue, not notifications
+
           const notifId = generateId("notif")
           await client.query(
             sql`INSERT INTO notifications (id, workspace_id, user_id, notification_type,
@@ -995,6 +1020,11 @@ export class StreamService {
   // ==========================================================================
 
   async createEvent(params: CreateEventParams): Promise<StreamEventWithDetails> {
+    // Validate that either actorId or agentId is provided
+    if (!params.actorId && !params.agentId) {
+      throw new Error("Either actorId or agentId must be provided")
+    }
+
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")
@@ -1020,10 +1050,10 @@ export class StreamService {
         )
       }
 
-      // Create the event
+      // Create the event (with either actor_id or agent_id)
       await client.query(
-        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id, payload)
-            VALUES (${eventId}, ${params.streamId}, ${params.eventType}, ${params.actorId},
+        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, payload)
+            VALUES (${eventId}, ${params.streamId}, ${params.eventType}, ${params.actorId || null}, ${params.agentId || null},
                     ${contentType}, ${contentId}, ${params.payload ? JSON.stringify(params.payload) : null})`,
       )
 
@@ -1037,11 +1067,12 @@ export class StreamService {
         throw new Error(`Stream not found: ${params.streamId}`)
       }
 
-      // Handle mentions - create notifications
-      if (params.mentions && params.mentions.length > 0) {
+      // Handle mentions - create notifications (only for user-created events)
+      if (params.actorId && params.mentions && params.mentions.length > 0) {
         const userMentions = params.mentions.filter((m) => m.type === "user")
         for (const mention of userMentions) {
           if (mention.id === params.actorId) continue // Don't notify self
+          if (mention.id?.startsWith("ariadne_")) continue // Ariadne is handled via job queue, not notifications
 
           const notifId = generateId("notif")
           await client.query(
@@ -1122,37 +1153,44 @@ export class StreamService {
               event_id: eventId,
               stream_id: params.streamId,
               workspace_id: stream.workspace_id,
+              stream_type: stream.stream_type,
               stream_slug: stream.slug,
               event_type: params.eventType,
-              actor_id: params.actorId,
+              actor_id: params.actorId || null,
+              agent_id: params.agentId || null,
               content: params.content,
               mentions: params.mentions,
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      // Update read cursor for the author (they've read their own message)
-      await client.query(
-        sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
-            WHERE stream_id = ${params.streamId} AND user_id = ${params.actorId}`,
-      )
+      // Update read cursor for the author (only for user events, not agent events)
+      if (params.actorId) {
+        await client.query(
+          sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
+              WHERE stream_id = ${params.streamId} AND user_id = ${params.actorId}`,
+        )
 
-      // Emit read cursor update so other devices see the message as read
-      const readCursorOutboxId = generateId("outbox")
-      await client.query(
-        sql`INSERT INTO outbox (id, event_type, payload)
-            VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
-              stream_id: params.streamId,
-              user_id: params.actorId,
-              event_id: eventId,
-              workspace_id: stream.workspace_id,
-            })})`,
-      )
-      await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
+        // Emit read cursor update so other devices see the message as read
+        const readCursorOutboxId = generateId("outbox")
+        await client.query(
+          sql`INSERT INTO outbox (id, event_type, payload)
+              VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
+                stream_id: params.streamId,
+                user_id: params.actorId,
+                event_id: eventId,
+                workspace_id: stream.workspace_id,
+              })})`,
+        )
+        await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
+      }
 
       await client.query("COMMIT")
 
-      logger.info({ eventId, streamId: params.streamId, type: params.eventType }, "Event created")
+      logger.info(
+        { eventId, streamId: params.streamId, type: params.eventType, isAgent: !!params.agentId },
+        "Event created",
+      )
 
       return (await this.getEventWithDetails(eventId))!
     } catch (error) {
@@ -1166,11 +1204,12 @@ export class StreamService {
   async getStreamEvents(streamId: string, limit: number = 50, offset: number = 0): Promise<StreamEventWithDetails[]> {
     const result = await this.pool.query(
       sql`SELECT
-            e.id, e.stream_id, e.event_type, e.actor_id,
+            e.id, e.stream_id, e.event_type, e.actor_id, e.agent_id,
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
             u.email as actor_email,
             COALESCE(wp.display_name, u.name) as actor_name,
+            ap.name as agent_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1180,8 +1219,9 @@ export class StreamService {
                AND se2.event_type = 'message') as reply_count
           FROM stream_events e
           INNER JOIN streams s ON e.stream_id = s.id
-          INNER JOIN users u ON e.actor_id = u.id
+          LEFT JOIN users u ON e.actor_id = u.id
           LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
+          LEFT JOIN ai_personas ap ON e.agent_id = ap.id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.stream_id = ${streamId}
@@ -1199,15 +1239,17 @@ export class StreamService {
       const originalIds = sharedEvents.map((e) => e.original_event_id)
       const originals = await this.pool.query(
         sql`SELECT
-              e.id, e.stream_id, e.event_type, e.actor_id,
+              e.id, e.stream_id, e.event_type, e.actor_id, e.agent_id,
               e.content_type, e.content_id, e.created_at,
               u.email as actor_email,
               COALESCE(wp.display_name, u.name) as actor_name,
+              ap.name as agent_name,
               tm.content, tm.mentions
             FROM stream_events e
             INNER JOIN streams s ON e.stream_id = s.id
-            INNER JOIN users u ON e.actor_id = u.id
+            LEFT JOIN users u ON e.actor_id = u.id
             LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
+            LEFT JOIN ai_personas ap ON e.agent_id = ap.id
             LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ANY(${originalIds})`,
       )
@@ -1227,11 +1269,12 @@ export class StreamService {
   async getEventWithDetails(eventId: string): Promise<StreamEventWithDetails | null> {
     const result = await this.pool.query(
       sql`SELECT
-            e.id, e.stream_id, e.event_type, e.actor_id,
+            e.id, e.stream_id, e.event_type, e.actor_id, e.agent_id,
             e.content_type, e.content_id, e.payload,
             e.created_at, e.edited_at, e.deleted_at,
             u.email as actor_email,
             COALESCE(wp.display_name, u.name) as actor_name,
+            ap.name as agent_name,
             tm.content, tm.mentions,
             sr.original_event_id, sr.context as share_context,
             (SELECT COUNT(*) FROM stream_events se2
@@ -1241,8 +1284,9 @@ export class StreamService {
                AND se2.event_type = 'message') as reply_count
           FROM stream_events e
           INNER JOIN streams s ON e.stream_id = s.id
-          INNER JOIN users u ON e.actor_id = u.id
+          LEFT JOIN users u ON e.actor_id = u.id
           LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
+          LEFT JOIN ai_personas ap ON e.agent_id = ap.id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.id = ${eventId}`,
@@ -1879,6 +1923,7 @@ export class StreamService {
       streamId: row.stream_id,
       eventType: row.event_type as EventType,
       actorId: row.actor_id,
+      agentId: row.agent_id,
       contentType: row.content_type,
       contentId: row.content_id,
       payload: row.payload,
@@ -1886,7 +1931,8 @@ export class StreamService {
       editedAt: row.edited_at,
       deletedAt: row.deleted_at,
       actorEmail: row.actor_email,
-      actorName: row.actor_name,
+      actorName: row.actor_name || row.agent_name, // Use agent name if no actor
+      agentName: row.agent_name,
       content: row.content,
       mentions: row.mentions,
       originalEventId: row.original_event_id,

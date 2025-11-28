@@ -46,7 +46,7 @@ export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
 // Model constants
 export const Models = {
   EMBEDDING: "text-embedding-3-small",
-  CLAUDE_SONNET: "claude-sonnet-4-20250514",
+  CLAUDE_SONNET: "claude-sonnet-4-5-20250929",
   CLAUDE_HAIKU: "claude-3-5-haiku-20241022",
 } as const
 

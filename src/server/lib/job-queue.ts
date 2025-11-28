@@ -80,12 +80,15 @@ export interface ClassifyJobData {
   reactionCount?: number
 }
 
+export type AriadneMode = "retrieval" | "thinking_partner"
+
 export interface RespondJobData {
   workspaceId: string
   streamId: string
   eventId: string
   mentionedBy: string
   question: string
+  mode?: AriadneMode
 }
 
 export interface ExtractJobData {
