@@ -171,6 +171,13 @@ export async function createApp(): Promise<AppContext> {
 
   const server = http.createServer(app)
 
+  // Track all connections so we can force-close them during shutdown
+  const connections = new Set<import("net").Socket>()
+  server.on("connection", (socket) => {
+    connections.add(socket)
+    socket.on("close", () => connections.delete(socket))
+  })
+
   return {
     app,
     server,
@@ -183,7 +190,14 @@ export async function createApp(): Promise<AppContext> {
     redisSubClient,
     outboxListener,
     close: async () => {
-      // Only close server if it's still listening (Socket.IO may have already closed it)
+      // Force-close all HTTP connections (don't wait for keep-alive to timeout)
+      logger.info({ count: connections.size }, "Destroying HTTP connections")
+      for (const socket of connections) {
+        socket.destroy()
+      }
+      connections.clear()
+
+      // Close server if still listening
       if (server.listening) {
         await attempt(() => promisify(server.close.bind(server))())
       }

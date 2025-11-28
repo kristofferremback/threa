@@ -58,9 +58,19 @@ export async function setupStreamWebSocket(
 
   io.adapter(createAdapter(pubClient, subClient))
 
-  // Add cleanup method that closes Redis clients properly
+  // Add cleanup method that disconnects all clients and closes Redis clients properly
   io.closeWithCleanup = async () => {
+    // First, disconnect all connected sockets (don't wait for clients to disconnect voluntarily)
+    const connectedSockets = await io.fetchSockets()
+    logger.info({ count: connectedSockets.length }, "Disconnecting all Socket.IO clients")
+    for (const socket of connectedSockets) {
+      socket.disconnect(true) // true = close the underlying connection
+    }
+
+    // Now close the server (should be quick since we already disconnected everyone)
     await new Promise<void>((resolve) => io.close(() => resolve()))
+
+    // Clean up Redis clients
     await Promise.all([
       pubClient.quit(),
       subClient.quit(),

@@ -46,7 +46,8 @@ export function getJobQueue(): PgBoss {
 
 export async function stopJobQueue(): Promise<void> {
   if (boss) {
-    await boss.stop()
+    // Stop with a short timeout - don't wait forever for workers to finish
+    await boss.stop({ graceful: true, timeout: 5000 })
     boss = null
     logger.info("pg-boss job queue stopped")
   }
