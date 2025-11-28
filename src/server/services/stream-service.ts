@@ -108,6 +108,7 @@ export interface StreamAccessResult {
   isMember: boolean
   canPost: boolean
   reason?: string
+  inheritedFrom?: string // Channel ID if access is inherited via parent membership
 }
 
 export interface BootstrapUser {
@@ -1817,11 +1818,12 @@ export class StreamService {
    * - Members can always access their streams (read + write)
    * - Non-members CAN read public streams but cannot post
    * - Non-members cannot access private streams at all
+   * - For threads: traverse graph upward - if user is member of parent channel, they can access
    */
   async checkStreamAccess(streamId: string, userId: string): Promise<StreamAccessResult> {
     const result = await this.pool.query(
       sql`SELECT
-            s.id, s.visibility, s.stream_type,
+            s.id, s.visibility, s.stream_type, s.parent_stream_id,
             CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member
           FROM streams s
           LEFT JOIN stream_members sm ON s.id = sm.stream_id
@@ -1837,9 +1839,22 @@ export class StreamService {
     const stream = result.rows[0]
     const isMember = stream.is_member
 
-    // Members always have full access
+    // Direct members always have full access
     if (isMember) {
       return { hasAccess: true, isMember: true, canPost: true }
+    }
+
+    // For threads, check if user has access through parent channel membership
+    if (stream.stream_type === "thread" && stream.parent_stream_id) {
+      const parentAccess = await this.checkParentChannelAccess(stream.parent_stream_id, userId)
+      if (parentAccess.hasAccess) {
+        return {
+          hasAccess: true,
+          isMember: false,
+          canPost: true,
+          inheritedFrom: parentAccess.channelId,
+        }
+      }
     }
 
     // Non-members can read public streams but not post
@@ -1859,6 +1874,52 @@ export class StreamService {
       canPost: false,
       reason: "This is a private channel",
     }
+  }
+
+  /**
+   * Traverse parent chain to find a channel and check if user is a member.
+   * Returns the channel ID if user has access through inheritance.
+   */
+  private async checkParentChannelAccess(
+    parentStreamId: string,
+    userId: string,
+  ): Promise<{ hasAccess: boolean; channelId?: string }> {
+    let currentId = parentStreamId
+
+    // Walk up the tree (max 10 levels to prevent infinite loops)
+    for (let i = 0; i < 10; i++) {
+      const result = await this.pool.query(
+        sql`SELECT
+              s.id, s.stream_type, s.parent_stream_id,
+              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member
+            FROM streams s
+            LEFT JOIN stream_members sm ON s.id = sm.stream_id
+              AND sm.user_id = ${userId}
+              AND sm.left_at IS NULL
+            WHERE s.id = ${currentId}`,
+      )
+
+      if (result.rows.length === 0) break
+
+      const parent = result.rows[0]
+
+      // Found a channel - check membership
+      if (parent.stream_type === "channel") {
+        return {
+          hasAccess: parent.is_member,
+          channelId: parent.id,
+        }
+      }
+
+      // If this is another thread, keep traversing up
+      if (parent.parent_stream_id) {
+        currentId = parent.parent_stream_id
+      } else {
+        break
+      }
+    }
+
+    return { hasAccess: false }
   }
 
   /**
