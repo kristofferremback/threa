@@ -135,6 +135,13 @@ export class OutboxListener {
       }
 
       await this.notifyClient.unlisten("outbox_event")
+      await this.notifyClient.disconnect()
+
+      // Disconnect outbox Redis client
+      if (this.redisClient) {
+        await this.redisClient.quit()
+      }
+
       this.isListening = false
       logger.info("Outbox listener stopped")
     } catch (error) {

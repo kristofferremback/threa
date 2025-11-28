@@ -78,6 +78,24 @@ export class NotifyClient {
   }
 
   /**
+   * Disconnect from the database
+   */
+  async disconnect(): Promise<void> {
+    if (!this.client || !this.isConnected) {
+      return
+    }
+
+    try {
+      await this.client.end()
+      this.isConnected = false
+      this.client = null
+      logger.info("Notification client disconnected")
+    } catch (error) {
+      logger.error({ err: error }, "Error disconnecting notification client")
+    }
+  }
+
+  /**
    * Register a handler for notifications
    */
   onNotification(handler: NotificationHandler): void {

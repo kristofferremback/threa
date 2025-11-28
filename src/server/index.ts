@@ -183,7 +183,10 @@ export async function createApp(): Promise<AppContext> {
     redisSubClient,
     outboxListener,
     close: async () => {
-      await attempt(() => promisify(server.close).bind(server)())
+      // Only close server if it's still listening (Socket.IO may have already closed it)
+      if (server.listening) {
+        await attempt(() => promisify(server.close.bind(server))())
+      }
 
       await attempt(() => outboxListener.stop())
       await attempt(() => pool.end())
@@ -228,7 +231,7 @@ export async function startServer(context: AppContext): Promise<void> {
     gracefulShutdown({
       context,
       preShutdown: async () => {
-        await socketIoServer.close()
+        await socketIoServer.closeWithCleanup()
         await stopWorkers()
       },
       onShutdown: async () => {

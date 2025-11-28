@@ -28,11 +28,15 @@ export const room = {
   user: (workspaceId: string, userId: string) => `ws:${workspaceId}:user:${userId}`,
 }
 
+export interface SocketIOServerWithCleanup extends SocketIOServer {
+  closeWithCleanup(): Promise<void>
+}
+
 export async function setupStreamWebSocket(
   httpServer: HTTPServer,
   pool: Pool,
   streamService: StreamService,
-): Promise<SocketIOServer> {
+): Promise<SocketIOServerWithCleanup> {
   const authService = new AuthService()
   const aiUsageService = new AIUsageService(pool)
 
@@ -44,7 +48,7 @@ export async function setupStreamWebSocket(
     },
     pingTimeout: 60000,
     pingInterval: 25000,
-  })
+  }) as SocketIOServerWithCleanup
 
   // Setup Redis adapter for horizontal scaling
   const redisUrl = process.env.REDIS_URL || "redis://localhost:6379"
@@ -53,6 +57,17 @@ export async function setupStreamWebSocket(
   const messageSubscriber = pubClient.duplicate()
 
   io.adapter(createAdapter(pubClient, subClient))
+
+  // Add cleanup method that closes Redis clients properly
+  io.closeWithCleanup = async () => {
+    await new Promise<void>((resolve) => io.close(() => resolve()))
+    await Promise.all([
+      pubClient.quit(),
+      subClient.quit(),
+      messageSubscriber.quit(),
+    ])
+    logger.info("Socket.IO server and Redis clients closed")
+  }
   logger.info("Redis adapter connected for Socket.IO")
 
   // Authentication middleware
