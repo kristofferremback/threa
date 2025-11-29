@@ -101,8 +101,8 @@ export function Sidebar({
   // DMs the user is part of
   const directMessages = streams.filter((s) => s.streamType === "dm" && s.isMember)
 
-  // Other users in workspace (excluding current user)
-  const otherUsers = users.filter((u) => u.id !== currentUserId)
+  // Other users in workspace (excluding current user and AI personas like Ariadne)
+  const otherUsers = users.filter((u) => u.id !== currentUserId && !u.email.endsWith("@threa.ai"))
 
   const hasNoChannels = memberChannels.length === 0
 
