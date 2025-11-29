@@ -10,6 +10,7 @@ import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "./prompts"
 import { logger } from "../../lib/logger"
 import { isLangfuseEnabled } from "../../lib/langfuse"
 import type { AriadneMode } from "../../lib/job-queue"
+import type { SearchScope } from "../../services/search-service"
 
 export interface ConversationMessage {
   role: "user" | "assistant"
@@ -23,6 +24,14 @@ export interface AriadneContext {
   mentionedBy: string
   mentionedByName?: string
   mode?: AriadneMode
+  /**
+   * Stream type and visibility for determining search scope.
+   * - thinking_space: Full user access (scope: user)
+   * - private channel/DM: Current stream + public (scope: private)
+   * - public channel: Public only (scope: public)
+   */
+  streamType?: "channel" | "thread" | "thinking_space"
+  streamVisibility?: "public" | "private"
   // For threads/thinking spaces: actual conversation history (back-and-forth)
   conversationHistory?: ConversationMessage[]
   // For channels: background context (recent messages, not a conversation)
@@ -30,10 +39,37 @@ export interface AriadneContext {
 }
 
 /**
+ * Determine the search scope based on stream type and visibility.
+ * This controls what information Ariadne can access.
+ */
+function determineSearchScope(context: AriadneContext): SearchScope {
+  // Thinking spaces: full user access
+  if (context.streamType === "thinking_space") {
+    return { type: "user" }
+  }
+
+  // Private streams (channels or threads): current stream + public
+  if (context.streamVisibility === "private") {
+    return { type: "private", currentStreamId: context.streamId }
+  }
+
+  // Public streams: public only
+  return { type: "public" }
+}
+
+/**
  * Create an Ariadne agent instance for a specific workspace context.
+ * The mentionedBy user ID is used for permission-scoped searches.
+ * The search scope is determined by the stream type and visibility.
  */
 export function createAriadneAgent(pool: Pool, context: AriadneContext) {
-  const tools = createAriadneTools(pool, context.workspaceId, context.streamId)
+  const scope = determineSearchScope(context)
+  const tools = createAriadneTools(pool, {
+    workspaceId: context.workspaceId,
+    userId: context.mentionedBy,
+    currentStreamId: context.streamId,
+    scope,
+  })
   const isThinkingPartner = context.mode === "thinking_partner"
 
   const model = new ChatAnthropic({

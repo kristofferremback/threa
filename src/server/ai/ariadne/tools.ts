@@ -1,24 +1,97 @@
 import { tool } from "@langchain/core/tools"
 import { z } from "zod"
 import { Pool } from "pg"
-import { SearchService } from "../../services/search-service"
+import { SearchService, SearchScope } from "../../services/search-service"
 import { StreamService } from "../../services/stream-service"
 import { logger } from "../../lib/logger"
 
+export interface AriadneToolsContext {
+  workspaceId: string
+  userId: string
+  currentStreamId?: string
+  /**
+   * Search scope determines information boundaries:
+   * - public: Only public streams (invoked from public channel)
+   * - private: Current stream + public streams (invoked from private channel)
+   * - user: All user-accessible content (invoked from thinking space)
+   */
+  scope: SearchScope
+}
+
 /**
- * Create Ariadne's tools for a specific workspace context.
+ * Create Ariadne's tools for a specific workspace and user context.
+ * The scope controls what information Ariadne can access based on invocation context.
  */
-export function createAriadneTools(pool: Pool, workspaceId: string, currentStreamId?: string) {
+export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
+  const { workspaceId, userId, currentStreamId, scope } = context
   const searchService = new SearchService(pool)
   const streamService = new StreamService(pool)
 
   const searchMessages = tool(
     async (input) => {
       try {
+        // Resolve human-readable names/slugs to IDs
+        const userIds: string[] = []
+        const withUserIds: string[] = []
+        const streamIds: string[] = []
+
+        if (input.fromUsers?.length) {
+          const resolved = await searchService.resolveUserNames(workspaceId, input.fromUsers)
+          for (const [name, id] of resolved) {
+            userIds.push(id)
+            logger.debug({ name, id }, "Resolved user name to ID (from)")
+          }
+          for (const name of input.fromUsers) {
+            if (!resolved.has(name)) {
+              logger.debug({ name }, "Could not resolve user name (from)")
+            }
+          }
+        }
+
+        if (input.withUsers?.length) {
+          const resolved = await searchService.resolveUserNames(workspaceId, input.withUsers)
+          for (const [name, id] of resolved) {
+            withUserIds.push(id)
+            logger.debug({ name, id }, "Resolved user name to ID (with)")
+          }
+          for (const name of input.withUsers) {
+            if (!resolved.has(name)) {
+              logger.debug({ name }, "Could not resolve user name (with)")
+            }
+          }
+        }
+
+        if (input.inChannels?.length) {
+          const resolved = await searchService.resolveStreamSlugs(workspaceId, input.inChannels)
+          for (const [slug, id] of resolved) {
+            streamIds.push(id)
+            logger.debug({ slug, id }, "Resolved stream slug to ID")
+          }
+          for (const slug of input.inChannels) {
+            if (!resolved.has(slug)) {
+              logger.debug({ slug }, "Could not resolve stream slug")
+            }
+          }
+        }
+
+        // Validate stream types
+        const validStreamTypes = ["channel", "thread", "thinking_space"] as const
+        const streamTypes = input.streamTypes?.filter((t): t is typeof validStreamTypes[number] =>
+          validStreamTypes.includes(t as typeof validStreamTypes[number])
+        )
+
         const results = await searchService.search(workspaceId, input.query, {
           limit: input.limit || 10,
           searchMessages: true,
           searchKnowledge: false,
+          userId,
+          scope, // Context-aware information boundaries
+          filters: {
+            userIds: userIds.length > 0 ? userIds : undefined,
+            withUserIds: withUserIds.length > 0 ? withUserIds : undefined,
+            streamIds: streamIds.length > 0 ? streamIds : undefined,
+            streamTypes: streamTypes?.length ? streamTypes : undefined,
+          },
         })
 
         if (results.results.length === 0) {
@@ -43,7 +116,11 @@ export function createAriadneTools(pool: Pool, workspaceId: string, currentStrea
       description:
         "Search past messages in the workspace. Use this to find relevant discussions, decisions, or information from conversations. Returns matching messages with author, channel, and date.",
       schema: z.object({
-        query: z.string().describe("The search query. Can include filters like 'from:username' or 'in:channel'."),
+        query: z.string().describe("The search query text (semantic search). Leave empty to just filter."),
+        fromUsers: z.array(z.string()).optional().describe("Filter by message author names (e.g., ['Kris', 'Stefan'])"),
+        withUsers: z.array(z.string()).optional().describe("Filter by conversations where these users participated together (e.g., ['Kris', 'Annica'] finds conversations where both were involved)"),
+        inChannels: z.array(z.string()).optional().describe("Filter by channel names/slugs (e.g., ['general', 'engineering'])"),
+        streamTypes: z.array(z.string()).optional().describe("Filter by stream type: 'channel', 'thread', or 'thinking_space'"),
         limit: z.number().optional().describe("Maximum number of results to return (default: 10)"),
       }),
     },
@@ -56,6 +133,8 @@ export function createAriadneTools(pool: Pool, workspaceId: string, currentStrea
           limit: input.limit || 10,
           searchMessages: false,
           searchKnowledge: true,
+          userId,
+          scope, // Context-aware information boundaries (knowledge only in "user" scope)
         })
 
         if (results.results.length === 0) {

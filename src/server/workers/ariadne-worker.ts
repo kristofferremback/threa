@@ -201,9 +201,10 @@ export class AriadneWorker {
       )
       const mentionedByName = userResult.rows[0]?.name || userResult.rows[0]?.email || "someone"
 
-      // Get stream type to determine context strategy
+      // Get stream info to determine context strategy and search scope
       const stream = await this.streamService.getStream(streamId)
       const streamType = stream?.streamType || "channel"
+      const streamVisibility = stream?.visibility || "public"
 
       // Fetch context based on stream type
       const isChannel = streamType === "channel"
@@ -216,6 +217,8 @@ export class AriadneWorker {
         mentionedBy,
         mentionedByName,
         mode: mode || "retrieval",
+        streamType: streamType as AriadneContext["streamType"],
+        streamVisibility: streamVisibility as AriadneContext["streamVisibility"],
         conversationHistory,
         backgroundContext,
       }

@@ -745,14 +745,24 @@ export function LayoutSystem() {
         mode={commandPaletteMode}
         onClose={() => setShowCommandPalette(false)}
         streams={bootstrapData.streams}
+        users={bootstrapData.users}
         workspaceId={bootstrapData.workspace.id}
         onSelectStream={handleCommandPaletteSelect}
-        onNavigateToMessage={(streamSlug, eventId, mode) => {
-          const stream = bootstrapData.streams.find((s) => s.slug === streamSlug)
+        onNavigateToMessage={(streamSlugOrId, eventId, mode) => {
+          // Try to find stream by slug first, then by id (for threads which don't have slugs)
+          const stream = bootstrapData.streams.find((s) => s.slug === streamSlugOrId)
+            || bootstrapData.streams.find((s) => s.id === streamSlugOrId)
+          const isThread = stream?.streamType === "thread" || stream?.streamType === "thinking_space"
           const streamTab = {
-            title: stream ? `#${(stream.name || "").replace("#", "")}` : `#${streamSlug}`,
+            title: stream
+              ? (isThread ? (stream.name || "Thread") : `#${(stream.name || "").replace("#", "")}`)
+              : `#${streamSlugOrId}`,
             type: "stream" as const,
-            data: { streamSlug, highlightEventId: eventId },
+            data: {
+              streamSlug: stream?.slug || undefined,
+              streamId: stream?.id || streamSlugOrId,
+              highlightEventId: eventId
+            },
           }
           openItem(streamTab, mode)
         }}

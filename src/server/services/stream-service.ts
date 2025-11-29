@@ -1393,6 +1393,17 @@ export class StreamService {
         "Event created",
       )
 
+      // Retry auto-naming for unnamed threads/thinking spaces after enough context
+      // This runs async outside the transaction to not block the response
+      if (
+        (stream.stream_type === "thread" || stream.stream_type === "thinking_space") &&
+        !stream.name
+      ) {
+        this.retryAutoNameIfNeeded(params.streamId, stream.workspace_id).catch((err) => {
+          logger.warn({ err, streamId: params.streamId }, "Failed to retry auto-naming")
+        })
+      }
+
       return (await this.getEventWithDetails(eventId))!
     } catch (error) {
       await client.query("ROLLBACK")
@@ -2150,6 +2161,96 @@ export class StreamService {
           SET pinned_at = NULL, updated_at = NOW()
           WHERE stream_id = ${streamId} AND user_id = ${userId}`,
     )
+  }
+
+  // ==========================================================================
+  // Auto-naming
+  // ==========================================================================
+
+  /**
+   * Retry auto-naming for threads/thinking spaces that don't have a name yet.
+   * This is called after new messages are added to give the namer more context.
+   */
+  private async retryAutoNameIfNeeded(streamId: string, workspaceId: string): Promise<void> {
+    // Get message count for this stream
+    const countResult = await this.pool.query(
+      sql`SELECT COUNT(*)::int as count FROM stream_events
+          WHERE stream_id = ${streamId}
+            AND event_type = 'message'
+            AND deleted_at IS NULL`,
+    )
+
+    const messageCount = countResult.rows[0]?.count || 0
+
+    // Only retry after 3+ messages to have enough context
+    if (messageCount < 3) {
+      return
+    }
+
+    // Check if stream still has no name
+    const streamResult = await this.pool.query(
+      sql`SELECT name, stream_type FROM streams WHERE id = ${streamId}`,
+    )
+
+    const stream = streamResult.rows[0]
+    if (!stream || stream.name) {
+      return // Already has a name
+    }
+
+    // Fetch recent messages for context
+    const messagesResult = await this.pool.query(
+      sql`SELECT tm.content
+          FROM stream_events e
+          INNER JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
+          WHERE e.stream_id = ${streamId}
+            AND e.event_type = 'message'
+            AND e.deleted_at IS NULL
+          ORDER BY e.created_at ASC
+          LIMIT 5`,
+    )
+
+    if (messagesResult.rows.length === 0) {
+      return
+    }
+
+    // Combine messages for naming context
+    const combinedContent = messagesResult.rows
+      .map((r) => r.content)
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 3000) // Limit to 3000 chars
+
+    try {
+      const nameResult = await generateAutoName(combinedContent)
+      if (nameResult.success && nameResult.name) {
+        // Update stream name
+        await this.pool.query(
+          sql`UPDATE streams SET name = ${nameResult.name}, updated_at = NOW() WHERE id = ${streamId}`,
+        )
+
+        // Emit stream.updated event
+        const client = await this.pool.connect()
+        try {
+          const updateOutboxId = generateId("outbox")
+          await client.query(
+            sql`INSERT INTO outbox (id, event_type, payload)
+                VALUES (${updateOutboxId}, 'stream.updated', ${JSON.stringify({
+                  stream_id: streamId,
+                  workspace_id: workspaceId,
+                  name: nameResult.name,
+                  updated_by: "system",
+                })})`,
+          )
+          await client.query(`NOTIFY outbox_event, '${updateOutboxId.replace(/'/g, "''")}'`)
+        } finally {
+          client.release()
+        }
+
+        logger.info({ streamId, name: nameResult.name, messageCount }, "Stream auto-named on retry")
+      }
+    } catch (err) {
+      logger.warn({ err, streamId }, "Failed to auto-name stream on retry")
+    }
   }
 
   // ==========================================================================

@@ -1,20 +1,76 @@
 import { Router } from "express"
-import { SearchService } from "../services/search-service"
+import { SearchService, TypedSearchFilters } from "../services/search-service"
 import { logger } from "../lib/logger"
 
 export function createSearchRoutes(searchService: SearchService): Router {
   const router = Router()
 
   /**
-   * GET /api/workspace/:workspaceId/search
+   * POST /api/workspace/:workspaceId/search
    *
-   * Search messages and knowledge base.
+   * Search messages and knowledge base with typed filters.
    *
-   * Query parameters:
-   * - q: Search query (supports filters like from:@user, in:#channel, etc.)
+   * Body:
+   * - query: Search query text (semantic/full-text search)
+   * - filters: { userIds?: string[], streamIds?: string[], before?: string, after?: string, has?: string[], is?: string[] }
    * - limit: Max results (default 50)
    * - offset: Pagination offset (default 0)
    * - type: "all" | "messages" | "knowledge" (default "all")
+   */
+  router.post("/:workspaceId/search", async (req, res, next) => {
+    try {
+      const { workspaceId } = req.params
+      const userId = req.user?.id
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" })
+      }
+
+      const { query = "", filters = {}, limit = 50, offset = 0, type = "all" } = req.body
+
+      // Parse typed filters from request body
+      const typedFilters: TypedSearchFilters = {
+        userIds: filters.userIds,
+        withUserIds: filters.withUserIds,
+        streamIds: filters.streamIds,
+        streamTypes: filters.streamTypes,
+        before: filters.before ? new Date(filters.before) : undefined,
+        after: filters.after ? new Date(filters.after) : undefined,
+        has: filters.has,
+        is: filters.is,
+      }
+
+      const searchOptions = {
+        limit: Math.min(limit, 100),
+        offset,
+        searchMessages: type === "all" || type === "messages",
+        searchKnowledge: type === "all" || type === "knowledge",
+        filters: typedFilters,
+        userId, // Permission scoping - only return content user can access
+      }
+
+      const results = await searchService.search(workspaceId, query, searchOptions)
+
+      logger.debug(
+        {
+          workspaceId,
+          userId,
+          query,
+          filters: typedFilters,
+          resultCount: results.total,
+        },
+        "Search executed",
+      )
+
+      return res.json(results)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  /**
+   * GET /api/workspace/:workspaceId/search (legacy - for backwards compatibility)
+   * Accepts query string parameters, no filters.
    */
   router.get("/:workspaceId/search", async (req, res, next) => {
     try {
@@ -30,19 +86,12 @@ export function createSearchRoutes(searchService: SearchService): Router {
       const offset = parseInt(req.query.offset as string) || 0
       const type = (req.query.type as string) || "all"
 
-      if (!query.trim()) {
-        return res.json({
-          results: [],
-          total: 0,
-          parsedQuery: { filters: {}, freeText: "" },
-        })
-      }
-
       const searchOptions = {
         limit,
         offset,
         searchMessages: type === "all" || type === "messages",
         searchKnowledge: type === "all" || type === "knowledge",
+        userId, // Permission scoping - only return content user can access
       }
 
       const results = await searchService.search(workspaceId, query, searchOptions)
@@ -54,7 +103,7 @@ export function createSearchRoutes(searchService: SearchService): Router {
           query,
           resultCount: results.total,
         },
-        "Search executed",
+        "Search executed (legacy GET)",
       )
 
       return res.json(results)

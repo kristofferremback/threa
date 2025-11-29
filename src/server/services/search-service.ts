@@ -2,7 +2,6 @@ import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { generateEmbedding, estimateTokens, calculateCost, Models } from "../lib/ai-providers"
 import { AIUsageService } from "./ai-usage-service"
-import { parseSearchQuery, SearchFilters } from "../lib/search-parser"
 import { logger } from "../lib/logger"
 import { getTextMessageEmbeddingTable, getKnowledgeEmbeddingTable } from "../lib/embedding-tables"
 
@@ -23,11 +22,54 @@ export interface SearchResult {
   }
 }
 
+/** Stream types that can be searched */
+export type SearchableStreamType = "channel" | "thread" | "thinking_space"
+
+/**
+ * Typed search filters - IDs are resolved by the caller (frontend or LLM tool wrapper)
+ */
+export interface TypedSearchFilters {
+  /** Filter by user IDs (messages FROM these users) */
+  userIds?: string[]
+  /** Filter by user IDs (messages in conversations WITH these users - they participated in the same stream) */
+  withUserIds?: string[]
+  /** Filter by stream IDs (messages in these streams) */
+  streamIds?: string[]
+  /** Filter by stream types (channel, thread, thinking_space) */
+  streamTypes?: SearchableStreamType[]
+  /** Filter messages before this date */
+  before?: Date
+  /** Filter messages after this date */
+  after?: Date
+  /** Content filters */
+  has?: ("code" | "link")[]
+  /** Type filters (legacy - use streamTypes for stream filtering) */
+  is?: ("thread" | "knowledge")[]
+}
+
+/**
+ * Search scope determines what content Ariadne can access based on invocation context.
+ * - public: Only public streams (when invoked from a public channel)
+ * - private: Current private stream + public streams (when invoked from private channel/DM)
+ * - user: All content the user can access (when invoked from thinking space)
+ */
+export interface SearchScope {
+  type: "public" | "private" | "user"
+  /** For private scope, the specific stream ID that's allowed */
+  currentStreamId?: string
+}
+
 export interface SearchOptions {
   limit?: number
   offset?: number
   searchKnowledge?: boolean
   searchMessages?: boolean
+  /** Pre-resolved typed filters (IDs, not names/slugs) */
+  filters?: TypedSearchFilters
+  /** User ID for permission filtering - REQUIRED for secure searches */
+  userId?: string
+  /** Search scope for Ariadne - determines information boundaries based on context */
+  scope?: SearchScope
 }
 
 export class SearchService {
@@ -39,6 +81,7 @@ export class SearchService {
 
   /**
    * Hybrid search combining vector similarity with full-text search.
+   * Filters are pre-resolved typed filters (IDs, not names/slugs).
    */
   async search(
     workspaceId: string,
@@ -47,11 +90,13 @@ export class SearchService {
   ): Promise<{
     results: SearchResult[]
     total: number
-    parsedQuery: { filters: SearchFilters; freeText: string }
+    filters: TypedSearchFilters
   }> {
-    const { filters, freeText } = parseSearchQuery(query)
+    const filters = options.filters ?? {}
     const limit = options.limit ?? 50
     const offset = options.offset ?? 0
+    const userId = options.userId
+    const scope = options.scope
 
     // Check if searching knowledge only
     const searchKnowledgeOnly = filters.is?.includes("knowledge")
@@ -61,18 +106,23 @@ export class SearchService {
 
     // Search messages (if not knowledge-only)
     if (!searchKnowledgeOnly && options.searchMessages !== false) {
-      const messageResults = await this.searchMessages(workspaceId, freeText, filters, {
+      const messageResults = await this.searchMessages(workspaceId, query, filters, {
         limit,
         offset,
+        userId,
+        scope,
       })
       results.push(...messageResults)
     }
 
     // Search knowledge (if not messages-only and knowledge search enabled)
-    if (!searchMessagesOnly && options.searchKnowledge !== false) {
-      const knowledgeResults = await this.searchKnowledge(workspaceId, freeText, filters, {
+    // Knowledge is only accessible in "user" scope (thinking spaces) or when no scope is set (UI search)
+    const canSearchKnowledge = !scope || scope.type === "user"
+    if (!searchMessagesOnly && options.searchKnowledge !== false && canSearchKnowledge) {
+      const knowledgeResults = await this.searchKnowledge(workspaceId, query, filters, {
         limit: Math.max(10, limit - results.length),
         offset: 0,
+        userId,
       })
       results.push(...knowledgeResults)
     }
@@ -84,18 +134,28 @@ export class SearchService {
     return {
       results: finalResults,
       total: finalResults.length,
-      parsedQuery: { filters, freeText },
+      filters,
     }
   }
 
   /**
    * Search messages using hybrid vector + full-text search.
+   *
+   * Permission filtering (base - what user CAN access):
+   * - Thinking spaces: only visible to owner (created_by)
+   * - Private streams: only visible to members
+   * - Public streams: visible to all workspace members
+   *
+   * Scope filtering (context - what Ariadne SHOULD access):
+   * - public: Only public streams (invoked from public channel)
+   * - private: Current private stream + public streams (invoked from private channel)
+   * - user: All content user can access (invoked from thinking space)
    */
   private async searchMessages(
     workspaceId: string,
     freeText: string,
-    filters: SearchFilters,
-    options: { limit: number; offset: number },
+    filters: TypedSearchFilters,
+    options: { limit: number; offset: number; userId?: string; scope?: SearchScope },
   ): Promise<SearchResult[]> {
     // Build filter clauses
     const filterClauses: string[] = []
@@ -106,20 +166,122 @@ export class SearchService {
     filterClauses.push(`s.workspace_id = $${paramIndex++}`)
     filterValues.push(workspaceId)
 
-    // from: filter (user)
-    if (filters.from?.length) {
-      const userPlaceholders = filters.from.map(() => `$${paramIndex++}`).join(", ")
-      filterClauses.push(`(u.email ILIKE ANY(ARRAY[${userPlaceholders}]) OR COALESCE(wp.display_name, u.name) ILIKE ANY(ARRAY[${userPlaceholders}]))`)
-      // Add % wildcards for ILIKE
-      const patterns = filters.from.map((f) => `%${f}%`)
-      filterValues.push(...patterns, ...patterns)
+    // Scope-based filtering (for Ariadne context awareness)
+    // This restricts WHAT Ariadne can see based on where she was invoked
+    // Note: threads may have visibility='inherit' - treat them as public if parent is public
+    if (options.scope) {
+      switch (options.scope.type) {
+        case "public":
+          // Only public streams (or threads inheriting from public parents)
+          // No private content, no thinking spaces
+          filterClauses.push(`(
+            s.visibility = 'public'
+            OR (s.visibility = 'inherit' AND EXISTS (
+              SELECT 1 FROM streams parent WHERE parent.id = s.parent_stream_id AND parent.visibility = 'public'
+            ))
+          )`)
+          filterClauses.push(`s.stream_type != 'thinking_space'`)
+          break
+        case "private":
+          // Current private stream + all public streams (no thinking spaces, no other private streams)
+          // Threads inheriting from public parents are also allowed
+          if (options.scope.currentStreamId) {
+            filterClauses.push(`(
+              s.visibility = 'public'
+              OR s.id = $${paramIndex++}
+              OR (s.visibility = 'inherit' AND EXISTS (
+                SELECT 1 FROM streams parent WHERE parent.id = s.parent_stream_id AND parent.visibility = 'public'
+              ))
+            )`)
+            filterValues.push(options.scope.currentStreamId)
+          } else {
+            filterClauses.push(`(
+              s.visibility = 'public'
+              OR (s.visibility = 'inherit' AND EXISTS (
+                SELECT 1 FROM streams parent WHERE parent.id = s.parent_stream_id AND parent.visibility = 'public'
+              ))
+            )`)
+          }
+          filterClauses.push(`s.stream_type != 'thinking_space'`)
+          break
+        case "user":
+          // Full user access - apply standard permission filter below
+          break
+      }
     }
 
-    // in: filter (stream)
-    if (filters.in?.length) {
-      const streamPlaceholders = filters.in.map(() => `$${paramIndex++}`).join(", ")
-      filterClauses.push(`(s.slug IN (${streamPlaceholders}) OR s.id IN (${streamPlaceholders}))`)
-      filterValues.push(...filters.in, ...filters.in)
+    // Permission filter: user can only see streams they have access to
+    // This is the base permission check - applied when scope is "user" or no scope
+    // For "public" and "private" scopes, the scope filter above is more restrictive
+    // Note: thinking spaces are private streams where only the owner is a member,
+    // so the membership check handles them automatically
+    // Threads can have visibility='inherit' which means check parent stream's visibility
+    if (options.userId && (!options.scope || options.scope.type === "user")) {
+      filterClauses.push(`(
+        (s.visibility = 'private' AND EXISTS (
+          SELECT 1 FROM stream_members sm WHERE sm.stream_id = s.id AND sm.user_id = $${paramIndex++}
+        ))
+        OR (s.visibility = 'public')
+        OR (s.visibility = 'inherit' AND EXISTS (
+          SELECT 1 FROM streams parent
+          WHERE parent.id = s.parent_stream_id
+            AND (
+              parent.visibility = 'public'
+              OR (parent.visibility = 'private' AND EXISTS (
+                SELECT 1 FROM stream_members psm WHERE psm.stream_id = parent.id AND psm.user_id = $${paramIndex++}
+              ))
+            )
+        ))
+      )`)
+      filterValues.push(options.userId, options.userId)
+    }
+
+    // User IDs filter (pre-resolved)
+    if (filters.userIds?.length) {
+      const userPlaceholders = filters.userIds.map(() => `$${paramIndex++}`).join(", ")
+      filterClauses.push(`e.actor_id IN (${userPlaceholders})`)
+      filterValues.push(...filters.userIds)
+    }
+
+    // Stream IDs filter (pre-resolved)
+    if (filters.streamIds?.length) {
+      const streamPlaceholders = filters.streamIds.map(() => `$${paramIndex++}`).join(", ")
+      filterClauses.push(`e.stream_id IN (${streamPlaceholders})`)
+      filterValues.push(...filters.streamIds)
+    }
+
+    // With user IDs filter - messages in streams where these users have also participated
+    // For threads, the root message author counts as a participant even though their
+    // message is technically in the parent stream
+    if (filters.withUserIds?.length) {
+      const withPlaceholders = filters.withUserIds.map(() => `$${paramIndex++}`).join(", ")
+      filterClauses.push(`e.stream_id IN (
+        SELECT stream_id FROM (
+          -- Direct participation: messages sent in the stream
+          SELECT stream_id, actor_id
+          FROM stream_events
+          WHERE event_type = 'message' AND deleted_at IS NULL
+
+          UNION ALL
+
+          -- For threads: root message author is also a participant
+          SELECT s.id as stream_id, root_event.actor_id
+          FROM streams s
+          JOIN stream_events root_event ON s.branched_from_event_id = root_event.id
+          WHERE s.branched_from_event_id IS NOT NULL
+        ) participants
+        WHERE actor_id IN (${withPlaceholders})
+        GROUP BY stream_id
+        HAVING COUNT(DISTINCT actor_id) = ${filters.withUserIds.length}
+      )`)
+      filterValues.push(...filters.withUserIds)
+    }
+
+    // Stream types filter (channel, thread, thinking_space)
+    if (filters.streamTypes?.length) {
+      const typePlaceholders = filters.streamTypes.map(() => `$${paramIndex++}`).join(", ")
+      filterClauses.push(`s.stream_type IN (${typePlaceholders})`)
+      filterValues.push(...filters.streamTypes)
     }
 
     // before: filter
@@ -300,12 +462,15 @@ export class SearchService {
 
   /**
    * Search knowledge base using hybrid vector + full-text search.
+   * Knowledge is workspace-wide and not stream-scoped for now.
+   * TODO: Consider adding source_stream permission checks if knowledge
+   * should inherit visibility from its source stream.
    */
   private async searchKnowledge(
     workspaceId: string,
     freeText: string,
-    filters: SearchFilters,
-    options: { limit: number; offset: number },
+    _filters: TypedSearchFilters,
+    options: { limit: number; offset: number; userId?: string },
   ): Promise<SearchResult[]> {
     if (!freeText.trim()) {
       // No free text - return recent knowledge
@@ -483,6 +648,84 @@ export class SearchService {
         email: row.actor_email,
       },
     }))
+  }
+
+  // ==========================================================================
+  // Resolver methods for LLM tools (name/slug → ID)
+  // ==========================================================================
+
+  /**
+   * Resolve user names/emails to user IDs within a workspace.
+   * Used by LLM tools to convert human-readable names to IDs.
+   */
+  async resolveUserNames(workspaceId: string, names: string[]): Promise<Map<string, string>> {
+    if (names.length === 0) return new Map()
+
+    const patterns = names.map((n) => `%${n.toLowerCase()}%`)
+    const result = await this.pool.query(
+      sql`SELECT u.id, u.email, u.name, wp.display_name
+          FROM users u
+          INNER JOIN workspace_members wm ON u.id = wm.user_id
+          LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = wm.workspace_id
+          WHERE wm.workspace_id = ${workspaceId}
+            AND wm.status = 'active'
+            AND (
+              LOWER(u.email) LIKE ANY(${patterns})
+              OR LOWER(u.name) LIKE ANY(${patterns})
+              OR LOWER(wp.display_name) LIKE ANY(${patterns})
+            )`,
+    )
+
+    // Map each input name to its best matching user ID
+    const resolved = new Map<string, string>()
+    for (const name of names) {
+      const lowerName = name.toLowerCase()
+      const match = result.rows.find(
+        (r) =>
+          r.email.toLowerCase().includes(lowerName) ||
+          r.name?.toLowerCase().includes(lowerName) ||
+          r.display_name?.toLowerCase().includes(lowerName),
+      )
+      if (match) {
+        resolved.set(name, match.id)
+      }
+    }
+
+    return resolved
+  }
+
+  /**
+   * Resolve stream slugs/names to stream IDs within a workspace.
+   * Used by LLM tools to convert human-readable slugs to IDs.
+   */
+  async resolveStreamSlugs(workspaceId: string, slugs: string[]): Promise<Map<string, string>> {
+    if (slugs.length === 0) return new Map()
+
+    const lowerSlugs = slugs.map((s) => s.toLowerCase())
+    const result = await this.pool.query(
+      sql`SELECT id, slug, name
+          FROM streams
+          WHERE workspace_id = ${workspaceId}
+            AND archived_at IS NULL
+            AND (
+              LOWER(slug) = ANY(${lowerSlugs})
+              OR LOWER(name) = ANY(${lowerSlugs})
+            )`,
+    )
+
+    // Map each input slug to its matching stream ID
+    const resolved = new Map<string, string>()
+    for (const slug of slugs) {
+      const lowerSlug = slug.toLowerCase()
+      const match = result.rows.find(
+        (r) => r.slug?.toLowerCase() === lowerSlug || r.name?.toLowerCase() === lowerSlug,
+      )
+      if (match) {
+        resolved.set(slug, match.id)
+      }
+    }
+
+    return resolved
   }
 }
 
