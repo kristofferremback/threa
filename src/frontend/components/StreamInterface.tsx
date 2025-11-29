@@ -16,6 +16,7 @@ interface StreamInterfaceProps {
   onOpenThread?: (eventId: string, parentStreamId: string, mode: OpenMode) => void
   onGoToStream?: (streamSlug: string, mode: OpenMode) => void
   onStreamMaterialized?: (draftId: string, realStream: Stream) => void
+  onStreamUpdate?: (stream: Stream) => void
   users?: Array<{ id: string; name: string; email: string }>
   streams?: Array<{ id: string; name: string; slug: string | null; branchedFromEventId?: string | null }>
 }
@@ -29,6 +30,7 @@ export function StreamInterface({
   onOpenThread,
   onGoToStream,
   onStreamMaterialized,
+  onStreamUpdate,
   users = [],
   streams = [],
 }: StreamInterfaceProps) {
@@ -56,6 +58,7 @@ export function StreamInterface({
     workspaceId,
     streamId,
     enabled: true,
+    onStreamUpdate,
   })
 
   // Track agent sessions with real-time updates

@@ -16,6 +16,7 @@ interface UseStreamOptions {
   workspaceId: string
   streamId?: string
   enabled?: boolean
+  onStreamUpdate?: (stream: Stream) => void
 }
 
 export interface MaterializedStreamResult {
@@ -87,9 +88,15 @@ export interface AgentSessionData {
   completedAt: string | null
 }
 
-export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOptions): UseStreamReturn {
+export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdate }: UseStreamOptions): UseStreamReturn {
   // State
   const [stream, setStream] = useState<Stream | null>(null)
+
+  // Ref for onStreamUpdate callback to avoid dependency issues
+  const onStreamUpdateRef = useRef(onStreamUpdate)
+  useEffect(() => {
+    onStreamUpdateRef.current = onStreamUpdate
+  }, [onStreamUpdate])
   const [events, setEvents] = useState<StreamEvent[]>([])
   const [initialSessions, setInitialSessions] = useState<AgentSessionData[]>([])
   const [parentStream, setParentStream] = useState<Stream | null>(null)
@@ -188,7 +195,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
     })
 
     // Handle thread creation (when viewing a pending thread and it gets created)
-    socket.on("thread:created", async (data: { threadId: string; parentStreamId: string; branchedFromEventId: string }) => {
+    socket.on("thread:created", async (data: { threadId: string; name?: string; parentStreamId: string; branchedFromEventId: string }) => {
       // Check if we're viewing this pending thread
       const currentId = currentStreamRef.current
       if (!currentId) return
@@ -205,6 +212,8 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
             setStream(threadData)
             setPendingEventId(null)
             currentStreamRef.current = data.threadId
+            // Notify parent of stream update (for tab title updates)
+            onStreamUpdateRef.current?.(threadData)
             // Join the new thread's room
             socket.emit("join", room.stream(workspaceId, data.threadId))
             // Fetch events
@@ -222,6 +231,26 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
           console.error("Failed to fetch thread after creation:", err)
         }
       }
+    })
+
+    // Handle stream updates (name changes, etc.)
+    socket.on("stream:updated", (data: { id: string; name?: string; slug?: string; description?: string; topic?: string }) => {
+      if (data.id !== currentStreamRef.current) return
+
+      // Update local stream state
+      setStream((prev) => {
+        if (!prev) return prev
+        const updated = {
+          ...prev,
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.slug !== undefined && { slug: data.slug }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.topic !== undefined && { topic: data.topic }),
+        }
+        // Notify parent of stream update (for tab title updates)
+        onStreamUpdateRef.current?.(updated)
+        return updated
+      })
     })
 
     // Handle read cursor updates from other devices

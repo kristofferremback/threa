@@ -1247,6 +1247,19 @@ export class StreamService {
             await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${params.streamId}`)
             stream.name = nameResult.name
             logger.debug({ streamId: params.streamId, name: nameResult.name }, "Thinking space auto-named")
+
+            // Emit stream.updated event so frontend can update tab titles
+            const updateOutboxId = generateId("outbox")
+            await client.query(
+              sql`INSERT INTO outbox (id, event_type, payload)
+                  VALUES (${updateOutboxId}, 'stream.updated', ${JSON.stringify({
+                    stream_id: params.streamId,
+                    workspace_id: stream.workspace_id,
+                    name: nameResult.name,
+                    updated_by: params.actorId || "system",
+                  })})`,
+            )
+            await client.query(`NOTIFY outbox_event, '${updateOutboxId.replace(/'/g, "''")}'`)
           }
         } catch (err) {
           // Don't fail event creation if auto-naming fails

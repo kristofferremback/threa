@@ -59,6 +59,7 @@ export function LayoutSystem() {
     selectStream,
     openItem,
     updateTabData,
+    updateTabsByStreamId,
     initializeFromUrl,
   } = usePaneManager({
     streams: bootstrapData?.streams || [],
@@ -107,6 +108,20 @@ export function LayoutSystem() {
     [removeStream, bootstrapData, activeStreamSlug, selectStream],
   )
 
+  // Handle stream updates (name changes, etc.) - update both bootstrap data and tab titles
+  const handleStreamUpdated = useCallback(
+    (streamId: string, updates: Partial<Stream>) => {
+      // Update bootstrap data
+      updateStream(streamId, updates)
+
+      // Update tab titles for any tabs showing this stream
+      if (updates.name) {
+        updateTabsByStreamId(streamId, { title: updates.name })
+      }
+    },
+    [updateStream, updateTabsByStreamId],
+  )
+
   // Workspace-level WebSocket for real-time updates
   const { socket } = useWorkspaceSocket({
     enabled: isAuthenticated && !!bootstrapData,
@@ -114,7 +129,7 @@ export function LayoutSystem() {
     activeStreamSlug: activeStreamSlug || undefined,
     currentUserId: user?.id,
     onStreamAdded: addStream,
-    onStreamUpdated: updateStream,
+    onStreamUpdated: handleStreamUpdated,
     onStreamRemoved: handleStreamRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
     onNewNotification: () => setInboxUnreadCount((prev) => prev + 1),
@@ -567,6 +582,14 @@ export function LayoutSystem() {
           addStream(realStream)
           // Update the current tab to point to the real stream
           updateTabData(tab.id, { streamId: realStream.id, streamSlug: realStream.slug })
+        }}
+        onStreamUpdate={(updatedStream) => {
+          // Stream data changed (e.g., auto-named thread/thinking space) - update tab title
+          if (updatedStream.name) {
+            updateTabsByStreamId(updatedStream.id, { title: updatedStream.name })
+          }
+          // Also update bootstrap data
+          updateStream(updatedStream.id, { name: updatedStream.name })
         }}
       />
     )

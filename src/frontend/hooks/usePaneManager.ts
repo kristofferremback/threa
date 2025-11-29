@@ -19,6 +19,7 @@ interface UsePaneManagerReturn {
   selectStream: (stream: Stream) => void
   openItem: (item: Omit<Tab, "id">, mode?: OpenMode, sourcePaneId?: string) => void
   updateTabData: (tabId: string, data: Record<string, unknown>) => void
+  updateTabsByStreamId: (streamId: string, updates: { title?: string }) => void
 
   // Initialize from URL
   initializeFromUrl: () => boolean
@@ -271,6 +272,22 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     )
   }, [])
 
+  // Update tabs that reference a specific stream (e.g., when stream name changes)
+  const updateTabsByStreamId = useCallback((streamId: string, updates: { title?: string }) => {
+    setPanes((prev) =>
+      prev.map((pane) => ({
+        ...pane,
+        tabs: pane.tabs.map((tab) => {
+          // Match by streamId in data
+          if (tab.data?.streamId === streamId) {
+            return { ...tab, ...(updates.title ? { title: updates.title } : {}) }
+          }
+          return tab
+        }),
+      })),
+    )
+  }, [])
+
   return {
     panes,
     focusedPaneId,
@@ -281,6 +298,7 @@ export function usePaneManager({ streams, defaultStreamSlug }: UsePaneManagerOpt
     selectStream,
     openItem,
     updateTabData,
+    updateTabsByStreamId,
     initializeFromUrl,
   }
 }
