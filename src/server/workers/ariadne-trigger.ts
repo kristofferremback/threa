@@ -6,8 +6,9 @@ import { checkAriadneEngagement } from "../lib/ollama"
 import { logger } from "../lib/logger"
 
 const ARIADNE_PERSONA_ID = "pers_default_ariadne"
-const MAX_UNDIRECTED_MESSAGES = 10 // Ariadne "leaves" after this many undirected messages
+const MAX_LOW_RELEVANCE_MESSAGES = 10 // Ariadne "leaves" after this many low-relevance messages
 const ENGAGEMENT_CACHE_TTL = 3600 // 1 hour TTL for engagement tracking
+const RELEVANCE_THRESHOLD = 5 // Minimum score (1-7) to warrant a response
 
 interface StreamEventPayload {
   event_id: string
@@ -179,45 +180,36 @@ export class AriadneTrigger {
   }
 
   /**
-   * Track undirected message count and check if Ariadne should leave.
+   * Track low-relevance message count and check if Ariadne should leave.
+   * A "low relevance" message is one with a score below the threshold.
    */
-  private async shouldAriadneLeave(
-    streamId: string,
-    isDirected: boolean,
-    topicChanged: boolean,
-  ): Promise<boolean> {
+  private async shouldAriadneLeave(streamId: string, relevanceScore: number): Promise<boolean> {
     if (!this.redisClient) return false
 
     const key = this.getUndirectedCountKey(streamId)
+    const isHighRelevance = relevanceScore >= RELEVANCE_THRESHOLD
 
     try {
-      if (isDirected) {
-        // Reset counter when message is directed at Ariadne
+      if (isHighRelevance) {
+        // Reset counter when message is relevant to Ariadne
         await this.redisClient.del(key)
         return false
       }
 
-      if (topicChanged) {
-        // Topic changed significantly - Ariadne leaves
-        await this.redisClient.del(key)
-        logger.info({ streamId }, "Ariadne leaving - topic changed")
-        return true
-      }
-
-      // Increment undirected counter
+      // Increment low-relevance counter
       const count = await this.redisClient.incr(key)
       await this.redisClient.expire(key, ENGAGEMENT_CACHE_TTL)
 
-      if (count >= MAX_UNDIRECTED_MESSAGES) {
-        // Too many undirected messages - Ariadne leaves
+      if (count >= MAX_LOW_RELEVANCE_MESSAGES) {
+        // Too many low-relevance messages - Ariadne leaves
         await this.redisClient.del(key)
-        logger.info({ streamId, count }, "Ariadne leaving - too many undirected messages")
+        logger.info({ streamId, count, relevanceScore }, "Ariadne leaving - too many low-relevance messages")
         return true
       }
 
       return false
     } catch (err) {
-      logger.error({ err, streamId }, "Failed to track undirected messages")
+      logger.error({ err, streamId }, "Failed to track low-relevance messages")
       return false
     }
   }
@@ -252,6 +244,11 @@ export class AriadneTrigger {
       (m) => m.type === "user" && m.label?.toLowerCase() === "ariadne",
     )
 
+    logger.info(
+      { eventId: event.event_id, streamId: event.stream_id, stream_type: event.stream_type, isThread, isThinkingSpace, ariadneMentioned },
+      "Ariadne trigger received event",
+    )
+
     let shouldTrigger = isThinkingSpace || ariadneMentioned
     let mode: AriadneMode = isThinkingSpace ? "thinking_partner" : "retrieval"
 
@@ -260,44 +257,59 @@ export class AriadneTrigger {
     if (!shouldTrigger && isThread) {
       // Check if Ariadne has participated in this thread before
       const hasParticipated = await this.hasAriadneParticipated(event.stream_id)
+      logger.info({ streamId: event.stream_id, hasParticipated }, "Checked Ariadne participation")
 
       if (hasParticipated) {
         // Get recent context for engagement check
         const context = await this.getRecentContext(event.stream_id, event.event_id)
 
-        // Simple heuristic: if Ariadne asked a question, user is likely responding to her
+        // Simple heuristic: if Ariadne asked a question, assume high relevance
         const ariadneAskedQuestion = context.ariadneLastResponse?.trim().endsWith("?")
 
-        let isDirected = false
-        let topicChanged = false
+        logger.info(
+          { streamId: event.stream_id, ariadneAskedQuestion, hasLastResponse: !!context.ariadneLastResponse },
+          "Got context for engagement check",
+        )
+
+        let relevanceScore = 4 // Default to ambiguous
 
         if (ariadneAskedQuestion) {
-          // Ariadne asked a question - assume user is responding unless clearly off-topic
-          isDirected = true
-          logger.debug(
-            { eventId: event.event_id, streamId: event.stream_id },
+          // Ariadne asked a question - assume user is responding (high relevance)
+          relevanceScore = 6
+          logger.info(
+            { eventId: event.event_id, streamId: event.stream_id, relevanceScore },
             "Ariadne asked a question, assuming follow-up is directed at her",
           )
         } else {
-          // Use SLM to check if message is directed at Ariadne
+          // Use SLM to score relevance (1-7 scale)
+          logger.info({ streamId: event.stream_id }, "Calling SLM for relevance check")
           const engagementResult = await checkAriadneEngagement(
             event.content,
             context.recentMessages,
             context.ariadneLastResponse,
           )
-          isDirected = engagementResult.isDirectedAtAriadne
-          topicChanged = engagementResult.topicChanged
+          relevanceScore = engagementResult.relevanceScore
+
+          logger.info(
+            { eventId: event.event_id, streamId: event.stream_id, relevanceScore, confident: engagementResult.confident },
+            "SLM relevance score for message",
+          )
         }
 
         // Check if Ariadne should leave this conversation
-        const shouldLeave = await this.shouldAriadneLeave(event.stream_id, isDirected, topicChanged)
+        const shouldLeave = await this.shouldAriadneLeave(event.stream_id, relevanceScore)
 
-        if (!shouldLeave && isDirected) {
+        logger.info(
+          { streamId: event.stream_id, relevanceScore, shouldLeave, threshold: RELEVANCE_THRESHOLD },
+          "Engagement decision",
+        )
+
+        if (!shouldLeave && relevanceScore >= RELEVANCE_THRESHOLD) {
           shouldTrigger = true
           mode = "retrieval"
 
           logger.info(
-            { eventId: event.event_id, streamId: event.stream_id },
+            { eventId: event.event_id, streamId: event.stream_id, relevanceScore },
             "Ariadne auto-engaging with follow-up message",
           )
         }

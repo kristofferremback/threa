@@ -1,5 +1,7 @@
 import ollama from "ollama"
+import { Langfuse } from "langfuse"
 import { logger } from "./logger"
+import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL } from "../config"
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434"
 const CLASSIFICATION_MODEL = process.env.OLLAMA_CLASSIFICATION_MODEL || "granite4:350m"
@@ -7,6 +9,113 @@ const EMBEDDING_MODEL = process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text"
 
 // Track whether Ollama embedding is available
 let ollamaEmbeddingAvailable = false
+
+// Initialize Langfuse client for manual tracing
+const langfuse =
+  LANGFUSE_SECRET_KEY && LANGFUSE_PUBLIC_KEY
+    ? new Langfuse({
+        secretKey: LANGFUSE_SECRET_KEY,
+        publicKey: LANGFUSE_PUBLIC_KEY,
+        baseUrl: LANGFUSE_BASE_URL,
+      })
+    : null
+
+// ============================================================================
+// Traced Ollama wrapper - automatically traces all generate() calls to Langfuse
+// ============================================================================
+
+interface TracedGenerateOptions {
+  /** Name for the trace (e.g., "knowledge-classification", "auto-name") */
+  traceName: string
+  /** The prompt to send to the model */
+  prompt: string
+  /** Model to use (defaults to CLASSIFICATION_MODEL) */
+  model?: string
+  /** Temperature (defaults to 0) */
+  temperature?: number
+  /** Max tokens to generate (defaults to 100) */
+  maxTokens?: number
+  /** Additional metadata to include in the trace */
+  metadata?: Record<string, unknown>
+}
+
+interface TracedGenerateResult {
+  /** The raw response text from the model */
+  text: string
+  /** Token counts from Ollama */
+  promptTokens: number
+  evalTokens: number
+  /** Duration in milliseconds */
+  durationMs: number
+}
+
+/**
+ * Wrapper around ollama.generate() that automatically traces to Langfuse.
+ * Use this for all text generation calls to ensure consistent observability.
+ */
+async function tracedGenerate(options: TracedGenerateOptions): Promise<TracedGenerateResult> {
+  const model = options.model || CLASSIFICATION_MODEL
+
+  const trace = langfuse?.trace({
+    name: options.traceName,
+    metadata: {
+      model,
+      promptLength: options.prompt.length,
+      ...options.metadata,
+    },
+  })
+
+  const generation = trace?.generation({
+    name: `ollama-${options.traceName}`,
+    model,
+    input: options.prompt,
+    metadata: { provider: "ollama", host: OLLAMA_HOST },
+  })
+
+  const startTime = Date.now()
+
+  try {
+    const response = await ollama.generate({
+      model,
+      prompt: options.prompt,
+      options: {
+        temperature: options.temperature ?? 0,
+        num_predict: options.maxTokens ?? 100,
+      },
+    })
+
+    const durationMs = Date.now() - startTime
+    const text = response.response.trim()
+    const promptTokens = response.prompt_eval_count || estimateTokens(options.prompt)
+    const evalTokens = response.eval_count || estimateTokens(text)
+
+    generation?.end({
+      output: text,
+      usage: { input: promptTokens, output: evalTokens },
+      metadata: {
+        durationMs,
+        totalDuration: response.total_duration,
+        promptEvalDuration: response.prompt_eval_duration,
+        evalDuration: response.eval_duration,
+      },
+    })
+
+    return { text, promptTokens, evalTokens, durationMs }
+  } catch (err) {
+    const durationMs = Date.now() - startTime
+    generation?.end({
+      output: null,
+      level: "ERROR",
+      statusMessage: err instanceof Error ? err.message : "Unknown error",
+      metadata: { durationMs },
+    })
+    throw err
+  }
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
 
 export interface ClassificationResult {
   isKnowledge: boolean
@@ -24,94 +133,93 @@ export interface OllamaEmbeddingResult {
   model: string
 }
 
+export interface EngagementCheckResult {
+  relevanceScore: number // 1-7 scale: 1 = clearly not for Ariadne, 7 = definitely for Ariadne
+  confident: boolean
+  rawResponse: string
+}
+
 /**
  * Classify content using a local SLM (Small Language Model) via Ollama.
  * Returns whether the content is knowledge-worthy and if the model was confident.
- *
- * Uses granite4:350m by default - a hybrid Mamba-2/Transformer model optimized
- * for edge deployment and classification tasks.
  */
 export async function classifyWithSLM(content: string): Promise<ClassificationResult> {
-  try {
-    const response = await ollama.generate({
-      model: CLASSIFICATION_MODEL,
-      prompt: `Is this message reusable knowledge (guides, how-tos, decisions, tips, troubleshooting, explanations) that would help others in the future?
+  const prompt = `Is this message reusable knowledge (guides, how-tos, decisions, tips, troubleshooting, explanations) that would help others in the future?
 
 Message:
-${content.slice(0, 1500)}
+${content.slice(0, 2000)}
 
-Answer YES or NO, then briefly explain why in one sentence.`,
-      options: {
-        temperature: 0,
-        num_predict: 100,
-      },
+Answer YES or NO, then briefly explain why in one sentence.`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "knowledge-classification",
+      prompt,
+      metadata: { contentLength: content.length },
     })
 
-    const text = response.response.trim()
-    const upperText = text.toUpperCase()
-
-    // Check for clear YES or NO at the start
+    const upperText = result.text.toUpperCase()
     const startsWithYes = upperText.startsWith("YES")
     const startsWithNo = upperText.startsWith("NO")
-    const isKnowledge = startsWithYes
-    const confident = startsWithYes || startsWithNo
+
+    const classification = {
+      isKnowledge: startsWithYes,
+      confident: startsWithYes || startsWithNo,
+      rawResponse: result.text,
+    }
 
     logger.debug(
-      { model: CLASSIFICATION_MODEL, isKnowledge, confident, response: text.slice(0, 200) },
+      { model: CLASSIFICATION_MODEL, ...classification, response: result.text.slice(0, 200) },
       "SLM classification result",
     )
 
-    return { isKnowledge, confident, rawResponse: text }
+    return classification
   } catch (err) {
     logger.error({ err, model: CLASSIFICATION_MODEL }, "SLM classification failed")
-    // Return uncertain result so it escalates to API
     return { isKnowledge: false, confident: false, rawResponse: "" }
   }
 }
 
 /**
  * Generate a short name/title for content using local SLM.
- * Handles international messages by first translating to English.
  * Used for auto-naming thinking spaces and threads.
  */
 export async function generateAutoName(content: string): Promise<AutoNameResult> {
-  try {
-    const response = await ollama.generate({
-      model: CLASSIFICATION_MODEL,
-      prompt: `Generate a short title (maximum 5 words) for this message.
+  const prompt = `Generate a short title (maximum 5 words) for this message.
 If the message isn't already in English, first translate it to English, then summarize it in five words, no more.
+Unless the message specifically asks for a translation, don't name the conversation "Translation" or anything like that, it's not needed.
 Only output the title, nothing else.
 
 Message:
-${content.slice(0, 500)}
+${content.slice(0, 2000)}
 
-Title:`,
-      options: {
-        temperature: 0.3,
-        num_predict: 20,
-      },
+Title:`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "auto-name-generation",
+      prompt,
+      temperature: 0.3,
+      maxTokens: 50,
+      metadata: { contentLength: content.length },
     })
 
-    // Clean up the response - remove quotes, extra whitespace, etc.
-    let name = response.response
-      .trim()
+    // Clean up the response
+    let name = result.text
       .replace(/^["']|["']$/g, "") // Remove surrounding quotes
       .replace(/^Title:\s*/i, "") // Remove "Title:" prefix if model included it
       .replace(/\n.*/s, "") // Take only first line
       .trim()
 
-    // Ensure it's not too long (truncate to ~50 chars if needed)
     if (name.length > 50) {
       name = name.slice(0, 47) + "..."
     }
 
-    // Fallback if empty
     if (!name) {
       return { name: "", success: false }
     }
 
     logger.debug({ model: CLASSIFICATION_MODEL, name, contentLength: content.length }, "Auto-name generated")
-
     return { name, success: true }
   } catch (err) {
     logger.error({ err, model: CLASSIFICATION_MODEL }, "Auto-name generation failed")
@@ -120,41 +228,78 @@ Title:`,
 }
 
 /**
- * Check if Ollama is available and required models are loaded.
+ * Check if a message in a conversation is intended for Ariadne.
+ * Returns a relevance score on a 1-7 scale where 5+ warrants a response.
  */
-export async function checkOllamaHealth(): Promise<{
-  available: boolean
-  classificationModelLoaded: boolean
-  embeddingModelLoaded: boolean
-  error?: string
-}> {
+export async function checkAriadneEngagement(
+  message: string,
+  recentContext: string,
+  ariadneLastResponse?: string,
+): Promise<EngagementCheckResult> {
+  const prompt = `You are a content classifier given the task to determine if a message should be routed to an AI assistant that is a participant of the conversation.
+
+The AI assistant is called Ariadna and her role is to answer questions that are addressed to her directly or that seem like follow up questions or requests for assistance.
+
+She should not answer all messages in the thread as other participants might be discussing the topic. The closer her last message is to the new message, the more likely it is that the new message is intended for her, whereas if other participants are discussing the topic, the new message is likely not intended for her.
+If the thread only contains messages from Ariadne and one other participant, the new message is likely intended for her.
+${
+  recentContext
+    ? `Here is the history of the conversation inside triple quotes ("""):
+"""${recentContext}""" :
+`
+    : ""
+}
+
+${
+  ariadneLastResponse
+    ? `Ariadne's last message inside triple quotes ("""):
+"""${ariadneLastResponse.slice(0, 2000)}"""`
+    : ""
+}
+
+New message inside triple quotes ("""):
+"""${message.slice(0, 2000)}"""
+
+Score 1-7 where:
+1 = Definitely NOT for the AI (talking to humans)
+4 = Unclear
+7 = Definitely for the AI (asking for help, follow-up question)
+
+Reply with just the number:
+`
+
   try {
-    const models = await ollama.list()
-    const classificationModelLoaded = models.models.some(
-      (m) => m.name === CLASSIFICATION_MODEL || m.name.startsWith(CLASSIFICATION_MODEL.split(":")[0]),
-    )
-    const embeddingModelLoaded = models.models.some(
-      (m) => m.name === EMBEDDING_MODEL || m.name.startsWith(EMBEDDING_MODEL.split(":")[0]),
+    const result = await tracedGenerate({
+      traceName: "ariadne-engagement-check",
+      prompt,
+      maxTokens: 10,
+      metadata: {
+        messageLength: message.length,
+        hasContext: !!ariadneLastResponse,
+      },
+    })
+
+    // Parse the score - look for any digit 1-7 in the response
+    const scoreMatch = result.text.match(/([1-7])/)
+    const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5
+    const confident = scoreMatch !== null
+
+    logger.info(
+      { model: CLASSIFICATION_MODEL, relevanceScore: score, confident, rawResponse: result.text },
+      "Ariadne engagement check result",
     )
 
-    // Update availability flag
-    ollamaEmbeddingAvailable = embeddingModelLoaded
-
-    return { available: true, classificationModelLoaded, embeddingModelLoaded }
+    return { relevanceScore: score, confident, rawResponse: result.text }
   } catch (err) {
-    const error = err instanceof Error ? err.message : "Unknown error"
-    logger.warn({ err, host: OLLAMA_HOST }, "Ollama health check failed")
-    ollamaEmbeddingAvailable = false
-    return { available: false, classificationModelLoaded: false, embeddingModelLoaded: false, error }
+    logger.error({ err, model: CLASSIFICATION_MODEL }, "Ariadne engagement check failed")
+    // Default to triggering response on error to avoid missing follow-ups
+    return { relevanceScore: 5, confident: false, rawResponse: "" }
   }
 }
 
-/**
- * Check if Ollama embeddings are available.
- */
-export function isOllamaEmbeddingAvailable(): boolean {
-  return ollamaEmbeddingAvailable
-}
+// ============================================================================
+// Embedding functions (not traced - high volume, low debugging value)
+// ============================================================================
 
 /**
  * Generate embedding using local Ollama model.
@@ -206,6 +351,46 @@ export async function generateOllamaEmbeddingsBatch(texts: string[]): Promise<Ol
   }
 }
 
+// ============================================================================
+// Health & Setup
+// ============================================================================
+
+/**
+ * Check if Ollama is available and required models are loaded.
+ */
+export async function checkOllamaHealth(): Promise<{
+  available: boolean
+  classificationModelLoaded: boolean
+  embeddingModelLoaded: boolean
+  error?: string
+}> {
+  try {
+    const models = await ollama.list()
+    const classificationModelLoaded = models.models.some(
+      (m) => m.name === CLASSIFICATION_MODEL || m.name.startsWith(CLASSIFICATION_MODEL.split(":")[0]),
+    )
+    const embeddingModelLoaded = models.models.some(
+      (m) => m.name === EMBEDDING_MODEL || m.name.startsWith(EMBEDDING_MODEL.split(":")[0]),
+    )
+
+    ollamaEmbeddingAvailable = embeddingModelLoaded
+
+    return { available: true, classificationModelLoaded, embeddingModelLoaded }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : "Unknown error"
+    logger.warn({ err, host: OLLAMA_HOST }, "Ollama health check failed")
+    ollamaEmbeddingAvailable = false
+    return { available: false, classificationModelLoaded: false, embeddingModelLoaded: false, error }
+  }
+}
+
+/**
+ * Check if Ollama embeddings are available.
+ */
+export function isOllamaEmbeddingAvailable(): boolean {
+  return ollamaEmbeddingAvailable
+}
+
 /**
  * Ensure required Ollama models are available.
  */
@@ -217,7 +402,6 @@ export async function ensureOllamaModels(): Promise<void> {
     return
   }
 
-  // Ensure classification model
   if (!health.classificationModelLoaded) {
     logger.info({ model: CLASSIFICATION_MODEL }, "Pulling classification model...")
     try {
@@ -228,7 +412,6 @@ export async function ensureOllamaModels(): Promise<void> {
     }
   }
 
-  // Ensure embedding model
   if (!health.embeddingModelLoaded) {
     logger.info({ model: EMBEDDING_MODEL }, "Pulling embedding model...")
     try {
@@ -243,92 +426,7 @@ export async function ensureOllamaModels(): Promise<void> {
 
 /**
  * Estimate tokens for a text (rough approximation: ~4 chars per token).
- * Used for cost tracking even though local models are "free".
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
-}
-
-export interface EngagementCheckResult {
-  isDirectedAtAriadne: boolean
-  topicChanged: boolean
-  confident: boolean
-  rawResponse: string
-}
-
-/**
- * Check if a message in a conversation is directed at Ariadne.
- * Used to determine if Ariadne should respond to follow-up messages
- * in threads/channels where she's already participated.
- *
- * @param message - The new message to check
- * @param recentContext - Recent messages for context (last few exchanges)
- * @param ariadneLastResponse - Ariadne's most recent response in this thread
- */
-export async function checkAriadneEngagement(
-  message: string,
-  recentContext: string,
-  ariadneLastResponse?: string,
-): Promise<EngagementCheckResult> {
-  try {
-    const contextSection = ariadneLastResponse
-      ? `Ariadne's last response:
-${ariadneLastResponse.slice(0, 500)}
-
-Recent conversation:
-${recentContext.slice(0, 1000)}`
-      : `Recent conversation:
-${recentContext.slice(0, 1000)}`
-
-    const response = await ollama.generate({
-      model: CLASSIFICATION_MODEL,
-      prompt: `You are analyzing a conversation where an AI assistant named Ariadne has been participating.
-Determine if the new message is directed at Ariadne or is a follow-up to her previous response.
-
-${contextSection}
-
-New message:
-${message.slice(0, 500)}
-
-Consider:
-1. Is this a follow-up question or response to Ariadne?
-2. Is the user asking for more help, clarification, or continuing the AI conversation?
-3. Has the topic completely changed to something unrelated where Ariadne wouldn't be needed?
-
-Answer with exactly one of these formats:
-DIRECTED - if the message is meant for Ariadne or continues the AI conversation
-UNDIRECTED - if the message is clearly to other humans and not related to Ariadne
-TOPIC_CHANGED - if the conversation has moved to a completely different topic
-
-Then briefly explain why in one sentence.`,
-      options: {
-        temperature: 0,
-        num_predict: 100,
-      },
-    })
-
-    const text = response.response.trim()
-    const upperText = text.toUpperCase()
-
-    const isDirected = upperText.startsWith("DIRECTED")
-    const isUndirected = upperText.startsWith("UNDIRECTED")
-    const topicChanged = upperText.startsWith("TOPIC_CHANGED")
-    const confident = isDirected || isUndirected || topicChanged
-
-    logger.debug(
-      { model: CLASSIFICATION_MODEL, isDirected, topicChanged, confident, response: text.slice(0, 200) },
-      "Ariadne engagement check result",
-    )
-
-    return {
-      isDirectedAtAriadne: isDirected,
-      topicChanged,
-      confident,
-      rawResponse: text,
-    }
-  } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "Ariadne engagement check failed")
-    // On error, assume directed to avoid missing legitimate follow-ups
-    return { isDirectedAtAriadne: true, topicChanged: false, confident: false, rawResponse: "" }
-  }
 }

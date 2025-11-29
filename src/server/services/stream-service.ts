@@ -875,6 +875,7 @@ export class StreamService {
               event_id: eventId,
               stream_id: threadStream.id,
               workspace_id: params.workspaceId,
+              stream_type: "thread",
               event_type: "message",
               actor_id: params.actorId,
               content: params.content,
