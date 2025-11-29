@@ -1,9 +1,11 @@
 import { useMemo } from "react"
 import { MessageList } from "./MessageList"
 import type { StreamEvent, OpenMode, Message } from "../../types"
+import type { AgentSession } from "./AgentThinkingEvent"
 
 interface EventListProps {
   events: StreamEvent[]
+  sessions?: AgentSession[]
   workspaceId: string
   streamId?: string
   lastReadEventId: string | null
@@ -29,15 +31,25 @@ interface EventListProps {
 // useful as metadata (threads are shown via reply counts on messages instead)
 const SYSTEM_EVENT_TYPES = ["member_joined", "member_left", "stream_created"]
 
+// Event types to render
+const RENDERABLE_EVENT_TYPES = ["message", "shared", "agent_thinking", ...SYSTEM_EVENT_TYPES]
+
 // Convert StreamEvent to Message format for MessageList compatibility
 function eventToMessage(event: StreamEvent, streamId?: string): Message {
   const isSystemEvent = SYSTEM_EVENT_TYPES.includes(event.eventType)
   const isSharedEvent = event.eventType === "shared"
+  const isAgentThinking = event.eventType === "agent_thinking"
 
   // For shared events, use the original event's content
   const originalEvent = event.originalEvent
   const content = isSharedEvent && originalEvent ? originalEvent.content : event.content
   const mentions = isSharedEvent && originalEvent ? originalEvent.mentions : event.mentions
+
+  // Determine message type
+  let messageType: Message["messageType"] = "message"
+  if (isSystemEvent) messageType = "system"
+  else if (isSharedEvent) messageType = "shared"
+  else if (isAgentThinking) messageType = "agent_thinking"
 
   return {
     id: event.id,
@@ -50,7 +62,7 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
     replyCount: event.replyCount,
     isEdited: event.isEdited,
     updatedAt: event.editedAt,
-    messageType: isSystemEvent ? "system" : isSharedEvent ? "shared" : "message",
+    messageType,
     mentions: mentions,
     // For shared events, include info about the original
     sharedFrom: isSharedEvent && originalEvent
@@ -63,6 +75,7 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
         }
       : undefined,
     // Map system event payload to metadata for SystemMessage component
+    // Also pass agent_thinking payload for session linking
     metadata: isSystemEvent
       ? {
           event: event.eventType as "member_joined" | "member_added" | "member_removed",
@@ -71,12 +84,15 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
           userEmail: event.actorEmail,
           ...(event.payload || {}),
         }
-      : undefined,
+      : isAgentThinking
+        ? event.payload
+        : undefined,
   }
 }
 
 export function EventList({
   events,
+  sessions = [],
   workspaceId,
   streamId,
   lastReadEventId,
@@ -96,20 +112,29 @@ export function EventList({
   users,
   streams,
 }: EventListProps) {
-  // Convert events to messages for MessageList (include system events)
+  // Convert events to messages for MessageList (include system events and agent_thinking)
   const messages = useMemo(
     () =>
       events
-        .filter(
-          (e) => e.eventType === "message" || e.eventType === "shared" || SYSTEM_EVENT_TYPES.includes(e.eventType),
-        )
+        .filter((e) => RENDERABLE_EVENT_TYPES.includes(e.eventType))
         .map((e) => eventToMessage(e, streamId)),
     [events, streamId],
   )
 
+  // Build map for session lookup by triggering event ID (for badge display on channel messages)
+  const sessionsByTrigger = useMemo(() => {
+    const byTrigger = new Map<string, AgentSession>()
+    for (const session of sessions) {
+      byTrigger.set(session.triggeringEventId, session)
+    }
+    return byTrigger
+  }, [sessions])
+
   return (
     <MessageList
       messages={messages}
+      sessions={sessions}
+      sessionsByTrigger={sessionsByTrigger}
       workspaceId={workspaceId}
       channelId={streamId}
       lastReadMessageId={lastReadEventId}

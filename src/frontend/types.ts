@@ -50,7 +50,7 @@ export interface StreamMember {
 // Event Types
 // ==========================================================================
 
-export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "stream_created" | "poll" | "file"
+export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "stream_created" | "poll" | "file" | "agent_thinking"
 
 export interface Mention {
   type: "user" | "channel" | "crosspost"
@@ -66,6 +66,7 @@ export interface StreamEvent {
   actorId: string
   actorEmail: string
   actorName?: string
+  agentId?: string // For AI agent events (Ariadne, etc.)
   // For message events
   content?: string
   mentions?: Mention[]
@@ -73,7 +74,7 @@ export interface StreamEvent {
   originalEventId?: string
   shareContext?: string
   originalEvent?: StreamEvent
-  // For system events (member_joined, thread_started, etc.)
+  // For system events (member_joined, thread_started, etc.) and agent_thinking
   payload?: Record<string, unknown>
   // Computed
   replyCount?: number
@@ -96,7 +97,7 @@ export interface Message {
   replyToMessageId?: string | null
   isEdited?: boolean
   updatedAt?: string
-  messageType?: "message" | "system" | "shared"
+  messageType?: "message" | "system" | "shared" | "agent_thinking"
   metadata?: SystemMessageMetadata
   mentions?: Mention[]
   linkedChannels?: LinkedChannel[]

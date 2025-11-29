@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { useMessageVisibility } from "../../hooks"
 import { MessageItem } from "./MessageItem"
+import type { AgentSession } from "./AgentThinkingEvent"
 import type { Message, OpenMode } from "../../types"
 
 interface MessageItemWithVisibilityProps {
@@ -26,6 +27,8 @@ interface MessageItemWithVisibilityProps {
   showThreadActions?: boolean
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string | null }>
+  agentSession?: AgentSession
+  sessionInThread?: boolean
 }
 
 export function MessageItemWithVisibility({
@@ -51,6 +54,8 @@ export function MessageItemWithVisibility({
   showThreadActions,
   users,
   channels,
+  agentSession,
+  sessionInThread,
 }: MessageItemWithVisibilityProps) {
   const visibilityRef = useMessageVisibility(message.id, onMessageVisible, onMessageHidden)
 
@@ -89,6 +94,8 @@ export function MessageItemWithVisibility({
       visibilityRef={combinedRef}
       users={users}
       channels={channels}
+      agentSession={agentSession}
+      sessionInThread={sessionInThread}
     />
   )
 }

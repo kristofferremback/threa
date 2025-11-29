@@ -13,7 +13,7 @@ import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
 export type StreamType = "channel" | "thread" | "dm" | "incident" | "thinking_space"
 export type StreamVisibility = "public" | "private" | "inherit"
 export type StreamStatus = "active" | "archived" | "resolved"
-export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "poll" | "file"
+export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "poll" | "file" | "agent_thinking"
 export type NotifyLevel = "all" | "mentions" | "muted" | "default"
 export type MemberRole = "owner" | "admin" | "member"
 
@@ -1346,6 +1346,7 @@ export class StreamService {
               agent_id: params.agentId || null,
               content: params.content,
               mentions: params.mentions,
+              payload: params.payload,
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)

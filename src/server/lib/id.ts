@@ -47,3 +47,11 @@ export function aiPersonaId(): string {
 export function knowledgeFeedbackId(): string {
   return generateId("kfb")
 }
+
+export function agentSessionId(): string {
+  return generateId("sess")
+}
+
+export function sessionStepId(): string {
+  return generateId("step")
+}

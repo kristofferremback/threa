@@ -26,6 +26,7 @@ export interface MaterializedStreamResult {
 interface UseStreamReturn {
   stream: Stream | null
   events: StreamEvent[]
+  initialSessions: AgentSessionData[]
   parentStream: Stream | null
   rootEvent: StreamEvent | null
   ancestors: StreamEvent[]
@@ -62,10 +63,35 @@ const isDraftThinkingSpace = (id: string | undefined): boolean => {
 // Hook
 // ==========================================================================
 
+// Agent session type for initial load from events endpoint
+export interface AgentSessionData {
+  id: string
+  streamId: string
+  triggeringEventId: string
+  responseEventId: string | null
+  status: "active" | "summarizing" | "completed" | "failed"
+  steps: Array<{
+    id: string
+    type: "gathering_context" | "reasoning" | "tool_call" | "synthesizing"
+    content: string
+    tool_name?: string
+    tool_input?: Record<string, unknown>
+    tool_result?: string
+    started_at: string
+    completed_at?: string
+    status: "active" | "completed" | "failed"
+  }>
+  summary: string | null
+  errorMessage: string | null
+  startedAt: string
+  completedAt: string | null
+}
+
 export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOptions): UseStreamReturn {
   // State
   const [stream, setStream] = useState<Stream | null>(null)
   const [events, setEvents] = useState<StreamEvent[]>([])
+  const [initialSessions, setInitialSessions] = useState<AgentSessionData[]>([])
   const [parentStream, setParentStream] = useState<Stream | null>(null)
   const [rootEvent, setRootEvent] = useState<StreamEvent | null>(null)
   const [ancestors, setAncestors] = useState<StreamEvent[]>([])
@@ -107,6 +133,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
 
     // Reset state for new stream
     setEvents([])
+    setInitialSessions([])
     setStream(null)
     setParentStream(null)
     setRootEvent(null)
@@ -188,6 +215,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
             if (eventsRes.ok) {
               const eventsData = await eventsRes.json()
               setEvents(eventsData.events || [])
+              setInitialSessions(eventsData.sessions || [])
             }
           }
         } catch (err) {
@@ -299,6 +327,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
             if (eventsRes.ok) {
               const eventsData = await eventsRes.json()
               setEvents(eventsData.events || [])
+              setInitialSessions(eventsData.sessions || [])
               setLastReadEventId(eventsData.lastReadEventId || null)
               setHasMoreEvents(eventsData.hasMore || false)
             }
@@ -456,6 +485,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
 
       const eventsData = await eventsRes.json()
       setEvents(eventsData.events || [])
+      setInitialSessions(eventsData.sessions || [])
       setLastReadEventId(eventsData.lastReadEventId || null)
       setHasMoreEvents(eventsData.hasMore || false)
 
@@ -721,6 +751,7 @@ export function useStream({ workspaceId, streamId, enabled = true }: UseStreamOp
   return {
     stream,
     events,
+    initialSessions,
     parentStream,
     rootEvent,
     ancestors,

@@ -3,6 +3,7 @@ import { StreamService, CreateStreamParams, CreateEventParams } from "../service
 import { WorkspaceService } from "../services/workspace-service"
 import { UserService } from "../services/user-service"
 import { SearchService } from "../services/search-service"
+import { AgentSessionService } from "../services/agent-session-service"
 import { logger } from "../lib/logger"
 import { createValidSlug } from "../../shared/slug"
 import { Pool } from "pg"
@@ -22,6 +23,7 @@ export function createStreamRoutes(
   const router = Router()
   const userService = new UserService(pool)
   const searchService = new SearchService(pool)
+  const sessionService = new AgentSessionService(pool)
 
   // Helper to ensure user exists in database
   async function ensureUserExists(req: Request): Promise<void> {
@@ -488,8 +490,23 @@ export function createStreamRoutes(
       const events = await streamService.getStreamEvents(streamId, limit, offset)
       const lastReadEventId = await streamService.getReadCursor(streamId, userId)
 
+      // Include agent sessions for this stream
+      const sessions = await sessionService.getSessionsForStream(streamId)
+
       res.json({
         events: events.map((e) => mapEventToResponse(e)),
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          streamId: s.streamId,
+          triggeringEventId: s.triggeringEventId,
+          responseEventId: s.responseEventId,
+          status: s.status,
+          steps: s.steps,
+          summary: s.summary,
+          errorMessage: s.errorMessage,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+        })),
         lastReadEventId,
         hasMore: events.length === limit,
       })
@@ -1367,6 +1384,7 @@ function mapEventToResponse(event: any) {
     actorId: event.actorId,
     actorEmail: event.actorEmail,
     actorName: event.actorName,
+    agentId: event.agentId,
     content: event.content,
     mentions: event.mentions,
     originalEventId: event.originalEventId,

@@ -3,12 +3,16 @@ import { Hash, MessageCircle, ChevronUp, CheckCheck } from "lucide-react"
 import { MessageItem } from "./MessageItem"
 import { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 import { SystemMessage } from "./SystemMessage"
+import { AgentThinkingEvent } from "./AgentThinkingEvent"
+import type { AgentSession } from "./AgentThinkingEvent"
 import { EmptyState } from "../ui"
 import { useReadReceipts } from "../../hooks"
 import type { Message, OpenMode } from "../../types"
 
 interface MessageListProps {
   messages: Message[]
+  sessions?: AgentSession[] // All sessions for this stream
+  sessionsByTrigger?: Map<string, AgentSession> // Map of triggering event ID to session (for badge display)
   workspaceId: string
   channelId?: string // Now treated as streamId
   lastReadMessageId?: string | null
@@ -35,6 +39,8 @@ interface MessageListProps {
 
 export function MessageList({
   messages,
+  sessions = [],
+  sessionsByTrigger,
   workspaceId,
   channelId, // Now treated as streamId
   lastReadMessageId,
@@ -155,6 +161,7 @@ export function MessageList({
       unreadCount: serverFirstUnread === -1 ? 0 : messages.length - serverFirstUnread,
     }
   }, [messages, lastReadMessageId, locallySeenIds])
+
 
   // Handle marking a message as read (updates local state too)
   const handleMarkAsRead = useCallback(
@@ -407,6 +414,9 @@ export function MessageList({
         const isServerRead = serverReadMessageIds.has(msg.id) // For context menu actions
         const showUnreadDivider = idx === firstUnreadIndex && firstUnreadIndex > 0
 
+        // Check if this message triggered an agent session (for badge display on channel messages)
+        const triggeredSession = sessionsByTrigger?.get(msg.id)
+
         return (
           <div key={msg.id || msg.timestamp}>
             {/* Unread divider */}
@@ -420,6 +430,32 @@ export function MessageList({
 
             {msg.messageType === "system" ? (
               <SystemMessage message={msg} animationDelay={Math.min(idx * 30, 300)} />
+            ) : msg.messageType === "agent_thinking" ? (
+              // Render agent_thinking events as AgentThinkingEvent
+              // Link to session via sessionId in metadata for real-time updates
+              (() => {
+                const metadata = msg.metadata as { sessionId?: string; triggeringEventId?: string; status?: string } | undefined
+                const sessionId = metadata?.sessionId
+                // Look up session - try by sessionId first, then by triggeringEventId as fallback
+                let session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined
+                if (!session && metadata?.triggeringEventId) {
+                  session = sessions.find((s) => s.triggeringEventId === metadata.triggeringEventId)
+                }
+                // Build a minimal session if we don't have one from the API yet
+                const displaySession = session || {
+                  id: sessionId || msg.id,
+                  streamId: channelId || "",
+                  triggeringEventId: metadata?.triggeringEventId || "",
+                  responseEventId: null,
+                  status: (metadata?.status || "active") as "active" | "completed" | "failed" | "summarizing",
+                  steps: [],
+                  summary: null,
+                  errorMessage: null,
+                  startedAt: msg.timestamp,
+                  completedAt: null,
+                }
+                return <AgentThinkingEvent session={displaySession} className="my-2" />
+              })()
             ) : (
               <MessageItemWithVisibility
                 message={msg}
@@ -444,8 +480,11 @@ export function MessageList({
                 showThreadActions={showThreadActions}
                 users={users}
                 channels={channels}
+                agentSession={triggeredSession}
+                sessionInThread={Boolean(triggeredSession?.streamId && triggeredSession.streamId !== channelId)}
               />
             )}
+
           </div>
         )
       })}

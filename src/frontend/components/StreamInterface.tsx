@@ -1,8 +1,9 @@
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
-import { useStream } from "../hooks"
+import { useStream, useAgentSessions } from "../hooks"
 import type { MaterializedStreamResult } from "../hooks"
 import { ChatHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
+import type { AgentSession } from "./chat/AgentThinkingEvent"
 import type { OpenMode, Mention, Stream } from "../types"
 import { getOpenMode } from "../types"
 
@@ -34,6 +35,7 @@ export function StreamInterface({
   const {
     stream,
     events,
+    initialSessions,
     parentStream,
     rootEvent,
     ancestors,
@@ -55,6 +57,39 @@ export function StreamInterface({
     streamId,
     enabled: true,
   })
+
+  // Track agent sessions with real-time updates
+  // initialSessions come from the events endpoint, then useAgentSessions adds real-time updates
+  const initialSessionsAsAgentSession = useMemo(
+    () =>
+      initialSessions.map((s) => ({
+        id: s.id,
+        streamId: s.streamId,
+        triggeringEventId: s.triggeringEventId,
+        responseEventId: s.responseEventId,
+        status: s.status,
+        steps: s.steps,
+        summary: s.summary,
+        errorMessage: s.errorMessage,
+        startedAt: s.startedAt,
+        completedAt: s.completedAt,
+      })) as AgentSession[],
+    [initialSessions],
+  )
+
+  // Use actual stream ID from useStream (handles pending thread -> real thread transitions)
+  // Falls back to prop streamId for initial load
+  const actualStreamId = stream?.id || streamId
+
+  const { sessions } = useAgentSessions({
+    workspaceId,
+    streamId: actualStreamId,
+    initialSessions: initialSessionsAsAgentSession,
+    enabled: Boolean(actualStreamId),
+  })
+
+  // Convert sessions Map to array for EventList
+  const sessionsArray = useMemo(() => Array.from(sessions.values()), [sessions])
 
   const isThread = stream?.streamType === "thread"
   // For threads, prefer the actual stream name over the static "Thread" title
@@ -156,6 +191,7 @@ export function StreamInterface({
         ) : (
           <EventList
             events={events}
+            sessions={sessionsArray}
             workspaceId={workspaceId}
             streamId={streamId}
             lastReadEventId={lastReadEventId}

@@ -1,11 +1,13 @@
 import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData } from "../lib/job-queue"
-import { invokeAriadne, AriadneContext, ConversationMessage } from "../ai/ariadne/agent"
+import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage } from "../ai/ariadne/agent"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
+import { AgentSessionService, SessionStep } from "../services/agent-session-service"
 import { logger } from "../lib/logger"
 import { Models, calculateCost } from "../lib/ai-providers"
+import { emitSessionStarted, emitSessionStep, emitSessionCompleted } from "../lib/ephemeral-events"
 import type { AriadneTrigger } from "./ariadne-trigger"
 
 const ARIADNE_PERSONA_ID = "pers_default_ariadne"
@@ -16,11 +18,12 @@ const CHANNEL_CONTEXT_MESSAGES = 10
  *
  * Listens for ai.respond jobs from the queue and generates responses
  * using the Ariadne agent. Handles budget checking, context fetching,
- * and response posting.
+ * session tracking, and response posting.
  */
 export class AriadneWorker {
   private usageService: AIUsageService
   private streamService: StreamService
+  private sessionService: AgentSessionService
   private isRunning = false
 
   constructor(
@@ -29,6 +32,7 @@ export class AriadneWorker {
   ) {
     this.usageService = new AIUsageService(pool)
     this.streamService = new StreamService(pool)
+    this.sessionService = new AgentSessionService(pool)
   }
 
   async start(): Promise<void> {
@@ -61,11 +65,111 @@ export class AriadneWorker {
   private async processJob(job: { id: string; data: RespondJobData }): Promise<void> {
     const { workspaceId, streamId, eventId, mentionedBy, question, mode } = job.data
 
+    // Determine where to respond - for channel @mentions in retrieval mode, respond in a thread
+    // We determine this EARLY so the session is created in the right stream
+    let responseStreamId = streamId
+    const sourceStream = await this.streamService.getStream(streamId)
+
+    if (mode !== "thinking_partner" && sourceStream?.streamType === "channel") {
+      // Create thread for the response - the thinking UI will appear there
+      const { stream: thread } = await this.streamService.createThreadFromEvent(eventId, ARIADNE_PERSONA_ID)
+      responseStreamId = thread.id
+      logger.info({ eventId, threadId: thread.id }, "Ariadne will respond in thread")
+    }
+
+    // Create or resume session in the response stream (thread or original stream)
+    const { session, isNew } = await this.sessionService.createSession({
+      workspaceId,
+      streamId: responseStreamId,
+      triggeringEventId: eventId,
+    })
+
+    // If session already completed or failed, don't retry
+    if (!isNew && (session.status === "completed" || session.status === "failed")) {
+      logger.info(
+        { sessionId: session.id, status: session.status },
+        "Session already completed/failed, skipping job",
+      )
+      return
+    }
+
+    // Only create thinking event for new sessions (not resumes)
+    if (isNew) {
+      // Create an agent_thinking event in the response stream
+      // This flows through normal event infrastructure and shows up immediately
+      await this.streamService.createEvent({
+        streamId: responseStreamId,
+        agentId: ARIADNE_PERSONA_ID,
+        eventType: "agent_thinking",
+        payload: {
+          sessionId: session.id,
+          triggeringEventId: eventId,
+          status: "active",
+        },
+      })
+
+      // Emit session:started to parent channel for the badge on the original message
+      // and to the pending thread room (users viewing via eventId before thread was created)
+      if (responseStreamId !== streamId) {
+        await emitSessionStarted(workspaceId, streamId, session.id, eventId, responseStreamId)
+        await emitSessionStarted(workspaceId, eventId, session.id, eventId, responseStreamId)
+      }
+    }
+
+    // Helper to emit a step to all relevant rooms
+    const emitStepToAllRooms = async (step: SessionStep) => {
+      await emitSessionStep(workspaceId, responseStreamId, session.id, step)
+      // Also emit to pending thread room (users viewing via eventId before thread was created)
+      if (responseStreamId !== streamId) {
+        await emitSessionStep(workspaceId, eventId, session.id, step)
+      }
+    }
+
+    // Helper to add and emit a step
+    const addStep = async (
+      type: SessionStep["type"],
+      content: string,
+      options?: { toolName?: string; toolInput?: Record<string, unknown> },
+    ): Promise<string> => {
+      const stepId = await this.sessionService.addStep({
+        sessionId: session.id,
+        type,
+        content,
+        toolName: options?.toolName,
+        toolInput: options?.toolInput,
+      })
+
+      // Get the full step for emitting
+      const updatedSession = await this.sessionService.getSession(session.id)
+      const step = updatedSession?.steps.find((s) => s.id === stepId)
+      if (step) {
+        await emitStepToAllRooms(step)
+      }
+
+      return stepId
+    }
+
+    // Helper to complete a step
+    const completeStep = async (stepId: string, toolResult?: string, failed?: boolean): Promise<void> => {
+      await this.sessionService.completeStep({ sessionId: session.id, stepId, toolResult, failed })
+
+      // Get and emit the updated step
+      const updatedSession = await this.sessionService.getSession(session.id)
+      const step = updatedSession?.steps.find((s) => s.id === stepId)
+      if (step) {
+        await emitStepToAllRooms(step)
+      }
+    }
+
     try {
       // Check if AI is enabled for this workspace
       const isEnabled = await this.usageService.isAIEnabled(workspaceId)
       if (!isEnabled) {
         logger.info({ workspaceId }, "AI not enabled for workspace, skipping Ariadne response")
+        await this.sessionService.updateStatus(session.id, "failed", "AI not enabled for this workspace")
+        await emitSessionCompleted(workspaceId, responseStreamId, session.id, "failed", {
+          errorMessage: "AI not enabled for this workspace",
+        })
         return
       }
 
@@ -74,12 +178,19 @@ export class AriadneWorker {
       const budget = await this.usageService.getWorkspaceBudget(workspaceId)
       if (usage.totalCostCents >= budget) {
         logger.warn({ workspaceId, usage: usage.totalCostCents, budget }, "Workspace AI budget exceeded")
+        await this.sessionService.updateStatus(session.id, "failed", "Budget exceeded")
+        await emitSessionCompleted(workspaceId, responseStreamId, session.id, "failed", {
+          errorMessage: "Budget exceeded",
+        })
         await this.postResponse(
-          streamId,
+          responseStreamId,
           "I'm sorry, but the workspace's AI budget for this month has been reached. Please contact your workspace admin to increase the budget.",
         )
         return
       }
+
+      // Step: Gathering context
+      const contextStepId = await addStep("gathering_context", "Gathering context...")
 
       // Get user info for context
       const userResult = await this.pool.query<{ name: string; email: string }>(
@@ -95,8 +206,6 @@ export class AriadneWorker {
       const streamType = stream?.streamType || "channel"
 
       // Fetch context based on stream type
-      // - Channels: background context (not a conversation, just recent activity)
-      // - Threads/Thinking spaces: conversation history (actual back-and-forth)
       const isChannel = streamType === "channel"
       const conversationHistory = isChannel ? [] : await this.fetchConversationHistory(streamId, eventId)
       const backgroundContext = isChannel ? await this.fetchBackgroundContext(streamId, eventId) : undefined
@@ -111,9 +220,16 @@ export class AriadneWorker {
         backgroundContext,
       }
 
+      // Complete context gathering step
+      await completeStep(
+        contextStepId,
+        `Found ${conversationHistory.length} messages in history${backgroundContext ? ", plus channel context" : ""}`,
+      )
+
       logger.info(
         {
           job: job.id,
+          sessionId: session.id,
           streamId,
           streamType,
           mentionedBy: mentionedByName,
@@ -124,49 +240,116 @@ export class AriadneWorker {
         "Processing Ariadne request",
       )
 
-      // Invoke Ariadne
-      const result = await invokeAriadne(this.pool, context, question)
+      // Step: Reasoning (starts when we call the agent)
+      const reasoningStepId = await addStep("reasoning", "Thinking...")
+
+      // Use streaming to capture tool calls and track them as steps
+      let finalResponse = ""
+      const activeToolSteps = new Map<string, string>() // tool content -> stepId
+
+      for await (const chunk of streamAriadne(this.pool, context, question)) {
+        if (chunk.type === "tool_call") {
+          // Check if we already have a step for this tool call
+          if (!activeToolSteps.has(chunk.content)) {
+            // Create a new tool call step
+            const toolStepId = await addStep("tool_call", chunk.content, {
+              toolName: chunk.content.split(" ")[0], // Extract tool name from content like "search_messages: query"
+            })
+            activeToolSteps.set(chunk.content, toolStepId)
+          }
+        } else if (chunk.type === "token") {
+          // Accumulate the final response
+          finalResponse = chunk.content
+        } else if (chunk.type === "done") {
+          // Complete reasoning step
+          await completeStep(reasoningStepId)
+
+          // Complete any pending tool steps
+          for (const [_content, stepId] of activeToolSteps) {
+            await completeStep(stepId)
+          }
+        }
+      }
+
+      // Step: Synthesizing (preparing response)
+      const synthesizeStepId = await addStep("synthesizing", "Preparing response...")
+
+      // Estimate token usage
+      const inputTokens = Math.ceil(question.length / 4)
+      const outputTokens = Math.ceil(finalResponse.length / 4)
 
       // Track usage
-      const costCents = calculateCost(Models.CLAUDE_HAIKU, result.usage)
+      const costCents = calculateCost(Models.CLAUDE_HAIKU, { inputTokens, outputTokens })
       await this.usageService.trackUsage({
         workspaceId,
         userId: mentionedBy,
         jobType: "respond",
         model: Models.CLAUDE_HAIKU,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
+        inputTokens,
+        outputTokens,
         costCents,
         streamId,
         eventId,
         jobId: job.id,
       })
 
-      // Determine where to post the response
-      let responseStreamId = streamId
+      // Post the response (responseStreamId was determined at the start)
+      const responseEvent = await this.postResponse(responseStreamId, finalResponse, session.id)
 
-      // For retrieval mode (channel @mentions), respond in a thread
-      if (mode !== "thinking_partner") {
-        const currentStream = await this.streamService.getStream(streamId)
-        if (currentStream && currentStream.streamType === "channel") {
-          const { stream: thread } = await this.streamService.createThreadFromEvent(eventId, ARIADNE_PERSONA_ID)
-          responseStreamId = thread.id
-          logger.info({ eventId, threadId: thread.id }, "Ariadne responding in thread")
-        }
+      // Complete synthesize step
+      await completeStep(synthesizeStepId, `Response: ${finalResponse.length} characters`)
+
+      // Generate summary and complete the session
+      await this.sessionService.updateStatus(session.id, "summarizing")
+      const summary = await this.generateSummary(session.id)
+      await this.sessionService.setSummary(session.id, summary)
+      await this.sessionService.linkResponseEvent(session.id, responseEvent.id)
+      await this.sessionService.updateStatus(session.id, "completed")
+
+      // Emit session completed to the thread
+      await emitSessionCompleted(workspaceId, responseStreamId, session.id, "completed", {
+        summary,
+        responseEventId: responseEvent.id,
+      })
+
+      // If this was a channel mention, also notify the parent channel and pending thread room
+      if (responseStreamId !== streamId) {
+        await emitSessionCompleted(workspaceId, streamId, session.id, "completed", {
+          summary,
+          responseEventId: responseEvent.id,
+        })
+        // Emit to pending thread room (users viewing the thread before it was created)
+        // They join the room by eventId, not threadId
+        await emitSessionCompleted(workspaceId, eventId, session.id, "completed", {
+          summary,
+          responseEventId: responseEvent.id,
+        })
       }
-
-      // Post the response
-      await this.postResponse(responseStreamId, result.response)
 
       // Reset engagement tracking - Ariadne is back in the conversation
       await this.ariadneTrigger.resetEngagementTracking(responseStreamId)
 
-      logger.info({ job: job.id, responseLength: result.response.length, costCents }, "Ariadne response posted")
+      logger.info(
+        { job: job.id, sessionId: session.id, responseLength: finalResponse.length, costCents },
+        "Ariadne response posted",
+      )
     } catch (err) {
-      logger.error({ err, job: job.id }, "Ariadne worker failed to process job")
+      logger.error({ err, job: job.id, sessionId: session.id }, "Ariadne worker failed to process job")
+
+      // Update session status to failed
+      const errorMessage = err instanceof Error ? err.message : "Unknown error"
+      await this.sessionService.updateStatus(session.id, "failed", errorMessage)
+      await emitSessionCompleted(workspaceId, responseStreamId, session.id, "failed", { errorMessage })
+
+      // If this was a channel mention, also notify the parent channel and pending thread room
+      if (responseStreamId !== streamId) {
+        await emitSessionCompleted(workspaceId, streamId, session.id, "failed", { errorMessage })
+        // Emit to pending thread room (users viewing the thread before it was created)
+        await emitSessionCompleted(workspaceId, eventId, session.id, "failed", { errorMessage })
+      }
 
       try {
-        await this.postResponse(streamId, "I encountered an error while processing your request. Please try again.")
+        await this.postResponse(responseStreamId, "I encountered an error while processing your request. Please try again.")
       } catch {
         // Ignore posting errors
       }
@@ -175,19 +358,62 @@ export class AriadneWorker {
     }
   }
 
-  private async postResponse(streamId: string, content: string): Promise<void> {
-    await this.streamService.createEvent({
+  private async postResponse(streamId: string, content: string, sessionId?: string): Promise<{ id: string }> {
+    return await this.streamService.createEvent({
       streamId,
       agentId: ARIADNE_PERSONA_ID,
       eventType: "message",
       content,
       mentions: [],
+      payload: sessionId ? { sessionId } : undefined,
     })
   }
 
   /**
+   * Generate a summary of the session's steps using a fast model.
+   */
+  private async generateSummary(sessionId: string): Promise<string> {
+    const session = await this.sessionService.getSession(sessionId)
+    if (!session) return "Session completed."
+
+    // Build a simple summary from the steps
+    const stepDescriptions = session.steps
+      .filter((s) => s.status === "completed")
+      .map((s) => {
+        switch (s.type) {
+          case "gathering_context":
+            return "gathered context"
+          case "reasoning":
+            return "analyzed the question"
+          case "tool_call":
+            return s.tool_name ? `used ${s.tool_name}` : "used a tool"
+          case "synthesizing":
+            return "prepared response"
+          default:
+            return s.type
+        }
+      })
+
+    // Calculate duration
+    const durationMs = session.completedAt
+      ? new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime()
+      : 0
+    const durationSec = (durationMs / 1000).toFixed(1)
+
+    // For now, generate a simple summary without calling the LLM
+    // TODO: Optionally call haiku for a more natural summary
+    const toolsUsed = session.steps.filter((s) => s.type === "tool_call" && s.tool_name).map((s) => s.tool_name)
+    const uniqueTools = [...new Set(toolsUsed)]
+
+    if (uniqueTools.length > 0) {
+      return `Analyzed the question using ${uniqueTools.join(", ")} in ${durationSec}s.`
+    } else {
+      return `Thought about the question for ${durationSec}s.`
+    }
+  }
+
+  /**
    * Fetch conversation history for threads and thinking spaces.
-   * These are focused conversations where all messages are part of the same discussion.
    */
   private async fetchConversationHistory(streamId: string, eventId: string): Promise<ConversationMessage[]> {
     const conversationHistory: ConversationMessage[] = []
@@ -217,8 +443,6 @@ export class AriadneWorker {
 
   /**
    * Fetch background context for channel invocations.
-   * Channel messages are typically unrelated discussions - they provide context
-   * but should not be treated as a conversation to respond to.
    */
   private async fetchBackgroundContext(streamId: string, eventId: string): Promise<string | undefined> {
     try {
@@ -253,12 +477,15 @@ export class AriadneWorker {
 
       if (recentEvents.rows.length === 0) return undefined
 
-      // Format as simple text context (not conversation format)
-      const contextLines = recentEvents.rows.reverse().map((event) => {
-        if (!event.content) return null
-        const name = event.agent_id === ARIADNE_PERSONA_ID ? "Ariadne" : event.actor_name || event.actor_email || "User"
-        return `[${name}]: ${event.content}`
-      }).filter(Boolean)
+      const contextLines = recentEvents.rows
+        .reverse()
+        .map((event) => {
+          if (!event.content) return null
+          const name =
+            event.agent_id === ARIADNE_PERSONA_ID ? "Ariadne" : event.actor_name || event.actor_email || "User"
+          return `[${name}]: ${event.content}`
+        })
+        .filter(Boolean)
 
       if (contextLines.length === 0) return undefined
 

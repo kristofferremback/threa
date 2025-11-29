@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward } from "lucide-react"
+import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward, Loader2 } from "lucide-react"
 import { Avatar, RelativeTime } from "../ui"
 import { MessageContextMenu } from "./MessageContextMenu"
 import { MessageRevisionsModal } from "./MessageRevisionsModal"
@@ -7,6 +7,7 @@ import { MessageContent, type MessageMention } from "./MessageContent"
 import { RichTextEditor, type RichTextEditorRef } from "./RichTextEditor"
 import type { Message, OpenMode, LinkedChannel, SharedFromInfo } from "../../types"
 import { getOpenMode, getDisplayName } from "../../types"
+import type { AgentSession } from "./AgentThinkingEvent"
 
 interface MessageItemProps {
   message: Message
@@ -29,6 +30,10 @@ interface MessageItemProps {
   visibilityRef?: React.RefObject<HTMLDivElement> | ((el: HTMLDivElement | null) => void)
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string | null }>
+  /** Session triggered by this message (for showing inline thinking badge) */
+  agentSession?: AgentSession
+  /** Whether the session is in a different stream (thread) - if true, show badge */
+  sessionInThread?: boolean
 }
 
 export function MessageItem({
@@ -52,8 +57,13 @@ export function MessageItem({
   visibilityRef,
   users = [],
   channels = [],
+  agentSession,
+  sessionInThread = false,
 }: MessageItemProps) {
   const hasReplies = message.replyCount && message.replyCount > 0
+  // Show thinking badge if session is active and in a thread (not in this stream)
+  const showThinkingBadge = sessionInThread && agentSession &&
+    (agentSession.status === "active" || agentSession.status === "summarizing")
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.message)
   const [isSaving, setIsSaving] = useState(false)
@@ -276,19 +286,35 @@ export function MessageItem({
 
       {showThreadActions && !isEditing && (
         <div className="pl-8 mt-2">
-          {hasReplies ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={(e) => onOpenThread?.(message.id, message.channelId, getOpenMode(e))}
-                className="text-xs flex items-center gap-1.5 transition-colors hover:underline"
-                style={{ color: "var(--accent-primary)" }}
-                title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
-              >
-                <MessageCircle className="h-3.5 w-3.5" />
-                <span className="font-medium">
-                  {message.replyCount} {message.replyCount === 1 ? "reply" : "replies"}
+          {hasReplies || showThinkingBadge ? (
+            <div className="flex items-center gap-3">
+              {/* Reply count */}
+              {hasReplies && (
+                <button
+                  onClick={(e) => onOpenThread?.(message.id, message.channelId, getOpenMode(e))}
+                  className="text-xs flex items-center gap-1.5 transition-colors hover:underline"
+                  style={{ color: "var(--accent-primary)" }}
+                  title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  <span className="font-medium">
+                    {message.replyCount} {message.replyCount === 1 ? "reply" : "replies"}
+                  </span>
+                </button>
+              )}
+
+              {/* Ariadne thinking badge - inline with reply count */}
+              {showThinkingBadge && (
+                <span
+                  className="text-xs flex items-center gap-1.5"
+                  style={{ color: "var(--accent-secondary, #8b5cf6)" }}
+                >
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span className="font-medium">Ariadne is thinking</span>
                 </span>
-              </button>
+              )}
+
+              {/* Side panel button */}
               <button
                 onClick={() => onOpenThread?.(message.id, message.channelId, "side")}
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded"

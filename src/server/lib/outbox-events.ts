@@ -82,6 +82,7 @@ export interface StreamEventCreatedPayload {
   agent_id?: string
   content?: string
   mentions?: Array<{ type: string; id: string; label?: string }>
+  payload?: Record<string, unknown> // Event-specific payload (e.g., sessionId for agent events)
   is_crosspost?: boolean
   original_stream_id?: string
 }

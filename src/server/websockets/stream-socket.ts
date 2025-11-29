@@ -146,6 +146,14 @@ export async function setupStreamWebSocket(
     // Notifications & read state
     "event:notification.created",
     "event:read_cursor.updated",
+    // Ephemeral events (not persisted, real-time only)
+    "ephemeral:session.started",
+    "ephemeral:session.step",
+    "ephemeral:session.completed",
+    // Legacy (deprecated)
+    "ephemeral:ariadne.thinking.start",
+    "ephemeral:ariadne.thinking.step",
+    "ephemeral:ariadne.thinking.done",
   )
 
   // Handle messages from subscribed channels
@@ -165,6 +173,7 @@ export async function setupStreamWebSocket(
             agent_id,
             content,
             mentions,
+            payload,
             is_crosspost,
             original_stream_id,
           } = event
@@ -201,6 +210,7 @@ export async function setupStreamWebSocket(
             agentName,
             content,
             mentions,
+            payload,
             createdAt: new Date().toISOString(),
             isCrosspost: is_crosspost,
             originalStreamId: original_stream_id,
@@ -601,6 +611,101 @@ export async function setupStreamWebSocket(
           })
 
           logger.debug({ invitation_id, email }, "Invitation revoked broadcast via Socket.IO")
+          break
+        }
+
+        // ========================================================================
+        // Ephemeral Events - Agent Sessions
+        // These are not persisted - just broadcast to connected clients
+        // ========================================================================
+
+        case "ephemeral:session.started": {
+          const { workspace_id, stream_id, session_stream_id, session_id, triggering_event_id } = event
+
+          io.to(room.stream(workspace_id, stream_id)).emit("session:started", {
+            streamId: session_stream_id, // The stream where the session actually lives
+            sessionId: session_id,
+            triggeringEventId: triggering_event_id,
+          })
+
+          logger.debug({ stream_id, session_stream_id, session_id }, "Session started broadcast")
+          break
+        }
+
+        case "ephemeral:session.step": {
+          const { workspace_id, stream_id, session_id, step } = event
+
+          io.to(room.stream(workspace_id, stream_id)).emit("session:step", {
+            streamId: stream_id,
+            sessionId: session_id,
+            step,
+          })
+
+          logger.debug({ stream_id, session_id, stepId: step?.id }, "Session step broadcast")
+          break
+        }
+
+        case "ephemeral:session.completed": {
+          const { workspace_id, stream_id, session_id, status, summary, error_message, response_event_id } = event
+
+          io.to(room.stream(workspace_id, stream_id)).emit("session:completed", {
+            streamId: stream_id,
+            sessionId: session_id,
+            status,
+            summary,
+            errorMessage: error_message,
+            responseEventId: response_event_id,
+          })
+
+          logger.debug({ stream_id, session_id, status }, "Session completed broadcast")
+          break
+        }
+
+        // ========================================================================
+        // Legacy Ephemeral Events (Deprecated - use session events)
+        // ========================================================================
+
+        case "ephemeral:ariadne.thinking.start": {
+          const { workspace_id, stream_id, event_id, triggered_by_user_id } = event
+
+          // Broadcast to the stream room - everyone viewing this stream sees the indicator
+          io.to(room.stream(workspace_id, stream_id)).emit("ariadne:thinking:start", {
+            streamId: stream_id,
+            eventId: event_id,
+            triggeredByUserId: triggered_by_user_id,
+          })
+
+          logger.debug({ stream_id, event_id }, "Ariadne thinking start broadcast")
+          break
+        }
+
+        case "ephemeral:ariadne.thinking.step": {
+          const { workspace_id, stream_id, event_id, step_type, step_content } = event
+
+          // Broadcast thinking step to the stream room
+          io.to(room.stream(workspace_id, stream_id)).emit("ariadne:thinking:step", {
+            streamId: stream_id,
+            eventId: event_id,
+            stepType: step_type,
+            stepContent: step_content,
+          })
+
+          logger.debug({ stream_id, event_id, step_type }, "Ariadne thinking step broadcast")
+          break
+        }
+
+        case "ephemeral:ariadne.thinking.done": {
+          const { workspace_id, stream_id, event_id, success, error_message } = event
+
+          // Broadcast thinking done to the stream room
+          io.to(room.stream(workspace_id, stream_id)).emit("ariadne:thinking:done", {
+            streamId: stream_id,
+            eventId: event_id,
+            success,
+            errorMessage: error_message,
+          })
+
+          logger.debug({ stream_id, event_id, success }, "Ariadne thinking done broadcast")
           break
         }
       }
