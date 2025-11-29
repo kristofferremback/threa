@@ -180,20 +180,41 @@ Answer YES or NO, then briefly explain why in one sentence.`
   }
 }
 
+// Generic names that indicate the SLM didn't understand the task
+const REJECTED_NAMES = [
+  "message summary",
+  "summary",
+  "message",
+  "title",
+  "untitled",
+  "no title",
+  "thread",
+  "conversation",
+  "chat",
+  "discussion",
+  "question",
+  "request",
+  "help",
+  "inquiry",
+]
+
 /**
  * Generate a short name/title for content using local SLM.
  * Used for auto-naming thinking spaces and threads.
  */
 export async function generateAutoName(content: string): Promise<AutoNameResult> {
-  const prompt = `Generate a short title (maximum 5 words) for this message.
-If the message isn't already in English, first translate it to English, then summarize it in five words, no more.
-Unless the message specifically asks for a translation, don't name the conversation "Translation" or anything like that, it's not needed.
-Only output the title, nothing else.
+  const prompt = `What is this message about? Answer in 2-5 words. Be specific.
+
+Examples:
+- "How do I deploy to production?" → "Production deployment"
+- "The API is returning 500 errors" → "API 500 errors"
+- "Can someone review my PR?" → "PR review request"
+- "Meeting notes from standup" → "Standup meeting notes"
 
 Message:
 ${content.slice(0, 2000)}
 
-Title:`
+Topic:`
 
   try {
     const result = await tracedGenerate({
@@ -207,7 +228,7 @@ Title:`
     // Clean up the response
     let name = result.text
       .replace(/^["']|["']$/g, "") // Remove surrounding quotes
-      .replace(/^Title:\s*/i, "") // Remove "Title:" prefix if model included it
+      .replace(/^(Title|Topic|Subject|Summary):\s*/i, "") // Remove common prefixes
       .replace(/\n.*/s, "") // Take only first line
       .trim()
 
@@ -215,7 +236,9 @@ Title:`
       name = name.slice(0, 47) + "..."
     }
 
-    if (!name) {
+    // Reject generic/useless names
+    if (!name || REJECTED_NAMES.includes(name.toLowerCase())) {
+      logger.debug({ model: CLASSIFICATION_MODEL, rejectedName: name, contentLength: content.length }, "Rejected generic auto-name")
       return { name: "", success: false }
     }
 
