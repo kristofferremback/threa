@@ -116,14 +116,34 @@ export async function setupStreamWebSocket(
   // ==========================================================================
 
   // Subscribe to channels
+  // NOTE: When adding new event types, you must:
+  // 1. Add the subscription here
+  // 2. Add a handler in the switch statement below
+  // 3. Handle in frontend hooks (useWorkspaceSocket, useStream, useBootstrap)
   await messageSubscriber.subscribe(
+    // Stream events (messages)
     "event:stream_event.created",
     "event:stream_event.edited",
     "event:stream_event.deleted",
+    // Stream lifecycle
     "event:stream.created",
+    "event:stream.updated",
+    "event:stream.archived",
     "event:stream.promoted",
+    // Stream membership
     "event:stream.member_added",
     "event:stream.member_removed",
+    // Workspace membership
+    "event:workspace.member_added",
+    "event:workspace.member_removed",
+    "event:workspace.member_updated",
+    // User profile
+    "event:user.profile_updated",
+    // Invitations
+    "event:invitation.created",
+    "event:invitation.accepted",
+    "event:invitation.revoked",
+    // Notifications & read state
     "event:notification.created",
     "event:read_cursor.updated",
   )
@@ -410,6 +430,177 @@ export async function setupStreamWebSocket(
           })
 
           logger.debug({ stream_id, user_id }, "Read cursor update broadcast")
+          break
+        }
+
+        // ========================================================================
+        // Stream Updates & Archival
+        // ========================================================================
+
+        case "event:stream.updated": {
+          const { stream_id, workspace_id, name, slug, description, topic, updated_by } = event
+
+          // Broadcast to workspace (sidebar needs to update)
+          io.to(room.workspace(workspace_id)).emit("stream:updated", {
+            id: stream_id,
+            name,
+            slug,
+            description,
+            topic,
+            updatedBy: updated_by,
+          })
+
+          // Also broadcast to the stream room (for header updates)
+          io.to(room.stream(workspace_id, stream_id)).emit("stream:updated", {
+            id: stream_id,
+            name,
+            slug,
+            description,
+            topic,
+            updatedBy: updated_by,
+          })
+
+          logger.debug({ stream_id, name }, "Stream updated broadcast via Socket.IO")
+          break
+        }
+
+        case "event:stream.archived": {
+          const { stream_id, workspace_id, archived, archived_by } = event
+
+          // Broadcast to workspace (sidebar needs to update)
+          io.to(room.workspace(workspace_id)).emit("stream:archived", {
+            id: stream_id,
+            archived,
+            archivedBy: archived_by,
+          })
+
+          // Also broadcast to the stream room (kick users out if archived)
+          io.to(room.stream(workspace_id, stream_id)).emit("stream:archived", {
+            id: stream_id,
+            archived,
+            archivedBy: archived_by,
+          })
+
+          logger.debug({ stream_id, archived }, "Stream archived status broadcast via Socket.IO")
+          break
+        }
+
+        // ========================================================================
+        // Workspace Membership Events
+        // ========================================================================
+
+        case "event:workspace.member_added": {
+          const { workspace_id, user_id, user_email, user_name, role, added_by_user_id } = event
+
+          // Broadcast to entire workspace so everyone sees the new member
+          io.to(room.workspace(workspace_id)).emit("workspace:member:added", {
+            userId: user_id,
+            userEmail: user_email,
+            userName: user_name,
+            role,
+            addedByUserId: added_by_user_id,
+          })
+
+          logger.debug({ workspace_id, user_id }, "Workspace member added broadcast via Socket.IO")
+          break
+        }
+
+        case "event:workspace.member_removed": {
+          const { workspace_id, user_id, user_email, removed_by_user_id } = event
+
+          // Broadcast to entire workspace
+          io.to(room.workspace(workspace_id)).emit("workspace:member:removed", {
+            userId: user_id,
+            userEmail: user_email,
+            removedByUserId: removed_by_user_id,
+          })
+
+          logger.debug({ workspace_id, user_id }, "Workspace member removed broadcast via Socket.IO")
+          break
+        }
+
+        case "event:workspace.member_updated": {
+          const { workspace_id, user_id, role, status, updated_by_user_id } = event
+
+          // Broadcast to entire workspace
+          io.to(room.workspace(workspace_id)).emit("workspace:member:updated", {
+            userId: user_id,
+            role,
+            status,
+            updatedByUserId: updated_by_user_id,
+          })
+
+          logger.debug({ workspace_id, user_id }, "Workspace member updated broadcast via Socket.IO")
+          break
+        }
+
+        // ========================================================================
+        // User Profile Events
+        // ========================================================================
+
+        case "event:user.profile_updated": {
+          const { workspace_id, user_id, display_name, title, avatar_url } = event
+
+          // Broadcast to entire workspace so everyone sees the profile update
+          io.to(room.workspace(workspace_id)).emit("user:profile:updated", {
+            userId: user_id,
+            displayName: display_name,
+            title,
+            avatarUrl: avatar_url,
+          })
+
+          logger.debug({ workspace_id, user_id }, "User profile updated broadcast via Socket.IO")
+          break
+        }
+
+        // ========================================================================
+        // Invitation Events
+        // ========================================================================
+
+        case "event:invitation.created": {
+          const { invitation_id, workspace_id, email, role, invited_by_user_id, invited_by_email, expires_at } = event
+
+          // Broadcast to workspace admins (they should see pending invitations)
+          io.to(room.workspace(workspace_id)).emit("invitation:created", {
+            id: invitation_id,
+            email,
+            role,
+            invitedByUserId: invited_by_user_id,
+            invitedByEmail: invited_by_email,
+            expiresAt: expires_at,
+          })
+
+          logger.debug({ invitation_id, email }, "Invitation created broadcast via Socket.IO")
+          break
+        }
+
+        case "event:invitation.accepted": {
+          const { invitation_id, workspace_id, user_id, user_email, user_name, role } = event
+
+          // Broadcast to workspace (new member joined via invitation)
+          io.to(room.workspace(workspace_id)).emit("invitation:accepted", {
+            id: invitation_id,
+            userId: user_id,
+            userEmail: user_email,
+            userName: user_name,
+            role,
+          })
+
+          logger.debug({ invitation_id, user_id }, "Invitation accepted broadcast via Socket.IO")
+          break
+        }
+
+        case "event:invitation.revoked": {
+          const { invitation_id, workspace_id, email, revoked_by_user_id } = event
+
+          // Broadcast to workspace admins
+          io.to(room.workspace(workspace_id)).emit("invitation:revoked", {
+            id: invitation_id,
+            email,
+            revokedByUserId: revoked_by_user_id,
+          })
+
+          logger.debug({ invitation_id, email }, "Invitation revoked broadcast via Socket.IO")
           break
         }
       }

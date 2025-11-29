@@ -4,6 +4,7 @@ import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
 import { generateAutoName } from "../lib/ollama"
+import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
 
 // ============================================================================
 // Types
@@ -1050,8 +1051,138 @@ export class StreamService {
     }
   }
 
-  async archiveStream(streamId: string): Promise<void> {
-    await this.pool.query(sql`UPDATE streams SET archived_at = NOW(), updated_at = NOW() WHERE id = ${streamId}`)
+  async archiveStream(streamId: string, archivedByUserId: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get workspace_id before archiving
+      const streamResult = await client.query<{ workspace_id: string }>(
+        sql`SELECT workspace_id FROM streams WHERE id = ${streamId}`,
+      )
+
+      if (streamResult.rows.length === 0) {
+        throw new Error("Stream not found")
+      }
+
+      const { workspace_id } = streamResult.rows[0]
+
+      await client.query(sql`UPDATE streams SET archived_at = NOW(), updated_at = NOW() WHERE id = ${streamId}`)
+
+      // Publish stream archived event
+      await publishOutboxEvent(client, OutboxEventType.STREAM_ARCHIVED, {
+        stream_id: streamId,
+        workspace_id,
+        archived: true,
+        archived_by: archivedByUserId,
+      })
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async unarchiveStream(streamId: string, unarchivedByUserId: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get workspace_id before unarchiving
+      const streamResult = await client.query<{ workspace_id: string }>(
+        sql`SELECT workspace_id FROM streams WHERE id = ${streamId}`,
+      )
+
+      if (streamResult.rows.length === 0) {
+        throw new Error("Stream not found")
+      }
+
+      const { workspace_id } = streamResult.rows[0]
+
+      await client.query(sql`UPDATE streams SET archived_at = NULL, updated_at = NOW() WHERE id = ${streamId}`)
+
+      // Publish stream unarchived event
+      await publishOutboxEvent(client, OutboxEventType.STREAM_ARCHIVED, {
+        stream_id: streamId,
+        workspace_id,
+        archived: false,
+        archived_by: unarchivedByUserId,
+      })
+
+      await client.query("COMMIT")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Update stream metadata (name, description, topic)
+   */
+  async updateStream(
+    streamId: string,
+    updates: { name?: string; description?: string; topic?: string },
+    updatedByUserId: string,
+  ): Promise<Stream> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get current stream
+      const streamResult = await client.query<{
+        id: string
+        workspace_id: string
+        name: string | null
+        slug: string | null
+        description: string | null
+        topic: string | null
+      }>(sql`SELECT id, workspace_id, name, slug, description, topic FROM streams WHERE id = ${streamId}`)
+
+      if (streamResult.rows.length === 0) {
+        throw new Error("Stream not found")
+      }
+
+      const currentStream = streamResult.rows[0]
+
+      // Update stream fields
+      const result = await client.query(
+        sql`UPDATE streams
+            SET
+              name = COALESCE(${updates.name}, name),
+              description = COALESCE(${updates.description}, description),
+              topic = COALESCE(${updates.topic}, topic),
+              updated_at = NOW()
+            WHERE id = ${streamId}
+            RETURNING *`,
+      )
+
+      const updatedStream = this.mapStreamRow(result.rows[0])
+
+      // Publish stream updated event
+      await publishOutboxEvent(client, OutboxEventType.STREAM_UPDATED, {
+        stream_id: streamId,
+        workspace_id: currentStream.workspace_id,
+        name: updates.name !== undefined ? updates.name : currentStream.name,
+        slug: currentStream.slug,
+        description: updates.description !== undefined ? updates.description : currentStream.description,
+        topic: updates.topic !== undefined ? updates.topic : currentStream.topic,
+        updated_by: updatedByUserId,
+      })
+
+      await client.query("COMMIT")
+
+      return updatedStream
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   // ==========================================================================

@@ -41,6 +41,9 @@ export function LayoutSystem() {
     removeStream,
     incrementUnreadCount,
     resetUnreadCount,
+    addUser,
+    updateUser,
+    removeUser,
   } = useBootstrap({
     enabled: isAuthenticated && state === "loaded",
   })
@@ -111,9 +114,13 @@ export function LayoutSystem() {
     activeStreamSlug: activeStreamSlug || undefined,
     currentUserId: user?.id,
     onStreamAdded: addStream,
+    onStreamUpdated: updateStream,
     onStreamRemoved: handleStreamRemoved,
     onUnreadCountUpdate: incrementUnreadCount,
     onNewNotification: () => setInboxUnreadCount((prev) => prev + 1),
+    onUserAdded: addUser,
+    onUserUpdated: updateUser,
+    onUserRemoved: removeUser,
   })
 
   // Fetch inbox unread count

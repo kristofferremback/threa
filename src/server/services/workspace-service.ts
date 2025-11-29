@@ -2,6 +2,8 @@ import { Pool } from "pg"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import type { Workspace, WorkspaceMember } from "../lib/types"
+import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
+import { randomUUID } from "node:crypto"
 
 export class WorkspaceService {
   constructor(private pool: Pool) {}
@@ -164,9 +166,12 @@ export class WorkspaceService {
         [workspaceId, userId],
       )
 
+      const wasInactive = existingMember.rows.length > 0 && existingMember.rows[0].status !== "active"
+      const isNewMember = existingMember.rows.length === 0
+
       if (existingMember.rows.length > 0) {
         // Update role if needed, maintain status
-        if (existingMember.rows[0].status !== "active") {
+        if (wasInactive) {
           // If reactivating, check limits
           await this.checkSeatLimit(client, workspaceId)
         }
@@ -185,6 +190,26 @@ export class WorkspaceService {
            VALUES ($1, $2, $3, 'active', NOW())`,
           [workspaceId, userId, role],
         )
+      }
+
+      // Publish event for new or reactivated members
+      if (isNewMember || wasInactive) {
+        // Get user info for the event
+        const userResult = await client.query<{ email: string; name: string | null }>(
+          "SELECT email, name FROM users WHERE id = $1",
+          [userId],
+        )
+        const user = userResult.rows[0]
+
+        if (user) {
+          await publishOutboxEvent(client, OutboxEventType.WORKSPACE_MEMBER_ADDED, {
+            workspace_id: workspaceId,
+            user_id: userId,
+            user_email: user.email,
+            user_name: user.name,
+            role,
+          })
+        }
       }
 
       await client.query("COMMIT")
@@ -307,6 +332,23 @@ export class WorkspaceService {
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [invitationId, workspaceId, email, role, token, invitedByUserId, expiresAt],
       )
+
+      // Get inviter email for the event
+      const inviterResult = await client.query<{ email: string }>("SELECT email FROM users WHERE id = $1", [
+        invitedByUserId,
+      ])
+      const inviterEmail = inviterResult.rows[0]?.email || "unknown"
+
+      // Publish invitation created event
+      await publishOutboxEvent(client, OutboxEventType.INVITATION_CREATED, {
+        invitation_id: invitationId,
+        workspace_id: workspaceId,
+        email,
+        role,
+        invited_by_user_id: invitedByUserId,
+        invited_by_email: inviterEmail,
+        expires_at: expiresAt.toISOString(),
+      })
 
       await client.query("COMMIT")
 
@@ -453,6 +495,25 @@ export class WorkspaceService {
         )
       }
 
+      // Publish workspace member added event
+      await publishOutboxEvent(client, OutboxEventType.WORKSPACE_MEMBER_ADDED, {
+        workspace_id: invitation.workspace_id,
+        user_id: userId,
+        user_email: userEmail,
+        user_name: userName,
+        role: invitation.role,
+      })
+
+      // Publish invitation accepted event
+      await publishOutboxEvent(client, OutboxEventType.INVITATION_ACCEPTED, {
+        invitation_id: invitation.id,
+        workspace_id: invitation.workspace_id,
+        user_id: userId,
+        user_email: userEmail,
+        user_name: userName,
+        role: invitation.role,
+      })
+
       await client.query("COMMIT")
 
       logger.info({ invitation_id: invitation.id, user_id: userId }, "Invitation accepted")
@@ -471,19 +532,47 @@ export class WorkspaceService {
    * Revoke an invitation
    */
   async revokeInvitation(invitationId: string, revokedByUserId: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE workspace_invitations
-       SET status = 'revoked', updated_at = NOW()
-       WHERE id = $1 AND status = 'pending'
-       RETURNING id`,
-      [invitationId],
-    )
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
 
-    if (result.rows.length === 0) {
-      throw new Error("Invitation not found or already processed")
+      // Get invitation details before revoking
+      const inviteResult = await client.query<{ workspace_id: string; email: string }>(
+        `SELECT workspace_id, email FROM workspace_invitations WHERE id = $1 AND status = 'pending'`,
+        [invitationId],
+      )
+
+      if (inviteResult.rows.length === 0) {
+        await client.query("ROLLBACK")
+        throw new Error("Invitation not found or already processed")
+      }
+
+      const invitation = inviteResult.rows[0]
+
+      await client.query(
+        `UPDATE workspace_invitations
+         SET status = 'revoked', updated_at = NOW()
+         WHERE id = $1`,
+        [invitationId],
+      )
+
+      // Publish invitation revoked event
+      await publishOutboxEvent(client, OutboxEventType.INVITATION_REVOKED, {
+        invitation_id: invitationId,
+        workspace_id: invitation.workspace_id,
+        email: invitation.email,
+        revoked_by_user_id: revokedByUserId,
+      })
+
+      await client.query("COMMIT")
+
+      logger.info({ invitation_id: invitationId, revoked_by: revokedByUserId }, "Invitation revoked")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
     }
-
-    logger.info({ invitation_id: invitationId, revoked_by: revokedByUserId }, "Invitation revoked")
   }
 
   /**
@@ -519,13 +608,7 @@ export class WorkspaceService {
   }
 
   private generateInviteToken(): string {
-    // Generate a URL-safe random token
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-    let token = ""
-    for (let i = 0; i < 32; i++) {
-      token += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return token
+    return randomUUID().replaceAll("-", "")
   }
 
   private generateSlug(name: string): string {
@@ -600,41 +683,62 @@ export class WorkspaceService {
     userId: string,
     updates: { displayName?: string; title?: string; avatarUrl?: string; bio?: string },
   ): Promise<boolean> {
-    // Check if user is a member
-    const memberResult = await this.pool.query(
-      `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
-      [workspaceId, userId],
-    )
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
 
-    if (memberResult.rows.length === 0) {
-      throw new Error("User is not a member of this workspace")
+      // Check if user is a member
+      const memberResult = await client.query(
+        `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+        [workspaceId, userId],
+      )
+
+      if (memberResult.rows.length === 0) {
+        throw new Error("User is not a member of this workspace")
+      }
+
+      // Check if profile is managed by SSO
+      const profileResult = await client.query(
+        `SELECT profile_managed_by_sso FROM workspace_profiles WHERE workspace_id = $1 AND user_id = $2`,
+        [workspaceId, userId],
+      )
+
+      if (profileResult.rows.length > 0 && profileResult.rows[0].profile_managed_by_sso) {
+        throw new Error("Profile is managed by SSO and cannot be edited")
+      }
+
+      // Upsert the profile
+      await client.query(
+        `INSERT INTO workspace_profiles (workspace_id, user_id, display_name, title, avatar_url, bio, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET
+           display_name = COALESCE($3, workspace_profiles.display_name),
+           title = COALESCE($4, workspace_profiles.title),
+           avatar_url = COALESCE($5, workspace_profiles.avatar_url),
+           bio = COALESCE($6, workspace_profiles.bio),
+           updated_at = NOW()`,
+        [workspaceId, userId, updates.displayName, updates.title, updates.avatarUrl, updates.bio],
+      )
+
+      // Publish profile updated event
+      await publishOutboxEvent(client, OutboxEventType.USER_PROFILE_UPDATED, {
+        workspace_id: workspaceId,
+        user_id: userId,
+        display_name: updates.displayName,
+        title: updates.title,
+        avatar_url: updates.avatarUrl,
+      })
+
+      await client.query("COMMIT")
+
+      logger.info({ workspaceId, userId, updates }, "Workspace profile updated")
+      return true
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
     }
-
-    // Check if profile is managed by SSO
-    const profileResult = await this.pool.query(
-      `SELECT profile_managed_by_sso FROM workspace_profiles WHERE workspace_id = $1 AND user_id = $2`,
-      [workspaceId, userId],
-    )
-
-    if (profileResult.rows.length > 0 && profileResult.rows[0].profile_managed_by_sso) {
-      throw new Error("Profile is managed by SSO and cannot be edited")
-    }
-
-    // Upsert the profile
-    await this.pool.query(
-      `INSERT INTO workspace_profiles (workspace_id, user_id, display_name, title, avatar_url, bio, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT (workspace_id, user_id) DO UPDATE SET
-         display_name = COALESCE($3, workspace_profiles.display_name),
-         title = COALESCE($4, workspace_profiles.title),
-         avatar_url = COALESCE($5, workspace_profiles.avatar_url),
-         bio = COALESCE($6, workspace_profiles.bio),
-         updated_at = NOW()`,
-      [workspaceId, userId, updates.displayName, updates.title, updates.avatarUrl, updates.bio],
-    )
-
-    logger.info({ workspaceId, userId, updates }, "Workspace profile updated")
-    return true
   }
 
   /**

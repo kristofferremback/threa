@@ -152,6 +152,9 @@ export interface WorkspaceUser {
   role: "admin" | "member" | "guest"
 }
 
+// Alias for use in bootstrap-related code
+export type BootstrapUser = WorkspaceUser
+
 export interface WorkspaceProfile {
   displayName: string | null
   title: string | null

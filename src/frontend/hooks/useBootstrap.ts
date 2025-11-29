@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import type { BootstrapData, Stream } from "../types"
+import type { BootstrapData, Stream, BootstrapUser } from "../types"
 
 interface UseBootstrapOptions {
   enabled?: boolean
@@ -11,11 +11,17 @@ interface UseBootstrapReturn {
   error: string | null
   noWorkspace: boolean
   refetch: () => void
+  // Stream mutations
   addStream: (stream: Stream) => void
-  updateStream: (stream: Stream) => void
+  /** Update stream - can be called with (stream) or (streamId, updates) */
+  updateStream: ((stream: Stream) => void) & ((streamId: string, updates: Partial<Stream>) => void)
   removeStream: (streamId: string) => void
   incrementUnreadCount: (streamId: string, increment?: number) => void
   resetUnreadCount: (streamId: string) => void
+  // User mutations
+  addUser: (user: BootstrapUser) => void
+  updateUser: (userId: string, updates: Partial<BootstrapUser>) => void
+  removeUser: (userId: string) => void
 }
 
 export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseBootstrapReturn {
@@ -83,15 +89,30 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
   }, [])
 
   // Update a stream in the local state
-  const updateStream = useCallback((stream: Stream) => {
+  // Supports two signatures: (stream: Stream) or (streamId: string, updates: Partial<Stream>)
+  const updateStream = useCallback((streamOrId: Stream | string, updates?: Partial<Stream>) => {
     setData((prev) => {
       if (!prev) return prev
+
+      let streamId: string
+      let streamUpdates: Partial<Stream>
+
+      if (typeof streamOrId === "string") {
+        // Called with (streamId, updates)
+        streamId = streamOrId
+        streamUpdates = updates || {}
+      } else {
+        // Called with (stream) - full stream object
+        streamId = streamOrId.id
+        streamUpdates = streamOrId
+      }
+
       const streams = prev.streams
-        .map((s) => (s.id === stream.id ? { ...s, ...stream } : s))
+        .map((s) => (s.id === streamId ? { ...s, ...streamUpdates } : s))
         .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
       return { ...prev, streams }
     })
-  }, [])
+  }, []) as UseBootstrapReturn["updateStream"]
 
   // Remove a stream from the local state (after archiving)
   const removeStream = useCallback((streamId: string) => {
@@ -124,6 +145,43 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     })
   }, [])
 
+  // Add a user to the local state
+  const addUser = useCallback((user: BootstrapUser) => {
+    setData((prev) => {
+      if (!prev) return prev
+      // Check if user already exists
+      const existingIndex = prev.users.findIndex((u) => u.id === user.id)
+      if (existingIndex >= 0) {
+        // User already exists, update instead
+        const users = prev.users.map((u) => (u.id === user.id ? { ...u, ...user } : u))
+        return { ...prev, users }
+      }
+      // Add new user
+      const users = [...prev.users, user].sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      return { ...prev, users }
+    })
+  }, [])
+
+  // Update a user in the local state
+  const updateUser = useCallback((userId: string, updates: Partial<BootstrapUser>) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const users = prev.users
+        .map((u) => (u.id === userId ? { ...u, ...updates } : u))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      return { ...prev, users }
+    })
+  }, [])
+
+  // Remove a user from the local state
+  const removeUser = useCallback((userId: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      const users = prev.users.filter((u) => u.id !== userId)
+      return { ...prev, users }
+    })
+  }, [])
+
   return {
     data,
     isLoading,
@@ -135,5 +193,8 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
     removeStream,
     incrementUnreadCount,
     resetUnreadCount,
+    addUser,
+    updateUser,
+    removeUser,
   }
 }
