@@ -119,8 +119,9 @@ export async function invokeAriadne(
     }
   }
 
-  // Add the current question as the final user message
-  messages.push({ role: "user", content: question })
+  // Add the current question as the final user message (with name prefix for consistency)
+  const questionWithName = context.mentionedByName ? `[${context.mentionedByName}]: ${question}` : question
+  messages.push({ role: "user", content: questionWithName })
 
   try {
     // Create Langfuse callback handler for tracing if enabled
@@ -182,9 +183,35 @@ export async function* streamAriadne(
   question: string,
   customInstructions?: string,
 ): AsyncGenerator<{ type: "token" | "tool_call" | "done"; content: string }> {
-  logger.info({ workspaceId: context.workspaceId, streamId: context.streamId }, "Streaming Ariadne response")
+  const historyLength = context.conversationHistory?.length || 0
+  logger.info(
+    {
+      workspaceId: context.workspaceId,
+      streamId: context.streamId,
+      mode: context.mode || "retrieval",
+      historyMessages: historyLength,
+    },
+    "Streaming Ariadne response",
+  )
 
   const agent = createAriadneAgent(pool, context)
+
+  // Build message array from conversation history (same as invokeAriadne)
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = []
+
+  if (context.conversationHistory && context.conversationHistory.length > 0) {
+    for (const msg of context.conversationHistory) {
+      const formattedContent = msg.role === "user" ? `[${msg.name}]: ${msg.content}` : msg.content
+      messages.push({
+        role: msg.role,
+        content: formattedContent,
+      })
+    }
+  }
+
+  // Add the current question as the final user message (with name prefix for consistency)
+  const questionWithName = context.mentionedByName ? `[${context.mentionedByName}]: ${question}` : question
+  messages.push({ role: "user", content: questionWithName })
 
   try {
     // Create Langfuse callback handler for tracing if enabled
@@ -204,13 +231,12 @@ export async function* streamAriadne(
     }
 
     const stream = await agent.stream(
-      {
-        messages: [{ role: "user", content: question }],
-      },
+      { messages },
       {
         configurable: {
           customInstructions,
           mentionedByName: context.mentionedByName || "someone",
+          backgroundContext: context.backgroundContext,
         },
         streamMode: "values",
         callbacks,

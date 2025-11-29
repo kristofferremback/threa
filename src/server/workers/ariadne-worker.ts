@@ -414,11 +414,29 @@ export class AriadneWorker {
 
   /**
    * Fetch conversation history for threads and thinking spaces.
+   * For threads, includes the root event that started the thread.
    */
   private async fetchConversationHistory(streamId: string, eventId: string): Promise<ConversationMessage[]> {
     const conversationHistory: ConversationMessage[] = []
 
     try {
+      // Get the stream to check if it's a thread with a root event
+      const stream = await this.streamService.getStream(streamId)
+
+      // If this is a thread, fetch the root event first
+      if (stream?.branchedFromEventId) {
+        const rootEvent = await this.streamService.getEventWithDetails(stream.branchedFromEventId)
+        if (rootEvent && rootEvent.content) {
+          const isAriadne = rootEvent.agentId === ARIADNE_PERSONA_ID
+          conversationHistory.push({
+            role: isAriadne ? "assistant" : "user",
+            name: isAriadne ? "Ariadne" : rootEvent.actorName || rootEvent.actorEmail || "User",
+            content: rootEvent.content,
+          })
+        }
+      }
+
+      // Now get the thread's own events
       const events = await this.streamService.getStreamEvents(streamId, 50)
 
       for (const event of events) {
@@ -433,7 +451,7 @@ export class AriadneWorker {
         })
       }
 
-      logger.debug({ streamId, eventId, historyCount: conversationHistory.length }, "Fetched conversation history")
+      logger.debug({ streamId, eventId, historyCount: conversationHistory.length, hasRootEvent: !!stream?.branchedFromEventId }, "Fetched conversation history")
     } catch (err) {
       logger.error({ err, streamId, eventId }, "Failed to fetch conversation history")
     }
