@@ -496,7 +496,9 @@ describe("E2E: HTTP API", () => {
   describe("Search", () => {
     // Note: This test requires Ollama to be running with nomic-embed-text model.
     // The test server calls checkOllamaHealth() to enable local embeddings.
-    test("should search messages", async () => {
+    // Skipped in CI via SKIP_OLLAMA_TESTS env var.
+    const testFn = process.env.SKIP_OLLAMA_TESTS ? test.skip : test
+    testFn("should search messages", async () => {
       const workspace = await createTestWorkspace(server.pool)
       const channel = await createTestStream(server.pool, workspace.id, {
         slug: "general",
