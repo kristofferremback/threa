@@ -122,6 +122,27 @@ export class AriadneTrigger {
   }
 
   /**
+   * Check if this is a two-party thread (just Ariadne and one other user).
+   * In two-party threads, follow-ups are almost always directed at Ariadne.
+   */
+  private async isTwoPartyThread(streamId: string): Promise<boolean> {
+    try {
+      const result = await this.pool.query<{ participant_count: string }>(
+        sql`SELECT COUNT(DISTINCT COALESCE(actor_id, agent_id)) as participant_count
+            FROM stream_events
+            WHERE stream_id = ${streamId}
+              AND event_type = 'message'
+              AND deleted_at IS NULL`,
+      )
+      const count = parseInt(result.rows[0]?.participant_count || "0", 10)
+      return count <= 2 // Ariadne + one user
+    } catch (err) {
+      logger.error({ err, streamId }, "Failed to check two-party thread")
+      return false
+    }
+  }
+
+  /**
    * Get recent conversation context for engagement check.
    */
   private async getRecentContext(
@@ -263,22 +284,52 @@ export class AriadneTrigger {
         // Get recent context for engagement check
         const context = await this.getRecentContext(event.stream_id, event.event_id)
 
-        // Simple heuristic: if Ariadne asked a question, assume high relevance
+        // Heuristics for detecting follow-ups (checked in order of confidence)
         const ariadneAskedQuestion = context.ariadneLastResponse?.trim().endsWith("?")
+        const userAsksQuestion = event.content.includes("?")
+        const isTwoParty = await this.isTwoPartyThread(event.stream_id)
 
         logger.info(
-          { streamId: event.stream_id, ariadneAskedQuestion, hasLastResponse: !!context.ariadneLastResponse },
+          {
+            streamId: event.stream_id,
+            ariadneAskedQuestion,
+            userAsksQuestion,
+            isTwoParty,
+            hasLastResponse: !!context.ariadneLastResponse,
+          },
           "Got context for engagement check",
         )
 
         let relevanceScore = 4 // Default to ambiguous
+        let heuristicUsed: string | null = null
 
         if (ariadneAskedQuestion) {
-          // Ariadne asked a question - assume user is responding (high relevance)
+          // Ariadne asked a question - assume user is responding
           relevanceScore = 6
+          heuristicUsed = "ariadne_asked_question"
+        } else if (isTwoParty && userAsksQuestion) {
+          // Two-party thread (Ariadne + one user) and user asks a question - very likely directed at Ariadne
+          relevanceScore = 6
+          heuristicUsed = "two_party_question"
+        } else if (isTwoParty) {
+          // Two-party thread - any message is likely for Ariadne, but less certain without a question
+          relevanceScore = 5
+          heuristicUsed = "two_party_thread"
+        } else if (userAsksQuestion) {
+          // User asks a question in a multi-party thread - slightly elevated relevance
+          // Still use SLM to verify, but boost the score if SLM is uncertain
+          const engagementResult = await checkAriadneEngagement(
+            event.content,
+            context.recentMessages,
+            context.ariadneLastResponse,
+          )
+          // If SLM says 4 (unclear) but user asked a question, bump to 5
+          relevanceScore = engagementResult.relevanceScore === 4 ? 5 : engagementResult.relevanceScore
+          heuristicUsed = "slm_with_question_boost"
+
           logger.info(
-            { eventId: event.event_id, streamId: event.stream_id, relevanceScore },
-            "Ariadne asked a question, assuming follow-up is directed at her",
+            { eventId: event.event_id, streamId: event.stream_id, slmScore: engagementResult.relevanceScore, boostedScore: relevanceScore },
+            "SLM relevance score (with question boost)",
           )
         } else {
           // Use SLM to score relevance (1-7 scale)
@@ -289,10 +340,18 @@ export class AriadneTrigger {
             context.ariadneLastResponse,
           )
           relevanceScore = engagementResult.relevanceScore
+          heuristicUsed = "slm"
 
           logger.info(
             { eventId: event.event_id, streamId: event.stream_id, relevanceScore, confident: engagementResult.confident },
             "SLM relevance score for message",
+          )
+        }
+
+        if (heuristicUsed && heuristicUsed !== "slm") {
+          logger.info(
+            { eventId: event.event_id, streamId: event.stream_id, relevanceScore, heuristicUsed },
+            "Heuristic determined relevance score",
           )
         }
 

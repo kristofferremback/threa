@@ -201,11 +201,28 @@ export class AgentSessionService {
 
   /**
    * Update session status.
+   * When marking as completed/failed, also completes any remaining active steps.
    */
   async updateStatus(sessionId: string, status: SessionStatus, errorMessage?: string): Promise<void> {
     const isFinal = status === "completed" || status === "failed"
 
     if (isFinal) {
+      // First, complete any remaining active steps
+      const session = await this.getSession(sessionId)
+      if (session && session.steps.some((s) => s.status === "active")) {
+        const completedAt = new Date().toISOString()
+        const stepStatus = status === "failed" ? "failed" : "completed"
+        const updatedSteps = session.steps.map((step) =>
+          step.status === "active" ? { ...step, status: stepStatus, completed_at: completedAt } : step,
+        )
+        await this.pool.query(
+          sql`UPDATE agent_sessions
+              SET steps = ${JSON.stringify(updatedSteps)}::jsonb
+              WHERE id = ${sessionId}`,
+        )
+        logger.debug({ sessionId, stepsCompleted: session.steps.filter((s) => s.status === "active").length }, "Completed remaining active steps")
+      }
+
       await this.pool.query(
         sql`UPDATE agent_sessions
             SET status = ${status},
@@ -275,6 +292,51 @@ export class AgentSessionService {
       sql`SELECT * FROM agent_sessions WHERE status = 'active'`,
     )
     return result.rows.map(rowToSession)
+  }
+
+  /**
+   * Reset a session for recovery - clears steps so we can start fresh.
+   * Called when recovering an orphaned session after server restart.
+   */
+  async resetForRecovery(sessionId: string): Promise<void> {
+    await this.pool.query(
+      sql`UPDATE agent_sessions
+          SET steps = '[]'::jsonb,
+              status = 'active',
+              error_message = NULL,
+              updated_at = NOW()
+          WHERE id = ${sessionId}`,
+    )
+    logger.info({ sessionId }, "Session reset for recovery")
+  }
+
+  /**
+   * Mark stale active sessions as failed.
+   * Called on server startup to clean up sessions that were interrupted by a restart.
+   * Returns the sessions that were marked as failed.
+   */
+  async markStaleSessions(staleThresholdMinutes: number = 5): Promise<AgentSession[]> {
+    const result = await this.pool.query<AgentSessionRow>(
+      sql`UPDATE agent_sessions
+          SET status = 'failed',
+              error_message = 'Session interrupted by server restart',
+              completed_at = NOW(),
+              updated_at = NOW()
+          WHERE status IN ('active', 'summarizing')
+            AND updated_at < NOW() - INTERVAL '${sql.raw(String(staleThresholdMinutes))} minutes'
+          RETURNING *`,
+    )
+
+    const staleSessions = result.rows.map(rowToSession)
+
+    if (staleSessions.length > 0) {
+      logger.info(
+        { count: staleSessions.length, sessionIds: staleSessions.map((s) => s.id) },
+        "Marked stale sessions as failed after server restart",
+      )
+    }
+
+    return staleSessions
   }
 
   /**

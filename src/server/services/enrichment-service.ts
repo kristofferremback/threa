@@ -47,16 +47,31 @@ export class EnrichmentService {
     eventId: string,
     signals: EnrichmentSignals,
   ): Promise<boolean> {
+    logger.info({ textMessageId, eventId }, "📝 Fetching message with context...")
+
     // Get the message and its context
     const messageData = await this.getMessageWithContext(textMessageId, eventId)
     if (!messageData) {
-      logger.warn({ textMessageId, eventId }, "Message not found for enrichment")
+      logger.warn({ textMessageId, eventId }, "❌ Message not found for enrichment")
       return false
     }
 
+    logger.info(
+      {
+        textMessageId,
+        streamName: messageData.streamName,
+        streamType: messageData.streamType,
+        authorName: messageData.authorName,
+        contentLength: messageData.content.length,
+        contextCount: messageData.context.length,
+        currentTier: messageData.enrichmentTier,
+      },
+      "📄 Message data retrieved",
+    )
+
     // Skip if already enriched
     if (messageData.enrichmentTier >= 2) {
-      logger.debug({ textMessageId }, "Message already enriched, skipping")
+      logger.info({ textMessageId }, "⏭️ Message already enriched (tier >= 2), skipping")
       return true
     }
 
@@ -72,6 +87,11 @@ export class EnrichmentService {
       content: c.content,
     }))
 
+    logger.info(
+      { textMessageId, contextMessageCount: contextMessages.length },
+      "🤖 Generating contextual header...",
+    )
+
     const headerResult = await generateContextualHeader(
       targetMessage,
       contextMessages,
@@ -83,14 +103,20 @@ export class EnrichmentService {
     )
 
     if (!headerResult.success) {
-      logger.warn({ textMessageId }, "Failed to generate contextual header")
+      logger.warn({ textMessageId }, "❌ Failed to generate contextual header")
       // Still mark as processed to avoid retrying indefinitely
       await this.updateEnrichmentStatus(textMessageId, 1, signals, null)
       return false
     }
 
+    logger.info(
+      { textMessageId, headerLength: headerResult.header.length, headerPreview: headerResult.header.slice(0, 100) },
+      "✅ Contextual header generated",
+    )
+
     // Re-embed with contextual header prepended
     const enrichedContent = `${headerResult.header}\n\n${messageData.content}`
+    logger.info({ textMessageId, enrichedContentLength: enrichedContent.length }, "🔄 Generating new embedding...")
     const embeddingResult = await generateEmbedding(enrichedContent)
 
     // Update the embedding

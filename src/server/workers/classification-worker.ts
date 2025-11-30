@@ -129,23 +129,46 @@ export class ClassificationWorker {
   private async processJob(job: { id: string; data: ClassifyJobData }): Promise<void> {
     const { workspaceId, streamId, eventId, textMessageId, content, reactionCount } = job.data
 
+    logger.info(
+      { jobId: job.id, streamId, eventId, contentLength: content.length, reactionCount },
+      "📋 Classification job started",
+    )
+
     try {
       const isEnabled = await this.usageService.isAIEnabled(workspaceId)
       if (!isEnabled) {
-        logger.debug({ workspaceId }, "AI not enabled, skipping classification")
+        logger.info({ workspaceId }, "⏭️ AI not enabled for workspace, skipping classification")
         return
       }
 
       const signals = getContentSignals(content)
       const structuralScore = calculateStructuralScore(signals, reactionCount)
 
+      logger.info(
+        {
+          streamId,
+          eventId,
+          structuralScore,
+          signals: {
+            length: signals.length,
+            hasCodeBlock: signals.hasCodeBlock,
+            hasListItems: signals.hasListItems,
+            isAnnouncement: signals.isAnnouncement,
+            isExplanation: signals.isExplanation,
+            isDecision: signals.isDecision,
+          },
+        },
+        "📊 Structural analysis complete",
+      )
+
       if (structuralScore < 2) {
-        logger.debug({ streamId, eventId, structuralScore }, "Content failed structural pre-filter")
+        logger.info({ streamId, eventId, structuralScore }, "⏭️ Content failed structural pre-filter (score < 2)")
         await this.updateClassificationResult(streamId, eventId, "not_applicable")
         return
       }
 
       // Try SLM classification first (free, fast)
+      logger.info({ streamId, eventId }, "🤖 Running SLM classification...")
       const slmResult = await classifyWithSLM(content)
 
       await this.usageService.trackUsage({
@@ -159,24 +182,38 @@ export class ClassificationWorker {
         jobId: job.id,
       })
 
+      logger.info(
+        {
+          streamId,
+          eventId,
+          isKnowledge: slmResult.isKnowledge,
+          confident: slmResult.confident,
+          rawResponse: slmResult.rawResponse.slice(0, 100),
+        },
+        "🤖 SLM classification result",
+      )
+
       if (slmResult.confident) {
         const result = slmResult.isKnowledge ? "knowledge_candidate" : "not_applicable"
         await this.updateClassificationResult(streamId, eventId, result)
 
         if (slmResult.isKnowledge) {
+          logger.info({ streamId, eventId }, "✅ Content identified as KNOWLEDGE - queueing enrichment")
           await this.emitKnowledgeSuggestion(streamId, eventId)
           // Queue enrichment for knowledge candidates
           if (textMessageId && eventId) {
             await this.queueEnrichmentForKnowledge(workspaceId, textMessageId, eventId, signals)
           }
+        } else {
+          logger.info({ streamId, eventId }, "❌ Content classified as NOT knowledge")
         }
 
-        logger.info({ streamId, eventId, result, model: "granite4:350m" }, "Classification complete (SLM)")
+        logger.info({ streamId, eventId, result, model: "granite4:350m" }, "📋 Classification complete (SLM)")
         return
       }
 
       // SLM uncertain - escalate to Haiku
-      logger.debug({ streamId, eventId }, "SLM uncertain, escalating to Haiku")
+      logger.info({ streamId, eventId }, "🔄 SLM uncertain, escalating to Haiku")
 
       const haikuResult = await classifyWithHaiku(content, reactionCount)
 
@@ -195,20 +232,42 @@ export class ClassificationWorker {
         jobId: job.id,
       })
 
+      logger.info(
+        {
+          streamId,
+          eventId,
+          isKnowledge: haikuResult.isKnowledge,
+          confidence: haikuResult.confidence,
+          suggestedTitle: haikuResult.suggestedTitle,
+        },
+        "🤖 Haiku classification result",
+      )
+
       const result = haikuResult.isKnowledge ? "knowledge_candidate" : "not_applicable"
       await this.updateClassificationResult(streamId, eventId, result, haikuResult.suggestedTitle)
 
       if (haikuResult.isKnowledge && haikuResult.confidence > 0.8) {
+        logger.info(
+          { streamId, eventId, confidence: haikuResult.confidence, suggestedTitle: haikuResult.suggestedTitle },
+          "✅ High-confidence KNOWLEDGE detected - queueing enrichment",
+        )
         await this.emitKnowledgeSuggestion(streamId, eventId, haikuResult.suggestedTitle)
         // Queue enrichment for high-confidence knowledge candidates
         if (textMessageId && eventId) {
           await this.queueEnrichmentForKnowledge(workspaceId, textMessageId, eventId, signals)
         }
+      } else if (haikuResult.isKnowledge) {
+        logger.info(
+          { streamId, eventId, confidence: haikuResult.confidence },
+          "🟡 Low-confidence knowledge - not queueing enrichment",
+        )
+      } else {
+        logger.info({ streamId, eventId }, "❌ Haiku classified as NOT knowledge")
       }
 
       logger.info(
         { streamId, eventId, result, confidence: haikuResult.confidence, model: "claude-haiku" },
-        "Classification complete (Haiku fallback)",
+        "📋 Classification complete (Haiku fallback)",
       )
     } catch (err) {
       logger.error({ err, streamId, eventId }, "Classification failed")
@@ -304,30 +363,45 @@ export async function maybeQueueClassification(params: {
   const signals = getContentSignals(params.content)
   const score = calculateStructuralScore(signals, params.reactionCount)
 
+  logger.info(
+    {
+      streamId: params.streamId,
+      eventId: params.eventId,
+      contentType: params.contentType,
+      contentLength: params.content.length,
+      score,
+      threshold: 3,
+      signals: {
+        isAnnouncement: signals.isAnnouncement,
+        isExplanation: signals.isExplanation,
+        isDecision: signals.isDecision,
+        hasCodeBlock: signals.hasCodeBlock,
+        hasListItems: signals.hasListItems,
+      },
+      forceClassify: params.forceClassify,
+    },
+    "🔍 maybeQueueClassification - evaluating content",
+  )
+
   if (!params.forceClassify && score < 3) {
-    logger.debug(
+    logger.info(
       {
         streamId: params.streamId,
         eventId: params.eventId,
         score,
-        isAnnouncement: signals.isAnnouncement,
-        isExplanation: signals.isExplanation,
       },
-      "Content doesn't meet structural threshold for classification",
+      "⏭️ Content doesn't meet structural threshold (score < 3), NOT queueing",
     )
     return null
   }
 
-  logger.debug(
+  logger.info(
     {
       streamId: params.streamId,
       eventId: params.eventId,
       score,
-      isAnnouncement: signals.isAnnouncement,
-      isExplanation: signals.isExplanation,
-      isDecision: signals.isDecision,
     },
-    "Queuing message for classification",
+    "📤 Queueing message for classification",
   )
 
   return await boss.send<ClassifyJobData>(

@@ -49,29 +49,39 @@ export class EnrichmentWorker {
   private async processJob(job: { id: string; data: EnrichJobData }): Promise<void> {
     const { workspaceId, textMessageId, eventId, signals } = job.data
 
+    logger.info(
+      { jobId: job.id, textMessageId, eventId, signals },
+      "📝 Enrichment job started",
+    )
+
     try {
       const isEnabled = await this.usageService.isAIEnabled(workspaceId)
       if (!isEnabled) {
-        logger.debug({ workspaceId }, "AI not enabled, skipping enrichment")
+        logger.info({ workspaceId }, "⏭️ AI not enabled for workspace, skipping enrichment")
         return
       }
 
       // Check if signals warrant enrichment
       if (!this.enrichmentService.shouldEnrich(signals)) {
-        logger.debug({ textMessageId, signals }, "Signals don't meet enrichment threshold")
+        logger.info(
+          { textMessageId, signals },
+          "⏭️ Signals don't meet enrichment threshold (need: reactions>=2 OR replies>=2 OR retrieved)",
+        )
         return
       }
+
+      logger.info({ textMessageId, eventId, signals }, "🔄 Starting message enrichment...")
 
       // Perform enrichment
       const success = await this.enrichmentService.enrichMessage(textMessageId, eventId, signals)
 
       if (success) {
-        logger.info({ textMessageId, signals }, "Message enriched successfully")
+        logger.info({ textMessageId, signals }, "✅ Message enriched successfully")
       } else {
-        logger.warn({ textMessageId }, "Message enrichment failed")
+        logger.warn({ textMessageId }, "❌ Message enrichment failed")
       }
     } catch (err) {
-      logger.error({ err, textMessageId, eventId }, "Enrichment job failed")
+      logger.error({ err, textMessageId, eventId }, "❌ Enrichment job failed")
       throw err
     }
   }
