@@ -1,4 +1,4 @@
-import type { AuthResult, AuthService } from "../../services/auth-service"
+import type { AuthResult, AuthService } from "./auth-service"
 
 /**
  * A stub AuthService for e2e testing that bypasses WorkOS entirely.

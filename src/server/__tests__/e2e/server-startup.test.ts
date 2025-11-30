@@ -4,13 +4,14 @@ import { spawn, type Subprocess } from "bun"
 const TEST_PORT = 3098 // Use different port from other e2e tests
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa_test"
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379"
+const BASE_URL = `http://localhost:${TEST_PORT}`
 
 // Skip in CI - this test spawns a real server process which can be flaky in CI environments
 const isCI = process.env.CI === "true"
 const testFn = isCI ? test.skip : test
 
-describe("E2E: Server Startup", () => {
-  let serverProcess: Subprocess<"ignore", "pipe", "pipe"> | null = null
+describe("E2E: Blackbox Server", () => {
+  let serverProcess: Subprocess | null = null
 
   afterAll(async () => {
     if (serverProcess) {
@@ -19,25 +20,22 @@ describe("E2E: Server Startup", () => {
     }
   })
 
-  testFn("should start server with 'bun start' and respond to health check", async () => {
-    // Start the server using the actual production command (bun start)
-    // This tests the real app setup, not a test-specific configuration
+  testFn("should start server with 'bun start' and execute real API calls", async () => {
+    // Start the server using the actual production command with stub auth
+    // Use inherit for stdout/stderr to avoid buffering issues
     serverProcess = spawn({
       cmd: ["bun", "run", "start"],
       env: {
-        ...process.env,
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
         PORT: String(TEST_PORT),
         DATABASE_URL: TEST_DATABASE_URL,
         REDIS_URL: REDIS_URL,
-        // WorkOS credentials - using dummy values for startup test
-        WORKOS_API_KEY: "sk_test_dummy",
-        WORKOS_CLIENT_ID: "client_dummy",
-        WORKOS_REDIRECT_URI: `http://localhost:${TEST_PORT}/api/auth/callback`,
-        WORKOS_COOKIE_PASSWORD: "test_cookie_password_at_least_32_chars",
+        USE_STUB_AUTH: "true", // Enable stub auth for testing
       },
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+      stdout: "inherit",
+      stderr: "inherit",
+    }) as any
 
     // Wait for server to be ready (poll health endpoint)
     const maxAttempts = 30
@@ -46,29 +44,59 @@ describe("E2E: Server Startup", () => {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const response = await fetch(`http://localhost:${TEST_PORT}/health`)
+        const response = await fetch(`${BASE_URL}/health`)
         if (response.ok) {
-          const data = await response.json()
-          expect(data.status).toBe("ok")
-          expect(data.message).toBe("Threa API")
           healthy = true
           break
         }
       } catch {
-        // Server not ready yet, wait and retry
         await new Promise((r) => setTimeout(r, pollInterval))
       }
     }
 
-    if (!healthy && serverProcess) {
-      // Capture output for debugging
-      const stdout = await new Response(serverProcess.stdout).text()
-      const stderr = await new Response(serverProcess.stderr).text()
-      console.error("Server stdout:", stdout)
-      console.error("Server stderr:", stderr)
+    if (!healthy) {
+      console.error("Server failed to become healthy")
     }
 
     expect(healthy).toBe(true)
+
+    // Test health endpoint
+    const healthRes = await fetch(`${BASE_URL}/health`)
+    const healthData = await healthRes.json()
+    expect(healthData.status).toBe("ok")
+    expect(healthData.message).toBe("Threa API")
+
+    // Small delay to ensure server is fully ready
+    await new Promise((r) => setTimeout(r, 500))
+
+    // Register a test user via the stub auth endpoint
+    const registerRes = await fetch(`${BASE_URL}/api/test/register-user`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "blackbox_test_user_1",
+        email: "blackbox@test.com",
+        firstName: "Blackbox",
+        lastName: "Tester",
+      }),
+    })
+    expect(registerRes.status).toBe(200)
+    const { sessionToken } = await registerRes.json()
+    expect(sessionToken).toBe("test_session_blackbox_test_user_1")
+
+    // Test authenticated endpoint - /api/auth/me
+    const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
+      headers: { Cookie: `wos_session=${sessionToken}` },
+    })
+    expect(meRes.status).toBe(200)
+    const meData = await meRes.json()
+    expect(meData.email).toBe("blackbox@test.com")
+
+    // Test unauthenticated request should redirect
+    const unauthRes = await fetch(`${BASE_URL}/api/workspace/ws_123/streams`, {
+      redirect: "manual",
+    })
+    expect(unauthRes.status).toBe(302)
 
     // Clean shutdown
     if (serverProcess) {
@@ -76,5 +104,5 @@ describe("E2E: Server Startup", () => {
       await serverProcess.exited
       serverProcess = null
     }
-  }, 15000) // 15 second timeout for server startup
+  }, 20000) // 20 second timeout
 })

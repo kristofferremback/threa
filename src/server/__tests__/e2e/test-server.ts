@@ -6,7 +6,7 @@ import { Pool } from "pg"
 import { io as ioClient, Socket as ClientSocket } from "socket.io-client"
 import { promisify } from "util"
 
-import { StubAuthService } from "./stub-auth-service"
+import { StubAuthService } from "../../services/stub-auth-service"
 import { createAuthMiddleware, createAuthRoutes } from "../../routes/auth-routes"
 import { createStreamRoutes } from "../../routes/stream-routes"
 import { createSearchRoutes } from "../../routes/search-routes"

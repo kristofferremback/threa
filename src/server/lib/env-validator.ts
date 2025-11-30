@@ -12,6 +12,12 @@ interface EnvConfig {
  * Throws an error with helpful message if any are missing
  */
 export function validateEnv(): void {
+  // Skip WorkOS validation when using stub auth for testing
+  if (process.env.USE_STUB_AUTH === "true") {
+    logger.debug("Skipping WorkOS env validation (USE_STUB_AUTH=true)")
+    return
+  }
+
   const required: (keyof EnvConfig)[] = [
     "WORKOS_API_KEY",
     "WORKOS_CLIENT_ID",

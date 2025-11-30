@@ -18,6 +18,7 @@ import { runMigrations } from "./lib/migrations"
 import { createDatabasePool } from "./lib/db"
 import { Pool } from "pg"
 import { AuthService } from "./services/auth-service"
+import { StubAuthService } from "./services/stub-auth-service"
 import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
@@ -211,7 +212,14 @@ export async function createApp(): Promise<AppContext> {
 
   const pool = createDatabasePool()
 
-  const authService = new AuthService()
+  // Use stub auth service for testing when USE_STUB_AUTH is set
+  const useStubAuth = process.env.USE_STUB_AUTH === "true"
+  const authService = useStubAuth ? new StubAuthService() : new AuthService()
+
+  if (useStubAuth) {
+    logger.warn("Using stub auth service - NOT FOR PRODUCTION")
+  }
+
   const streamService = new StreamService(pool)
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
@@ -226,6 +234,27 @@ export async function createApp(): Promise<AppContext> {
   const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
   const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
   const searchRoutes = createSearchRoutes(searchService)
+
+  // Test endpoint for registering users in stub auth mode
+  if (useStubAuth && authService instanceof StubAuthService) {
+    app.post("/api/test/register-user", async (req, res) => {
+      const { id, email, firstName, lastName } = req.body
+      if (!id || !email) {
+        return res.status(400).json({ error: "id and email required" })
+      }
+
+      // Ensure user exists in database
+      await userService.ensureUser({
+        id,
+        email,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+      })
+
+      const sessionToken = authService.registerTestUser({ id, email, firstName, lastName })
+      return res.json({ sessionToken })
+    })
+  }
 
   app.use("/api/auth", authRoutes)
   app.use("/api/workspace", authMiddleware, streamRoutes)
