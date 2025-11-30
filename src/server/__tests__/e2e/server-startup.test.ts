@@ -26,9 +26,10 @@ describe("E2E: Server Startup", () => {
         REDIS_URL: REDIS_URL,
         NODE_ENV: "test",
         // WorkOS credentials - using dummy values for startup test
-        // The server should start even if auth service fails to initialize
-        WORKOS_API_KEY: "test_key",
-        WORKOS_CLIENT_ID: "test_client_id",
+        WORKOS_API_KEY: "sk_test_dummy",
+        WORKOS_CLIENT_ID: "client_dummy",
+        WORKOS_REDIRECT_URI: "http://localhost:3098/api/auth/callback",
+        WORKOS_COOKIE_PASSWORD: "test_cookie_password_at_least_32_chars",
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -55,11 +56,21 @@ describe("E2E: Server Startup", () => {
       }
     }
 
+    if (!healthy && serverProcess) {
+      // Capture output for debugging
+      const stdout = await new Response(serverProcess.stdout).text()
+      const stderr = await new Response(serverProcess.stderr).text()
+      console.error("Server stdout:", stdout)
+      console.error("Server stderr:", stderr)
+    }
+
     expect(healthy).toBe(true)
 
     // Clean shutdown
-    serverProcess.kill("SIGTERM")
-    await serverProcess.exited
-    serverProcess = null
+    if (serverProcess) {
+      serverProcess.kill("SIGTERM")
+      await serverProcess.exited
+      serverProcess = null
+    }
   }, 15000) // 15 second timeout for server startup
 })
