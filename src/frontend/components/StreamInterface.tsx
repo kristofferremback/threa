@@ -160,18 +160,6 @@ export function StreamInterface({
 
       {isThread && parentStream && (
         <ThreadContext
-          rootMessage={
-            rootEvent
-              ? {
-                  id: rootEvent.id,
-                  email: rootEvent.actorEmail,
-                  message: rootEvent.content || "",
-                  timestamp: rootEvent.createdAt,
-                  channelId: rootEvent.streamId,
-                  replyCount: rootEvent.replyCount,
-                }
-              : null
-          }
           ancestors={ancestors.map((e) => ({
             id: e.id,
             email: e.actorEmail,
@@ -181,7 +169,7 @@ export function StreamInterface({
             replyCount: e.replyCount,
           }))}
           channelName={(parentStream.name || "").replace("#", "")}
-          isLoading={isLoading && !rootEvent}
+          channelId={parentStream.id}
           onOpenThread={(msgId, _channelId, mode) => handleOpenThread(msgId, mode)}
           onGoToChannel={(slug, mode) => onGoToStream?.(slug, mode)}
           onChannelClick={(slug, e) => onGoToStream?.(slug, getOpenMode(e))}
@@ -202,7 +190,7 @@ export function StreamInterface({
             isLoadingMore={isLoadingMore}
             hasMoreEvents={hasMoreEvents}
             isThread={isThread}
-            hasRootEvent={Boolean(rootEvent)}
+            rootEvent={rootEvent}
             currentUserId={currentUserId}
             highlightEventId={highlightEventId}
             onOpenThread={handleOpenThread}
@@ -210,7 +198,7 @@ export function StreamInterface({
             onLoadMore={loadMoreEvents}
             onShareToStream={handleShareToStream}
             onCrosspostToStream={handleCrosspostToStream}
-            onStreamClick={(slug) => onGoToStream?.(slug, "replace")}
+            onStreamClick={(slug, e) => onGoToStream?.(slug, getOpenMode(e))}
             users={users}
             streams={streams}
           />

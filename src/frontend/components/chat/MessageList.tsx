@@ -5,9 +5,12 @@ import { MessageItemWithVisibility } from "./MessageItemWithVisibility"
 import { SystemMessage } from "./SystemMessage"
 import { AgentThinkingEvent } from "./AgentThinkingEvent"
 import type { AgentSession } from "./AgentThinkingEvent"
-import { EmptyState } from "../ui"
+import { StickyThreadHeader } from "./StickyThreadHeader"
+import { EmptyState, Avatar, RelativeTime } from "../ui"
+import { MessageContent } from "./MessageContent"
 import { useReadReceipts } from "../../hooks"
 import type { Message, OpenMode } from "../../types"
+import { getDisplayName } from "../../types"
 
 interface MessageListProps {
   messages: Message[]
@@ -20,7 +23,7 @@ interface MessageListProps {
   isLoadingMore?: boolean
   hasMoreMessages?: boolean
   isThread?: boolean
-  hasRootMessage?: boolean
+  rootMessage?: Message | null // Root message for threads (shown as first item)
   currentUserId?: string | null
   highlightMessageId?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
@@ -48,7 +51,7 @@ export function MessageList({
   isLoadingMore = false,
   hasMoreMessages = true,
   isThread = false,
-  hasRootMessage = false,
+  rootMessage = null,
   currentUserId,
   highlightMessageId,
   onOpenThread,
@@ -67,7 +70,11 @@ export function MessageList({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const unreadDividerRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const rootMessageRef = useRef<HTMLDivElement>(null)
   const messageRefsMap = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Track if root message is visible (for sticky header)
+  const [isRootMessageVisible, setIsRootMessageVisible] = useState(true)
 
   // Track which message is currently highlighted (for timed highlighting)
   const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null)
@@ -109,6 +116,27 @@ export function MessageList({
   useEffect(() => {
     setLocallySeenIds(new Set())
   }, [channelId])
+
+  // Intersection observer for root message visibility (sticky header trigger)
+  useEffect(() => {
+    if (!rootMessage || !rootMessageRef.current || !containerRef.current) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show sticky header when root message is scrolled out of view
+        // Using a small threshold so the header appears just as the message leaves
+        setIsRootMessageVisible(entry?.isIntersecting ?? true)
+      },
+      {
+        root: containerRef.current,
+        threshold: 0,
+        rootMargin: "-1px 0px 0px 0px", // Trigger slightly before completely out of view
+      },
+    )
+
+    observer.observe(rootMessageRef.current)
+    return () => observer.disconnect()
+  }, [rootMessage])
 
   // Calculate which messages are read/unread
   // We track TWO sets:
@@ -367,49 +395,99 @@ export function MessageList({
     )
   }
 
-  if (messages.length === 0) {
-    if (isThread && hasRootMessage) {
-      return <EmptyState icon={MessageCircle} description="No replies yet. Start the conversation!" />
-    }
-
-    if (!isThread) {
-      return <EmptyState icon={Hash} description="No messages yet. Say hello!" />
-    }
+  // For non-threads with no messages, show empty state
+  if (messages.length === 0 && !isThread) {
+    return <EmptyState icon={Hash} description="No messages yet. Say hello!" />
   }
+
+  const rootDisplayName = rootMessage ? getDisplayName(rootMessage.name, rootMessage.email) : ""
+  const hasNoRepliesYet = messages.length === 0 && isThread
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto p-4 min-h-0"
+      className="flex-1 overflow-y-auto min-h-0 relative"
       style={{ overflowAnchor: "none" }} // Disable scroll anchoring to prevent browser interference
       onScroll={handleScroll}
     >
-      {/* Loading indicator at top */}
-      {isLoadingMore && (
-        <div className="flex justify-center py-3">
+      {/* Sticky header for root message (appears when scrolled past) */}
+      {isThread && rootMessage && (
+        <StickyThreadHeader
+          rootMessage={rootMessage}
+          isVisible={!isRootMessageVisible}
+          onChannelClick={onChannelClick}
+        />
+      )}
+
+      <div className="p-4">
+        {/* Loading indicator at top */}
+        {isLoadingMore && (
+          <div className="flex justify-center py-3">
+            <div
+              className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
+              style={{ borderColor: "var(--text-muted)", borderTopColor: "transparent" }}
+            />
+          </div>
+        )}
+
+        {/* "Load more" button if there are more messages */}
+        {!isLoadingMore && hasMoreMessages && onLoadMore && (
+          <div className="flex justify-center py-2">
+            <button
+              onClick={onLoadMore}
+              className="text-xs px-3 py-1 rounded-full transition-colors"
+              style={{ color: "var(--text-muted)", background: "var(--bg-tertiary)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay-strong)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-tertiary)")}
+            >
+              Load older messages
+            </button>
+          </div>
+        )}
+
+        {/* Root message for threads (shown as first item, no reply button) */}
+        {isThread && rootMessage && (
           <div
-            className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: "var(--text-muted)", borderTopColor: "transparent" }}
-          />
-        </div>
-      )}
-
-      {/* "Load more" button if there are more messages */}
-      {!isLoadingMore && hasMoreMessages && onLoadMore && (
-        <div className="flex justify-center py-2">
-          <button
-            onClick={onLoadMore}
-            className="text-xs px-3 py-1 rounded-full transition-colors"
-            style={{ color: "var(--text-muted)", background: "var(--bg-tertiary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover-overlay-strong)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-tertiary)")}
+            ref={rootMessageRef}
+            className={hasNoRepliesYet ? "pb-4" : "pb-4 mb-4"}
+            style={hasNoRepliesYet ? undefined : { borderBottom: "1px solid var(--border-subtle)" }}
           >
-            Load older messages
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="text-xs font-medium px-2 py-0.5 rounded"
+                style={{ background: "var(--accent-glow)", color: "var(--accent-primary)" }}
+              >
+                Thread started from
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Avatar name={rootDisplayName} size="sm" />
+                <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                  {rootDisplayName}
+                </span>
+                <RelativeTime date={rootMessage.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
+              </div>
+              <div className="pl-8 text-sm" style={{ color: "var(--text-primary)" }}>
+                <MessageContent
+                  content={rootMessage.message}
+                  mentions={rootMessage.mentions}
+                  onChannelClick={onChannelClick}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
-      {messages.map((msg, idx) => {
+        {/* Empty state for threads with no replies */}
+        {hasNoRepliesYet && (
+          <div className="flex flex-col items-center justify-center py-8" style={{ color: "var(--text-muted)" }}>
+            <MessageCircle className="h-8 w-8 mb-2 opacity-50" />
+            <p className="text-sm">No replies yet. Start the conversation!</p>
+          </div>
+        )}
+
+        {messages.map((msg, idx) => {
         const isRead = readMessageIds.has(msg.id) // For visual indicators (includes locally seen)
         const isServerRead = serverReadMessageIds.has(msg.id) // For context menu actions
         const showUnreadDivider = idx === firstUnreadIndex && firstUnreadIndex > 0
@@ -488,7 +566,8 @@ export function MessageList({
           </div>
         )
       })}
-      <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Cross-post channel selector modal */}
       {crosspostModalMessageId && (

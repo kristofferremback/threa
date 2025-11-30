@@ -13,7 +13,7 @@ interface EventListProps {
   isLoadingMore: boolean
   hasMoreEvents: boolean
   isThread: boolean
-  hasRootEvent: boolean
+  rootEvent?: StreamEvent | null
   currentUserId: string | null
   highlightEventId?: string
   onOpenThread: (eventId: string, mode: OpenMode) => void
@@ -100,7 +100,7 @@ export function EventList({
   isLoadingMore,
   hasMoreEvents,
   isThread,
-  hasRootEvent,
+  rootEvent,
   currentUserId,
   highlightEventId,
   onOpenThread,
@@ -112,6 +112,12 @@ export function EventList({
   users,
   streams,
 }: EventListProps) {
+  // Convert root event to message for threads
+  const rootMessage = useMemo(
+    () => (rootEvent ? eventToMessage(rootEvent, rootEvent.streamId) : null),
+    [rootEvent],
+  )
+
   // Convert events to messages for MessageList (include system events and agent_thinking)
   const messages = useMemo(
     () =>
@@ -142,7 +148,7 @@ export function EventList({
       isLoadingMore={isLoadingMore}
       hasMoreMessages={hasMoreEvents}
       isThread={isThread}
-      hasRootMessage={hasRootEvent}
+      rootMessage={rootMessage}
       currentUserId={currentUserId}
       highlightMessageId={highlightEventId}
       onOpenThread={(msgId, _channelId, mode) => onOpenThread(msgId, mode)}

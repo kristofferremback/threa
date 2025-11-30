@@ -1,38 +1,39 @@
 import { useState } from "react"
 import { ChevronRight, ChevronDown, PanelRightOpen, Hash, ArrowLeft } from "lucide-react"
-import { Avatar, Spinner, RelativeTime } from "../ui"
+import { Avatar, RelativeTime } from "../ui"
 import { MessageContent } from "./MessageContent"
 import type { Message, OpenMode } from "../../types"
 import { getOpenMode, getDisplayName } from "../../types"
 
 interface ThreadContextProps {
-  rootMessage: Message | null
   ancestors: Message[]
   channelName?: string
-  isLoading: boolean
+  channelId?: string
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
   onGoToChannel?: (channelId: string, mode: OpenMode) => void
   onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
 }
 
 export function ThreadContext({
-  rootMessage,
   ancestors,
   channelName,
-  isLoading,
+  channelId,
   onOpenThread,
   onGoToChannel,
   onChannelClick,
 }: ThreadContextProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
+  // Don't render anything if there's no channel breadcrumb and no ancestors
+  if (!channelId && ancestors.length === 0) return null
+
   return (
     <div style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border-subtle)" }}>
       {/* Channel breadcrumb */}
-      {rootMessage && onGoToChannel && (
-        <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+      {channelId && onGoToChannel && (
+        <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: ancestors.length > 0 ? "1px solid var(--border-subtle)" : undefined }}>
           <button
-            onClick={(e) => onGoToChannel(rootMessage.channelId, getOpenMode(e))}
+            onClick={(e) => onGoToChannel(channelId, getOpenMode(e))}
             className="flex items-center gap-1.5 text-xs transition-colors hover:underline"
             style={{ color: "var(--accent-primary)" }}
             title="Go back to channel"
@@ -46,7 +47,7 @@ export function ThreadContext({
 
       {/* Collapsible Ancestors */}
       {ancestors.length > 0 && (
-        <div style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <div>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center gap-2 w-full px-4 py-2 text-xs transition-colors hover:bg-white/5"
@@ -65,26 +66,6 @@ export function ThreadContext({
           )}
         </div>
       )}
-
-      {/* Root Message (the message this thread branches from) */}
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span
-            className="text-xs font-medium px-2 py-0.5 rounded"
-            style={{ background: "var(--accent-glow)", color: "var(--accent-primary)" }}
-          >
-            Thread started from
-          </span>
-        </div>
-        {isLoading ? (
-          <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
-            <Spinner size="sm" />
-            <span className="text-sm">Loading...</span>
-          </div>
-        ) : rootMessage ? (
-          <RootMessageDisplay message={rootMessage} onOpenThread={onOpenThread} onChannelClick={onChannelClick} />
-        ) : null}
-      </div>
     </div>
   )
 }
@@ -92,7 +73,7 @@ export function ThreadContext({
 interface AncestorMessageProps {
   message: Message
   onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
-  onChannelClick?: (channelSlug: string) => void
+  onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
 }
 
 function AncestorMessage({ message, onOpenThread, onChannelClick }: AncestorMessageProps) {
@@ -131,37 +112,3 @@ function AncestorMessage({ message, onOpenThread, onChannelClick }: AncestorMess
   )
 }
 
-interface RootMessageDisplayProps {
-  message: Message
-  onOpenThread?: (messageId: string, channelId: string, mode: OpenMode) => void
-  onChannelClick?: (channelSlug: string) => void
-}
-
-function RootMessageDisplay({ message, onOpenThread, onChannelClick }: RootMessageDisplayProps) {
-  const displayName = getDisplayName(message.name, message.email)
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <Avatar name={displayName} size="sm" />
-        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {displayName}
-        </span>
-        <RelativeTime date={message.timestamp} className="text-xs" style={{ color: "var(--text-muted)" }} />
-      </div>
-      <div className="pl-8 text-sm" style={{ color: "var(--text-primary)" }}>
-        <MessageContent content={message.message} mentions={message.mentions} onChannelClick={onChannelClick} />
-      </div>
-      {/* Allow branching from root message too */}
-      <div className="pl-8 mt-1 opacity-0 hover:opacity-100 transition-opacity">
-        <button
-          onClick={(e) => onOpenThread?.(message.id, message.channelId, getOpenMode(e))}
-          className="text-xs hover:underline"
-          style={{ color: "var(--accent-primary)" }}
-          title="Click to open, ⌥+click to open to side, ⌘+click for new tab"
-        >
-          View thread
-        </button>
-      </div>
-    </div>
-  )
-}

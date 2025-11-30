@@ -11,5 +11,6 @@ export { RichTextEditor, type RichTextEditorRef, type ExtractedMention } from ".
 export { MentionList, type MentionItem } from "./MentionList"
 export { MessageContent } from "./MessageContent"
 export { ThreadContext } from "./ThreadContext"
+export { StickyThreadHeader } from "./StickyThreadHeader"
 export { ConnectionError } from "./ConnectionError"
 export { AriadneThinkingIndicator, AriadneThinkingBadge } from "./AriadneThinkingIndicator"
