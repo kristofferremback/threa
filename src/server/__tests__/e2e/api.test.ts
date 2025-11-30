@@ -494,10 +494,9 @@ describe("E2E: HTTP API", () => {
   })
 
   describe("Search", () => {
-    // Note: This test requires AI/embedding providers (Ollama or OpenAI) to be available.
-    // In CI without these, the search will return empty results because the search
-    // service uses embeddings for hybrid semantic search.
-    test.skip("should search messages", async () => {
+    // Note: This test requires Ollama to be running with nomic-embed-text model.
+    // The test server calls checkOllamaHealth() to enable local embeddings.
+    test("should search messages", async () => {
       const workspace = await createTestWorkspace(server.pool)
       const channel = await createTestStream(server.pool, workspace.id, {
         slug: "general",
@@ -528,9 +527,9 @@ describe("E2E: HTTP API", () => {
         body: JSON.stringify({ content: "Hello world" }),
       })
 
-      // Search
+      // Search (uses 'query' param, not 'q' due to stream-routes taking precedence)
       const response = await server.fetch(
-        `/api/workspace/${workspace.id}/search?q=fox`,
+        `/api/workspace/${workspace.id}/search?query=fox`,
         { sessionToken },
       )
 

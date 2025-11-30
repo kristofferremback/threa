@@ -29,7 +29,14 @@ import {
   type TestUser,
   type TestWorkspace,
 } from "../../services/__tests__/test-helpers"
+import { checkOllamaHealth } from "../../lib/ollama"
 
+/**
+ * E2E Test Server
+ *
+ * NOTE: When running multiple e2e test files, use --max-concurrency=1 to prevent
+ * port conflicts: `bun test src/server/__tests__/e2e --max-concurrency=1`
+ */
 const TEST_PORT = 3099
 
 export interface TestServerContext {
@@ -101,6 +108,9 @@ export async function getTestServer(): Promise<TestServerContext> {
 
   const pool = await getTestPool()
   await runMigrations(pool)
+
+  // Check Ollama availability for embeddings (needed for search tests)
+  await checkOllamaHealth()
 
   const app = express()
   app.use(express.json())
