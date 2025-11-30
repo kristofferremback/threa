@@ -19,10 +19,6 @@ describe("E2E: Real-time Messaging", () => {
     server = await getTestServer()
   })
 
-  afterAll(async () => {
-    await server.close()
-  })
-
   beforeEach(async () => {
     await server.cleanup()
   })

@@ -15,10 +15,6 @@ describe("E2E: HTTP API", () => {
     server = await getTestServer()
   })
 
-  afterAll(async () => {
-    await server.close()
-  })
-
   beforeEach(async () => {
     await server.cleanup()
   })
