@@ -50,13 +50,13 @@ jobs:
       - name: Run unit tests
         run: bun run test:unit
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/threa_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threa_test
           REDIS_URL: redis://localhost:6379
 
       - name: Run e2e tests
         run: bun run test:e2e
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/threa_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threa_test
           REDIS_URL: redis://localhost:6379
           # Skip search test in CI (requires Ollama)
           SKIP_OLLAMA_TESTS: true
