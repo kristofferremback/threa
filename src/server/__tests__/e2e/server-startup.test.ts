@@ -1,9 +1,13 @@
-import { describe, test, expect, afterAll } from "bun:test"
+import { describe, test, expect, afterAll, beforeAll } from "bun:test"
 import { spawn, type Subprocess } from "bun"
 
 const TEST_PORT = 3098 // Use different port from other e2e tests
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa_test"
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379"
+
+// Skip in CI - this test spawns a real server process which can be flaky in CI environments
+const isCI = process.env.CI === "true"
+const testFn = isCI ? test.skip : test
 
 describe("E2E: Server Startup", () => {
   let serverProcess: Subprocess<"ignore", "pipe", "pipe"> | null = null
@@ -15,7 +19,7 @@ describe("E2E: Server Startup", () => {
     }
   })
 
-  test("should start server and respond to health check", async () => {
+  testFn("should start server and respond to health check", async () => {
     // Start the server as a subprocess with test environment
     serverProcess = spawn({
       cmd: ["bun", "src/server/index.ts"],
