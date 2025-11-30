@@ -16,7 +16,10 @@
     "clear:deps": "docker compose down -v",
     "langfuse": "docker compose -f docker-compose.langfuse.yml up -d",
     "langfuse:stop": "docker compose -f docker-compose.langfuse.yml down",
-    "langfuse:clear": "docker compose -f docker-compose.langfuse.yml down -v"
+    "langfuse:clear": "docker compose -f docker-compose.langfuse.yml down -v",
+    "test": "bun test src/server/services/__tests__ src/server/__tests__/e2e --max-concurrency=1",
+    "test:unit": "bun test src/server/services/__tests__",
+    "test:e2e": "bun test src/server/__tests__/e2e --max-concurrency=1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
