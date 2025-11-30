@@ -1,10 +1,11 @@
-import { Pool } from "pg"
+import { Pool, PoolClient } from "pg"
 import { sql } from "../../lib/db"
 import { runMigrations } from "../../lib/migrations"
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa_test"
 
 let pool: Pool | null = null
+let testClient: PoolClient | null = null
 
 /**
  * Get or create a shared test database pool.
@@ -35,6 +36,10 @@ export async function getTestPool(): Promise<Pool> {
  * Close the test pool. Call in afterAll.
  */
 export async function closeTestPool(): Promise<void> {
+  if (testClient) {
+    testClient.release()
+    testClient = null
+  }
   if (pool) {
     await pool.end()
     pool = null
@@ -42,12 +47,44 @@ export async function closeTestPool(): Promise<void> {
 }
 
 /**
+ * Begin a transaction for test isolation.
+ * All changes will be rolled back when endTestTransaction is called.
+ * This is safer than deleting data - nothing persists between tests.
+ */
+export async function beginTestTransaction(p: Pool): Promise<PoolClient> {
+  testClient = await p.connect()
+  await testClient.query("BEGIN")
+  // Use savepoint so nested transactions work
+  await testClient.query("SAVEPOINT test_start")
+  return testClient
+}
+
+/**
+ * Rollback the test transaction. Call in afterEach.
+ * This undoes all changes made during the test.
+ */
+export async function rollbackTestTransaction(): Promise<void> {
+  if (testClient) {
+    await testClient.query("ROLLBACK TO SAVEPOINT test_start")
+    await testClient.query("ROLLBACK")
+    testClient.release()
+    testClient = null
+  }
+}
+
+/**
  * Clean up all test data. Call in beforeEach or afterEach.
+ * Note: Prefer using beginTestTransaction/rollbackTestTransaction instead
+ * for better isolation and safety.
  */
 export async function cleanupTestData(p: Pool): Promise<void> {
   // Delete in order respecting foreign keys
+  await p.query("DELETE FROM notifications")
+  await p.query("DELETE FROM message_revisions")
+  await p.query("DELETE FROM outbox")
   await p.query("DELETE FROM stream_members")
   await p.query("DELETE FROM stream_events")
+  await p.query("DELETE FROM shared_refs")
   await p.query("DELETE FROM text_messages")
   await p.query("DELETE FROM streams")
   await p.query("DELETE FROM workspace_members")

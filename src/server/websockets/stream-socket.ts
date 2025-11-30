@@ -37,8 +37,9 @@ export async function setupStreamWebSocket(
   httpServer: HTTPServer,
   pool: Pool,
   streamService: StreamService,
+  authService?: AuthService,
 ): Promise<SocketIOServerWithCleanup> {
-  const authService = new AuthService()
+  const auth = authService ?? new AuthService()
   const aiUsageService = new AIUsageService(pool)
 
   // Create Socket.IO server
@@ -96,7 +97,7 @@ export async function setupStreamWebSocket(
       return next(new Error("No session cookie provided"))
     }
 
-    const result = await authService.authenticateSession(sealedSession)
+    const result = await auth.authenticateSession(sealedSession)
 
     if (result.success && result.user) {
       socket.data.userId = result.user.id
