@@ -1,9 +1,12 @@
 import { tool } from "@langchain/core/tools"
 import { z } from "zod"
 import { Pool } from "pg"
+import * as cheerio from "cheerio"
 import { SearchService, SearchScope } from "../../services/search-service"
 import { StreamService } from "../../services/stream-service"
 import { logger } from "../../lib/logger"
+
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY
 
 export interface AriadneToolsContext {
   workspaceId: string
@@ -263,5 +266,186 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
     },
   )
 
-  return [searchMessages, searchKnowledge, getStreamContext, getThreadHistory]
+  const webSearch = tool(
+    async (input) => {
+      if (!TAVILY_API_KEY) {
+        return "Web search is not configured. Please ask your workspace admin to set up the TAVILY_API_KEY."
+      }
+
+      try {
+        const response = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            api_key: TAVILY_API_KEY,
+            query: input.query,
+            search_depth: input.deepSearch ? "advanced" : "basic",
+            include_answer: true,
+            include_raw_content: false,
+            max_results: input.maxResults || 5,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          logger.error({ status: response.status, error: errorText }, "Tavily API error")
+          return "Web search failed. Please try again."
+        }
+
+        const data = (await response.json()) as {
+          answer?: string
+          results: Array<{
+            title: string
+            url: string
+            content: string
+            score: number
+          }>
+        }
+
+        // Format results
+        let output = ""
+
+        if (data.answer) {
+          output += `**Summary:** ${data.answer}\n\n---\n\n`
+        }
+
+        if (data.results.length === 0) {
+          return output + "No relevant web results found."
+        }
+
+        output += "**Sources:**\n\n"
+        output += data.results
+          .map((r, i) => {
+            const snippet = r.content.length > 400 ? r.content.slice(0, 400) + "..." : r.content
+            return `[${i + 1}] **${r.title}**\n${r.url}\n${snippet}`
+          })
+          .join("\n\n")
+
+        return output
+      } catch (err) {
+        logger.error({ err }, "Ariadne: webSearch tool failed")
+        return "Web search failed. Please try again."
+      }
+    },
+    {
+      name: "web_search",
+      description:
+        "Search the web for current information, documentation, news, or anything not in the workspace's knowledge base. Use this when you need up-to-date information or external resources.",
+      schema: z.object({
+        query: z.string().describe("The search query for web search"),
+        deepSearch: z
+          .boolean()
+          .optional()
+          .describe("Set to true for more thorough search (slower but better for complex queries)"),
+        maxResults: z.number().optional().describe("Maximum number of results to return (default: 5, max: 10)"),
+      }),
+    },
+  )
+
+  const fetchUrl = tool(
+    async (input) => {
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 10000)
+
+        const response = await fetch(input.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; Ariadne/1.0; +https://threa.app)",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          signal: controller.signal,
+        })
+        clearTimeout(timeout)
+
+        if (!response.ok) {
+          return `Failed to fetch URL: ${response.status} ${response.statusText}`
+        }
+
+        const contentType = response.headers.get("content-type") || ""
+
+        // Handle JSON responses
+        if (contentType.includes("application/json")) {
+          const json = await response.json()
+          const jsonStr = JSON.stringify(json, null, 2)
+          if (jsonStr.length > 4000) {
+            return `JSON response (truncated):\n\`\`\`json\n${jsonStr.slice(0, 4000)}...\n\`\`\``
+          }
+          return `JSON response:\n\`\`\`json\n${jsonStr}\n\`\`\``
+        }
+
+        // Handle plain text
+        if (contentType.includes("text/plain")) {
+          const text = await response.text()
+          if (text.length > 4000) {
+            return `Plain text (truncated):\n${text.slice(0, 4000)}...`
+          }
+          return text
+        }
+
+        // Handle HTML - extract main content
+        const html = await response.text()
+        const $ = cheerio.load(html)
+
+        // Remove unwanted elements
+        $("script, style, nav, header, footer, aside, iframe, noscript").remove()
+
+        // Try to find the main content
+        let mainContent = ""
+        const mainSelectors = ["article", "main", '[role="main"]', ".content", ".post", ".article", "#content"]
+
+        for (const selector of mainSelectors) {
+          const el = $(selector)
+          if (el.length > 0) {
+            mainContent = el.text()
+            break
+          }
+        }
+
+        // Fall back to body if no main content found
+        if (!mainContent) {
+          mainContent = $("body").text()
+        }
+
+        // Clean up whitespace
+        mainContent = mainContent.replace(/\s+/g, " ").trim()
+
+        // Get title
+        const title = $("title").text().trim() || $("h1").first().text().trim() || "Untitled"
+
+        // Get meta description
+        const description = $('meta[name="description"]').attr("content") || ""
+
+        let output = `**${title}**\n`
+        if (description) {
+          output += `*${description}*\n\n`
+        }
+
+        if (mainContent.length > 4000) {
+          output += mainContent.slice(0, 4000) + "..."
+        } else {
+          output += mainContent
+        }
+
+        return output
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return "Request timed out. The URL took too long to respond."
+        }
+        logger.error({ err, url: input.url }, "Ariadne: fetchUrl tool failed")
+        return `Failed to fetch URL: ${err instanceof Error ? err.message : "Unknown error"}`
+      }
+    },
+    {
+      name: "fetch_url",
+      description:
+        "Fetch and read the content of a URL. Use this to read documentation, articles, or any web page that someone shared. Returns the main text content of the page.",
+      schema: z.object({
+        url: z.string().url().describe("The URL to fetch and read"),
+      }),
+    },
+  )
+
+  return [searchMessages, searchKnowledge, getStreamContext, getThreadHistory, webSearch, fetchUrl]
 }

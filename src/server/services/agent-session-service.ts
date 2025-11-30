@@ -276,6 +276,20 @@ export class AgentSessionService {
     )
     return result.rows.map(rowToSession)
   }
+
+  /**
+   * Set the helpfulness score for a completed session.
+   */
+  async setHelpfulnessScore(sessionId: string, score: number, reasoning: string): Promise<void> {
+    await this.pool.query(
+      sql`UPDATE agent_sessions
+          SET helpfulness_score = ${score},
+              helpfulness_reasoning = ${reasoning}
+          WHERE id = ${sessionId}`,
+    )
+
+    logger.debug({ sessionId, score, reasoning: reasoning.slice(0, 50) }, "Session helpfulness score set")
+  }
 }
 
 // Database row type

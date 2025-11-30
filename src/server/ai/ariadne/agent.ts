@@ -18,6 +18,18 @@ export interface ConversationMessage {
   content: string
 }
 
+export interface StreamContext {
+  topic?: string
+  description?: string
+  streamName?: string
+  members: Array<{ name: string; email: string }>
+  parentStream?: {
+    name: string
+    topic?: string
+    members: Array<{ name: string; email: string }>
+  }
+}
+
 export interface AriadneContext {
   workspaceId: string
   streamId: string
@@ -36,6 +48,8 @@ export interface AriadneContext {
   conversationHistory?: ConversationMessage[]
   // For channels: background context (recent messages, not a conversation)
   backgroundContext?: string
+  // Stream context: members, topic, parent stream info
+  streamContext?: StreamContext
 }
 
 /**
@@ -83,12 +97,48 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext) {
     const customInstructions = config.configurable?.customInstructions || ""
     const mentionedByName = config.configurable?.mentionedByName || "someone"
     const backgroundContext = config.configurable?.backgroundContext || ""
+    const streamContext = config.configurable?.streamContext as StreamContext | undefined
 
     // Select base prompt based on mode
     let systemPrompt = isThinkingPartner ? THINKING_PARTNER_PROMPT : RETRIEVAL_PROMPT
 
     if (customInstructions) {
       systemPrompt += `\n\nAdditional context from workspace settings:\n${customInstructions}`
+    }
+
+    // Add stream context (members, topic, parent stream)
+    if (streamContext) {
+      let contextSection = "\n\n## About this conversation"
+
+      if (streamContext.streamName) {
+        contextSection += `\nChannel: #${streamContext.streamName}`
+      }
+
+      if (streamContext.topic) {
+        contextSection += `\nTopic: ${streamContext.topic}`
+      }
+
+      if (streamContext.description) {
+        contextSection += `\nDescription: ${streamContext.description}`
+      }
+
+      if (streamContext.members.length > 0) {
+        const memberNames = streamContext.members.slice(0, 10).map((m) => m.name || m.email)
+        contextSection += `\nParticipants: ${memberNames.join(", ")}${streamContext.members.length > 10 ? ` and ${streamContext.members.length - 10} others` : ""}`
+      }
+
+      if (streamContext.parentStream) {
+        contextSection += `\n\nThis is a thread from #${streamContext.parentStream.name}`
+        if (streamContext.parentStream.topic) {
+          contextSection += ` (topic: ${streamContext.parentStream.topic})`
+        }
+        if (streamContext.parentStream.members.length > 0) {
+          const parentMemberNames = streamContext.parentStream.members.slice(0, 10).map((m) => m.name || m.email)
+          contextSection += `\nChannel members: ${parentMemberNames.join(", ")}${streamContext.parentStream.members.length > 10 ? ` and ${streamContext.parentStream.members.length - 10} others` : ""}`
+        }
+      }
+
+      systemPrompt += contextSection
     }
 
     // Only add "mentioned by" context in retrieval mode
@@ -183,6 +233,7 @@ export async function invokeAriadne(
           customInstructions,
           mentionedByName: context.mentionedByName || "someone",
           backgroundContext: context.backgroundContext,
+          streamContext: context.streamContext,
         },
         callbacks,
       },
@@ -273,6 +324,7 @@ export async function* streamAriadne(
           customInstructions,
           mentionedByName: context.mentionedByName || "someone",
           backgroundContext: context.backgroundContext,
+          streamContext: context.streamContext,
         },
         streamMode: "values",
         callbacks,

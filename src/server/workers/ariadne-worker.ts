@@ -1,14 +1,27 @@
 import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData } from "../lib/job-queue"
-import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage } from "../ai/ariadne/agent"
+import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage, StreamContext } from "../ai/ariadne/agent"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
 import { AgentSessionService, SessionStep } from "../services/agent-session-service"
 import { logger } from "../lib/logger"
 import { Models, calculateCost } from "../lib/ai-providers"
 import { emitSessionStarted, emitSessionStep, emitSessionCompleted } from "../lib/ephemeral-events"
+import { scoreHelpfulness } from "../lib/ollama"
+import { Langfuse } from "langfuse"
+import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL } from "../config"
 import type { AriadneTrigger } from "./ariadne-trigger"
+
+// Initialize Langfuse client for scoring
+const langfuse =
+  LANGFUSE_SECRET_KEY && LANGFUSE_PUBLIC_KEY
+    ? new Langfuse({
+        secretKey: LANGFUSE_SECRET_KEY,
+        publicKey: LANGFUSE_PUBLIC_KEY,
+        baseUrl: LANGFUSE_BASE_URL,
+      })
+    : null
 
 const ARIADNE_PERSONA_ID = "pers_default_ariadne"
 const CHANNEL_CONTEXT_MESSAGES = 10
@@ -211,6 +224,9 @@ export class AriadneWorker {
       const conversationHistory = isChannel ? [] : await this.fetchConversationHistory(streamId, eventId)
       const backgroundContext = isChannel ? await this.fetchBackgroundContext(streamId, eventId) : undefined
 
+      // Fetch stream context (members, topic, parent stream)
+      const streamContext = await this.fetchStreamContext(streamId, stream)
+
       const context: AriadneContext = {
         workspaceId,
         streamId,
@@ -221,12 +237,15 @@ export class AriadneWorker {
         streamVisibility: streamVisibility as AriadneContext["streamVisibility"],
         conversationHistory,
         backgroundContext,
+        streamContext,
       }
 
       // Complete context gathering step
+      const memberCount = streamContext?.members.length || 0
+      const parentInfo = streamContext?.parentStream ? `, thread from #${streamContext.parentStream.name}` : ""
       await completeStep(
         contextStepId,
-        `Found ${conversationHistory.length} messages in history${backgroundContext ? ", plus channel context" : ""}`,
+        `Found ${conversationHistory.length} messages, ${memberCount} participants${parentInfo}${backgroundContext ? ", plus channel context" : ""}`,
       )
 
       logger.info(
@@ -331,6 +350,11 @@ export class AriadneWorker {
 
       // Reset engagement tracking - Ariadne is back in the conversation
       await this.ariadneTrigger.resetEngagementTracking(responseStreamId)
+
+      // Score helpfulness asynchronously (don't block the response)
+      this.scoreAndLogHelpfulness(session.id, question, finalResponse, context, workspaceId).catch((err) => {
+        logger.warn({ err, sessionId: session.id }, "Failed to score helpfulness")
+      })
 
       logger.info(
         { job: job.id, sessionId: session.id, responseLength: finalResponse.length, costCents },
@@ -515,6 +539,129 @@ export class AriadneWorker {
     } catch (err) {
       logger.error({ err, streamId, eventId }, "Failed to fetch background context")
       return undefined
+    }
+  }
+
+  /**
+   * Fetch stream context including members, topic, and parent stream info.
+   */
+  private async fetchStreamContext(
+    streamId: string,
+    stream: Awaited<ReturnType<StreamService["getStream"]>>,
+  ): Promise<StreamContext | undefined> {
+    try {
+      if (!stream) return undefined
+
+      // Get current stream members
+      const members = await this.streamService.getStreamMembers(streamId)
+      const memberList = members.map((m) => ({ name: m.name, email: m.email }))
+
+      const streamContext: StreamContext = {
+        streamName: stream.name || stream.slug || undefined,
+        topic: stream.topic || undefined,
+        description: stream.description || undefined,
+        members: memberList,
+      }
+
+      // If this is a thread, get parent stream info
+      if (stream.parentStreamId) {
+        const parentStream = await this.streamService.getStream(stream.parentStreamId)
+        if (parentStream) {
+          const parentMembers = await this.streamService.getStreamMembers(stream.parentStreamId)
+          streamContext.parentStream = {
+            name: parentStream.name || parentStream.slug || "channel",
+            topic: parentStream.topic || undefined,
+            members: parentMembers.map((m) => ({ name: m.name, email: m.email })),
+          }
+        }
+      }
+
+      logger.debug(
+        {
+          streamId,
+          memberCount: memberList.length,
+          hasTopic: !!stream.topic,
+          hasParent: !!streamContext.parentStream,
+        },
+        "Fetched stream context",
+      )
+
+      return streamContext
+    } catch (err) {
+      logger.error({ err, streamId }, "Failed to fetch stream context")
+      return undefined
+    }
+  }
+
+  /**
+   * Score the helpfulness of Ariadne's response and log to Langfuse.
+   * This runs asynchronously after the response is posted.
+   */
+  private async scoreAndLogHelpfulness(
+    sessionId: string,
+    question: string,
+    response: string,
+    context: AriadneContext,
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      // Build context string from conversation history
+      const contextStr = context.conversationHistory
+        ?.map((msg) => `[${msg.name}]: ${msg.content}`)
+        .join("\n")
+        .slice(0, 1000)
+
+      // Score using the local SLM
+      const result = await scoreHelpfulness(question, response, contextStr)
+
+      logger.info(
+        {
+          sessionId,
+          score: result.score,
+          reasoning: result.reasoning,
+          confident: result.confident,
+          mode: context.mode,
+        },
+        "Helpfulness score",
+      )
+
+      // Log to Langfuse if available
+      if (langfuse) {
+        // Create a trace for the scoring
+        const trace = langfuse.trace({
+          name: "ariadne-helpfulness",
+          sessionId: context.streamId,
+          userId: context.mentionedBy,
+          metadata: {
+            workspaceId,
+            sessionId,
+            mode: context.mode,
+            questionLength: question.length,
+            responseLength: response.length,
+          },
+          tags: [
+            "ariadne",
+            context.mode || "retrieval",
+            `helpfulness:${result.score}`,
+            result.score >= 4 ? "helpful" : result.score <= 2 ? "unhelpful" : "neutral",
+          ],
+        })
+
+        // Add a score to the trace
+        trace.score({
+          name: "helpfulness",
+          value: result.score,
+          comment: result.reasoning,
+        })
+
+        // Flush to ensure the score is sent
+        await langfuse.flushAsync()
+      }
+
+      // Store the score in the session for future reference
+      await this.sessionService.setHelpfulnessScore(sessionId, result.score, result.reasoning)
+    } catch (err) {
+      logger.error({ err, sessionId }, "Failed to score and log helpfulness")
     }
   }
 }

@@ -139,6 +139,12 @@ export interface EngagementCheckResult {
   rawResponse: string
 }
 
+export interface HelpfulnessScoreResult {
+  score: number // 1-5 scale: 1 = not helpful, 5 = very helpful
+  reasoning: string
+  confident: boolean
+}
+
 /**
  * Classify content using a local SLM (Small Language Model) via Ollama.
  * Returns whether the content is knowledge-worthy and if the model was confident.
@@ -317,6 +323,77 @@ Reply with just the number:
     logger.error({ err, model: CLASSIFICATION_MODEL }, "Ariadne engagement check failed")
     // Default to triggering response on error to avoid missing follow-ups
     return { relevanceScore: 5, confident: false, rawResponse: "" }
+  }
+}
+
+/**
+ * Score the helpfulness of an AI response given the question and context.
+ * Used for tracking Ariadne's quality over time via Langfuse.
+ *
+ * @param question - The user's question or request
+ * @param response - Ariadne's response
+ * @param context - Optional additional context (conversation history, etc.)
+ * @returns Score from 1-5 with reasoning
+ */
+export async function scoreHelpfulness(
+  question: string,
+  response: string,
+  context?: string,
+): Promise<HelpfulnessScoreResult> {
+  const prompt = `Rate how helpful this AI assistant response is to the user's question.
+
+${context ? `Context:\n${context.slice(0, 1000)}\n\n` : ""}User's question:
+${question.slice(0, 500)}
+
+AI response:
+${response.slice(0, 2000)}
+
+Score from 1-5:
+1 = Not helpful at all (wrong, irrelevant, or evasive)
+2 = Slightly helpful (partially addresses the question but missing key points)
+3 = Moderately helpful (addresses the question but could be better)
+4 = Helpful (good answer that addresses the question well)
+5 = Very helpful (excellent answer, thorough, actionable, well-cited)
+
+Respond with the score (1-5) followed by a brief reason (one sentence).
+Format: [SCORE] - [REASON]
+
+Example: 4 - Good explanation with code example but could cite sources better.
+
+Your rating:`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "helpfulness-scoring",
+      prompt,
+      temperature: 0.3,
+      maxTokens: 100,
+      metadata: {
+        questionLength: question.length,
+        responseLength: response.length,
+        hasContext: !!context,
+      },
+    })
+
+    // Parse the score - look for a digit 1-5 at the start
+    const scoreMatch = result.text.match(/^([1-5])/)
+    const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 3
+
+    // Extract reasoning after the score
+    const reasoningMatch = result.text.match(/^[1-5]\s*[-–:]\s*(.+)/)
+    const reasoning = reasoningMatch ? reasoningMatch[1].trim() : result.text.slice(2).trim()
+
+    const confident = scoreMatch !== null
+
+    logger.debug(
+      { model: CLASSIFICATION_MODEL, score, confident, reasoning: reasoning.slice(0, 100) },
+      "Helpfulness score result",
+    )
+
+    return { score, reasoning, confident }
+  } catch (err) {
+    logger.error({ err, model: CLASSIFICATION_MODEL }, "Helpfulness scoring failed")
+    return { score: 3, reasoning: "Scoring failed", confident: false }
   }
 }
 
