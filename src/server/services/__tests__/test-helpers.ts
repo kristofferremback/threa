@@ -2,7 +2,7 @@ import { Pool, PoolClient } from "pg"
 import { sql } from "../../lib/db"
 import { runMigrations } from "../../lib/migrations"
 
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa_test"
+export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa_test"
 
 let pool: Pool | null = null
 let testClient: PoolClient | null = null

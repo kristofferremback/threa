@@ -15,7 +15,10 @@ export class OutboxListener {
   private debouncedNotificationProcessor: DebounceWithMaxWait
   private pollInterval: NodeJS.Timeout | null = null
 
-  constructor(private pool: Pool) {
+  constructor(
+    private pool: Pool,
+    private databaseUrl?: string,
+  ) {
     this.debouncedNotificationProcessor = new DebounceWithMaxWait(
       () => this.processOutboxBatch(),
       DEBOUNCE_MS,
@@ -34,7 +37,7 @@ export class OutboxListener {
 
     try {
       // Create and connect notification client
-      this.notifyClient = new NotifyClient()
+      this.notifyClient = new NotifyClient(this.databaseUrl)
       await this.notifyClient.connect()
 
       // Connect to Redis for publishing

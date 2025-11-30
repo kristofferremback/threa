@@ -26,6 +26,7 @@ import {
   createTestUser,
   createTestWorkspace,
   addUserToWorkspace,
+  TEST_DATABASE_URL,
   type TestUser,
   type TestWorkspace,
 } from "../../services/__tests__/test-helpers"
@@ -125,7 +126,7 @@ export async function getTestServer(): Promise<TestServerContext> {
   const workspaceService = new WorkspaceService(pool)
   const userService = new UserService(pool)
   const searchService = new SearchService(pool)
-  const outboxListener = new OutboxListener(pool)
+  const outboxListener = new OutboxListener(pool, TEST_DATABASE_URL)
 
   // Create Redis clients
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
