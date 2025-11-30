@@ -2,8 +2,8 @@
  * Embedding table selection based on provider.
  *
  * Uses environment variable EMBEDDING_PROVIDER to determine which table to use:
- * - "ollama" (default): Uses 768-dim tables (embeddings_768, knowledge_embeddings_768)
- * - "openai": Uses 1536-dim tables (embeddings_1536, knowledge_embeddings_1536)
+ * - "ollama" (default): Uses 768-dim tables (embeddings_768, memo_embeddings_768)
+ * - "openai": Uses 1536-dim tables (embeddings_1536, memo_embeddings_1536)
  */
 
 export type EmbeddingProvider = "ollama" | "openai"
@@ -22,8 +22,8 @@ export function getTextMessageEmbeddingTable(): "embeddings_768" | "embeddings_1
   return EMBEDDING_PROVIDER === "openai" ? "embeddings_1536" : "embeddings_768"
 }
 
-export function getKnowledgeEmbeddingTable(): "knowledge_embeddings_768" | "knowledge_embeddings_1536" {
-  return EMBEDDING_PROVIDER === "openai" ? "knowledge_embeddings_1536" : "knowledge_embeddings_768"
+export function getMemoEmbeddingTable(): "memo_embeddings_768" | "memo_embeddings_1536" {
+  return EMBEDDING_PROVIDER === "openai" ? "memo_embeddings_1536" : "memo_embeddings_768"
 }
 
 /**
@@ -34,9 +34,9 @@ export function textMessageEmbeddingsSql(): string {
 }
 
 /**
- * Get the SQL table name for knowledge embeddings (for dynamic queries).
+ * Get the SQL table name for memo embeddings (for dynamic queries).
  */
-export function knowledgeEmbeddingsSql(): string {
-  return getKnowledgeEmbeddingTable()
+export function memoEmbeddingsSql(): string {
+  return getMemoEmbeddingTable()
 }
 

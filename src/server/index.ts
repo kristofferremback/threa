@@ -9,6 +9,7 @@ import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
 import { createStreamRoutes } from "./routes/stream-routes"
 import { createInvitationRoutes } from "./routes/invitation-routes"
 import { createSearchRoutes } from "./routes/search-routes"
+import { createMemoRoutes } from "./routes/memo-routes"
 import { SearchService } from "./services/search-service"
 import { setupStreamWebSocket } from "./websockets/stream-socket"
 import { isProduction, PORT, DATABASE_URL } from "./config"
@@ -234,6 +235,7 @@ export async function createApp(): Promise<AppContext> {
   const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
   const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
   const searchRoutes = createSearchRoutes(searchService)
+  const memoRoutes = createMemoRoutes(pool)
 
   // Test endpoint for registering users in stub auth mode
   if (useStubAuth && authService instanceof StubAuthService) {
@@ -259,6 +261,7 @@ export async function createApp(): Promise<AppContext> {
   app.use("/api/auth", authRoutes)
   app.use("/api/workspace", authMiddleware, streamRoutes)
   app.use("/api/workspace", authMiddleware, searchRoutes)
+  app.use("/api/workspace", authMiddleware, memoRoutes)
   // Invitation routes - get is public, accept requires auth
   app.use("/api/invite", invitationRoutes)
 

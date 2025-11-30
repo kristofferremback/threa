@@ -397,6 +397,81 @@ Your rating:`
   }
 }
 
+export interface ContextualHeaderResult {
+  header: string
+  success: boolean
+}
+
+export interface ContextMessage {
+  author: string
+  content: string
+  isTarget?: boolean
+}
+
+/**
+ * Generate a contextual header for a message to improve embedding quality.
+ * The header captures conversation context, participants, and topic.
+ */
+export async function generateContextualHeader(
+  targetMessage: ContextMessage,
+  contextMessages: ContextMessage[],
+  streamInfo: { name?: string; topic?: string; type?: string },
+): Promise<ContextualHeaderResult> {
+  const conversationContext = contextMessages
+    .map((m) => `${m.author}: ${m.content.slice(0, 300)}${m.content.length > 300 ? "..." : ""}`)
+    .join("\n")
+
+  const prompt = `Generate a brief contextual header for this message. Include:
+- What the conversation is about (1 sentence)
+- Key participants and their roles if apparent
+- Any relevant topic or context
+
+Keep it under 80 words. Be factual and concise.
+
+${streamInfo.name ? `Channel: #${streamInfo.name}` : ""}
+${streamInfo.topic ? `Topic: ${streamInfo.topic}` : ""}
+${streamInfo.type ? `Type: ${streamInfo.type}` : ""}
+
+Conversation:
+${conversationContext}
+
+Target message:
+${targetMessage.author}: ${targetMessage.content.slice(0, 500)}
+
+Contextual header:`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "contextual-header-generation",
+      prompt,
+      temperature: 0.3,
+      maxTokens: 150,
+      metadata: {
+        streamName: streamInfo.name,
+        contextMessageCount: contextMessages.length,
+      },
+    })
+
+    const header = result.text
+      .replace(/^(Header|Context|Summary):\s*/i, "")
+      .trim()
+
+    if (!header || header.length < 10) {
+      logger.debug({ streamName: streamInfo.name }, "Generated header too short")
+      return { header: "", success: false }
+    }
+
+    logger.debug(
+      { model: CLASSIFICATION_MODEL, headerLength: header.length, streamName: streamInfo.name },
+      "Contextual header generated",
+    )
+    return { header, success: true }
+  } catch (err) {
+    logger.error({ err, model: CLASSIFICATION_MODEL }, "Contextual header generation failed")
+    return { header: "", success: false }
+  }
+}
+
 // ============================================================================
 // Embedding functions (not traced - high volume, low debugging value)
 // ============================================================================

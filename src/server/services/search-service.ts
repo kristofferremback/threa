@@ -3,7 +3,7 @@ import { sql } from "../lib/db"
 import { generateEmbedding, estimateTokens, calculateCost, Models } from "../lib/ai-providers"
 import { AIUsageService } from "./ai-usage-service"
 import { logger } from "../lib/logger"
-import { getTextMessageEmbeddingTable, getKnowledgeEmbeddingTable } from "../lib/embedding-tables"
+import { getTextMessageEmbeddingTable, getMemoEmbeddingTable } from "../lib/embedding-tables"
 
 export interface SearchResult {
   type: "message" | "knowledge"
@@ -115,16 +115,16 @@ export class SearchService {
       results.push(...messageResults)
     }
 
-    // Search knowledge (if not messages-only and knowledge search enabled)
-    // Knowledge is only accessible in "user" scope (thinking spaces) or when no scope is set (UI search)
-    const canSearchKnowledge = !scope || scope.type === "user"
-    if (!searchMessagesOnly && options.searchKnowledge !== false && canSearchKnowledge) {
-      const knowledgeResults = await this.searchKnowledge(workspaceId, query, filters, {
+    // Search memos (if not messages-only and knowledge search enabled)
+    // Memos are only accessible in "user" scope (thinking spaces) or when no scope is set (UI search)
+    const canSearchMemos = !scope || scope.type === "user"
+    if (!searchMessagesOnly && options.searchKnowledge !== false && canSearchMemos) {
+      const memoResults = await this.searchMemos(workspaceId, query, filters, {
         limit: Math.max(10, limit - results.length),
         offset: 0,
         userId,
       })
-      results.push(...knowledgeResults)
+      results.push(...memoResults)
     }
 
     // Sort by score and limit
@@ -461,50 +461,51 @@ export class SearchService {
   }
 
   /**
-   * Search knowledge base using hybrid vector + full-text search.
-   * Knowledge is workspace-wide and not stream-scoped for now.
-   * TODO: Consider adding source_stream permission checks if knowledge
-   * should inherit visibility from its source stream.
+   * Search memos using hybrid vector + full-text search.
+   * Memos are lightweight pointers to valuable conversations.
+   * Visibility follows the same pattern as message search (workspace/channel/private).
    */
-  private async searchKnowledge(
+  private async searchMemos(
     workspaceId: string,
     freeText: string,
     _filters: TypedSearchFilters,
     options: { limit: number; offset: number; userId?: string },
   ): Promise<SearchResult[]> {
     if (!freeText.trim()) {
-      // No free text - return recent knowledge
+      // No free text - return recent high-confidence memos
       const result = await this.pool.query(
         sql`SELECT
-          k.id, k.title, k.summary, k.content, k.created_at,
-          k.source_stream_id as stream_id,
+          m.id, m.summary, m.topics, m.created_at, m.confidence,
+          m.context_stream_id as stream_id,
           s.slug as stream_slug, s.name as stream_name,
           u.id as actor_id, u.email as actor_email, COALESCE(wp.display_name, u.name) as actor_name
-        FROM knowledge k
-        LEFT JOIN streams s ON k.source_stream_id = s.id
-        INNER JOIN users u ON k.created_by = u.id
-        LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = k.workspace_id
-        WHERE k.workspace_id = ${workspaceId}
-          AND k.archived_at IS NULL
-        ORDER BY k.created_at DESC
+        FROM memos m
+        LEFT JOIN streams s ON m.context_stream_id = s.id
+        LEFT JOIN users u ON m.created_by = u.id
+        LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = m.workspace_id
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.archived_at IS NULL
+        ORDER BY m.confidence DESC, m.created_at DESC
         LIMIT ${options.limit}
         OFFSET ${options.offset}`,
       )
 
       return result.rows.map((row) => ({
-        type: "knowledge" as const,
+        type: "knowledge" as const, // Keep 'knowledge' for API compatibility
         id: row.id,
         streamId: row.stream_id,
         streamSlug: row.stream_slug,
         streamName: row.stream_name,
-        content: `**${row.title}**\n\n${row.summary}`,
-        score: 1,
+        content: row.summary,
+        score: row.confidence || 0.5,
         createdAt: row.created_at.toISOString(),
-        actor: {
-          id: row.actor_id,
-          name: row.actor_name || row.actor_email,
-          email: row.actor_email,
-        },
+        actor: row.actor_id
+          ? {
+              id: row.actor_id,
+              name: row.actor_name || row.actor_email,
+              email: row.actor_email,
+            }
+          : undefined,
       }))
     }
 
@@ -518,7 +519,7 @@ export class SearchService {
       model: Models.EMBEDDING,
       inputTokens: estimateTokens(freeText),
       costCents: calculateCost(Models.EMBEDDING, { inputTokens: estimateTokens(freeText) }),
-      metadata: { purpose: "search_knowledge" },
+      metadata: { purpose: "search_memos" },
     })
 
     const embeddingJson = JSON.stringify(embedding.embedding)
@@ -527,43 +528,43 @@ export class SearchService {
       .filter((w) => w.length > 2)
       .join(" & ")
 
-    // Get the appropriate knowledge embedding table based on provider
-    const knowledgeEmbeddingTable = getKnowledgeEmbeddingTable()
+    // Get the appropriate memo embedding table based on provider
+    const memoEmbeddingTable = getMemoEmbeddingTable()
 
     const result = await this.pool.query(
       sql`WITH semantic AS (
-        SELECT k.id, 1 - (emb.embedding <=> ${embeddingJson}::vector) as score
-        FROM knowledge k
-        INNER JOIN ${sql.raw(knowledgeEmbeddingTable)} emb ON emb.knowledge_id = k.id
-        WHERE k.workspace_id = ${workspaceId}
-          AND k.archived_at IS NULL
+        SELECT m.id, 1 - (emb.embedding <=> ${embeddingJson}::vector) as score
+        FROM memos m
+        INNER JOIN ${sql.raw(memoEmbeddingTable)} emb ON emb.memo_id = m.id
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.archived_at IS NULL
         ORDER BY emb.embedding <=> ${embeddingJson}::vector
         LIMIT 50
       ),
       fulltext AS (
         SELECT id, ts_rank(search_vector, to_tsquery('english', ${tsQuery})) as score
-        FROM knowledge
+        FROM memos
         WHERE workspace_id = ${workspaceId}
           AND archived_at IS NULL
           AND search_vector @@ to_tsquery('english', ${tsQuery})
         LIMIT 50
       )
       SELECT
-        k.id, k.title, k.summary, k.content, k.created_at,
-        k.source_stream_id as stream_id,
+        m.id, m.summary, m.topics, m.created_at, m.confidence,
+        m.context_stream_id as stream_id,
         s.slug as stream_slug, s.name as stream_name,
         u.id as actor_id, u.email as actor_email, COALESCE(wp.display_name, u.name) as actor_name,
         COALESCE(sem.score, 0) * 0.6 + COALESCE(ft.score, 0) * 0.4 as combined_score,
-        ts_headline('english', k.title || ' ' || k.summary, to_tsquery('english', ${tsQuery}),
+        ts_headline('english', m.summary, to_tsquery('english', ${tsQuery}),
           'MaxWords=30, MinWords=10, StartSel=**, StopSel=**') as highlights
-      FROM knowledge k
-      LEFT JOIN streams s ON k.source_stream_id = s.id
-      INNER JOIN users u ON k.created_by = u.id
-      LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = k.workspace_id
-      LEFT JOIN semantic sem ON k.id = sem.id
-      LEFT JOIN fulltext ft ON k.id = ft.id
-      WHERE k.workspace_id = ${workspaceId}
-        AND k.archived_at IS NULL
+      FROM memos m
+      LEFT JOIN streams s ON m.context_stream_id = s.id
+      LEFT JOIN users u ON m.created_by = u.id
+      LEFT JOIN workspace_profiles wp ON u.id = wp.user_id AND wp.workspace_id = m.workspace_id
+      LEFT JOIN semantic sem ON m.id = sem.id
+      LEFT JOIN fulltext ft ON m.id = ft.id
+      WHERE m.workspace_id = ${workspaceId}
+        AND m.archived_at IS NULL
         AND (sem.id IS NOT NULL OR ft.id IS NOT NULL)
       ORDER BY combined_score DESC
       LIMIT ${options.limit}
@@ -571,20 +572,22 @@ export class SearchService {
     )
 
     return result.rows.map((row) => ({
-      type: "knowledge" as const,
+      type: "knowledge" as const, // Keep 'knowledge' for API compatibility
       id: row.id,
       streamId: row.stream_id,
       streamSlug: row.stream_slug,
       streamName: row.stream_name,
-      content: `**${row.title}**\n\n${row.summary}`,
+      content: row.summary,
       score: parseFloat(row.combined_score) || 0,
       highlights: row.highlights,
       createdAt: row.created_at.toISOString(),
-      actor: {
-        id: row.actor_id,
-        name: row.actor_name || row.actor_email,
-        email: row.actor_email,
-      },
+      actor: row.actor_id
+        ? {
+            id: row.actor_id,
+            name: row.actor_name || row.actor_email,
+            email: row.actor_email,
+          }
+        : undefined,
     }))
   }
 

@@ -28,11 +28,13 @@ export async function initJobQueue(connectionString: string): Promise<PgBoss> {
   logger.info("pg-boss job queue started")
 
   // Pre-create queues so workers don't error when polling empty queues
-  const queues: AIJobType[] = ["ai.embed", "ai.classify", "ai.respond", "ai.extract"]
-  for (const queue of queues) {
+  const aiQueues: AIJobType[] = ["ai.embed", "ai.classify", "ai.respond", "ai.extract"]
+  const memoryQueues: MemoryJobType[] = ["memory.enrich", "memory.create-memo", "memory.evolve"]
+  const allQueues = [...aiQueues, ...memoryQueues]
+  for (const queue of allQueues) {
     await boss.createQueue(queue)
   }
-  logger.info({ queues }, "AI job queues created")
+  logger.info({ queues: allQueues }, "Job queues created")
 
   return boss
 }
@@ -55,6 +57,8 @@ export async function stopJobQueue(): Promise<void> {
 
 // Job type definitions
 export type AIJobType = "ai.embed" | "ai.classify" | "ai.respond" | "ai.extract"
+export type MemoryJobType = "memory.enrich" | "memory.create-memo" | "memory.evolve"
+export type JobType = AIJobType | MemoryJobType
 
 // Priority levels (lower = higher priority)
 export const JobPriority = {
@@ -103,6 +107,35 @@ export interface ExtractJobData {
     content: string
     createdAt: string
   }>
+}
+
+// Memory system job data types
+export interface EnrichJobData {
+  workspaceId: string
+  textMessageId: string
+  eventId: string
+  signals: EnrichmentSignals
+}
+
+export interface EnrichmentSignals {
+  reactions?: number
+  replies?: number
+  retrieved?: boolean
+  helpful?: boolean
+}
+
+export interface CreateMemoJobData {
+  workspaceId: string
+  anchorEventIds: string[]
+  streamId: string
+  source: "user" | "system" | "ariadne"
+  createdBy?: string
+  summary?: string
+  sessionId?: string
+}
+
+export interface EvolveJobData {
+  workspaceId: string
 }
 
 // Helper to enqueue jobs with workspace AI check

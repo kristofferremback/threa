@@ -4,6 +4,7 @@ import { EmbeddingWorker } from "./embedding-worker"
 import { ClassificationWorker } from "./classification-worker"
 import { AriadneWorker } from "./ariadne-worker"
 import { AriadneTrigger } from "./ariadne-trigger"
+import { EnrichmentWorker } from "./enrichment-worker"
 import { checkOllamaHealth, ensureOllamaModels } from "../lib/ollama"
 import { logger } from "../lib/logger"
 
@@ -11,6 +12,7 @@ let embeddingWorker: EmbeddingWorker | null = null
 let classificationWorker: ClassificationWorker | null = null
 let ariadneWorker: AriadneWorker | null = null
 let ariadneTrigger: AriadneTrigger | null = null
+let enrichmentWorker: EnrichmentWorker | null = null
 
 /**
  * Initialize and start all AI workers.
@@ -52,12 +54,14 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
   embeddingWorker = new EmbeddingWorker(pool)
   classificationWorker = new ClassificationWorker(pool)
   ariadneWorker = new AriadneWorker(pool, ariadneTrigger)
+  enrichmentWorker = new EnrichmentWorker(pool)
 
   // Start workers
   await embeddingWorker.start()
   await classificationWorker.start()
   await ariadneWorker.start()
   await ariadneTrigger.start()
+  await enrichmentWorker.start()
 
   logger.info("AI workers started successfully")
 }
@@ -78,6 +82,7 @@ export async function stopWorkers(): Promise<void> {
   embeddingWorker = null
   classificationWorker = null
   ariadneWorker = null
+  enrichmentWorker = null
 
   logger.info("AI workers stopped")
 }
@@ -86,3 +91,10 @@ export async function stopWorkers(): Promise<void> {
 export { queueEmbedding, backfillEmbeddings } from "./embedding-worker"
 export { maybeQueueClassification, shouldClassifyStream } from "./classification-worker"
 export { queueAriadneResponse } from "./ariadne-worker"
+export {
+  queueEnrichment,
+  queueEnrichmentForThreadParent,
+  queueEnrichmentForThreadReply,
+  queueEnrichmentForReaction,
+  queueEnrichmentForRetrieval,
+} from "./enrichment-worker"

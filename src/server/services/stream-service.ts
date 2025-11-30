@@ -5,6 +5,7 @@ import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
 import { generateAutoName } from "../lib/ollama"
 import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
+import { queueEnrichmentForThreadParent, queueEnrichmentForThreadReply, queueEnrichmentForReaction } from "../workers"
 
 // ============================================================================
 // Types
@@ -739,6 +740,17 @@ export class StreamService {
       const event = await this.getEventWithDetails(threadEventId)
 
       logger.info({ streamId, parentStreamId: originalEvent.parent_stream_id }, "Thread created")
+
+      // Queue enrichment for the parent message (thread creation is a signal of value)
+      if (originalEvent.content_type === "text_message" && originalEvent.content_id) {
+        queueEnrichmentForThreadParent({
+          workspaceId: originalEvent.workspace_id,
+          parentEventId: eventId,
+          parentTextMessageId: originalEvent.content_id,
+        }).catch((err) => {
+          logger.warn({ err, eventId }, "Failed to queue enrichment for thread parent")
+        })
+      }
 
       return { stream, event: event! }
     } catch (error) {
@@ -2303,5 +2315,179 @@ export class StreamService {
       replyCount: parseInt(row.reply_count || "0", 10),
       isEdited: Boolean(row.edited_at),
     }
+  }
+
+  // ==========================================================================
+  // Reactions
+  // ==========================================================================
+
+  /**
+   * Add a reaction to a message.
+   */
+  async addReaction(eventId: string, userId: string, reaction: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get event info for workspace and content
+      const eventResult = await client.query(
+        sql`SELECT e.id, e.stream_id, e.content_type, e.content_id, s.workspace_id
+            FROM stream_events e
+            JOIN streams s ON e.stream_id = s.id
+            WHERE e.id = ${eventId}`,
+      )
+
+      if (eventResult.rows.length === 0) {
+        throw new Error("Event not found")
+      }
+
+      const event = eventResult.rows[0]
+
+      // Insert reaction (upsert to handle duplicates)
+      const reactionId = generateId("msgr")
+      await client.query(
+        sql`INSERT INTO message_reactions (id, message_id, user_id, reaction)
+            VALUES (${reactionId}, ${eventId}, ${userId}, ${reaction})
+            ON CONFLICT (message_id, user_id, reaction) DO NOTHING`,
+      )
+
+      // Get updated reaction count
+      const countResult = await client.query<{ count: string }>(
+        sql`SELECT COUNT(*)::text as count FROM message_reactions
+            WHERE message_id = ${eventId} AND deleted_at IS NULL`,
+      )
+      const reactionCount = parseInt(countResult.rows[0].count, 10)
+
+      // Emit outbox event for real-time updates
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, 'reaction.added', ${JSON.stringify({
+              event_id: eventId,
+              stream_id: event.stream_id,
+              workspace_id: event.workspace_id,
+              user_id: userId,
+              reaction,
+              reaction_count: reactionCount,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      // Queue enrichment if this is a text message with enough reactions
+      if (event.content_type === "text_message" && event.content_id) {
+        queueEnrichmentForReaction({
+          workspaceId: event.workspace_id,
+          eventId,
+          textMessageId: event.content_id,
+          reactionCount,
+        }).catch((err) => {
+          logger.warn({ err, eventId }, "Failed to queue enrichment for reaction")
+        })
+      }
+
+      logger.debug({ eventId, userId, reaction, reactionCount }, "Reaction added")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Remove a reaction from a message.
+   */
+  async removeReaction(eventId: string, userId: string, reaction: string): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("BEGIN")
+
+      // Get event info for workspace
+      const eventResult = await client.query(
+        sql`SELECT e.stream_id, s.workspace_id
+            FROM stream_events e
+            JOIN streams s ON e.stream_id = s.id
+            WHERE e.id = ${eventId}`,
+      )
+
+      if (eventResult.rows.length === 0) {
+        throw new Error("Event not found")
+      }
+
+      const event = eventResult.rows[0]
+
+      // Soft delete the reaction
+      await client.query(
+        sql`UPDATE message_reactions
+            SET deleted_at = NOW()
+            WHERE message_id = ${eventId} AND user_id = ${userId} AND reaction = ${reaction}`,
+      )
+
+      // Get updated reaction count
+      const countResult = await client.query<{ count: string }>(
+        sql`SELECT COUNT(*)::text as count FROM message_reactions
+            WHERE message_id = ${eventId} AND deleted_at IS NULL`,
+      )
+      const reactionCount = parseInt(countResult.rows[0].count, 10)
+
+      // Emit outbox event
+      const outboxId = generateId("outbox")
+      await client.query(
+        sql`INSERT INTO outbox (id, event_type, payload)
+            VALUES (${outboxId}, 'reaction.removed', ${JSON.stringify({
+              event_id: eventId,
+              stream_id: event.stream_id,
+              workspace_id: event.workspace_id,
+              user_id: userId,
+              reaction,
+              reaction_count: reactionCount,
+            })})`,
+      )
+      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+      await client.query("COMMIT")
+
+      logger.debug({ eventId, userId, reaction }, "Reaction removed")
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  /**
+   * Get reactions for an event.
+   */
+  async getReactions(eventId: string): Promise<Array<{ userId: string; reaction: string; createdAt: Date }>> {
+    const result = await this.pool.query<{
+      user_id: string
+      reaction: string
+      created_at: Date
+    }>(
+      sql`SELECT user_id, reaction, created_at
+          FROM message_reactions
+          WHERE message_id = ${eventId} AND deleted_at IS NULL
+          ORDER BY created_at ASC`,
+    )
+
+    return result.rows.map((r) => ({
+      userId: r.user_id,
+      reaction: r.reaction,
+      createdAt: r.created_at,
+    }))
+  }
+
+  /**
+   * Get reaction count for an event.
+   */
+  async getReactionCount(eventId: string): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      sql`SELECT COUNT(*)::text as count FROM message_reactions
+          WHERE message_id = ${eventId} AND deleted_at IS NULL`,
+    )
+    return parseInt(result.rows[0].count, 10)
   }
 }

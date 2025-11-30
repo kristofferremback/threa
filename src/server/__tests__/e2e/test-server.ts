@@ -11,6 +11,7 @@ import { createAuthMiddleware, createAuthRoutes } from "../../routes/auth-routes
 import { createStreamRoutes } from "../../routes/stream-routes"
 import { createSearchRoutes } from "../../routes/search-routes"
 import { createInvitationRoutes } from "../../routes/invitation-routes"
+import { createMemoRoutes } from "../../routes/memo-routes"
 import { StreamService } from "../../services/stream-service"
 import { WorkspaceService } from "../../services/workspace-service"
 import { UserService } from "../../services/user-service"
@@ -137,10 +138,12 @@ export async function getTestServer(): Promise<TestServerContext> {
   const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
   const searchRoutes = createSearchRoutes(searchService)
   const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
+  const memoRoutes = createMemoRoutes(pool)
 
   app.use("/api/auth", authRoutes)
   app.use("/api/workspace", authMiddleware, streamRoutes)
   app.use("/api/workspace", authMiddleware, searchRoutes)
+  app.use("/api/workspace", authMiddleware, memoRoutes)
   app.use("/api/invite", invitationRoutes)
 
   // Create HTTP server

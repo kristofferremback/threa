@@ -2,8 +2,10 @@ import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData } from "../lib/job-queue"
 import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage, StreamContext } from "../ai/ariadne/agent"
+import { AriadneResearcher, classifyQuestionComplexity } from "../ai/ariadne/researcher"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
+import { MemoService } from "../services/memo-service"
 import { AgentSessionService, SessionStep } from "../services/agent-session-service"
 import { logger } from "../lib/logger"
 import { Models, calculateCost } from "../lib/ai-providers"
@@ -12,6 +14,7 @@ import { scoreHelpfulness } from "../lib/ollama"
 import { Langfuse } from "langfuse"
 import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL } from "../config"
 import type { AriadneTrigger } from "./ariadne-trigger"
+import type { SearchScope } from "../services/search-service"
 
 // Initialize Langfuse client for scoring
 const langfuse =
@@ -36,6 +39,7 @@ const CHANNEL_CONTEXT_MESSAGES = 10
 export class AriadneWorker {
   private usageService: AIUsageService
   private streamService: StreamService
+  private memoService: MemoService
   private sessionService: AgentSessionService
   private isRunning = false
 
@@ -45,6 +49,7 @@ export class AriadneWorker {
   ) {
     this.usageService = new AIUsageService(pool)
     this.streamService = new StreamService(pool)
+    this.memoService = new MemoService(pool)
     this.sessionService = new AgentSessionService(pool)
   }
 
@@ -248,6 +253,13 @@ export class AriadneWorker {
         `Found ${conversationHistory.length} messages, ${memberCount} participants${parentInfo}${backgroundContext ? ", plus channel context" : ""}`,
       )
 
+      // Determine search scope from context
+      const scope: SearchScope = this.determineSearchScope(streamType, streamVisibility, streamId)
+
+      // Classify question complexity (for retrieval mode only)
+      const isRetrievalMode = mode !== "thinking_partner"
+      const complexity = isRetrievalMode ? await classifyQuestionComplexity(question) : "simple"
+
       logger.info(
         {
           job: job.id,
@@ -256,39 +268,67 @@ export class AriadneWorker {
           streamType,
           mentionedBy: mentionedByName,
           mode: mode || "retrieval",
+          complexity,
           historyMessages: conversationHistory.length,
           hasBackgroundContext: !!backgroundContext,
         },
         "Processing Ariadne request",
       )
 
-      // Step: Reasoning (starts when we call the agent)
-      const reasoningStepId = await addStep("reasoning", "Thinking...")
-
-      // Use streaming to capture tool calls and track them as steps
       let finalResponse = ""
-      const activeToolSteps = new Map<string, string>() // tool content -> stepId
+      let citedEventIds: string[] = []
+      let researcherIterations = 0
 
-      for await (const chunk of streamAriadne(this.pool, context, question)) {
-        if (chunk.type === "tool_call") {
-          // Check if we already have a step for this tool call
-          if (!activeToolSteps.has(chunk.content)) {
-            // Create a new tool call step
-            const toolStepId = await addStep("tool_call", chunk.content, {
-              toolName: chunk.content.split(" ")[0], // Extract tool name from content like "search_messages: query"
-            })
-            activeToolSteps.set(chunk.content, toolStepId)
-          }
-        } else if (chunk.type === "token") {
-          // Accumulate the final response
-          finalResponse = chunk.content
-        } else if (chunk.type === "done") {
-          // Complete reasoning step
-          await completeStep(reasoningStepId)
+      // For complex retrieval questions, use the iterative researcher
+      if (isRetrievalMode && complexity === "complex" && !conversationHistory.length) {
+        // Step: Researching (iterative)
+        const researchStepId = await addStep("reasoning", "Researching your question...")
 
-          // Complete any pending tool steps
-          for (const [_content, stepId] of activeToolSteps) {
-            await completeStep(stepId)
+        try {
+          const researcher = new AriadneResearcher(this.pool, workspaceId, mentionedBy, scope)
+          const result = await researcher.research(question)
+
+          finalResponse = result.content
+          citedEventIds = result.citations
+          researcherIterations = result.iterations
+
+          await completeStep(researchStepId, `Found ${result.citations.length} relevant messages in ${result.iterations} iterations (confidence: ${(result.confidence * 100).toFixed(0)}%)`)
+        } catch (err) {
+          logger.warn({ err }, "Researcher failed, falling back to streaming agent")
+          await completeStep(researchStepId, "Research failed, using standard approach", true)
+          // Fall through to streaming agent below
+        }
+      }
+
+      // If we don't have a response yet (simple question, thinking partner, or researcher failed), use streaming agent
+      if (!finalResponse) {
+        // Step: Reasoning (starts when we call the agent)
+        const reasoningStepId = await addStep("reasoning", "Thinking...")
+
+        // Use streaming to capture tool calls and track them as steps
+        const activeToolSteps = new Map<string, string>() // tool content -> stepId
+
+        for await (const chunk of streamAriadne(this.pool, context, question)) {
+          if (chunk.type === "tool_call") {
+            // Check if we already have a step for this tool call
+            if (!activeToolSteps.has(chunk.content)) {
+              // Create a new tool call step
+              const toolStepId = await addStep("tool_call", chunk.content, {
+                toolName: chunk.content.split(" ")[0], // Extract tool name from content like "search_messages: query"
+              })
+              activeToolSteps.set(chunk.content, toolStepId)
+            }
+          } else if (chunk.type === "token") {
+            // Accumulate the final response
+            finalResponse = chunk.content
+          } else if (chunk.type === "done") {
+            // Complete reasoning step
+            await completeStep(reasoningStepId)
+
+            // Complete any pending tool steps
+            for (const [_content, stepId] of activeToolSteps) {
+              await completeStep(stepId)
+            }
           }
         }
       }
@@ -355,6 +395,20 @@ export class AriadneWorker {
       this.scoreAndLogHelpfulness(session.id, question, finalResponse, context, workspaceId).catch((err) => {
         logger.warn({ err, sessionId: session.id }, "Failed to score helpfulness")
       })
+
+      // Auto-create memo from successful researcher answers (high confidence)
+      if (researcherIterations > 0 && citedEventIds.length > 0) {
+        this.memoService.createFromAriadneSuccess({
+          workspaceId,
+          query: question,
+          citedEventIds,
+          responseEventId: responseEvent.id,
+          sessionId: session.id,
+          streamId: responseStreamId,
+        }).catch((err) => {
+          logger.warn({ err, sessionId: session.id }, "Failed to auto-create memo")
+        })
+      }
 
       logger.info(
         { job: job.id, sessionId: session.id, responseLength: finalResponse.length, costCents },
@@ -591,6 +645,24 @@ export class AriadneWorker {
       logger.error({ err, streamId }, "Failed to fetch stream context")
       return undefined
     }
+  }
+
+  /**
+   * Determine the search scope based on stream type and visibility.
+   */
+  private determineSearchScope(streamType: string, streamVisibility: string, streamId: string): SearchScope {
+    // Thinking spaces: full user access
+    if (streamType === "thinking_space") {
+      return { type: "user" }
+    }
+
+    // Private streams: current stream + public
+    if (streamVisibility === "private") {
+      return { type: "private", currentStreamId: streamId }
+    }
+
+    // Public streams: public only
+    return { type: "public" }
   }
 
   /**

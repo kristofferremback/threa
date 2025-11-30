@@ -4,6 +4,7 @@ import { Pool } from "pg"
 import * as cheerio from "cheerio"
 import { SearchService, SearchScope } from "../../services/search-service"
 import { StreamService } from "../../services/stream-service"
+import { MemoService } from "../../services/memo-service"
 import { logger } from "../../lib/logger"
 
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY
@@ -29,6 +30,7 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
   const { workspaceId, userId, currentStreamId, scope } = context
   const searchService = new SearchService(pool)
   const streamService = new StreamService(pool)
+  const memoService = new MemoService(pool)
 
   const searchMessages = tool(
     async (input) => {
@@ -129,20 +131,33 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
     },
   )
 
-  const searchKnowledge = tool(
+  const searchMemos = tool(
     async (input) => {
       try {
         const results = await searchService.search(workspaceId, input.query, {
           limit: input.limit || 10,
           searchMessages: false,
-          searchKnowledge: true,
+          searchKnowledge: true, // Searches memos (renamed from knowledge)
           userId,
-          scope, // Context-aware information boundaries (knowledge only in "user" scope)
+          scope, // Context-aware information boundaries (memos only in "user" scope)
         })
 
         if (results.results.length === 0) {
-          return "No knowledge articles found matching that query."
+          return "No memos found matching that query. Try searching messages instead."
         }
+
+        // Log the retrieval for evolution tracking
+        const retrievedMemoIds = results.results.map((r) => r.id)
+        await memoService.logRetrieval({
+          workspaceId,
+          query: input.query,
+          requesterType: "ariadne",
+          requesterId: userId,
+          retrievedMemoIds,
+          retrievalScores: Object.fromEntries(results.results.map((r) => [r.id, r.score])),
+        }).catch((err) => {
+          logger.warn({ err }, "Failed to log memo retrieval")
+        })
 
         return results.results
           .map((r, i) => {
@@ -151,16 +166,16 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
           })
           .join("\n\n---\n\n")
       } catch (err) {
-        logger.error({ err }, "Ariadne: searchKnowledge tool failed")
-        return "Failed to search knowledge base. Please try again."
+        logger.error({ err }, "Ariadne: searchMemos tool failed")
+        return "Failed to search memos. Please try again."
       }
     },
     {
-      name: "search_knowledge",
+      name: "search_memos",
       description:
-        "Search the knowledge base for documented information, how-tos, decisions, and guides. Use this for finding established knowledge rather than recent conversations.",
+        "Search memos - lightweight pointers to valuable past conversations and decisions. Memos summarize what knowledge exists and where to find it. Use this FIRST before searching all messages, as memos point to the most relevant discussions. If memo results are helpful, follow up with get_thread_history to read the full context.",
       schema: z.object({
-        query: z.string().describe("The search query for the knowledge base."),
+        query: z.string().describe("The search query for memos. Be specific about what information you're looking for."),
         limit: z.number().optional().describe("Maximum number of results to return (default: 10)"),
       }),
     },
@@ -447,5 +462,5 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
     },
   )
 
-  return [searchMessages, searchKnowledge, getStreamContext, getThreadHistory, webSearch, fetchUrl]
+  return [searchMemos, searchMessages, getStreamContext, getThreadHistory, webSearch, fetchUrl]
 }

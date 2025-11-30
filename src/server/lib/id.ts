@@ -32,8 +32,16 @@ export function messageReactionId(): string {
   return generateId("msgr")
 }
 
-export function knowledgeId(): string {
-  return generateId("know")
+export function memoId(): string {
+  return generateId("memo")
+}
+
+export function retrievalLogId(): string {
+  return generateId("retr")
+}
+
+export function expertiseSignalId(): string {
+  return generateId("exp")
 }
 
 export function aiUsageId(): string {
@@ -42,10 +50,6 @@ export function aiUsageId(): string {
 
 export function aiPersonaId(): string {
   return generateId("pers")
-}
-
-export function knowledgeFeedbackId(): string {
-  return generateId("kfb")
 }
 
 export function agentSessionId(): string {
