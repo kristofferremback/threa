@@ -19,20 +19,20 @@ describe("E2E: Server Startup", () => {
     }
   })
 
-  testFn("should start server and respond to health check", async () => {
-    // Start the server as a subprocess with test environment
+  testFn("should start server with 'bun start' and respond to health check", async () => {
+    // Start the server using the actual production command (bun start)
+    // This tests the real app setup, not a test-specific configuration
     serverProcess = spawn({
-      cmd: ["bun", "src/server/index.ts"],
+      cmd: ["bun", "run", "start"],
       env: {
         ...process.env,
         PORT: String(TEST_PORT),
         DATABASE_URL: TEST_DATABASE_URL,
         REDIS_URL: REDIS_URL,
-        NODE_ENV: "test",
         // WorkOS credentials - using dummy values for startup test
         WORKOS_API_KEY: "sk_test_dummy",
         WORKOS_CLIENT_ID: "client_dummy",
-        WORKOS_REDIRECT_URI: "http://localhost:3098/api/auth/callback",
+        WORKOS_REDIRECT_URI: `http://localhost:${TEST_PORT}/api/auth/callback`,
         WORKOS_COOKIE_PASSWORD: "test_cookie_password_at_least_32_chars",
       },
       stdout: "pipe",
