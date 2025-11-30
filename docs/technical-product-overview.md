@@ -55,6 +55,26 @@
 - Information silos create friction
 - Experts are bottlenecked answering repeat questions
 
+### Implementation Priority (PoC Phase)
+
+The solo-founder use case is the strategic wedge. If @ariadne is a compelling thinking partner, founders adopt Threa before they'd pick Slack — and their teams inherit the decision. This inverts the typical "convince a team to switch" challenge.
+
+**Critical Path:**
+
+| Priority | Feature | Rationale |
+|----------|---------|-----------|
+| 1 | **Thinking Spaces + Thinking Partner @ariadne** | Core solo-founder value. Without this, Threa competes on collaboration features where Slack has a decade head start. |
+| 2 | **Knowledge extraction UI** | "Save as knowledge" button + AI-assisted structuring. Closes the loop from conversation → reusable knowledge. |
+| 3 | **Search polish** | Hybrid search foundation exists. Polish for surfacing context well — essential for both retrieval and solo thinking. |
+| 4 | **Multi-channel UX refinement** | The architectural moat. Not the marketing headline, but the hard-to-copy differentiator. Keep improving. |
+
+**Deferred to post-validation:**
+
+- AI Persona System (section 5.7) — validates after @ariadne proves valuable
+- Integration add-ons (GitHub, Linear, Notion) — expands knowledge surface after core works
+- Pricing/monetization specifics — observe usage patterns first
+- Migration tools — less critical if winning founders before they adopt Slack
+
 ---
 
 ## 2. Problem Space Analysis
@@ -112,7 +132,7 @@ From the product specification, key metrics Threa aims to improve:
 **Primary**: Engineering-led startups and scale-ups
 
 Characteristics:
-- 1-1,000 employees (sweet spot: 20-200)
+- 1-1,000 employees (initial focus: 1-50, sweet spot: solo founders through Series A)
 - Distributed/remote work culture
 - High knowledge worker density
 - Growing fast enough that institutional knowledge matters
@@ -124,15 +144,56 @@ Characteristics:
 - Onboarding new engineers
 - Preserving decision context ("why did we choose X?")
 
-### 3.2 Pricing Model
+### 3.2 Single-Founder to Team: Solving the Cold-Start Problem
 
-**Target**: ~$10/user/month for paid plans
+Most collaboration tools are useless until you have collaborators—Slack with one person is just a weird notes app. Threa inverts this dynamic by providing **single-player value that compounds into multi-player advantage**.
 
-**Tier Structure** (implied from documentation):
-- **Free Tier**: Basic chat with multi-channel conversations (no AI)
-- **Paid Tier**: Chat + AI features (search, @ariadne, knowledge extraction)
+**The Solo Founder Use Case:**
 
-### 3.3 Strategic Positioning
+A founder using Threa as their "second brain"—thinking through problems with @assistant, extracting knowledge from their own reasoning, building institutional memory *before* there's an institution.
+
+**The Expansion Moment:**
+
+When employee #1 joins:
+- Context already exists—no "let me explain how we got here"
+- Knowledge base is populated from founder's explorations
+- New hire can ask @assistant "why did we decide on this architecture?" and get answers from conversations the founder had *with themselves*
+- Onboarding becomes inheritance rather than recreation
+
+**Strategic Implications:**
+
+1. **Single-player value**: The AI assistant must be genuinely useful for solo thinking and exploration—good enough that a founder chooses Threa over raw ChatGPT/Claude
+2. **Zero-friction team expansion**: Adding people adds them to existing context, not a new empty workspace
+3. **Built-in onboarding**: New hires inherit the founder's accumulated knowledge
+4. **Solved cold-start problem**: No need to convince a team to switch simultaneously—convince one founder, the team inherits the decision
+
+This extends the target range from "1-50 employees" to literally starting at 1. The founder builds the knowledge graph; the team benefits from day one.
+
+**Prioritization Implication:** This strengthens the case for making @assistant excellent before expanding other features. If the single-player AI experience is compelling, organic growth into teams follows. If it's mediocre, Threa competes on collaboration features where Slack has a decade head start.
+
+### 3.3 Pricing Model
+
+**Target**: ~$10/user/month for paid plans (preliminary)
+
+**Tier Structure** (preliminary):
+- **Free Tier**: Basic chat with multi-channel conversations, unlimited message history (no AI)
+- **Pro Tier**: Chat + AI features (search, @ariadne, curated personas, knowledge extraction)
+
+### 3.4 Monetization Principles (To Be Validated)
+
+Pricing will be determined after validating usage patterns. Key principles to guide future decisions:
+
+1. **Simplicity over optimization**: Complex pricing kills conversions. When in doubt, simpler.
+
+2. **Capability-based, not count-based**: If we monetize personas, charge for *what they can do* (model tier, integration access) rather than *how many exist*. Persona creation is free — it's just configuration.
+
+3. **Aligned with actual costs**: Sonnet costs ~10x Haiku; integrations require maintenance. Pricing should reflect this naturally.
+
+4. **Competitive positioning**: Slack AI charges $10/user/month mandatory for all users. There's room to offer better value through flexibility.
+
+5. **Validate first, price later**: Build the persona system, observe how teams use it, then design pricing around real patterns.
+
+### 3.5 Strategic Positioning
 
 Threa is **not** attempting to:
 - Replace Slack at enterprise scale
@@ -336,6 +397,113 @@ If score ≥ 3: Queue classification
 - Exponential backoff
 - 1-hour expiration
 - 7-day retention, 14-day deletion
+
+### 5.7 AI Persona System (Planned)
+
+**Philosophy**: Ariadne is the default persona, but workspaces will be able to configure additional AI personas with different capabilities, tool access, and behavioral patterns. Customers have use cases we can't anticipate—self-service persona creation unlocks that value.
+
+**Architecture Concept**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PERSONA SYSTEM                            │
+├─────────────────────────────────────────────────────────────┤
+│  CURATED PERSONAS (Threa-provided)                          │
+│  @ariadne    - General knowledge companion (default)        │
+│  @reviewer   - Code review assistance, PR context           │
+│  @onboarder  - New hire questions, explains "why we do X"   │
+│  @incident   - Incident coordination, runbook lookup        │
+├─────────────────────────────────────────────────────────────┤
+│  CUSTOM PERSONAS (Workspace-defined)                        │
+│  - Custom system prompts                                    │
+│  - Selective tool access (e.g., only search_knowledge)      │
+│  - Channel restrictions (only responds in certain channels) │
+│  - Model selection (Sonnet vs Haiku for cost control)       │
+│  - Integration-specific (e.g., @github with repo context)   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Persona Configuration**:
+```typescript
+interface AIPersona {
+  id: string;                    // persona_01ARZ3...
+  workspace_id: string;
+  name: string;                  // Display name (@reviewer)
+  system_prompt: string;         // Custom instructions
+  tools: string[];               // Allowed tool IDs
+  channels: string[] | null;     // Restricted channels (null = all)
+  model: 'sonnet' | 'haiku';     // Model selection
+  temperature: number;           // Response creativity
+  is_curated: boolean;           // Threa-provided vs custom
+  created_by: string;
+  created_at: Date;
+}
+```
+
+**Strategic Value**:
+
+1. **Extensibility without engineering**: Customers configure personas for their specific workflows without Threa building each use case
+2. **Integration leverage**: Personas can be specialized for specific integrations (e.g., @github persona with repository-aware tools)
+3. **Cost control**: Workspaces can create Haiku-based personas for high-volume, simpler tasks
+4. **Channel-specific behavior**: A `#support` channel might have a customer-focused persona while `#engineering` has a technical one
+5. **Competitive moat**: The accumulated personas and their configurations become workspace-specific institutional knowledge
+
+**Scope**: Deferred to post-MVP. Ariadne as single persona validates the AI assistant value; persona system expands it.
+
+### 5.8 Thinking Spaces (Planned)
+
+**Philosophy**: @ariadne in channels is a retrieval assistant — invoked explicitly, answers from knowledge. But solo founders (and small teams) need a *thinking partner* — an AI that engages with problems, asks questions, and reasons alongside you. Thinking Spaces provide this mode.
+
+**Core Concept**: A Thinking Space is a stream where @ariadne is always present and engaged. No @mention required — you talk, @ariadne responds as a thinking partner.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  REGULAR CHANNELS                                           │
+│  - @ariadne invoked with explicit @mention                  │
+│  - Retrieval mode: searches knowledge, answers questions    │
+│  - Conservative: only speaks when asked                     │
+│  - Multi-participant by default                             │
+├─────────────────────────────────────────────────────────────┤
+│  THINKING SPACES                                            │
+│  - @ariadne sees all messages automatically                 │
+│  - Thinking partner mode: reasons, questions, pushes back   │
+│  - Engaged: responds to continue dialogue                   │
+│  - Solo by default (can invite others)                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**UX Behavior**:
+
+1. **Creation**: User clicks "New thinking space" — creates a stream with `stream_type: 'thinking_space'` and @ariadne as default member
+2. **Naming**: Auto-generated from first message content (like iMessage/ChatGPT), user can rename anytime
+3. **Interaction**: No @mention needed. User sends message → @ariadne responds
+4. **Invitations**: Other users can be invited to think together (cofounder, advisor)
+5. **Knowledge access**: @ariadne can still pull from workspace knowledge graph ("You discussed something similar in #engineering last week...")
+
+**Adaptive Behavior**:
+
+@ariadne's mode is determined by stream context:
+
+| Context | Mode | Behavior |
+|---------|------|----------|
+| Channel with multiple participants | Retrieval | Answers when @mentioned, searches knowledge |
+| Thinking Space (solo) | Thinking partner | Engages with every message, reasons through problems |
+| Thinking Space (with guests) | Collaborative | Thinking partner but aware of multiple perspectives |
+| DM with @ariadne | Thinking partner | Same as thinking space |
+
+**What Thinking Partner Mode Enables**:
+
+- **Reasoning without retrieval**: When there's no knowledge to retrieve, @ariadne engages with the problem directly rather than saying "I couldn't find anything"
+- **Conversation memory**: Tracks the arc of the discussion — "We've established X, you're leaning toward Y, the open question is Z"
+- **Clarifying questions**: Asks for context instead of assuming
+- **Pushback**: Challenges assumptions, offers counterarguments
+- **Framework suggestions**: "Have you considered thinking about this as..."
+
+**Strategic Importance**:
+
+This is the key to solo-founder value. A founder using Threa as their second brain — thinking through problems with @ariadne, extracting knowledge from their own reasoning — builds institutional memory before the institution exists. When employee #1 joins, the context is already there.
+
+**Scope**: High priority for solo-founder use case. Simple implementation first (stream + auto-responding @ariadne), polish later.
 
 ---
 
