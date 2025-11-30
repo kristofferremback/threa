@@ -13,6 +13,7 @@ import { NewDMModal } from "./NewDMModal"
 import { ProfileSetupModal } from "./ProfileSetupModal"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
+import { KnowledgeBrowserModal } from "./KnowledgeBrowserModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import type { Tab, Stream, OpenMode } from "../../types"
 
@@ -25,6 +26,7 @@ export function LayoutSystem() {
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [commandPaletteMode, setCommandPaletteMode] = useState<"navigate" | "search">("navigate")
   const [showBrowseChannels, setShowBrowseChannels] = useState(false)
+  const [showKnowledgeBrowser, setShowKnowledgeBrowser] = useState(false)
   const [showProfileSetup, setShowProfileSetup] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
@@ -679,6 +681,7 @@ export function LayoutSystem() {
         onLogout={logout}
         onOpenCommandPalette={() => setShowCommandPalette(true)}
         onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
+        onOpenKnowledge={() => setShowKnowledgeBrowser(true)}
         onBrowseChannels={() => setShowBrowseChannels(true)}
         onPinStream={handlePinStream}
         onUnpinStream={handleUnpinStream}
@@ -776,6 +779,21 @@ export function LayoutSystem() {
         onCreateChannel={() => {
           setShowBrowseChannels(false)
           setShowCreateChannel(true)
+        }}
+      />
+
+      <KnowledgeBrowserModal
+        isOpen={showKnowledgeBrowser}
+        onClose={() => setShowKnowledgeBrowser(false)}
+        workspaceId={bootstrapData.workspace.id}
+        onNavigateToStream={(streamId) => {
+          setShowKnowledgeBrowser(false)
+          const stream = bootstrapData.streams.find((s) => s.id === streamId)
+          if (stream) {
+            handleSelectStream(stream)
+          } else {
+            openItem({ title: "Channel", type: "stream", data: { streamId } }, "replace")
+          }
         }}
       />
 

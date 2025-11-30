@@ -19,6 +19,7 @@ import {
   User,
   Brain,
   Archive,
+  BookOpen,
 } from "lucide-react"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
@@ -54,6 +55,7 @@ interface SidebarProps {
   onLogout: () => void
   onOpenCommandPalette: () => void
   onOpenInbox?: () => void
+  onOpenKnowledge?: () => void
   onBrowseChannels?: () => void
   onPinStream?: (streamId: string) => void
   onUnpinStream?: (streamId: string) => void
@@ -80,6 +82,7 @@ export function Sidebar({
   onLogout,
   onOpenCommandPalette,
   onOpenInbox,
+  onOpenKnowledge,
   onBrowseChannels,
   onPinStream,
   onUnpinStream,
@@ -114,7 +117,7 @@ export function Sidebar({
       <WorkspaceHeader workspace={workspace} onInvitePeople={onInvitePeople} />
       <ChannelSearch onOpenCommandPalette={onOpenCommandPalette} />
 
-      <div className="px-2 py-1">
+      <div className="px-2 py-1 space-y-0.5">
         <button
           onClick={onOpenInbox}
           className={clsx(
@@ -144,6 +147,17 @@ export function Sidebar({
             </span>
           )}
         </button>
+        {onOpenKnowledge && (
+          <button
+            onClick={onOpenKnowledge}
+            className="w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors hover:bg-[var(--hover-overlay)]"
+          >
+            <BookOpen className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+            <span className="text-sm flex-1" style={{ color: "var(--text-secondary)" }}>
+              Knowledge
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
