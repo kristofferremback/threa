@@ -1,11 +1,11 @@
 import { logger } from "./logger"
-
-interface EnvConfig {
-  WORKOS_API_KEY: string
-  WORKOS_CLIENT_ID: string
-  WORKOS_REDIRECT_URI: string
-  WORKOS_COOKIE_PASSWORD: string
-}
+import {
+  USE_STUB_AUTH,
+  WORKOS_API_KEY,
+  WORKOS_CLIENT_ID,
+  WORKOS_REDIRECT_URI,
+  WORKOS_COOKIE_PASSWORD,
+} from "../config"
 
 /**
  * Validates that all required environment variables are set
@@ -13,23 +13,23 @@ interface EnvConfig {
  */
 export function validateEnv(): void {
   // Skip WorkOS validation when using stub auth for testing
-  if (process.env.USE_STUB_AUTH === "true") {
+  if (USE_STUB_AUTH) {
     logger.debug("Skipping WorkOS env validation (USE_STUB_AUTH=true)")
     return
   }
 
-  const required: (keyof EnvConfig)[] = [
-    "WORKOS_API_KEY",
-    "WORKOS_CLIENT_ID",
-    "WORKOS_REDIRECT_URI",
-    "WORKOS_COOKIE_PASSWORD",
+  const required: [string, string | undefined][] = [
+    ["WORKOS_API_KEY", WORKOS_API_KEY],
+    ["WORKOS_CLIENT_ID", WORKOS_CLIENT_ID],
+    ["WORKOS_REDIRECT_URI", WORKOS_REDIRECT_URI],
+    ["WORKOS_COOKIE_PASSWORD", WORKOS_COOKIE_PASSWORD],
   ]
 
   const missing: string[] = []
 
-  for (const key of required) {
-    if (!process.env[key]) {
-      missing.push(key)
+  for (const [name, value] of required) {
+    if (!value) {
+      missing.push(name)
     }
   }
 

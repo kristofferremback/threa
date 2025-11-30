@@ -80,6 +80,7 @@ export interface ClassifyJobData {
   workspaceId: string
   streamId?: string
   eventId?: string
+  textMessageId?: string
   content: string
   contentType: "thread" | "message"
   reactionCount?: number

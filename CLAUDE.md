@@ -103,3 +103,7 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+
+## Configuration
+
+All server-side environment variables must be defined in `src/server/config.ts` and imported from there. Never use `process.env` directly in application code - only in config.ts.

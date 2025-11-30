@@ -5,7 +5,7 @@ import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
 import { generateAutoName } from "../lib/ollama"
 import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
-import { queueEnrichmentForThreadParent, queueEnrichmentForThreadReply, queueEnrichmentForReaction } from "../workers"
+import { queueEnrichmentForThreadParent, queueEnrichmentForThreadReply, queueEnrichmentForReaction, maybeQueueClassification } from "../workers"
 
 // ============================================================================
 // Types
@@ -967,6 +967,18 @@ export class StreamService {
 
       const event = await this.getEventWithDetails(eventId)
 
+      // Queue classification for the reply message
+      maybeQueueClassification({
+        workspaceId: params.workspaceId,
+        streamId: threadStream.id,
+        eventId,
+        textMessageId: messageId,
+        content: params.content,
+        contentType: "message",
+      }).catch((err) => {
+        logger.warn({ err, eventId }, "Failed to queue classification for reply")
+      })
+
       return {
         stream: threadStream,
         event: event!,
@@ -1413,6 +1425,21 @@ export class StreamService {
       ) {
         this.retryAutoNameIfNeeded(params.streamId, stream.workspace_id).catch((err) => {
           logger.warn({ err, streamId: params.streamId }, "Failed to retry auto-naming")
+        })
+      }
+
+      // Queue classification for text messages to proactively identify valuable content
+      // This enables early enrichment for announcements, explanations, and decisions
+      if (params.eventType === "message" && params.content && contentId && params.actorId) {
+        maybeQueueClassification({
+          workspaceId: stream.workspace_id,
+          streamId: params.streamId,
+          eventId,
+          textMessageId: contentId,
+          content: params.content,
+          contentType: "message",
+        }).catch((err) => {
+          logger.warn({ err, eventId }, "Failed to queue classification")
         })
       }
 

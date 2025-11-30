@@ -25,11 +25,12 @@ export interface ResearcherConfig {
 }
 
 interface GatheredContext {
-  memos: Array<{ id: string; summary: string; streamName?: string; score: number }>
+  memos: Array<{ id: string; summary: string; streamId?: string; streamName?: string; score: number }>
   events: Array<{
     id: string
     content: string
     author: string
+    streamId: string
     channel: string
     date: string
     textMessageId?: string
@@ -58,9 +59,31 @@ interface Reflection {
   refinedQueries: string[]
 }
 
+export interface Citation {
+  /** The citation number as used in the response text [1], [2], etc. */
+  index: number
+  /** Type of source */
+  type: "message" | "memo"
+  /** Event ID (for messages) or memo ID */
+  id: string
+  /** Stream ID where the source is located */
+  streamId?: string
+  /** Stream name/slug for display */
+  streamName?: string
+  /** Author name (for messages) */
+  author?: string
+  /** Date of the source */
+  date?: string
+  /** Preview of the source content */
+  preview?: string
+}
+
 export interface ResearcherResponse {
   content: string
+  /** List of citation IDs (for backward compatibility) */
   citations: string[]
+  /** Rich citation metadata for frontend rendering */
+  citationDetails: Citation[]
   confidence: number
   iterations: number
   memoHits: string[]
@@ -306,6 +329,7 @@ Keep searches concise and targeted. Maximum 2-3 searches per iteration.`
             ...memoResults.results.map((r) => ({
               id: r.id,
               summary: r.content,
+              streamId: r.streamId,
               streamName: r.streamName,
               score: r.score,
             })),
@@ -325,6 +349,7 @@ Keep searches concise and targeted. Maximum 2-3 searches per iteration.`
               id: r.id,
               content: r.content,
               author: r.actor?.name || "Unknown",
+              streamId: r.streamId || "",
               channel: r.streamName || "unknown",
               date: new Date(r.createdAt).toLocaleDateString(),
               textMessageId: r.id, // For enrichment tracking
@@ -416,7 +441,7 @@ Output ONLY valid JSON:
    */
   private async synthesizeFromMemos(question: string, context: GatheredContext): Promise<ResearcherResponse> {
     const prompt = `Answer this question based on the workspace memos below.
-Reference specific memos when relevant.
+Reference specific memos using [1], [2] etc when citing information.
 If the memos don't fully answer the question, say so.
 
 Question: ${question}
@@ -427,9 +452,19 @@ ${context.memos.map((m, i) => `[${i + 1}] ${m.summary}${m.streamName ? ` (from #
     const response = await this.synthesisModel.invoke([{ role: "user", content: prompt }])
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content)
 
+    // Build rich citation details
+    const citationDetails: Citation[] = context.memos.map((m, i) => ({
+      index: i + 1,
+      type: "memo" as const,
+      id: m.id,
+      streamName: m.streamName,
+      preview: m.summary.slice(0, 150) + (m.summary.length > 150 ? "..." : ""),
+    }))
+
     return {
       content,
       citations: context.memos.map((m) => m.id),
+      citationDetails,
       confidence: context.confidence,
       iterations: 0,
       memoHits: context.memos.map((m) => m.id),
@@ -441,7 +476,7 @@ ${context.memos.map((m, i) => `[${i + 1}] ${m.summary}${m.streamName ? ` (from #
    */
   private async synthesize(question: string, context: GatheredContext): Promise<ResearcherResponse> {
     const prompt = `Answer this question based on the workspace conversations and memos below.
-Cite specific messages using [1], [2] etc.
+Cite specific messages using [1], [2] etc. when referencing information.
 If you're not confident about something, say so.
 
 Question: ${question}
@@ -452,9 +487,22 @@ ${context.events.map((e, i) => `[${i + 1}] ${e.author} in #${e.channel} (${e.dat
     const response = await this.synthesisModel.invoke([{ role: "user", content: prompt }])
     const content = typeof response.content === "string" ? response.content : JSON.stringify(response.content)
 
+    // Build rich citation details for events (messages get numbered citations)
+    const citationDetails: Citation[] = context.events.map((e, i) => ({
+      index: i + 1,
+      type: "message" as const,
+      id: e.id,
+      streamId: e.streamId,
+      streamName: e.channel,
+      author: e.author,
+      date: e.date,
+      preview: e.content.slice(0, 150) + (e.content.length > 150 ? "..." : ""),
+    }))
+
     return {
       content,
       citations: context.events.map((e) => e.id),
+      citationDetails,
       confidence: context.confidence,
       iterations: context.iterations,
       memoHits: context.memos.map((m) => m.id),

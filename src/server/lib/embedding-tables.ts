@@ -6,9 +6,9 @@
  * - "openai": Uses 1536-dim tables (embeddings_1536, memo_embeddings_1536)
  */
 
-export type EmbeddingProvider = "ollama" | "openai"
+import { EMBEDDING_PROVIDER } from "../config"
 
-const EMBEDDING_PROVIDER = (process.env.EMBEDDING_PROVIDER || "ollama") as EmbeddingProvider
+export type EmbeddingProvider = "ollama" | "openai"
 
 export function getEmbeddingProvider(): EmbeddingProvider {
   return EMBEDDING_PROVIDER

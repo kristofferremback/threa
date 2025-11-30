@@ -12,7 +12,14 @@ import { createSearchRoutes } from "./routes/search-routes"
 import { createMemoRoutes } from "./routes/memo-routes"
 import { SearchService } from "./services/search-service"
 import { setupStreamWebSocket } from "./websockets/stream-socket"
-import { isProduction, PORT, DATABASE_URL } from "./config"
+import {
+  isProduction,
+  PORT,
+  DATABASE_URL,
+  USE_STUB_AUTH,
+  HEALTH_CHECK_INTERVAL_MS,
+  HEALTH_CHECK_FAILURES_TO_UNHEALTHY,
+} from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
@@ -90,17 +97,10 @@ class ShutdownCoordinator {
   }
 }
 
-// Helper to parse env var as number, falling back if invalid
-function parseEnvNumber(value: string | undefined, fallback: number): number {
-  if (value === undefined || value.trim() === "") return fallback
-  const num = Number(value)
-  return isNaN(num) ? fallback : num
-}
-
 // Global shutdown coordinator
 export const shutdownCoordinator = new ShutdownCoordinator({
-  healthCheckIntervalMs: parseEnvNumber(process.env.HEALTH_CHECK_INTERVAL_MS, 10_000),
-  failedChecksToUnhealthy: parseEnvNumber(process.env.HEALTH_CHECK_FAILURES_TO_UNHEALTHY, 2),
+  healthCheckIntervalMs: HEALTH_CHECK_INTERVAL_MS,
+  failedChecksToUnhealthy: HEALTH_CHECK_FAILURES_TO_UNHEALTHY,
 })
 
 export interface AppContext {
@@ -214,10 +214,9 @@ export async function createApp(): Promise<AppContext> {
   const pool = createDatabasePool()
 
   // Use stub auth service for testing when USE_STUB_AUTH is set
-  const useStubAuth = process.env.USE_STUB_AUTH === "true"
-  const authService = useStubAuth ? new StubAuthService() : new AuthService()
+  const authService = USE_STUB_AUTH ? new StubAuthService() : new AuthService()
 
-  if (useStubAuth) {
+  if (USE_STUB_AUTH) {
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
   }
 
@@ -238,7 +237,7 @@ export async function createApp(): Promise<AppContext> {
   const memoRoutes = createMemoRoutes(pool)
 
   // Test endpoint for registering users in stub auth mode
-  if (useStubAuth && authService instanceof StubAuthService) {
+  if (USE_STUB_AUTH && authService instanceof StubAuthService) {
     app.post("/api/test/register-user", async (req, res) => {
       const { id, email, firstName, lastName } = req.body
       if (!id || !email) {
@@ -336,7 +335,7 @@ export async function startServer(context: AppContext): Promise<void> {
     await context.outboxListener.start()
 
     // Start AI workers (embedding, classification)
-    const connectionString = process.env.DATABASE_URL || "postgresql://threa:threa@localhost:5433/threa"
+    const connectionString = DATABASE_URL
     logger.info("Starting AI workers...")
     await startWorkers(context.pool, connectionString)
 

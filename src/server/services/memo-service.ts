@@ -111,19 +111,24 @@ export class MemoService {
     const limit = options.limit ?? 50
     const offset = options.offset ?? 0
 
-    let query = sql`SELECT * FROM memos
-      WHERE workspace_id = ${workspaceId}
-        AND archived_at IS NULL`
+    // Use separate queries since squid/pg sql tags can't be composed
+    const result = options.topics && options.topics.length > 0
+      ? await this.pool.query<MemoRow>(
+          sql`SELECT * FROM memos
+            WHERE workspace_id = ${workspaceId}
+              AND archived_at IS NULL
+              AND topics && ${options.topics}
+            ORDER BY confidence DESC, created_at DESC
+            LIMIT ${limit} OFFSET ${offset}`,
+        )
+      : await this.pool.query<MemoRow>(
+          sql`SELECT * FROM memos
+            WHERE workspace_id = ${workspaceId}
+              AND archived_at IS NULL
+            ORDER BY confidence DESC, created_at DESC
+            LIMIT ${limit} OFFSET ${offset}`,
+        )
 
-    if (options.topics && options.topics.length > 0) {
-      query = sql`${query} AND topics && ${options.topics}`
-    }
-
-    query = sql`${query}
-      ORDER BY confidence DESC, created_at DESC
-      LIMIT ${limit} OFFSET ${offset}`
-
-    const result = await this.pool.query<MemoRow>(query)
     return result.rows.map(this.mapMemoRow)
   }
 

@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 import { logger } from "./logger"
 import { isOllamaEmbeddingAvailable, generateOllamaEmbedding, generateOllamaEmbeddingsBatch } from "./ollama"
+import { ANTHROPIC_API_KEY, OPENAI_API_KEY } from "../config"
 
 // Lazy-loaded clients - only initialized when first used
 let _anthropic: Anthropic | null = null
@@ -9,22 +10,20 @@ let _openai: OpenAI | null = null
 
 function getAnthropicClient(): Anthropic {
   if (!_anthropic) {
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
+    if (!ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY environment variable is not set")
     }
-    _anthropic = new Anthropic({ apiKey })
+    _anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY })
   }
   return _anthropic
 }
 
 function getOpenAIClient(): OpenAI {
   if (!_openai) {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
+    if (!OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY environment variable is not set")
     }
-    _openai = new OpenAI({ apiKey })
+    _openai = new OpenAI({ apiKey: OPENAI_API_KEY })
   }
   return _openai
 }
@@ -34,8 +33,8 @@ function getOpenAIClient(): OpenAI {
  */
 export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
   return {
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    openai: !!OPENAI_API_KEY,
+    anthropic: !!ANTHROPIC_API_KEY,
   }
 }
 

@@ -1,8 +1,8 @@
 import pino from "pino"
-import { isProduction } from "../config"
+import { isProduction, LOG_LEVEL } from "../config"
 
 export const logger = pino({
-  level: process.env.LOG_LEVEL || "info",
+  level: LOG_LEVEL,
   transport: isProduction
     ? undefined
     : {

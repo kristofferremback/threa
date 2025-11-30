@@ -11,6 +11,7 @@ import { parseCookies } from "../lib/cookies"
 import { queueEmbedding } from "../workers/embedding-worker"
 import { AIUsageService } from "../services/ai-usage-service"
 import { shutdownCoordinator } from "../index"
+import { REDIS_URL } from "../config"
 
 interface SocketData {
   userId: string
@@ -53,8 +54,7 @@ export async function setupStreamWebSocket(
   }) as SocketIOServerWithCleanup
 
   // Setup Redis adapter for horizontal scaling
-  const redisUrl = process.env.REDIS_URL || "redis://localhost:6379"
-  const pubClient = new Redis(redisUrl)
+  const pubClient = new Redis(REDIS_URL)
   const subClient = pubClient.duplicate()
   const messageSubscriber = pubClient.duplicate()
 

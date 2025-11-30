@@ -2,7 +2,7 @@ import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData } from "../lib/job-queue"
 import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage, StreamContext } from "../ai/ariadne/agent"
-import { AriadneResearcher, classifyQuestionComplexity } from "../ai/ariadne/researcher"
+import { AriadneResearcher, classifyQuestionComplexity, Citation } from "../ai/ariadne/researcher"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
 import { MemoService } from "../services/memo-service"
@@ -277,6 +277,7 @@ export class AriadneWorker {
 
       let finalResponse = ""
       let citedEventIds: string[] = []
+      let citationDetails: Citation[] = []
       let researcherIterations = 0
 
       // For complex retrieval questions, use the iterative researcher
@@ -290,6 +291,7 @@ export class AriadneWorker {
 
           finalResponse = result.content
           citedEventIds = result.citations
+          citationDetails = result.citationDetails
           researcherIterations = result.iterations
 
           await completeStep(researchStepId, `Found ${result.citations.length} relevant messages in ${result.iterations} iterations (confidence: ${(result.confidence * 100).toFixed(0)}%)`)
@@ -355,8 +357,8 @@ export class AriadneWorker {
         jobId: job.id,
       })
 
-      // Post the response (responseStreamId was determined at the start)
-      const responseEvent = await this.postResponse(responseStreamId, finalResponse, session.id)
+      // Post the response with citation details (responseStreamId was determined at the start)
+      const responseEvent = await this.postResponse(responseStreamId, finalResponse, session.id, citationDetails)
 
       // Complete synthesize step
       await completeStep(synthesizeStepId, `Response: ${finalResponse.length} characters`)
@@ -439,14 +441,29 @@ export class AriadneWorker {
     }
   }
 
-  private async postResponse(streamId: string, content: string, sessionId?: string): Promise<{ id: string }> {
+  private async postResponse(
+    streamId: string,
+    content: string,
+    sessionId?: string,
+    citations?: Citation[],
+  ): Promise<{ id: string }> {
+    const payload: Record<string, unknown> = {}
+
+    if (sessionId) {
+      payload.sessionId = sessionId
+    }
+
+    if (citations && citations.length > 0) {
+      payload.citations = citations
+    }
+
     return await this.streamService.createEvent({
       streamId,
       agentId: ARIADNE_PERSONA_ID,
       eventType: "message",
       content,
       mentions: [],
-      payload: sessionId ? { sessionId } : undefined,
+      payload: Object.keys(payload).length > 0 ? payload : undefined,
     })
   }
 

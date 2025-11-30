@@ -1,11 +1,14 @@
 import ollama from "ollama"
 import { Langfuse } from "langfuse"
 import { logger } from "./logger"
-import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL } from "../config"
-
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434"
-const CLASSIFICATION_MODEL = process.env.OLLAMA_CLASSIFICATION_MODEL || "granite4:350m"
-const EMBEDDING_MODEL = process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text"
+import {
+  LANGFUSE_SECRET_KEY,
+  LANGFUSE_PUBLIC_KEY,
+  LANGFUSE_BASE_URL,
+  OLLAMA_HOST,
+  OLLAMA_OLLAMA_CLASSIFICATION_MODEL,
+  OLLAMA_OLLAMA_EMBEDDING_MODEL,
+} from "../config"
 
 // Track whether Ollama embedding is available
 let ollamaEmbeddingAvailable = false
@@ -29,7 +32,7 @@ interface TracedGenerateOptions {
   traceName: string
   /** The prompt to send to the model */
   prompt: string
-  /** Model to use (defaults to CLASSIFICATION_MODEL) */
+  /** Model to use (defaults to OLLAMA_CLASSIFICATION_MODEL) */
   model?: string
   /** Temperature (defaults to 0) */
   temperature?: number
@@ -54,7 +57,7 @@ interface TracedGenerateResult {
  * Use this for all text generation calls to ensure consistent observability.
  */
 async function tracedGenerate(options: TracedGenerateOptions): Promise<TracedGenerateResult> {
-  const model = options.model || CLASSIFICATION_MODEL
+  const model = options.model || OLLAMA_CLASSIFICATION_MODEL
 
   const trace = langfuse?.trace({
     name: options.traceName,
@@ -175,13 +178,13 @@ Answer YES or NO, then briefly explain why in one sentence.`
     }
 
     logger.debug(
-      { model: CLASSIFICATION_MODEL, ...classification, response: result.text.slice(0, 200) },
+      { model: OLLAMA_CLASSIFICATION_MODEL, ...classification, response: result.text.slice(0, 200) },
       "SLM classification result",
     )
 
     return classification
   } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "SLM classification failed")
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "SLM classification failed")
     return { isKnowledge: false, confident: false, rawResponse: "" }
   }
 }
@@ -244,14 +247,14 @@ Topic:`
 
     // Reject generic/useless names
     if (!name || REJECTED_NAMES.includes(name.toLowerCase())) {
-      logger.debug({ model: CLASSIFICATION_MODEL, rejectedName: name, contentLength: content.length }, "Rejected generic auto-name")
+      logger.debug({ model: OLLAMA_CLASSIFICATION_MODEL, rejectedName: name, contentLength: content.length }, "Rejected generic auto-name")
       return { name: "", success: false }
     }
 
-    logger.debug({ model: CLASSIFICATION_MODEL, name, contentLength: content.length }, "Auto-name generated")
+    logger.debug({ model: OLLAMA_CLASSIFICATION_MODEL, name, contentLength: content.length }, "Auto-name generated")
     return { name, success: true }
   } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "Auto-name generation failed")
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Auto-name generation failed")
     return { name: "", success: false }
   }
 }
@@ -314,13 +317,13 @@ Reply with just the number:
     const confident = scoreMatch !== null
 
     logger.info(
-      { model: CLASSIFICATION_MODEL, relevanceScore: score, confident, rawResponse: result.text },
+      { model: OLLAMA_CLASSIFICATION_MODEL, relevanceScore: score, confident, rawResponse: result.text },
       "Ariadne engagement check result",
     )
 
     return { relevanceScore: score, confident, rawResponse: result.text }
   } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "Ariadne engagement check failed")
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Ariadne engagement check failed")
     // Default to triggering response on error to avoid missing follow-ups
     return { relevanceScore: 5, confident: false, rawResponse: "" }
   }
@@ -386,13 +389,13 @@ Your rating:`
     const confident = scoreMatch !== null
 
     logger.debug(
-      { model: CLASSIFICATION_MODEL, score, confident, reasoning: reasoning.slice(0, 100) },
+      { model: OLLAMA_CLASSIFICATION_MODEL, score, confident, reasoning: reasoning.slice(0, 100) },
       "Helpfulness score result",
     )
 
     return { score, reasoning, confident }
   } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "Helpfulness scoring failed")
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Helpfulness scoring failed")
     return { score: 3, reasoning: "Scoring failed", confident: false }
   }
 }
@@ -462,12 +465,12 @@ Contextual header:`
     }
 
     logger.debug(
-      { model: CLASSIFICATION_MODEL, headerLength: header.length, streamName: streamInfo.name },
+      { model: OLLAMA_CLASSIFICATION_MODEL, headerLength: header.length, streamName: streamInfo.name },
       "Contextual header generated",
     )
     return { header, success: true }
   } catch (err) {
-    logger.error({ err, model: CLASSIFICATION_MODEL }, "Contextual header generation failed")
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Contextual header generation failed")
     return { header: "", success: false }
   }
 }
@@ -487,16 +490,16 @@ export async function generateOllamaEmbedding(text: string): Promise<OllamaEmbed
 
   try {
     const response = await ollama.embed({
-      model: EMBEDDING_MODEL,
+      model: OLLAMA_EMBEDDING_MODEL,
       input: text,
     })
 
     return {
       embedding: response.embeddings[0],
-      model: EMBEDDING_MODEL,
+      model: OLLAMA_EMBEDDING_MODEL,
     }
   } catch (err) {
-    logger.error({ err, model: EMBEDDING_MODEL }, "Ollama embedding failed")
+    logger.error({ err, model: OLLAMA_EMBEDDING_MODEL }, "Ollama embedding failed")
     return null
   }
 }
@@ -512,16 +515,16 @@ export async function generateOllamaEmbeddingsBatch(texts: string[]): Promise<Ol
 
   try {
     const response = await ollama.embed({
-      model: EMBEDDING_MODEL,
+      model: OLLAMA_EMBEDDING_MODEL,
       input: texts,
     })
 
     return response.embeddings.map((embedding) => ({
       embedding,
-      model: EMBEDDING_MODEL,
+      model: OLLAMA_EMBEDDING_MODEL,
     }))
   } catch (err) {
-    logger.error({ err, model: EMBEDDING_MODEL }, "Ollama batch embedding failed")
+    logger.error({ err, model: OLLAMA_EMBEDDING_MODEL }, "Ollama batch embedding failed")
     return null
   }
 }
@@ -542,10 +545,10 @@ export async function checkOllamaHealth(): Promise<{
   try {
     const models = await ollama.list()
     const classificationModelLoaded = models.models.some(
-      (m) => m.name === CLASSIFICATION_MODEL || m.name.startsWith(CLASSIFICATION_MODEL.split(":")[0]),
+      (m) => m.name === OLLAMA_CLASSIFICATION_MODEL || m.name.startsWith(OLLAMA_CLASSIFICATION_MODEL.split(":")[0]),
     )
     const embeddingModelLoaded = models.models.some(
-      (m) => m.name === EMBEDDING_MODEL || m.name.startsWith(EMBEDDING_MODEL.split(":")[0]),
+      (m) => m.name === OLLAMA_EMBEDDING_MODEL || m.name.startsWith(OLLAMA_EMBEDDING_MODEL.split(":")[0]),
     )
 
     ollamaEmbeddingAvailable = embeddingModelLoaded
@@ -578,23 +581,23 @@ export async function ensureOllamaModels(): Promise<void> {
   }
 
   if (!health.classificationModelLoaded) {
-    logger.info({ model: CLASSIFICATION_MODEL }, "Pulling classification model...")
+    logger.info({ model: OLLAMA_CLASSIFICATION_MODEL }, "Pulling classification model...")
     try {
-      await ollama.pull({ model: CLASSIFICATION_MODEL })
-      logger.info({ model: CLASSIFICATION_MODEL }, "Classification model pulled successfully")
+      await ollama.pull({ model: OLLAMA_CLASSIFICATION_MODEL })
+      logger.info({ model: OLLAMA_CLASSIFICATION_MODEL }, "Classification model pulled successfully")
     } catch (err) {
-      logger.error({ err, model: CLASSIFICATION_MODEL }, "Failed to pull classification model")
+      logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Failed to pull classification model")
     }
   }
 
   if (!health.embeddingModelLoaded) {
-    logger.info({ model: EMBEDDING_MODEL }, "Pulling embedding model...")
+    logger.info({ model: OLLAMA_EMBEDDING_MODEL }, "Pulling embedding model...")
     try {
-      await ollama.pull({ model: EMBEDDING_MODEL })
+      await ollama.pull({ model: OLLAMA_EMBEDDING_MODEL })
       ollamaEmbeddingAvailable = true
-      logger.info({ model: EMBEDDING_MODEL }, "Embedding model pulled successfully")
+      logger.info({ model: OLLAMA_EMBEDDING_MODEL }, "Embedding model pulled successfully")
     } catch (err) {
-      logger.error({ err, model: EMBEDDING_MODEL }, "Failed to pull embedding model")
+      logger.error({ err, model: OLLAMA_EMBEDDING_MODEL }, "Failed to pull embedding model")
     }
   }
 }

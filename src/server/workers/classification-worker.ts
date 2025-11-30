@@ -5,6 +5,7 @@ import { classifyWithSLM, estimateTokens as estimateSLMTokens } from "../lib/oll
 import { classifyWithHaiku, calculateCost, Models } from "../lib/ai-providers"
 import { AIUsageService } from "../services/ai-usage-service"
 import { logger } from "../lib/logger"
+import { queueEnrichment } from "./enrichment-worker"
 
 interface ContentSignals {
   length: number
@@ -13,7 +14,36 @@ interface ContentSignals {
   hasListItems: boolean
   hasLinks: boolean
   lineCount: number
+  isAnnouncement: boolean
+  isExplanation: boolean
+  isDecision: boolean
+  hasKnowledgeEmoji: boolean
 }
+
+// Patterns that indicate an announcement
+const ANNOUNCEMENT_PATTERNS = [
+  /\b(we('ve|'re| have| are| just)|i('ve| have| just))\s+(implemented|launched|shipped|released|deployed|built|created|added|introduced|finished|completed)/i,
+  /\b(introducing|announcing|new feature|just (launched|shipped|released|deployed))/i,
+  /\bhey (all|everyone|team|folks),?\s+we/i,
+  /\b(fyi|heads up|psa|update):?\s/i,
+]
+
+// Patterns that indicate an explanation
+const EXPLANATION_PATTERNS = [
+  /\b(for those (curious|wondering|interested)|here'?s (how|why|what)|let me explain|the (way|reason) (it|this|we))/i,
+  /\b(basically|essentially|in (short|summary|essence)|to (summarize|explain)|this (means|is because))/i,
+  /\binspired by\b/i,
+  /\bworks by\b/i,
+]
+
+// Patterns that indicate a decision
+const DECISION_PATTERNS = [
+  /\b(we('ve)? decided|the decision (is|was)|going (with|forward with)|the plan is|we('re| are) going to)/i,
+  /\b(after (discussing|consideration|review)|based on (feedback|discussion))/i,
+]
+
+// Emojis that often accompany knowledge-sharing
+const KNOWLEDGE_EMOJIS = /[🤔💡📚📖ℹ️✨🎉🚀💭📝🔍]/
 
 /**
  * Extract language-agnostic structural signals from content.
@@ -26,20 +56,33 @@ function getContentSignals(content: string): ContentSignals {
     hasListItems: /^[\s]*[-*•]\s|^[\s]*\d+[.)]\s/m.test(content),
     hasLinks: /https?:\/\/\S+/.test(content),
     lineCount: content.split("\n").filter((l) => l.trim()).length,
+    isAnnouncement: ANNOUNCEMENT_PATTERNS.some((p) => p.test(content)),
+    isExplanation: EXPLANATION_PATTERNS.some((p) => p.test(content)),
+    isDecision: DECISION_PATTERNS.some((p) => p.test(content)),
+    hasKnowledgeEmoji: KNOWLEDGE_EMOJIS.test(content),
   }
 }
 
 /**
  * Calculate a structural score to determine if content is worth classifying.
+ * Higher score = more likely to be valuable content.
  */
 function calculateStructuralScore(signals: ContentSignals, reactionCount?: number): number {
   return (
+    // Structural signals
     (signals.length > 200 ? 1 : 0) +
+    (signals.length > 500 ? 1 : 0) +
     (signals.hasCodeBlock ? 2 : 0) +
     (signals.hasInlineCode ? 1 : 0) +
     (signals.hasListItems ? 2 : 0) +
     (signals.hasLinks ? 1 : 0) +
     (signals.lineCount > 3 ? 1 : 0) +
+    // Content-type signals (high value - these indicate intentional knowledge sharing)
+    (signals.isAnnouncement ? 3 : 0) +
+    (signals.isExplanation ? 3 : 0) +
+    (signals.isDecision ? 2 : 0) +
+    (signals.hasKnowledgeEmoji ? 1 : 0) +
+    // Social proof signals
     (reactionCount && reactionCount >= 3 ? 1 : 0) +
     (reactionCount && reactionCount >= 5 ? 1 : 0)
   )
@@ -84,7 +127,7 @@ export class ClassificationWorker {
   }
 
   private async processJob(job: { id: string; data: ClassifyJobData }): Promise<void> {
-    const { workspaceId, streamId, eventId, content, reactionCount } = job.data
+    const { workspaceId, streamId, eventId, textMessageId, content, reactionCount } = job.data
 
     try {
       const isEnabled = await this.usageService.isAIEnabled(workspaceId)
@@ -122,6 +165,10 @@ export class ClassificationWorker {
 
         if (slmResult.isKnowledge) {
           await this.emitKnowledgeSuggestion(streamId, eventId)
+          // Queue enrichment for knowledge candidates
+          if (textMessageId && eventId) {
+            await this.queueEnrichmentForKnowledge(workspaceId, textMessageId, eventId, signals)
+          }
         }
 
         logger.info({ streamId, eventId, result, model: "granite4:350m" }, "Classification complete (SLM)")
@@ -153,6 +200,10 @@ export class ClassificationWorker {
 
       if (haikuResult.isKnowledge && haikuResult.confidence > 0.8) {
         await this.emitKnowledgeSuggestion(streamId, eventId, haikuResult.suggestedTitle)
+        // Queue enrichment for high-confidence knowledge candidates
+        if (textMessageId && eventId) {
+          await this.queueEnrichmentForKnowledge(workspaceId, textMessageId, eventId, signals)
+        }
       }
 
       logger.info(
@@ -162,6 +213,35 @@ export class ClassificationWorker {
     } catch (err) {
       logger.error({ err, streamId, eventId }, "Classification failed")
       throw err
+    }
+  }
+
+  /**
+   * Queue enrichment for content classified as knowledge.
+   */
+  private async queueEnrichmentForKnowledge(
+    workspaceId: string,
+    textMessageId: string,
+    eventId: string,
+    signals: ContentSignals,
+  ): Promise<void> {
+    try {
+      await queueEnrichment({
+        workspaceId,
+        textMessageId,
+        eventId,
+        signals: {
+          // Mark as "classified" to trigger enrichment regardless of reaction/reply count
+          retrieved: true,
+          helpful: true,
+        },
+      })
+      logger.debug(
+        { textMessageId, eventId, isAnnouncement: signals.isAnnouncement, isExplanation: signals.isExplanation },
+        "Queued enrichment for classified knowledge",
+      )
+    } catch (err) {
+      logger.warn({ err, textMessageId, eventId }, "Failed to queue enrichment for classified knowledge")
     }
   }
 
@@ -206,12 +286,14 @@ export class ClassificationWorker {
 }
 
 /**
- * Queue a classification job with debouncing logic.
+ * Queue a classification job for a message.
+ * Uses structural heuristics to pre-filter messages before sending to the LLM.
  */
 export async function maybeQueueClassification(params: {
   workspaceId: string
   streamId?: string
   eventId?: string
+  textMessageId?: string
   content: string
   contentType: "thread" | "message"
   reactionCount?: number
@@ -219,15 +301,34 @@ export async function maybeQueueClassification(params: {
 }): Promise<string | null> {
   const boss = getJobQueue()
 
-  if (!params.forceClassify) {
-    const signals = getContentSignals(params.content)
-    const score = calculateStructuralScore(signals, params.reactionCount)
+  const signals = getContentSignals(params.content)
+  const score = calculateStructuralScore(signals, params.reactionCount)
 
-    if (score < 3) {
-      logger.debug({ streamId: params.streamId, eventId: params.eventId, score }, "Content doesn't meet structural threshold")
-      return null
-    }
+  if (!params.forceClassify && score < 3) {
+    logger.debug(
+      {
+        streamId: params.streamId,
+        eventId: params.eventId,
+        score,
+        isAnnouncement: signals.isAnnouncement,
+        isExplanation: signals.isExplanation,
+      },
+      "Content doesn't meet structural threshold for classification",
+    )
+    return null
   }
+
+  logger.debug(
+    {
+      streamId: params.streamId,
+      eventId: params.eventId,
+      score,
+      isAnnouncement: signals.isAnnouncement,
+      isExplanation: signals.isExplanation,
+      isDecision: signals.isDecision,
+    },
+    "Queuing message for classification",
+  )
 
   return await boss.send<ClassifyJobData>(
     "ai.classify",
@@ -235,6 +336,7 @@ export async function maybeQueueClassification(params: {
       workspaceId: params.workspaceId,
       streamId: params.streamId,
       eventId: params.eventId,
+      textMessageId: params.textMessageId,
       content: params.content,
       contentType: params.contentType,
       reactionCount: params.reactionCount,

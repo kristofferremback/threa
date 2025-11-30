@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
 import { logger } from "../lib/logger"
+import { isProduction } from "../config"
 
 export interface ApiError {
   message: string
@@ -32,7 +33,7 @@ export const createErrorHandler = () => {
 
     // Don't leak internal error details in production
     const message =
-      statusCode === 500 && process.env.NODE_ENV === "production"
+      statusCode === 500 && isProduction
         ? "Internal server error"
         : err.message || "An error occurred"
 
@@ -40,7 +41,7 @@ export const createErrorHandler = () => {
     res.status(statusCode).json({
       error: message,
       code,
-      ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
+      ...(!isProduction && { stack: err.stack }),
     })
   }
 }

@@ -6,8 +6,7 @@ import { SearchService, SearchScope } from "../../services/search-service"
 import { StreamService } from "../../services/stream-service"
 import { MemoService } from "../../services/memo-service"
 import { logger } from "../../lib/logger"
-
-const TAVILY_API_KEY = process.env.TAVILY_API_KEY
+import { TAVILY_API_KEY } from "../../config"
 
 export interface AriadneToolsContext {
   workspaceId: string
