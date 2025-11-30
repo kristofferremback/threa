@@ -11,7 +11,7 @@ import { createInvitationRoutes } from "./routes/invitation-routes"
 import { createSearchRoutes } from "./routes/search-routes"
 import { SearchService } from "./services/search-service"
 import { setupStreamWebSocket } from "./websockets/stream-socket"
-import { isProduction, PORT } from "./config"
+import { isProduction, PORT, DATABASE_URL } from "./config"
 import { logger } from "./lib/logger"
 import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
@@ -216,7 +216,7 @@ export async function createApp(): Promise<AppContext> {
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
   const searchService = new SearchService(pool)
-  const outboxListener = new OutboxListener(pool)
+  const outboxListener = new OutboxListener(pool, DATABASE_URL)
 
   // Create Redis clients for Socket.IO
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()

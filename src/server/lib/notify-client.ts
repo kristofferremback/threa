@@ -1,5 +1,4 @@
-import { Client, QueryConfigValues, QueryResultRow } from "pg"
-import { DATABASE_URL } from "../config"
+import { Client } from "pg"
 import { logger } from "./logger"
 
 export interface NotificationMessage {
@@ -20,7 +19,7 @@ export class NotifyClient {
   private isConnected = false
   private errorHandler: ErrorHandler | null = null
 
-  constructor(private databaseUrl: string = DATABASE_URL) {}
+  constructor(private databaseUrl: string) {}
 
   /**
    * Connect to the database

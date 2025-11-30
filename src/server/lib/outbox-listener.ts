@@ -17,7 +17,7 @@ export class OutboxListener {
 
   constructor(
     private pool: Pool,
-    private databaseUrl?: string,
+    private databaseUrl: string,
   ) {
     this.debouncedNotificationProcessor = new DebounceWithMaxWait(
       () => this.processOutboxBatch(),
