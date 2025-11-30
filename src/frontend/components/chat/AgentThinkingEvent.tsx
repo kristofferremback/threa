@@ -1,5 +1,21 @@
 import { useState } from "react"
-import { Sparkles, ChevronDown, ChevronUp, Brain, Wrench, FileText, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import {
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  Wrench,
+  FileText,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ChevronRight,
+  Copy,
+  Check,
+  Maximize2,
+  ExternalLink,
+} from "lucide-react"
+import { useToolResultPanel } from "./ToolResultViewer"
 
 // Types matching the backend
 export interface SessionStep {
@@ -67,12 +83,249 @@ function formatStepDuration(step: SessionStep): string {
 }
 
 /**
+ * Individual step component with expandable details
+ */
+function StepItem({ step }: { step: SessionStep }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const { setExpandedStep } = useToolResultPanel()
+
+  const Icon = stepIcons[step.type]
+  const isStepActive = step.status === "active"
+  const isStepFailed = step.status === "failed"
+  const stepDuration = formatStepDuration(step)
+  const hasDetails = step.type === "tool_call" && (step.tool_input || step.tool_result)
+  const hasToolResult = step.type === "tool_call" && step.tool_result && step.status === "completed"
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (step.tool_result) {
+      await navigator.clipboard.writeText(step.tool_result)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const handleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpandedStep(step)
+  }
+
+  return (
+    <div className="group">
+      {/* Step header */}
+      <button
+        onClick={() => hasDetails && setIsExpanded(!isExpanded)}
+        className={`w-full flex items-start gap-2 text-sm py-1 ${hasDetails ? "cursor-pointer hover:bg-[var(--hover-overlay)] -mx-2 px-2 rounded" : ""}`}
+        style={{
+          color: isStepActive
+            ? "var(--text-primary)"
+            : isStepFailed
+              ? "var(--error)"
+              : "var(--text-muted)",
+        }}
+      >
+        {/* Expand indicator for steps with details */}
+        {hasDetails ? (
+          <ChevronRight
+            className={`w-3 h-3 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+            style={{ color: "var(--text-muted)" }}
+          />
+        ) : (
+          <div className="w-3 flex-shrink-0" />
+        )}
+
+        {/* Step status indicator */}
+        <div className="flex items-center gap-1.5 min-w-0 flex-shrink-0">
+          {isStepActive ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "var(--accent-secondary)" }} />
+          ) : isStepFailed ? (
+            <XCircle className="w-3.5 h-3.5" />
+          ) : (
+            <CheckCircle
+              className="w-3.5 h-3.5"
+              style={{ color: "var(--success, #22c55e)", opacity: 0.7 }}
+            />
+          )}
+        </div>
+
+        {/* Step content */}
+        <span className="min-w-0 flex-1 text-left truncate">{step.content}</span>
+
+        {/* Duration */}
+        {stepDuration && (
+          <span
+            className="text-xs flex-shrink-0 tabular-nums"
+            style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+          >
+            {stepDuration}
+          </span>
+        )}
+      </button>
+
+      {/* Expanded details */}
+      {isExpanded && hasDetails && (
+        <div
+          className="ml-5 mt-1 mb-2 rounded-lg overflow-hidden border"
+          style={{ borderColor: "var(--border-subtle)", background: "var(--bg-tertiary)" }}
+        >
+          {/* Tool input */}
+          {step.tool_input && Object.keys(step.tool_input).length > 0 && (
+            <div className="p-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
+              <div className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
+                Input
+              </div>
+              <pre
+                className="text-xs overflow-x-auto font-mono"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {JSON.stringify(step.tool_input, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Tool result */}
+          {step.tool_result && (
+            <div className="p-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Result
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleCopy}
+                    className="p-1 rounded hover:bg-[var(--hover-overlay)] transition-colors"
+                    title="Copy result"
+                  >
+                    {copied ? (
+                      <Check className="w-3 h-3" style={{ color: "var(--success)" }} />
+                    ) : (
+                      <Copy className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleExpand}
+                    className="p-1 rounded hover:bg-[var(--hover-overlay)] transition-colors"
+                    title="Open in panel"
+                  >
+                    <Maximize2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                  </button>
+                </div>
+              </div>
+              <ToolResultPreview content={step.tool_result} toolName={step.tool_name} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Renders tool result with nice formatting
+ */
+function ToolResultPreview({ content, toolName }: { content: string; toolName?: string }) {
+  const { navigateToEvent } = useToolResultPanel()
+  const isSearchResult = toolName === "search_messages" || toolName === "search_memos" || toolName === "web_search"
+  const maxPreviewLength = 800
+
+  // Truncate if too long
+  const truncated = content.length > maxPreviewLength
+  const displayContent = truncated ? content.slice(0, maxPreviewLength) : content
+
+  if (isSearchResult) {
+    // Parse search results - they're separated by "---"
+    const sections = displayContent.split(/\n*---\n*/).filter(Boolean).slice(0, 3) // Show max 3 results
+
+    return (
+      <div className="space-y-2">
+        {sections.map((section, idx) => {
+          // Try to parse new format: [N|eventId|streamId] Author in #channel (date):\nContent
+          // Or fallback to old format: [N] Author in #channel (date):\nContent
+          const newFormatMatch = section.match(/^\[(\d+)\|([^|]+)\|([^\]]+)\]\s*(.+?):\n([\s\S]*)$/)
+          const oldFormatMatch = !newFormatMatch && section.match(/^\[(\d+)\]\s*(.+?):\n([\s\S]*)$/)
+
+          if (newFormatMatch) {
+            const [, num, eventId, streamId, header, body] = newFormatMatch
+            const canNavigate = !!navigateToEvent && eventId && streamId
+
+            return (
+              <div
+                key={idx}
+                className={`p-2 rounded text-xs ${canNavigate ? "cursor-pointer hover:ring-1 hover:ring-[var(--accent-primary)] transition-all" : ""}`}
+                style={{ background: "var(--bg-secondary)" }}
+                onClick={canNavigate ? () => navigateToEvent(streamId, eventId) : undefined}
+                title={canNavigate ? "Click to view message" : undefined}
+              >
+                <div className="font-medium mb-1 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+                  <span>[{num}] {header}</span>
+                  {canNavigate && (
+                    <ExternalLink className="w-3 h-3 opacity-50" />
+                  )}
+                </div>
+                <div style={{ color: "var(--text-primary)" }}>
+                  {body.trim().slice(0, 200)}{body.trim().length > 200 ? "..." : ""}
+                </div>
+              </div>
+            )
+          }
+
+          if (oldFormatMatch) {
+            const [, num, header, body] = oldFormatMatch
+            return (
+              <div
+                key={idx}
+                className="p-2 rounded text-xs"
+                style={{ background: "var(--bg-secondary)" }}
+              >
+                <div className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
+                  [{num}] {header}
+                </div>
+                <div style={{ color: "var(--text-primary)" }}>
+                  {body.trim().slice(0, 200)}{body.trim().length > 200 ? "..." : ""}
+                </div>
+              </div>
+            )
+          }
+
+          return (
+            <div
+              key={idx}
+              className="p-2 rounded text-xs"
+              style={{ background: "var(--bg-secondary)", color: "var(--text-primary)" }}
+            >
+              {section.slice(0, 200)}{section.length > 200 ? "..." : ""}
+            </div>
+          )
+        })}
+        {(truncated || displayContent.split(/\n*---\n*/).filter(Boolean).length > 3) && (
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            + more results...
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Default: show as preformatted text
+  return (
+    <pre
+      className="text-xs whitespace-pre-wrap font-mono max-h-48 overflow-y-auto"
+      style={{ color: "var(--text-primary)" }}
+    >
+      {displayContent}
+      {truncated && <span style={{ color: "var(--text-muted)" }}>...</span>}
+    </pre>
+  )
+}
+
+/**
  * Displays an agent thinking session inline in the chat.
  *
  * Shows as a collapsible thin event with:
  * - Header showing status and duration
  * - Summary when collapsed (after completion)
- * - Full step timeline when expanded
+ * - Full step timeline when expanded with expandable details per step
  * - Subtle connector line to response below
  */
 export function AgentThinkingEvent({ session, isLinkedToResponse = false, className = "" }: AgentThinkingEventProps) {
@@ -84,6 +337,9 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
 
   // Get the latest active step for status display
   const activeStep = session.steps.find((s) => s.status === "active")
+
+  // Count steps with tool results
+  const stepsWithResults = session.steps.filter(s => s.type === "tool_call" && s.tool_result).length
 
   return (
     <div className={`relative ${className}`}>
@@ -141,6 +397,7 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
           ) : (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
               thought for {duration}
+              {stepsWithResults > 0 && ` · ${stepsWithResults} tool${stepsWithResults > 1 ? "s" : ""} used`}
             </span>
           )}
 
@@ -166,57 +423,13 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
         {/* Expanded content - step timeline */}
         {isExpanded && (
           <div
-            className="px-3 pb-3 pl-10 border-t"
+            className="px-3 pb-3 pl-8 border-t"
             style={{ borderColor: "var(--border-subtle)", background: "var(--bg-secondary)" }}
           >
-            <div className="pt-2 space-y-1.5">
-              {session.steps.map((step, idx) => {
-                const Icon = stepIcons[step.type]
-                const isStepActive = step.status === "active"
-                const isStepFailed = step.status === "failed"
-                const stepDuration = formatStepDuration(step)
-
-                return (
-                  <div
-                    key={step.id}
-                    className="flex items-start gap-2 text-sm"
-                    style={{
-                      color: isStepActive
-                        ? "var(--text-primary)"
-                        : isStepFailed
-                          ? "var(--error)"
-                          : "var(--text-muted)",
-                    }}
-                  >
-                    {/* Step indicator */}
-                    <div className="flex items-center gap-1.5 min-w-0 flex-shrink-0">
-                      {isStepActive ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "var(--accent-secondary)" }} />
-                      ) : isStepFailed ? (
-                        <XCircle className="w-3.5 h-3.5" />
-                      ) : (
-                        <CheckCircle
-                          className="w-3.5 h-3.5"
-                          style={{ color: "var(--success, #22c55e)", opacity: 0.7 }}
-                        />
-                      )}
-                    </div>
-
-                    {/* Step content */}
-                    <span className="min-w-0 flex-1 truncate">{step.content}</span>
-
-                    {/* Duration */}
-                    {stepDuration && (
-                      <span
-                        className="text-xs flex-shrink-0 tabular-nums"
-                        style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-                      >
-                        {stepDuration}
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
+            <div className="pt-2 space-y-0.5">
+              {session.steps.map((step) => (
+                <StepItem key={step.id} step={step} />
+              ))}
 
               {/* Error message */}
               {session.status === "failed" && session.errorMessage && (

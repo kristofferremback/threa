@@ -219,6 +219,21 @@ body {
   animation: highlight-pulse 1.5s ease-in-out 3;
 }
 
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.2s ease-out forwards;
+}
+
 /* Staggered animations */
 .stagger-1 {
   animation-delay: 0.1s;

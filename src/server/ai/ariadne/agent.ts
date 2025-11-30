@@ -5,12 +5,14 @@ import { RunnableConfig } from "@langchain/core/runnables"
 import { MessagesAnnotation } from "@langchain/langgraph"
 import { Pool } from "pg"
 import { CallbackHandler } from "@langfuse/langchain"
-import { createAriadneTools } from "./tools"
+import { createAriadneTools, CitationAccumulator } from "./tools"
 import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "./prompts"
 import { logger } from "../../lib/logger"
 import { isLangfuseEnabled } from "../../lib/langfuse"
 import type { AriadneMode } from "../../lib/job-queue"
 import type { SearchScope } from "../../services/search-service"
+import type { Citation } from "./researcher"
+import { Models } from "../../lib/ai-providers"
 
 export interface ConversationMessage {
   role: "user" | "assistant"
@@ -76,18 +78,23 @@ function determineSearchScope(context: AriadneContext): SearchScope {
  * The mentionedBy user ID is used for permission-scoped searches.
  * The search scope is determined by the stream type and visibility.
  */
-export function createAriadneAgent(pool: Pool, context: AriadneContext) {
+export function createAriadneAgent(
+  pool: Pool,
+  context: AriadneContext,
+  citationAccumulator?: CitationAccumulator,
+) {
   const scope = determineSearchScope(context)
   const tools = createAriadneTools(pool, {
     workspaceId: context.workspaceId,
     userId: context.mentionedBy,
     currentStreamId: context.streamId,
     scope,
+    citationAccumulator,
   })
   const isThinkingPartner = context.mode === "thinking_partner"
 
   const model = new ChatAnthropic({
-    model: "claude-haiku-4-5-20251001",
+    model: Models.CLAUDE_HAIKU,
     temperature: isThinkingPartner ? 0.8 : 0.7, // Slightly higher temperature for thinking partner
     maxTokens: isThinkingPartner ? 4096 : 2048, // Allow longer responses in thinking mode
   })
@@ -261,6 +268,12 @@ export async function invokeAriadne(
   }
 }
 
+export type StreamChunk =
+  | { type: "token"; content: string }
+  | { type: "tool_call"; content: string; toolName: string; toolInput?: Record<string, unknown> }
+  | { type: "tool_result"; content: string; toolName: string; toolCallId: string }
+  | { type: "done"; content: string; citations: Citation[] }
+
 /**
  * Stream Ariadne's response for real-time output.
  */
@@ -269,7 +282,7 @@ export async function* streamAriadne(
   context: AriadneContext,
   question: string,
   customInstructions?: string,
-): AsyncGenerator<{ type: "token" | "tool_call" | "done"; content: string }> {
+): AsyncGenerator<StreamChunk> {
   const historyLength = context.conversationHistory?.length || 0
   logger.info(
     {
@@ -281,7 +294,9 @@ export async function* streamAriadne(
     "Streaming Ariadne response",
   )
 
-  const agent = createAriadneAgent(pool, context)
+  // Create citation accumulator to track sources from tool calls
+  const citationAccumulator = new CitationAccumulator()
+  const agent = createAriadneAgent(pool, context, citationAccumulator)
 
   // Build message array from conversation history (same as invokeAriadne)
   const messages: Array<{ role: "user" | "assistant"; content: string }> = []
@@ -332,31 +347,65 @@ export async function* streamAriadne(
     )
 
     let lastMessageCount = 0
+    // Track pending tool calls by ID to match with results
+    const pendingToolCalls = new Map<string, { name: string; args: Record<string, unknown> }>()
 
     for await (const chunk of stream) {
       const messages = chunk.messages
-      if (messages.length > lastMessageCount) {
-        const newMessage = messages[messages.length - 1]
+      // Process ALL new messages, not just the last one
+      // When tools run, multiple ToolMessages may be added at once
+      while (messages.length > lastMessageCount) {
+        const newMessage = messages[lastMessageCount]
 
-        if (newMessage.tool_calls?.length) {
+        // Check message type - LangGraph messages have _getType() method
+        const messageType = newMessage._getType?.() || newMessage.constructor?.name
+
+        if (messageType === "tool" || newMessage.tool_call_id) {
+          // This is a ToolMessage (tool result)
+          const toolCallId = newMessage.tool_call_id as string
+          const toolInfo = pendingToolCalls.get(toolCallId)
+          const content = typeof newMessage.content === "string" ? newMessage.content : JSON.stringify(newMessage.content)
+
+          yield {
+            type: "tool_result",
+            content,
+            toolName: toolInfo?.name || newMessage.name || "unknown",
+            toolCallId,
+          }
+
+          pendingToolCalls.delete(toolCallId)
+        } else if (newMessage.tool_calls?.length) {
+          // AI message with tool calls
           for (const toolCall of newMessage.tool_calls) {
+            // Store for matching with result later
+            pendingToolCalls.set(toolCall.id, {
+              name: toolCall.name,
+              args: toolCall.args as Record<string, unknown>,
+            })
+
             yield {
               type: "tool_call",
               content: `Using ${toolCall.name}...`,
+              toolName: toolCall.name,
+              toolInput: toolCall.args as Record<string, unknown>,
             }
           }
         } else if (typeof newMessage.content === "string" && newMessage.content) {
+          // Regular AI response
           yield {
             type: "token",
             content: newMessage.content,
           }
         }
 
-        lastMessageCount = messages.length
+        lastMessageCount++
       }
     }
 
-    yield { type: "done", content: "" }
+    // Return all accumulated citations with the done event
+    const citations = citationAccumulator.getCitations()
+    logger.info({ citationCount: citations.length }, "Streaming complete with citations")
+    yield { type: "done", content: "", citations }
   } catch (err) {
     logger.error({ err, context }, "Ariadne streaming failed")
     throw err

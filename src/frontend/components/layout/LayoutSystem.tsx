@@ -15,6 +15,7 @@ import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { KnowledgeBrowserModal } from "./KnowledgeBrowserModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
+import { ToolResultPanelProvider, ToolResultPanel } from "../chat/ToolResultViewer"
 import type { Tab, Stream, OpenMode } from "../../types"
 
 export function LayoutSystem() {
@@ -486,6 +487,20 @@ export function LayoutSystem() {
     )
   }, [bootstrapData, addStream, openItem])
 
+  // Callback for navigating to a specific event from tool results
+  const handleNavigateToEvent = useCallback((streamId: string, eventId: string) => {
+    if (!bootstrapData) return
+    const stream = bootstrapData.streams.find((s) => s.id === streamId)
+    openItem(
+      {
+        title: stream ? `#${(stream.name || "").replace("#", "")}` : "Message",
+        type: "stream",
+        data: { streamId, highlightEventId: eventId },
+      },
+      "open",
+    )
+  }, [bootstrapData, openItem])
+
   // Helper to get stream from slug or ID
   const getStreamFromSlug = (streamSlug?: string) => {
     if (!streamSlug || !bootstrapData) return undefined
@@ -635,6 +650,7 @@ export function LayoutSystem() {
   }
 
   return (
+    <ToolResultPanelProvider onNavigateToEvent={handleNavigateToEvent}>
     <div className="flex h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       <Sidebar
         workspace={bootstrapData.workspace}
@@ -817,6 +833,10 @@ export function LayoutSystem() {
         onSkip={() => setShowProfileSetup(false)}
         canSkip={true}
       />
+
+      {/* Tool result viewer panel */}
+      <ToolResultPanel />
     </div>
+    </ToolResultPanelProvider>
   )
 }

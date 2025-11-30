@@ -307,29 +307,66 @@ export class AriadneWorker {
         // Step: Reasoning (starts when we call the agent)
         const reasoningStepId = await addStep("reasoning", "Thinking...")
 
-        // Use streaming to capture tool calls and track them as steps
-        const activeToolSteps = new Map<string, string>() // tool content -> stepId
+        // Track tool calls by their ID to match with results
+        // Map: toolCallId -> { stepId, toolName }
+        const pendingToolSteps = new Map<string, { stepId: string; toolName: string }>()
+        // Also track by content for deduplication (same tool might show multiple times)
+        const seenToolCalls = new Set<string>()
 
         for await (const chunk of streamAriadne(this.pool, context, question)) {
           if (chunk.type === "tool_call") {
-            // Check if we already have a step for this tool call
-            if (!activeToolSteps.has(chunk.content)) {
-              // Create a new tool call step
+            // Create a unique key for deduplication
+            const toolKey = `${chunk.toolName}:${JSON.stringify(chunk.toolInput || {})}`
+
+            if (!seenToolCalls.has(toolKey)) {
+              seenToolCalls.add(toolKey)
+
+              // Create a new tool call step with input details
               const toolStepId = await addStep("tool_call", chunk.content, {
-                toolName: chunk.content.split(" ")[0], // Extract tool name from content like "search_messages: query"
+                toolName: chunk.toolName,
+                toolInput: chunk.toolInput,
               })
-              activeToolSteps.set(chunk.content, toolStepId)
+
+              // Store mapping from tool call content to step (we'll match by toolName since
+              // the tool_call_id might not be available in all cases)
+              // For now, we use the toolKey as the identifier
+              pendingToolSteps.set(toolKey, { stepId: toolStepId, toolName: chunk.toolName })
+            }
+          } else if (chunk.type === "tool_result") {
+            // Find the matching tool step by toolName (most recent one)
+            // Since tools execute sequentially, we can match by name
+            let matchedStepId: string | undefined
+            let matchedKey: string | undefined
+
+            for (const [key, info] of pendingToolSteps) {
+              if (info.toolName === chunk.toolName) {
+                matchedStepId = info.stepId
+                matchedKey = key
+                break
+              }
+            }
+
+            if (matchedStepId && matchedKey) {
+              // Complete the step with the tool result
+              await completeStep(matchedStepId, chunk.content)
+              pendingToolSteps.delete(matchedKey)
             }
           } else if (chunk.type === "token") {
             // Accumulate the final response
             finalResponse = chunk.content
           } else if (chunk.type === "done") {
+            // Capture citations from streaming agent
+            if (chunk.citations && chunk.citations.length > 0) {
+              citationDetails = chunk.citations
+              logger.info({ citationCount: citationDetails.length }, "Captured citations from streaming agent")
+            }
+
             // Complete reasoning step
             await completeStep(reasoningStepId)
 
-            // Complete any pending tool steps
-            for (const [_content, stepId] of activeToolSteps) {
-              await completeStep(stepId)
+            // Complete any pending tool steps that didn't get results
+            for (const [_key, info] of pendingToolSteps) {
+              await completeStep(info.stepId)
             }
           }
         }

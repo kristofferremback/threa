@@ -7,6 +7,98 @@ import { StreamService } from "../../services/stream-service"
 import { MemoService } from "../../services/memo-service"
 import { logger } from "../../lib/logger"
 import { TAVILY_API_KEY } from "../../config"
+import type { Citation } from "./researcher"
+
+/**
+ * Accumulator for tracking citations from tool calls.
+ * Tools register their sources as they return results, allowing
+ * us to build rich citation metadata for the final response.
+ */
+export class CitationAccumulator {
+  private citations: Citation[] = []
+  private nextIndex = 1
+
+  /**
+   * Register a message citation.
+   * Returns the citation index to use in the response (e.g., [1], [2]).
+   */
+  addMessage(params: {
+    id: string
+    streamId?: string
+    streamName?: string
+    author?: string
+    date?: string
+    preview?: string
+  }): number {
+    const index = this.nextIndex++
+    this.citations.push({
+      index,
+      type: "message",
+      id: params.id,
+      streamId: params.streamId,
+      streamName: params.streamName,
+      author: params.author,
+      date: params.date,
+      preview: params.preview,
+    })
+    return index
+  }
+
+  /**
+   * Register a memo citation.
+   */
+  addMemo(params: {
+    id: string
+    streamId?: string
+    streamName?: string
+    preview?: string
+  }): number {
+    const index = this.nextIndex++
+    this.citations.push({
+      index,
+      type: "memo",
+      id: params.id,
+      streamId: params.streamId,
+      streamName: params.streamName,
+      preview: params.preview,
+    })
+    return index
+  }
+
+  /**
+   * Register a web citation.
+   */
+  addWeb(params: {
+    url: string
+    title?: string
+    preview?: string
+  }): number {
+    const index = this.nextIndex++
+    this.citations.push({
+      index,
+      type: "web",
+      id: params.url,
+      author: params.title,
+      preview: params.preview,
+    })
+    return index
+  }
+
+  /**
+   * Get all accumulated citations.
+   */
+  getCitations(): Citation[] {
+    return [...this.citations]
+  }
+
+  /**
+   * Clear all citations (useful for reset between invocations).
+   */
+  clear(): void {
+    this.citations = []
+    this.nextIndex = 1
+  }
+}
 
 export interface AriadneToolsContext {
   workspaceId: string
@@ -19,6 +111,11 @@ export interface AriadneToolsContext {
    * - user: All user-accessible content (invoked from thinking space)
    */
   scope: SearchScope
+  /**
+   * Optional citation accumulator for tracking sources.
+   * When provided, tools will register citations as they return results.
+   */
+  citationAccumulator?: CitationAccumulator
 }
 
 /**
@@ -26,7 +123,7 @@ export interface AriadneToolsContext {
  * The scope controls what information Ariadne can access based on invocation context.
  */
 export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
-  const { workspaceId, userId, currentStreamId, scope } = context
+  const { workspaceId, userId, currentStreamId, scope, citationAccumulator } = context
   const searchService = new SearchService(pool)
   const streamService = new StreamService(pool)
   const memoService = new MemoService(pool)
@@ -103,11 +200,26 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
         }
 
         return results.results
-          .map((r, i) => {
+          .map((r) => {
             const channel = r.streamName ? `#${r.streamName}` : "unknown channel"
             const author = r.actor?.name || "Unknown"
             const date = new Date(r.createdAt).toLocaleDateString()
-            return `[${i + 1}] ${author} in ${channel} (${date}):\n${r.content.slice(0, 500)}${r.content.length > 500 ? "..." : ""}`
+            const preview = r.content.slice(0, 500) + (r.content.length > 500 ? "..." : "")
+
+            // Register citation if accumulator is provided
+            const index = citationAccumulator
+              ? citationAccumulator.addMessage({
+                  id: r.id,
+                  streamId: r.streamId,
+                  streamName: r.streamName,
+                  author,
+                  date,
+                  preview: r.content.slice(0, 200),
+                })
+              : results.results.indexOf(r) + 1
+
+            // Include IDs for navigation: [index|eventId|streamId]
+            return `[${index}|${r.id}|${r.streamId}] ${author} in ${channel} (${date}):\n${preview}`
           })
           .join("\n\n---\n\n")
       } catch (err) {
@@ -159,9 +271,20 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
         })
 
         return results.results
-          .map((r, i) => {
+          .map((r) => {
             const source = r.streamName ? `Source: #${r.streamName}` : ""
-            return `[${i + 1}] ${r.content}\n${source}`
+
+            // Register citation if accumulator is provided
+            const index = citationAccumulator
+              ? citationAccumulator.addMemo({
+                  id: r.id,
+                  streamId: r.streamId,
+                  streamName: r.streamName,
+                  preview: r.content.slice(0, 200),
+                })
+              : results.results.indexOf(r) + 1
+
+            return `[${index}] ${r.content}\n${source}`
           })
           .join("\n\n---\n\n")
       } catch (err) {
@@ -183,9 +306,20 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
   const getStreamContext = tool(
     async (input) => {
       try {
-        const streamId = input.streamId || currentStreamId
+        let streamId = input.stream || currentStreamId
         if (!streamId) {
           return "No stream context available."
+        }
+
+        // Resolve slug to ID if needed (stream IDs start with "stream_")
+        if (!streamId.startsWith("stream_")) {
+          const resolved = await searchService.resolveStreamSlugs(workspaceId, [streamId])
+          const resolvedId = resolved.get(streamId)
+          if (resolvedId) {
+            streamId = resolvedId
+          } else {
+            return `Could not find channel "${streamId}". Make sure you're using the correct channel name.`
+          }
         }
 
         const events = await streamService.getStreamEvents(streamId, input.messageCount || 50)
@@ -220,7 +354,7 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
       description:
         "Get recent messages from a stream (channel or thread) to understand the current conversation context. Use this to understand what's being discussed before answering.",
       schema: z.object({
-        streamId: z.string().optional().describe("The stream ID to get context from. Defaults to the current stream."),
+        stream: z.string().optional().describe("The channel name (e.g., 'general') or stream ID. Defaults to the current stream."),
         messageCount: z.number().optional().describe("Number of recent messages to retrieve (default: 50, max: 100)"),
       }),
     },
@@ -229,14 +363,27 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
   const getThreadHistory = tool(
     async (input) => {
       try {
+        let threadId = input.thread
+
+        // Resolve slug to ID if needed (stream IDs start with "stream_")
+        if (threadId && !threadId.startsWith("stream_")) {
+          const resolved = await searchService.resolveStreamSlugs(workspaceId, [threadId])
+          const resolvedId = resolved.get(threadId)
+          if (resolvedId) {
+            threadId = resolvedId
+          } else {
+            return `Could not find thread or channel "${threadId}". Make sure you're using the correct name.`
+          }
+        }
+
         // Get the thread/stream
-        const stream = await streamService.getStream(input.threadId)
+        const stream = await streamService.getStream(threadId)
         if (!stream) {
           return "Thread not found."
         }
 
         // Get all events in the thread
-        const events = await streamService.getStreamEvents(input.threadId, 200)
+        const events = await streamService.getStreamEvents(threadId, 200)
 
         // If it's a thread (has parent), also get the root message
         let rootContext = ""
@@ -275,7 +422,7 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
       description:
         "Get the full history of a thread, including the original message that started it. Use this when you need complete context of a threaded discussion.",
       schema: z.object({
-        threadId: z.string().describe("The thread/stream ID to get history from."),
+        thread: z.string().describe("The channel name (e.g., 'general') or thread/stream ID to get history from."),
       }),
     },
   )
@@ -331,9 +478,19 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
 
         output += "**Sources:**\n\n"
         output += data.results
-          .map((r, i) => {
+          .map((r) => {
             const snippet = r.content.length > 400 ? r.content.slice(0, 400) + "..." : r.content
-            return `[${i + 1}] **${r.title}**\n${r.url}\n${snippet}`
+
+            // Register citation if accumulator is provided
+            const index = citationAccumulator
+              ? citationAccumulator.addWeb({
+                  url: r.url,
+                  title: r.title,
+                  preview: r.content.slice(0, 200),
+                })
+              : data.results.indexOf(r) + 1
+
+            return `[${index}] **${r.title}**\n${r.url}\n${snippet}`
           })
           .join("\n\n")
 
@@ -430,6 +587,15 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
 
         // Get meta description
         const description = $('meta[name="description"]').attr("content") || ""
+
+        // Register citation for this URL fetch
+        if (citationAccumulator) {
+          citationAccumulator.addWeb({
+            url: input.url,
+            title,
+            preview: mainContent.slice(0, 200),
+          })
+        }
 
         let output = `**${title}**\n`
         if (description) {
