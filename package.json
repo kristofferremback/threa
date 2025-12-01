@@ -17,9 +17,12 @@
     "langfuse": "docker compose -f docker-compose.langfuse.yml up -d",
     "langfuse:stop": "docker compose -f docker-compose.langfuse.yml down",
     "langfuse:clear": "docker compose -f docker-compose.langfuse.yml down -v",
-    "test": "bun test src/server/services/__tests__ src/server/__tests__/e2e --max-concurrency=1",
-    "test:unit": "bun test src/server/services/__tests__",
-    "test:e2e": "bun test src/server/__tests__/e2e --max-concurrency=1"
+    "test": "TEST_DATABASE_URL=postgresql://threa:threa@localhost:5434/threa_test bun test src/server --max-concurrency=1",
+    "test:unit": "TEST_DATABASE_URL=postgresql://threa:threa@localhost:5434/threa_test bun test src/server/services",
+    "test:e2e": "TEST_DATABASE_URL=postgresql://threa:threa@localhost:5434/threa_test bun test src/server/__tests__/e2e --max-concurrency=1",
+    "test:evolution": "TEST_DATABASE_URL=postgresql://threa:threa@localhost:5434/threa_test bun test src/server/services/memo-evolution/__tests__",
+    "test:deps": "docker compose -f docker-compose.test.yml up -d",
+    "eval:evolution": "bun src/server/evals/cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
