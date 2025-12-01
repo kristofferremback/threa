@@ -177,6 +177,7 @@ export async function setupStreamWebSocket(
             payload,
             is_crosspost,
             original_stream_id,
+            client_message_id,
           } = event
 
           // Get actor or agent info
@@ -215,6 +216,7 @@ export async function setupStreamWebSocket(
             createdAt: new Date().toISOString(),
             isCrosspost: is_crosspost,
             originalStreamId: original_stream_id,
+            clientMessageId: client_message_id,
           }
 
           // Emit to the stream room

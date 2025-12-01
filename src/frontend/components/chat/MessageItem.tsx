@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward, Loader2 } from "lucide-react"
+import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward, Loader2, AlertCircle, RotateCcw } from "lucide-react"
 import { Avatar, RelativeTime } from "../ui"
 import { MessageContextMenu } from "./MessageContextMenu"
 import { MessageRevisionsModal } from "./MessageRevisionsModal"
@@ -25,6 +25,7 @@ interface MessageItemProps {
   onCrosspostToChannel?: (messageId: string) => void // Opens channel selector
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
+  onRetryMessage?: (messageId: string) => void
   animationDelay?: number
   showThreadActions?: boolean
   visibilityRef?: React.RefObject<HTMLDivElement> | ((el: HTMLDivElement | null) => void)
@@ -52,6 +53,7 @@ export function MessageItem({
   onCrosspostToChannel,
   onUserMentionClick,
   onChannelClick,
+  onRetryMessage,
   animationDelay = 0,
   showThreadActions = true,
   visibilityRef,
@@ -60,6 +62,8 @@ export function MessageItem({
   agentSession,
   sessionInThread = false,
 }: MessageItemProps) {
+  const isPending = message.pending
+  const isFailed = message.sendFailed
   const hasReplies = message.replyCount && message.replyCount > 0
   // Show thinking badge if session is active and in a thread (not in this stream)
   const showThinkingBadge = sessionInThread && agentSession &&
@@ -169,6 +173,30 @@ export function MessageItem({
           className="text-xs"
           style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
         />
+
+        {/* Pending/Failed status indicator */}
+        {isPending && (
+          <span className="flex items-center gap-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Sending...
+          </span>
+        )}
+        {isFailed && (
+          <span className="flex items-center gap-1 text-xs" style={{ color: "var(--warning, #f59e0b)" }}>
+            <RotateCcw className="h-3 w-3" />
+            Will retry automatically
+            {onRetryMessage && (
+              <button
+                onClick={() => onRetryMessage(message.id)}
+                className="flex items-center gap-0.5 ml-1 hover:underline"
+                style={{ color: "var(--accent-primary)" }}
+              >
+                Retry now
+              </button>
+            )}
+          </span>
+        )}
+
         {message.isEdited && message.updatedAt && (
           <button
             onClick={() => setShowRevisions(true)}

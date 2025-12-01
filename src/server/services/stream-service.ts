@@ -165,6 +165,7 @@ export interface CreateEventParams {
   payload?: Record<string, unknown>
   originalEventId?: string // For shared events
   shareContext?: string // For shared events
+  clientMessageId?: string // Client-generated ID for idempotency
 }
 
 export interface PromoteStreamParams {
@@ -183,6 +184,7 @@ export interface ReplyToEventParams {
   actorId: string
   content: string
   mentions?: Mention[]
+  clientMessageId?: string
 }
 
 export interface ReplyToEventResult {
@@ -866,6 +868,43 @@ export class StreamService {
         logger.info({ streamId, parentStreamId: params.parentStreamId }, "Thread created for reply")
       }
 
+      // Idempotency check: if clientMessageId is provided, check if message already exists
+      if (params.clientMessageId) {
+        const existingMessage = await client.query(
+          sql`SELECT se.*, tm.content, tm.mentions, u.email as actor_email
+              FROM stream_events se
+              LEFT JOIN text_messages tm ON se.content_id = tm.id AND se.content_type = 'text_message'
+              LEFT JOIN users u ON se.actor_id = u.id
+              WHERE se.client_message_id = ${params.clientMessageId}
+                AND se.stream_id = ${threadStream.id}`,
+        )
+        if (existingMessage.rows.length > 0) {
+          // Message already exists, commit and return existing event
+          // Don't release client here - the finally block will handle it
+          await client.query("COMMIT")
+          const row = existingMessage.rows[0]
+          return {
+            stream: threadStream,
+            event: {
+              id: row.id,
+              streamId: row.stream_id,
+              eventType: row.event_type,
+              actorId: row.actor_id,
+              actorEmail: row.actor_email || "",
+              agentId: row.agent_id,
+              content: row.content,
+              mentions: row.mentions,
+              payload: row.payload,
+              createdAt: row.created_at,
+              editedAt: row.edited_at,
+              isEdited: row.edited_at !== null,
+              replyCount: 0,
+            } as StreamEventWithDetails,
+            threadCreated: false,
+          }
+        }
+      }
+
       // Now post the message to the thread
       const messageId = generateId("msg")
       await client.query(
@@ -875,8 +914,8 @@ export class StreamService {
 
       const eventId = generateId("event")
       await client.query(
-        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id)
-            VALUES (${eventId}, ${threadStream.id}, 'message', ${params.actorId}, 'text_message', ${messageId})`,
+        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id, client_message_id)
+            VALUES (${eventId}, ${threadStream.id}, 'message', ${params.actorId}, 'text_message', ${messageId}, ${params.clientMessageId || null})`,
       )
 
       // Emit event.created
@@ -892,6 +931,7 @@ export class StreamService {
               actor_id: params.actorId,
               content: params.content,
               mentions: params.mentions || [],
+              client_message_id: params.clientMessageId,
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${eventOutboxId.replace(/'/g, "''")}'`)
@@ -1224,6 +1264,41 @@ export class StreamService {
     try {
       await client.query("BEGIN")
 
+      // Idempotency check: if clientMessageId is provided, check if event already exists
+      if (params.clientMessageId) {
+        const existingEvent = await client.query(
+          sql`SELECT se.*, tm.content, tm.mentions,
+                     u.email as actor_email
+              FROM stream_events se
+              LEFT JOIN text_messages tm ON se.content_id = tm.id AND se.content_type = 'text_message'
+              LEFT JOIN users u ON se.actor_id = u.id
+              WHERE se.client_message_id = ${params.clientMessageId}
+                AND se.stream_id = ${params.streamId}`,
+        )
+
+        if (existingEvent.rows.length > 0) {
+          // Event already exists, commit and return existing event
+          // Don't release client here - the finally block will handle it
+          await client.query("COMMIT")
+          const row = existingEvent.rows[0]
+          return {
+            id: row.id,
+            streamId: row.stream_id,
+            eventType: row.event_type,
+            actorId: row.actor_id,
+            actorEmail: row.actor_email,
+            agentId: row.agent_id,
+            content: row.content,
+            mentions: row.mentions,
+            payload: row.payload,
+            createdAt: row.created_at,
+            editedAt: row.edited_at,
+            isEdited: row.is_edited,
+            replyCount: row.reply_count || 0,
+          }
+        }
+      }
+
       const eventId = generateId("event")
       let contentType: string | null = null
       let contentId: string | null = null
@@ -1247,9 +1322,9 @@ export class StreamService {
 
       // Create the event (with either actor_id or agent_id)
       await client.query(
-        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, payload)
+        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, payload, client_message_id)
             VALUES (${eventId}, ${params.streamId}, ${params.eventType}, ${params.actorId || null}, ${params.agentId || null},
-                    ${contentType}, ${contentId}, ${params.payload ? JSON.stringify(params.payload) : null})`,
+                    ${contentType}, ${contentId}, ${params.payload ? JSON.stringify(params.payload) : null}, ${params.clientMessageId || null})`,
       )
 
       // Get stream info for notifications
@@ -1385,6 +1460,7 @@ export class StreamService {
               content: params.content,
               mentions: params.mentions,
               payload: params.payload,
+              client_message_id: params.clientMessageId,
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
@@ -1446,6 +1522,47 @@ export class StreamService {
       return (await this.getEventWithDetails(eventId))!
     } catch (error) {
       await client.query("ROLLBACK")
+
+      // Handle duplicate key error on client_message_id (race condition during retry)
+      // If another request already created the event, fetch and return it
+      const pgError = error as { code?: string; constraint?: string }
+      if (
+        pgError.code === "23505" &&
+        pgError.constraint === "idx_stream_events_client_message_id" &&
+        params.clientMessageId
+      ) {
+        logger.debug(
+          { clientMessageId: params.clientMessageId, streamId: params.streamId },
+          "Duplicate client_message_id detected, fetching existing event"
+        )
+        const existingEvent = await this.pool.query(
+          sql`SELECT se.*, tm.content, tm.mentions, u.email as actor_email
+              FROM stream_events se
+              LEFT JOIN text_messages tm ON se.content_id = tm.id AND se.content_type = 'text_message'
+              LEFT JOIN users u ON se.actor_id = u.id
+              WHERE se.client_message_id = ${params.clientMessageId}
+                AND se.stream_id = ${params.streamId}`,
+        )
+        if (existingEvent.rows.length > 0) {
+          const row = existingEvent.rows[0]
+          return {
+            id: row.id,
+            streamId: row.stream_id,
+            eventType: row.event_type,
+            actorId: row.actor_id,
+            actorEmail: row.actor_email,
+            agentId: row.agent_id,
+            content: row.content,
+            mentions: row.mentions,
+            payload: row.payload,
+            createdAt: row.created_at,
+            editedAt: row.edited_at,
+            isEdited: row.is_edited,
+            replyCount: row.reply_count || 0,
+          }
+        }
+      }
+
       throw error
     } finally {
       client.release()
@@ -2060,8 +2177,8 @@ export class StreamService {
       return { hasAccess: true, isMember: true, canPost: true }
     }
 
-    // For threads, check if user has access through parent channel membership
-    if (stream.stream_type === "thread" && stream.parent_stream_id) {
+    // For threads and thinking spaces, check if user has access through parent membership
+    if ((stream.stream_type === "thread" || stream.stream_type === "thinking_space") && stream.parent_stream_id) {
       const parentAccess = await this.checkParentChannelAccess(stream.parent_stream_id, userId)
       if (parentAccess.hasAccess) {
         return {
@@ -2119,8 +2236,8 @@ export class StreamService {
 
       const parent = result.rows[0]
 
-      // Found a channel - check membership
-      if (parent.stream_type === "channel") {
+      // Found a channel or thinking space - check membership
+      if (parent.stream_type === "channel" || parent.stream_type === "thinking_space") {
         return {
           hasAccess: parent.is_member,
           channelId: parent.id,

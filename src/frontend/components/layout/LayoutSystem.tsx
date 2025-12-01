@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "../../auth"
-import { useBootstrap, usePaneManager, useWorkspaceSocket } from "../../hooks"
+import { useBootstrapQuery, usePaneManager, useWorkspaceSocket } from "../../hooks"
+import { initSocket } from "../../workers/socket-worker"
 import { StreamInterface } from "../StreamInterface"
 import { Sidebar } from "./Sidebar"
 import { PaneSystem } from "./PaneSystem"
@@ -16,6 +17,7 @@ import { InboxView } from "./InboxView"
 import { KnowledgeBrowserModal } from "./KnowledgeBrowserModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import { ToolResultPanelProvider, ToolResultPanel } from "../chat/ToolResultViewer"
+import { OfflineBanner } from "../OfflineBanner"
 import type { Tab, Stream, OpenMode } from "../../types"
 
 export function LayoutSystem() {
@@ -32,7 +34,7 @@ export function LayoutSystem() {
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
-  // Bootstrap data
+  // Bootstrap data - uses TanStack Query for offline-first caching
   const {
     data: bootstrapData,
     isLoading: bootstrapLoading,
@@ -47,7 +49,8 @@ export function LayoutSystem() {
     addUser,
     updateUser,
     removeUser,
-  } = useBootstrap({
+  } = useBootstrapQuery({
+    workspaceId: "default",
     enabled: isAuthenticated && state === "loaded",
   })
 
@@ -74,6 +77,13 @@ export function LayoutSystem() {
       initializeFromUrl()
     }
   }, [bootstrapData, initializeFromUrl])
+
+  // Initialize the message socket worker when we have workspace data
+  useEffect(() => {
+    if (bootstrapData?.workspace.id) {
+      initSocket(bootstrapData.workspace.id)
+    }
+  }, [bootstrapData?.workspace.id])
 
   // Show profile setup modal if user needs to set up their profile
   useEffect(() => {
@@ -651,7 +661,9 @@ export function LayoutSystem() {
 
   return (
     <ToolResultPanelProvider onNavigateToEvent={handleNavigateToEvent}>
-    <div className="flex h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
+    <div className="flex flex-col h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
+      <OfflineBanner />
+      <div className="flex flex-1 min-h-0">
       <Sidebar
         workspace={bootstrapData.workspace}
         streams={bootstrapData.streams}
@@ -836,6 +848,7 @@ export function LayoutSystem() {
 
       {/* Tool result viewer panel */}
       <ToolResultPanel />
+      </div>
     </div>
     </ToolResultPanelProvider>
   )

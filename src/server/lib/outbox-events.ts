@@ -85,6 +85,7 @@ export interface StreamEventCreatedPayload {
   payload?: Record<string, unknown> // Event-specific payload (e.g., sessionId for agent events)
   is_crosspost?: boolean
   original_stream_id?: string
+  client_message_id?: string // Client-generated ID for optimistic update matching
 }
 
 export interface StreamEventEditedPayload {

@@ -519,7 +519,7 @@ export function createStreamRoutes(
   // Create an event (post a message)
   router.post("/:workspaceId/streams/:streamId/events", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { streamId } = req.params
+      const { workspaceId, streamId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
@@ -530,14 +530,58 @@ export function createStreamRoutes(
       // Ensure user exists in database
       await ensureUserExists(req)
 
-      // Check access - must be a member to post
+      const { content, mentions, clientMessageId, parentEventId, parentStreamId } = req.body
+
+      // Handle "pending" streamId - this is for creating a thread on a message
+      if (streamId === "pending") {
+        if (!parentEventId) {
+          res.status(400).json({ error: "parentEventId is required for pending threads" })
+          return
+        }
+
+        // Get the parent event to find its stream
+        const parentEvent = await streamService.getEventWithDetails(parentEventId)
+        if (!parentEvent) {
+          res.status(404).json({ error: "Parent event not found" })
+          return
+        }
+
+        // Check access to the parent stream
+        const access = await streamService.checkStreamAccess(parentEvent.streamId, userId)
+        if (!access.canPost) {
+          res.status(403).json({ error: access.reason || "You must be a member to reply" })
+          return
+        }
+
+        // Create the thread and message
+        if (!content || typeof content !== "string" || content.trim().length === 0) {
+          res.status(400).json({ error: "Content is required" })
+          return
+        }
+
+        const result = await streamService.replyToEvent({
+          workspaceId,
+          eventId: parentEventId,
+          parentStreamId: parentStreamId || parentEvent.streamId,
+          actorId: userId,
+          content: content.trim(),
+          mentions,
+          clientMessageId,
+        })
+
+        res.status(201).json({
+          event: mapEventToResponse(result.event),
+          stream: result.stream,
+        })
+        return
+      }
+
+      // Regular stream - check access
       const access = await streamService.checkStreamAccess(streamId, userId)
       if (!access.canPost) {
         res.status(403).json({ error: access.reason || "You must be a member to post messages" })
         return
       }
-
-      const { content, mentions } = req.body
 
       if (!content || typeof content !== "string" || content.trim().length === 0) {
         res.status(400).json({ error: "Content is required" })
@@ -550,6 +594,7 @@ export function createStreamRoutes(
         eventType: "message",
         content: content.trim(),
         mentions,
+        clientMessageId,
       }
 
       const event = await streamService.createEvent(params)
