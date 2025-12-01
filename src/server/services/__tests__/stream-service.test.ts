@@ -485,6 +485,327 @@ describe("StreamService", () => {
       expect(access.canPost).toBe(true)
       expect(access.inheritedFrom).toBe(channel.id)
     })
+
+    test("should allow thinking space owner to access threads within their thinking space", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+
+      // Create thinking space (owner becomes member automatically)
+      const thinkingSpace = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "thinking_space",
+        name: "My Space",
+        visibility: "private",
+      })
+
+      // Create a message in the thinking space
+      const rootEvent = await streamService.createEvent({
+        streamId: thinkingSpace.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "A thought to branch from",
+      })
+
+      // Create thread from the message
+      const { stream: thread } = await streamService.createThreadFromEvent(rootEvent.id, owner.id)
+
+      // Owner should have access to thread through thinking space membership
+      const access = await streamService.checkStreamAccess(thread.id, owner.id)
+
+      expect(access.hasAccess).toBe(true)
+      expect(access.canPost).toBe(true)
+    })
+
+    test("should deny non-owner access to threads within private thinking space", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const outsider = await createTestUser(pool, { name: "Outsider" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, outsider.id, workspace.id)
+
+      // Create thinking space (owner only)
+      const thinkingSpace = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "thinking_space",
+        name: "Private Space",
+        visibility: "private",
+      })
+
+      // Create a message and thread
+      const rootEvent = await streamService.createEvent({
+        streamId: thinkingSpace.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Private thought",
+      })
+
+      const { stream: thread } = await streamService.createThreadFromEvent(rootEvent.id, owner.id)
+
+      // Outsider should NOT have access
+      const access = await streamService.checkStreamAccess(thread.id, outsider.id)
+
+      expect(access.hasAccess).toBe(false)
+    })
+
+    test("should traverse nested threads to find root channel access", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const member = await createTestUser(pool, { name: "Member" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, member.id, workspace.id)
+
+      // Create channel
+      const channel = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "channel",
+        name: "General",
+        slug: "general",
+        visibility: "public",
+      })
+
+      // Create first level thread BEFORE member joins
+      const msg1 = await streamService.createEvent({
+        streamId: channel.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Starting thread 1",
+      })
+      const { stream: thread1 } = await streamService.createThreadFromEvent(msg1.id, owner.id)
+
+      // Create second level thread (nested) BEFORE member joins
+      const msg2 = await streamService.createEvent({
+        streamId: thread1.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Starting nested thread 2",
+      })
+      const { stream: thread2 } = await streamService.createThreadFromEvent(msg2.id, owner.id)
+
+      // Now add member to channel (AFTER threads were created)
+      await streamService.joinStream(channel.id, member.id)
+
+      // Member should have access through channel membership (2 levels deep)
+      // They are NOT a direct member of thread2 since they joined after it was created
+      const access = await streamService.checkStreamAccess(thread2.id, member.id)
+
+      expect(access.hasAccess).toBe(true)
+      expect(access.canPost).toBe(true)
+      expect(access.inheritedFrom).toBe(channel.id)
+    })
+
+    test("should return stream not found for non-existent stream", async () => {
+      const user = await createTestUser(pool)
+
+      const access = await streamService.checkStreamAccess("non_existent_stream_id", user.id)
+
+      expect(access.hasAccess).toBe(false)
+      expect(access.reason).toBe("Stream not found")
+    })
+
+    test("should allow read-only access to threads in public channels for non-members", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const viewer = await createTestUser(pool, { name: "Viewer" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, viewer.id, workspace.id)
+
+      // Create PUBLIC channel
+      const channel = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "channel",
+        name: "Public",
+        slug: "public",
+        visibility: "public",
+      })
+
+      // Create thread (visibility: inherit)
+      const msg = await streamService.createEvent({
+        streamId: channel.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Thread starter",
+      })
+      const { stream: thread } = await streamService.createThreadFromEvent(msg.id, owner.id)
+
+      // Viewer is NOT a member of channel or thread
+      // Should have read-only access since parent channel is public
+      const access = await streamService.checkStreamAccess(thread.id, viewer.id)
+
+      expect(access.hasAccess).toBe(true)
+      expect(access.canPost).toBe(false)
+    })
+
+    test("should deny access to threads in private channels for non-members", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const outsider = await createTestUser(pool, { name: "Outsider" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, outsider.id, workspace.id)
+
+      // Create PRIVATE channel
+      const channel = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "channel",
+        name: "Private",
+        slug: "private",
+        visibility: "private",
+      })
+
+      // Create thread (visibility: inherit)
+      const msg = await streamService.createEvent({
+        streamId: channel.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Private thread",
+      })
+      const { stream: thread } = await streamService.createThreadFromEvent(msg.id, owner.id)
+
+      // Outsider should NOT have access
+      const access = await streamService.checkStreamAccess(thread.id, outsider.id)
+
+      expect(access.hasAccess).toBe(false)
+      expect(access.reason).toBe("This is a private channel")
+    })
+  })
+
+  describe("checkEventAccess", () => {
+    test("should allow member to reply to event via event access check", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const member = await createTestUser(pool, { name: "Member" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, member.id, workspace.id)
+
+      const channel = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "channel",
+        name: "General",
+        slug: "general",
+        visibility: "public",
+      })
+
+      await streamService.joinStream(channel.id, member.id)
+
+      const event = await streamService.createEvent({
+        streamId: channel.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Root message for pending thread",
+      })
+
+      // Check access via event ID (simulating pending thread scenario)
+      const access = await streamService.checkEventAccess(event.id, member.id)
+
+      expect(access.hasAccess).toBe(true)
+      expect(access.canPost).toBe(true)
+    })
+
+    test("should deny non-member access to reply to event in private channel", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const owner = await createTestUser(pool, { name: "Owner" })
+      const outsider = await createTestUser(pool, { name: "Outsider" })
+      await addUserToWorkspace(pool, owner.id, workspace.id)
+      await addUserToWorkspace(pool, outsider.id, workspace.id)
+
+      const channel = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: owner.id,
+        streamType: "channel",
+        name: "Private",
+        slug: "private",
+        visibility: "private",
+      })
+
+      const event = await streamService.createEvent({
+        streamId: channel.id,
+        actorId: owner.id,
+        eventType: "message",
+        content: "Private message",
+      })
+
+      // Outsider should NOT have access
+      const access = await streamService.checkEventAccess(event.id, outsider.id)
+
+      expect(access.hasAccess).toBe(false)
+    })
+
+    test("should return event not found for non-existent event", async () => {
+      const user = await createTestUser(pool)
+
+      const access = await streamService.checkEventAccess("non_existent_event_id", user.id)
+
+      expect(access.hasAccess).toBe(false)
+      expect(access.reason).toBe("Event not found")
+    })
+  })
+
+  describe("cross-post access", () => {
+    test("should allow access via cross-post from another channel", async () => {
+      const workspace = await createTestWorkspace(pool)
+      const alice = await createTestUser(pool, { name: "Alice" })
+      const bob = await createTestUser(pool, { name: "Bob" })
+      await addUserToWorkspace(pool, alice.id, workspace.id)
+      await addUserToWorkspace(pool, bob.id, workspace.id)
+
+      // Alice creates Channel 1 with a thread
+      const channel1 = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: alice.id,
+        streamType: "channel",
+        name: "Channel 1",
+        slug: "channel-1",
+        visibility: "private",
+      })
+
+      const msg1 = await streamService.createEvent({
+        streamId: channel1.id,
+        actorId: alice.id,
+        eventType: "message",
+        content: "Thread starter in channel 1",
+      })
+      const { stream: thread1 } = await streamService.createThreadFromEvent(msg1.id, alice.id)
+
+      // Bob creates Channel 2
+      const channel2 = await streamService.createStream({
+        workspaceId: workspace.id,
+        creatorId: bob.id,
+        streamType: "channel",
+        name: "Channel 2",
+        slug: "channel-2",
+        visibility: "private",
+      })
+
+      // Bob creates a message in channel 2, then cross-posts it to thread1
+      const msg2 = await streamService.createEvent({
+        streamId: channel2.id,
+        actorId: bob.id,
+        eventType: "message",
+        content: "Message from channel 2",
+      })
+
+      // Cross-post msg2 into thread1 (requires alice to have access to add content)
+      await streamService.createEvent({
+        streamId: thread1.id,
+        actorId: alice.id,
+        eventType: "shared",
+        originalEventId: msg2.id,
+      })
+
+      // Now Bob should have access to thread1 via the cross-post
+      const access = await streamService.checkStreamAccess(thread1.id, bob.id)
+
+      expect(access.hasAccess).toBe(true)
+      expect(access.canPost).toBe(true)
+      // Access was granted via cross-post from channel2
+      expect(access.inheritedFrom).toBe(channel2.id)
+    })
   })
 
   describe("editEvent", () => {

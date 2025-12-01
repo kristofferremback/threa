@@ -687,13 +687,17 @@ export class StreamService {
             RETURNING *`,
       )
 
-      // Copy parent stream membership to thread
+      // Note: We do NOT copy parent membership to threads.
+      // Access is determined by graph traversal - if you're a member of an ancestor
+      // channel/thinking_space, you can access all descendant threads.
+      // Direct thread membership is only added when a user explicitly "watches"
+      // the thread or posts a message in it.
+
+      // Add the thread creator as a member (so they get notifications)
       await client.query(
         sql`INSERT INTO stream_members (stream_id, user_id, role, notify_level)
-            SELECT ${streamId}, user_id, 'member', notify_level
-            FROM stream_members
-            WHERE stream_id = ${originalEvent.parent_stream_id}
-              AND left_at IS NULL`,
+            VALUES (${streamId}, ${creatorId}, 'owner', 'all')
+            ON CONFLICT (stream_id, user_id) DO NOTHING`,
       )
 
       // Auto-name thread based on original message content
@@ -2147,56 +2151,114 @@ export class StreamService {
   }
 
   /**
-   * Check if a user has access to a stream
-   * - Members can always access their streams (read + write)
-   * - Non-members CAN read public streams but cannot post
-   * - Non-members cannot access private streams at all
-   * - For threads: traverse graph upward - if user is member of parent channel, they can access
+   * Check if a user has access to a stream using recursive CTE for efficient graph traversal.
+   * Access can be granted through:
+   * 1. Direct membership in the target stream
+   * 2. Membership in any ancestor stream (channel/thinking_space)
+   * 3. Cross-post access: if content was cross-posted INTO this stream from another stream
+   *    the user has access to, they can access this stream too
    */
   async checkStreamAccess(streamId: string, userId: string): Promise<StreamAccessResult> {
+    // Use recursive CTE to traverse the parent chain in a single query
+    // This finds all ancestors and checks membership at each level
     const result = await this.pool.query(
-      sql`SELECT
-            s.id, s.visibility, s.stream_type, s.parent_stream_id,
-            CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member
-          FROM streams s
-          LEFT JOIN stream_members sm ON s.id = sm.stream_id
-            AND sm.user_id = ${userId}
-            AND sm.left_at IS NULL
-          WHERE s.id = ${streamId}`,
+      sql`WITH RECURSIVE stream_chain AS (
+            -- Base case: the requested stream
+            SELECT
+              s.id,
+              s.visibility,
+              s.stream_type,
+              s.parent_stream_id,
+              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+              0 as depth,
+              s.id as chain_id
+            FROM streams s
+            LEFT JOIN stream_members sm ON s.id = sm.stream_id
+              AND sm.user_id = ${userId}
+              AND sm.left_at IS NULL
+            WHERE s.id = ${streamId}
+
+            UNION ALL
+
+            -- Recursive case: traverse to parent streams
+            SELECT
+              p.id,
+              p.visibility,
+              p.stream_type,
+              p.parent_stream_id,
+              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+              sc.depth + 1,
+              p.id as chain_id
+            FROM stream_chain sc
+            INNER JOIN streams p ON p.id = sc.parent_stream_id
+            LEFT JOIN stream_members sm ON p.id = sm.stream_id
+              AND sm.user_id = ${userId}
+              AND sm.left_at IS NULL
+            WHERE sc.depth < 10  -- Max 10 levels to prevent infinite loops
+          )
+          SELECT * FROM stream_chain
+          ORDER BY depth`,
     )
 
     if (result.rows.length === 0) {
       return { hasAccess: false, isMember: false, canPost: false, reason: "Stream not found" }
     }
 
-    const stream = result.rows[0]
-    const isMember = stream.is_member
+    const targetStream = result.rows[0]
 
-    // Direct members always have full access
-    if (isMember) {
+    // Direct member of the target stream - full access
+    if (targetStream.is_member) {
       return { hasAccess: true, isMember: true, canPost: true }
     }
 
-    // For threads and thinking spaces, check if user has access through parent membership
-    if ((stream.stream_type === "thread" || stream.stream_type === "thinking_space") && stream.parent_stream_id) {
-      const parentAccess = await this.checkParentChannelAccess(stream.parent_stream_id, userId)
-      if (parentAccess.hasAccess) {
-        return {
-          hasAccess: true,
-          isMember: false,
-          canPost: true,
-          inheritedFrom: parentAccess.channelId,
+    // For threads, check if user is member of any ancestor channel/thinking_space
+    if (targetStream.stream_type === "thread") {
+      for (const ancestor of result.rows) {
+        if (ancestor.depth === 0) continue // Skip target stream itself
+
+        // Found a channel or thinking space ancestor where user is a member
+        if ((ancestor.stream_type === "channel" || ancestor.stream_type === "thinking_space") && ancestor.is_member) {
+          return {
+            hasAccess: true,
+            isMember: false,
+            canPost: true,
+            inheritedFrom: ancestor.id,
+          }
         }
+      }
+
+      // Check cross-post access: if content was cross-posted INTO this stream
+      // from another stream the user has access to
+      const crossPostAccess = await this.checkCrossPostAccess(streamId, userId)
+      if (crossPostAccess.hasAccess) {
+        return crossPostAccess
       }
     }
 
     // Non-members can read public streams but not post
-    if (stream.visibility === "public") {
+    if (targetStream.visibility === "public") {
       return {
         hasAccess: true,
         isMember: false,
         canPost: false,
         reason: "You need to join this channel to post messages",
+      }
+    }
+
+    // For threads with 'inherit' visibility, check if parent chain has public visibility
+    if (targetStream.visibility === "inherit") {
+      for (const ancestor of result.rows) {
+        if (ancestor.depth === 0) continue
+        if (ancestor.visibility === "public") {
+          return {
+            hasAccess: true,
+            isMember: false,
+            canPost: false,
+            reason: "You need to join to post messages",
+          }
+        }
+        // Stop at first non-inherit ancestor
+        if (ancestor.visibility !== "inherit") break
       }
     }
 
@@ -2210,49 +2272,104 @@ export class StreamService {
   }
 
   /**
-   * Traverse parent chain to find a channel and check if user is a member.
-   * Returns the channel ID if user has access through inheritance.
+   * Check if user has access through cross-posts.
+   * If content was cross-posted INTO this stream from another stream the user can access,
+   * they get access to this stream too.
    */
-  private async checkParentChannelAccess(
-    parentStreamId: string,
-    userId: string,
-  ): Promise<{ hasAccess: boolean; channelId?: string }> {
-    let currentId = parentStreamId
+  private async checkCrossPostAccess(streamId: string, userId: string): Promise<StreamAccessResult> {
+    // Find all source streams that have cross-posted content INTO this stream
+    // by looking at shared_refs in this stream's events
+    const crossPostSources = await this.pool.query(
+      sql`SELECT DISTINCT source_event.stream_id as source_stream_id
+          FROM stream_events e
+          INNER JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
+          INNER JOIN stream_events source_event ON sr.original_event_id = source_event.id
+          WHERE e.stream_id = ${streamId}
+            AND e.deleted_at IS NULL`,
+    )
 
-    // Walk up the tree (max 10 levels to prevent infinite loops)
-    for (let i = 0; i < 10; i++) {
-      const result = await this.pool.query(
-        sql`SELECT
-              s.id, s.stream_type, s.parent_stream_id,
-              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member
-            FROM streams s
-            LEFT JOIN stream_members sm ON s.id = sm.stream_id
-              AND sm.user_id = ${userId}
-              AND sm.left_at IS NULL
-            WHERE s.id = ${currentId}`,
-      )
-
-      if (result.rows.length === 0) break
-
-      const parent = result.rows[0]
-
-      // Found a channel or thinking space - check membership
-      if (parent.stream_type === "channel" || parent.stream_type === "thinking_space") {
+    // Check if user has access to any of the source streams
+    for (const source of crossPostSources.rows) {
+      // Recursively check access to the source stream (but don't check cross-posts again to avoid loops)
+      const sourceAccess = await this.checkStreamAccessDirect(source.source_stream_id, userId)
+      if (sourceAccess.hasAccess) {
         return {
-          hasAccess: parent.is_member,
-          channelId: parent.id,
+          hasAccess: true,
+          isMember: false,
+          canPost: true,
+          inheritedFrom: source.source_stream_id,
         }
-      }
-
-      // If this is another thread, keep traversing up
-      if (parent.parent_stream_id) {
-        currentId = parent.parent_stream_id
-      } else {
-        break
       }
     }
 
-    return { hasAccess: false }
+    return { hasAccess: false, isMember: false, canPost: false }
+  }
+
+  /**
+   * Check stream access via parent chain only (no cross-post recursion).
+   * Used internally to avoid infinite loops when checking cross-post access.
+   */
+  private async checkStreamAccessDirect(streamId: string, userId: string): Promise<StreamAccessResult> {
+    const result = await this.pool.query(
+      sql`WITH RECURSIVE stream_chain AS (
+            SELECT
+              s.id, s.visibility, s.stream_type, s.parent_stream_id,
+              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+              0 as depth
+            FROM streams s
+            LEFT JOIN stream_members sm ON s.id = sm.stream_id
+              AND sm.user_id = ${userId} AND sm.left_at IS NULL
+            WHERE s.id = ${streamId}
+            UNION ALL
+            SELECT
+              p.id, p.visibility, p.stream_type, p.parent_stream_id,
+              CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+              sc.depth + 1
+            FROM stream_chain sc
+            INNER JOIN streams p ON p.id = sc.parent_stream_id
+            LEFT JOIN stream_members sm ON p.id = sm.stream_id
+              AND sm.user_id = ${userId} AND sm.left_at IS NULL
+            WHERE sc.depth < 10
+          )
+          SELECT * FROM stream_chain ORDER BY depth`,
+    )
+
+    if (result.rows.length === 0) {
+      return { hasAccess: false, isMember: false, canPost: false }
+    }
+
+    const targetStream = result.rows[0]
+
+    if (targetStream.is_member) {
+      return { hasAccess: true, isMember: true, canPost: true }
+    }
+
+    // Check ancestor membership
+    for (const ancestor of result.rows) {
+      if (ancestor.depth === 0) continue
+      if ((ancestor.stream_type === "channel" || ancestor.stream_type === "thinking_space") && ancestor.is_member) {
+        return { hasAccess: true, isMember: false, canPost: true, inheritedFrom: ancestor.id }
+      }
+    }
+
+    return { hasAccess: false, isMember: false, canPost: false }
+  }
+
+  /**
+   * Check if user has access to reply to an event (for pending threads).
+   * This checks access to the event's parent stream.
+   */
+  async checkEventAccess(eventId: string, userId: string): Promise<StreamAccessResult> {
+    // Get the event's stream ID
+    const result = await this.pool.query(
+      sql`SELECT stream_id FROM stream_events WHERE id = ${eventId}`,
+    )
+
+    if (result.rows.length === 0) {
+      return { hasAccess: false, isMember: false, canPost: false, reason: "Event not found" }
+    }
+
+    return this.checkStreamAccess(result.rows[0].stream_id, userId)
   }
 
   /**
