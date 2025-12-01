@@ -33,6 +33,7 @@ interface MessageListProps {
   onUpdateLastRead?: (messageId: string | null) => void
   onShareToChannel?: (messageId: string) => Promise<void>
   onCrosspostToChannel?: (messageId: string, targetChannelId: string) => Promise<void>
+  onRetryMessage?: (messageId: string) => void
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
   showThreadActions?: boolean
@@ -61,6 +62,7 @@ export function MessageList({
   onUpdateLastRead,
   onShareToChannel,
   onCrosspostToChannel,
+  onRetryMessage,
   onUserMentionClick,
   onChannelClick,
   showThreadActions = true,
@@ -549,6 +551,7 @@ export function MessageList({
                 onMarkAsUnread={markAsUnread}
                 onShareToChannel={onShareToChannel}
                 onCrosspostToChannel={(messageId) => setCrosspostModalMessageId(messageId)}
+                onRetryMessage={onRetryMessage}
                 onUserMentionClick={onUserMentionClick}
                 onChannelClick={onChannelClick}
                 onMessageVisible={onMessageVisible}

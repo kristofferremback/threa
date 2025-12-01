@@ -430,16 +430,24 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
     }, [editor, disabled])
 
     // Set initial content as markdown when editor is ready, including mentions
-    const initialContentSetRef = useRef(false)
+    // Track the content we've already set to avoid re-setting the same content
+    const lastSetContentRef = useRef<string | null>(null)
     useEffect(() => {
-      if (editor && initialContent && !initialContentSetRef.current) {
-        initialContentSetRef.current = true
+      // Only set content if:
+      // 1. Editor exists
+      // 2. We have initial content to set
+      // 3. We haven't already set this exact content
+      if (!editor || !initialContent || lastSetContentRef.current === initialContent) {
+        return
+      }
 
-        // First, set the content (tiptap-markdown will parse markdown formatting)
-        editor.commands.setContent(initialContent)
+      lastSetContentRef.current = initialContent
 
-        // Then, replace mention text patterns with actual mention nodes
-        if (initialMentions.length > 0) {
+      // First, set the content (tiptap-markdown will parse markdown formatting)
+      editor.commands.setContent(initialContent)
+
+      // Then, replace mention text patterns with actual mention nodes
+      if (initialMentions.length > 0) {
           // We need to find and replace mention text with mention nodes
           // Process in reverse order to not mess up positions
           const sortedMentions = [...initialMentions].reverse()
@@ -495,7 +503,6 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
           // Move cursor to end after inserting mentions
           editor.commands.focus("end")
         }
-      }
     }, [editor, initialContent, initialMentions])
 
     // Extract mentions from the editor content

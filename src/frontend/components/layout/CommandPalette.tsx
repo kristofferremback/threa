@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { Hash, Lock, Search, X, UserCheck, UserPlus, PanelRightOpen, MessageSquare, FileText, User, AtSign, Users } from "lucide-react"
+import { Hash, Lock, Search, X, UserCheck, UserPlus, PanelRightOpen, MessageSquare, FileText, User, AtSign, Users, WifiOff } from "lucide-react"
 import type { Stream, OpenMode } from "../../types"
 import { getOpenMode } from "../../types"
 import { Avatar } from "../ui"
+import { useOffline } from "../../contexts/OfflineContext"
 
 type PaletteMode = "navigate" | "search"
 
@@ -185,6 +186,7 @@ export function CommandPalette({
   onSelectStream,
   onNavigateToMessage,
 }: CommandPaletteProps) {
+  const { isOnline } = useOffline()
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<PaletteMode>(initialMode)
@@ -952,7 +954,17 @@ export function CommandPalette({
               })
             )
           ) : // Search results
-          searchError ? (
+          !isOnline ? (
+            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+              <WifiOff className="h-10 w-10 mb-3" style={{ color: "var(--text-muted)" }} />
+              <p className="font-medium" style={{ color: "var(--text-primary)" }}>
+                You're offline
+              </p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                Search requires an internet connection
+              </p>
+            </div>
+          ) : searchError ? (
             <div className="px-4 py-8 text-center" style={{ color: "var(--error)" }}>
               {searchError}
             </div>

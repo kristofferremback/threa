@@ -21,6 +21,7 @@ interface EventListProps {
   onLoadMore: () => Promise<void>
   onShareToStream: (eventId: string) => Promise<void>
   onCrosspostToStream: (eventId: string, targetStreamId: string) => Promise<void>
+  onRetryMessage?: (eventId: string) => void
   onStreamClick: (slug: string, e: React.MouseEvent) => void
   users: Array<{ id: string; name: string; email: string }>
   streams: Array<{ id: string; name: string; slug: string | null }>
@@ -64,6 +65,9 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
     updatedAt: event.editedAt,
     messageType,
     mentions: mentions,
+    // Optimistic update state
+    pending: event.pending,
+    sendFailed: event.sendFailed,
     // For shared events, include info about the original
     sharedFrom: isSharedEvent && originalEvent
       ? {
@@ -108,6 +112,7 @@ export function EventList({
   onLoadMore,
   onShareToStream,
   onCrosspostToStream,
+  onRetryMessage,
   onStreamClick,
   users,
   streams,
@@ -156,6 +161,7 @@ export function EventList({
       onLoadMore={onLoadMore}
       onShareToChannel={onShareToStream}
       onCrosspostToChannel={onCrosspostToStream}
+      onRetryMessage={onRetryMessage}
       onChannelClick={onStreamClick}
       users={users}
       channels={streams}

@@ -81,6 +81,11 @@ export interface StreamEvent {
   isEdited?: boolean
   createdAt: string
   editedAt?: string
+  // Optimistic update state
+  pending?: boolean
+  sendFailed?: boolean
+  // Client-generated ID for matching optimistic events with server events
+  clientMessageId?: string
 }
 
 // For backwards compatibility during migration
@@ -102,6 +107,9 @@ export interface Message {
   mentions?: Mention[]
   linkedChannels?: LinkedChannel[]
   sharedFrom?: SharedFromInfo
+  // Optimistic update state
+  pending?: boolean
+  sendFailed?: boolean
 }
 
 export interface SharedFromInfo {

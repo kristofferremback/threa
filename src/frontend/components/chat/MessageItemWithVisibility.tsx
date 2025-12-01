@@ -20,6 +20,7 @@ interface MessageItemWithVisibilityProps {
   onCrosspostToChannel?: (messageId: string) => void
   onUserMentionClick?: (userId: string) => void
   onChannelClick?: (channelSlug: string, e: React.MouseEvent) => void
+  onRetryMessage?: (messageId: string) => void
   onMessageVisible: (messageId: string) => void
   onMessageHidden: (messageId: string) => void
   onSetRef?: (element: HTMLDivElement | null) => void
@@ -47,6 +48,7 @@ export function MessageItemWithVisibility({
   onCrosspostToChannel,
   onUserMentionClick,
   onChannelClick,
+  onRetryMessage,
   onMessageVisible,
   onMessageHidden,
   onSetRef,
@@ -89,6 +91,7 @@ export function MessageItemWithVisibility({
       onCrosspostToChannel={onCrosspostToChannel}
       onUserMentionClick={onUserMentionClick}
       onChannelClick={onChannelClick}
+      onRetryMessage={onRetryMessage}
       animationDelay={animationDelay}
       showThreadActions={showThreadActions}
       visibilityRef={combinedRef}

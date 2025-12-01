@@ -1,7 +1,31 @@
+/**
+ * @deprecated Use useStreamWithQuery instead.
+ *
+ * This hook uses the legacy IndexedDB caching system.
+ * The new useStreamWithQuery uses TanStack Query for offline-first caching.
+ *
+ * Kept for reference and as a fallback during migration.
+ */
+
 import { useState, useEffect, useRef, useCallback } from "react"
 import { io, Socket } from "socket.io-client"
 import { toast } from "sonner"
 import type { Stream, StreamEvent, Mention, ThreadData } from "../types"
+import {
+  cacheEvents as cacheToDB,
+  getCachedEvents,
+  getCachedEvent,
+  mergeEvent as mergeEventToCache,
+  updateCachedEvent,
+  deleteCachedEvent,
+  cacheStream as cacheStreamToDB,
+  getCachedStream,
+  addToOutbox,
+  createOptimisticEvent,
+  getPendingForStream,
+  type OutboxMessage,
+} from "../lib/offline"
+import { setWebSocketConnected, isOnline } from "../lib/connectivity"
 
 // Room name builders (must match server)
 const room = {
@@ -135,13 +159,37 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
       return
     }
 
+    // Load cached data immediately (before socket connects)
+    // This ensures we show something even if server is down
+    const loadCachedData = async () => {
+      try {
+        const [cachedEvents, cachedStream] = await Promise.all([
+          getCachedEvents(streamId, { limit: EVENT_PAGE_SIZE }),
+          getCachedStream(streamId),
+        ])
+
+        if (cachedEvents.length > 0) {
+          setEvents(cachedEvents)
+          setHasMoreEvents(cachedEvents.length >= EVENT_PAGE_SIZE)
+          setIsLoading(false)
+        }
+
+        if (cachedStream) {
+          setStream(cachedStream)
+        }
+      } catch {
+        // Ignore cache errors
+      }
+    }
+
+    // Start loading cache immediately
+    loadCachedData()
+
     const socket = io({ withCredentials: true })
     socketRef.current = socket
 
-    // Reset state for new stream
-    setEvents([])
+    // Reset state for new stream - but DON'T clear events if we might have cache
     setInitialSessions([])
-    setStream(null)
     setParentStream(null)
     setRootEvent(null)
     setAncestors([])
@@ -152,15 +200,24 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
     socket.on("connect", () => {
       setIsConnected(true)
       setConnectionError(null)
+      setWebSocketConnected(true)
     })
 
     socket.on("disconnect", () => {
       setIsConnected(false)
+      setWebSocketConnected(false)
     })
 
     socket.on("connect_error", (error) => {
-      setConnectionError(error.message)
+      // Only set connection error if we don't have cached data to show
+      setEvents((currentEvents) => {
+        if (currentEvents.length === 0) {
+          setConnectionError(error.message)
+        }
+        return currentEvents
+      })
       setIsConnected(false)
+      setIsLoading(false) // Stop loading spinner
     })
 
     // Handle new events
@@ -171,6 +228,11 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
         if (prev.some((e) => e.id === data.id)) return prev
         return [...prev, data]
       })
+
+      // Cache the new event
+      mergeEventToCache(data).catch(() => {
+        // Silently ignore cache errors
+      })
     })
 
     // Handle event edits
@@ -180,11 +242,17 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
           e.id === data.id ? { ...e, content: data.content, editedAt: data.editedAt, isEdited: true } : e,
         ),
       )
+
+      // Update cache
+      updateCachedEvent(data.id, { content: data.content, editedAt: data.editedAt, isEdited: true }).catch(() => {})
     })
 
     // Handle event deletes
     socket.on("event:deleted", (data: { id: string }) => {
       setEvents((prev) => prev.filter((e) => e.id !== data.id))
+
+      // Remove from cache
+      deleteCachedEvent(data.id).catch(() => {})
     })
 
     // Handle reply count updates (when someone replies to a message in this stream)
@@ -398,29 +466,78 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
 
         // We need to fetch the original event and its parent stream
         // The event fetch endpoint should return both
-        const eventInfoRes = await fetch(`/api/workspace/${workspaceId}/events/${eventId}`, { credentials: "include" })
+        try {
+          const eventInfoRes = await fetch(`/api/workspace/${workspaceId}/events/${eventId}`, { credentials: "include" })
 
-        if (eventInfoRes.ok) {
-          const eventInfo = await eventInfoRes.json()
-          setRootEvent(eventInfo.event)
-          setParentStream(eventInfo.stream)
-          setParentStreamIdForReply(eventInfo.stream?.id || null)
+          if (eventInfoRes.ok) {
+            const eventInfo = await eventInfoRes.json()
+            setRootEvent(eventInfo.event)
+            setParentStream(eventInfo.stream)
+            setParentStreamIdForReply(eventInfo.stream?.id || null)
 
-          // For pending threads, we need to build the ancestor chain manually
-          // The root event IS the first ancestor, and we need to fetch any ancestors of the parent stream
-          if (eventInfo.stream?.id) {
-            // If the parent stream is also a thread, fetch its ancestors
-            if (eventInfo.stream.streamType === "thread" && eventInfo.stream.parentStreamId) {
-              const ancestorsRes = await fetch(
-                `/api/workspace/${workspaceId}/streams/${eventInfo.stream.id}/ancestors`,
-                { credentials: "include" },
-              )
-              if (ancestorsRes.ok) {
-                const ancestorsData = await ancestorsRes.json()
-                // The root event (eventInfo.event) will be shown separately,
-                // so ancestors are the parent stream's ancestors
-                setAncestors(ancestorsData.ancestors || [])
+            // For pending threads, we need to build the ancestor chain manually
+            // The root event IS the first ancestor, and we need to fetch any ancestors of the parent stream
+            if (eventInfo.stream?.id) {
+              // If the parent stream is also a thread, fetch its ancestors
+              if (eventInfo.stream.streamType === "thread" && eventInfo.stream.parentStreamId) {
+                const ancestorsRes = await fetch(
+                  `/api/workspace/${workspaceId}/streams/${eventInfo.stream.id}/ancestors`,
+                  { credentials: "include" },
+                )
+                if (ancestorsRes.ok) {
+                  const ancestorsData = await ancestorsRes.json()
+                  // The root event (eventInfo.event) will be shown separately,
+                  // so ancestors are the parent stream's ancestors
+                  setAncestors(ancestorsData.ancestors || [])
+                }
               }
+            }
+
+            // Create a "virtual" thread stream for the UI
+            setStream({
+              id: `pending_${eventId}`,
+              workspaceId,
+              streamType: "thread",
+              name: null,
+              slug: null,
+              description: null,
+              topic: null,
+              parentStreamId: eventInfo.stream?.id || null,
+              branchedFromEventId: eventId,
+              visibility: "inherit",
+              status: "active",
+              isMember: true,
+              unreadCount: 0,
+              lastReadAt: null,
+              notifyLevel: "default",
+              pinnedAt: null,
+            })
+
+            // Get current user
+            const authRes = await fetch("/api/auth/me", { credentials: "include" })
+            if (authRes.ok) {
+              const authData = await authRes.json()
+              setCurrentUserId(authData.user?.id || null)
+            }
+            setIsLoading(false)
+            return
+          }
+        } catch {
+          // Network error - we're offline
+        }
+
+        // Offline or failed to fetch - try to get root event from cache
+        // The eventId format is "event_<uuid>", so we can try to find it in cached events
+        const cachedEvent = await getCachedEvent(eventId)
+        if (cachedEvent) {
+          setRootEvent(cachedEvent)
+
+          // Try to get parent stream from cache
+          if (cachedEvent.streamId) {
+            const cachedParent = await getCachedStream(cachedEvent.streamId)
+            if (cachedParent) {
+              setParentStream(cachedParent)
+              setParentStreamIdForReply(cachedParent.id)
             }
           }
 
@@ -433,7 +550,7 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
             slug: null,
             description: null,
             topic: null,
-            parentStreamId: eventInfo.stream?.id || null,
+            parentStreamId: cachedEvent.streamId || null,
             branchedFromEventId: eventId,
             visibility: "inherit",
             status: "active",
@@ -443,32 +560,57 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
             notifyLevel: "default",
             pinnedAt: null,
           })
-        } else {
-          throw new Error("Failed to fetch event info")
+
+          setIsLoading(false)
+          // Don't set connection error - we have data to show
+          return
         }
 
-        // Get current user
-        const authRes = await fetch("/api/auth/me", { credentials: "include" })
-        if (authRes.ok) {
-          const authData = await authRes.json()
-          setCurrentUserId(authData.user?.id || null)
-        }
-        setIsLoading(false)
-        return
+        // No cached data available - show connection error
+        throw new Error("Unable to load thread - you appear to be offline")
       }
 
-      // Normal stream fetch
+      // Normal stream fetch - try cache first for instant display
+      let cachedEventsLoaded = false
+
+      try {
+        const cachedEvents = await getCachedEvents(streamId, { limit: EVENT_PAGE_SIZE })
+        if (cachedEvents.length > 0) {
+          setEvents(cachedEvents)
+          setHasMoreEvents(cachedEvents.length >= EVENT_PAGE_SIZE)
+          setIsLoading(false) // Show cached data immediately
+          cachedEventsLoaded = true
+        }
+
+        // Also try to load cached stream metadata
+        const cachedStream = await getCachedStream(streamId)
+        if (cachedStream) {
+          setStream(cachedStream)
+        }
+      } catch {
+        // Ignore cache errors
+      }
+
+      // Now fetch fresh data from API
       const streamRes = await fetch(`/api/workspace/${workspaceId}/streams/${streamId}`, {
         credentials: "include",
       })
 
       if (!streamRes.ok) {
+        // If we have cached data, keep showing it
+        if (cachedEventsLoaded) {
+          console.warn("Failed to fetch stream, using cached data")
+          return
+        }
         throw new Error("Failed to fetch stream")
       }
 
       const streamData = await streamRes.json()
       setStream(streamData)
       setPendingEventId(null)
+
+      // Cache the stream metadata
+      cacheStreamToDB(streamData).catch(() => {})
 
       // If this is a thread, fetch parent info and ancestors
       if (streamData.parentStreamId) {
@@ -509,14 +651,25 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
       )
 
       if (!eventsRes.ok) {
+        // If we have cached data, keep showing it
+        if (cachedEventsLoaded) {
+          console.warn("Failed to fetch events, using cached data")
+          return
+        }
         throw new Error("Failed to fetch events")
       }
 
       const eventsData = await eventsRes.json()
-      setEvents(eventsData.events || [])
+      const freshEvents = eventsData.events || []
+      setEvents(freshEvents)
       setInitialSessions(eventsData.sessions || [])
       setLastReadEventId(eventsData.lastReadEventId || null)
       setHasMoreEvents(eventsData.hasMore || false)
+
+      // Cache the fetched events
+      if (freshEvents.length > 0) {
+        cacheToDB(streamId, freshEvents).catch(() => {})
+      }
 
       // Get current user from bootstrap or auth
       const authRes = await fetch("/api/auth/me", { credentials: "include" })
@@ -549,6 +702,11 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
       const olderEvents = data.events || []
 
       setHasMoreEvents(olderEvents.length >= EVENT_PAGE_SIZE)
+
+      // Cache the newly loaded events
+      if (olderEvents.length > 0) {
+        cacheToDB(streamId, olderEvents).catch(() => {})
+      }
 
       // Prepend older events
       setEvents((prev) => {
@@ -668,6 +826,29 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
         }
 
         // Normal post to existing stream
+        // Check if we're offline - if so, queue the message
+        if (!isOnline()) {
+          // Queue message for later sending
+          const outboxMsg = await addToOutbox(
+            workspaceId,
+            streamId,
+            content.trim(),
+            mentions || [],
+          )
+
+          // Create optimistic event and add it to the list for immediate display
+          const optimisticEvent = createOptimisticEvent(
+            outboxMsg,
+            currentUserId || "unknown",
+            "", // email will be empty for optimistic
+            undefined,
+          )
+          setEvents((prev) => [...prev, optimisticEvent as unknown as StreamEvent])
+
+          toast.info("Message queued - will send when you're back online")
+          return
+        }
+
         const res = await fetch(`/api/workspace/${workspaceId}/streams/${streamId}/events`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -682,13 +863,38 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
 
         // Event will come through websocket
       } catch (error) {
+        // If network error, queue the message
+        if (error instanceof TypeError && error.message.includes("fetch")) {
+          try {
+            const outboxMsg = await addToOutbox(
+              workspaceId,
+              streamId,
+              content.trim(),
+              mentions || [],
+            )
+
+            const optimisticEvent = createOptimisticEvent(
+              outboxMsg,
+              currentUserId || "unknown",
+              "",
+              undefined,
+            )
+            setEvents((prev) => [...prev, optimisticEvent as unknown as StreamEvent])
+
+            toast.info("Message queued - will send when you're back online")
+            return
+          } catch {
+            // If queueing also fails, fall through to error toast
+          }
+        }
+
         toast.error(error instanceof Error ? error.message : "Failed to send message")
         throw error
       } finally {
         setIsSending(false)
       }
     },
-    [workspaceId, streamId, isSending, pendingEventId, parentStreamIdForReply, parentStream],
+    [workspaceId, streamId, isSending, pendingEventId, parentStreamIdForReply, parentStream, currentUserId],
   )
 
   const editEvent = useCallback(

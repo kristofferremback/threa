@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
-import { useStream, useAgentSessions } from "../hooks"
+import { useStreamWithQuery, useAgentSessions } from "../hooks"
 import type { MaterializedStreamResult } from "../hooks"
 import { ChatHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
 import type { AgentSession } from "./chat/AgentThinkingEvent"
@@ -54,7 +54,8 @@ export function StreamInterface({
     createThread,
     loadMoreEvents,
     updateLinkedStreams,
-  } = useStream({
+    retryMessage,
+  } = useStreamWithQuery({
     workspaceId,
     streamId,
     enabled: true,
@@ -177,7 +178,7 @@ export function StreamInterface({
       )}
 
       <div className="flex-1 min-h-0 flex flex-col">
-        {connectionError ? (
+        {connectionError && events.length === 0 && !streamId?.startsWith("event_") ? (
           <ConnectionError message={connectionError} />
         ) : (
           <EventList
@@ -198,6 +199,7 @@ export function StreamInterface({
             onLoadMore={loadMoreEvents}
             onShareToStream={handleShareToStream}
             onCrosspostToStream={handleCrosspostToStream}
+            onRetryMessage={retryMessage}
             onStreamClick={(slug, e) => onGoToStream?.(slug, getOpenMode(e))}
             users={users}
             streams={streams}
@@ -208,9 +210,9 @@ export function StreamInterface({
       <ChatInput
         onSend={handleSend}
         placeholder={isThread ? "Reply to thread..." : `Message ${displayTitle}`}
-        disabled={!isConnected}
         users={users}
         channels={streams}
+        streamId={actualStreamId}
       />
     </div>
   )

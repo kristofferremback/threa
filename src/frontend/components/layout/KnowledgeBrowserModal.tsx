@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react"
-import { X, Search, BookOpen, ExternalLink, Calendar, User } from "lucide-react"
+import { X, Search, BookOpen, ExternalLink, Calendar, User, WifiOff } from "lucide-react"
 import { Modal } from "../ui/Modal"
 import { Spinner } from "../ui/Spinner"
+import { useOffline } from "../../contexts/OfflineContext"
 
 interface Memo {
   id: string
@@ -23,6 +24,7 @@ interface KnowledgeBrowserModalProps {
 }
 
 export function KnowledgeBrowserModal({ isOpen, onClose, workspaceId, onNavigateToStream }: KnowledgeBrowserModalProps) {
+  const { isOnline } = useOffline()
   const [memos, setMemos] = useState<Memo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -150,7 +152,17 @@ export function KnowledgeBrowserModal({ isOpen, onClose, workspaceId, onNavigate
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
+          {!isOnline ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <WifiOff className="h-12 w-12 mb-3" style={{ color: "var(--text-muted)" }} />
+              <p className="font-medium" style={{ color: "var(--text-primary)" }}>
+                You're offline
+              </p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                Knowledge browsing requires an internet connection
+              </p>
+            </div>
+          ) : loading ? (
             <div className="flex items-center justify-center h-full">
               <Spinner size="lg" />
             </div>
