@@ -4,7 +4,7 @@ import { logger } from "../lib/logger"
 import { memoId, retrievalLogId, expertiseSignalId } from "../lib/id"
 import { generateEmbedding } from "../lib/ai-providers"
 import { getMemoEmbeddingTable } from "../lib/embedding-tables"
-import { generateAutoName } from "../lib/ollama"
+import { generateAutoName, MemoCategory } from "../lib/ollama"
 
 /**
  * MemoService - Manages memos in the GAM-inspired memory system.
@@ -61,14 +61,14 @@ export class MemoService {
     // Insert the memo
     await this.pool.query(
       sql`INSERT INTO memos (
-        id, workspace_id, summary, topics,
+        id, workspace_id, summary, topics, category,
         anchor_event_ids, context_stream_id,
         context_start_event_id, context_end_event_id,
         participant_ids, primary_answerer_id,
         confidence, source, created_by, visibility,
         visible_to_stream_ids
       ) VALUES (
-        ${id}, ${params.workspaceId}, ${summary}, ${topics},
+        ${id}, ${params.workspaceId}, ${summary}, ${topics}, ${params.category || null},
         ${params.anchorEventIds}, ${params.streamId},
         ${contextWindow.startEventId}, ${contextWindow.endEventId},
         ${participants.ids}, ${participants.primaryAnswerer},
@@ -108,7 +108,7 @@ export class MemoService {
    */
   async getMemos(
     workspaceId: string,
-    options: { limit?: number; offset?: number; topics?: string[] } = {},
+    options: { limit?: number; offset?: number; topics?: string[]; includeContent?: boolean } = {},
   ): Promise<Memo[]> {
     const limit = options.limit ?? 50
     const offset = options.offset ?? 0
@@ -132,7 +132,61 @@ export class MemoService {
             LIMIT ${limit} OFFSET ${offset}`,
           )
 
-    return result.rows.map(this.mapMemoRow)
+    const memos = result.rows.map(this.mapMemoRow)
+
+    if (options.includeContent) {
+      return this.enrichMemosWithContent(memos)
+    }
+
+    return memos
+  }
+
+  /**
+   * Enrich memos with anchor content and author info.
+   */
+  private async enrichMemosWithContent(memos: Memo[]): Promise<MemoWithContent[]> {
+    if (memos.length === 0) return []
+
+    const allEventIds = memos.flatMap((m) => m.anchorEventIds)
+    if (allEventIds.length === 0) return memos.map((m) => ({ ...m, anchorContent: null, authorName: null }))
+
+    const contentResult = await this.pool.query<{
+      event_id: string
+      content: string
+      author_name: string
+      stream_name: string
+    }>(
+      sql`SELECT
+        e.id as event_id,
+        tm.content,
+        COALESCE(u.name, u.email, 'Unknown') as author_name,
+        COALESCE(s.name, s.slug, 'Unknown') as stream_name
+      FROM stream_events e
+      JOIN text_messages tm ON e.content_id = tm.id AND e.content_type = 'text_message'
+      LEFT JOIN users u ON e.actor_id = u.id
+      LEFT JOIN streams s ON e.stream_id = s.id
+      WHERE e.id = ANY(${allEventIds})`,
+    )
+
+    const contentMap = new Map<string, { content: string; authorName: string; streamName: string }>()
+    for (const row of contentResult.rows) {
+      contentMap.set(row.event_id, {
+        content: row.content,
+        authorName: row.author_name,
+        streamName: row.stream_name,
+      })
+    }
+
+    return memos.map((memo) => {
+      const firstAnchor = memo.anchorEventIds[0]
+      const anchorData = firstAnchor ? contentMap.get(firstAnchor) : null
+      return {
+        ...memo,
+        anchorContent: anchorData?.content || null,
+        authorName: anchorData?.authorName || null,
+        streamName: anchorData?.streamName || null,
+      }
+    })
   }
 
   /**
@@ -462,6 +516,7 @@ export class MemoService {
       workspaceId: row.workspace_id,
       summary: row.summary,
       topics: row.topics || [],
+      category: row.category as MemoCategory | null,
       anchorEventIds: row.anchor_event_ids || [],
       contextStreamId: row.context_stream_id,
       contextStartEventId: row.context_start_event_id,
@@ -492,6 +547,7 @@ export interface Memo {
   workspaceId: string
   summary: string
   topics: string[]
+  category: MemoCategory | null
   anchorEventIds: string[]
   contextStreamId: string | null
   contextStartEventId: string | null
@@ -511,6 +567,12 @@ export interface Memo {
   archivedAt: string | null
 }
 
+export interface MemoWithContent extends Memo {
+  anchorContent: string | null
+  authorName: string | null
+  streamName: string | null
+}
+
 export interface CreateMemoParams {
   workspaceId: string
   anchorEventIds: string[]
@@ -519,6 +581,7 @@ export interface CreateMemoParams {
   createdBy?: string
   summary?: string
   topics?: string[]
+  category?: MemoCategory
   confidence?: number
 }
 
@@ -551,6 +614,7 @@ interface MemoRow {
   workspace_id: string
   summary: string
   topics: string[]
+  category: string | null
   anchor_event_ids: string[]
   context_stream_id: string | null
   context_start_event_id: string | null

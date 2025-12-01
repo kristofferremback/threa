@@ -28,10 +28,11 @@ export class EnrichmentService {
 
   /**
    * Check if a message should be enriched based on accumulated signals.
+   * Currently set to always return true for eager indexing.
    */
-  shouldEnrich(signals: EnrichmentSignals): boolean {
-    // Any of these signals triggers enrichment
-    return (signals.reactions ?? 0) >= 2 || (signals.replies ?? 0) >= 2 || signals.retrieved === true
+  shouldEnrich(_signals: EnrichmentSignals): boolean {
+    // Eager mode: always enrich messages that have embeddings
+    return true
   }
 
   /**

@@ -59,3 +59,7 @@ export function agentSessionId(): string {
 export function sessionStepId(): string {
   return generateId("step")
 }
+
+export function tagId(): string {
+  return generateId("tag")
+}

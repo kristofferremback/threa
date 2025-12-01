@@ -1,8 +1,11 @@
 import { Pool } from "pg"
+import { sql } from "../lib/db"
 import { getJobQueue, EnrichJobData, JobPriority } from "../lib/job-queue"
 import { EnrichmentService } from "../services/enrichment-service"
 import { AIUsageService } from "../services/ai-usage-service"
 import { logger } from "../lib/logger"
+import { getTextMessageEmbeddingTable } from "../lib/embedding-tables"
+import { queueMemoEvaluation } from "./memo-worker"
 
 /**
  * Enrichment Worker - Processes message enrichment jobs.
@@ -35,10 +38,13 @@ export class EnrichmentWorker {
     await boss.work<EnrichJobData>(
       "memory.enrich",
       {
+        batchSize: 1,
         pollingIntervalSeconds: 5,
       },
-      async (job) => {
-        await this.processJob(job)
+      async (jobs) => {
+        for (const job of jobs) {
+          await this.processJob(job)
+        }
       },
     )
 
@@ -74,6 +80,20 @@ export class EnrichmentWorker {
 
       if (success) {
         logger.info({ textMessageId, signals }, "✅ Message enriched successfully")
+
+        // Queue memo evaluation after successful enrichment
+        try {
+          await queueMemoEvaluation({
+            workspaceId,
+            eventId,
+            textMessageId,
+            source: "enrichment",
+          })
+          logger.debug({ textMessageId, eventId }, "📋 Queued memo evaluation after enrichment")
+        } catch (memoErr) {
+          // Don't fail the enrichment job if memo queueing fails
+          logger.warn({ err: memoErr, textMessageId }, "Failed to queue memo evaluation")
+        }
       } else {
         logger.warn({ textMessageId }, "❌ Message enrichment failed")
       }
@@ -86,7 +106,7 @@ export class EnrichmentWorker {
 
 /**
  * Queue an enrichment job for a message.
- * Called when signals accumulate (reactions, replies, or retrieval).
+ * In eager mode, this is called immediately after embedding.
  */
 export async function queueEnrichment(params: {
   workspaceId: string
@@ -97,15 +117,10 @@ export async function queueEnrichment(params: {
     replies?: number
     retrieved?: boolean
     helpful?: boolean
+    immediate?: boolean
   }
 }): Promise<string | null> {
   const boss = getJobQueue()
-
-  // Quick pre-check - don't queue if signals are too low
-  const signalSum = (params.signals.reactions ?? 0) + (params.signals.replies ?? 0)
-  if (signalSum < 2 && !params.signals.retrieved) {
-    return null
-  }
 
   return await boss.send<EnrichJobData>(
     "memory.enrich",
@@ -193,4 +208,67 @@ export async function queueEnrichmentForRetrieval(params: {
     eventId: params.eventId,
     signals: { retrieved: true, helpful: params.helpful },
   })
+}
+
+/**
+ * Queue immediate enrichment after embedding completes.
+ * Used for eager indexing mode.
+ */
+export async function queueImmediateEnrichment(params: {
+  workspaceId: string
+  eventId: string
+  textMessageId: string
+}): Promise<string | null> {
+  return queueEnrichment({
+    workspaceId: params.workspaceId,
+    textMessageId: params.textMessageId,
+    eventId: params.eventId,
+    signals: { immediate: true },
+  })
+}
+
+/**
+ * Backfill enrichment for existing messages that have embeddings but no enrichment.
+ * Queues enrichment jobs for all messages with embeddings and tier < 2.
+ */
+export async function backfillEnrichment(
+  pool: Pool,
+  workspaceId: string,
+  options: { limit?: number } = {},
+): Promise<{ queued: number }> {
+  const limit = options.limit ?? 1000
+  const embeddingTable = getTextMessageEmbeddingTable()
+
+  const result = await pool.query<{
+    text_message_id: string
+    event_id: string
+  }>(
+    sql`SELECT emb.text_message_id, e.id as event_id
+      FROM ${sql.raw(embeddingTable)} emb
+      INNER JOIN text_messages tm ON tm.id = emb.text_message_id
+      INNER JOIN stream_events e ON e.content_id = tm.id AND e.content_type = 'text_message'
+      INNER JOIN streams s ON e.stream_id = s.id
+      WHERE s.workspace_id = ${workspaceId}
+        AND COALESCE(tm.enrichment_tier, 0) < 2
+        AND e.deleted_at IS NULL
+      ORDER BY e.created_at DESC
+      LIMIT ${limit}`,
+  )
+
+  let queued = 0
+
+  for (const row of result.rows) {
+    const jobId = await queueImmediateEnrichment({
+      workspaceId,
+      textMessageId: row.text_message_id,
+      eventId: row.event_id,
+    })
+
+    if (jobId) {
+      queued++
+    }
+  }
+
+  logger.info({ workspaceId, queued, total: result.rows.length }, "Backfill enrichment jobs queued")
+  return { queued }
 }

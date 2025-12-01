@@ -476,6 +476,152 @@ Contextual header:`
   }
 }
 
+export interface TagSuggestionResult {
+  tags: string[]
+  success: boolean
+}
+
+export type MemoCategory = "announcement" | "decision" | "how-to" | "insight" | "reference" | "event" | "feedback"
+
+export interface CategoryClassificationResult {
+  category: MemoCategory | null
+  success: boolean
+}
+
+/**
+ * Suggest tags for content using the local SLM.
+ * Provides existing tags as context to encourage reuse and consistency.
+ *
+ * @param content - The message content to tag
+ * @param existingTags - Tags already used in this workspace (sorted by popularity)
+ * @returns 1-3 suggested tags
+ */
+export async function suggestTags(content: string, existingTags: string[]): Promise<TagSuggestionResult> {
+  const tagContext =
+    existingTags.length > 0
+      ? `Existing tags in this workspace (prefer reusing these when appropriate):
+${existingTags.slice(0, 30).join(", ")}
+
+`
+      : ""
+
+  const prompt = `${tagContext}Suggest 1-3 tags for this content. Tags should be lowercase, specific, and help categorize the content for later retrieval.
+
+Rules:
+- Prefer reusing existing tags when they fit
+- Create new tags only if no existing tag is appropriate
+- Tags should describe the topic (e.g., "recipes", "deployment", "onboarding"), not the format
+- Keep tags short (1-3 words)
+- Do NOT use generic tags like "question", "discussion", "message", "chat"
+
+Content:
+${content.slice(0, 1500)}
+
+Tags (comma-separated):`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "tag-suggestion",
+      prompt,
+      temperature: 0.3,
+      maxTokens: 50,
+      metadata: {
+        contentLength: content.length,
+        existingTagCount: existingTags.length,
+      },
+    })
+
+    // Parse comma-separated tags
+    const tags = result.text
+      .split(",")
+      .map((t) =>
+        t
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, "")
+          .replace(/\s+/g, "-"),
+      )
+      .filter((t) => t.length >= 2 && t.length <= 30)
+      .slice(0, 3)
+
+    if (tags.length === 0) {
+      logger.debug({ model: OLLAMA_CLASSIFICATION_MODEL, rawResponse: result.text }, "No valid tags extracted")
+      return { tags: [], success: false }
+    }
+
+    logger.debug(
+      { model: OLLAMA_CLASSIFICATION_MODEL, tags, existingTagCount: existingTags.length },
+      "Tags suggested",
+    )
+    return { tags, success: true }
+  } catch (err) {
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Tag suggestion failed")
+    return { tags: [], success: false }
+  }
+}
+
+const VALID_CATEGORIES: MemoCategory[] = [
+  "announcement",
+  "decision",
+  "how-to",
+  "insight",
+  "reference",
+  "event",
+  "feedback",
+]
+
+/**
+ * Classify content into a memo category/archetype.
+ * Categories represent the fundamental nature of the content, not its topic.
+ *
+ * @param content - The message content to classify
+ * @returns The category and success status
+ */
+export async function classifyMemoCategory(content: string): Promise<CategoryClassificationResult> {
+  const prompt = `Classify this message into ONE of these categories based on its fundamental nature:
+
+- announcement: news, updates, launches, team announcements
+- decision: choices made, direction set, policies, conclusions reached
+- how-to: processes, procedures, guides, explanations of how things work
+- insight: ideas, lessons learned, observations, knowledge shares
+- reference: links, resources, documentation, things to bookmark
+- event: things that happened, incidents, milestones, occurrences
+- feedback: user feedback, reviews, opinions from external sources
+
+Message:
+${content.slice(0, 1500)}
+
+Category (one word only):`
+
+  try {
+    const result = await tracedGenerate({
+      traceName: "memo-category-classification",
+      prompt,
+      temperature: 0.1,
+      maxTokens: 20,
+      metadata: { contentLength: content.length },
+    })
+
+    // Extract and validate category
+    const rawCategory = result.text.toLowerCase().trim().split(/[\s,.-]/)[0]
+    const category = VALID_CATEGORIES.find((c) => rawCategory === c || rawCategory.startsWith(c.replace("-", "")))
+
+    if (!category) {
+      logger.debug(
+        { model: OLLAMA_CLASSIFICATION_MODEL, rawResponse: result.text },
+        "Could not parse valid category from response",
+      )
+      return { category: null, success: false }
+    }
+
+    logger.debug({ model: OLLAMA_CLASSIFICATION_MODEL, category, rawResponse: result.text }, "Memo category classified")
+    return { category, success: true }
+  } catch (err) {
+    logger.error({ err, model: OLLAMA_CLASSIFICATION_MODEL }, "Memo category classification failed")
+    return { category: null, success: false }
+  }
+}
+
 // ============================================================================
 // Embedding functions (not traced - high volume, low debugging value)
 // ============================================================================

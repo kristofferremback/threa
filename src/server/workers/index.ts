@@ -5,6 +5,7 @@ import { ClassificationWorker } from "./classification-worker"
 import { AriadneWorker, queueAriadneResponse } from "./ariadne-worker"
 import { AriadneTrigger } from "./ariadne-trigger"
 import { EnrichmentWorker } from "./enrichment-worker"
+import { MemoWorker } from "./memo-worker"
 import { AgentSessionService } from "../services/agent-session-service"
 import { StreamService } from "../services/stream-service"
 import { checkOllamaHealth, ensureOllamaModels } from "../lib/ollama"
@@ -15,6 +16,7 @@ let classificationWorker: ClassificationWorker | null = null
 let ariadneWorker: AriadneWorker | null = null
 let ariadneTrigger: AriadneTrigger | null = null
 let enrichmentWorker: EnrichmentWorker | null = null
+let memoWorker: MemoWorker | null = null
 
 /**
  * Initialize and start all AI workers.
@@ -57,6 +59,7 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
   classificationWorker = new ClassificationWorker(pool)
   ariadneWorker = new AriadneWorker(pool, ariadneTrigger)
   enrichmentWorker = new EnrichmentWorker(pool)
+  memoWorker = new MemoWorker(pool)
 
   // Start workers
   await embeddingWorker.start()
@@ -64,6 +67,7 @@ export async function startWorkers(pool: Pool, connectionString: string): Promis
   await ariadneWorker.start()
   await ariadneTrigger.start()
   await enrichmentWorker.start()
+  await memoWorker.start()
 
   // Recover orphaned Ariadne sessions from previous server instance
   await recoverOrphanedSessions(pool)
@@ -151,6 +155,7 @@ export async function stopWorkers(): Promise<void> {
   classificationWorker = null
   ariadneWorker = null
   enrichmentWorker = null
+  memoWorker = null
 
   logger.info("AI workers stopped")
 }
@@ -165,4 +170,7 @@ export {
   queueEnrichmentForThreadReply,
   queueEnrichmentForReaction,
   queueEnrichmentForRetrieval,
+  queueImmediateEnrichment,
+  backfillEnrichment,
 } from "./enrichment-worker"
+export { queueMemoEvaluation, backfillMemoEvaluation } from "./memo-worker"

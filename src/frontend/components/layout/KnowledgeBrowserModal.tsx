@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { X, Search, BookOpen, ExternalLink, Calendar, User, WifiOff } from "lucide-react"
+import { X, Search, BookOpen, ExternalLink, Calendar, User, WifiOff, ChevronDown, ChevronUp, Hash, MessageSquare } from "lucide-react"
 import { Modal } from "../ui/Modal"
 import { Spinner } from "../ui/Spinner"
 import { useOffline } from "../../contexts/OfflineContext"
@@ -13,7 +13,9 @@ interface Memo {
   source: "user" | "system" | "ariadne"
   createdAt: string
   contextStreamId: string | null
-  streamName?: string
+  streamName?: string | null
+  anchorContent?: string | null
+  authorName?: string | null
 }
 
 interface KnowledgeBrowserModalProps {
@@ -218,64 +220,124 @@ interface MemoCardProps {
 }
 
 function MemoCard({ memo, onNavigate }: MemoCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const hasContent = Boolean(memo.anchorContent)
+
   const sourceLabel = {
     user: "Saved by user",
     system: "Auto-captured",
     ariadne: "From Ariadne",
   }[memo.source]
 
+  const truncateContent = (content: string, maxLength: number = 300) => {
+    if (content.length <= maxLength) return content
+    return content.slice(0, maxLength).trim() + "..."
+  }
+
   return (
     <div
-      className="p-4 rounded-lg border transition-colors"
+      className="rounded-lg border transition-colors overflow-hidden"
       style={{
         background: "var(--bg-tertiary)",
         borderColor: "var(--border-subtle)",
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-            {memo.summary}
-          </p>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium" style={{ color: "var(--text-primary)" }}>
+              {memo.summary}
+            </p>
 
-          {memo.topics.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {memo.topics.map((topic) => (
-                <span
-                  key={topic}
-                  className="px-2 py-0.5 rounded text-xs"
-                  style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}
-                >
-                  {topic}
+            {memo.topics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {memo.topics.map((topic) => (
+                  <span
+                    key={topic}
+                    className="px-2 py-0.5 rounded text-xs"
+                    style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}
+                  >
+                    {topic}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+              {memo.authorName && (
+                <span className="flex items-center gap-1">
+                  <User className="h-3 w-3" />
+                  {memo.authorName}
                 </span>
-              ))}
+              )}
+              {memo.streamName && (
+                <span className="flex items-center gap-1">
+                  <Hash className="h-3 w-3" />
+                  {memo.streamName}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {new Date(memo.createdAt).toLocaleDateString()}
+              </span>
+              <span className="flex items-center gap-1">
+                <MessageSquare className="h-3 w-3" />
+                {sourceLabel}
+              </span>
+              {memo.retrievalCount > 0 && <span>Used {memo.retrievalCount}×</span>}
             </div>
-          )}
+          </div>
 
-          <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {new Date(memo.createdAt).toLocaleDateString()}
-            </span>
-            <span className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              {sourceLabel}
-            </span>
-            {memo.retrievalCount > 0 && <span>Used {memo.retrievalCount} times</span>}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {hasContent && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="p-2 rounded-lg hover:bg-[var(--hover-overlay)] transition-colors"
+                style={{ color: "var(--text-muted)" }}
+                title={isExpanded ? "Hide content" : "Show content"}
+              >
+                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                onClick={onNavigate}
+                className="p-2 rounded-lg hover:bg-[var(--hover-overlay)] transition-colors"
+                style={{ color: "var(--text-muted)" }}
+                title="View conversation"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
-
-        {onNavigate && (
-          <button
-            onClick={onNavigate}
-            className="p-2 rounded-lg hover:bg-[var(--hover-overlay)] transition-colors flex-shrink-0"
-            style={{ color: "var(--text-muted)" }}
-            title="View conversation"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </button>
-        )}
       </div>
+
+      {hasContent && isExpanded && (
+        <div
+          className="px-4 pb-4 pt-0"
+        >
+          <div
+            className="p-3 rounded-lg text-sm whitespace-pre-wrap"
+            style={{
+              background: "var(--bg-secondary)",
+              color: "var(--text-secondary)",
+              borderLeft: "3px solid var(--accent-primary)",
+            }}
+          >
+            {truncateContent(memo.anchorContent!, 600)}
+          </div>
+          {memo.anchorContent && memo.anchorContent.length > 600 && onNavigate && (
+            <button
+              onClick={onNavigate}
+              className="mt-2 text-xs hover:underline"
+              style={{ color: "var(--accent-primary)" }}
+            >
+              View full conversation →
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

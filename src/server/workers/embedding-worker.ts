@@ -5,6 +5,7 @@ import { generateEmbeddingsBatch, calculateCost, Models } from "../lib/ai-provid
 import { AIUsageService } from "../services/ai-usage-service"
 import { logger } from "../lib/logger"
 import { getTextMessageEmbeddingTable, getEmbeddingProvider } from "../lib/embedding-tables"
+import { queueImmediateEnrichment } from "./enrichment-worker"
 
 /**
  * Embedding Worker - Processes embedding generation jobs.
@@ -96,9 +97,18 @@ export class EmbeddingWorker {
             eventId: job.data.eventId,
             jobId: job.id,
           })
+
+          // Queue immediate enrichment after embedding (eager indexing)
+          if (job.data.eventId) {
+            await queueImmediateEnrichment({
+              workspaceId: job.data.workspaceId,
+              textMessageId: job.data.textMessageId,
+              eventId: job.data.eventId,
+            })
+          }
         }
 
-        logger.info({ workspaceId, count: validJobs.length }, "Embeddings stored successfully")
+        logger.info({ workspaceId, count: validJobs.length }, "Embeddings stored and enrichment queued")
       } catch (err) {
         logger.error({ err, workspaceId }, "Failed to process embeddings for workspace")
         throw err

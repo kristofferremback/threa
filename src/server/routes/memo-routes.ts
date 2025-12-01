@@ -15,6 +15,7 @@ export function createMemoRoutes(pool: Pool): Router {
    * - limit: Max results (default 50)
    * - offset: Pagination offset (default 0)
    * - topics: Comma-separated topic filters
+   * - includeContent: Include anchor message content (default true)
    */
   router.get("/:workspaceId/memos", async (req, res, next) => {
     try {
@@ -29,8 +30,9 @@ export function createMemoRoutes(pool: Pool): Router {
       const offset = parseInt(req.query.offset as string) || 0
       const topicsParam = req.query.topics as string | undefined
       const topics = topicsParam ? topicsParam.split(",").map((t) => t.trim()) : undefined
+      const includeContent = req.query.includeContent !== "false"
 
-      const memos = await memoService.getMemos(workspaceId, { limit, offset, topics })
+      const memos = await memoService.getMemos(workspaceId, { limit, offset, topics, includeContent })
 
       logger.debug({ workspaceId, userId, memoCount: memos.length, topics }, "Memos listed")
 
