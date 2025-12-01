@@ -1,10 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import type { Socket as ClientSocket } from "socket.io-client"
-import {
-  getTestServer,
-  waitForSocketEvent,
-  type TestServerContext,
-} from "./test-server"
+import { getTestServer, waitForSocketEvent, type TestServerContext } from "./test-server"
 import {
   createTestWorkspace,
   addUserToWorkspace,
@@ -81,15 +77,12 @@ describe("E2E: Real-time Messaging", () => {
       }>(bobSocket, "event")
 
       // Alice sends a message via HTTP API
-      const response = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Hello from Alice!" }),
-        },
-      )
+      const response = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Hello from Alice!" }),
+      })
 
       expect(response.status).toBe(201)
 
@@ -123,15 +116,12 @@ describe("E2E: Real-time Messaging", () => {
       await new Promise((r) => setTimeout(r, 100))
 
       // Create a message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Original message" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Original message" }),
+      })
 
       const createdEvent = await createResponse.json()
 
@@ -142,15 +132,12 @@ describe("E2E: Real-time Messaging", () => {
       }>(aliceSocket, "event:edited")
 
       // Edit the message
-      await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events/${createdEvent.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Edited message" }),
-        },
-      )
+      await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events/${createdEvent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Edited message" }),
+      })
 
       const editedEvent = await editPromise
       expect(editedEvent.id).toBe(createdEvent.id)
@@ -179,15 +166,12 @@ describe("E2E: Real-time Messaging", () => {
       await new Promise((r) => setTimeout(r, 100))
 
       // Create a message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Message to delete" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Message to delete" }),
+      })
 
       const createdEvent = await createResponse.json()
 
@@ -195,13 +179,10 @@ describe("E2E: Real-time Messaging", () => {
       const deletePromise = waitForSocketEvent<{ id: string }>(aliceSocket, "event:deleted")
 
       // Delete the message
-      await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events/${createdEvent.id}`,
-        {
-          method: "DELETE",
-          sessionToken: aliceToken,
-        },
-      )
+      await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events/${createdEvent.id}`, {
+        method: "DELETE",
+        sessionToken: aliceToken,
+      })
 
       const deletedEvent = await deletePromise
       expect(deletedEvent.id).toBe(createdEvent.id)
@@ -233,15 +214,12 @@ describe("E2E: Real-time Messaging", () => {
       await new Promise((r) => setTimeout(r, 100))
 
       // Create a message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Let's discuss this" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Let's discuss this" }),
+      })
 
       const rootEvent = await createResponse.json()
 
@@ -335,9 +313,7 @@ describe("E2E: Real-time Messaging", () => {
       }
 
       // Connect all users
-      const sockets = await Promise.all(
-        users.map(({ sessionToken }) => server.createSocketClient(sessionToken)),
-      )
+      const sockets = await Promise.all(users.map(({ sessionToken }) => server.createSocketClient(sessionToken)))
 
       // All join the room
       const roomName = `ws:${workspace.id}:stream:${channel.id}`

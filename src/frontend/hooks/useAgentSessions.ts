@@ -139,10 +139,12 @@ export function useAgentSessions({
       // Refetch sessions after delays to catch any we might have missed
       // First try quickly, then again after a longer delay for slow session creation
       timeouts.push(setTimeout(refetchSessions, 300))
-      timeouts.push(setTimeout(() => {
-        hasRefetchedRef.current = false // Reset to allow second fetch
-        refetchSessions()
-      }, 1500))
+      timeouts.push(
+        setTimeout(() => {
+          hasRefetchedRef.current = false // Reset to allow second fetch
+          refetchSessions()
+        }, 1500),
+      )
     }
 
     socket.on("connect", joinRoom)
@@ -151,85 +153,79 @@ export function useAgentSessions({
     }
 
     // Handle session started
-    socket.on(
-      "session:started",
-      (data: { streamId: string; sessionId: string; triggeringEventId: string }) => {
-        // Note: streamId in data is the session's actual stream, not necessarily the stream we're viewing
-        // We receive this event if we're viewing either the session's stream OR the triggering event's channel
+    socket.on("session:started", (data: { streamId: string; sessionId: string; triggeringEventId: string }) => {
+      // Note: streamId in data is the session's actual stream, not necessarily the stream we're viewing
+      // We receive this event if we're viewing either the session's stream OR the triggering event's channel
 
-        setSessions((prev) => {
-          const existing = prev.get(data.sessionId)
-          const next = new Map(prev)
+      setSessions((prev) => {
+        const existing = prev.get(data.sessionId)
+        const next = new Map(prev)
 
-          if (existing) {
-            // Update existing session with triggeringEventId (might have been created by session:step first)
-            next.set(data.sessionId, {
-              ...existing,
-              triggeringEventId: data.triggeringEventId,
-              streamId: data.streamId,
-            })
-          } else {
-            // Create new session
-            next.set(data.sessionId, {
-              id: data.sessionId,
-              streamId: data.streamId,
-              triggeringEventId: data.triggeringEventId,
-              responseEventId: null,
-              status: "active",
-              steps: [],
-              summary: null,
-              errorMessage: null,
-              startedAt: new Date().toISOString(),
-              completedAt: null,
-            })
-          }
-          return next
-        })
-      },
-    )
-
-    // Handle session step updates
-    socket.on(
-      "session:step",
-      (data: { streamId: string; sessionId: string; step: SessionStep }) => {
-        // Accept updates for sessions we're tracking OR create a new session if we missed session:started
-        setSessions((prev) => {
-          const existing = prev.get(data.sessionId)
-
-          if (!existing) {
-            // Session not found - create a placeholder (we missed session:started)
-            const next = new Map(prev)
-            next.set(data.sessionId, {
-              id: data.sessionId,
-              streamId: data.streamId,
-              triggeringEventId: "", // Unknown, will be populated when we get more info
-              responseEventId: null,
-              status: "active",
-              steps: [data.step],
-              summary: null,
-              errorMessage: null,
-              startedAt: data.step.started_at,
-              completedAt: null,
-            })
-            return next
-          }
-
-          const next = new Map(prev)
-          // Update existing step or add new one
-          const stepIndex = existing.steps.findIndex((s) => s.id === data.step.id)
-          const updatedSteps =
-            stepIndex >= 0
-              ? existing.steps.map((s, i) => (i === stepIndex ? data.step : s))
-              : [...existing.steps, data.step]
-
+        if (existing) {
+          // Update existing session with triggeringEventId (might have been created by session:step first)
           next.set(data.sessionId, {
             ...existing,
-            steps: updatedSteps,
+            triggeringEventId: data.triggeringEventId,
+            streamId: data.streamId,
+          })
+        } else {
+          // Create new session
+          next.set(data.sessionId, {
+            id: data.sessionId,
+            streamId: data.streamId,
+            triggeringEventId: data.triggeringEventId,
+            responseEventId: null,
+            status: "active",
+            steps: [],
+            summary: null,
+            errorMessage: null,
+            startedAt: new Date().toISOString(),
+            completedAt: null,
+          })
+        }
+        return next
+      })
+    })
+
+    // Handle session step updates
+    socket.on("session:step", (data: { streamId: string; sessionId: string; step: SessionStep }) => {
+      // Accept updates for sessions we're tracking OR create a new session if we missed session:started
+      setSessions((prev) => {
+        const existing = prev.get(data.sessionId)
+
+        if (!existing) {
+          // Session not found - create a placeholder (we missed session:started)
+          const next = new Map(prev)
+          next.set(data.sessionId, {
+            id: data.sessionId,
+            streamId: data.streamId,
+            triggeringEventId: "", // Unknown, will be populated when we get more info
+            responseEventId: null,
+            status: "active",
+            steps: [data.step],
+            summary: null,
+            errorMessage: null,
+            startedAt: data.step.started_at,
+            completedAt: null,
           })
           return next
+        }
+
+        const next = new Map(prev)
+        // Update existing step or add new one
+        const stepIndex = existing.steps.findIndex((s) => s.id === data.step.id)
+        const updatedSteps =
+          stepIndex >= 0
+            ? existing.steps.map((s, i) => (i === stepIndex ? data.step : s))
+            : [...existing.steps, data.step]
+
+        next.set(data.sessionId, {
+          ...existing,
+          steps: updatedSteps,
         })
-      },
-    )
+        return next
+      })
+    })
 
     // Handle session completed
     socket.on(

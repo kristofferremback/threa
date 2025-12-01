@@ -261,12 +261,17 @@ export class AriadneTrigger {
 
     const isThinkingSpace = event.stream_type === "thinking_space"
     const isThread = event.stream_type === "thread"
-    const ariadneMentioned = event.mentions?.some(
-      (m) => m.type === "user" && m.label?.toLowerCase() === "ariadne",
-    )
+    const ariadneMentioned = event.mentions?.some((m) => m.type === "user" && m.label?.toLowerCase() === "ariadne")
 
     logger.info(
-      { eventId: event.event_id, streamId: event.stream_id, stream_type: event.stream_type, isThread, isThinkingSpace, ariadneMentioned },
+      {
+        eventId: event.event_id,
+        streamId: event.stream_id,
+        stream_type: event.stream_type,
+        isThread,
+        isThinkingSpace,
+        ariadneMentioned,
+      },
       "Ariadne trigger received event",
     )
 
@@ -328,7 +333,12 @@ export class AriadneTrigger {
           heuristicUsed = "slm_with_question_boost"
 
           logger.info(
-            { eventId: event.event_id, streamId: event.stream_id, slmScore: engagementResult.relevanceScore, boostedScore: relevanceScore },
+            {
+              eventId: event.event_id,
+              streamId: event.stream_id,
+              slmScore: engagementResult.relevanceScore,
+              boostedScore: relevanceScore,
+            },
             "SLM relevance score (with question boost)",
           )
         } else {
@@ -343,7 +353,12 @@ export class AriadneTrigger {
           heuristicUsed = "slm"
 
           logger.info(
-            { eventId: event.event_id, streamId: event.stream_id, relevanceScore, confident: engagementResult.confident },
+            {
+              eventId: event.event_id,
+              streamId: event.stream_id,
+              relevanceScore,
+              confident: engagementResult.confident,
+            },
             "SLM relevance score for message",
           )
         }
@@ -403,7 +418,12 @@ export class AriadneTrigger {
       )
 
       logger.info(
-        { eventId: event.event_id, streamId: event.stream_id, mode, autoEngaged: !isThinkingSpace && !ariadneMentioned },
+        {
+          eventId: event.event_id,
+          streamId: event.stream_id,
+          mode,
+          autoEngaged: !isThinkingSpace && !ariadneMentioned,
+        },
         "Ariadne trigger queued AI response",
       )
     } catch (err) {

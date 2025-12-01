@@ -95,7 +95,7 @@ export function usePostMessage({
       const result = await streamApi.postMessage(
         workspaceId,
         streamId.startsWith("event_") ? "pending" : streamId,
-        data
+        data,
       )
 
       return { ...result, _tempId: tempId }
@@ -108,7 +108,7 @@ export function usePostMessage({
 
       // Snapshot previous value
       const previousEvents = queryClient.getQueryData<{ pages: EventsResponse[] }>(
-        eventKeys.stream(workspaceId, streamId)
+        eventKeys.stream(workspaceId, streamId),
       )
 
       // tempId is always provided (generated in postMessage or passed in retryMessage)
@@ -166,9 +166,9 @@ export function usePostMessage({
             // Update existing event to pending state
             const pages = old.pages.map((page) => ({
               ...page,
-              events: page.events.filter((e): e is StreamEvent => e != null).map((e) =>
-                e.id === tempId ? { ...e, pending: true, sendFailed: false } : e
-              ),
+              events: page.events
+                .filter((e): e is StreamEvent => e != null)
+                .map((e) => (e.id === tempId ? { ...e, pending: true, sendFailed: false } : e)),
             }))
             return { ...old, pages }
           }
@@ -182,7 +182,7 @@ export function usePostMessage({
           })
 
           return { ...old, pages }
-        }
+        },
       )
 
       return { tempId, previousEvents }
@@ -199,13 +199,13 @@ export function usePostMessage({
 
             const pages = old.pages.map((page) => ({
               ...page,
-              events: page.events.filter((e): e is StreamEvent => e != null).map((e) =>
-                e.id === context.tempId ? { ...e, pending: false, sendFailed: true } : e
-              ),
+              events: page.events
+                .filter((e): e is StreamEvent => e != null)
+                .map((e) => (e.id === context.tempId ? { ...e, pending: false, sendFailed: true } : e)),
             }))
 
             return { ...old, pages }
-          }
+          },
         )
       }
       onError?.(error)
@@ -222,11 +222,13 @@ export function usePostMessage({
 
             const pages = old.pages.map((page) => ({
               ...page,
-              events: page.events.filter((e): e is StreamEvent => e != null).map((e) => (e.id === context.tempId ? response.event : e)),
+              events: page.events
+                .filter((e): e is StreamEvent => e != null)
+                .map((e) => (e.id === context.tempId ? response.event : e)),
             }))
 
             return { ...old, pages }
-          }
+          },
         )
       }
 

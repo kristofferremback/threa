@@ -145,4 +145,3 @@ export function createSearchRoutes(searchService: SearchService): Router {
 
   return router
 }
-

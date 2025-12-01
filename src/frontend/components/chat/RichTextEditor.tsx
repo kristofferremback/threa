@@ -448,61 +448,61 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
 
       // Then, replace mention text patterns with actual mention nodes
       if (initialMentions.length > 0) {
-          // We need to find and replace mention text with mention nodes
-          // Process in reverse order to not mess up positions
-          const sortedMentions = [...initialMentions].reverse()
+        // We need to find and replace mention text with mention nodes
+        // Process in reverse order to not mess up positions
+        const sortedMentions = [...initialMentions].reverse()
 
-          for (const mention of sortedMentions) {
-            let searchText: string
-            if (mention.type === "user") {
-              searchText = `@${mention.label}`
-            } else if (mention.type === "crosspost") {
-              searchText = `#+${mention.slug || mention.label}`
-            } else {
-              searchText = `#${mention.slug || mention.label}`
-            }
-
-            // Find the text in the document
-            const { state } = editor
-            let found = false
-            state.doc.descendants((node, pos) => {
-              if (found || !node.isText) return
-              const text = node.text || ""
-              const index = text.indexOf(searchText)
-              if (index !== -1) {
-                found = true
-                const from = pos + index
-                const to = from + searchText.length
-
-                // Determine which mention type to use
-                const mentionType = mention.type === "user" ? "userMention" : "channelMention"
-                const attrs = {
-                  id: mention.id,
-                  label: mention.label,
-                  ...(mention.type !== "user" && {
-                    type: mention.type,
-                    slug: mention.slug,
-                  }),
-                }
-
-                // Replace the text with a mention node
-                editor
-                  .chain()
-                  .focus()
-                  .setTextSelection({ from, to })
-                  .deleteSelection()
-                  .insertContent({
-                    type: mentionType,
-                    attrs,
-                  })
-                  .run()
-              }
-            })
+        for (const mention of sortedMentions) {
+          let searchText: string
+          if (mention.type === "user") {
+            searchText = `@${mention.label}`
+          } else if (mention.type === "crosspost") {
+            searchText = `#+${mention.slug || mention.label}`
+          } else {
+            searchText = `#${mention.slug || mention.label}`
           }
 
-          // Move cursor to end after inserting mentions
-          editor.commands.focus("end")
+          // Find the text in the document
+          const { state } = editor
+          let found = false
+          state.doc.descendants((node, pos) => {
+            if (found || !node.isText) return
+            const text = node.text || ""
+            const index = text.indexOf(searchText)
+            if (index !== -1) {
+              found = true
+              const from = pos + index
+              const to = from + searchText.length
+
+              // Determine which mention type to use
+              const mentionType = mention.type === "user" ? "userMention" : "channelMention"
+              const attrs = {
+                id: mention.id,
+                label: mention.label,
+                ...(mention.type !== "user" && {
+                  type: mention.type,
+                  slug: mention.slug,
+                }),
+              }
+
+              // Replace the text with a mention node
+              editor
+                .chain()
+                .focus()
+                .setTextSelection({ from, to })
+                .deleteSelection()
+                .insertContent({
+                  type: mentionType,
+                  attrs,
+                })
+                .run()
+            }
+          })
         }
+
+        // Move cursor to end after inserting mentions
+        editor.commands.focus("end")
+      }
     }, [editor, initialContent, initialMentions])
 
     // Extract mentions from the editor content

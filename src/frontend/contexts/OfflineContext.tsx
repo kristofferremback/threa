@@ -12,14 +12,7 @@ import {
   isOnline as checkIsOnline,
   checkConnectivity,
 } from "../lib/connectivity"
-import {
-  getPendingCount,
-  processOutbox,
-  clearOutbox,
-  isIndexedDBAvailable,
-  deleteDB,
-  pruneCache,
-} from "../lib/offline"
+import { getPendingCount, processOutbox, clearOutbox, isIndexedDBAvailable, deleteDB, pruneCache } from "../lib/offline"
 
 interface OfflineContextValue {
   // Connection state
@@ -122,7 +115,9 @@ export function OfflineProvider({ children, sendMessage }: OfflineProviderProps)
         }
       })
 
-      console.log(`[Offline] Processed outbox: ${result.sent} sent, ${result.failed} failed, ${result.remaining} remaining`)
+      console.log(
+        `[Offline] Processed outbox: ${result.sent} sent, ${result.failed} failed, ${result.remaining} remaining`,
+      )
     } finally {
       setIsProcessingOutbox(false)
       await refreshPendingCount()

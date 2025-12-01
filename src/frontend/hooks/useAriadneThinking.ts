@@ -90,34 +90,26 @@ export function useAriadneThinking({
     }
 
     // Handle thinking start
-    socket.on(
-      "ariadne:thinking:start",
-      (data: { streamId: string; eventId: string; triggeredByUserId: string }) => {
-        if (data.streamId !== currentStreamRef.current) return
+    socket.on("ariadne:thinking:start", (data: { streamId: string; eventId: string; triggeredByUserId: string }) => {
+      if (data.streamId !== currentStreamRef.current) return
 
-        setThinkingStates((prev) => {
-          const next = new Map(prev)
-          next.set(data.eventId, {
-            eventId: data.eventId,
-            triggeredByUserId: data.triggeredByUserId,
-            status: "thinking",
-            steps: [],
-            startedAt: Date.now(),
-          })
-          return next
+      setThinkingStates((prev) => {
+        const next = new Map(prev)
+        next.set(data.eventId, {
+          eventId: data.eventId,
+          triggeredByUserId: data.triggeredByUserId,
+          status: "thinking",
+          steps: [],
+          startedAt: Date.now(),
         })
-      },
-    )
+        return next
+      })
+    })
 
     // Handle thinking step
     socket.on(
       "ariadne:thinking:step",
-      (data: {
-        streamId: string
-        eventId: string
-        stepType: AriadneThinkingStep["stepType"]
-        stepContent: string
-      }) => {
+      (data: { streamId: string; eventId: string; stepType: AriadneThinkingStep["stepType"]; stepContent: string }) => {
         if (data.streamId !== currentStreamRef.current) return
 
         setThinkingStates((prev) => {

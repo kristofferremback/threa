@@ -43,9 +43,7 @@ export function getOutboxMessages(): OutboxMessage[] {
  * Get outbox messages for a specific stream
  */
 export function getStreamOutboxMessages(workspaceId: string, streamId: string): OutboxMessage[] {
-  return getOutboxMessages().filter(
-    (m) => m.workspaceId === workspaceId && m.streamId === streamId
-  )
+  return getOutboxMessages().filter((m) => m.workspaceId === workspaceId && m.streamId === streamId)
 }
 
 /**
@@ -85,11 +83,7 @@ export function addToOutbox(message: Omit<OutboxMessage, "status" | "retryCount"
 /**
  * Update message status in outbox
  */
-export function updateOutboxStatus(
-  id: string,
-  status: OutboxMessage["status"],
-  error?: string
-): void {
+export function updateOutboxStatus(id: string, status: OutboxMessage["status"], error?: string): void {
   const messages = getOutboxMessages()
   const index = messages.findIndex((m) => m.id === id)
 
@@ -137,9 +131,7 @@ export function isInOutbox(id: string): boolean {
  * Get pending/failed messages that should be retried
  */
 export function getRetryableMessages(): OutboxMessage[] {
-  return getOutboxMessages().filter(
-    (m) => m.status === "pending" || m.status === "failed"
-  )
+  return getOutboxMessages().filter((m) => m.status === "pending" || m.status === "failed")
 }
 
 /**

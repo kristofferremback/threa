@@ -140,4 +140,3 @@ export function hasActiveFilters(filters: SearchFilters): boolean {
     filters.is?.length
   )
 }
-

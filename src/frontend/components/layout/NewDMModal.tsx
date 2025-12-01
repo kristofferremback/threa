@@ -28,17 +28,12 @@ export function NewDMModal({ isOpen, onClose, onCreateDM, users, currentUserId }
       .filter((u) => {
         if (!searchQuery) return true
         const query = searchQuery.toLowerCase()
-        return (
-          (u.name?.toLowerCase() || "").includes(query) ||
-          u.email.toLowerCase().includes(query)
-        )
+        return (u.name?.toLowerCase() || "").includes(query) || u.email.toLowerCase().includes(query)
       })
   }, [users, currentUserId, searchQuery])
 
   const toggleUser = useCallback((userId: string) => {
-    setSelectedUsers((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
-    )
+    setSelectedUsers((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]))
   }, [])
 
   const handleCreate = async () => {
@@ -123,10 +118,7 @@ export function NewDMModal({ isOpen, onClose, onCreateDM, users, currentUserId }
                     style={{ background: "var(--accent-glow)", color: "var(--accent-primary)" }}
                   >
                     {user.name || user.email.split("@")[0]}
-                    <button
-                      onClick={() => toggleUser(userId)}
-                      className="hover:opacity-70 transition-opacity"
-                    >
+                    <button onClick={() => toggleUser(userId)} className="hover:opacity-70 transition-opacity">
                       <X className="h-3 w-3" />
                     </button>
                   </span>
@@ -172,9 +164,7 @@ export function NewDMModal({ isOpen, onClose, onCreateDM, users, currentUserId }
                         {user.email}
                       </div>
                     </div>
-                    {isSelected && (
-                      <Check className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />
-                    )}
+                    {isSelected && <Check className="h-4 w-4" style={{ color: "var(--accent-primary)" }} />}
                   </button>
                 )
               })}
@@ -190,11 +180,7 @@ export function NewDMModal({ isOpen, onClose, onCreateDM, users, currentUserId }
           <Button variant="ghost" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleCreate}
-            disabled={selectedUsers.length === 0 || isCreating}
-          >
+          <Button variant="primary" onClick={handleCreate} disabled={selectedUsers.length === 0 || isCreating}>
             {isCreating ? (
               <>
                 <Spinner size="sm" />
@@ -212,4 +198,3 @@ export function NewDMModal({ isOpen, onClose, onCreateDM, users, currentUserId }
     </div>
   )
 }
-

@@ -39,17 +39,18 @@
 
 ### Key Differentiators
 
-| Aspect | Traditional Tools | Threa |
-|--------|------------------|-------|
-| Multi-channel | Cross-post (divergent copies) | Graph model (single thread, multiple channels) |
-| Knowledge capture | Manual wikis (always outdated) | Emerges from conversations |
-| AI assistance | Bolt-on features | Core to platform architecture |
-| Question answering | Experts answer all | AI deflection for routine questions |
-| Search | Keyword-only | Hybrid semantic + full-text |
+| Aspect             | Traditional Tools              | Threa                                          |
+| ------------------ | ------------------------------ | ---------------------------------------------- |
+| Multi-channel      | Cross-post (divergent copies)  | Graph model (single thread, multiple channels) |
+| Knowledge capture  | Manual wikis (always outdated) | Emerges from conversations                     |
+| AI assistance      | Bolt-on features               | Core to platform architecture                  |
+| Question answering | Experts answer all             | AI deflection for routine questions            |
+| Search             | Keyword-only                   | Hybrid semantic + full-text                    |
 
 ### Target Market
 
 **Startups and scale-ups (1-1,000 employees)** where:
+
 - Institutional knowledge is critical for scaling
 - Teams work async across timezones
 - Information silos create friction
@@ -61,12 +62,12 @@ The solo-founder use case is the strategic wedge. If @ariadne is a compelling th
 
 **Critical Path:**
 
-| Priority | Feature | Rationale |
-|----------|---------|-----------|
-| 1 | **Thinking Spaces + Thinking Partner @ariadne** | Core solo-founder value. Without this, Threa competes on collaboration features where Slack has a decade head start. |
-| 2 | **Knowledge extraction UI** | "Save as knowledge" button + AI-assisted structuring. Closes the loop from conversation → reusable knowledge. |
-| 3 | **Search polish** | Hybrid search foundation exists. Polish for surfacing context well — essential for both retrieval and solo thinking. |
-| 4 | **Multi-channel UX refinement** | The architectural moat. Not the marketing headline, but the hard-to-copy differentiator. Keep improving. |
+| Priority | Feature                                         | Rationale                                                                                                            |
+| -------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1        | **Thinking Spaces + Thinking Partner @ariadne** | Core solo-founder value. Without this, Threa competes on collaboration features where Slack has a decade head start. |
+| 2        | **Knowledge extraction UI**                     | "Save as knowledge" button + AI-assisted structuring. Closes the loop from conversation → reusable knowledge.        |
+| 3        | **Search polish**                               | Hybrid search foundation exists. Polish for surfacing context well — essential for both retrieval and solo thinking. |
+| 4        | **Multi-channel UX refinement**                 | The architectural moat. Not the marketing headline, but the hard-to-copy differentiator. Keep improving.             |
 
 **Deferred to post-validation:**
 
@@ -84,11 +85,13 @@ The solo-founder use case is the strategic wedge. If @ariadne is a compelling th
 In existing tools, every message must select a single "home" channel. When a conversation affects multiple teams (e.g., an API bug affecting engineering, security, and operations), users face a choice:
 
 **Option A: Pick One Channel**
+
 - Other stakeholders miss the conversation
 - Context is lost for future reference in other channels
 - Creates "information silos"
 
 **Option B: Cross-Post to Multiple Channels**
+
 - Creates divergent copies that evolve independently
 - Replies fragment across channels
 - "Which thread has the latest update?"
@@ -99,6 +102,7 @@ In existing tools, every message must select a single "home" channel. When a con
 ### 2.2 The Knowledge Decay Problem
 
 **Current State in Traditional Tools**:
+
 1. Expert answers question in chat
 2. Answer scrolls away within hours
 3. 6 months later, new hire asks same question
@@ -106,6 +110,7 @@ In existing tools, every message must select a single "home" channel. When a con
 5. Wikis exist but are perpetually outdated
 
 **The Real Issue**: No one maintains documentation because:
+
 - It's extra work separate from daily activities
 - Documentation tools are disconnected from conversations
 - There's no natural feedback loop
@@ -116,12 +121,12 @@ In existing tools, every message must select a single "home" channel. When a con
 
 From the product specification, key metrics Threa aims to improve:
 
-| Problem | Current State | Target |
-|---------|---------------|--------|
-| Repeat questions | Experts answer same questions multiple times | 80% deflection to AI |
-| Time to answer | Hours/days waiting for expert | <5 minutes via AI |
-| Knowledge utilization | Most answers never reused | 50+ knowledge entries per 100 users |
-| Search effectiveness | Keyword-only, misses semantic matches | Hybrid with 60% semantic weight |
+| Problem               | Current State                                | Target                              |
+| --------------------- | -------------------------------------------- | ----------------------------------- |
+| Repeat questions      | Experts answer same questions multiple times | 80% deflection to AI                |
+| Time to answer        | Hours/days waiting for expert                | <5 minutes via AI                   |
+| Knowledge utilization | Most answers never reused                    | 50+ knowledge entries per 100 users |
+| Search effectiveness  | Keyword-only, misses semantic matches        | Hybrid with 60% semantic weight     |
 
 ---
 
@@ -132,6 +137,7 @@ From the product specification, key metrics Threa aims to improve:
 **Primary**: Engineering-led startups and scale-ups
 
 Characteristics:
+
 - 1-1,000 employees (initial focus: 1-50, sweet spot: solo founders through Series A)
 - Distributed/remote work culture
 - High knowledge worker density
@@ -139,6 +145,7 @@ Characteristics:
 - Frustrated with Slack's limitations but not ready for enterprise tools
 
 **Use Cases**:
+
 - "How do we deploy to production?" (answered 10x/month)
 - Cross-team incident coordination
 - Onboarding new engineers
@@ -150,14 +157,15 @@ Most collaboration tools are useless until you have collaborators—Slack with o
 
 **The Solo Founder Use Case:**
 
-A founder using Threa as their "second brain"—thinking through problems with @assistant, extracting knowledge from their own reasoning, building institutional memory *before* there's an institution.
+A founder using Threa as their "second brain"—thinking through problems with @assistant, extracting knowledge from their own reasoning, building institutional memory _before_ there's an institution.
 
 **The Expansion Moment:**
 
 When employee #1 joins:
+
 - Context already exists—no "let me explain how we got here"
 - Knowledge base is populated from founder's explorations
-- New hire can ask @assistant "why did we decide on this architecture?" and get answers from conversations the founder had *with themselves*
+- New hire can ask @assistant "why did we decide on this architecture?" and get answers from conversations the founder had _with themselves_
 - Onboarding becomes inheritance rather than recreation
 
 **Strategic Implications:**
@@ -176,6 +184,7 @@ This extends the target range from "1-50 employees" to literally starting at 1. 
 **Target**: ~$10/user/month for paid plans (preliminary)
 
 **Tier Structure** (preliminary):
+
 - **Free Tier**: Basic chat with multi-channel conversations, unlimited message history (no AI)
 - **Pro Tier**: Chat + AI features (search, @ariadne, curated personas, knowledge extraction)
 
@@ -185,7 +194,7 @@ Pricing will be determined after validating usage patterns. Key principles to gu
 
 1. **Simplicity over optimization**: Complex pricing kills conversions. When in doubt, simpler.
 
-2. **Capability-based, not count-based**: If we monetize personas, charge for *what they can do* (model tier, integration access) rather than *how many exist*. Persona creation is free — it's just configuration.
+2. **Capability-based, not count-based**: If we monetize personas, charge for _what they can do_ (model tier, integration access) rather than _how many exist_. Persona creation is free — it's just configuration.
 
 3. **Aligned with actual costs**: Sonnet costs ~10x Haiku; integrations require maintenance. Pricing should reflect this naturally.
 
@@ -196,11 +205,13 @@ Pricing will be determined after validating usage patterns. Key principles to gu
 ### 3.5 Strategic Positioning
 
 Threa is **not** attempting to:
+
 - Replace Slack at enterprise scale
 - Compete on integrations ecosystem
 - Win on price alone
 
 Threa **is** attempting to:
+
 - Solve the multi-channel problem (novel, hard to copy)
 - Make AI-as-deflection work (conservative, quality-first)
 - Capture knowledge passively (philosophical differentiation)
@@ -212,6 +223,7 @@ Threa **is** attempting to:
 ### 4.1 The Unified Stream Model
 
 Traditional tools have separate concepts:
+
 - Channels (persistent, named)
 - Threads (nested under messages)
 - DMs (private, unnamed)
@@ -231,6 +243,7 @@ streams
 ### 4.2 Multi-Channel Conversation Mechanics
 
 **User Experience**:
+
 1. User writes message in #engineering
 2. Tags additional channels with `#+security` `#+api`
 3. Message appears in all three channels as single entity
@@ -238,6 +251,7 @@ streams
 5. No divergence, no sync issues
 
 **Database Implementation**:
+
 - Original message creates `stream_event` in primary channel
 - Crosspost mentions stored in `mentions` JSONB array
 - `shared_refs` table links to original event
@@ -256,6 +270,7 @@ Threads can be "promoted" to full channels:
 ```
 
 This enables:
+
 - Informal discussions that escalate to formal channels
 - Incident management workflows
 - Preserving full history after promotion
@@ -269,6 +284,7 @@ This enables:
 > "Human communication first, AI assistance second. Reduce repeat answers, not repeat questions."
 
 Key Principles:
+
 1. **Conservative over aggressive**: Better to miss than interrupt
 2. **Quality over quantity**: Expensive Claude Sonnet > cheap models
 3. **Explicit invocation**: AI responds only when @mentioned
@@ -302,18 +318,21 @@ Key Principles:
 **Named after Greek mythology** - Ariadne gave Theseus the thread to navigate the labyrinth.
 
 **Architecture**:
+
 - **Framework**: LangChain + LangGraph (ReAct agent pattern)
 - **Model**: Claude Sonnet 4 (`claude-sonnet-4-20250514`)
 - **Temperature**: 0.7 (balanced creativity)
 - **Max tokens**: 2048
 
 **Available Tools**:
+
 1. `search_messages` - Searches past conversations with filters
 2. `search_knowledge` - Searches curated knowledge base
 3. `get_stream_context` - Gets recent messages from current stream
 4. `get_thread_history` - Gets full thread including root message
 
 **Invocation Flow**:
+
 ```
 User mentions @ariadne in message
          ↓
@@ -334,12 +353,13 @@ Real-time broadcast via WebSocket
 
 **Dual-Provider Strategy**:
 
-| Environment | Provider | Dimensions | Model |
-|-------------|----------|------------|-------|
-| Development | Ollama (local) | 768 | nomic-embed-text |
-| Production | OpenAI API | 1536 | text-embedding-3-small |
+| Environment | Provider       | Dimensions | Model                  |
+| ----------- | -------------- | ---------- | ---------------------- |
+| Development | Ollama (local) | 768        | nomic-embed-text       |
+| Production  | OpenAI API     | 1536       | text-embedding-3-small |
 
 **Hybrid Search Implementation**:
+
 ```sql
 -- Combined score calculation
 score = (semantic_similarity * 0.6) + (full_text_rank * 0.4)
@@ -352,6 +372,7 @@ SELECT ts_rank(search_vector, plainto_tsquery(query)) AS text_score
 ```
 
 **Query Syntax** (Slack-compatible):
+
 - `from:@username` - Filter by author
 - `in:#channel` - Filter by stream
 - `before:YYYY-MM-DD`, `after:YYYY-MM-DD` - Date range
@@ -385,14 +406,15 @@ If score ≥ 3: Queue classification
 
 **Job Queue**: pg-boss (PostgreSQL-backed)
 
-| Job Type | Priority | Batch Size | Purpose |
-|----------|----------|------------|---------|
-| ai.respond | URGENT (1) | 1 | @ariadne responses |
-| ai.extract | HIGH (3) | 1 | User-triggered knowledge extraction |
-| ai.embed | NORMAL (5) | 50 | Vector embeddings |
-| ai.classify | LOW (7) | 1 | Knowledge candidate detection |
+| Job Type    | Priority   | Batch Size | Purpose                             |
+| ----------- | ---------- | ---------- | ----------------------------------- |
+| ai.respond  | URGENT (1) | 1          | @ariadne responses                  |
+| ai.extract  | HIGH (3)   | 1          | User-triggered knowledge extraction |
+| ai.embed    | NORMAL (5) | 50         | Vector embeddings                   |
+| ai.classify | LOW (7)    | 1          | Knowledge candidate detection       |
 
 **Reliability Features**:
+
 - 3 retries with 30s delay
 - Exponential backoff
 - 1-hour expiration
@@ -424,19 +446,20 @@ If score ≥ 3: Queue classification
 ```
 
 **Persona Configuration**:
+
 ```typescript
 interface AIPersona {
-  id: string;                    // persona_01ARZ3...
-  workspace_id: string;
-  name: string;                  // Display name (@reviewer)
-  system_prompt: string;         // Custom instructions
-  tools: string[];               // Allowed tool IDs
-  channels: string[] | null;     // Restricted channels (null = all)
-  model: 'sonnet' | 'haiku';     // Model selection
-  temperature: number;           // Response creativity
-  is_curated: boolean;           // Threa-provided vs custom
-  created_by: string;
-  created_at: Date;
+  id: string // persona_01ARZ3...
+  workspace_id: string
+  name: string // Display name (@reviewer)
+  system_prompt: string // Custom instructions
+  tools: string[] // Allowed tool IDs
+  channels: string[] | null // Restricted channels (null = all)
+  model: "sonnet" | "haiku" // Model selection
+  temperature: number // Response creativity
+  is_curated: boolean // Threa-provided vs custom
+  created_by: string
+  created_at: Date
 }
 ```
 
@@ -452,7 +475,7 @@ interface AIPersona {
 
 ### 5.8 Thinking Spaces (Planned)
 
-**Philosophy**: @ariadne in channels is a retrieval assistant — invoked explicitly, answers from knowledge. But solo founders (and small teams) need a *thinking partner* — an AI that engages with problems, asks questions, and reasons alongside you. Thinking Spaces provide this mode.
+**Philosophy**: @ariadne in channels is a retrieval assistant — invoked explicitly, answers from knowledge. But solo founders (and small teams) need a _thinking partner_ — an AI that engages with problems, asks questions, and reasons alongside you. Thinking Spaces provide this mode.
 
 **Core Concept**: A Thinking Space is a stream where @ariadne is always present and engaged. No @mention required — you talk, @ariadne responds as a thinking partner.
 
@@ -484,12 +507,12 @@ interface AIPersona {
 
 @ariadne's mode is determined by stream context:
 
-| Context | Mode | Behavior |
-|---------|------|----------|
-| Channel with multiple participants | Retrieval | Answers when @mentioned, searches knowledge |
-| Thinking Space (solo) | Thinking partner | Engages with every message, reasons through problems |
-| Thinking Space (with guests) | Collaborative | Thinking partner but aware of multiple perspectives |
-| DM with @ariadne | Thinking partner | Same as thinking space |
+| Context                            | Mode             | Behavior                                             |
+| ---------------------------------- | ---------------- | ---------------------------------------------------- |
+| Channel with multiple participants | Retrieval        | Answers when @mentioned, searches knowledge          |
+| Thinking Space (solo)              | Thinking partner | Engages with every message, reasons through problems |
+| Thinking Space (with guests)       | Collaborative    | Thinking partner but aware of multiple perspectives  |
+| DM with @ariadne                   | Thinking partner | Same as thinking space                               |
 
 **What Thinking Partner Mode Enables**:
 
@@ -511,19 +534,19 @@ This is the key to solo-founder value. A founder using Threa as their second bra
 
 ### 6.1 Technology Stack
 
-| Layer | Technology | Rationale |
-|-------|------------|-----------|
-| Runtime | Bun | Fast DX, modern JS runtime |
-| Backend | Express.js | Proven, well-understood |
-| Database | PostgreSQL + pgvector | Operational simplicity, vector support |
-| Cache/Pub-Sub | Redis | Horizontal scaling for WebSockets |
-| Job Queue | pg-boss | No external service, PostgreSQL-native |
-| Real-time | Socket.IO + Redis adapter | Multi-server support |
-| Auth | WorkOS Authkit | Enterprise SSO ready |
-| AI | LangChain + Anthropic/OpenAI | Flexible agent framework |
-| Frontend | React 19 + Vite | Modern, fast builds |
-| Styling | Tailwind CSS | Utility-first, consistent |
-| Editor | Tiptap (ProseMirror) | Rich text with extensions |
+| Layer         | Technology                   | Rationale                              |
+| ------------- | ---------------------------- | -------------------------------------- |
+| Runtime       | Bun                          | Fast DX, modern JS runtime             |
+| Backend       | Express.js                   | Proven, well-understood                |
+| Database      | PostgreSQL + pgvector        | Operational simplicity, vector support |
+| Cache/Pub-Sub | Redis                        | Horizontal scaling for WebSockets      |
+| Job Queue     | pg-boss                      | No external service, PostgreSQL-native |
+| Real-time     | Socket.IO + Redis adapter    | Multi-server support                   |
+| Auth          | WorkOS Authkit               | Enterprise SSO ready                   |
+| AI            | LangChain + Anthropic/OpenAI | Flexible agent framework               |
+| Frontend      | React 19 + Vite              | Modern, fast builds                    |
+| Styling       | Tailwind CSS                 | Utility-first, consistent              |
+| Editor        | Tiptap (ProseMirror)         | Rich text with extensions              |
 
 ### 6.2 Service Layer Pattern
 
@@ -711,13 +734,13 @@ const room = {
 
 ### 8.3 Latency Characteristics
 
-| Step | Latency | Notes |
-|------|---------|-------|
-| DB insert → NOTIFY | <1ms | Same transaction |
-| NOTIFY → Redis | 0-50ms | Debounced |
-| Redis → Socket.IO | <10ms | In-process |
-| Socket.IO → Browser | 10-100ms | Network |
-| **Total** | **20-200ms** | Under normal conditions |
+| Step                | Latency      | Notes                   |
+| ------------------- | ------------ | ----------------------- |
+| DB insert → NOTIFY  | <1ms         | Same transaction        |
+| NOTIFY → Redis      | 0-50ms       | Debounced               |
+| Redis → Socket.IO   | <10ms        | In-process              |
+| Socket.IO → Browser | 10-100ms     | Network                 |
+| **Total**           | **20-200ms** | Under normal conditions |
 
 ### 8.4 Horizontal Scaling
 
@@ -763,14 +786,14 @@ App
 
 **No global state manager** - uses React Context + hooks:
 
-| Context | Purpose |
-|---------|---------|
-| AuthContext | Session, user, logout |
-| ThemeContext | Light/dark/system theme |
-| useBootstrap | Workspace data, streams, users |
-| usePaneManager | Tab/pane state with URL sync |
-| useStream | Per-stream events, real-time |
-| useWorkspaceSocket | Workspace-level events |
+| Context            | Purpose                        |
+| ------------------ | ------------------------------ |
+| AuthContext        | Session, user, logout          |
+| ThemeContext       | Light/dark/system theme        |
+| useBootstrap       | Workspace data, streams, users |
+| usePaneManager     | Tab/pane state with URL sync   |
+| useStream          | Per-stream events, real-time   |
+| useWorkspaceSocket | Workspace-level events         |
 
 ### 9.3 URL-Driven Pane State
 
@@ -786,6 +809,7 @@ Format:
 ```
 
 **Benefits**:
+
 - Shareable URLs with exact view state
 - Browser back/forward works
 - Bookmarkable workspace views
@@ -795,6 +819,7 @@ Format:
 **Framework**: Tiptap (ProseMirror wrapper)
 
 **Extensions**:
+
 - StarterKit (bold, italic, lists, blockquotes, code)
 - CodeBlockLowlight (syntax highlighting)
 - Markdown (import/export)
@@ -802,6 +827,7 @@ Format:
 - Custom Mention (three types)
 
 **Mention Types**:
+
 - `@user` - User mentions with autocomplete
 - `#channel` - Channel references
 - `#+channel` - Crosspost to channel
@@ -814,30 +840,30 @@ Format:
 
 **Model Costs** (per 1M tokens, in cents):
 
-| Model | Input | Output | Use Case |
-|-------|-------|--------|----------|
-| text-embedding-3-small | $2 | - | Embeddings |
-| Claude Sonnet 4 | $300 | $1,500 | Ariadne responses |
-| Claude Haiku 3.5 | $25 | $125 | Classification fallback |
-| granite4:350m (local) | $0 | $0 | Classification primary |
-| nomic-embed-text (local) | $0 | $0 | Dev embeddings |
+| Model                    | Input | Output | Use Case                |
+| ------------------------ | ----- | ------ | ----------------------- |
+| text-embedding-3-small   | $2    | -      | Embeddings              |
+| Claude Sonnet 4          | $300  | $1,500 | Ariadne responses       |
+| Claude Haiku 3.5         | $25   | $125   | Classification fallback |
+| granite4:350m (local)    | $0    | $0     | Classification primary  |
+| nomic-embed-text (local) | $0    | $0     | Dev embeddings          |
 
 ### 10.2 Cost Projections
 
 **At 1,000 active users/month, $10/user pricing**:
 
-| Metric | Value |
-|--------|-------|
-| Revenue | $10,000/month |
+| Metric               | Value         |
+| -------------------- | ------------- |
+| Revenue              | $10,000/month |
 | AI costs (estimated) | $55-105/month |
-| AI as % of revenue | 0.5-1% |
+| AI as % of revenue   | 0.5-1%        |
 
 **At scale with aggressive AI usage**:
 
-| Metric | Value |
-|--------|-------|
+| Metric                 | Value                |
+| ---------------------- | -------------------- |
 | 50,000 questions/month | ~$790/month AI spend |
-| At $10/user | ~8% of revenue |
+| At $10/user            | ~8% of revenue       |
 
 ### 10.3 Budget Controls
 
@@ -860,13 +886,13 @@ Format:
 
 ### 11.1 Direct Competitors
 
-| Product | Strengths | Weaknesses vs Threa |
-|---------|-----------|---------------------|
-| **Slack** | Market leader, integrations | Single-channel forcing, bolt-on AI |
-| **Discord** | Communities, voice | Gaming-focused, chaotic threads |
-| **Microsoft Teams** | Enterprise, Office integration | Complex, enterprise-focused |
-| **Notion** | Docs + chat | Weak real-time, document-centric |
-| **Twist** | Async-first | No AI, limited adoption |
+| Product             | Strengths                      | Weaknesses vs Threa                |
+| ------------------- | ------------------------------ | ---------------------------------- |
+| **Slack**           | Market leader, integrations    | Single-channel forcing, bolt-on AI |
+| **Discord**         | Communities, voice             | Gaming-focused, chaotic threads    |
+| **Microsoft Teams** | Enterprise, Office integration | Complex, enterprise-focused        |
+| **Notion**          | Docs + chat                    | Weak real-time, document-centric   |
+| **Twist**           | Async-first                    | No AI, limited adoption            |
 
 ### 11.2 Threa's Differentiated Position
 
@@ -890,12 +916,12 @@ Format:
 
 ### 11.3 Defensibility Analysis
 
-| Innovation | Defensibility | Time to Copy |
-|------------|---------------|--------------|
-| Multi-channel graph model | HIGH - architectural | 12-18 months |
-| Knowledge emergence | MEDIUM - philosophical | 6-12 months |
-| AI-as-deflection | LOW - feature | 3-6 months |
-| Hybrid search | LOW - commodity | 1-3 months |
+| Innovation                | Defensibility          | Time to Copy |
+| ------------------------- | ---------------------- | ------------ |
+| Multi-channel graph model | HIGH - architectural   | 12-18 months |
+| Knowledge emergence       | MEDIUM - philosophical | 6-12 months  |
+| AI-as-deflection          | LOW - feature          | 3-6 months   |
+| Hybrid search             | LOW - commodity        | 1-3 months   |
 
 ---
 
@@ -948,6 +974,7 @@ Format:
 4. **Knowledge management**: Growing recognition that chat ≠ knowledge
 
 **Threa's Bet**: The next generation of workspace tools will have:
+
 - Graph-based information architecture (not channel silos)
 - AI as infrastructure (not feature)
 - Knowledge as emergent property (not separate system)
@@ -1030,31 +1057,31 @@ EMBEDDING_PROVIDER=ollama  # or 'openai'
 
 ### A.4 Database Migrations
 
-| Migration | Description |
-|-----------|-------------|
-| 001-007 | Legacy (pre-stream model) |
-| 008 | Unified streams model |
-| 009 | Pinned streams |
-| 010 | Invitations |
-| 011 | Workspace profiles |
-| 012 | AI features (usage, knowledge, personas) |
-| 013 | Flexible embedding dimensions |
-| 014 | Dual embedding tables (provider-aware) |
-| 015 | Agent events (AI can post messages) |
+| Migration | Description                              |
+| --------- | ---------------------------------------- |
+| 001-007   | Legacy (pre-stream model)                |
+| 008       | Unified streams model                    |
+| 009       | Pinned streams                           |
+| 010       | Invitations                              |
+| 011       | Workspace profiles                       |
+| 012       | AI features (usage, knowledge, personas) |
+| 013       | Flexible embedding dimensions            |
+| 014       | Dual embedding tables (provider-aware)   |
+| 015       | Agent events (AI can post messages)      |
 
 ### A.5 Key Files Reference
 
-| File | Purpose | Lines |
-|------|---------|-------|
-| `src/server/index.ts` | Server entry point | 250 |
-| `src/server/services/stream-service.ts` | Core data model | 1,800 |
-| `src/server/services/search-service.ts` | Hybrid search | 490 |
-| `src/server/ai/ariadne/agent.ts` | LangChain agent | 200 |
-| `src/server/workers/` | AI job processing | 700 |
-| `src/frontend/components/chat/RichTextEditor.tsx` | Tiptap editor | 900 |
-| `src/frontend/hooks/useStream.ts` | Stream WebSocket | 600 |
-| `src/frontend/components/layout/LayoutSystem.tsx` | Main UI orchestrator | 680 |
+| File                                              | Purpose              | Lines |
+| ------------------------------------------------- | -------------------- | ----- |
+| `src/server/index.ts`                             | Server entry point   | 250   |
+| `src/server/services/stream-service.ts`           | Core data model      | 1,800 |
+| `src/server/services/search-service.ts`           | Hybrid search        | 490   |
+| `src/server/ai/ariadne/agent.ts`                  | LangChain agent      | 200   |
+| `src/server/workers/`                             | AI job processing    | 700   |
+| `src/frontend/components/chat/RichTextEditor.tsx` | Tiptap editor        | 900   |
+| `src/frontend/hooks/useStream.ts`                 | Stream WebSocket     | 600   |
+| `src/frontend/components/layout/LayoutSystem.tsx` | Main UI orchestrator | 680   |
 
 ---
 
-*Document generated for AI research purposes. For the latest implementation details, refer to the source code.*
+_Document generated for AI research purposes. For the latest implementation details, refer to the source code._

@@ -151,17 +151,12 @@ export async function enqueueAIJob<T extends Record<string, unknown>>(
 ): Promise<string | null> {
   const queue = getJobQueue()
 
-  return await queue.send(
-    jobType,
-    data,
-    {
-      priority: options.priority ?? JobPriority.NORMAL,
-      retryLimit: options.retryLimit ?? 3,
-      retryDelay: 30,
-      retryBackoff: true,
-      expireInSeconds: 3600,
-      ...(options.startAfter && { startAfter: options.startAfter }),
-    },
-  )
+  return await queue.send(jobType, data, {
+    priority: options.priority ?? JobPriority.NORMAL,
+    retryLimit: options.retryLimit ?? 3,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 3600,
+    ...(options.startAfter && { startAfter: options.startAfter }),
+  })
 }
-

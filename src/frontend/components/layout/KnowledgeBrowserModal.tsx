@@ -23,7 +23,12 @@ interface KnowledgeBrowserModalProps {
   onNavigateToStream?: (streamId: string) => void
 }
 
-export function KnowledgeBrowserModal({ isOpen, onClose, workspaceId, onNavigateToStream }: KnowledgeBrowserModalProps) {
+export function KnowledgeBrowserModal({
+  isOpen,
+  onClose,
+  workspaceId,
+  onNavigateToStream,
+}: KnowledgeBrowserModalProps) {
   const { isOnline } = useOffline()
   const [memos, setMemos] = useState<Memo[]>([])
   const [loading, setLoading] = useState(true)
@@ -68,10 +73,7 @@ export function KnowledgeBrowserModal({ isOpen, onClose, workspaceId, onNavigate
   const filteredMemos = memos.filter((memo) => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
-    return (
-      memo.summary.toLowerCase().includes(query) ||
-      memo.topics.some((t) => t.toLowerCase().includes(query))
-    )
+    return memo.summary.toLowerCase().includes(query) || memo.topics.some((t) => t.toLowerCase().includes(query))
   })
 
   // Get all unique topics
@@ -259,9 +261,7 @@ function MemoCard({ memo, onNavigate }: MemoCardProps) {
               <User className="h-3 w-3" />
               {sourceLabel}
             </span>
-            {memo.retrievalCount > 0 && (
-              <span>Used {memo.retrievalCount} times</span>
-            )}
+            {memo.retrievalCount > 0 && <span>Used {memo.retrievalCount} times</span>}
           </div>
         </div>
 

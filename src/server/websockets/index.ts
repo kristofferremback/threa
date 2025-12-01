@@ -286,12 +286,20 @@ export const createSocketIOServer = async ({
     ;(async () => {
       try {
         const event = JSON.parse(message)
-        const { workspace_id, user_id, notification_type, message_id, channel_id, conversation_id, actor_id, preview, id } = event
+        const {
+          workspace_id,
+          user_id,
+          notification_type,
+          message_id,
+          channel_id,
+          conversation_id,
+          actor_id,
+          preview,
+          id,
+        } = event
 
         // Get actor details
-        const actorResult = await pool.query(
-          sql`SELECT name, email FROM users WHERE id = ${actor_id}`,
-        )
+        const actorResult = await pool.query(sql`SELECT name, email FROM users WHERE id = ${actor_id}`)
         const actor = actorResult.rows[0]
 
         // Get channel details

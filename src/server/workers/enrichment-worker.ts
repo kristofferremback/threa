@@ -49,10 +49,7 @@ export class EnrichmentWorker {
   private async processJob(job: { id: string; data: EnrichJobData }): Promise<void> {
     const { workspaceId, textMessageId, eventId, signals } = job.data
 
-    logger.info(
-      { jobId: job.id, textMessageId, eventId, signals },
-      "📝 Enrichment job started",
-    )
+    logger.info({ jobId: job.id, textMessageId, eventId, signals }, "📝 Enrichment job started")
 
     try {
       const isEnabled = await this.usageService.isAIEnabled(workspaceId)

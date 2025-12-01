@@ -142,4 +142,3 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(({ items
 })
 
 MentionList.displayName = "MentionList"
-

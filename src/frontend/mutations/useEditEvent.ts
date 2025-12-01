@@ -36,7 +36,7 @@ export function useEditEvent({ workspaceId, streamId, onSuccess, onError }: UseE
 
       // Snapshot previous value
       const previousEvents = queryClient.getQueryData<{ pages: EventsResponse[] }>(
-        eventKeys.stream(workspaceId, streamId)
+        eventKeys.stream(workspaceId, streamId),
       )
 
       // Optimistically update the event
@@ -56,12 +56,12 @@ export function useEditEvent({ workspaceId, streamId, onSuccess, onError }: UseE
                     isEdited: true,
                     editedAt: new Date().toISOString(),
                   }
-                : e
+                : e,
             ),
           }))
 
           return { ...old, pages }
-        }
+        },
       )
 
       return { previousEvents }

@@ -720,9 +720,7 @@ export class SearchService {
     const resolved = new Map<string, string>()
     for (const slug of slugs) {
       const lowerSlug = slug.toLowerCase()
-      const match = result.rows.find(
-        (r) => r.slug?.toLowerCase() === lowerSlug || r.name?.toLowerCase() === lowerSlug,
-      )
+      const match = result.rows.find((r) => r.slug?.toLowerCase() === lowerSlug || r.name?.toLowerCase() === lowerSlug)
       if (match) {
         resolved.set(slug, match.id)
       }
@@ -731,4 +729,3 @@ export class SearchService {
     return resolved
   }
 }
-

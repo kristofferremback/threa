@@ -58,15 +58,12 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Create message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Hello, world!" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Hello, world!" }),
+      })
 
       expect(createResponse.status).toBe(201)
       const event = await createResponse.json()
@@ -74,10 +71,9 @@ describe("E2E: HTTP API", () => {
       expect(event.actorId).toBe(user.id)
 
       // Retrieve messages
-      const getResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        { sessionToken },
-      )
+      const getResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        sessionToken,
+      })
 
       expect(getResponse.status).toBe(200)
       const { events } = await getResponse.json()
@@ -96,15 +92,12 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Create message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Original" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Original" }),
+      })
 
       const event = await createResponse.json()
 
@@ -145,15 +138,12 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, bob.id, channel.id)
 
       // Alice creates message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: aliceToken,
-          body: JSON.stringify({ content: "Alice's message" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: aliceToken,
+        body: JSON.stringify({ content: "Alice's message" }),
+      })
 
       const event = await createResponse.json()
 
@@ -183,15 +173,12 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Create message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Delete me" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Delete me" }),
+      })
 
       const event = await createResponse.json()
 
@@ -207,10 +194,9 @@ describe("E2E: HTTP API", () => {
       expect(deleteResponse.status).toBe(204)
 
       // Verify it's gone from listing
-      const getResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        { sessionToken },
-      )
+      const getResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        sessionToken,
+      })
 
       const { events } = await getResponse.json()
       expect(events.find((e: any) => e.id === event.id)).toBeUndefined()
@@ -238,10 +224,9 @@ describe("E2E: HTTP API", () => {
       await createTestMessage(server.pool, publicChannel.id, owner.id, "Public message")
 
       // Viewer (not a member) can read
-      const response = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${publicChannel.id}/events`,
-        { sessionToken: viewerToken },
-      )
+      const response = await server.fetch(`/api/workspace/${workspace.id}/streams/${publicChannel.id}/events`, {
+        sessionToken: viewerToken,
+      })
 
       expect(response.status).toBe(200)
       const { events } = await response.json()
@@ -268,10 +253,9 @@ describe("E2E: HTTP API", () => {
       await createTestMessage(server.pool, privateChannel.id, owner.id, "Secret message")
 
       // Outsider cannot read
-      const response = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${privateChannel.id}/events`,
-        { sessionToken: outsiderToken },
-      )
+      const response = await server.fetch(`/api/workspace/${workspace.id}/streams/${privateChannel.id}/events`, {
+        sessionToken: outsiderToken,
+      })
 
       expect(response.status).toBe(403)
     })
@@ -293,15 +277,12 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, owner.id, publicChannel.id)
 
       // Viewer tries to post
-      const response = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${publicChannel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: viewerToken,
-          body: JSON.stringify({ content: "I shouldn't be able to post" }),
-        },
-      )
+      const response = await server.fetch(`/api/workspace/${workspace.id}/streams/${publicChannel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: viewerToken,
+        body: JSON.stringify({ content: "I shouldn't be able to post" }),
+      })
 
       expect(response.status).toBe(403)
     })
@@ -325,26 +306,20 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, owner.id, channel.id)
 
       // Join
-      const joinResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/join`,
-        {
-          method: "POST",
-          sessionToken: joinerToken,
-        },
-      )
+      const joinResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/join`, {
+        method: "POST",
+        sessionToken: joinerToken,
+      })
 
       expect(joinResponse.status).toBe(200)
 
       // Now can post
-      const postResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken: joinerToken,
-          body: JSON.stringify({ content: "I joined!" }),
-        },
-      )
+      const postResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken: joinerToken,
+        body: JSON.stringify({ content: "I joined!" }),
+      })
 
       expect(postResponse.status).toBe(201)
     })
@@ -361,26 +336,20 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Leave
-      const leaveResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/leave`,
-        {
-          method: "POST",
-          sessionToken,
-        },
-      )
+      const leaveResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/leave`, {
+        method: "POST",
+        sessionToken,
+      })
 
       expect(leaveResponse.status).toBe(200)
 
       // Can still read (public) but not post
-      const postResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Can I still post?" }),
-        },
-      )
+      const postResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Can I still post?" }),
+      })
 
       expect(postResponse.status).toBe(403)
     })
@@ -399,28 +368,22 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Create root message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Let's discuss this in a thread" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Let's discuss this in a thread" }),
+      })
 
       const rootEvent = await createResponse.json()
 
       // Create thread
-      const threadResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/thread`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ eventId: rootEvent.id }),
-        },
-      )
+      const threadResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/thread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ eventId: rootEvent.id }),
+      })
 
       expect(threadResponse.status).toBe(201)
       const { stream: thread } = await threadResponse.json()
@@ -441,28 +404,22 @@ describe("E2E: HTTP API", () => {
       await addUserToStream(server.pool, user.id, channel.id)
 
       // Create root message
-      const createResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/events`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ content: "Start thread" }),
-        },
-      )
+      const createResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ content: "Start thread" }),
+      })
 
       const rootEvent = await createResponse.json()
 
       // Create thread
-      const threadResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${channel.id}/thread`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          sessionToken,
-          body: JSON.stringify({ eventId: rootEvent.id }),
-        },
-      )
+      const threadResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${channel.id}/thread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        sessionToken,
+        body: JSON.stringify({ eventId: rootEvent.id }),
+      })
 
       const { stream: thread } = await threadResponse.json()
 
@@ -477,10 +434,9 @@ describe("E2E: HTTP API", () => {
       }
 
       // Get thread events and verify count
-      const eventsResponse = await server.fetch(
-        `/api/workspace/${workspace.id}/streams/${thread.id}/events`,
-        { sessionToken },
-      )
+      const eventsResponse = await server.fetch(`/api/workspace/${workspace.id}/streams/${thread.id}/events`, {
+        sessionToken,
+      })
 
       const { events } = await eventsResponse.json()
       // Should have 3 reply messages
@@ -526,10 +482,7 @@ describe("E2E: HTTP API", () => {
       })
 
       // Search (uses 'query' param, not 'q' due to stream-routes taking precedence)
-      const response = await server.fetch(
-        `/api/workspace/${workspace.id}/search?query=fox`,
-        { sessionToken },
-      )
+      const response = await server.fetch(`/api/workspace/${workspace.id}/search?query=fox`, { sessionToken })
 
       expect(response.status).toBe(200)
       const { results } = await response.json()

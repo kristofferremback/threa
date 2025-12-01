@@ -33,7 +33,7 @@
 The current knowledge system follows an **Ahead-of-Time (AOT)** paradigm: valuable messages are identified, extracted into structured knowledge entries, and those entries become the answer source. This approach has fundamental limitations:
 
 1. **Information loss**: Extraction compresses context; nuance is lost
-2. **Static structure**: Pre-computed answers can't adapt to novel questions  
+2. **Static structure**: Pre-computed answers can't adapt to novel questions
 3. **Staleness**: Extracted knowledge doesn't update when source conversations evolve
 4. **Single consumer**: Knowledge entries serve Ariadne but aren't directly useful to humans
 
@@ -54,12 +54,12 @@ Memos don't contain answers—they help find where answers live. Ariadne (and us
 
 ### 1.4 Success Metrics
 
-| Metric | Current Target | Evolved Target |
-|--------|----------------|----------------|
-| Question deflection rate | 80% | 85% (better retrieval) |
-| Time to answer | <5 minutes | <30 seconds (cached memos) |
-| Knowledge reuse | 50 entries/100 users | 200+ memos/100 users (auto-generated) |
-| User self-service | N/A | 40% questions answered via browse (no AI) |
+| Metric                   | Current Target       | Evolved Target                            |
+| ------------------------ | -------------------- | ----------------------------------------- |
+| Question deflection rate | 80%                  | 85% (better retrieval)                    |
+| Time to answer           | <5 minutes           | <30 seconds (cached memos)                |
+| Knowledge reuse          | 50 entries/100 users | 200+ memos/100 users (auto-generated)     |
+| User self-service        | N/A                  | 40% questions answered via browse (no AI) |
 
 ---
 
@@ -70,6 +70,7 @@ Memos don't contain answers—they help find where answers live. Ariadne (and us
 **1. Pointers over content**
 
 Memos point to source conversations rather than duplicating content. This ensures:
+
 - No staleness (source is always current)
 - No information loss (full context available)
 - Single source of truth
@@ -77,6 +78,7 @@ Memos point to source conversations rather than duplicating content. This ensure
 **2. Lazy enrichment**
 
 Don't pre-compute everything. Wait for signals that content is valuable:
+
 - Social proof (reactions, replies)
 - Retrieval success (Ariadne found it useful)
 - Explicit user action (save as knowledge)
@@ -84,6 +86,7 @@ Don't pre-compute everything. Wait for signals that content is valuable:
 **3. Graceful degradation**
 
 The system works at every enrichment level:
+
 - No enrichment: basic keyword search still works
 - Basic embedding: semantic search works
 - Contextual header: high-precision retrieval
@@ -227,41 +230,41 @@ Message Created
 CREATE TABLE memos (
   id TEXT PRIMARY KEY DEFAULT generate_ulid(),
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  
+
   -- What this memo is about
   summary TEXT NOT NULL,              -- "How to deploy to production"
   topics TEXT[] DEFAULT '{}',         -- ["deployment", "CI", "production"]
-  
+
   -- Pointers to source (NOT extracted content)
   anchor_event_ids TEXT[] NOT NULL,   -- Key messages
   context_stream_id TEXT REFERENCES streams(id),
   context_start_event_id TEXT,        -- Conversation window start
   context_end_event_id TEXT,          -- Conversation window end
-  
+
   -- Participants (for expert routing)
   participant_ids TEXT[] DEFAULT '{}',
   primary_answerer_id TEXT REFERENCES users(id),
-  
+
   -- Retrieval metadata
   confidence REAL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
   retrieval_count INTEGER DEFAULT 0,
   last_retrieved_at TIMESTAMPTZ,
   helpfulness_score REAL DEFAULT 0,   -- Accumulated from feedback
-  
+
   -- Provenance
   source TEXT NOT NULL CHECK (source IN ('user', 'system', 'ariadne')),
   created_by TEXT REFERENCES users(id),  -- NULL if system/ariadne
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
   -- Visibility (inherits from source stream)
-  visibility TEXT NOT NULL DEFAULT 'workspace' 
+  visibility TEXT NOT NULL DEFAULT 'workspace'
     CHECK (visibility IN ('workspace', 'channel', 'private')),
   visible_to_stream_ids TEXT[] DEFAULT '{}',  -- If channel/private scoped
-  
+
   -- Soft delete
   archived_at TIMESTAMPTZ,
-  
+
   -- Embedding for semantic search over memos
   embedding vector(1536)
 );
@@ -296,33 +299,33 @@ ALTER TABLE text_messages ADD COLUMN enrichment_signals JSONB DEFAULT '{}';
 CREATE TABLE retrieval_log (
   id TEXT PRIMARY KEY DEFAULT generate_ulid(),
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  
+
   -- The query
   query TEXT NOT NULL,
   query_embedding vector(1536),
   requester_type TEXT NOT NULL CHECK (requester_type IN ('ariadne', 'user', 'system')),
   requester_id TEXT,  -- user_id or persona_id
-  
+
   -- What was retrieved
   retrieved_memo_ids TEXT[] DEFAULT '{}',
   retrieved_event_ids TEXT[] DEFAULT '{}',
   retrieval_scores JSONB DEFAULT '{}',  -- {memo_id: score, ...}
-  
+
   -- Synthesis (if Ariadne)
   response_event_id TEXT REFERENCES stream_events(id),
   iteration_count INTEGER DEFAULT 1,
-  
+
   -- Outcome
   user_feedback TEXT CHECK (user_feedback IN ('positive', 'negative', 'neutral')),
   feedback_at TIMESTAMPTZ,
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Indexes for evolution queries
 CREATE INDEX idx_retrieval_log_workspace ON retrieval_log(workspace_id, created_at DESC);
 CREATE INDEX idx_retrieval_log_memos ON retrieval_log USING gin(retrieved_memo_ids);
-CREATE INDEX idx_retrieval_log_feedback ON retrieval_log(workspace_id, user_feedback) 
+CREATE INDEX idx_retrieval_log_feedback ON retrieval_log(workspace_id, user_feedback)
   WHERE user_feedback IS NOT NULL;
 ```
 
@@ -333,20 +336,20 @@ CREATE TABLE expertise_signals (
   id TEXT PRIMARY KEY DEFAULT generate_ulid(),
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  
+
   topic TEXT NOT NULL,
-  
+
   -- Signal sources
   questions_answered INTEGER DEFAULT 0,
   answers_cited_by_ariadne INTEGER DEFAULT 0,
   positive_reactions_received INTEGER DEFAULT 0,
   answers_marked_helpful INTEGER DEFAULT 0,
-  
+
   -- Computed score (updated by evolution job)
   expertise_score REAL DEFAULT 0,
-  
+
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
   UNIQUE(workspace_id, user_id, topic)
 );
 
@@ -390,17 +393,17 @@ CREATE INDEX idx_expertise_workspace_topic ON expertise_signals(workspace_id, to
 
 ### 5.1 Message Ingestion
 
-```typescript
+````typescript
 // In StreamService.createEvent()
 
 async createEvent(streamId: string, content: CreateEventInput): Promise<StreamEvent> {
   return this.pool.transaction(async (tx) => {
     // Existing: create event and message
     const event = await this.insertEvent(tx, streamId, content);
-    
+
     // New: queue for memory processing
     await this.queueMemoryProcessing(tx, event);
-    
+
     return event;
   });
 }
@@ -408,7 +411,7 @@ async createEvent(streamId: string, content: CreateEventInput): Promise<StreamEv
 private async queueMemoryProcessing(tx: Transaction, event: StreamEvent) {
   // Structural pre-filter (synchronous, free)
   const dominated = this.structuralFilter(event);
-  
+
   if (!dominated.dominated) {
     // Queue for basic embedding
     await this.boss.send('memory.embed', {
@@ -421,21 +424,21 @@ private async queueMemoryProcessing(tx: Transaction, event: StreamEvent) {
 private structuralFilter(event: StreamEvent): { pass: boolean; score: number } {
   let score = 0;
   const content = event.content;
-  
+
   // Skip trivial messages
   if (content.length < 20) return { pass: false, score: 0 };
   if (/^(thanks|ok|lol|👍|🎉)+$/i.test(content)) return { pass: false, score: 0 };
-  
+
   // Score valuable signals
   if (content.length > 200) score += 1;
   if (/```/.test(content)) score += 2;  // Code block
   if (/^[\d\-\*]/.test(content)) score += 1;  // List
   if (/https?:\/\//.test(content)) score += 1;  // Link
   if (/\?/.test(content)) score += 1;  // Question
-  
+
   return { pass: score >= 1, score };
 }
-```
+````
 
 ### 5.2 Tiered Enrichment
 
@@ -443,53 +446,56 @@ private structuralFilter(event: StreamEvent): { pass: boolean; score: number } {
 // Worker: memory.embed
 class EmbeddingWorker {
   async process(job: Job<{ eventId: string }>) {
-    const event = await this.getEvent(job.data.eventId);
-    if (!event) return;
-    
+    const event = await this.getEvent(job.data.eventId)
+    if (!event) return
+
     // Basic embedding (Tier 1)
-    const embedding = await this.embedder.embed(event.content);
-    await this.storeEmbedding(event.id, embedding);
-    
+    const embedding = await this.embedder.embed(event.content)
+    await this.storeEmbedding(event.id, embedding)
+
     // Mark as Tier 1
-    await this.updateEnrichmentTier(event.id, 1);
+    await this.updateEnrichmentTier(event.id, 1)
   }
 }
 
 // Worker: memory.enrich (triggered by signals)
 class EnrichmentWorker {
   async process(job: Job<{ eventId: string; signals: EnrichmentSignals }>) {
-    const event = await this.getEvent(job.data.eventId);
-    if (!event || event.enrichmentTier >= 2) return;
-    
+    const event = await this.getEvent(job.data.eventId)
+    if (!event || event.enrichmentTier >= 2) return
+
     // Check budget
-    if (!await this.budgetService.canEnrich(event.workspaceId)) {
-      return; // Graceful skip
+    if (!(await this.budgetService.canEnrich(event.workspaceId))) {
+      return // Graceful skip
     }
-    
+
     // Generate contextual header (Tier 2)
-    const header = await this.generateContextualHeader(event);
-    
+    const header = await this.generateContextualHeader(event)
+
     // Re-embed with context
-    const enrichedContent = `${header}\n\n${event.content}`;
-    const embedding = await this.embedder.embed(enrichedContent);
-    
+    const enrichedContent = `${header}\n\n${event.content}`
+    const embedding = await this.embedder.embed(enrichedContent)
+
     // Update
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE text_messages 
       SET contextual_header = $1,
           header_generated_at = NOW(),
           enrichment_tier = 2,
           enrichment_signals = $2
       WHERE id = $3
-    `, [header, job.data.signals, event.id]);
-    
-    await this.updateEmbedding(event.id, embedding);
+    `,
+      [header, job.data.signals, event.id],
+    )
+
+    await this.updateEmbedding(event.id, embedding)
   }
-  
+
   private async generateContextualHeader(event: StreamEvent): Promise<string> {
     // Get surrounding context
-    const context = await this.getContextWindow(event, { before: 5, after: 2 });
-    
+    const context = await this.getContextWindow(event, { before: 5, after: 2 })
+
     const prompt = `
       Generate a brief contextual header for this message that captures:
       - The channel/stream it's in
@@ -500,13 +506,13 @@ class EnrichmentWorker {
       Keep it under 100 words. Be factual, not interpretive.
       
       Conversation context:
-      ${context.map(e => `${e.author}: ${e.content}`).join('\n')}
+      ${context.map((e) => `${e.author}: ${e.content}`).join("\n")}
       
       Target message:
       ${event.author}: ${event.content}
-    `;
-    
-    return this.llm.complete(prompt, { model: 'haiku', maxTokens: 150 });
+    `
+
+    return this.llm.complete(prompt, { model: "haiku", maxTokens: 150 })
   }
 }
 ```
@@ -517,7 +523,7 @@ class EnrichmentWorker {
 // In StreamService - when reactions are added
 async addReaction(eventId: string, userId: string, emoji: string) {
   await this.pool.query(/* insert reaction */);
-  
+
   // Check if this triggers enrichment
   const reactionCount = await this.getReactionCount(eventId);
   if (reactionCount >= 2) {
@@ -528,7 +534,7 @@ async addReaction(eventId: string, userId: string, emoji: string) {
 // In StreamService - when replies are added
 async createEvent(streamId: string, content: CreateEventInput) {
   const event = await /* create event */;
-  
+
   // If this is a reply, check parent
   if (content.replyToEventId) {
     const replyCount = await this.getReplyCount(content.replyToEventId);
@@ -548,11 +554,11 @@ async recordRetrieval(eventIds: string[], helpful: boolean) {
 private async queueEnrichmentIfNeeded(eventId: string, signals: EnrichmentSignals) {
   const event = await this.getEvent(eventId);
   if (event.enrichmentTier >= 2) return; // Already enriched
-  
+
   // Merge with existing signals
   const existingSignals = event.enrichmentSignals || {};
   const mergedSignals = { ...existingSignals, ...signals };
-  
+
   // Queue enrichment
   await this.boss.send('memory.enrich', {
     eventId,
@@ -566,24 +572,21 @@ private async queueEnrichmentIfNeeded(eventId: string, signals: EnrichmentSignal
 ```typescript
 class MemoService {
   // User-triggered memo creation
-  async createFromUserAction(
-    userId: string,
-    anchorEventId: string,
-    summary?: string
-  ): Promise<Memo> {
-    const event = await this.getEvent(anchorEventId);
-    const context = await this.getContextWindow(event, { before: 10, after: 5 });
-    
+  async createFromUserAction(userId: string, anchorEventId: string, summary?: string): Promise<Memo> {
+    const event = await this.getEvent(anchorEventId)
+    const context = await this.getContextWindow(event, { before: 10, after: 5 })
+
     // Generate summary if not provided
-    const memoSummary = summary || await this.generateSummary(event, context);
-    
+    const memoSummary = summary || (await this.generateSummary(event, context))
+
     // Extract topics
-    const topics = await this.extractTopics(event, context);
-    
+    const topics = await this.extractTopics(event, context)
+
     // Identify primary answerer (if Q&A pattern)
-    const answerer = this.identifyAnswerer(context);
-    
-    return this.pool.query(`
+    const answerer = this.identifyAnswerer(context)
+
+    return this.pool.query(
+      `
       INSERT INTO memos (
         workspace_id, summary, topics,
         anchor_event_ids, context_stream_id,
@@ -592,37 +595,36 @@ class MemoService {
         confidence, source, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'user', $11)
       RETURNING *
-    `, [
-      event.workspaceId,
-      memoSummary,
-      topics,
-      [anchorEventId],
-      event.streamId,
-      context[0].id,
-      context[context.length - 1].id,
-      [...new Set(context.map(e => e.actorId))],
-      answerer?.id,
-      0.9,  // High confidence for user-created
-      userId
-    ]);
+    `,
+      [
+        event.workspaceId,
+        memoSummary,
+        topics,
+        [anchorEventId],
+        event.streamId,
+        context[0].id,
+        context[context.length - 1].id,
+        [...new Set(context.map((e) => e.actorId))],
+        answerer?.id,
+        0.9, // High confidence for user-created
+        userId,
+      ],
+    )
   }
-  
+
   // System-triggered memo creation (from successful Ariadne answers)
-  async createFromAriadneSuccess(
-    query: string,
-    citedEventIds: string[],
-    responseEventId: string
-  ): Promise<Memo> {
-    if (citedEventIds.length === 0) return null;
-    
-    const primaryEvent = await this.getEvent(citedEventIds[0]);
-    const context = await this.getContextWindow(primaryEvent, { before: 5, after: 5 });
-    
+  async createFromAriadneSuccess(query: string, citedEventIds: string[], responseEventId: string): Promise<Memo> {
+    if (citedEventIds.length === 0) return null
+
+    const primaryEvent = await this.getEvent(citedEventIds[0])
+    const context = await this.getContextWindow(primaryEvent, { before: 5, after: 5 })
+
     // Use the question as the summary
-    const summary = query;
-    const topics = await this.extractTopics(primaryEvent, context);
-    
-    return this.pool.query(`
+    const summary = query
+    const topics = await this.extractTopics(primaryEvent, context)
+
+    return this.pool.query(
+      `
       INSERT INTO memos (
         workspace_id, summary, topics,
         anchor_event_ids, context_stream_id,
@@ -631,17 +633,19 @@ class MemoService {
         confidence, source
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ariadne')
       RETURNING *
-    `, [
-      primaryEvent.workspaceId,
-      summary,
-      topics,
-      citedEventIds,
-      primaryEvent.streamId,
-      context[0].id,
-      context[context.length - 1].id,
-      [...new Set(context.map(e => e.actorId))],
-      0.6  // Moderate confidence for auto-created
-    ]);
+    `,
+      [
+        primaryEvent.workspaceId,
+        summary,
+        topics,
+        citedEventIds,
+        primaryEvent.streamId,
+        context[0].id,
+        context[context.length - 1].id,
+        [...new Set(context.map((e) => e.actorId))],
+        0.6, // Moderate confidence for auto-created
+      ],
+    )
   }
 }
 ```
@@ -654,10 +658,10 @@ class MemoService {
 
 ```typescript
 interface AriadneConfig {
-  maxIterations: number;      // Default: 3
-  confidenceThreshold: number; // Default: 0.8
-  maxRetrievedMemos: number;  // Default: 5
-  maxRetrievedEvents: number; // Default: 10
+  maxIterations: number // Default: 3
+  confidenceThreshold: number // Default: 0.8
+  maxRetrievedMemos: number // Default: 5
+  maxRetrievedEvents: number // Default: 10
 }
 
 class AriadneResearcher {
@@ -665,67 +669,61 @@ class AriadneResearcher {
     maxIterations: 3,
     confidenceThreshold: 0.8,
     maxRetrievedMemos: 5,
-    maxRetrievedEvents: 10
-  };
-  
+    maxRetrievedEvents: 10,
+  }
+
   async respond(question: string, streamContext: StreamContext): Promise<AriadneResponse> {
     // Step 1: Quick memo lookup (might short-circuit)
-    const quickResult = await this.quickMemoLookup(question);
+    const quickResult = await this.quickMemoLookup(question)
     if (quickResult.confidence > 0.9) {
-      return this.synthesizeFromMemos(question, quickResult.memos);
+      return this.synthesizeFromMemos(question, quickResult.memos)
     }
-    
+
     // Step 2: Full iterative research
-    return this.iterativeResearch(question, streamContext);
+    return this.iterativeResearch(question, streamContext)
   }
-  
-  private async iterativeResearch(
-    question: string,
-    streamContext: StreamContext
-  ): Promise<AriadneResponse> {
-    let iteration = 0;
+
+  private async iterativeResearch(question: string, streamContext: StreamContext): Promise<AriadneResponse> {
+    let iteration = 0
     let gatheredContext: GatheredContext = {
       memos: [],
       events: [],
-      confidence: 0
-    };
-    
+      confidence: 0,
+    }
+
     while (iteration < this.config.maxIterations) {
-      iteration++;
-      
+      iteration++
+
       // PLAN: What information do we need?
-      const plan = await this.planInformationNeeds(question, gatheredContext);
-      
+      const plan = await this.planInformationNeeds(question, gatheredContext)
+
       if (plan.sufficient) {
-        break; // We have enough
+        break // We have enough
       }
-      
+
       // SEARCH: Execute search plan
-      const searchResults = await this.executeSearchPlan(plan);
-      
+      const searchResults = await this.executeSearchPlan(plan)
+
       // INTEGRATE: Merge new results
-      gatheredContext = this.integrateResults(gatheredContext, searchResults);
-      
+      gatheredContext = this.integrateResults(gatheredContext, searchResults)
+
       // REFLECT: Assess confidence
-      const reflection = await this.reflect(question, gatheredContext);
-      gatheredContext.confidence = reflection.confidence;
-      
+      const reflection = await this.reflect(question, gatheredContext)
+      gatheredContext.confidence = reflection.confidence
+
       if (reflection.confidence >= this.config.confidenceThreshold) {
-        break;
+        break
       }
     }
-    
+
     // Log retrieval for evolution
-    await this.logRetrieval(question, gatheredContext, iteration);
-    
+    await this.logRetrieval(question, gatheredContext, iteration)
+
     // Synthesize final answer
-    return this.synthesize(question, gatheredContext);
+    return this.synthesize(question, gatheredContext)
   }
-  
-  private async planInformationNeeds(
-    question: string,
-    currentContext: GatheredContext
-  ): Promise<SearchPlan> {
+
+  private async planInformationNeeds(question: string, currentContext: GatheredContext): Promise<SearchPlan> {
     const prompt = `
       Question: ${question}
       
@@ -745,34 +743,31 @@ class AriadneResearcher {
           {"type": "message", "query": "...", "filters": {...}}
         ]
       }
-    `;
-    
-    return this.llm.complete(prompt, { 
-      model: 'sonnet',
-      responseFormat: 'json'
-    });
+    `
+
+    return this.llm.complete(prompt, {
+      model: "sonnet",
+      responseFormat: "json",
+    })
   }
-  
+
   private async executeSearchPlan(plan: SearchPlan): Promise<SearchResults> {
-    const results: SearchResults = { memos: [], events: [] };
-    
+    const results: SearchResults = { memos: [], events: [] }
+
     for (const search of plan.searches) {
-      if (search.type === 'memo') {
-        const memos = await this.memoryService.searchMemos(search.query);
-        results.memos.push(...memos);
-      } else if (search.type === 'message') {
-        const events = await this.searchService.hybridSearch(search.query, search.filters);
-        results.events.push(...events);
+      if (search.type === "memo") {
+        const memos = await this.memoryService.searchMemos(search.query)
+        results.memos.push(...memos)
+      } else if (search.type === "message") {
+        const events = await this.searchService.hybridSearch(search.query, search.filters)
+        results.events.push(...events)
       }
     }
-    
-    return results;
+
+    return results
   }
-  
-  private async reflect(
-    question: string,
-    context: GatheredContext
-  ): Promise<Reflection> {
+
+  private async reflect(question: string, context: GatheredContext): Promise<Reflection> {
     const prompt = `
       Question: ${question}
       
@@ -791,21 +786,18 @@ class AriadneResearcher {
         "missing": ["..."],
         "refinedQueries": ["..."]
       }
-    `;
-    
+    `
+
     return this.llm.complete(prompt, {
-      model: 'sonnet',
-      responseFormat: 'json'
-    });
+      model: "sonnet",
+      responseFormat: "json",
+    })
   }
-  
-  private async synthesize(
-    question: string,
-    context: GatheredContext
-  ): Promise<AriadneResponse> {
+
+  private async synthesize(question: string, context: GatheredContext): Promise<AriadneResponse> {
     // Fetch full content for cited events
-    const eventContents = await this.fetchEventContents(context.events);
-    
+    const eventContents = await this.fetchEventContents(context.events)
+
     const prompt = `
       Answer this question based on the workspace conversations below.
       Cite specific messages using [1], [2] etc.
@@ -814,18 +806,18 @@ class AriadneResearcher {
       Question: ${question}
       
       Relevant conversations:
-      ${eventContents.map((e, i) => `[${i + 1}] ${e.author} in #${e.channel}: ${e.content}`).join('\n\n')}
-    `;
-    
-    const answer = await this.llm.complete(prompt, { model: 'sonnet' });
-    
+      ${eventContents.map((e, i) => `[${i + 1}] ${e.author} in #${e.channel}: ${e.content}`).join("\n\n")}
+    `
+
+    const answer = await this.llm.complete(prompt, { model: "sonnet" })
+
     return {
       content: answer,
-      citations: context.events.map(e => e.id),
+      citations: context.events.map((e) => e.id),
       confidence: context.confidence,
       iterations: context.iterations,
-      memoHits: context.memos.map(m => m.id)
-    };
+      memoHits: context.memos.map((m) => m.id),
+    }
   }
 }
 ```
@@ -836,53 +828,53 @@ class AriadneResearcher {
 const ariadneTools = [
   // Existing tools (enhanced)
   {
-    name: 'search_messages',
-    description: 'Search past conversations. Returns messages with context.',
+    name: "search_messages",
+    description: "Search past conversations. Returns messages with context.",
     parameters: {
-      query: { type: 'string', description: 'Search query' },
+      query: { type: "string", description: "Search query" },
       filters: {
-        from: { type: 'string', description: 'Filter by author username' },
-        in: { type: 'string', description: 'Filter by channel slug' },
-        before: { type: 'string', description: 'Before date (YYYY-MM-DD)' },
-        after: { type: 'string', description: 'After date (YYYY-MM-DD)' },
-        hasCode: { type: 'boolean', description: 'Must contain code' }
-      }
-    }
+        from: { type: "string", description: "Filter by author username" },
+        in: { type: "string", description: "Filter by channel slug" },
+        before: { type: "string", description: "Before date (YYYY-MM-DD)" },
+        after: { type: "string", description: "After date (YYYY-MM-DD)" },
+        hasCode: { type: "boolean", description: "Must contain code" },
+      },
+    },
   },
-  
+
   // New tools
   {
-    name: 'search_memos',
-    description: 'Search the knowledge index for documented topics and Q&A patterns.',
+    name: "search_memos",
+    description: "Search the knowledge index for documented topics and Q&A patterns.",
     parameters: {
-      query: { type: 'string', description: 'What are you looking for?' },
-      topics: { type: 'array', items: { type: 'string' }, description: 'Filter by topic tags' }
-    }
+      query: { type: "string", description: "What are you looking for?" },
+      topics: { type: "array", items: { type: "string" }, description: "Filter by topic tags" },
+    },
   },
   {
-    name: 'get_conversation_context',
-    description: 'Get the full conversation around a specific message.',
+    name: "get_conversation_context",
+    description: "Get the full conversation around a specific message.",
     parameters: {
-      eventId: { type: 'string', description: 'The message ID' },
-      beforeCount: { type: 'number', description: 'Messages before (default 10)' },
-      afterCount: { type: 'number', description: 'Messages after (default 5)' }
-    }
+      eventId: { type: "string", description: "The message ID" },
+      beforeCount: { type: "number", description: "Messages before (default 10)" },
+      afterCount: { type: "number", description: "Messages after (default 5)" },
+    },
   },
   {
-    name: 'find_expert',
-    description: 'Find who in the workspace knows about a topic.',
+    name: "find_expert",
+    description: "Find who in the workspace knows about a topic.",
     parameters: {
-      topic: { type: 'string', description: 'The topic to find expertise in' }
-    }
+      topic: { type: "string", description: "The topic to find expertise in" },
+    },
   },
   {
-    name: 'plan_research',
-    description: 'Break down a complex question into sub-queries.',
+    name: "plan_research",
+    description: "Break down a complex question into sub-queries.",
     parameters: {
-      question: { type: 'string', description: 'The complex question' }
-    }
-  }
-];
+      question: { type: "string", description: "The complex question" },
+    },
+  },
+]
 ```
 
 ### 6.3 Confidence-Gated Iteration
@@ -891,38 +883,34 @@ const ariadneTools = [
 class AriadneService {
   async respond(question: string, context: StreamContext): Promise<void> {
     // Classify question complexity (free, local SLM)
-    const complexity = await this.classifyComplexity(question);
-    
-    if (complexity === 'simple') {
+    const complexity = await this.classifyComplexity(question)
+
+    if (complexity === "simple") {
       // Single-shot for simple questions
-      const result = await this.singleShotAnswer(question, context);
-      await this.postResponse(result, context);
-      return;
+      const result = await this.singleShotAnswer(question, context)
+      await this.postResponse(result, context)
+      return
     }
-    
+
     // Iterative for complex questions
-    const result = await this.researcher.iterativeResearch(question, context);
-    await this.postResponse(result, context);
-    
+    const result = await this.researcher.iterativeResearch(question, context)
+    await this.postResponse(result, context)
+
     // If successful, create memo for future
     if (result.confidence > 0.7 && result.citations.length > 0) {
-      await this.memoService.createFromAriadneSuccess(
-        question,
-        result.citations,
-        result.responseEventId
-      );
+      await this.memoService.createFromAriadneSuccess(question, result.citations, result.responseEventId)
     }
   }
-  
-  private async classifyComplexity(question: string): Promise<'simple' | 'complex'> {
+
+  private async classifyComplexity(question: string): Promise<"simple" | "complex"> {
     // Quick heuristics first
-    if (question.split(' ').length < 8) return 'simple';
+    if (question.split(" ").length < 8) return "simple"
     if (!/\b(and|or|compare|vs|difference|how did|why did|what were)\b/i.test(question)) {
-      return 'simple';
+      return "simple"
     }
-    
+
     // SLM classification for edge cases
-    return this.slm.classify(question, ['simple', 'complex']);
+    return this.slm.classify(question, ["simple", "complex"])
   }
 }
 ```
@@ -939,36 +927,37 @@ Shows contextually relevant discussions in the sidebar when viewing a thread.
 // API: GET /api/workspace/:ws/streams/:stream/events/:event/related
 interface RelatedConversationsResponse {
   memos: Array<{
-    id: string;
-    summary: string;
-    relevanceScore: number;
+    id: string
+    summary: string
+    relevanceScore: number
     anchorEvent: {
-      id: string;
-      content: string;
-      author: User;
-      stream: Stream;
-      createdAt: string;
-    };
-  }>;
+      id: string
+      content: string
+      author: User
+      stream: Stream
+      createdAt: string
+    }
+  }>
   recentDiscussions: Array<{
-    streamId: string;
-    streamName: string;
-    previewContent: string;
-    participants: User[];
-    relevanceScore: number;
-  }>;
+    streamId: string
+    streamName: string
+    previewContent: string
+    participants: User[]
+    relevanceScore: number
+  }>
 }
 
 // Backend
 class RelatedService {
   async getRelatedConversations(eventId: string, limit = 5): Promise<RelatedConversationsResponse> {
-    const event = await this.getEvent(eventId);
-    
+    const event = await this.getEvent(eventId)
+
     // Get embedding for current context
-    const contextEmbedding = await this.getContextEmbedding(event);
-    
+    const contextEmbedding = await this.getContextEmbedding(event)
+
     // Search memos
-    const memos = await this.pool.query(`
+    const memos = await this.pool.query(
+      `
       SELECT m.*, 
              1 - (m.embedding <=> $1) as relevance_score
       FROM memos m
@@ -979,17 +968,15 @@ class RelatedService {
         )
       ORDER BY relevance_score DESC
       LIMIT $4
-    `, [contextEmbedding, event.workspaceId, eventId, limit]);
-    
+    `,
+      [contextEmbedding, event.workspaceId, eventId, limit],
+    )
+
     // Get recent discussions in related topics
-    const topics = await this.extractTopics(event);
-    const recentDiscussions = await this.getRecentDiscussionsByTopic(
-      event.workspaceId,
-      topics,
-      limit
-    );
-    
-    return { memos, recentDiscussions };
+    const topics = await this.extractTopics(event)
+    const recentDiscussions = await this.getRecentDiscussionsByTopic(event.workspaceId, topics, limit)
+
+    return { memos, recentDiscussions }
   }
 }
 ```
@@ -999,26 +986,22 @@ class RelatedService {
 ```tsx
 // RelatedConversationsPanel.tsx
 function RelatedConversationsPanel({ eventId }: { eventId: string }) {
-  const { data, isLoading } = useRelatedConversations(eventId);
-  
-  if (isLoading || !data?.memos.length) return null;
-  
+  const { data, isLoading } = useRelatedConversations(eventId)
+
+  if (isLoading || !data?.memos.length) return null
+
   return (
     <div className="border-l border-gray-200 p-4 w-72">
-      <h3 className="text-sm font-medium text-gray-500 mb-3">
-        Related discussions
-      </h3>
-      
+      <h3 className="text-sm font-medium text-gray-500 mb-3">Related discussions</h3>
+
       <div className="space-y-3">
-        {data.memos.map(memo => (
+        {data.memos.map((memo) => (
           <button
             key={memo.id}
             onClick={() => navigateToEvent(memo.anchorEvent.id)}
             className="block w-full text-left p-2 rounded hover:bg-gray-50"
           >
-            <div className="text-sm font-medium text-gray-900 line-clamp-2">
-              {memo.summary}
-            </div>
+            <div className="text-sm font-medium text-gray-900 line-clamp-2">{memo.summary}</div>
             <div className="text-xs text-gray-500 mt-1">
               #{memo.anchorEvent.stream.slug} · {formatRelativeTime(memo.anchorEvent.createdAt)}
             </div>
@@ -1026,7 +1009,7 @@ function RelatedConversationsPanel({ eventId }: { eventId: string }) {
         ))}
       </div>
     </div>
-  );
+  )
 }
 ```
 
@@ -1037,28 +1020,28 @@ A dedicated view for browsing institutional knowledge.
 ```typescript
 // API: GET /api/workspace/:ws/knowledge
 interface KnowledgeBrowserResponse {
-  frequentlyReferenced: Memo[];
-  recentValuable: Memo[];
-  byTopic: Record<string, Memo[]>;
+  frequentlyReferenced: Memo[]
+  recentValuable: Memo[]
+  byTopic: Record<string, Memo[]>
   coverageGaps: Array<{
-    query: string;
-    askCount: number;
-    lastAsked: string;
-  }>;
+    query: string
+    askCount: number
+    lastAsked: string
+  }>
   topExperts: Array<{
-    user: User;
-    topics: string[];
-    score: number;
-  }>;
+    user: User
+    topics: string[]
+    score: number
+  }>
 }
 
 // API: GET /api/workspace/:ws/knowledge/topics
 interface TopicsResponse {
   topics: Array<{
-    name: string;
-    memoCount: number;
-    recentActivity: string;
-  }>;
+    name: string
+    memoCount: number
+    recentActivity: string
+  }>
 }
 ```
 
@@ -1067,68 +1050,52 @@ interface TopicsResponse {
 ```tsx
 // KnowledgeBrowser.tsx
 function KnowledgeBrowser() {
-  const { data } = useKnowledge();
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  
+  const { data } = useKnowledge()
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null)
+
   return (
     <div className="flex h-full">
       {/* Sidebar: Topics */}
       <div className="w-64 border-r p-4">
-        <SearchInput 
-          placeholder="Search knowledge..."
-          onSearch={handleSearch}
-        />
-        
+        <SearchInput placeholder="Search knowledge..." onSearch={handleSearch} />
+
         <nav className="mt-4 space-y-1">
-          <TopicLink 
-            active={!selectedTopic}
-            onClick={() => setSelectedTopic(null)}
-          >
+          <TopicLink active={!selectedTopic} onClick={() => setSelectedTopic(null)}>
             All Knowledge
           </TopicLink>
-          
-          {data?.byTopic && Object.keys(data.byTopic).map(topic => (
-            <TopicLink
-              key={topic}
-              active={selectedTopic === topic}
-              onClick={() => setSelectedTopic(topic)}
-            >
-              {topic}
-              <span className="text-gray-400 ml-2">
-                {data.byTopic[topic].length}
-              </span>
-            </TopicLink>
-          ))}
+
+          {data?.byTopic &&
+            Object.keys(data.byTopic).map((topic) => (
+              <TopicLink key={topic} active={selectedTopic === topic} onClick={() => setSelectedTopic(topic)}>
+                {topic}
+                <span className="text-gray-400 ml-2">{data.byTopic[topic].length}</span>
+              </TopicLink>
+            ))}
         </nav>
-        
+
         {data?.coverageGaps.length > 0 && (
           <div className="mt-6">
-            <h4 className="text-xs font-medium text-amber-600 uppercase">
-              Coverage Gaps
-            </h4>
+            <h4 className="text-xs font-medium text-amber-600 uppercase">Coverage Gaps</h4>
             <div className="mt-2 space-y-2">
-              {data.coverageGaps.map(gap => (
+              {data.coverageGaps.map((gap) => (
                 <div key={gap.query} className="text-sm text-gray-600">
-                  "{gap.query}"
-                  <span className="text-gray-400 ml-1">
-                    ({gap.askCount}x)
-                  </span>
+                  "{gap.query}"<span className="text-gray-400 ml-1">({gap.askCount}x)</span>
                 </div>
               ))}
             </div>
           </div>
         )}
       </div>
-      
+
       {/* Main: Memo list */}
       <div className="flex-1 p-6">
-        <MemoList 
+        <MemoList
           memos={selectedTopic ? data?.byTopic[selectedTopic] : data?.frequentlyReferenced}
           onMemoClick={handleMemoClick}
         />
       </div>
     </div>
-  );
+  )
 }
 ```
 
@@ -1139,36 +1106,37 @@ Shows relevant existing knowledge as user types a question.
 ```typescript
 // API: POST /api/workspace/:ws/knowledge/suggest
 interface SuggestRequest {
-  partialQuery: string;
-  streamId: string;
+  partialQuery: string
+  streamId: string
 }
 
 interface SuggestResponse {
   suggestions: Array<{
-    memo: Memo;
-    relevance: number;
-    preview: string;
-  }>;
+    memo: Memo
+    relevance: number
+    preview: string
+  }>
 }
 
 // Backend - debounced, cached
 class SuggestionService {
-  private cache = new LRUCache<string, SuggestResponse>({ max: 1000, ttl: 60000 });
-  
+  private cache = new LRUCache<string, SuggestResponse>({ max: 1000, ttl: 60000 })
+
   async suggest(query: string, workspaceId: string): Promise<SuggestResponse> {
     // Skip short queries
-    if (query.length < 10) return { suggestions: [] };
-    
+    if (query.length < 10) return { suggestions: [] }
+
     // Check cache
-    const cacheKey = `${workspaceId}:${query.toLowerCase().trim()}`;
+    const cacheKey = `${workspaceId}:${query.toLowerCase().trim()}`
     if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey)!;
+      return this.cache.get(cacheKey)!
     }
-    
+
     // Quick embedding lookup
-    const queryEmbedding = await this.embedder.embed(query);
-    
-    const memos = await this.pool.query(`
+    const queryEmbedding = await this.embedder.embed(query)
+
+    const memos = await this.pool.query(
+      `
       SELECT m.*, 
              1 - (m.embedding <=> $1) as relevance
       FROM memos m
@@ -1178,18 +1146,20 @@ class SuggestionService {
         AND 1 - (m.embedding <=> $1) > 0.7
       ORDER BY relevance DESC
       LIMIT 3
-    `, [queryEmbedding, workspaceId]);
-    
+    `,
+      [queryEmbedding, workspaceId],
+    )
+
     const result = {
-      suggestions: memos.rows.map(m => ({
+      suggestions: memos.rows.map((m) => ({
         memo: m,
         relevance: m.relevance,
-        preview: m.summary
-      }))
-    };
-    
-    this.cache.set(cacheKey, result);
-    return result;
+        preview: m.summary,
+      })),
+    }
+
+    this.cache.set(cacheKey, result)
+    return result
   }
 }
 ```
@@ -1199,44 +1169,34 @@ class SuggestionService {
 ```tsx
 // ChatInput.tsx (enhanced)
 function ChatInput({ streamId }: { streamId: string }) {
-  const [content, setContent] = useState('');
-  const debouncedContent = useDebounce(content, 300);
-  
+  const [content, setContent] = useState("")
+  const debouncedContent = useDebounce(content, 300)
+
   const { data: suggestions } = useSuggestions(debouncedContent, streamId, {
-    enabled: content.includes('?') && content.length > 15
-  });
-  
+    enabled: content.includes("?") && content.length > 15,
+  })
+
   return (
     <div className="relative">
       {suggestions?.suggestions.length > 0 && (
         <div className="absolute bottom-full mb-2 w-full bg-white border rounded-lg shadow-lg p-3">
-          <div className="text-xs text-gray-500 mb-2">
-            Might be helpful:
-          </div>
-          {suggestions.suggestions.map(s => (
+          <div className="text-xs text-gray-500 mb-2">Might be helpful:</div>
+          {suggestions.suggestions.map((s) => (
             <button
               key={s.memo.id}
               onClick={() => navigateToMemo(s.memo)}
               className="block w-full text-left p-2 rounded hover:bg-gray-50"
             >
-              <div className="text-sm text-gray-900">
-                {s.memo.summary}
-              </div>
-              <div className="text-xs text-gray-500">
-                Click to view discussion
-              </div>
+              <div className="text-sm text-gray-900">{s.memo.summary}</div>
+              <div className="text-xs text-gray-500">Click to view discussion</div>
             </button>
           ))}
         </div>
       )}
-      
-      <RichTextEditor
-        value={content}
-        onChange={setContent}
-        onSubmit={handleSubmit}
-      />
+
+      <RichTextEditor value={content} onChange={setContent} onSubmit={handleSubmit} />
     </div>
-  );
+  )
 }
 ```
 
@@ -1247,24 +1207,27 @@ Surface who knows what based on accumulated signals.
 ```typescript
 // API: GET /api/workspace/:ws/experts
 interface ExpertsResponse {
-  byTopic: Record<string, Array<{
-    user: User;
-    score: number;
-    recentContributions: number;
-  }>>;
+  byTopic: Record<
+    string,
+    Array<{
+      user: User
+      score: number
+      recentContributions: number
+    }>
+  >
 }
 
 // API: GET /api/workspace/:ws/experts/for-topic/:topic
 interface TopicExpertsResponse {
   experts: Array<{
-    user: User;
-    score: number;
+    user: User
+    score: number
     sampleAnswers: Array<{
-      eventId: string;
-      preview: string;
-      helpful: boolean;
-    }>;
-  }>;
+      eventId: string
+      preview: string
+      helpful: boolean
+    }>
+  }>
 }
 ```
 
@@ -1278,16 +1241,17 @@ interface TopicExpertsResponse {
 // Scheduled job: runs nightly
 class EvolutionJob {
   async evolve(workspaceId: string) {
-    await this.boostRetrievedMemos(workspaceId);
-    await this.decayUnusedMemos(workspaceId);
-    await this.updateExpertiseScores(workspaceId);
-    await this.detectCoverageGaps(workspaceId);
-    await this.pruneStaleData(workspaceId);
+    await this.boostRetrievedMemos(workspaceId)
+    await this.decayUnusedMemos(workspaceId)
+    await this.updateExpertiseScores(workspaceId)
+    await this.detectCoverageGaps(workspaceId)
+    await this.pruneStaleData(workspaceId)
   }
-  
+
   private async boostRetrievedMemos(workspaceId: string) {
     // Boost memos that were retrieved and led to positive feedback
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE memos m
       SET confidence = LEAST(confidence + 0.05, 1.0),
           helpfulness_score = helpfulness_score + 1,
@@ -1297,10 +1261,13 @@ class EvolutionJob {
         AND m.id = ANY(r.retrieved_memo_ids)
         AND r.user_feedback = 'positive'
         AND r.created_at > NOW() - INTERVAL '24 hours'
-    `, [workspaceId]);
-    
+    `,
+      [workspaceId],
+    )
+
     // Decay memos with negative feedback
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE memos m
       SET confidence = GREATEST(confidence - 0.1, 0.1),
           helpfulness_score = helpfulness_score - 1,
@@ -1310,12 +1277,15 @@ class EvolutionJob {
         AND m.id = ANY(r.retrieved_memo_ids)
         AND r.user_feedback = 'negative'
         AND r.created_at > NOW() - INTERVAL '24 hours'
-    `, [workspaceId]);
+    `,
+      [workspaceId],
+    )
   }
-  
+
   private async decayUnusedMemos(workspaceId: string) {
     // Slowly decay confidence of never-retrieved memos
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE memos
       SET confidence = GREATEST(confidence - 0.01, 0.1),
           updated_at = NOW()
@@ -1323,12 +1293,15 @@ class EvolutionJob {
         AND (last_retrieved_at IS NULL OR last_retrieved_at < NOW() - INTERVAL '90 days')
         AND confidence > 0.1
         AND source = 'system'  -- Don't decay user-created
-    `, [workspaceId]);
+    `,
+      [workspaceId],
+    )
   }
-  
+
   private async updateExpertiseScores(workspaceId: string) {
     // Recalculate expertise scores from signals
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE expertise_signals
       SET expertise_score = (
         questions_answered * 1.0 +
@@ -1341,12 +1314,15 @@ class EvolutionJob {
       ),
       updated_at = NOW()
       WHERE workspace_id = $1
-    `, [workspaceId]);
+    `,
+      [workspaceId],
+    )
   }
-  
+
   private async detectCoverageGaps(workspaceId: string) {
     // Find queries with low confidence or no results
-    const gaps = await this.pool.query(`
+    const gaps = await this.pool.query(
+      `
       SELECT 
         query,
         COUNT(*) as ask_count,
@@ -1362,29 +1338,37 @@ class EvolutionJob {
       HAVING COUNT(*) >= 2
       ORDER BY ask_count DESC
       LIMIT 20
-    `, [workspaceId]);
-    
+    `,
+      [workspaceId],
+    )
+
     // Store for admin visibility
-    await this.storeCoverageGaps(workspaceId, gaps.rows);
+    await this.storeCoverageGaps(workspaceId, gaps.rows)
   }
-  
+
   private async pruneStaleData(workspaceId: string) {
     // Archive very low confidence system memos
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE memos
       SET archived_at = NOW()
       WHERE workspace_id = $1
         AND source = 'system'
         AND confidence < 0.2
         AND last_retrieved_at < NOW() - INTERVAL '180 days'
-    `, [workspaceId]);
-    
+    `,
+      [workspaceId],
+    )
+
     // Clean old retrieval logs (keep 90 days)
-    await this.pool.query(`
+    await this.pool.query(
+      `
       DELETE FROM retrieval_log
       WHERE workspace_id = $1
         AND created_at < NOW() - INTERVAL '90 days'
-    `, [workspaceId]);
+    `,
+      [workspaceId],
+    )
   }
 }
 ```
@@ -1402,7 +1386,7 @@ async onSuccessfulResponse(
   // Only create memo for positive or high-confidence responses
   if (feedback === 'negative') return;
   if (citations.length === 0) return;
-  
+
   // Check if similar memo already exists
   const existing = await this.findSimilarMemo(question);
   if (existing && existing.relevance > 0.9) {
@@ -1410,7 +1394,7 @@ async onSuccessfulResponse(
     await this.boostMemo(existing.id);
     return;
   }
-  
+
   // Create new memo
   await this.memoService.createFromAriadneSuccess(question, citations, responseEventId);
 }
@@ -1423,20 +1407,20 @@ async onSuccessfulResponse(
 async onEventCreated(event: StreamEvent) {
   // Check if this looks like an answer to a question
   if (!event.replyToEventId) return;
-  
+
   const parent = await this.getEvent(event.replyToEventId);
   if (!this.looksLikeQuestion(parent.content)) return;
-  
+
   // Extract topics from the thread
   const topics = await this.extractTopics([parent, event]);
-  
+
   // Record expertise signal
   for (const topic of topics) {
     await this.pool.query(`
       INSERT INTO expertise_signals (workspace_id, user_id, topic, questions_answered)
       VALUES ($1, $2, $3, 1)
       ON CONFLICT (workspace_id, user_id, topic)
-      DO UPDATE SET 
+      DO UPDATE SET
         questions_answered = expertise_signals.questions_answered + 1,
         updated_at = NOW()
     `, [event.workspaceId, event.actorId, topic]);
@@ -1446,12 +1430,12 @@ async onEventCreated(event: StreamEvent) {
 // In AriadneService, when citing a message
 async onMessageCited(eventId: string, topic: string) {
   const event = await this.getEvent(eventId);
-  
+
   await this.pool.query(`
     INSERT INTO expertise_signals (workspace_id, user_id, topic, answers_cited_by_ariadne)
     VALUES ($1, $2, $3, 1)
     ON CONFLICT (workspace_id, user_id, topic)
-    DO UPDATE SET 
+    DO UPDATE SET
       answers_cited_by_ariadne = expertise_signals.answers_cited_by_ariadne + 1,
       updated_at = NOW()
   `, [event.workspaceId, event.actorId, topic]);
@@ -1466,50 +1450,53 @@ async onMessageCited(eventId: string, topic: string) {
 
 ```typescript
 interface WorkspaceMemoryBudget {
-  workspaceId: string;
-  
+  workspaceId: string
+
   // Monthly limits
-  monthlyEmbeddingLimit: number;      // Default: 10,000
-  monthlyEnrichmentLimit: number;     // Default: 500
-  monthlyAriadneQueryLimit: number;   // Default: 1,000
-  monthlyIterationLimit: number;      // Default: 300
-  
+  monthlyEmbeddingLimit: number // Default: 10,000
+  monthlyEnrichmentLimit: number // Default: 500
+  monthlyAriadneQueryLimit: number // Default: 1,000
+  monthlyIterationLimit: number // Default: 300
+
   // Current usage (reset monthly)
-  embeddingsUsed: number;
-  enrichmentsUsed: number;
-  ariadneQueriesUsed: number;
-  iterationsUsed: number;
-  
+  embeddingsUsed: number
+  enrichmentsUsed: number
+  ariadneQueriesUsed: number
+  iterationsUsed: number
+
   // Cost tracking
-  currentMonthCostCents: number;
-  budgetLimitCents: number;           // Default: 10000 ($100)
+  currentMonthCostCents: number
+  budgetLimitCents: number // Default: 10000 ($100)
 }
 
 class BudgetService {
   async canEmbed(workspaceId: string): Promise<boolean> {
-    const budget = await this.getBudget(workspaceId);
-    return budget.embeddingsUsed < budget.monthlyEmbeddingLimit;
+    const budget = await this.getBudget(workspaceId)
+    return budget.embeddingsUsed < budget.monthlyEmbeddingLimit
   }
-  
+
   async canEnrich(workspaceId: string): Promise<boolean> {
-    const budget = await this.getBudget(workspaceId);
-    if (budget.enrichmentsUsed >= budget.monthlyEnrichmentLimit) return false;
-    if (budget.currentMonthCostCents >= budget.budgetLimitCents) return false;
-    return true;
+    const budget = await this.getBudget(workspaceId)
+    if (budget.enrichmentsUsed >= budget.monthlyEnrichmentLimit) return false
+    if (budget.currentMonthCostCents >= budget.budgetLimitCents) return false
+    return true
   }
-  
+
   async canIterate(workspaceId: string): Promise<boolean> {
-    const budget = await this.getBudget(workspaceId);
-    return budget.iterationsUsed < budget.monthlyIterationLimit;
+    const budget = await this.getBudget(workspaceId)
+    return budget.iterationsUsed < budget.monthlyIterationLimit
   }
-  
+
   async recordUsage(workspaceId: string, type: UsageType, costCents: number) {
-    await this.pool.query(`
+    await this.pool.query(
+      `
       UPDATE workspace_memory_budgets
       SET ${type}_used = ${type}_used + 1,
           current_month_cost_cents = current_month_cost_cents + $1
       WHERE workspace_id = $2
-    `, [costCents, workspaceId]);
+    `,
+      [costCents, workspaceId],
+    )
   }
 }
 ```
@@ -1519,43 +1506,45 @@ class BudgetService {
 ```typescript
 class AdaptiveEnrichmentService {
   async shouldEnrich(event: StreamEvent, signals: EnrichmentSignals): Promise<boolean> {
-    const budget = await this.budgetService.getBudget(event.workspaceId);
-    
+    const budget = await this.budgetService.getBudget(event.workspaceId)
+
     // Calculate remaining budget ratio
-    const daysLeft = this.daysRemainingInMonth();
-    const remainingBudgetRatio = (budget.monthlyEnrichmentLimit - budget.enrichmentsUsed) / 
-                                  (budget.monthlyEnrichmentLimit * (daysLeft / 30));
-    
+    const daysLeft = this.daysRemainingInMonth()
+    const remainingBudgetRatio =
+      (budget.monthlyEnrichmentLimit - budget.enrichmentsUsed) / (budget.monthlyEnrichmentLimit * (daysLeft / 30))
+
     // Adjust thresholds based on budget
-    let reactionThreshold = 2;
-    let replyThreshold = 3;
-    
+    let reactionThreshold = 2
+    let replyThreshold = 3
+
     if (remainingBudgetRatio < 0.5) {
       // Budget tight - raise thresholds
-      reactionThreshold = 4;
-      replyThreshold = 5;
+      reactionThreshold = 4
+      replyThreshold = 5
     } else if (remainingBudgetRatio > 1.5) {
       // Budget loose - lower thresholds
-      reactionThreshold = 1;
-      replyThreshold = 2;
+      reactionThreshold = 1
+      replyThreshold = 2
     }
-    
-    return (signals.reactions || 0) >= reactionThreshold ||
-           (signals.replies || 0) >= replyThreshold ||
-           signals.retrieved === true;
+
+    return (
+      (signals.reactions || 0) >= reactionThreshold ||
+      (signals.replies || 0) >= replyThreshold ||
+      signals.retrieved === true
+    )
   }
 }
 ```
 
 ### 9.3 Cost Projections
 
-| Operation | Unit Cost | 50-person workspace/month |
-|-----------|-----------|---------------------------|
-| Basic embeddings | $0.004 | 3,000 msgs × $0.004 = $12 |
-| Contextual headers | $0.025 | 150 msgs × $0.025 = $3.75 |
-| Ariadne single-shot | $0.02 | 400 queries × $0.02 = $8 |
-| Ariadne iterative | $0.06 | 100 queries × $0.06 = $6 |
-| **Total** | | **~$30/month** |
+| Operation           | Unit Cost | 50-person workspace/month |
+| ------------------- | --------- | ------------------------- |
+| Basic embeddings    | $0.004    | 3,000 msgs × $0.004 = $12 |
+| Contextual headers  | $0.025    | 150 msgs × $0.025 = $3.75 |
+| Ariadne single-shot | $0.02     | 400 queries × $0.02 = $8  |
+| Ariadne iterative   | $0.06     | 100 queries × $0.06 = $6  |
+| **Total**           |           | **~$30/month**            |
 
 At $500/month revenue (50 users × $10), this is **6% of revenue** on AI costs.
 
@@ -1655,10 +1644,10 @@ GET    /api/workspace/:ws/streams/:s/events/:e/related  # Related conversations
 ```typescript
 // New events for real-time updates
 interface MemoryEvents {
-  'memo:created': { memo: Memo };
-  'memo:updated': { memoId: string; changes: Partial<Memo> };
-  'memo:archived': { memoId: string };
-  'suggestion:available': { suggestions: Suggestion[] };  // For before-you-ask
+  "memo:created": { memo: Memo }
+  "memo:updated": { memoId: string; changes: Partial<Memo> }
+  "memo:archived": { memoId: string }
+  "suggestion:available": { suggestions: Suggestion[] } // For before-you-ask
 }
 ```
 
@@ -1681,7 +1670,7 @@ INSERT INTO memos (
   created_by,
   created_at
 )
-SELECT 
+SELECT
   k.workspace_id,
   k.title as summary,
   k.tags as topics,
@@ -1717,14 +1706,14 @@ async backfillEnrichment(workspaceId: string) {
         )
         -- Or has replies
         OR EXISTS (
-          SELECT 1 FROM stream_events child 
+          SELECT 1 FROM stream_events child
           WHERE child.reply_to_event_id = se.id
         )
       )
     ORDER BY se.created_at DESC
     LIMIT 1000
   `, [workspaceId]);
-  
+
   // Queue for enrichment in batches
   for (const batch of chunk(candidates.rows, 50)) {
     await this.boss.send('memory.backfill-enrich', {
@@ -1739,15 +1728,15 @@ async backfillEnrichment(workspaceId: string) {
 ```typescript
 const memoryFeatureFlags = {
   // Rollout phases
-  'memory.contextual-headers': false,      // Phase 1
-  'memory.memos': false,                   // Phase 2
-  'memory.iterative-researcher': false,    // Phase 3
-  'memory.user-features': false,           // Phase 4
-  'memory.evolution': false,               // Phase 5
-  
+  "memory.contextual-headers": false, // Phase 1
+  "memory.memos": false, // Phase 2
+  "memory.iterative-researcher": false, // Phase 3
+  "memory.user-features": false, // Phase 4
+  "memory.evolution": false, // Phase 5
+
   // Gradual rollout
-  'memory.before-you-ask': false,          // Most visible, last to enable
-};
+  "memory.before-you-ask": false, // Most visible, last to enable
+}
 ```
 
 ---
@@ -1830,19 +1819,19 @@ Output JSON:
 
 ### B.1 Key Metrics
 
-| Metric | Target | Alert Threshold |
-|--------|--------|-----------------|
-| Memo retrieval hit rate | >60% | <40% |
-| Avg iterations per query | <1.5 | >2.5 |
-| Before-you-ask click rate | >20% | <10% |
-| Enrichment budget utilization | 70-90% | >95% or <50% |
-| Nightly evolution job duration | <5min | >15min |
+| Metric                         | Target | Alert Threshold |
+| ------------------------------ | ------ | --------------- |
+| Memo retrieval hit rate        | >60%   | <40%            |
+| Avg iterations per query       | <1.5   | >2.5            |
+| Before-you-ask click rate      | >20%   | <10%            |
+| Enrichment budget utilization  | 70-90% | >95% or <50%    |
+| Nightly evolution job duration | <5min  | >15min          |
 
 ### B.2 Dashboard Queries
 
 ```sql
 -- Memo effectiveness
-SELECT 
+SELECT
   date_trunc('day', created_at) as day,
   COUNT(*) as queries,
   AVG(array_length(retrieved_memo_ids, 1)) as avg_memos_retrieved,
@@ -1867,4 +1856,4 @@ WHERE se.workspace_id = $1
 
 ---
 
-*End of specification*
+_End of specification_

@@ -12,7 +12,12 @@ interface MessageContentProps {
 export type { MessageMention }
 
 // Parse markdown into blocks first, then handle inline formatting
-function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionClick?: (id: string) => void, onChannelClick?: (slug: string, e: React.MouseEvent) => void): React.ReactNode[] {
+function parseMarkdown(
+  text: string,
+  mentions: MessageMention[],
+  onUserMentionClick?: (id: string) => void,
+  onChannelClick?: (slug: string, e: React.MouseEvent) => void,
+): React.ReactNode[] {
   const lines = text.split("\n")
   const blocks: React.ReactNode[] = []
   let key = 0
@@ -38,12 +43,15 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
           style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)" }}
         >
           {language && (
-            <div className="text-xs mb-2 pb-2" style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}>
+            <div
+              className="text-xs mb-2 pb-2"
+              style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}
+            >
               {language}
             </div>
           )}
           <code style={{ color: "var(--text-primary)" }}>{codeLines.join("\n")}</code>
-        </pre>
+        </pre>,
       )
       continue
     }
@@ -64,7 +72,7 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
           {quoteLines.map((ql, idx) => (
             <div key={idx}>{parseInlineWithMentions(ql, mentions, onUserMentionClick, onChannelClick)}</div>
           ))}
-        </blockquote>
+        </blockquote>,
       )
       continue
     }
@@ -79,11 +87,9 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
       blocks.push(
         <ul key={key++} className="list-disc list-inside my-2 space-y-1" style={{ color: "var(--text-primary)" }}>
           {listItems.map((item, idx) => (
-            <li key={idx}>
-              {parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}
-            </li>
+            <li key={idx}>{parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}</li>
           ))}
-        </ul>
+        </ul>,
       )
       continue
     }
@@ -98,11 +104,9 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
       blocks.push(
         <ol key={key++} className="list-decimal list-inside my-2 space-y-1" style={{ color: "var(--text-primary)" }}>
           {listItems.map((item, idx) => (
-            <li key={idx}>
-              {parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}
-            </li>
+            <li key={idx}>{parseInlineWithMentions(item, mentions, onUserMentionClick, onChannelClick)}</li>
           ))}
-        </ol>
+        </ol>,
       )
       continue
     }
@@ -124,7 +128,7 @@ function parseMarkdown(text: string, mentions: MessageMention[], onUserMentionCl
     blocks.push(
       <p key={key++} style={{ color: "var(--text-primary)" }}>
         {parseInlineWithMentions(line, mentions, onUserMentionClick, onChannelClick)}
-      </p>
+      </p>,
     )
     i++
   }
@@ -137,7 +141,7 @@ function parseInlineWithMentions(
   text: string,
   mentions: MessageMention[],
   onUserMentionClick?: (id: string) => void,
-  onChannelClick?: (slug: string, e: React.MouseEvent) => void
+  onChannelClick?: (slug: string, e: React.MouseEvent) => void,
 ): React.ReactNode[] {
   if (mentions.length === 0) {
     return parseInlineMarkdown(text)
@@ -223,7 +227,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           style={{ background: "var(--bg-tertiary)", color: "var(--accent-primary)" }}
         >
           {match[1]}
-        </code>
+        </code>,
       )
       remaining = remaining.slice(match[0].length)
       continue
@@ -235,7 +239,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <strong key={key++} className="font-semibold" style={{ color: "var(--text-primary)" }}>
           {match[1]}
-        </strong>
+        </strong>,
       )
       remaining = remaining.slice(match[0].length)
       continue
@@ -247,7 +251,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <em key={key++} className="italic">
           {match[1]}
-        </em>
+        </em>,
       )
       remaining = remaining.slice(match[0].length)
       continue
@@ -259,7 +263,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <span key={key++} className="line-through" style={{ color: "var(--text-muted)" }}>
           {match[1]}
-        </span>
+        </span>,
       )
       remaining = remaining.slice(match[0].length)
       continue
@@ -278,7 +282,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           style={{ color: "var(--accent-primary)" }}
         >
           {match[1]}
-        </a>
+        </a>,
       )
       remaining = remaining.slice(match[0].length)
       continue
@@ -297,7 +301,7 @@ function parseInlineMarkdown(text: string): React.ReactNode[] {
           style={{ color: "var(--accent-primary)" }}
         >
           {match[1]}
-        </a>
+        </a>,
       )
       remaining = remaining.slice(match[0].length)
       continue

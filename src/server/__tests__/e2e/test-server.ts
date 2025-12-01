@@ -81,10 +81,7 @@ export interface TestServerContext {
   /**
    * Make an authenticated HTTP request.
    */
-  fetch(
-    path: string,
-    options?: RequestInit & { sessionToken?: string },
-  ): Promise<Response>
+  fetch(path: string, options?: RequestInit & { sessionToken?: string }): Promise<Response>
 
   /**
    * Clean up test data between tests

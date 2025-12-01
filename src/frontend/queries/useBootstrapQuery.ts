@@ -65,7 +65,7 @@ export function useBootstrapQuery({ workspaceId = "default", enabled = true }: U
   const updateStream = (streamIdOrStream: string | Stream, updates?: Partial<Stream>) => {
     updateStreams((streams) => {
       const streamId = typeof streamIdOrStream === "string" ? streamIdOrStream : streamIdOrStream.id
-      const streamUpdates = typeof streamIdOrStream === "string" ? (updates || {}) : streamIdOrStream
+      const streamUpdates = typeof streamIdOrStream === "string" ? updates || {} : streamIdOrStream
 
       return streams
         .map((s) => (s.id === streamId ? { ...s, ...streamUpdates } : s))
@@ -82,15 +82,15 @@ export function useBootstrapQuery({ workspaceId = "default", enabled = true }: U
   const incrementUnreadCount = (streamId: string, increment = 1) => {
     updateStreams((streams) =>
       streams.map((s) =>
-        s.id === streamId || s.slug === streamId ? { ...s, unreadCount: s.unreadCount + increment } : s
-      )
+        s.id === streamId || s.slug === streamId ? { ...s, unreadCount: s.unreadCount + increment } : s,
+      ),
     )
   }
 
   // Reset unread count for a stream
   const resetUnreadCount = (streamId: string) => {
     updateStreams((streams) =>
-      streams.map((s) => (s.id === streamId || s.slug === streamId ? { ...s, unreadCount: 0 } : s))
+      streams.map((s) => (s.id === streamId || s.slug === streamId ? { ...s, unreadCount: 0 } : s)),
     )
   }
 
@@ -118,7 +118,7 @@ export function useBootstrapQuery({ workspaceId = "default", enabled = true }: U
     updateUsers((users) =>
       users
         .map((u) => (u.id === userId ? { ...u, ...updates } : u))
-        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || "")),
     )
   }
 

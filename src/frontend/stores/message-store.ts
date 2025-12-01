@@ -188,13 +188,13 @@ export const useMessageStore = create<MessageStore>()(
           newEvents.set(streamId, {
             ...existing,
             events: existing.events.map((e) =>
-              e.id === event.clientMessageId ? { ...event, pending: false, sendFailed: false } : e
+              e.id === event.clientMessageId ? { ...event, pending: false, sendFailed: false } : e,
             ),
           })
         } else {
           // Add new event at the end (sorted by createdAt)
           const events = [...existing.events, event].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
           )
           newEvents.set(streamId, { ...existing, events })
         }
@@ -392,7 +392,7 @@ export const useMessageStore = create<MessageStore>()(
         // Ignore quota errors
       }
     },
-  }))
+  })),
 )
 
 // =============================================================================

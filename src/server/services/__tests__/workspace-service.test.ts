@@ -122,9 +122,7 @@ describe("WorkspaceService", () => {
 
       expect(streamId).toBeDefined()
 
-      const result = await pool.query(
-        sql`SELECT name, slug, visibility FROM streams WHERE id = ${streamId}`,
-      )
+      const result = await pool.query(sql`SELECT name, slug, visibility FROM streams WHERE id = ${streamId}`)
 
       expect(result.rows[0].name).toBe("general")
       expect(result.rows[0].slug).toBe("general")
@@ -147,12 +145,7 @@ describe("WorkspaceService", () => {
       const inviter = await createTestUser(pool, { email: "inviter@test.com" })
       await addUserToWorkspace(pool, inviter.id, workspace.id)
 
-      const invitation = await workspaceService.createInvitation(
-        workspace.id,
-        "newuser@test.com",
-        inviter.id,
-        "member",
-      )
+      const invitation = await workspaceService.createInvitation(workspace.id, "newuser@test.com", inviter.id, "member")
 
       expect(invitation.id).toBeDefined()
       expect(invitation.token).toBeDefined()
@@ -164,11 +157,7 @@ describe("WorkspaceService", () => {
       const inviter = await createTestUser(pool, { email: "inviter@test.com" })
       await addUserToWorkspace(pool, inviter.id, workspace.id)
 
-      const created = await workspaceService.createInvitation(
-        workspace.id,
-        "newuser@test.com",
-        inviter.id,
-      )
+      const created = await workspaceService.createInvitation(workspace.id, "newuser@test.com", inviter.id)
 
       const fetched = await workspaceService.getInvitationByToken(created.token)
 
@@ -187,11 +176,7 @@ describe("WorkspaceService", () => {
       // Create default channel
       await workspaceService.getOrCreateDefaultChannel(workspace.id)
 
-      const invitation = await workspaceService.createInvitation(
-        workspace.id,
-        "newuser@test.com",
-        inviter.id,
-      )
+      const invitation = await workspaceService.createInvitation(workspace.id, "newuser@test.com", inviter.id)
 
       // Create the new user
       const newUser = await createTestUser(pool, { email: "newuser@test.com" })
@@ -213,9 +198,7 @@ describe("WorkspaceService", () => {
       expect(memberResult.rows[0].status).toBe("active")
 
       // Verify invitation is marked as accepted
-      const inviteResult = await pool.query(
-        sql`SELECT status FROM workspace_invitations WHERE id = ${invitation.id}`,
-      )
+      const inviteResult = await pool.query(sql`SELECT status FROM workspace_invitations WHERE id = ${invitation.id}`)
       expect(inviteResult.rows[0].status).toBe("accepted")
     })
 
@@ -224,21 +207,13 @@ describe("WorkspaceService", () => {
       const inviter = await createTestUser(pool, { email: "inviter@test.com" })
       await addUserToWorkspace(pool, inviter.id, workspace.id)
 
-      const invitation = await workspaceService.createInvitation(
-        workspace.id,
-        "correct@test.com",
-        inviter.id,
-      )
+      const invitation = await workspaceService.createInvitation(workspace.id, "correct@test.com", inviter.id)
 
       const wrongUser = await createTestUser(pool, { email: "wrong@test.com" })
 
-      await expect(
-        workspaceService.acceptInvitation(
-          invitation.token,
-          wrongUser.id,
-          "wrong@test.com",
-        ),
-      ).rejects.toThrow("different email")
+      await expect(workspaceService.acceptInvitation(invitation.token, wrongUser.id, "wrong@test.com")).rejects.toThrow(
+        "different email",
+      )
     })
 
     test("should revoke invitation", async () => {
@@ -246,17 +221,11 @@ describe("WorkspaceService", () => {
       const inviter = await createTestUser(pool, { email: "inviter@test.com" })
       await addUserToWorkspace(pool, inviter.id, workspace.id)
 
-      const invitation = await workspaceService.createInvitation(
-        workspace.id,
-        "newuser@test.com",
-        inviter.id,
-      )
+      const invitation = await workspaceService.createInvitation(workspace.id, "newuser@test.com", inviter.id)
 
       await workspaceService.revokeInvitation(invitation.id, inviter.id)
 
-      const result = await pool.query(
-        sql`SELECT status FROM workspace_invitations WHERE id = ${invitation.id}`,
-      )
+      const result = await pool.query(sql`SELECT status FROM workspace_invitations WHERE id = ${invitation.id}`)
       expect(result.rows[0].status).toBe("revoked")
     })
 

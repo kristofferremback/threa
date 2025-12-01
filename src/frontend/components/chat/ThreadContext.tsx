@@ -31,7 +31,10 @@ export function ThreadContext({
     <div style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border-subtle)" }}>
       {/* Channel breadcrumb */}
       {channelId && onGoToChannel && (
-        <div className="flex items-center gap-2 px-4 py-2" style={{ borderBottom: ancestors.length > 0 ? "1px solid var(--border-subtle)" : undefined }}>
+        <div
+          className="flex items-center gap-2 px-4 py-2"
+          style={{ borderBottom: ancestors.length > 0 ? "1px solid var(--border-subtle)" : undefined }}
+        >
           <button
             onClick={(e) => onGoToChannel(channelId, getOpenMode(e))}
             className="flex items-center gap-1.5 text-xs transition-colors hover:underline"
@@ -60,7 +63,12 @@ export function ThreadContext({
           {isExpanded && (
             <div className="px-4 pb-3 space-y-3">
               {ancestors.map((parent) => (
-                <AncestorMessage key={parent.id} message={parent} onOpenThread={onOpenThread} onChannelClick={onChannelClick} />
+                <AncestorMessage
+                  key={parent.id}
+                  message={parent}
+                  onOpenThread={onOpenThread}
+                  onChannelClick={onChannelClick}
+                />
               ))}
             </div>
           )}
@@ -111,4 +119,3 @@ function AncestorMessage({ message, onOpenThread, onChannelClick }: AncestorMess
     </div>
   )
 }
-

@@ -1,5 +1,17 @@
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, PanelRightOpen, Pencil, X, Check, MoreHorizontal, Hash, Forward, Loader2, AlertCircle, RotateCcw } from "lucide-react"
+import {
+  MessageCircle,
+  PanelRightOpen,
+  Pencil,
+  X,
+  Check,
+  MoreHorizontal,
+  Hash,
+  Forward,
+  Loader2,
+  AlertCircle,
+  RotateCcw,
+} from "lucide-react"
 import { Avatar, RelativeTime } from "../ui"
 import { MessageContextMenu } from "./MessageContextMenu"
 import { MessageRevisionsModal } from "./MessageRevisionsModal"
@@ -66,8 +78,8 @@ export function MessageItem({
   const isFailed = message.sendFailed
   const hasReplies = message.replyCount && message.replyCount > 0
   // Show thinking badge if session is active and in a thread (not in this stream)
-  const showThinkingBadge = sessionInThread && agentSession &&
-    (agentSession.status === "active" || agentSession.status === "summarizing")
+  const showThinkingBadge =
+    sessionInThread && agentSession && (agentSession.status === "active" || agentSession.status === "summarizing")
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.message)
   const [isSaving, setIsSaving] = useState(false)

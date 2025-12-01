@@ -1051,23 +1051,26 @@ export function createWorkspaceRoutes(
   })
 
   // Mark a notification as read
-  router.post("/:workspaceId/notifications/:notificationId/read", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { notificationId } = req.params
-      const userId = req.user?.id
+  router.post(
+    "/:workspaceId/notifications/:notificationId/read",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { notificationId } = req.params
+        const userId = req.user?.id
 
-      if (!userId) {
-        res.status(401).json({ error: "Unauthorized" })
-        return
+        if (!userId) {
+          res.status(401).json({ error: "Unauthorized" })
+          return
+        }
+
+        await chatService.markNotificationAsRead(notificationId, userId)
+        res.json({ success: true })
+      } catch (error) {
+        logger.error({ err: error }, "Failed to mark notification as read")
+        next(error)
       }
-
-      await chatService.markNotificationAsRead(notificationId, userId)
-      res.json({ success: true })
-    } catch (error) {
-      logger.error({ err: error }, "Failed to mark notification as read")
-      next(error)
-    }
-  })
+    },
+  )
 
   // Mark all notifications as read
   router.post("/:workspaceId/notifications/read-all", async (req: Request, res: Response, next: NextFunction) => {

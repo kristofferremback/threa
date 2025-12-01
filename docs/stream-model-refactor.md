@@ -20,6 +20,7 @@ message_channels (for cross-posting)
 ```
 
 This creates:
+
 - **Duplicate code paths** everywhere (channel vs conversation handling)
 - **Complex junction tables** for cross-posting
 - **Rigid hierarchy** - threads can't become channels
@@ -35,6 +36,7 @@ stream_events (polymorphic - messages, shares, polls, system events)
 ```
 
 Benefits:
+
 - **One code path** for all stream types
 - **Threads can be promoted** to channels (incident escalation use case)
 - **Cross-posting is natural** - just a "shared" event in the target stream
@@ -49,12 +51,12 @@ Benefits:
 
 A stream is a container that can hold any sequence of events:
 
-| Type | Has Name | In Sidebar | Membership | Example |
-|------|----------|------------|------------|---------|
-| `channel` | Required | Yes | Explicit join | #engineering |
-| `thread` | Optional | No | Inherited from parent | Discussion on a message |
-| `dm` | Auto-generated | Yes | Fixed participants | Pierre, Kristoffer |
-| `incident` | Required | Yes (special) | Auto + explicit | Checkout Outage |
+| Type       | Has Name       | In Sidebar    | Membership            | Example                 |
+| ---------- | -------------- | ------------- | --------------------- | ----------------------- |
+| `channel`  | Required       | Yes           | Explicit join         | #engineering            |
+| `thread`   | Optional       | No            | Inherited from parent | Discussion on a message |
+| `dm`       | Auto-generated | Yes           | Fixed participants    | Pierre, Kristoffer      |
+| `incident` | Required       | Yes (special) | Auto + explicit       | Checkout Outage         |
 
 Streams can **branch** (threads branch from events in channels) and **promote** (thread → channel).
 
@@ -62,15 +64,15 @@ Streams can **branch** (threads branch from events in channels) and **promote** 
 
 Everything that happens is an event:
 
-| Event Type | Content | Example |
-|------------|---------|---------|
-| `message` | Text + mentions | "Hey team, quick question..." |
-| `shared` | Reference + context | Shared from #engineering: "..." |
-| `member_joined` | User ID | Pierre joined the channel |
-| `member_left` | User ID | Kristoffer left the channel |
-| `thread_started` | Thread stream ID | New thread branched off |
-| `poll` | Question + options | "Ship Friday?" |
-| `file` | File metadata | Uploaded design.fig |
+| Event Type       | Content             | Example                         |
+| ---------------- | ------------------- | ------------------------------- |
+| `message`        | Text + mentions     | "Hey team, quick question..."   |
+| `shared`         | Reference + context | Shared from #engineering: "..." |
+| `member_joined`  | User ID             | Pierre joined the channel       |
+| `member_left`    | User ID             | Kristoffer left the channel     |
+| `thread_started` | Thread stream ID    | New thread branched off         |
+| `poll`           | Question + options  | "Ship Friday?"                  |
+| `file`           | File metadata       | Uploaded design.fig             |
 
 ### Branching & Promotion
 
@@ -182,6 +184,7 @@ CREATE TABLE stream_members (
 ```
 
 ### Tables to Keep (Unchanged)
+
 - `workspaces`
 - `users`
 - `workspace_members`
@@ -189,6 +192,7 @@ CREATE TABLE stream_members (
 - `notifications` (will reference stream_events instead of messages)
 
 ### Tables to Drop
+
 - `channels`
 - `channel_members`
 - `conversations`
@@ -207,32 +211,32 @@ Three room levels for different event scopes:
 
 ```typescript
 const room = {
-    // Per-stream events (new events, edits, typing)
-    stream: (wsId: string, streamId: string) => `ws:${wsId}:stream:${streamId}`,
+  // Per-stream events (new events, edits, typing)
+  stream: (wsId: string, streamId: string) => `ws:${wsId}:stream:${streamId}`,
 
-    // Workspace-wide (sidebar badges, new streams visible)
-    workspace: (wsId: string) => `ws:${wsId}:workspace`,
+  // Workspace-wide (sidebar badges, new streams visible)
+  workspace: (wsId: string) => `ws:${wsId}:workspace`,
 
-    // User-specific (activity feed, membership changes, read sync)
-    user: (wsId: string, userId: string) => `ws:${wsId}:user:${userId}`,
+  // User-specific (activity feed, membership changes, read sync)
+  user: (wsId: string, userId: string) => `ws:${wsId}:user:${userId}`,
 }
 ```
 
 ### Events by Room
 
-| Room | Event | Purpose |
-|------|-------|---------|
-| `stream:*` | `event` | New event posted in stream |
-| `stream:*` | `event:edited` | Event was edited |
-| `stream:*` | `event:deleted` | Event was deleted |
-| `stream:*` | `typing` | Someone is typing |
-| `workspace` | `notification` | Sidebar badge update |
-| `workspace` | `stream:created` | New stream visible to user |
-| `workspace` | `stream:archived` | Stream was archived |
-| `user:*` | `notification:new` | Activity feed item (mention) |
-| `user:*` | `stream:member:added` | User was added to stream |
-| `user:*` | `stream:member:removed` | User was removed from stream |
-| `user:*` | `readCursor:updated` | Read state synced across devices |
+| Room        | Event                   | Purpose                          |
+| ----------- | ----------------------- | -------------------------------- |
+| `stream:*`  | `event`                 | New event posted in stream       |
+| `stream:*`  | `event:edited`          | Event was edited                 |
+| `stream:*`  | `event:deleted`         | Event was deleted                |
+| `stream:*`  | `typing`                | Someone is typing                |
+| `workspace` | `notification`          | Sidebar badge update             |
+| `workspace` | `stream:created`        | New stream visible to user       |
+| `workspace` | `stream:archived`       | Stream was archived              |
+| `user:*`    | `notification:new`      | Activity feed item (mention)     |
+| `user:*`    | `stream:member:added`   | User was added to stream         |
+| `user:*`    | `stream:member:removed` | User was removed from stream     |
+| `user:*`    | `readCursor:updated`    | Read state synced across devices |
 
 ---
 
@@ -273,6 +277,7 @@ Read State
 ```
 
 ### Removed Routes
+
 - All `/channels/*` routes (merged into `/streams/*`)
 - All `/threads/*` routes (merged into `/streams/*`)
 - All `/conversations/*` routes (eliminated)
@@ -321,19 +326,19 @@ export interface StreamEvent {
 
 ### Hooks
 
-| Old | New | Purpose |
-|-----|-----|---------|
-| `useChat` | `useStream` | Stream events, posting, editing |
+| Old                  | New                  | Purpose                                     |
+| -------------------- | -------------------- | ------------------------------------------- |
+| `useChat`            | `useStream`          | Stream events, posting, editing             |
 | `useWorkspaceSocket` | `useWorkspaceSocket` | Sidebar badges, activity (mostly unchanged) |
 
 ### Components
 
-| Component | Changes |
-|-----------|---------|
-| `ChatInterface` | Props: `channelId/threadId` → `streamId` |
-| `Sidebar` | Fetch streams by type, no more separate channel/conversation logic |
-| `MessageList` → `EventList` | Render different event types |
-| `MessageItem` → `EventItem` | Handle message vs shared vs system events |
+| Component                   | Changes                                                            |
+| --------------------------- | ------------------------------------------------------------------ |
+| `ChatInterface`             | Props: `channelId/threadId` → `streamId`                           |
+| `Sidebar`                   | Fetch streams by type, no more separate channel/conversation logic |
+| `MessageList` → `EventList` | Render different event types                                       |
+| `MessageItem` → `EventItem` | Handle message vs shared vs system events                          |
 
 ### URL State
 
@@ -347,11 +352,13 @@ New: p=s:stream_123
 ## Implementation Phases
 
 ### Phase 1: Database Schema ✅
+
 - [x] Create `008_streams.sql` migration
 - [x] Indexes for common queries
 - [x] Drop old tables
 
 ### Phase 2: Backend Service ✅
+
 - [x] Create `StreamService` class
 - [x] Bootstrap method (streams, unread counts)
 - [x] Stream CRUD operations
@@ -362,17 +369,20 @@ New: p=s:stream_123
 - [x] Read state management
 
 ### Phase 3: API Routes ✅
+
 - [x] Create `stream-routes.ts`
 - [x] New stream-based endpoints
 - [x] Wire up to server
 
 ### Phase 4: WebSocket Layer ✅
+
 - [x] Update room naming in `stream-socket.ts`
 - [x] Event handlers for stream events
 - [x] Workspace and user level events
 - [x] Authentication middleware
 
 ### Phase 5: Frontend Types & Hooks ✅
+
 - [x] Update `types.ts` (Stream, StreamEvent, etc.)
 - [x] Create `useStream` hook
 - [x] Update `useWorkspaceSocket`
@@ -380,6 +390,7 @@ New: p=s:stream_123
 - [x] Update `usePaneManager`
 
 ### Phase 6: Frontend Components ✅ (with migration helpers)
+
 - [x] `StreamInterface` component (wraps old ChatInterface pattern)
 - [x] `Sidebar` → uses streams
 - [x] `EventList` adapter (wraps MessageList)
@@ -387,6 +398,7 @@ New: p=s:stream_123
 - [x] URL state serialization (with legacy format support)
 
 ### Phase 7: Cleanup (remaining)
+
 - [ ] Remove old `ChatService` (once confirmed working)
 - [ ] Remove old `useChat` hook
 - [ ] Update remaining components using old Message types
@@ -461,4 +473,3 @@ VALUES ($5, $3, 'thread_started', $6, '{"thread_id": "$1"}'::jsonb);
 - **Soft deletes** - `deleted_at` timestamp, never hard delete
 - **Workspace isolation** - all queries scoped by `workspace_id` for future sharding
 - **Event sourcing lite** - not full event sourcing, but append-mostly pattern
-

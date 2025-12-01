@@ -44,7 +44,8 @@ export function AriadneThinkingIndicator({ state, className = "" }: AriadneThink
         <div
           className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
           style={{
-            background: "linear-gradient(135deg, var(--accent-secondary, #8b5cf6) 0%, var(--accent-primary, #3b82f6) 100%)",
+            background:
+              "linear-gradient(135deg, var(--accent-secondary, #8b5cf6) 0%, var(--accent-primary, #3b82f6) 100%)",
           }}
         >
           <Sparkles className="w-3.5 h-3.5 text-white" />
@@ -59,7 +60,9 @@ export function AriadneThinkingIndicator({ state, className = "" }: AriadneThink
           <span
             className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
             style={{
-              background: state.success ? "var(--success-muted, rgba(34, 197, 94, 0.15))" : "var(--error-muted, rgba(239, 68, 68, 0.15))",
+              background: state.success
+                ? "var(--success-muted, rgba(34, 197, 94, 0.15))"
+                : "var(--error-muted, rgba(239, 68, 68, 0.15))",
               color: state.success ? "var(--success, #22c55e)" : "var(--error, #ef4444)",
             }}
           >
@@ -103,9 +106,15 @@ export function AriadneThinkingIndicator({ state, className = "" }: AriadneThink
         {state.steps.length === 0 && !isDone ? (
           <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
             <div className="flex gap-1">
-              <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
-              <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
-              <span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+              <span className="animate-bounce" style={{ animationDelay: "0ms" }}>
+                .
+              </span>
+              <span className="animate-bounce" style={{ animationDelay: "150ms" }}>
+                .
+              </span>
+              <span className="animate-bounce" style={{ animationDelay: "300ms" }}>
+                .
+              </span>
             </div>
           </div>
         ) : (
@@ -155,12 +164,11 @@ export function AriadneThinkingBadge({ state }: { state: AriadneThinkingState })
     <span
       className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs"
       style={{
-        background: isDone && !state.success
-          ? "var(--error-muted, rgba(239, 68, 68, 0.15))"
-          : "var(--accent-secondary-muted, rgba(139, 92, 246, 0.15))",
-        color: isDone && !state.success
-          ? "var(--error, #ef4444)"
-          : "var(--accent-secondary, #8b5cf6)",
+        background:
+          isDone && !state.success
+            ? "var(--error-muted, rgba(239, 68, 68, 0.15))"
+            : "var(--accent-secondary-muted, rgba(139, 92, 246, 0.15))",
+        color: isDone && !state.success ? "var(--error, #ef4444)" : "var(--accent-secondary, #8b5cf6)",
       }}
     >
       <Sparkles className="w-3 h-3" />

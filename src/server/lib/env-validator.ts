@@ -1,11 +1,5 @@
 import { logger } from "./logger"
-import {
-  USE_STUB_AUTH,
-  WORKOS_API_KEY,
-  WORKOS_CLIENT_ID,
-  WORKOS_REDIRECT_URI,
-  WORKOS_COOKIE_PASSWORD,
-} from "../config"
+import { USE_STUB_AUTH, WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_REDIRECT_URI, WORKOS_COOKIE_PASSWORD } from "../config"
 
 /**
  * Validates that all required environment variables are set

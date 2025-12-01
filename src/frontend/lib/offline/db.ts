@@ -388,11 +388,7 @@ export async function getAllPendingOutbox(): Promise<OutboxMessage[]> {
   return [...pending, ...failed].sort((a, b) => a.createdAt - b.createdAt)
 }
 
-export async function updateOutboxStatus(
-  id: string,
-  status: OutboxStatus,
-  error?: string,
-): Promise<void> {
+export async function updateOutboxStatus(id: string, status: OutboxStatus, error?: string): Promise<void> {
   const store = await getStore(STORES.outbox, "readwrite")
   const existing = await promisifyRequest(store.get(id))
   if (existing) {
@@ -448,89 +444,89 @@ export async function pruneCache(): Promise<{ eventsDeleted: number; streamsDele
 
     // Prune old events
     const eventsTx = db.transaction(STORES.events, "readwrite")
-  const eventsStore = eventsTx.objectStore(STORES.events)
-  const cachedAtIndex = eventsStore.index("cachedAt")
+    const eventsStore = eventsTx.objectStore(STORES.events)
+    const cachedAtIndex = eventsStore.index("cachedAt")
 
-  await new Promise<void>((resolve, reject) => {
-    const range = IDBKeyRange.upperBound(cutoff)
-    const request = cachedAtIndex.openCursor(range)
+    await new Promise<void>((resolve, reject) => {
+      const range = IDBKeyRange.upperBound(cutoff)
+      const request = cachedAtIndex.openCursor(range)
 
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (cursor) {
-        cursor.delete()
-        eventsDeleted++
-        cursor.continue()
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          cursor.delete()
+          eventsDeleted++
+          cursor.continue()
+        }
+      }
+
+      eventsTx.oncomplete = () => resolve()
+      eventsTx.onerror = () => reject(eventsTx.error)
+    })
+
+    // Prune excess events per stream (keep only MAX_EVENTS_PER_STREAM newest)
+    const streamIndex = eventsStore.index("streamId")
+    const allStreams = new Set<string>()
+
+    // First, collect all unique stream IDs
+    const collectTx = db.transaction(STORES.events, "readonly")
+    const collectStore = collectTx.objectStore(STORES.events)
+    const collectIndex = collectStore.index("streamId")
+
+    await new Promise<void>((resolve, reject) => {
+      const request = collectIndex.openCursor(null, "nextunique")
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          allStreams.add(cursor.key as string)
+          cursor.continue()
+        }
+      }
+      collectTx.oncomplete = () => resolve()
+      collectTx.onerror = () => reject(collectTx.error)
+    })
+
+    // For each stream, check if we need to prune
+    for (const streamId of allStreams) {
+      const events = await getCachedEvents(streamId)
+      if (events.length > MAX_EVENTS_PER_STREAM) {
+        const toDelete = events.slice(0, events.length - MAX_EVENTS_PER_STREAM)
+        const deleteTx = db.transaction(STORES.events, "readwrite")
+        const deleteStore = deleteTx.objectStore(STORES.events)
+
+        for (const event of toDelete) {
+          deleteStore.delete(event.id)
+          eventsDeleted++
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          deleteTx.oncomplete = () => resolve()
+          deleteTx.onerror = () => reject(deleteTx.error)
+        })
       }
     }
 
-    eventsTx.oncomplete = () => resolve()
-    eventsTx.onerror = () => reject(eventsTx.error)
-  })
+    // Prune old streams
+    const streamsTx = db.transaction(STORES.streams, "readwrite")
+    const streamsStore = streamsTx.objectStore(STORES.streams)
+    const streamsCachedAtIndex = streamsStore.index("cachedAt")
 
-  // Prune excess events per stream (keep only MAX_EVENTS_PER_STREAM newest)
-  const streamIndex = eventsStore.index("streamId")
-  const allStreams = new Set<string>()
+    await new Promise<void>((resolve, reject) => {
+      const range = IDBKeyRange.upperBound(cutoff)
+      const request = streamsCachedAtIndex.openCursor(range)
 
-  // First, collect all unique stream IDs
-  const collectTx = db.transaction(STORES.events, "readonly")
-  const collectStore = collectTx.objectStore(STORES.events)
-  const collectIndex = collectStore.index("streamId")
-
-  await new Promise<void>((resolve, reject) => {
-    const request = collectIndex.openCursor(null, "nextunique")
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (cursor) {
-        allStreams.add(cursor.key as string)
-        cursor.continue()
-      }
-    }
-    collectTx.oncomplete = () => resolve()
-    collectTx.onerror = () => reject(collectTx.error)
-  })
-
-  // For each stream, check if we need to prune
-  for (const streamId of allStreams) {
-    const events = await getCachedEvents(streamId)
-    if (events.length > MAX_EVENTS_PER_STREAM) {
-      const toDelete = events.slice(0, events.length - MAX_EVENTS_PER_STREAM)
-      const deleteTx = db.transaction(STORES.events, "readwrite")
-      const deleteStore = deleteTx.objectStore(STORES.events)
-
-      for (const event of toDelete) {
-        deleteStore.delete(event.id)
-        eventsDeleted++
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (cursor) {
+          cursor.delete()
+          streamsDeleted++
+          cursor.continue()
+        }
       }
 
-      await new Promise<void>((resolve, reject) => {
-        deleteTx.oncomplete = () => resolve()
-        deleteTx.onerror = () => reject(deleteTx.error)
-      })
-    }
-  }
-
-  // Prune old streams
-  const streamsTx = db.transaction(STORES.streams, "readwrite")
-  const streamsStore = streamsTx.objectStore(STORES.streams)
-  const streamsCachedAtIndex = streamsStore.index("cachedAt")
-
-  await new Promise<void>((resolve, reject) => {
-    const range = IDBKeyRange.upperBound(cutoff)
-    const request = streamsCachedAtIndex.openCursor(range)
-
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (cursor) {
-        cursor.delete()
-        streamsDeleted++
-        cursor.continue()
-      }
-    }
-
-    streamsTx.oncomplete = () => resolve()
-    streamsTx.onerror = () => reject(streamsTx.error)
-  })
+      streamsTx.oncomplete = () => resolve()
+      streamsTx.onerror = () => reject(streamsTx.error)
+    })
 
     return { eventsDeleted, streamsDeleted }
   } catch (err) {

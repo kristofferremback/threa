@@ -23,7 +23,9 @@ export function ToolResultPanelProvider({ children, onNavigateToEvent }: ToolRes
   const [expandedStep, setExpandedStep] = useState<SessionStep | null>(null)
 
   return (
-    <ToolResultPanelContext.Provider value={{ expandedStep, setExpandedStep, navigateToEvent: onNavigateToEvent || null }}>
+    <ToolResultPanelContext.Provider
+      value={{ expandedStep, setExpandedStep, navigateToEvent: onNavigateToEvent || null }}
+    >
       {children}
     </ToolResultPanelContext.Provider>
   )
@@ -69,9 +71,7 @@ export function ToolResultPeek({ step, children }: ToolResultPeekProps) {
     return <>{children}</>
   }
 
-  const truncatedResult = step.tool_result!.length > 500
-    ? step.tool_result!.slice(0, 500) + "..."
-    : step.tool_result!
+  const truncatedResult = step.tool_result!.length > 500 ? step.tool_result!.slice(0, 500) + "..." : step.tool_result!
 
   return (
     <div
@@ -81,10 +81,7 @@ export function ToolResultPeek({ step, children }: ToolResultPeekProps) {
       onMouseLeave={() => setIsHovering(false)}
     >
       {/* Original content with visual indicator */}
-      <div
-        className="cursor-pointer group/peek"
-        onClick={() => setExpandedStep(step)}
-      >
+      <div className="cursor-pointer group/peek" onClick={() => setExpandedStep(step)}>
         {children}
         {/* Small indicator that result is viewable */}
         <span
@@ -129,10 +126,7 @@ export function ToolResultPeek({ step, children }: ToolResultPeekProps) {
 
           {/* Preview content */}
           <div className="p-3 overflow-y-auto max-h-48">
-            <pre
-              className="text-xs whitespace-pre-wrap font-mono"
-              style={{ color: "var(--text-primary)" }}
-            >
+            <pre className="text-xs whitespace-pre-wrap font-mono" style={{ color: "var(--text-primary)" }}>
               {truncatedResult}
             </pre>
           </div>
@@ -171,17 +165,15 @@ export function ToolResultPanel() {
   }
 
   // Parse tool result to detect if it contains formatted search results
-  const isSearchResult = expandedStep.tool_name === "search_messages" ||
-                          expandedStep.tool_name === "search_memos" ||
-                          expandedStep.tool_name === "web_search"
+  const isSearchResult =
+    expandedStep.tool_name === "search_messages" ||
+    expandedStep.tool_name === "search_memos" ||
+    expandedStep.tool_name === "web_search"
 
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/30 animate-fade-in"
-        onClick={() => setExpandedStep(null)}
-      />
+      <div className="fixed inset-0 z-40 bg-black/30 animate-fade-in" onClick={() => setExpandedStep(null)} />
 
       {/* Panel */}
       <div
@@ -202,7 +194,7 @@ export function ToolResultPanel() {
                 className="text-xs px-2 py-0.5 rounded-full"
                 style={{
                   background: "var(--success-muted, rgba(34, 197, 94, 0.15))",
-                  color: "var(--success, #22c55e)"
+                  color: "var(--success, #22c55e)",
                 }}
               >
                 Completed
@@ -301,15 +293,16 @@ function SearchResultsView({ content }: { content: string }) {
               className={`p-3 rounded-lg border ${canNavigate ? "cursor-pointer hover:border-[var(--accent-primary)] transition-colors" : ""}`}
               style={{
                 background: "var(--bg-tertiary)",
-                borderColor: "var(--border-subtle)"
+                borderColor: "var(--border-subtle)",
               }}
               onClick={canNavigate ? () => handleNavigate(streamId, eventId) : undefined}
             >
-              <div className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
+              <div
+                className="text-xs font-medium mb-2 flex items-center gap-2"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 <span>{header}</span>
-                {canNavigate && (
-                  <ExternalLink className="w-3.5 h-3.5 opacity-50" />
-                )}
+                {canNavigate && <ExternalLink className="w-3.5 h-3.5 opacity-50" />}
               </div>
               <div className="text-sm" style={{ color: "var(--text-primary)" }}>
                 {body.trim()}
@@ -326,7 +319,7 @@ function SearchResultsView({ content }: { content: string }) {
               className="p-3 rounded-lg border"
               style={{
                 background: "var(--bg-tertiary)",
-                borderColor: "var(--border-subtle)"
+                borderColor: "var(--border-subtle)",
               }}
             >
               <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>

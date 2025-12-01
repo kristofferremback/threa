@@ -69,15 +69,16 @@ function eventToMessage(event: StreamEvent, streamId?: string): Message {
     pending: event.pending,
     sendFailed: event.sendFailed,
     // For shared events, include info about the original
-    sharedFrom: isSharedEvent && originalEvent
-      ? {
-          eventId: event.originalEventId!,
-          streamId: originalEvent.streamId,
-          actorName: originalEvent.actorName,
-          actorEmail: originalEvent.actorEmail,
-          createdAt: originalEvent.createdAt,
-        }
-      : undefined,
+    sharedFrom:
+      isSharedEvent && originalEvent
+        ? {
+            eventId: event.originalEventId!,
+            streamId: originalEvent.streamId,
+            actorName: originalEvent.actorName,
+            actorEmail: originalEvent.actorEmail,
+            createdAt: originalEvent.createdAt,
+          }
+        : undefined,
     // Map system event payload to metadata for SystemMessage component
     // Also pass agent_thinking payload for session linking
     metadata: isSystemEvent
@@ -118,17 +119,11 @@ export function EventList({
   streams,
 }: EventListProps) {
   // Convert root event to message for threads
-  const rootMessage = useMemo(
-    () => (rootEvent ? eventToMessage(rootEvent, rootEvent.streamId) : null),
-    [rootEvent],
-  )
+  const rootMessage = useMemo(() => (rootEvent ? eventToMessage(rootEvent, rootEvent.streamId) : null), [rootEvent])
 
   // Convert events to messages for MessageList (include system events and agent_thinking)
   const messages = useMemo(
-    () =>
-      events
-        .filter((e) => RENDERABLE_EVENT_TYPES.includes(e.eventType))
-        .map((e) => eventToMessage(e, streamId)),
+    () => events.filter((e) => RENDERABLE_EVENT_TYPES.includes(e.eventType)).map((e) => eventToMessage(e, streamId)),
     [events, streamId],
   )
 

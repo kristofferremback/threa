@@ -78,11 +78,7 @@ function determineSearchScope(context: AriadneContext): SearchScope {
  * The mentionedBy user ID is used for permission-scoped searches.
  * The search scope is determined by the stream type and visibility.
  */
-export function createAriadneAgent(
-  pool: Pool,
-  context: AriadneContext,
-  citationAccumulator?: CitationAccumulator,
-) {
+export function createAriadneAgent(pool: Pool, context: AriadneContext, citationAccumulator?: CitationAccumulator) {
   const scope = determineSearchScope(context)
   const tools = createAriadneTools(pool, {
     workspaceId: context.workspaceId,
@@ -364,7 +360,8 @@ export async function* streamAriadne(
           // This is a ToolMessage (tool result)
           const toolCallId = newMessage.tool_call_id as string
           const toolInfo = pendingToolCalls.get(toolCallId)
-          const content = typeof newMessage.content === "string" ? newMessage.content : JSON.stringify(newMessage.content)
+          const content =
+            typeof newMessage.content === "string" ? newMessage.content : JSON.stringify(newMessage.content)
 
           yield {
             type: "tool_result",

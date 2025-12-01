@@ -31,22 +31,14 @@ export class EnrichmentService {
    */
   shouldEnrich(signals: EnrichmentSignals): boolean {
     // Any of these signals triggers enrichment
-    return (
-      (signals.reactions ?? 0) >= 2 ||
-      (signals.replies ?? 0) >= 2 ||
-      signals.retrieved === true
-    )
+    return (signals.reactions ?? 0) >= 2 || (signals.replies ?? 0) >= 2 || signals.retrieved === true
   }
 
   /**
    * Enrich a message with contextual header and update embedding.
    * Returns true if enrichment was successful.
    */
-  async enrichMessage(
-    textMessageId: string,
-    eventId: string,
-    signals: EnrichmentSignals,
-  ): Promise<boolean> {
+  async enrichMessage(textMessageId: string, eventId: string, signals: EnrichmentSignals): Promise<boolean> {
     logger.info({ textMessageId, eventId }, "📝 Fetching message with context...")
 
     // Get the message and its context
@@ -87,20 +79,13 @@ export class EnrichmentService {
       content: c.content,
     }))
 
-    logger.info(
-      { textMessageId, contextMessageCount: contextMessages.length },
-      "🤖 Generating contextual header...",
-    )
+    logger.info({ textMessageId, contextMessageCount: contextMessages.length }, "🤖 Generating contextual header...")
 
-    const headerResult = await generateContextualHeader(
-      targetMessage,
-      contextMessages,
-      {
-        name: messageData.streamName,
-        topic: messageData.streamTopic,
-        type: messageData.streamType,
-      },
-    )
+    const headerResult = await generateContextualHeader(targetMessage, contextMessages, {
+      name: messageData.streamName,
+      topic: messageData.streamTopic,
+      type: messageData.streamType,
+    })
 
     if (!headerResult.success) {
       logger.warn({ textMessageId }, "❌ Failed to generate contextual header")
@@ -130,20 +115,14 @@ export class EnrichmentService {
     // Update the message with contextual header
     await this.updateEnrichmentStatus(textMessageId, 2, signals, headerResult.header)
 
-    logger.info(
-      { textMessageId, headerLength: headerResult.header.length },
-      "Message enriched with contextual header",
-    )
+    logger.info({ textMessageId, headerLength: headerResult.header.length }, "Message enriched with contextual header")
     return true
   }
 
   /**
    * Get a message with surrounding context for header generation.
    */
-  private async getMessageWithContext(
-    textMessageId: string,
-    eventId: string,
-  ): Promise<MessageWithContext | null> {
+  private async getMessageWithContext(textMessageId: string, eventId: string): Promise<MessageWithContext | null> {
     // Get the target message
     const messageResult = await this.pool.query<{
       id: string

@@ -11,12 +11,7 @@ interface PendingRead {
   timestamp: number
 }
 
-export function useReadReceipts({
-  workspaceId,
-  streamId,
-  enabled = true,
-}: UseReadReceiptsOptions) {
-
+export function useReadReceipts({ workspaceId, streamId, enabled = true }: UseReadReceiptsOptions) {
   // Track messages that have been visible for 500ms+
   const visibleMessagesRef = useRef<Map<string, number>>(new Map())
   // Track the most recent message ID that should be marked as read

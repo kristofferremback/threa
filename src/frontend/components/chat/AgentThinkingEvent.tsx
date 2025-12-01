@@ -118,11 +118,7 @@ function StepItem({ step }: { step: SessionStep }) {
         onClick={() => hasDetails && setIsExpanded(!isExpanded)}
         className={`w-full flex items-start gap-2 text-sm py-1 ${hasDetails ? "cursor-pointer hover:bg-[var(--hover-overlay)] -mx-2 px-2 rounded" : ""}`}
         style={{
-          color: isStepActive
-            ? "var(--text-primary)"
-            : isStepFailed
-              ? "var(--error)"
-              : "var(--text-muted)",
+          color: isStepActive ? "var(--text-primary)" : isStepFailed ? "var(--error)" : "var(--text-muted)",
         }}
       >
         {/* Expand indicator for steps with details */}
@@ -142,10 +138,7 @@ function StepItem({ step }: { step: SessionStep }) {
           ) : isStepFailed ? (
             <XCircle className="w-3.5 h-3.5" />
           ) : (
-            <CheckCircle
-              className="w-3.5 h-3.5"
-              style={{ color: "var(--success, #22c55e)", opacity: 0.7 }}
-            />
+            <CheckCircle className="w-3.5 h-3.5" style={{ color: "var(--success, #22c55e)", opacity: 0.7 }} />
           )}
         </div>
 
@@ -175,10 +168,7 @@ function StepItem({ step }: { step: SessionStep }) {
               <div className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
                 Input
               </div>
-              <pre
-                className="text-xs overflow-x-auto font-mono"
-                style={{ color: "var(--text-primary)" }}
-              >
+              <pre className="text-xs overflow-x-auto font-mono" style={{ color: "var(--text-primary)" }}>
                 {JSON.stringify(step.tool_input, null, 2)}
               </pre>
             </div>
@@ -235,7 +225,10 @@ function ToolResultPreview({ content, toolName }: { content: string; toolName?: 
 
   if (isSearchResult) {
     // Parse search results - they're separated by "---"
-    const sections = displayContent.split(/\n*---\n*/).filter(Boolean).slice(0, 3) // Show max 3 results
+    const sections = displayContent
+      .split(/\n*---\n*/)
+      .filter(Boolean)
+      .slice(0, 3) // Show max 3 results
 
     return (
       <div className="space-y-2">
@@ -258,13 +251,14 @@ function ToolResultPreview({ content, toolName }: { content: string; toolName?: 
                 title={canNavigate ? "Click to view message" : undefined}
               >
                 <div className="font-medium mb-1 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
-                  <span>[{num}] {header}</span>
-                  {canNavigate && (
-                    <ExternalLink className="w-3 h-3 opacity-50" />
-                  )}
+                  <span>
+                    [{num}] {header}
+                  </span>
+                  {canNavigate && <ExternalLink className="w-3 h-3 opacity-50" />}
                 </div>
                 <div style={{ color: "var(--text-primary)" }}>
-                  {body.trim().slice(0, 200)}{body.trim().length > 200 ? "..." : ""}
+                  {body.trim().slice(0, 200)}
+                  {body.trim().length > 200 ? "..." : ""}
                 </div>
               </div>
             )
@@ -273,16 +267,13 @@ function ToolResultPreview({ content, toolName }: { content: string; toolName?: 
           if (oldFormatMatch) {
             const [, num, header, body] = oldFormatMatch
             return (
-              <div
-                key={idx}
-                className="p-2 rounded text-xs"
-                style={{ background: "var(--bg-secondary)" }}
-              >
+              <div key={idx} className="p-2 rounded text-xs" style={{ background: "var(--bg-secondary)" }}>
                 <div className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
                   [{num}] {header}
                 </div>
                 <div style={{ color: "var(--text-primary)" }}>
-                  {body.trim().slice(0, 200)}{body.trim().length > 200 ? "..." : ""}
+                  {body.trim().slice(0, 200)}
+                  {body.trim().length > 200 ? "..." : ""}
                 </div>
               </div>
             )
@@ -294,7 +285,8 @@ function ToolResultPreview({ content, toolName }: { content: string; toolName?: 
               className="p-2 rounded text-xs"
               style={{ background: "var(--bg-secondary)", color: "var(--text-primary)" }}
             >
-              {section.slice(0, 200)}{section.length > 200 ? "..." : ""}
+              {section.slice(0, 200)}
+              {section.length > 200 ? "..." : ""}
             </div>
           )
         })}
@@ -339,7 +331,7 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
   const activeStep = session.steps.find((s) => s.status === "active")
 
   // Count steps with tool results
-  const stepsWithResults = session.steps.filter(s => s.type === "tool_call" && s.tool_result).length
+  const stepsWithResults = session.steps.filter((s) => s.type === "tool_call" && s.tool_result).length
 
   return (
     <div className={`relative ${className}`}>

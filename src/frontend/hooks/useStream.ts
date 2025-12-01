@@ -112,7 +112,12 @@ export interface AgentSessionData {
   completedAt: string | null
 }
 
-export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdate }: UseStreamOptions): UseStreamReturn {
+export function useStream({
+  workspaceId,
+  streamId,
+  enabled = true,
+  onStreamUpdate,
+}: UseStreamOptions): UseStreamReturn {
   // State
   const [stream, setStream] = useState<Stream | null>(null)
 
@@ -257,69 +262,72 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
 
     // Handle reply count updates (when someone replies to a message in this stream)
     socket.on("replyCount:updated", (data: { eventId: string; replyCount: number }) => {
-      setEvents((prev) =>
-        prev.map((e) => (e.id === data.eventId ? { ...e, replyCount: data.replyCount } : e)),
-      )
+      setEvents((prev) => prev.map((e) => (e.id === data.eventId ? { ...e, replyCount: data.replyCount } : e)))
     })
 
     // Handle thread creation (when viewing a pending thread and it gets created)
-    socket.on("thread:created", async (data: { threadId: string; name?: string; parentStreamId: string; branchedFromEventId: string }) => {
-      // Check if we're viewing this pending thread
-      const currentId = currentStreamRef.current
-      if (!currentId) return
+    socket.on(
+      "thread:created",
+      async (data: { threadId: string; name?: string; parentStreamId: string; branchedFromEventId: string }) => {
+        // Check if we're viewing this pending thread
+        const currentId = currentStreamRef.current
+        if (!currentId) return
 
-      // If we're viewing this event as a pending thread, switch to the real thread
-      if (isPendingThread(currentId) && currentId === data.branchedFromEventId) {
-        // Fetch the real thread data
-        try {
-          const res = await fetch(`/api/workspace/${workspaceId}/streams/${data.threadId}`, {
-            credentials: "include",
-          })
-          if (res.ok) {
-            const threadData = await res.json()
-            setStream(threadData)
-            setPendingEventId(null)
-            currentStreamRef.current = data.threadId
-            // Notify parent of stream update (for tab title updates)
-            onStreamUpdateRef.current?.(threadData)
-            // Join the new thread's room
-            socket.emit("join", room.stream(workspaceId, data.threadId))
-            // Fetch events
-            const eventsRes = await fetch(
-              `/api/workspace/${workspaceId}/streams/${data.threadId}/events?limit=50`,
-              { credentials: "include" },
-            )
-            if (eventsRes.ok) {
-              const eventsData = await eventsRes.json()
-              setEvents(eventsData.events || [])
-              setInitialSessions(eventsData.sessions || [])
+        // If we're viewing this event as a pending thread, switch to the real thread
+        if (isPendingThread(currentId) && currentId === data.branchedFromEventId) {
+          // Fetch the real thread data
+          try {
+            const res = await fetch(`/api/workspace/${workspaceId}/streams/${data.threadId}`, {
+              credentials: "include",
+            })
+            if (res.ok) {
+              const threadData = await res.json()
+              setStream(threadData)
+              setPendingEventId(null)
+              currentStreamRef.current = data.threadId
+              // Notify parent of stream update (for tab title updates)
+              onStreamUpdateRef.current?.(threadData)
+              // Join the new thread's room
+              socket.emit("join", room.stream(workspaceId, data.threadId))
+              // Fetch events
+              const eventsRes = await fetch(`/api/workspace/${workspaceId}/streams/${data.threadId}/events?limit=50`, {
+                credentials: "include",
+              })
+              if (eventsRes.ok) {
+                const eventsData = await eventsRes.json()
+                setEvents(eventsData.events || [])
+                setInitialSessions(eventsData.sessions || [])
+              }
             }
+          } catch (err) {
+            console.error("Failed to fetch thread after creation:", err)
           }
-        } catch (err) {
-          console.error("Failed to fetch thread after creation:", err)
         }
-      }
-    })
+      },
+    )
 
     // Handle stream updates (name changes, etc.)
-    socket.on("stream:updated", (data: { id: string; name?: string; slug?: string; description?: string; topic?: string }) => {
-      if (data.id !== currentStreamRef.current) return
+    socket.on(
+      "stream:updated",
+      (data: { id: string; name?: string; slug?: string; description?: string; topic?: string }) => {
+        if (data.id !== currentStreamRef.current) return
 
-      // Update local stream state
-      setStream((prev) => {
-        if (!prev) return prev
-        const updated = {
-          ...prev,
-          ...(data.name !== undefined && { name: data.name }),
-          ...(data.slug !== undefined && { slug: data.slug }),
-          ...(data.description !== undefined && { description: data.description }),
-          ...(data.topic !== undefined && { topic: data.topic }),
-        }
-        // Notify parent of stream update (for tab title updates)
-        onStreamUpdateRef.current?.(updated)
-        return updated
-      })
-    })
+        // Update local stream state
+        setStream((prev) => {
+          if (!prev) return prev
+          const updated = {
+            ...prev,
+            ...(data.name !== undefined && { name: data.name }),
+            ...(data.slug !== undefined && { slug: data.slug }),
+            ...(data.description !== undefined && { description: data.description }),
+            ...(data.topic !== undefined && { topic: data.topic }),
+          }
+          // Notify parent of stream update (for tab title updates)
+          onStreamUpdateRef.current?.(updated)
+          return updated
+        })
+      },
+    )
 
     // Handle read cursor updates from other devices
     socket.on("readCursor:updated", (data: { streamId: string; eventId: string }) => {
@@ -467,7 +475,9 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
         // We need to fetch the original event and its parent stream
         // The event fetch endpoint should return both
         try {
-          const eventInfoRes = await fetch(`/api/workspace/${workspaceId}/events/${eventId}`, { credentials: "include" })
+          const eventInfoRes = await fetch(`/api/workspace/${workspaceId}/events/${eventId}`, {
+            credentials: "include",
+          })
 
           if (eventInfoRes.ok) {
             const eventInfo = await eventInfoRes.json()
@@ -829,12 +839,7 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
         // Check if we're offline - if so, queue the message
         if (!isOnline()) {
           // Queue message for later sending
-          const outboxMsg = await addToOutbox(
-            workspaceId,
-            streamId,
-            content.trim(),
-            mentions || [],
-          )
+          const outboxMsg = await addToOutbox(workspaceId, streamId, content.trim(), mentions || [])
 
           // Create optimistic event and add it to the list for immediate display
           const optimisticEvent = createOptimisticEvent(
@@ -866,19 +871,9 @@ export function useStream({ workspaceId, streamId, enabled = true, onStreamUpdat
         // If network error, queue the message
         if (error instanceof TypeError && error.message.includes("fetch")) {
           try {
-            const outboxMsg = await addToOutbox(
-              workspaceId,
-              streamId,
-              content.trim(),
-              mentions || [],
-            )
+            const outboxMsg = await addToOutbox(workspaceId, streamId, content.trim(), mentions || [])
 
-            const optimisticEvent = createOptimisticEvent(
-              outboxMsg,
-              currentUserId || "unknown",
-              "",
-              undefined,
-            )
+            const optimisticEvent = createOptimisticEvent(outboxMsg, currentUserId || "unknown", "", undefined)
             setEvents((prev) => [...prev, optimisticEvent as unknown as StreamEvent])
 
             toast.info("Message queued - will send when you're back online")

@@ -138,9 +138,7 @@ export function useBootstrap({ enabled = true }: UseBootstrapOptions = {}): UseB
   const resetUnreadCount = useCallback((streamId: string) => {
     setData((prev) => {
       if (!prev) return prev
-      const streams = prev.streams.map((s) =>
-        s.id === streamId || s.slug === streamId ? { ...s, unreadCount: 0 } : s,
-      )
+      const streams = prev.streams.map((s) => (s.id === streamId || s.slug === streamId ? { ...s, unreadCount: 0 } : s))
       return { ...prev, streams }
     })
   }, [])

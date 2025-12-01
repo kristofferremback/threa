@@ -32,10 +32,7 @@ export function createMemoRoutes(pool: Pool): Router {
 
       const memos = await memoService.getMemos(workspaceId, { limit, offset, topics })
 
-      logger.debug(
-        { workspaceId, userId, memoCount: memos.length, topics },
-        "Memos listed",
-      )
+      logger.debug({ workspaceId, userId, memoCount: memos.length, topics }, "Memos listed")
 
       return res.json({ memos, total: memos.length })
     } catch (error) {
@@ -113,10 +110,7 @@ export function createMemoRoutes(pool: Pool): Router {
         confidence: 0.9, // User-created memos have high confidence
       })
 
-      logger.info(
-        { workspaceId, userId, memoId: memo.id, anchorEventIds },
-        "Memo created",
-      )
+      logger.info({ workspaceId, userId, memoId: memo.id, anchorEventIds }, "Memo created")
 
       return res.status(201).json({ memo })
     } catch (error) {
@@ -157,10 +151,7 @@ export function createMemoRoutes(pool: Pool): Router {
 
       const updatedMemo = await memoService.getMemo(memoId)
 
-      logger.info(
-        { workspaceId, userId, memoId },
-        "Memo updated",
-      )
+      logger.info({ workspaceId, userId, memoId }, "Memo updated")
 
       return res.json({ memo: updatedMemo })
     } catch (error) {
@@ -194,10 +185,7 @@ export function createMemoRoutes(pool: Pool): Router {
 
       await memoService.archiveMemo(memoId)
 
-      logger.info(
-        { workspaceId, userId, memoId },
-        "Memo archived",
-      )
+      logger.info({ workspaceId, userId, memoId }, "Memo archived")
 
       return res.status(204).send()
     } catch (error) {

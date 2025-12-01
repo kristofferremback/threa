@@ -1,6 +1,20 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { Hash, Lock, Search, X, UserCheck, UserPlus, PanelRightOpen, MessageSquare, FileText, User, AtSign, Users, WifiOff } from "lucide-react"
+import {
+  Hash,
+  Lock,
+  Search,
+  X,
+  UserCheck,
+  UserPlus,
+  PanelRightOpen,
+  MessageSquare,
+  FileText,
+  User,
+  AtSign,
+  Users,
+  WifiOff,
+} from "lucide-react"
 import type { Stream, OpenMode } from "../../types"
 import { getOpenMode } from "../../types"
 import { Avatar } from "../ui"
@@ -193,7 +207,12 @@ export function CommandPalette({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [searchFilters, setSearchFilters] = useState<SearchFilters>({ users: [], withUsers: [], channels: [], streamTypes: [] })
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    users: [],
+    withUsers: [],
+    channels: [],
+    streamTypes: [],
+  })
   const [filterAutocomplete, setFilterAutocomplete] = useState<FilterAutocomplete>({ type: "none" })
   const [autocompleteIndex, setAutocompleteIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -382,7 +401,11 @@ export function CommandPalette({
     }
 
     // Need either query text or filters to search
-    const hasFilters = searchFilters.users.length > 0 || searchFilters.withUsers.length > 0 || searchFilters.channels.length > 0 || searchFilters.streamTypes.length > 0
+    const hasFilters =
+      searchFilters.users.length > 0 ||
+      searchFilters.withUsers.length > 0 ||
+      searchFilters.channels.length > 0 ||
+      searchFilters.streamTypes.length > 0
     if (mode !== "search" || (!query.trim() && !hasFilters)) {
       setSearchResults([])
       setSearchError(null)
@@ -537,7 +560,13 @@ export function CommandPalette({
           break
         case "Backspace":
           // Remove last filter if cursor is at start of empty query
-          if (!query && (searchFilters.users.length > 0 || searchFilters.withUsers.length > 0 || searchFilters.channels.length > 0 || searchFilters.streamTypes.length > 0)) {
+          if (
+            !query &&
+            (searchFilters.users.length > 0 ||
+              searchFilters.withUsers.length > 0 ||
+              searchFilters.channels.length > 0 ||
+              searchFilters.streamTypes.length > 0)
+          ) {
             e.preventDefault()
             // Remove in reverse order of visual appearance: streamTypes, channels, withUsers, users
             if (searchFilters.streamTypes.length > 0) {
@@ -721,7 +750,11 @@ export function CommandPalette({
                 <span
                   key={`with-${user.id}`}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm"
-                  style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--accent-primary)" }}
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    border: "1px solid var(--accent-primary)",
+                  }}
                 >
                   <Users className="h-3 w-3" style={{ color: "var(--accent-primary)" }} />
                   {user.name}
@@ -757,7 +790,11 @@ export function CommandPalette({
                   <span
                     key={streamType}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm"
-                    style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-secondary)",
+                      border: "1px solid var(--border-subtle)",
+                    }}
                   >
                     {opt?.label || streamType}
                     <button
@@ -779,7 +816,10 @@ export function CommandPalette({
               placeholder={
                 mode === "navigate"
                   ? "Search channels..."
-                  : searchFilters.users.length || searchFilters.withUsers.length || searchFilters.channels.length || searchFilters.streamTypes.length
+                  : searchFilters.users.length ||
+                      searchFilters.withUsers.length ||
+                      searchFilters.channels.length ||
+                      searchFilters.streamTypes.length
                     ? "Add search terms..."
                     : "Search messages... (from:@ with:@ in:# is:)"
               }
@@ -792,21 +832,26 @@ export function CommandPalette({
                 style={{ borderColor: "var(--text-muted)", borderTopColor: "transparent" }}
               />
             )}
-            {(query || searchFilters.users.length > 0 || searchFilters.withUsers.length > 0 || searchFilters.channels.length > 0 || searchFilters.streamTypes.length > 0) && !isSearching && (
-              <button
-                onClick={() => {
-                  setQuery("")
-                  setSearchFilters({ users: [], withUsers: [], channels: [], streamTypes: [] })
-                  inputRef.current?.focus()
-                }}
-                className="p-1 rounded transition-colors"
-                style={{ color: "var(--text-muted)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+            {(query ||
+              searchFilters.users.length > 0 ||
+              searchFilters.withUsers.length > 0 ||
+              searchFilters.channels.length > 0 ||
+              searchFilters.streamTypes.length > 0) &&
+              !isSearching && (
+                <button
+                  onClick={() => {
+                    setQuery("")
+                    setSearchFilters({ users: [], withUsers: [], channels: [], streamTypes: [] })
+                    inputRef.current?.focus()
+                  }}
+                  className="p-1 rounded transition-colors"
+                  style={{ color: "var(--text-muted)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
           </div>
 
           {/* Autocomplete dropdown for filters */}
@@ -972,7 +1017,11 @@ export function CommandPalette({
             <div className="px-4 py-8 text-center" style={{ color: "var(--text-muted)" }}>
               Searching...
             </div>
-          ) : !query.trim() && !searchFilters.users.length && !searchFilters.withUsers.length && !searchFilters.channels.length && !searchFilters.streamTypes.length ? (
+          ) : !query.trim() &&
+            !searchFilters.users.length &&
+            !searchFilters.withUsers.length &&
+            !searchFilters.channels.length &&
+            !searchFilters.streamTypes.length ? (
             <div className="px-4 py-8 text-center" style={{ color: "var(--text-muted)" }}>
               Type to search messages...
             </div>
@@ -1013,7 +1062,10 @@ export function CommandPalette({
                       {result.streamName && (
                         <>
                           <span style={{ color: "var(--text-muted)" }}>in</span>
-                          <span className="text-sm flex items-center gap-0.5" style={{ color: "var(--accent-primary)" }}>
+                          <span
+                            className="text-sm flex items-center gap-0.5"
+                            style={{ color: "var(--accent-primary)" }}
+                          >
                             <Hash className="h-3 w-3" />
                             {result.streamName}
                           </span>

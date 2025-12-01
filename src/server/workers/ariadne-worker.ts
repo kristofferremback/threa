@@ -104,10 +104,7 @@ export class AriadneWorker {
 
     // If session already completed or failed, don't retry
     if (!isNew && (session.status === "completed" || session.status === "failed")) {
-      logger.info(
-        { sessionId: session.id, status: session.status },
-        "Session already completed/failed, skipping job",
-      )
+      logger.info({ sessionId: session.id, status: session.status }, "Session already completed/failed, skipping job")
       return
     }
 
@@ -294,7 +291,10 @@ export class AriadneWorker {
           citationDetails = result.citationDetails
           researcherIterations = result.iterations
 
-          await completeStep(researchStepId, `Found ${result.citations.length} relevant messages in ${result.iterations} iterations (confidence: ${(result.confidence * 100).toFixed(0)}%)`)
+          await completeStep(
+            researchStepId,
+            `Found ${result.citations.length} relevant messages in ${result.iterations} iterations (confidence: ${(result.confidence * 100).toFixed(0)}%)`,
+          )
         } catch (err) {
           logger.warn({ err }, "Researcher failed, falling back to streaming agent")
           await completeStep(researchStepId, "Research failed, using standard approach", true)
@@ -437,16 +437,18 @@ export class AriadneWorker {
 
       // Auto-create memo from successful researcher answers (high confidence)
       if (researcherIterations > 0 && citedEventIds.length > 0) {
-        this.memoService.createFromAriadneSuccess({
-          workspaceId,
-          query: question,
-          citedEventIds,
-          responseEventId: responseEvent.id,
-          sessionId: session.id,
-          streamId: responseStreamId,
-        }).catch((err) => {
-          logger.warn({ err, sessionId: session.id }, "Failed to auto-create memo")
-        })
+        this.memoService
+          .createFromAriadneSuccess({
+            workspaceId,
+            query: question,
+            citedEventIds,
+            responseEventId: responseEvent.id,
+            sessionId: session.id,
+            streamId: responseStreamId,
+          })
+          .catch((err) => {
+            logger.warn({ err, sessionId: session.id }, "Failed to auto-create memo")
+          })
       }
 
       logger.info(
@@ -469,7 +471,10 @@ export class AriadneWorker {
       }
 
       try {
-        await this.postResponse(responseStreamId, "I encountered an error while processing your request. Please try again.")
+        await this.postResponse(
+          responseStreamId,
+          "I encountered an error while processing your request. Please try again.",
+        )
       } catch {
         // Ignore posting errors
       }
@@ -586,7 +591,10 @@ export class AriadneWorker {
         })
       }
 
-      logger.debug({ streamId, eventId, historyCount: conversationHistory.length, hasRootEvent: !!stream?.branchedFromEventId }, "Fetched conversation history")
+      logger.debug(
+        { streamId, eventId, historyCount: conversationHistory.length, hasRootEvent: !!stream?.branchedFromEventId },
+        "Fetched conversation history",
+      )
     } catch (err) {
       logger.error({ err, streamId, eventId }, "Failed to fetch conversation history")
     }

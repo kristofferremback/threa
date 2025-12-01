@@ -39,4 +39,3 @@ export function textMessageEmbeddingsSql(): string {
 export function memoEmbeddingsSql(): string {
   return getMemoEmbeddingTable()
 }
-

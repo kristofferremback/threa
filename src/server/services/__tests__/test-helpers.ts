@@ -136,17 +136,14 @@ function generateId(prefix: string): string {
 /**
  * Create a test user.
  */
-export async function createTestUser(
-  p: Pool,
-  overrides: Partial<TestUser> = {}
-): Promise<TestUser> {
+export async function createTestUser(p: Pool, overrides: Partial<TestUser> = {}): Promise<TestUser> {
   const id = overrides.id || generateId("usr")
   const email = overrides.email || `${id}@test.com`
   const name = overrides.name || `Test User ${id}`
 
   await p.query(
     sql`INSERT INTO users (id, email, name, created_at, updated_at)
-        VALUES (${id}, ${email}, ${name}, NOW(), NOW())`
+        VALUES (${id}, ${email}, ${name}, NOW(), NOW())`,
   )
 
   return { id, email, name }
@@ -155,17 +152,14 @@ export async function createTestUser(
 /**
  * Create a test workspace.
  */
-export async function createTestWorkspace(
-  p: Pool,
-  overrides: Partial<TestWorkspace> = {}
-): Promise<TestWorkspace> {
+export async function createTestWorkspace(p: Pool, overrides: Partial<TestWorkspace> = {}): Promise<TestWorkspace> {
   const id = overrides.id || generateId("ws")
   const name = overrides.name || `Test Workspace ${id}`
   const slug = overrides.slug || id
 
   await p.query(
     sql`INSERT INTO workspaces (id, name, slug, created_at)
-        VALUES (${id}, ${name}, ${slug}, NOW())`
+        VALUES (${id}, ${name}, ${slug}, NOW())`,
   )
 
   return { id, name, slug }
@@ -178,12 +172,12 @@ export async function addUserToWorkspace(
   p: Pool,
   userId: string,
   workspaceId: string,
-  role: "owner" | "admin" | "member" = "member"
+  role: "owner" | "admin" | "member" = "member",
 ): Promise<void> {
   await p.query(
     sql`INSERT INTO workspace_members (user_id, workspace_id, role, status, joined_at)
         VALUES (${userId}, ${workspaceId}, ${role}, 'active', NOW())
-        ON CONFLICT (user_id, workspace_id) DO NOTHING`
+        ON CONFLICT (user_id, workspace_id) DO NOTHING`,
   )
 }
 
@@ -193,7 +187,7 @@ export async function addUserToWorkspace(
 export async function createTestStream(
   p: Pool,
   workspaceId: string,
-  overrides: Partial<Omit<TestStream, "workspaceId">> = {}
+  overrides: Partial<Omit<TestStream, "workspaceId">> = {},
 ): Promise<TestStream> {
   const id = overrides.id || generateId("str")
   const streamType = overrides.streamType || "channel"
@@ -203,7 +197,7 @@ export async function createTestStream(
 
   await p.query(
     sql`INSERT INTO streams (id, workspace_id, stream_type, visibility, name, slug, parent_stream_id, branched_from_event_id, created_at, updated_at)
-        VALUES (${id}, ${workspaceId}, ${streamType}, ${visibility}, ${name}, ${slug}, ${overrides.parentStreamId || null}, ${overrides.branchedFromEventId || null}, NOW(), NOW())`
+        VALUES (${id}, ${workspaceId}, ${streamType}, ${visibility}, ${name}, ${slug}, ${overrides.parentStreamId || null}, ${overrides.branchedFromEventId || null}, NOW(), NOW())`,
   )
 
   return {
@@ -225,12 +219,12 @@ export async function addUserToStream(
   p: Pool,
   userId: string,
   streamId: string,
-  role: "owner" | "admin" | "member" = "member"
+  role: "owner" | "admin" | "member" = "member",
 ): Promise<void> {
   await p.query(
     sql`INSERT INTO stream_members (stream_id, user_id, role, joined_at, updated_at)
         VALUES (${streamId}, ${userId}, ${role}, NOW(), NOW())
-        ON CONFLICT (stream_id, user_id) DO NOTHING`
+        ON CONFLICT (stream_id, user_id) DO NOTHING`,
   )
 }
 
@@ -242,7 +236,7 @@ export async function createTestMessage(
   streamId: string,
   actorId: string,
   content: string,
-  overrides: { id?: string; createdAt?: Date; agentId?: string } = {}
+  overrides: { id?: string; createdAt?: Date; agentId?: string } = {},
 ): Promise<TestEvent> {
   const eventId = overrides.id || generateId("evt")
   const textMessageId = generateId("tm")
@@ -251,19 +245,19 @@ export async function createTestMessage(
   // Create text message
   await p.query(
     sql`INSERT INTO text_messages (id, content, created_at)
-        VALUES (${textMessageId}, ${content}, ${createdAt})`
+        VALUES (${textMessageId}, ${content}, ${createdAt})`,
   )
 
   // Create stream event
   if (overrides.agentId) {
     await p.query(
       sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, created_at)
-          VALUES (${eventId}, ${streamId}, 'message', ${actorId}, ${overrides.agentId}, 'text_message', ${textMessageId}, ${createdAt})`
+          VALUES (${eventId}, ${streamId}, 'message', ${actorId}, ${overrides.agentId}, 'text_message', ${textMessageId}, ${createdAt})`,
     )
   } else {
     await p.query(
       sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id, created_at)
-          VALUES (${eventId}, ${streamId}, 'message', ${actorId}, 'text_message', ${textMessageId}, ${createdAt})`
+          VALUES (${eventId}, ${streamId}, 'message', ${actorId}, 'text_message', ${textMessageId}, ${createdAt})`,
     )
   }
 
@@ -278,7 +272,7 @@ export async function createTestThread(
   workspaceId: string,
   parentStreamId: string,
   branchedFromEventId: string,
-  overrides: Partial<Omit<TestStream, "workspaceId" | "streamType">> = {}
+  overrides: Partial<Omit<TestStream, "workspaceId" | "streamType">> = {},
 ): Promise<TestStream> {
   return createTestStream(p, workspaceId, {
     ...overrides,
@@ -296,7 +290,7 @@ export async function createTestThinkingSpace(
   p: Pool,
   workspaceId: string,
   ownerId: string,
-  overrides: Partial<Omit<TestStream, "workspaceId" | "streamType" | "visibility">> = {}
+  overrides: Partial<Omit<TestStream, "workspaceId" | "streamType" | "visibility">> = {},
 ): Promise<TestStream> {
   const stream = await createTestStream(p, workspaceId, {
     ...overrides,

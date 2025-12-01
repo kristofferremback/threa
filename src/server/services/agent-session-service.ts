@@ -94,9 +94,7 @@ export class AgentSessionService {
    * Get session by ID.
    */
   async getSession(sessionId: string): Promise<AgentSession | null> {
-    const result = await this.pool.query<AgentSessionRow>(
-      sql`SELECT * FROM agent_sessions WHERE id = ${sessionId}`,
-    )
+    const result = await this.pool.query<AgentSessionRow>(sql`SELECT * FROM agent_sessions WHERE id = ${sessionId}`)
     return result.rows[0] ? rowToSession(result.rows[0]) : null
   }
 
@@ -185,9 +183,7 @@ export class AgentSessionService {
       return
     }
 
-    const updatedSteps = session.steps.map((step) =>
-      step.id === params.stepId ? { ...step, ...updateObj } : step,
-    )
+    const updatedSteps = session.steps.map((step) => (step.id === params.stepId ? { ...step, ...updateObj } : step))
 
     await this.pool.query(
       sql`UPDATE agent_sessions
@@ -196,7 +192,10 @@ export class AgentSessionService {
           WHERE id = ${params.sessionId}`,
     )
 
-    logger.debug({ sessionId: params.sessionId, stepId: params.stepId, failed: params.failed }, "Session step completed")
+    logger.debug(
+      { sessionId: params.sessionId, stepId: params.stepId, failed: params.failed },
+      "Session step completed",
+    )
   }
 
   /**
@@ -220,7 +219,10 @@ export class AgentSessionService {
               SET steps = ${JSON.stringify(updatedSteps)}::jsonb
               WHERE id = ${sessionId}`,
         )
-        logger.debug({ sessionId, stepsCompleted: session.steps.filter((s) => s.status === "active").length }, "Completed remaining active steps")
+        logger.debug(
+          { sessionId, stepsCompleted: session.steps.filter((s) => s.status === "active").length },
+          "Completed remaining active steps",
+        )
       }
 
       await this.pool.query(
@@ -288,9 +290,7 @@ export class AgentSessionService {
    * Get all active sessions (for resume on startup).
    */
   async getActiveSessions(): Promise<AgentSession[]> {
-    const result = await this.pool.query<AgentSessionRow>(
-      sql`SELECT * FROM agent_sessions WHERE status = 'active'`,
-    )
+    const result = await this.pool.query<AgentSessionRow>(sql`SELECT * FROM agent_sessions WHERE status = 'active'`)
     return result.rows.map(rowToSession)
   }
 

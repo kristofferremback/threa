@@ -96,7 +96,10 @@ export function BrowseChannelsModal({
         className="w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
         style={{ background: "var(--bg-primary)", border: "1px solid var(--border-subtle)" }}
       >
-        <div className="p-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <div
+          className="p-4 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
+        >
           <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
             Browse Channels
           </h2>
@@ -281,9 +284,7 @@ function ChannelRow({ stream, isJoined, isJoining, onJoin }: ChannelRowProps) {
           style={{ background: "var(--accent-primary)", color: "white" }}
         >
           {isJoining ? (
-            <div
-              className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin"
-            />
+            <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin" />
           ) : (
             <LogIn className="h-3 w-3" />
           )}
@@ -293,4 +294,3 @@ function ChannelRow({ stream, isJoined, isJoining, onJoin }: ChannelRowProps) {
     </div>
   )
 }
-

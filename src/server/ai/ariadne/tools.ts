@@ -47,12 +47,7 @@ export class CitationAccumulator {
   /**
    * Register a memo citation.
    */
-  addMemo(params: {
-    id: string
-    streamId?: string
-    streamName?: string
-    preview?: string
-  }): number {
+  addMemo(params: { id: string; streamId?: string; streamName?: string; preview?: string }): number {
     const index = this.nextIndex++
     this.citations.push({
       index,
@@ -68,11 +63,7 @@ export class CitationAccumulator {
   /**
    * Register a web citation.
    */
-  addWeb(params: {
-    url: string
-    title?: string
-    preview?: string
-  }): number {
+  addWeb(params: { url: string; title?: string; preview?: string }): number {
     const index = this.nextIndex++
     this.citations.push({
       index,
@@ -177,8 +168,8 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
 
         // Validate stream types
         const validStreamTypes = ["channel", "thread", "thinking_space"] as const
-        const streamTypes = input.streamTypes?.filter((t): t is typeof validStreamTypes[number] =>
-          validStreamTypes.includes(t as typeof validStreamTypes[number])
+        const streamTypes = input.streamTypes?.filter((t): t is (typeof validStreamTypes)[number] =>
+          validStreamTypes.includes(t as (typeof validStreamTypes)[number]),
         )
 
         const results = await searchService.search(workspaceId, input.query, {
@@ -234,9 +225,20 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
       schema: z.object({
         query: z.string().describe("The search query text (semantic search). Leave empty to just filter."),
         fromUsers: z.array(z.string()).optional().describe("Filter by message author names (e.g., ['Kris', 'Stefan'])"),
-        withUsers: z.array(z.string()).optional().describe("Filter by conversations where these users participated together (e.g., ['Kris', 'Annica'] finds conversations where both were involved)"),
-        inChannels: z.array(z.string()).optional().describe("Filter by channel names/slugs (e.g., ['general', 'engineering'])"),
-        streamTypes: z.array(z.string()).optional().describe("Filter by stream type: 'channel', 'thread', or 'thinking_space'"),
+        withUsers: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Filter by conversations where these users participated together (e.g., ['Kris', 'Annica'] finds conversations where both were involved)",
+          ),
+        inChannels: z
+          .array(z.string())
+          .optional()
+          .describe("Filter by channel names/slugs (e.g., ['general', 'engineering'])"),
+        streamTypes: z
+          .array(z.string())
+          .optional()
+          .describe("Filter by stream type: 'channel', 'thread', or 'thinking_space'"),
         limit: z.number().optional().describe("Maximum number of results to return (default: 10)"),
       }),
     },
@@ -259,16 +261,18 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
 
         // Log the retrieval for evolution tracking
         const retrievedMemoIds = results.results.map((r) => r.id)
-        await memoService.logRetrieval({
-          workspaceId,
-          query: input.query,
-          requesterType: "ariadne",
-          requesterId: userId,
-          retrievedMemoIds,
-          retrievalScores: Object.fromEntries(results.results.map((r) => [r.id, r.score])),
-        }).catch((err) => {
-          logger.warn({ err }, "Failed to log memo retrieval")
-        })
+        await memoService
+          .logRetrieval({
+            workspaceId,
+            query: input.query,
+            requesterType: "ariadne",
+            requesterId: userId,
+            retrievedMemoIds,
+            retrievalScores: Object.fromEntries(results.results.map((r) => [r.id, r.score])),
+          })
+          .catch((err) => {
+            logger.warn({ err }, "Failed to log memo retrieval")
+          })
 
         return results.results
           .map((r) => {
@@ -297,7 +301,9 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
       description:
         "Search memos - lightweight pointers to valuable past conversations and decisions. Memos summarize what knowledge exists and where to find it. Use this FIRST before searching all messages, as memos point to the most relevant discussions. If memo results are helpful, follow up with get_thread_history to read the full context.",
       schema: z.object({
-        query: z.string().describe("The search query for memos. Be specific about what information you're looking for."),
+        query: z
+          .string()
+          .describe("The search query for memos. Be specific about what information you're looking for."),
         limit: z.number().optional().describe("Maximum number of results to return (default: 10)"),
       }),
     },
@@ -354,7 +360,10 @@ export function createAriadneTools(pool: Pool, context: AriadneToolsContext) {
       description:
         "Get recent messages from a stream (channel or thread) to understand the current conversation context. Use this to understand what's being discussed before answering.",
       schema: z.object({
-        stream: z.string().optional().describe("The channel name (e.g., 'general') or stream ID. Defaults to the current stream."),
+        stream: z
+          .string()
+          .optional()
+          .describe("The channel name (e.g., 'general') or stream ID. Defaults to the current stream."),
         messageCount: z.number().optional().describe("Number of recent messages to retrieve (default: 50, max: 100)"),
       }),
     },

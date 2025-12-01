@@ -498,18 +498,21 @@ export function LayoutSystem() {
   }, [bootstrapData, addStream, openItem])
 
   // Callback for navigating to a specific event from tool results
-  const handleNavigateToEvent = useCallback((streamId: string, eventId: string) => {
-    if (!bootstrapData) return
-    const stream = bootstrapData.streams.find((s) => s.id === streamId)
-    openItem(
-      {
-        title: stream ? `#${(stream.name || "").replace("#", "")}` : "Message",
-        type: "stream",
-        data: { streamId, highlightEventId: eventId },
-      },
-      "open",
-    )
-  }, [bootstrapData, openItem])
+  const handleNavigateToEvent = useCallback(
+    (streamId: string, eventId: string) => {
+      if (!bootstrapData) return
+      const stream = bootstrapData.streams.find((s) => s.id === streamId)
+      openItem(
+        {
+          title: stream ? `#${(stream.name || "").replace("#", "")}` : "Message",
+          type: "stream",
+          data: { streamId, highlightEventId: eventId },
+        },
+        "open",
+      )
+    },
+    [bootstrapData, openItem],
+  )
 
   // Helper to get stream from slug or ID
   const getStreamFromSlug = (streamSlug?: string) => {
@@ -661,195 +664,198 @@ export function LayoutSystem() {
 
   return (
     <ToolResultPanelProvider onNavigateToEvent={handleNavigateToEvent}>
-    <div className="flex flex-col h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
-      <OfflineBanner />
-      <div className="flex flex-1 min-h-0">
-      <Sidebar
-        workspace={bootstrapData.workspace}
-        streams={bootstrapData.streams}
-        users={bootstrapData.users}
-        activeStreamSlug={isActivityActive ? null : activeStreamSlug}
-        currentUserId={user?.id}
-        onSelectStream={handleSelectStream}
-        onStartDM={async (userId) => {
-          // Create/find DM with this user and open it
-          try {
-            const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ streamType: "dm", participantIds: [userId] }),
-            })
-            if (!res.ok) throw new Error("Failed to create DM")
-            const data = await res.json()
-            const dmStream: Stream = { ...data, isMember: true, pinnedAt: null }
+      <div className="flex flex-col h-screen w-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
+        <OfflineBanner />
+        <div className="flex flex-1 min-h-0">
+          <Sidebar
+            workspace={bootstrapData.workspace}
+            streams={bootstrapData.streams}
+            users={bootstrapData.users}
+            activeStreamSlug={isActivityActive ? null : activeStreamSlug}
+            currentUserId={user?.id}
+            onSelectStream={handleSelectStream}
+            onStartDM={async (userId) => {
+              // Create/find DM with this user and open it
+              try {
+                const res = await fetch(`/api/workspace/${bootstrapData.workspace.id}/streams`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ streamType: "dm", participantIds: [userId] }),
+                })
+                if (!res.ok) throw new Error("Failed to create DM")
+                const data = await res.json()
+                const dmStream: Stream = { ...data, isMember: true, pinnedAt: null }
 
-            // Add or update stream in local state
-            const existingStream = bootstrapData.streams.find((s) => s.id === dmStream.id)
-            if (existingStream) {
-              updateStream(dmStream)
-            } else {
-              addStream(dmStream)
-            }
+                // Add or update stream in local state
+                const existingStream = bootstrapData.streams.find((s) => s.id === dmStream.id)
+                if (existingStream) {
+                  updateStream(dmStream)
+                } else {
+                  addStream(dmStream)
+                }
 
-            openItem(
-              { title: dmStream.name || "Direct Message", type: "stream", data: { streamId: dmStream.id } },
-              "replace",
-            )
-          } catch (error) {
-            console.error("Failed to start DM:", error)
-          }
-        }}
-        onCreateChannel={() => setShowCreateChannel(true)}
-        onCreateDM={() => setShowNewDM(true)}
-        onCreateThinkingSpace={handleCreateThinkingSpace}
-        onStreamSettings={(stream) => setStreamToEdit(stream)}
-        onEditProfile={() => setShowProfileSetup(true)}
-        onInvitePeople={() => setShowInviteModal(true)}
-        onLogout={logout}
-        onOpenCommandPalette={() => setShowCommandPalette(true)}
-        onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
-        onOpenKnowledge={() => setShowKnowledgeBrowser(true)}
-        onBrowseChannels={() => setShowBrowseChannels(true)}
-        onPinStream={handlePinStream}
-        onUnpinStream={handleUnpinStream}
-        onLeaveStream={handleLeaveStream}
-        onArchiveStream={handleArchiveStream}
-        isInboxActive={isActivityActive}
-        inboxUnreadCount={inboxUnreadCount}
-        currentUserProfile={bootstrapData.userProfile}
-      />
+                openItem(
+                  { title: dmStream.name || "Direct Message", type: "stream", data: { streamId: dmStream.id } },
+                  "replace",
+                )
+              } catch (error) {
+                console.error("Failed to start DM:", error)
+              }
+            }}
+            onCreateChannel={() => setShowCreateChannel(true)}
+            onCreateDM={() => setShowNewDM(true)}
+            onCreateThinkingSpace={handleCreateThinkingSpace}
+            onStreamSettings={(stream) => setStreamToEdit(stream)}
+            onEditProfile={() => setShowProfileSetup(true)}
+            onInvitePeople={() => setShowInviteModal(true)}
+            onLogout={logout}
+            onOpenCommandPalette={() => setShowCommandPalette(true)}
+            onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
+            onOpenKnowledge={() => setShowKnowledgeBrowser(true)}
+            onBrowseChannels={() => setShowBrowseChannels(true)}
+            onPinStream={handlePinStream}
+            onUnpinStream={handleUnpinStream}
+            onLeaveStream={handleLeaveStream}
+            onArchiveStream={handleArchiveStream}
+            isInboxActive={isActivityActive}
+            inboxUnreadCount={inboxUnreadCount}
+            currentUserProfile={bootstrapData.userProfile}
+          />
 
-      <CreateChannelModal
-        open={showCreateChannel}
-        workspaceId={bootstrapData.workspace.id}
-        onClose={() => setShowCreateChannel(false)}
-        onCreated={(stream: Stream) => {
-          setShowCreateChannel(false)
-          addStream(stream)
-          handleSelectStream(stream)
-        }}
-      />
+          <CreateChannelModal
+            open={showCreateChannel}
+            workspaceId={bootstrapData.workspace.id}
+            onClose={() => setShowCreateChannel(false)}
+            onCreated={(stream: Stream) => {
+              setShowCreateChannel(false)
+              addStream(stream)
+              handleSelectStream(stream)
+            }}
+          />
 
-      <ChannelSettingsModal
-        open={streamToEdit !== null}
-        channel={streamToEdit}
-        workspaceId={bootstrapData.workspace.id}
-        currentUserId={user?.id}
-        isWorkspaceOwner={bootstrapData.userRole === "admin"}
-        onClose={() => setStreamToEdit(null)}
-        onUpdated={(stream) => {
-          updateStream(stream)
-          setStreamToEdit(null)
-        }}
-        onArchived={(streamId) => {
-          removeStream(streamId)
-          setStreamToEdit(null)
-          // If we're viewing the archived stream, navigate away
-          if (activeStreamSlug === streamToEdit?.slug) {
-            const firstStream = bootstrapData.streams.find((s) => s.id !== streamId && s.streamType === "channel")
-            if (firstStream) handleSelectStream(firstStream)
-          }
-        }}
-      />
+          <ChannelSettingsModal
+            open={streamToEdit !== null}
+            channel={streamToEdit}
+            workspaceId={bootstrapData.workspace.id}
+            currentUserId={user?.id}
+            isWorkspaceOwner={bootstrapData.userRole === "admin"}
+            onClose={() => setStreamToEdit(null)}
+            onUpdated={(stream) => {
+              updateStream(stream)
+              setStreamToEdit(null)
+            }}
+            onArchived={(streamId) => {
+              removeStream(streamId)
+              setStreamToEdit(null)
+              // If we're viewing the archived stream, navigate away
+              if (activeStreamSlug === streamToEdit?.slug) {
+                const firstStream = bootstrapData.streams.find((s) => s.id !== streamId && s.streamType === "channel")
+                if (firstStream) handleSelectStream(firstStream)
+              }
+            }}
+          />
 
-      <InviteModal
-        isOpen={showInviteModal}
-        onClose={() => setShowInviteModal(false)}
-        workspaceId={bootstrapData.workspace.id}
-        workspaceName={bootstrapData.workspace.name}
-      />
+          <InviteModal
+            isOpen={showInviteModal}
+            onClose={() => setShowInviteModal(false)}
+            workspaceId={bootstrapData.workspace.id}
+            workspaceName={bootstrapData.workspace.name}
+          />
 
-      <div className="flex-1 min-w-0">
-        <PaneSystem
-          panes={panes}
-          focusedPaneId={focusedPaneId}
-          onFocusPane={setFocusedPane}
-          onSetActiveTab={setActiveTab}
-          onCloseTab={closeTab}
-          renderContent={renderTabContent}
-        />
+          <div className="flex-1 min-w-0">
+            <PaneSystem
+              panes={panes}
+              focusedPaneId={focusedPaneId}
+              onFocusPane={setFocusedPane}
+              onSetActiveTab={setActiveTab}
+              onCloseTab={closeTab}
+              renderContent={renderTabContent}
+            />
+          </div>
+
+          <CommandPalette
+            open={showCommandPalette}
+            mode={commandPaletteMode}
+            onClose={() => setShowCommandPalette(false)}
+            streams={bootstrapData.streams}
+            users={bootstrapData.users}
+            workspaceId={bootstrapData.workspace.id}
+            onSelectStream={handleCommandPaletteSelect}
+            onNavigateToMessage={(streamSlugOrId, eventId, mode) => {
+              // Try to find stream by slug first, then by id (for threads which don't have slugs)
+              const stream =
+                bootstrapData.streams.find((s) => s.slug === streamSlugOrId) ||
+                bootstrapData.streams.find((s) => s.id === streamSlugOrId)
+              const isThread = stream?.streamType === "thread" || stream?.streamType === "thinking_space"
+              const streamTab = {
+                title: stream
+                  ? isThread
+                    ? stream.name || "Thread"
+                    : `#${(stream.name || "").replace("#", "")}`
+                  : `#${streamSlugOrId}`,
+                type: "stream" as const,
+                data: {
+                  streamSlug: stream?.slug || undefined,
+                  streamId: stream?.id || streamSlugOrId,
+                  highlightEventId: eventId,
+                },
+              }
+              openItem(streamTab, mode)
+            }}
+          />
+
+          <BrowseChannelsModal
+            open={showBrowseChannels}
+            workspaceId={bootstrapData.workspace.id}
+            onClose={() => setShowBrowseChannels(false)}
+            onJoinStream={handleJoinStream}
+            onCreateChannel={() => {
+              setShowBrowseChannels(false)
+              setShowCreateChannel(true)
+            }}
+          />
+
+          <KnowledgeBrowserModal
+            isOpen={showKnowledgeBrowser}
+            onClose={() => setShowKnowledgeBrowser(false)}
+            workspaceId={bootstrapData.workspace.id}
+            onNavigateToStream={(streamId) => {
+              setShowKnowledgeBrowser(false)
+              const stream = bootstrapData.streams.find((s) => s.id === streamId)
+              if (stream) {
+                handleSelectStream(stream)
+              } else {
+                openItem({ title: "Channel", type: "stream", data: { streamId } }, "replace")
+              }
+            }}
+          />
+
+          <NewDMModal
+            isOpen={showNewDM}
+            onClose={() => setShowNewDM(false)}
+            onCreateDM={handleCreateDM}
+            users={bootstrapData.users}
+            currentUserId={user?.id || ""}
+          />
+
+          <ProfileSetupModal
+            isOpen={showProfileSetup}
+            workspaceId={bootstrapData.workspace.id}
+            workspaceName={bootstrapData.workspace.name}
+            currentProfile={bootstrapData.userProfile}
+            onComplete={() => {
+              setShowProfileSetup(false)
+              refetchBootstrap()
+            }}
+            onSkip={() => setShowProfileSetup(false)}
+            canSkip={true}
+          />
+
+          {/* Tool result viewer panel */}
+          <ToolResultPanel />
+        </div>
       </div>
-
-      <CommandPalette
-        open={showCommandPalette}
-        mode={commandPaletteMode}
-        onClose={() => setShowCommandPalette(false)}
-        streams={bootstrapData.streams}
-        users={bootstrapData.users}
-        workspaceId={bootstrapData.workspace.id}
-        onSelectStream={handleCommandPaletteSelect}
-        onNavigateToMessage={(streamSlugOrId, eventId, mode) => {
-          // Try to find stream by slug first, then by id (for threads which don't have slugs)
-          const stream = bootstrapData.streams.find((s) => s.slug === streamSlugOrId)
-            || bootstrapData.streams.find((s) => s.id === streamSlugOrId)
-          const isThread = stream?.streamType === "thread" || stream?.streamType === "thinking_space"
-          const streamTab = {
-            title: stream
-              ? (isThread ? (stream.name || "Thread") : `#${(stream.name || "").replace("#", "")}`)
-              : `#${streamSlugOrId}`,
-            type: "stream" as const,
-            data: {
-              streamSlug: stream?.slug || undefined,
-              streamId: stream?.id || streamSlugOrId,
-              highlightEventId: eventId
-            },
-          }
-          openItem(streamTab, mode)
-        }}
-      />
-
-      <BrowseChannelsModal
-        open={showBrowseChannels}
-        workspaceId={bootstrapData.workspace.id}
-        onClose={() => setShowBrowseChannels(false)}
-        onJoinStream={handleJoinStream}
-        onCreateChannel={() => {
-          setShowBrowseChannels(false)
-          setShowCreateChannel(true)
-        }}
-      />
-
-      <KnowledgeBrowserModal
-        isOpen={showKnowledgeBrowser}
-        onClose={() => setShowKnowledgeBrowser(false)}
-        workspaceId={bootstrapData.workspace.id}
-        onNavigateToStream={(streamId) => {
-          setShowKnowledgeBrowser(false)
-          const stream = bootstrapData.streams.find((s) => s.id === streamId)
-          if (stream) {
-            handleSelectStream(stream)
-          } else {
-            openItem({ title: "Channel", type: "stream", data: { streamId } }, "replace")
-          }
-        }}
-      />
-
-      <NewDMModal
-        isOpen={showNewDM}
-        onClose={() => setShowNewDM(false)}
-        onCreateDM={handleCreateDM}
-        users={bootstrapData.users}
-        currentUserId={user?.id || ""}
-      />
-
-      <ProfileSetupModal
-        isOpen={showProfileSetup}
-        workspaceId={bootstrapData.workspace.id}
-        workspaceName={bootstrapData.workspace.name}
-        currentProfile={bootstrapData.userProfile}
-        onComplete={() => {
-          setShowProfileSetup(false)
-          refetchBootstrap()
-        }}
-        onSkip={() => setShowProfileSetup(false)}
-        canSkip={true}
-      />
-
-      {/* Tool result viewer panel */}
-      <ToolResultPanel />
-      </div>
-    </div>
     </ToolResultPanelProvider>
   )
 }

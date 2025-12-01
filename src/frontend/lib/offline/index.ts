@@ -24,14 +24,7 @@ export {
 } from "./db"
 
 // Draft store
-export {
-  saveDraft,
-  getDraft,
-  clearDraft,
-  getAllDrafts,
-  pruneOldDrafts,
-  hasDraft,
-} from "./draft-store"
+export { saveDraft, getDraft, clearDraft, getAllDrafts, pruneOldDrafts, hasDraft } from "./draft-store"
 
 // Message cache
 export {

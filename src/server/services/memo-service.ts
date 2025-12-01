@@ -49,7 +49,11 @@ export class MemoService {
     const contextWindow = await this.getContextWindow(params.anchorEventIds)
 
     // Get participants from the context
-    const participants = await this.getParticipants(params.streamId, contextWindow.startEventId, contextWindow.endEventId)
+    const participants = await this.getParticipants(
+      params.streamId,
+      contextWindow.startEventId,
+      contextWindow.endEventId,
+    )
 
     // Determine visibility from source stream
     const visibility = await this.getVisibilityFromStream(params.streamId)
@@ -95,9 +99,7 @@ export class MemoService {
    * Get a memo by ID.
    */
   async getMemo(id: string): Promise<Memo | null> {
-    const result = await this.pool.query<MemoRow>(
-      sql`SELECT * FROM memos WHERE id = ${id}`,
-    )
+    const result = await this.pool.query<MemoRow>(sql`SELECT * FROM memos WHERE id = ${id}`)
     return result.rows[0] ? this.mapMemoRow(result.rows[0]) : null
   }
 
@@ -112,22 +114,23 @@ export class MemoService {
     const offset = options.offset ?? 0
 
     // Use separate queries since squid/pg sql tags can't be composed
-    const result = options.topics && options.topics.length > 0
-      ? await this.pool.query<MemoRow>(
-          sql`SELECT * FROM memos
+    const result =
+      options.topics && options.topics.length > 0
+        ? await this.pool.query<MemoRow>(
+            sql`SELECT * FROM memos
             WHERE workspace_id = ${workspaceId}
               AND archived_at IS NULL
               AND topics && ${options.topics}
             ORDER BY confidence DESC, created_at DESC
             LIMIT ${limit} OFFSET ${offset}`,
-        )
-      : await this.pool.query<MemoRow>(
-          sql`SELECT * FROM memos
+          )
+        : await this.pool.query<MemoRow>(
+            sql`SELECT * FROM memos
             WHERE workspace_id = ${workspaceId}
               AND archived_at IS NULL
             ORDER BY confidence DESC, created_at DESC
             LIMIT ${limit} OFFSET ${offset}`,
-        )
+          )
 
     return result.rows.map(this.mapMemoRow)
   }
@@ -181,9 +184,7 @@ export class MemoService {
    * Archive a memo (soft delete).
    */
   async archiveMemo(id: string): Promise<void> {
-    await this.pool.query(
-      sql`UPDATE memos SET archived_at = NOW(), updated_at = NOW() WHERE id = ${id}`,
-    )
+    await this.pool.query(sql`UPDATE memos SET archived_at = NOW(), updated_at = NOW() WHERE id = ${id}`)
     logger.info({ memoId: id }, "Memo archived")
   }
 

@@ -6,8 +6,8 @@ import {
   LANGFUSE_PUBLIC_KEY,
   LANGFUSE_BASE_URL,
   OLLAMA_HOST,
-  OLLAMA_OLLAMA_CLASSIFICATION_MODEL,
-  OLLAMA_OLLAMA_EMBEDDING_MODEL,
+  OLLAMA_EMBEDDING_MODEL,
+  OLLAMA_CLASSIFICATION_MODEL,
 } from "../config"
 
 // Track whether Ollama embedding is available
@@ -247,7 +247,10 @@ Topic:`
 
     // Reject generic/useless names
     if (!name || REJECTED_NAMES.includes(name.toLowerCase())) {
-      logger.debug({ model: OLLAMA_CLASSIFICATION_MODEL, rejectedName: name, contentLength: content.length }, "Rejected generic auto-name")
+      logger.debug(
+        { model: OLLAMA_CLASSIFICATION_MODEL, rejectedName: name, contentLength: content.length },
+        "Rejected generic auto-name",
+      )
       return { name: "", success: false }
     }
 
@@ -455,9 +458,7 @@ Contextual header:`
       },
     })
 
-    const header = result.text
-      .replace(/^(Header|Context|Summary):\s*/i, "")
-      .trim()
+    const header = result.text.replace(/^(Header|Context|Summary):\s*/i, "").trim()
 
     if (!header || header.length < 10) {
       logger.debug({ streamName: streamInfo.name }, "Generated header too short")

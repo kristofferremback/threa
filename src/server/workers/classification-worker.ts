@@ -479,7 +479,10 @@ export async function shouldClassifyStream(
   if (stream.last_event_at) {
     const hoursSinceActivity = (Date.now() - stream.last_event_at.getTime()) / (1000 * 60 * 60)
     if (hoursSinceActivity < 1) {
-      return { shouldClassify: false, reason: `Activity ${(hoursSinceActivity * 60).toFixed(0)} minutes ago (need 60+)` }
+      return {
+        shouldClassify: false,
+        reason: `Activity ${(hoursSinceActivity * 60).toFixed(0)} minutes ago (need 60+)`,
+      }
     }
   }
 

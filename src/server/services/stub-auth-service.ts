@@ -12,12 +12,7 @@ export class StubAuthService implements Pick<AuthService, keyof AuthService> {
    * Register a test user that can authenticate.
    * Returns the session token to use in cookies.
    */
-  registerTestUser(user: {
-    id: string
-    email: string
-    firstName?: string | null
-    lastName?: string | null
-  }): string {
+  registerTestUser(user: { id: string; email: string; firstName?: string | null; lastName?: string | null }): string {
     this.users.set(user.id, {
       id: user.id,
       email: user.email,

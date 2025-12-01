@@ -94,7 +94,10 @@ async function recoverOrphanedSessions(pool: Pool): Promise<void> {
       const triggeringEvent = await streamService.getEventWithDetails(session.triggeringEventId)
 
       if (!triggeringEvent) {
-        logger.warn({ sessionId: session.id, eventId: session.triggeringEventId }, "Cannot recover session - triggering event not found")
+        logger.warn(
+          { sessionId: session.id, eventId: session.triggeringEventId },
+          "Cannot recover session - triggering event not found",
+        )
         await sessionService.updateStatus(session.id, "failed", "Recovery failed: triggering event not found")
         continue
       }
@@ -122,7 +125,11 @@ async function recoverOrphanedSessions(pool: Pool): Promise<void> {
       )
     } catch (err) {
       logger.error({ err, sessionId: session.id }, "Failed to recover orphaned session")
-      await sessionService.updateStatus(session.id, "failed", "Recovery failed: " + (err instanceof Error ? err.message : "Unknown error"))
+      await sessionService.updateStatus(
+        session.id,
+        "failed",
+        "Recovery failed: " + (err instanceof Error ? err.message : "Unknown error"),
+      )
     }
   }
 }

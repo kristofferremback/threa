@@ -99,9 +99,7 @@ export async function cacheEvents(streamId: string, events: StreamEvent[]): Prom
     await dbCacheEvents(events)
 
     // Update sync state
-    const sortedEvents = [...events].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    )
+    const sortedEvents = [...events].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     const oldestEvent = sortedEvents[0]
     const newestEvent = sortedEvents[sortedEvents.length - 1]
 
@@ -120,10 +118,7 @@ export async function cacheEvents(streamId: string, events: StreamEvent[]): Prom
 /**
  * Get cached events for a stream
  */
-export async function getCachedEvents(
-  streamId: string,
-  options: { limit?: number } = {},
-): Promise<StreamEvent[]> {
+export async function getCachedEvents(streamId: string, options: { limit?: number } = {}): Promise<StreamEvent[]> {
   if (!isIndexedDBAvailable()) return []
 
   try {
@@ -169,10 +164,7 @@ export async function mergeEvent(event: StreamEvent): Promise<void> {
 /**
  * Update a cached event (for edits)
  */
-export async function updateCachedEvent(
-  eventId: string,
-  updates: Partial<StreamEvent>,
-): Promise<void> {
+export async function updateCachedEvent(eventId: string, updates: Partial<StreamEvent>): Promise<void> {
   if (!isIndexedDBAvailable()) return
 
   try {

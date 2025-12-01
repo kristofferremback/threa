@@ -9,8 +9,7 @@ import { WifiOff, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { useOffline } from "../contexts/OfflineContext"
 
 export function OfflineBanner() {
-  const { isOnline, connectionState, pendingMessageCount, isProcessingOutbox, retryPending } =
-    useOffline()
+  const { isOnline, connectionState, pendingMessageCount, isProcessingOutbox, retryPending } = useOffline()
 
   // Don't show anything when online and no pending messages
   if (isOnline && pendingMessageCount === 0) return null
@@ -28,13 +27,10 @@ export function OfflineBanner() {
         {!isOnline ? (
           <>
             <WifiOff className="h-4 w-4" />
-            <span>
-              {connectionState === "reconnecting" ? "Reconnecting..." : "You're offline"}
-            </span>
+            <span>{connectionState === "reconnecting" ? "Reconnecting..." : "You're offline"}</span>
             {pendingMessageCount > 0 && (
               <span className="opacity-70">
-                • {pendingMessageCount} message{pendingMessageCount > 1 ? "s" : ""} will send when
-                you reconnect
+                • {pendingMessageCount} message{pendingMessageCount > 1 ? "s" : ""} will send when you reconnect
               </span>
             )}
           </>
@@ -94,11 +90,7 @@ export function OfflineIndicator() {
           : `${pendingMessageCount} pending message${pendingMessageCount > 1 ? "s" : ""}`
       }
     >
-      {!isOnline ? (
-        <WifiOff className="h-3 w-3" />
-      ) : (
-        <span className="font-medium">{pendingMessageCount}</span>
-      )}
+      {!isOnline ? <WifiOff className="h-3 w-3" /> : <span className="font-medium">{pendingMessageCount}</span>}
     </div>
   )
 }

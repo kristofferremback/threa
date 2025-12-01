@@ -81,7 +81,7 @@ export async function fetchStream(workspaceId: string, streamId: string): Promis
 export async function fetchEvents(
   workspaceId: string,
   streamId: string,
-  options?: { force?: boolean; cursor?: string }
+  options?: { force?: boolean; cursor?: string },
 ): Promise<void> {
   const store = useMessageStore.getState()
   const cached = store.events.get(streamId)
@@ -224,6 +224,6 @@ export function getMergedEvents(workspaceId: string, streamId: string): StreamEv
 
   // Sort by createdAt
   return [...serverEvents, ...outboxEvents].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
   )
 }

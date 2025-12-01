@@ -36,10 +36,15 @@ export function StickyThreadHeader({ rootMessage, isVisible, onChannelClick }: S
         </span>
         {!isExpanded && (
           <span className="text-xs truncate max-w-[200px]" style={{ color: "var(--text-muted)" }}>
-            {rootMessage.message.slice(0, 60)}{rootMessage.message.length > 60 ? "..." : ""}
+            {rootMessage.message.slice(0, 60)}
+            {rootMessage.message.length > 60 ? "..." : ""}
           </span>
         )}
-        <RelativeTime date={rootMessage.timestamp} className="text-xs flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+        <RelativeTime
+          date={rootMessage.timestamp}
+          className="text-xs flex-shrink-0"
+          style={{ color: "var(--text-muted)" }}
+        />
         {isExpanded ? (
           <ChevronUp className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
         ) : (

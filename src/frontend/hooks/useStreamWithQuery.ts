@@ -305,7 +305,7 @@ export function useStreamWithQuery({
 
     // Sort by createdAt
     return [...filteredServerEvents, ...outboxEvents].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     )
   }, [eventsCache?.events, outbox, workspaceId, streamId])
 
@@ -381,7 +381,7 @@ export function useStreamWithQuery({
 
       pokeOutboxWorker()
     },
-    [workspaceId, streamId, currentUserId, currentUserEmail, streamCache?.parentStream?.id]
+    [workspaceId, streamId, currentUserId, currentUserEmail, streamCache?.parentStream?.id],
   )
 
   const loadMoreEvents = useCallback(async () => {
@@ -411,7 +411,7 @@ export function useStreamWithQuery({
         throw new Error(error.error || "Failed to edit event")
       }
     },
-    [workspaceId, streamId]
+    [workspaceId, streamId],
   )
 
   const shareEvent = useCallback(
@@ -430,7 +430,7 @@ export function useStreamWithQuery({
         throw new Error(error.error || "Failed to share event")
       }
     },
-    [workspaceId, streamId]
+    [workspaceId, streamId],
   )
 
   const createThread = useCallback(
@@ -451,7 +451,7 @@ export function useStreamWithQuery({
 
       return (await res.json()).stream
     },
-    [workspaceId, streamId]
+    [workspaceId, streamId],
   )
 
   const retryMessage = useCallback(async (tempId: string) => {

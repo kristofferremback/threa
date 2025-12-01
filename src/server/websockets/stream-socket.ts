@@ -73,11 +73,7 @@ export async function setupStreamWebSocket(
     await new Promise<void>((resolve) => io.close(() => resolve()))
 
     // Clean up Redis clients
-    await Promise.all([
-      pubClient.quit(),
-      subClient.quit(),
-      messageSubscriber.quit(),
-    ])
+    await Promise.all([pubClient.quit(), subClient.quit(), messageSubscriber.quit()])
     logger.info("Socket.IO server and Redis clients closed")
   }
   logger.info("Redis adapter connected for Socket.IO")
@@ -269,7 +265,11 @@ export async function setupStreamWebSocket(
               )
               const streamInfo = streamResult.rows[0]
 
-              if (streamInfo?.stream_type === "thread" && streamInfo.parent_stream_id && streamInfo.branched_from_event_id) {
+              if (
+                streamInfo?.stream_type === "thread" &&
+                streamInfo.parent_stream_id &&
+                streamInfo.branched_from_event_id
+              ) {
                 // Count replies in this thread
                 const countResult = await pool.query<{ count: string }>(
                   sql`SELECT COUNT(*) as count FROM stream_events
@@ -320,7 +320,17 @@ export async function setupStreamWebSocket(
         }
 
         case "event:stream.created": {
-          const { stream_id, workspace_id, stream_type, name, slug, visibility, creator_id, parent_stream_id, branched_from_event_id } = event
+          const {
+            stream_id,
+            workspace_id,
+            stream_type,
+            name,
+            slug,
+            visibility,
+            creator_id,
+            parent_stream_id,
+            branched_from_event_id,
+          } = event
 
           // For public channels, broadcast to workspace
           if (visibility === "public" && stream_type === "channel") {
@@ -346,7 +356,10 @@ export async function setupStreamWebSocket(
             io.to(room.stream(workspace_id, parent_stream_id)).emit("thread:created", threadCreatedPayload)
             // Emit to pending thread room (for users viewing the pending thread)
             io.to(room.stream(workspace_id, branched_from_event_id)).emit("thread:created", threadCreatedPayload)
-            logger.debug({ stream_id, parent_stream_id, branched_from_event_id }, "Thread created broadcast to parent stream and pending thread")
+            logger.debug(
+              { stream_id, parent_stream_id, branched_from_event_id },
+              "Thread created broadcast to parent stream and pending thread",
+            )
           }
 
           logger.debug({ stream_id }, "Stream created broadcast via Socket.IO")

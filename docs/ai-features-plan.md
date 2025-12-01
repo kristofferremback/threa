@@ -56,6 +56,7 @@ From Greek mythology, Ariadne gave Theseus the thread that guided him through th
 ### Persona Design
 
 Ariadne is:
+
 - Helpful and concise
 - Honest about uncertainty ("I'm not sure, but here's what I found...")
 - Source-citing (always references where information came from)
@@ -69,13 +70,13 @@ Future: A persona manager will allow workspaces to customize AI personalities an
 
 ### Cost Optimization Through Model Selection
 
-| Task | Model | Cost | Why |
-|------|-------|------|-----|
-| Classification | granite4:350m (Ollama) | Free | Fast, local, good for binary decisions |
-| Classification fallback | Claude Haiku | ~$0.00025/call | When SLM is uncertain |
-| Embeddings | text-embedding-3-small | ~$0.00002/msg | Cheap, high quality |
-| AI Responses | Claude Sonnet 4 | ~$0.01-0.05/response | Quality matters for user-facing |
-| Knowledge Extraction | Claude Sonnet 4 | ~$0.02/extraction | Quality matters for persistence |
+| Task                    | Model                  | Cost                 | Why                                    |
+| ----------------------- | ---------------------- | -------------------- | -------------------------------------- |
+| Classification          | granite4:350m (Ollama) | Free                 | Fast, local, good for binary decisions |
+| Classification fallback | Claude Haiku           | ~$0.00025/call       | When SLM is uncertain                  |
+| Embeddings              | text-embedding-3-small | ~$0.00002/msg        | Cheap, high quality                    |
+| AI Responses            | Claude Sonnet 4        | ~$0.01-0.05/response | Quality matters for user-facing        |
+| Knowledge Extraction    | Claude Sonnet 4        | ~$0.02/extraction    | Quality matters for persistence        |
 
 ### Why granite4:350m for Classification?
 
@@ -87,6 +88,7 @@ IBM's Granite 4.0 Nano (350M parameters) uses a hybrid Mamba-2/Transformer archi
 - **Can run on same server** as the application (or separate host in production)
 
 For the "is this knowledge?" classification task, a small model is sufficient because:
+
 - It's a binary decision (yes/no)
 - We have structural pre-filters that reduce noise
 - Uncertain cases escalate to Haiku API
@@ -94,7 +96,7 @@ For the "is this knowledge?" classification task, a small model is sufficient be
 
 ### Hybrid Classification Flow
 
-```
+````
 Message Created
      │
      ▼
@@ -123,7 +125,7 @@ Message Created
 │             ▼                           │
 │       Escalate to Haiku API             │
 └─────────────────────────────────────────┘
-```
+````
 
 ---
 
@@ -134,6 +136,7 @@ Message Created
 We use pg-boss (PostgreSQL-based job queue) for all AI work:
 
 **Why pg-boss over BullMQ/Redis:**
+
 - Uses PostgreSQL (already have it, better durability)
 - Built-in job batching (perfect for embeddings)
 - Priority queues out of the box
@@ -169,6 +172,7 @@ Embedding Worker (batches up to 50)
 ```
 
 **On message edit:**
+
 1. Clear existing embedding (`embedding = NULL`)
 2. Re-queue ai.embed job
 
@@ -194,6 +198,7 @@ final_score = (semantic_score * 0.6) + (text_score * 0.4)
 ```
 
 **Search syntax** (Slack-like):
+
 ```
 from:@pierre in:#engineering kubernetes deployment
 before:2025-01-01 has:code is:thread
@@ -226,6 +231,7 @@ Post response as Ariadne in stream
 ### Knowledge Extraction Flow
 
 **Manual trigger:**
+
 1. User clicks "Save as knowledge" on any message
 2. System reads anchor message + ±20 surrounding messages
 3. Claude Sonnet generates structured extraction
@@ -234,11 +240,13 @@ Post response as Ariadne in stream
 6. System event emitted in stream: "📚 Knowledge extracted"
 
 **AI-suggested:**
+
 1. Classification detects knowledge candidate
 2. UI shows subtle indicator: "💡 This looks valuable"
 3. User clicks → same flow as manual
 
 **Debouncing for threads:**
+
 - Don't classify if classified within 24 hours
 - Don't classify if activity within last hour (thread still "hot")
 - Don't re-classify after knowledge extracted
@@ -367,6 +375,7 @@ GET /api/workspace/:workspaceId/ai/usage/summary
 ### Knowledge Explorer
 
 New tab type accessible from sidebar:
+
 - Search bar with query syntax
 - Sections: Recent, Most Referenced, By Channel
 - Detail view with source link, feedback buttons
@@ -382,6 +391,7 @@ New tab type accessible from sidebar:
 ### Knowledge Event in Stream
 
 When knowledge is extracted, a system event appears:
+
 ```
 📚 Knowledge extracted by Pierre
 "Fixing staging database timeouts"
@@ -394,6 +404,7 @@ How to resolve connection pool exhaustion on staging deploys
 ## Implementation Phases
 
 ### Phase 1: Infrastructure (Week 1)
+
 - [ ] Database migration (012_ai_features.sql)
 - [ ] pg-boss setup and initialization
 - [ ] Ollama client for granite4:350m
@@ -401,12 +412,14 @@ How to resolve connection pool exhaustion on staging deploys
 - [ ] Usage tracking service
 
 ### Phase 2: Embeddings (Week 2)
+
 - [ ] Embedding worker with batching
 - [ ] Hook into event creation
 - [ ] Re-embed on message edit
 - [ ] Backfill script for existing messages
 
 ### Phase 3: Search (Weeks 3-4)
+
 - [ ] Hybrid search service
 - [ ] Search query parser
 - [ ] Search API routes
@@ -414,6 +427,7 @@ How to resolve connection pool exhaustion on staging deploys
 - [ ] Search results UI
 
 ### Phase 4: Ariadne (Weeks 5-6)
+
 - [ ] Ariadne service and worker
 - [ ] Tool implementations (search_knowledge, search_messages)
 - [ ] @ariadne mention detection
@@ -421,6 +435,7 @@ How to resolve connection pool exhaustion on staging deploys
 - [ ] Default persona setup
 
 ### Phase 5: Knowledge (Weeks 7-8)
+
 - [ ] Knowledge service (CRUD)
 - [ ] Extraction API with Claude
 - [ ] Extraction modal UI
@@ -434,14 +449,14 @@ How to resolve connection pool exhaustion on staging deploys
 
 ### Per 1,000 Active Users/Month
 
-| Feature | Volume | Cost |
-|---------|--------|------|
-| Embeddings | 50k messages | ~$1 |
-| Classification (SLM) | 5k candidates | $0 |
-| Classification (Haiku fallback) | 500 escalations | ~$0.13 |
-| Ariadne responses | 2k invocations | ~$50-100 |
-| Knowledge extraction | 100 extractions | ~$2 |
-| **Total** | | **~$55-105/month** |
+| Feature                         | Volume          | Cost               |
+| ------------------------------- | --------------- | ------------------ |
+| Embeddings                      | 50k messages    | ~$1                |
+| Classification (SLM)            | 5k candidates   | $0                 |
+| Classification (Haiku fallback) | 500 escalations | ~$0.13             |
+| Ariadne responses               | 2k invocations  | ~$50-100           |
+| Knowledge extraction            | 100 extractions | ~$2                |
+| **Total**                       |                 | **~$55-105/month** |
 
 At $10/user pricing: **0.5-1% of revenue** for AI features.
 
@@ -456,30 +471,30 @@ At $10/user pricing: **0.5-1% of revenue** for AI features.
 
 ## Files to Create
 
-| File | Purpose |
-|------|---------|
-| `migrations/012_ai_features.sql` | Database schema |
-| `lib/job-queue.ts` | pg-boss initialization |
-| `lib/ollama.ts` | SLM client |
-| `lib/ai-providers.ts` | Claude/OpenAI clients |
-| `lib/search-parser.ts` | Query syntax parsing |
-| `services/search-service.ts` | Hybrid search |
-| `services/ariadne-service.ts` | AI companion |
-| `services/knowledge-service.ts` | Knowledge CRUD |
-| `workers/embedding-worker.ts` | Embedding jobs |
-| `workers/classification-worker.ts` | Classification jobs |
-| `workers/ariadne-worker.ts` | AI response jobs |
-| `routes/search-routes.ts` | Search API |
-| `routes/knowledge-routes.ts` | Knowledge API |
+| File                               | Purpose                |
+| ---------------------------------- | ---------------------- |
+| `migrations/012_ai_features.sql`   | Database schema        |
+| `lib/job-queue.ts`                 | pg-boss initialization |
+| `lib/ollama.ts`                    | SLM client             |
+| `lib/ai-providers.ts`              | Claude/OpenAI clients  |
+| `lib/search-parser.ts`             | Query syntax parsing   |
+| `services/search-service.ts`       | Hybrid search          |
+| `services/ariadne-service.ts`      | AI companion           |
+| `services/knowledge-service.ts`    | Knowledge CRUD         |
+| `workers/embedding-worker.ts`      | Embedding jobs         |
+| `workers/classification-worker.ts` | Classification jobs    |
+| `workers/ariadne-worker.ts`        | AI response jobs       |
+| `routes/search-routes.ts`          | Search API             |
+| `routes/knowledge-routes.ts`       | Knowledge API          |
 
 ### Files to Modify
 
-| File | Changes |
-|------|---------|
-| `stream-service.ts` | Hook AI triggers on event creation |
-| `CommandPalette.tsx` | Add search mode |
-| `Sidebar.tsx` | Add Knowledge link |
-| `url-state.ts` | Support knowledge tab type |
+| File                 | Changes                            |
+| -------------------- | ---------------------------------- |
+| `stream-service.ts`  | Hook AI triggers on event creation |
+| `CommandPalette.tsx` | Add search mode                    |
+| `Sidebar.tsx`        | Add Knowledge link                 |
+| `url-state.ts`       | Support knowledge tab type         |
 
 ---
 
@@ -495,12 +510,14 @@ At $10/user pricing: **0.5-1% of revenue** for AI features.
 ## Success Metrics
 
 ### Validation (PoC)
+
 - % of searches that use semantic vs keyword-only
 - @ariadne invocation rate
 - Knowledge extraction rate
 - Helpfulness ratings on AI responses
 
 ### Target (Post-Launch)
+
 - 80% question deflection rate (AI answers without human)
 - 90%+ helpful rating on Ariadne responses
 - 50+ knowledge entries per 100 users
@@ -515,4 +532,3 @@ At $10/user pricing: **0.5-1% of revenue** for AI features.
 - [pg-boss Documentation](https://github.com/timgit/pg-boss)
 - [pgvector Documentation](https://github.com/pgvector/pgvector)
 - [IBM Granite Documentation](https://www.ibm.com/granite/docs/models/granite)
-

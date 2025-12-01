@@ -117,25 +117,22 @@ export function useWorkspaceSocket({
     setSocket(newSocket)
 
     // Handle notification events (new events in streams)
-    newSocket.on(
-      "notification",
-      (data: { type: string; streamId: string; streamSlug?: string; actorId?: string }) => {
-        if (data.type === "event") {
-          // Don't increment unread count for the user's own events
-          if (data.actorId && data.actorId === currentUserIdRef.current) {
-            return
-          }
-
-          // Don't increment unread count if we're currently viewing this stream
-          const isActiveStream =
-            activeStreamSlugRef.current === data.streamSlug || activeStreamSlugRef.current === data.streamId
-
-          if (!isActiveStream) {
-            onUnreadCountUpdateRef.current?.(data.streamId, 1)
-          }
+    newSocket.on("notification", (data: { type: string; streamId: string; streamSlug?: string; actorId?: string }) => {
+      if (data.type === "event") {
+        // Don't increment unread count for the user's own events
+        if (data.actorId && data.actorId === currentUserIdRef.current) {
+          return
         }
-      },
-    )
+
+        // Don't increment unread count if we're currently viewing this stream
+        const isActiveStream =
+          activeStreamSlugRef.current === data.streamSlug || activeStreamSlugRef.current === data.streamId
+
+        if (!isActiveStream) {
+          onUnreadCountUpdateRef.current?.(data.streamId, 1)
+        }
+      }
+    })
 
     // Handle stream created (new channel visible)
     newSocket.on(
@@ -195,10 +192,13 @@ export function useWorkspaceSocket({
     )
 
     // Handle being removed from a stream
-    newSocket.on("stream:member:removed", (data: { streamId: string; streamName: string; removedByUserId?: string }) => {
-      toast.error(`You were removed from #${data.streamName.replace("#", "")}`)
-      onStreamRemovedRef.current?.(data.streamId)
-    })
+    newSocket.on(
+      "stream:member:removed",
+      (data: { streamId: string; streamName: string; removedByUserId?: string }) => {
+        toast.error(`You were removed from #${data.streamName.replace("#", "")}`)
+        onStreamRemovedRef.current?.(data.streamId)
+      },
+    )
 
     // Handle new notifications (mentions, etc.)
     newSocket.on("notification:new", () => {
@@ -269,12 +269,9 @@ export function useWorkspaceSocket({
     )
 
     // Handle invitation created
-    newSocket.on(
-      "invitation:created",
-      (data: { id: string; email: string; role: string; invitedByEmail: string }) => {
-        onInvitationCreatedRef.current?.({ id: data.id, email: data.email, role: data.role })
-      },
-    )
+    newSocket.on("invitation:created", (data: { id: string; email: string; role: string; invitedByEmail: string }) => {
+      onInvitationCreatedRef.current?.({ id: data.id, email: data.email, role: data.role })
+    })
 
     // Handle invitation accepted (new member joined via invite)
     newSocket.on(

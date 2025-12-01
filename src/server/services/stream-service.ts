@@ -5,7 +5,12 @@ import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
 import { generateAutoName } from "../lib/ollama"
 import { publishOutboxEvent, OutboxEventType } from "../lib/outbox-events"
-import { queueEnrichmentForThreadParent, queueEnrichmentForThreadReply, queueEnrichmentForReaction, maybeQueueClassification } from "../workers"
+import {
+  queueEnrichmentForThreadParent,
+  queueEnrichmentForThreadReply,
+  queueEnrichmentForReaction,
+  maybeQueueClassification,
+} from "../workers"
 
 // ============================================================================
 // Types
@@ -14,7 +19,15 @@ import { queueEnrichmentForThreadParent, queueEnrichmentForThreadReply, queueEnr
 export type StreamType = "channel" | "thread" | "dm" | "incident" | "thinking_space"
 export type StreamVisibility = "public" | "private" | "inherit"
 export type StreamStatus = "active" | "archived" | "resolved"
-export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "poll" | "file" | "agent_thinking"
+export type EventType =
+  | "message"
+  | "shared"
+  | "member_joined"
+  | "member_left"
+  | "thread_started"
+  | "poll"
+  | "file"
+  | "agent_thinking"
 export type NotifyLevel = "all" | "mentions" | "muted" | "default"
 export type MemberRole = "owner" | "admin" | "member"
 
@@ -1499,10 +1512,7 @@ export class StreamService {
 
       // Retry auto-naming for unnamed threads/thinking spaces after enough context
       // This runs async outside the transaction to not block the response
-      if (
-        (stream.stream_type === "thread" || stream.stream_type === "thinking_space") &&
-        !stream.name
-      ) {
+      if ((stream.stream_type === "thread" || stream.stream_type === "thinking_space") && !stream.name) {
         this.retryAutoNameIfNeeded(params.streamId, stream.workspace_id).catch((err) => {
           logger.warn({ err, streamId: params.streamId }, "Failed to retry auto-naming")
         })
@@ -1537,7 +1547,7 @@ export class StreamService {
       ) {
         logger.debug(
           { clientMessageId: params.clientMessageId, streamId: params.streamId },
-          "Duplicate client_message_id detected, fetching existing event"
+          "Duplicate client_message_id detected, fetching existing event",
         )
         const existingEvent = await this.pool.query(
           sql`SELECT se.*, tm.content, tm.mentions, u.email as actor_email
@@ -2361,9 +2371,7 @@ export class StreamService {
    */
   async checkEventAccess(eventId: string, userId: string): Promise<StreamAccessResult> {
     // Get the event's stream ID
-    const result = await this.pool.query(
-      sql`SELECT stream_id FROM stream_events WHERE id = ${eventId}`,
-    )
+    const result = await this.pool.query(sql`SELECT stream_id FROM stream_events WHERE id = ${eventId}`)
 
     if (result.rows.length === 0) {
       return { hasAccess: false, isMember: false, canPost: false, reason: "Event not found" }
@@ -2461,9 +2469,7 @@ export class StreamService {
     }
 
     // Check if stream still has no name
-    const streamResult = await this.pool.query(
-      sql`SELECT name, stream_type FROM streams WHERE id = ${streamId}`,
-    )
+    const streamResult = await this.pool.query(sql`SELECT name, stream_type FROM streams WHERE id = ${streamId}`)
 
     const stream = streamResult.rows[0]
     if (!stream || stream.name) {

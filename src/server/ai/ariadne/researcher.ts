@@ -63,14 +63,14 @@ export interface Citation {
   /** The citation number as used in the response text [1], [2], etc. */
   index: number
   /** Type of source */
-  type: "message" | "memo"
-  /** Event ID (for messages) or memo ID */
+  type: "message" | "memo" | "web"
+  /** Event ID (for messages), memo ID, or URL (for web) */
   id: string
   /** Stream ID where the source is located */
   streamId?: string
   /** Stream name/slug for display */
   streamName?: string
-  /** Author name (for messages) */
+  /** Author name (for messages) or page title (for web) */
   author?: string
   /** Date of the source */
   date?: string
@@ -177,7 +177,8 @@ export class AriadneResearcher {
     }
 
     // Calculate confidence based on top scores
-    const avgScore = results.results.length > 0 ? results.results.reduce((sum, r) => sum + r.score, 0) / results.results.length : 0
+    const avgScore =
+      results.results.length > 0 ? results.results.reduce((sum, r) => sum + r.score, 0) / results.results.length : 0
     const topScore = results.results[0]?.score || 0
 
     return {
@@ -222,7 +223,10 @@ export class AriadneResearcher {
       const reflection = await this.reflect(question, gatheredContext)
       gatheredContext.confidence = reflection.confidence
 
-      logger.info({ iteration, confidence: reflection.confidence, assessment: reflection.assessment }, "Research iteration complete")
+      logger.info(
+        { iteration, confidence: reflection.confidence, assessment: reflection.assessment },
+        "Research iteration complete",
+      )
 
       if (reflection.confidence >= this.config.confidenceThreshold) {
         break
@@ -308,7 +312,9 @@ Keep searches concise and targeted. Maximum 2-3 searches per iteration.`
   /**
    * Execute the search plan.
    */
-  private async executeSearchPlan(plan: SearchPlan): Promise<{ memos: GatheredContext["memos"]; events: GatheredContext["events"] }> {
+  private async executeSearchPlan(
+    plan: SearchPlan,
+  ): Promise<{ memos: GatheredContext["memos"]; events: GatheredContext["events"] }> {
     const results: { memos: GatheredContext["memos"]; events: GatheredContext["events"] } = {
       memos: [],
       events: [],
@@ -521,7 +527,9 @@ ${context.events.map((e, i) => `[${i + 1}] ${e.author} in #${e.channel} (${e.dat
 
     if (context.memos.length > 0) {
       formatted += "Memos:\n"
-      formatted += context.memos.map((m) => `- ${m.summary}${m.streamName ? ` (from #${m.streamName})` : ""}`).join("\n")
+      formatted += context.memos
+        .map((m) => `- ${m.summary}${m.streamName ? ` (from #${m.streamName})` : ""}`)
+        .join("\n")
       formatted += "\n\n"
     }
 
@@ -551,7 +559,13 @@ export async function classifyQuestionComplexity(question: string): Promise<"sim
     /why (did|does|do|is|are|was|were)/i,
   ]
 
-  const simpleIndicators = [/^who is/i, /^what is (?!the best)/i, /^when (did|is|was)/i, /^where (is|are|was|were)/i, /^(?:is|are|was|were|did|do|does|can|will) /i]
+  const simpleIndicators = [
+    /^who is/i,
+    /^what is (?!the best)/i,
+    /^when (did|is|was)/i,
+    /^where (is|are|was|were)/i,
+    /^(?:is|are|was|were|did|do|does|can|will) /i,
+  ]
 
   // Check for complex patterns
   for (const pattern of complexIndicators) {

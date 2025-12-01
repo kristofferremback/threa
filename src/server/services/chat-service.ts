@@ -709,7 +709,7 @@ export class ChatService {
     )
 
     // Batch fetch linked channels from message_channels (for cross-posts)
-    const messageIds = messagesWithSystemInfo.map(m => m.id)
+    const messageIds = messagesWithSystemInfo.map((m) => m.id)
     const messageLinkedChannelsMap: Map<string, LinkedChannel[]> = new Map()
 
     if (messageIds.length > 0) {
@@ -729,7 +729,7 @@ export class ChatService {
             FROM message_channels mc
             INNER JOIN channels c ON mc.channel_id = c.id
             WHERE mc.message_id = ANY(${messageIds})
-            ORDER BY mc.is_primary DESC, c.name ASC`
+            ORDER BY mc.is_primary DESC, c.name ASC`,
       )
 
       for (const row of messageChannelsResult.rows) {
@@ -745,7 +745,9 @@ export class ChatService {
     }
 
     // Also fetch linked channels for conversations
-    const conversationIds = [...new Set(messagesWithSystemInfo.filter(m => m.conversationId).map(m => m.conversationId!))]
+    const conversationIds = [
+      ...new Set(messagesWithSystemInfo.filter((m) => m.conversationId).map((m) => m.conversationId!)),
+    ]
     const conversationLinkedChannelsMap: Map<string, LinkedChannel[]> = new Map()
 
     if (conversationIds.length > 0) {
@@ -765,7 +767,7 @@ export class ChatService {
             FROM conversation_channels cc
             INNER JOIN channels c ON cc.channel_id = c.id
             WHERE cc.conversation_id = ANY(${conversationIds})
-            ORDER BY cc.is_primary DESC, c.name ASC`
+            ORDER BY cc.is_primary DESC, c.name ASC`,
       )
 
       for (const row of linkedChannelsResult.rows) {
@@ -781,7 +783,7 @@ export class ChatService {
     }
 
     // Attach linked channels to messages (prefer message_channels, fallback to conversation_channels)
-    const messagesWithLinkedChannels = messagesWithSystemInfo.map(msg => {
+    const messagesWithLinkedChannels = messagesWithSystemInfo.map((msg) => {
       // Check message_channels first (for cross-posted messages or "shared to channel")
       const messageChannels = messageLinkedChannelsMap.get(msg.id)
       if (messageChannels && messageChannels.length > 0) {
@@ -1274,12 +1276,7 @@ export class ChatService {
     }
   }
 
-  async markMessageAsUnread(
-    channelId: string,
-    userId: string,
-    messageId: string,
-    workspaceId?: string,
-  ): Promise<void> {
+  async markMessageAsUnread(channelId: string, userId: string, messageId: string, workspaceId?: string): Promise<void> {
     const client = await this.pool.connect()
     try {
       await client.query("BEGIN")

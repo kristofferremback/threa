@@ -50,7 +50,16 @@ export interface StreamMember {
 // Event Types
 // ==========================================================================
 
-export type EventType = "message" | "shared" | "member_joined" | "member_left" | "thread_started" | "stream_created" | "poll" | "file" | "agent_thinking"
+export type EventType =
+  | "message"
+  | "shared"
+  | "member_joined"
+  | "member_left"
+  | "thread_started"
+  | "stream_created"
+  | "poll"
+  | "file"
+  | "agent_thinking"
 
 export interface Mention {
   type: "user" | "channel" | "crosspost"

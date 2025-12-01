@@ -146,9 +146,7 @@ export function InboxView({
     if (!notification.readAt) {
       // Optimistic update - update state immediately
       setNotifications((prev) => {
-        const updated = prev.map((n) =>
-          n.id === notification.id ? { ...n, readAt: new Date().toISOString() } : n,
-        )
+        const updated = prev.map((n) => (n.id === notification.id ? { ...n, readAt: new Date().toISOString() } : n))
         // Immediately notify parent of new count
         const newUnreadCount = updated.filter((n) => !n.readAt).length
         onUnreadCountChange?.(newUnreadCount)
@@ -215,8 +213,7 @@ export function InboxView({
   }
 
   // Filter notifications based on active tab
-  const filteredNotifications =
-    activeTab === "unread" ? notifications.filter((n) => !n.readAt) : notifications
+  const filteredNotifications = activeTab === "unread" ? notifications.filter((n) => !n.readAt) : notifications
 
   const readCount = notifications.filter((n) => n.readAt).length
 
@@ -391,10 +388,7 @@ export function InboxView({
 
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {!notification.readAt && (
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ background: "var(--accent-primary)" }}
-                    />
+                    <div className="w-2 h-2 rounded-full" style={{ background: "var(--accent-primary)" }} />
                   )}
                   <button
                     onClick={(e) => {

@@ -192,7 +192,6 @@ export function MessageList({
     }
   }, [messages, lastReadMessageId, locallySeenIds])
 
-
   // Handle marking a message as read (updates local state too)
   const handleMarkAsRead = useCallback(
     (messageId: string) => {
@@ -490,85 +489,86 @@ export function MessageList({
         )}
 
         {messages.map((msg, idx) => {
-        const isRead = readMessageIds.has(msg.id) // For visual indicators (includes locally seen)
-        const isServerRead = serverReadMessageIds.has(msg.id) // For context menu actions
-        const showUnreadDivider = idx === firstUnreadIndex && firstUnreadIndex > 0
+          const isRead = readMessageIds.has(msg.id) // For visual indicators (includes locally seen)
+          const isServerRead = serverReadMessageIds.has(msg.id) // For context menu actions
+          const showUnreadDivider = idx === firstUnreadIndex && firstUnreadIndex > 0
 
-        // Check if this message triggered an agent session (for badge display on channel messages)
-        const triggeredSession = sessionsByTrigger?.get(msg.id)
+          // Check if this message triggered an agent session (for badge display on channel messages)
+          const triggeredSession = sessionsByTrigger?.get(msg.id)
 
-        return (
-          <div key={msg.id || msg.timestamp}>
-            {/* Unread divider */}
-            {showUnreadDivider && (
-              <div ref={unreadDividerRef} className="flex items-center gap-3 my-3" style={{ color: "var(--error)" }}>
-                <div className="flex-1 h-px" style={{ background: "var(--error)" }} />
-                <span className="text-xs font-medium uppercase">New messages</span>
-                <div className="flex-1 h-px" style={{ background: "var(--error)" }} />
-              </div>
-            )}
+          return (
+            <div key={msg.id || msg.timestamp}>
+              {/* Unread divider */}
+              {showUnreadDivider && (
+                <div ref={unreadDividerRef} className="flex items-center gap-3 my-3" style={{ color: "var(--error)" }}>
+                  <div className="flex-1 h-px" style={{ background: "var(--error)" }} />
+                  <span className="text-xs font-medium uppercase">New messages</span>
+                  <div className="flex-1 h-px" style={{ background: "var(--error)" }} />
+                </div>
+              )}
 
-            {msg.messageType === "system" ? (
-              <SystemMessage message={msg} animationDelay={Math.min(idx * 30, 300)} />
-            ) : msg.messageType === "agent_thinking" ? (
-              // Render agent_thinking events as AgentThinkingEvent
-              // Link to session via sessionId in metadata for real-time updates
-              (() => {
-                const metadata = msg.metadata as { sessionId?: string; triggeringEventId?: string; status?: string } | undefined
-                const sessionId = metadata?.sessionId
-                // Look up session - try by sessionId first, then by triggeringEventId as fallback
-                let session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined
-                if (!session && metadata?.triggeringEventId) {
-                  session = sessions.find((s) => s.triggeringEventId === metadata.triggeringEventId)
-                }
-                // Build a minimal session if we don't have one from the API yet
-                const displaySession = session || {
-                  id: sessionId || msg.id,
-                  streamId: channelId || "",
-                  triggeringEventId: metadata?.triggeringEventId || "",
-                  responseEventId: null,
-                  status: (metadata?.status || "active") as "active" | "completed" | "failed" | "summarizing",
-                  steps: [],
-                  summary: null,
-                  errorMessage: null,
-                  startedAt: msg.timestamp,
-                  completedAt: null,
-                }
-                return <AgentThinkingEvent session={displaySession} className="my-2" />
-              })()
-            ) : (
-              <MessageItemWithVisibility
-                message={msg}
-                workspaceId={workspaceId}
-                currentChannelId={channelId}
-                isOwnMessage={currentUserId ? msg.userId === currentUserId : false}
-                isRead={isRead}
-                isServerRead={isServerRead}
-                isHighlighted={msg.id === activeHighlightId}
-                onOpenThread={onOpenThread}
-                onEdit={onEditMessage}
-                onMarkAsRead={markAsRead}
-                onMarkAsUnread={markAsUnread}
-                onShareToChannel={onShareToChannel}
-                onCrosspostToChannel={(messageId) => setCrosspostModalMessageId(messageId)}
-                onRetryMessage={onRetryMessage}
-                onUserMentionClick={onUserMentionClick}
-                onChannelClick={onChannelClick}
-                onMessageVisible={onMessageVisible}
-                onMessageHidden={onMessageHidden}
-                onSetRef={(el) => setMessageRef(msg.id, el)}
-                animationDelay={Math.min(idx * 30, 300)}
-                showThreadActions={showThreadActions}
-                users={users}
-                channels={channels}
-                agentSession={triggeredSession}
-                sessionInThread={Boolean(triggeredSession?.streamId && triggeredSession.streamId !== channelId)}
-              />
-            )}
-
-          </div>
-        )
-      })}
+              {msg.messageType === "system" ? (
+                <SystemMessage message={msg} animationDelay={Math.min(idx * 30, 300)} />
+              ) : msg.messageType === "agent_thinking" ? (
+                // Render agent_thinking events as AgentThinkingEvent
+                // Link to session via sessionId in metadata for real-time updates
+                (() => {
+                  const metadata = msg.metadata as
+                    | { sessionId?: string; triggeringEventId?: string; status?: string }
+                    | undefined
+                  const sessionId = metadata?.sessionId
+                  // Look up session - try by sessionId first, then by triggeringEventId as fallback
+                  let session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined
+                  if (!session && metadata?.triggeringEventId) {
+                    session = sessions.find((s) => s.triggeringEventId === metadata.triggeringEventId)
+                  }
+                  // Build a minimal session if we don't have one from the API yet
+                  const displaySession = session || {
+                    id: sessionId || msg.id,
+                    streamId: channelId || "",
+                    triggeringEventId: metadata?.triggeringEventId || "",
+                    responseEventId: null,
+                    status: (metadata?.status || "active") as "active" | "completed" | "failed" | "summarizing",
+                    steps: [],
+                    summary: null,
+                    errorMessage: null,
+                    startedAt: msg.timestamp,
+                    completedAt: null,
+                  }
+                  return <AgentThinkingEvent session={displaySession} className="my-2" />
+                })()
+              ) : (
+                <MessageItemWithVisibility
+                  message={msg}
+                  workspaceId={workspaceId}
+                  currentChannelId={channelId}
+                  isOwnMessage={currentUserId ? msg.userId === currentUserId : false}
+                  isRead={isRead}
+                  isServerRead={isServerRead}
+                  isHighlighted={msg.id === activeHighlightId}
+                  onOpenThread={onOpenThread}
+                  onEdit={onEditMessage}
+                  onMarkAsRead={markAsRead}
+                  onMarkAsUnread={markAsUnread}
+                  onShareToChannel={onShareToChannel}
+                  onCrosspostToChannel={(messageId) => setCrosspostModalMessageId(messageId)}
+                  onRetryMessage={onRetryMessage}
+                  onUserMentionClick={onUserMentionClick}
+                  onChannelClick={onChannelClick}
+                  onMessageVisible={onMessageVisible}
+                  onMessageHidden={onMessageHidden}
+                  onSetRef={(el) => setMessageRef(msg.id, el)}
+                  animationDelay={Math.min(idx * 30, 300)}
+                  showThreadActions={showThreadActions}
+                  users={users}
+                  channels={channels}
+                  agentSession={triggeredSession}
+                  sessionInThread={Boolean(triggeredSession?.streamId && triggeredSession.streamId !== channelId)}
+                />
+              )}
+            </div>
+          )
+        })}
         <div ref={messagesEndRef} />
       </div>
 

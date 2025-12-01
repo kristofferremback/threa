@@ -53,11 +53,7 @@ export function QueryProvider({ children }: QueryProviderProps) {
   }
 
   // Fallback for SSR or environments without IndexedDB
-  return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
 // Export the hook to access query client outside React

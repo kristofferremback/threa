@@ -32,10 +32,7 @@ export const createErrorHandler = () => {
     )
 
     // Don't leak internal error details in production
-    const message =
-      statusCode === 500 && isProduction
-        ? "Internal server error"
-        : err.message || "An error occurred"
+    const message = statusCode === 500 && isProduction ? "Internal server error" : err.message || "An error occurred"
 
     // Return simple error string for frontend compatibility
     res.status(statusCode).json({
