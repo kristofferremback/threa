@@ -232,6 +232,7 @@ export function createStreamRoutes(
   })
 
   // Get a single stream (by ID or slug)
+  // Returns stream with thread context (parentStream, rootEvent, ancestors) for threads
   router.get("/:workspaceId/streams/:streamId", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { workspaceId, streamId } = req.params
@@ -260,7 +261,40 @@ export function createStreamRoutes(
         return
       }
 
-      res.json(stream)
+      // Build response with thread context
+      const response: {
+        stream: typeof stream
+        parentStream?: typeof stream
+        rootEvent?: ReturnType<typeof mapEventToResponse>
+        ancestors?: ReturnType<typeof mapEventToResponse>[]
+      } = { stream }
+
+      // For threads, include parent stream and root event
+      if (stream.streamType === "thread") {
+        // Get parent stream
+        if (stream.parentStreamId) {
+          const parent = await streamService.getStream(stream.parentStreamId)
+          if (parent) {
+            response.parentStream = parent
+          }
+        }
+
+        // Get root event (the message this thread branched from)
+        if (stream.branchedFromEventId) {
+          const rootEvent = await streamService.getEventWithDetails(stream.branchedFromEventId)
+          if (rootEvent) {
+            response.rootEvent = mapEventToResponse(rootEvent)
+          }
+        }
+
+        // Get ancestor events (for deep thread navigation)
+        const { ancestors } = await streamService.getAncestorChain(stream.id)
+        if (ancestors.length > 0) {
+          response.ancestors = ancestors.map(mapEventToResponse)
+        }
+      }
+
+      res.json(response)
     } catch (error) {
       logger.error({ err: error }, "Failed to get stream")
       next(error)
