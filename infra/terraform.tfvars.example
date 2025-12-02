@@ -1,0 +1,15 @@
+# Example terraform.tfvars
+# Copy to terraform.tfvars and customize
+
+aws_region  = "eu-central-1"
+environment = "prod"
+app_name    = "threa"
+
+# Container settings
+container_port   = 3000
+container_cpu    = 256   # 0.25 vCPU (minimum)
+container_memory = 512   # 512 MB (minimum)
+desired_count    = 1
+
+# Image tag (usually set by CI/CD)
+image_tag = "latest"
