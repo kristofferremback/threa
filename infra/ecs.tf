@@ -68,17 +68,16 @@ resource "aws_ecs_task_definition" "app" {
       ]
 
       # Secrets from SSM Parameter Store
-      # Uncomment and add your secrets:
-      # secrets = [
-      #   {
-      #     name      = "DATABASE_URL"
-      #     valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.app_name}/database-url"
-      #   },
-      #   {
-      #     name      = "REDIS_URL"
-      #     valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.app_name}/redis-url"
-      #   }
-      # ]
+      secrets = [
+        {
+          name      = "DATABASE_URL"
+          valueFrom = aws_ssm_parameter.database_url.arn
+        },
+        {
+          name      = "REDIS_URL"
+          valueFrom = aws_ssm_parameter.redis_url.arn
+        }
+      ]
 
       logConfiguration = {
         logDriver = "awslogs"

@@ -1,6 +1,6 @@
 # Threa Infrastructure
 
-Minimal AWS infrastructure for deploying Threa using ECS Fargate.
+Minimal AWS infrastructure for deploying Threa using ECS Fargate with RDS and ElastiCache.
 
 ## Architecture
 
@@ -20,18 +20,22 @@ Minimal AWS infrastructure for deploying Threa using ECS Fargate.
 │  └─────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
                           │
-                          ▼
-┌──────────────────┐  ┌──────────────────┐
-│   PostgreSQL     │  │      Redis       │
-│   (External)     │  │   (External)     │
-└──────────────────┘  └──────────────────┘
+            ┌─────────────┴─────────────┐
+            ▼                           ▼
+┌──────────────────┐         ┌──────────────────┐
+│   RDS PostgreSQL │         │ ElastiCache Redis│
+│   (db.t4g.micro) │         │ (cache.t4g.micro)│
+└──────────────────┘         └──────────────────┘
 ```
 
 ## Components
 
 - **ECR** - Container registry for Docker images
 - **ECS Fargate** - Serverless container hosting
+- **RDS PostgreSQL** - Managed database with automatic backups
+- **ElastiCache Redis** - Managed Redis for caching and pub/sub
 - **CloudWatch** - Logs, metrics, and dashboards
+- **SSM Parameter Store** - Secure secret storage
 - **IAM** - Roles and policies for ECS tasks
 
 ## Prerequisites
@@ -48,48 +52,73 @@ cd infra
 
 # 2. Create your variables file
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars as needed
 
-# 3. Initialize Terraform
+# 3. Edit terraform.tfvars - IMPORTANT: Set a secure db_password!
+vim terraform.tfvars
+
+# 4. Initialize Terraform
 terraform init
 
-# 4. Preview changes
+# 5. Preview changes
 terraform plan
 
-# 5. Apply infrastructure
+# 6. Apply infrastructure
 terraform apply
 ```
 
+## Estimated Costs
+
+| Resource | Monthly Cost |
+|----------|-------------|
+| ECS Fargate (0.25 vCPU, 0.5GB) | ~$10 |
+| RDS PostgreSQL (db.t4g.micro) | ~$13 |
+| ElastiCache Redis (cache.t4g.micro) | ~$13 |
+| CloudWatch Logs | ~$1 |
+| ECR Storage | ~$0.10 |
+| **Total** | **~$37/month** |
+
 ## Configuration
 
-### Environment Variables
+### Required Variables
 
-The app expects these environment variables (configured via SSM Parameter Store):
+| Variable | Description |
+|----------|-------------|
+| `db_password` | PostgreSQL master password (use a strong password!) |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `REDIS_URL` | Yes | Redis connection string |
-| `WORKOS_API_KEY` | Yes | WorkOS API key |
-| `WORKOS_CLIENT_ID` | Yes | WorkOS client ID |
-| `WORKOS_REDIRECT_URI` | Yes | WorkOS OAuth redirect URI |
-| `WORKOS_COOKIE_PASSWORD` | Yes | Session cookie encryption key |
-| `ANTHROPIC_API_KEY` | No | Anthropic API key for AI features |
-| `OPENAI_API_KEY` | No | OpenAI API key for embeddings |
+### Optional Variables
 
-### Adding Secrets
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `aws_region` | eu-central-1 | AWS region |
+| `environment` | prod | Environment name |
+| `db_instance_class` | db.t4g.micro | RDS instance size |
+| `redis_node_type` | cache.t4g.micro | ElastiCache node size |
+| `container_cpu` | 256 | CPU units (256 = 0.25 vCPU) |
+| `container_memory` | 512 | Memory in MB |
 
-Store secrets in AWS SSM Parameter Store:
+### Adding App Secrets
+
+Additional secrets (like WorkOS keys) can be added to SSM Parameter Store:
 
 ```bash
-# Example: Add database URL
+# Add a secret
 aws ssm put-parameter \
-  --name "/threa/database-url" \
+  --name "/threa/workos-api-key" \
   --type "SecureString" \
-  --value "postgresql://user:pass@host:5432/db"
+  --value "your-api-key-here"
 ```
 
-Then uncomment the `secrets` block in `ecs.tf`.
+Then add to the secrets block in `ecs.tf`:
+
+```hcl
+secrets = [
+  # ... existing secrets ...
+  {
+    name      = "WORKOS_API_KEY"
+    valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.app_name}/workos-api-key"
+  }
+]
+```
 
 ## CI/CD
 
@@ -106,39 +135,80 @@ The GitHub Actions workflow (`.github/workflows/deploy.yml`) automatically:
 
 ## Monitoring
 
-Access the CloudWatch dashboard:
+### CloudWatch Dashboard
 
+Access the dashboard:
 ```bash
 terraform output cloudwatch_dashboard_url
 ```
 
-Or view logs:
+### View Logs
 
 ```bash
 aws logs tail /ecs/threa --follow
 ```
 
-## Costs
+### Alarms
 
-Estimated monthly cost (minimal setup):
+The following alarms are configured:
+- CPU utilization > 80%
+- Memory utilization > 80%
+- No running tasks
 
-| Resource | Cost |
-|----------|------|
-| ECS Fargate (0.25 vCPU, 0.5GB) | ~$10 |
-| CloudWatch Logs | ~$1 |
-| ECR Storage | ~$0.10 |
-| **Total** | **~$11/month** |
+## Database
 
-Note: Database and Redis costs are separate.
+### Connect to RDS
+
+The database is not publicly accessible. To connect:
+
+1. Use Session Manager to connect to the ECS task
+2. Or set up a bastion host / VPN
+
+### Enable pgvector
+
+After deployment, connect to the database and enable pgvector:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+### Run Migrations
+
+Migrations should be run as part of your deployment process or manually:
+
+```bash
+# Example: Run migrations from your local machine through a bastion
+DATABASE_URL="postgresql://..." bun run migrate
+```
 
 ## Scaling Up
 
-To add more resources:
+### Add Load Balancer (for HTTPS and redundancy)
 
-1. **Load Balancer**: Add ALB for SSL termination and multiple tasks
-2. **Database**: Add RDS PostgreSQL with `pgvector` extension
-3. **Cache**: Add ElastiCache Redis
-4. **Auto-scaling**: Add ECS service auto-scaling policies
+To add an ALB:
+
+1. Create an ALB with HTTPS listener
+2. Add ACM certificate for your domain
+3. Update ECS service to use the ALB target group
+4. Update security groups
+
+### Increase Capacity
+
+```hcl
+# In terraform.tfvars
+container_cpu    = 512   # 0.5 vCPU
+container_memory = 1024  # 1 GB
+desired_count    = 2     # 2 tasks
+
+db_instance_class = "db.t4g.small"
+redis_node_type   = "cache.t4g.small"
+```
+
+### Add Multi-AZ
+
+For production redundancy:
+- Enable `multi_az = true` for RDS
+- Use ElastiCache replication group instead of cluster
 
 ## Cleanup
 
@@ -146,4 +216,9 @@ To add more resources:
 terraform destroy
 ```
 
-⚠️ This will delete all resources including the ECR repository and any stored images.
+⚠️ This will delete all resources including:
+- ECR repository and images
+- RDS database and all data
+- ElastiCache cluster
+
+To keep RDS data, take a final snapshot before destroying.

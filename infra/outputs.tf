@@ -25,6 +25,23 @@ output "cloudwatch_dashboard_url" {
   value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${var.app_name}"
 }
 
+# RDS outputs
+output "rds_endpoint" {
+  description = "RDS PostgreSQL endpoint"
+  value       = aws_db_instance.main.endpoint
+}
+
+output "rds_database_name" {
+  description = "RDS database name"
+  value       = aws_db_instance.main.db_name
+}
+
+# ElastiCache outputs
+output "redis_endpoint" {
+  description = "ElastiCache Redis endpoint"
+  value       = "${aws_elasticache_cluster.main.cache_nodes[0].address}:${aws_elasticache_cluster.main.cache_nodes[0].port}"
+}
+
 # Note: Public IP is dynamic with Fargate without ALB
 # To get the current IP, run:
 # aws ecs list-tasks --cluster threa --service-name threa --query 'taskArns[0]' --output text | xargs -I {} aws ecs describe-tasks --cluster threa --tasks {} --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text | xargs -I {} aws ec2 describe-network-interfaces --network-interface-ids {} --query 'NetworkInterfaces[0].Association.PublicIp' --output text

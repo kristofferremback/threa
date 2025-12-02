@@ -49,3 +49,36 @@ variable "image_tag" {
   type        = string
   default     = "latest"
 }
+
+# RDS PostgreSQL configuration
+variable "db_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.t4g.micro" # Cheapest option (~$13/month)
+}
+
+variable "db_name" {
+  description = "Database name"
+  type        = string
+  default     = "threa"
+}
+
+variable "db_username" {
+  description = "Database master username"
+  type        = string
+  default     = "threa"
+  sensitive   = true
+}
+
+variable "db_password" {
+  description = "Database master password"
+  type        = string
+  sensitive   = true
+}
+
+# ElastiCache Redis configuration
+variable "redis_node_type" {
+  description = "ElastiCache node type"
+  type        = string
+  default     = "cache.t4g.micro" # Cheapest option (~$13/month)
+}

@@ -13,3 +13,12 @@ desired_count    = 1
 
 # Image tag (usually set by CI/CD)
 image_tag = "latest"
+
+# RDS PostgreSQL (required)
+db_instance_class = "db.t4g.micro"  # ~$13/month
+db_name           = "threa"
+db_username       = "threa"
+db_password       = "CHANGE_ME_TO_SECURE_PASSWORD"  # Use a strong password!
+
+# ElastiCache Redis
+redis_node_type = "cache.t4g.micro"  # ~$13/month
