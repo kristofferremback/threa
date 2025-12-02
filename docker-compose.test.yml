@@ -1,0 +1,23 @@
+services:
+  postgres-test:
+    image: pgvector/pgvector:pg16
+    container_name: threa-postgres-test
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: threa
+      POSTGRES_PASSWORD: threa
+      POSTGRES_DB: threa_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: threa-redis-test
+    ports:
+      - "6381:6379"
+    tmpfs:
+      - /data
+    command: redis-server --appendonly no
+    restart: unless-stopped
