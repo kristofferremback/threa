@@ -240,6 +240,8 @@ async function verifyWithOpenAI(prompt: string, config: ModelConfig): Promise<LL
       model: config.model,
       provider: config.provider,
       latencyMs: 0,
+      rawResponse: null,
+      parsedResponse: null,
     }
   }
 
@@ -274,6 +276,8 @@ async function verifyWithAnthropic(prompt: string, config: ModelConfig): Promise
       model: config.model,
       provider: config.provider,
       latencyMs: 0,
+      rawResponse: null,
+      parsedResponse: null,
     }
   }
 
@@ -387,14 +391,56 @@ function parseResponse(content: string, config: ModelConfig, latencyMs: number):
  * Create error result.
  */
 function errorResult(err: unknown, config: ModelConfig, latencyMs: number): LLMVerificationResult {
+  const errorMessage = classifyError(err)
+
   return {
     isSameTopic: false,
     relationship: "different",
-    explanation: `Error: ${err instanceof Error ? err.message : String(err)}`,
+    explanation: errorMessage,
     model: config.model,
     provider: config.provider,
     latencyMs,
+    rawResponse: null,
+    parsedResponse: null,
   }
+}
+
+/**
+ * Classify error into user-friendly message.
+ */
+function classifyError(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return `Error: ${String(err)}`
+  }
+
+  const message = err.message.toLowerCase()
+
+  // Rate limiting
+  if (message.includes("rate limit") || message.includes("429") || message.includes("too many requests")) {
+    return `Rate limited: ${err.message}`
+  }
+
+  // Auth errors
+  if (message.includes("401") || message.includes("403") || message.includes("unauthorized") || message.includes("invalid api key") || message.includes("authentication")) {
+    return `Auth error: ${err.message}`
+  }
+
+  // Model not found
+  if (message.includes("404") || message.includes("not found") || message.includes("does not exist")) {
+    return `Model not found: ${err.message}`
+  }
+
+  // Timeout
+  if (message.includes("timeout") || message.includes("timed out") || message.includes("deadline")) {
+    return `Timeout: ${err.message}`
+  }
+
+  // Connection errors
+  if (message.includes("econnrefused") || message.includes("enotfound") || message.includes("network") || message.includes("connection")) {
+    return `Connection error: ${err.message}`
+  }
+
+  return `Error: ${err.message}`
 }
 
 // Legacy exports for backward compatibility

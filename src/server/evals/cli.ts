@@ -81,6 +81,7 @@ Examples:
   bun run eval:evolution --model ollama:gemma3:1b --verbose
   bun run eval:evolution --model openai:gpt-4o-mini
   bun run eval:evolution --model anthropic:claude-3-5-haiku-latest
+  bun run eval:evolution --model openrouter:ibm:granite-3.1-8b-instruct
   bun run eval:evolution --compare --no-langfuse
 `)
 }

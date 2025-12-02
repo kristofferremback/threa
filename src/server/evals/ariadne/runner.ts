@@ -103,6 +103,49 @@ export interface AriadneEvalRunnerConfig {
 }
 
 /**
+ * Classify agent errors into user-friendly messages.
+ */
+function classifyAgentError(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return String(err)
+  }
+
+  const message = err.message.toLowerCase()
+
+  // Rate limiting
+  if (message.includes("rate limit") || message.includes("429") || message.includes("too many requests")) {
+    return `Rate limited: ${err.message}`
+  }
+
+  // Auth errors
+  if (message.includes("401") || message.includes("403") || message.includes("unauthorized") || message.includes("invalid api key") || message.includes("authentication")) {
+    return `Auth error: ${err.message}`
+  }
+
+  // Model not found
+  if (message.includes("404") || message.includes("not found") || message.includes("does not exist")) {
+    return `Model not found: ${err.message}`
+  }
+
+  // Timeout
+  if (message.includes("timeout") || message.includes("timed out") || message.includes("deadline")) {
+    return `Timeout: ${err.message}`
+  }
+
+  // Connection errors
+  if (message.includes("econnrefused") || message.includes("enotfound") || message.includes("network") || message.includes("connection")) {
+    return `Connection error: ${err.message}`
+  }
+
+  // Tool execution errors
+  if (message.includes("tool") || message.includes("function call")) {
+    return `Tool error: ${err.message}`
+  }
+
+  return err.message
+}
+
+/**
  * Wrap tools to capture their calls while still executing them.
  */
 function wrapToolsForCapture(tools: StructuredTool[], capturedCalls: CapturedToolCall[]): StructuredTool[] {
@@ -237,7 +280,7 @@ async function runSingleCase(
     const lastMessage = messages[messages.length - 1]
     response = typeof lastMessage.content === "string" ? lastMessage.content : JSON.stringify(lastMessage.content)
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err)
+    error = classifyAgentError(err)
     errorStack = err instanceof Error ? err.stack : undefined
     response = ""
   }
@@ -555,66 +598,72 @@ export async function runAriadneEval(config: AriadneEvalRunnerConfig): Promise<A
 
   const results: AriadneEvalResult[] = []
 
-  // Run each case
-  for (let i = 0; i < dataset.cases.length; i++) {
-    const evalCase = dataset.cases[i]
-    const progress = `[${i + 1}/${dataset.cases.length}]`
+  try {
+    // Run each case
+    for (let i = 0; i < dataset.cases.length; i++) {
+      const evalCase = dataset.cases[i]
+      const progress = `[${i + 1}/${dataset.cases.length}]`
 
-    if (config.verbose) {
-      console.log(`${progress} ${evalCase.id} - "${evalCase.question.slice(0, 50)}..."`)
-    } else {
-      process.stdout.write(`\r${progress} Running...`)
-    }
-
-    const result = await runSingleCase(pool, seededData, evalCase, config.model, langfuse, runId)
-    results.push(result)
-
-    if (config.verbose) {
-      if (result.error) {
-        console.log(`  ❌ ERROR: ${result.error}`)
-        if (result.errorStack) {
-          // Print first 3 lines of stack trace for context
-          const stackLines = result.errorStack.split("\n").slice(0, 4).join("\n")
-          console.log(`     ${stackLines.replace(/\n/g, "\n     ")}`)
-        }
+      if (config.verbose) {
+        console.log(`${progress} ${evalCase.id} - "${evalCase.question.slice(0, 50)}..."`)
       } else {
-        const status = result.overallScore >= 0.7 ? "✅" : result.overallScore >= 0.4 ? "⚠️" : "❌"
-        console.log(
-          `  ${status} overall=${(result.overallScore * 100).toFixed(0)}% ` +
-            `tools=${(result.toolSelectionScore * 100).toFixed(0)}% ` +
-            `retrieval=${(result.retrievalScore * 100).toFixed(0)}% ` +
-            `(${result.capturedTools.join(", ") || "none"})`,
-        )
-        if (result.missingSources.length > 0) {
-          console.log(`     Missing sources: ${result.missingSources.join(", ")}`)
-        }
+        process.stdout.write(`\r${progress} Running...`)
       }
-    } else if (result.error) {
-      // Always show errors even in non-verbose mode
-      console.log(`\n❌ ${evalCase.id}: ${result.error}`)
+
+      const result = await runSingleCase(pool, seededData, evalCase, config.model, langfuse, runId)
+      results.push(result)
+
+      if (config.verbose) {
+        if (result.error) {
+          console.log(`  ❌ ERROR: ${result.error}`)
+          if (result.errorStack) {
+            // Print first 3 lines of stack trace for context
+            const stackLines = result.errorStack.split("\n").slice(0, 4).join("\n")
+            console.log(`     ${stackLines.replace(/\n/g, "\n     ")}`)
+          }
+        } else {
+          const status = result.overallScore >= 0.7 ? "✅" : result.overallScore >= 0.4 ? "⚠️" : "❌"
+          console.log(
+            `  ${status} overall=${(result.overallScore * 100).toFixed(0)}% ` +
+              `tools=${(result.toolSelectionScore * 100).toFixed(0)}% ` +
+              `retrieval=${(result.retrievalScore * 100).toFixed(0)}% ` +
+              `(${result.capturedTools.join(", ") || "none"})`,
+          )
+          if (result.missingSources.length > 0) {
+            console.log(`     Missing sources: ${result.missingSources.join(", ")}`)
+          }
+        }
+      } else if (result.error) {
+        // Always show errors even in non-verbose mode
+        console.log(`\n❌ ${evalCase.id}: ${result.error}`)
+      }
+    }
+
+    console.log(`\r${" ".repeat(40)}\r`) // Clear progress line
+
+    // Calculate summary
+    const summary = calculateSummary(runId, config.model, dataset, results, startedAt)
+
+    // Log to Langfuse
+    if (langfuse) {
+      await logSummaryToLangfuse(langfuse, summary)
+      await langfuse.flushAsync()
+    }
+
+    // Print summary
+    printSummary(summary)
+
+    return summary
+  } finally {
+    // Always clean up, even on error
+    console.log(`\n🧹 Cleaning up test data...`)
+    try {
+      await cleanupAriadneEvalData(pool)
+      await closeTestPool()
+    } catch (cleanupErr) {
+      console.error(`⚠️  Cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`)
     }
   }
-
-  console.log(`\r${" ".repeat(40)}\r`) // Clear progress line
-
-  // Calculate summary
-  const summary = calculateSummary(runId, config.model, dataset, results, startedAt)
-
-  // Log to Langfuse
-  if (langfuse) {
-    await logSummaryToLangfuse(langfuse, summary)
-    await langfuse.flushAsync()
-  }
-
-  // Clean up
-  console.log(`\n🧹 Cleaning up test data...`)
-  await cleanupAriadneEvalData(pool)
-  await closeTestPool()
-
-  // Print summary
-  printSummary(summary)
-
-  return summary
 }
 
 /**
