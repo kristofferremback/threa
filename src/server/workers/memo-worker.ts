@@ -3,6 +3,7 @@ import { getJobQueue, CreateMemoJobData, JobPriority } from "../lib/job-queue"
 import { MemoService } from "../services/memo-service"
 import { MemoScoringService } from "../services/memo-scoring-service"
 import { MemoRevisionService } from "../services/memo-revision-service"
+import { MemoEvolutionService } from "../services/memo-evolution"
 import { AIUsageService } from "../services/ai-usage-service"
 import { logger } from "../lib/logger"
 
@@ -11,12 +12,13 @@ import { logger } from "../lib/logger"
  *
  * Listens for memory.create-memo jobs and evaluates messages for memo-worthiness.
  * Uses the scoring service to determine if content should become a memo, and the
- * revision service to handle overlap with existing memos.
+ * evolution service to handle overlap with existing memos using event embeddings.
  */
 export class MemoWorker {
   private memoService: MemoService
   private scoringService: MemoScoringService
   private revisionService: MemoRevisionService
+  private evolutionService: MemoEvolutionService
   private usageService: AIUsageService
   private isRunning = false
 
@@ -24,6 +26,7 @@ export class MemoWorker {
     this.memoService = new MemoService(pool)
     this.scoringService = new MemoScoringService(pool)
     this.revisionService = new MemoRevisionService(pool)
+    this.evolutionService = new MemoEvolutionService(pool)
     this.usageService = new AIUsageService(pool)
   }
 
@@ -102,44 +105,51 @@ export class MemoWorker {
         return
       }
 
-      // Check for semantic overlap with existing memos
-      const overlap = await this.revisionService.findOverlappingMemos(
+      // Evaluate for memo evolution (uses event-to-event embedding comparison)
+      const evolution = await this.evolutionService.evaluateForEvolution(
         workspaceId,
-        message.content,
         eventId,
+        message.content,
       )
 
       logger.info(
         {
           eventId,
-          overlappingCount: overlap.overlappingMemos.length,
-          recommendedAction: overlap.recommendedAction,
-          reason: overlap.reason,
+          action: evolution.action,
+          targetMemoId: evolution.targetMemoId,
+          similarity: evolution.similarity,
+          llmVerified: evolution.llmVerified,
+          reasoning: evolution.reasoning,
         },
-        "🔍 Overlap analysis complete",
+        "🔍 Evolution analysis complete",
       )
 
-      // Handle based on recommended action
-      switch (overlap.recommendedAction) {
+      // Handle based on evolution decision
+      switch (evolution.action) {
         case "skip":
           logger.info(
-            { eventId, targetMemoId: overlap.targetMemoId },
+            { eventId, targetMemoId: evolution.targetMemoId },
             "⏭️ Skipping - similar memo already exists",
           )
           return
 
-        case "merge":
-          if (overlap.targetMemoId) {
-            await this.revisionService.mergeMemo(overlap.targetMemoId, eventId)
+        case "reinforce":
+          if (evolution.targetMemoId) {
+            await this.evolutionService.reinforceMemo(
+              evolution.targetMemoId,
+              eventId,
+              evolution.similarity,
+              evolution.llmVerified,
+            )
             logger.info(
-              { eventId, targetMemoId: overlap.targetMemoId },
-              "🔗 Merged event into existing memo",
+              { eventId, targetMemoId: evolution.targetMemoId, similarity: evolution.similarity },
+              "🔗 Reinforced existing memo with new event",
             )
           }
           return
 
         case "supersede":
-          if (overlap.targetMemoId) {
+          if (evolution.targetMemoId) {
             const supersedeSummary = await this.scoringService.generateSummary(message.content, {
               streamName: message.streamName,
               authorName: message.authorName,
@@ -148,7 +158,7 @@ export class MemoWorker {
             const supersedeTopics = await this.scoringService.suggestTopics(workspaceId, message.content)
             const supersedeCategory = await this.scoringService.classifyCategory(message.content)
 
-            const newMemo = await this.revisionService.supersedeMemo(overlap.targetMemoId, {
+            const newMemo = await this.revisionService.supersedeMemo(evolution.targetMemoId, {
               workspaceId,
               anchorEventIds: [eventId],
               streamId: message.streamId,
@@ -158,12 +168,15 @@ export class MemoWorker {
               confidence: worthiness.confidence,
             })
 
+            // Record original anchor for the new memo
+            await this.evolutionService.recordOriginalAnchor(newMemo.id, eventId)
+
             if (supersedeTopics.length > 0) {
               await this.scoringService.recordTagUsage(workspaceId, supersedeTopics)
             }
 
             logger.info(
-              { eventId, oldMemoId: overlap.targetMemoId, newMemoId: newMemo.id },
+              { eventId, oldMemoId: evolution.targetMemoId, newMemoId: newMemo.id },
               "🔄 Superseded old memo with new one",
             )
           }
@@ -194,6 +207,9 @@ export class MemoWorker {
             category: category || undefined,
             confidence: worthiness.confidence,
           })
+
+          // Record original anchor in reinforcement tracking
+          await this.evolutionService.recordOriginalAnchor(memo.id, eventId)
 
           // Record tag usage to update workspace tags
           if (topics.length > 0) {

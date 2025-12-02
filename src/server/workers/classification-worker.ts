@@ -266,7 +266,7 @@ export class ClassificationWorker {
       }
 
       logger.info(
-        { streamId, eventId, result, confidence: haikuResult.confidence, model: "claude-haiku" },
+        { streamId, eventId, result, confidence: haikuResult.confidence, model: Models.CLAUDE_HAIKU },
         "📋 Classification complete (Haiku fallback)",
       )
     } catch (err) {

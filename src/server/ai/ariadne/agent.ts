@@ -408,3 +408,4 @@ export async function* streamAriadne(
     throw err
   }
 }
+

@@ -27,7 +27,7 @@ const config = {
 
   // Ollama (local AI)
   OLLAMA_HOST: process.env.OLLAMA_HOST || "http://localhost:11434",
-  OLLAMA_CLASSIFICATION_MODEL: process.env.OLLAMA_CLASSIFICATION_MODEL || "granite4:350m",
+  OLLAMA_CLASSIFICATION_MODEL: process.env.OLLAMA_CLASSIFICATION_MODEL || "granite4:1b",
   OLLAMA_EMBEDDING_MODEL: process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text",
   EMBEDDING_PROVIDER: (process.env.EMBEDDING_PROVIDER || "ollama") as "ollama" | "openai",
 

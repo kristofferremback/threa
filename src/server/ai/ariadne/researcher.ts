@@ -5,6 +5,7 @@ import { MemoService, Memo } from "../../services/memo-service"
 import { StreamService } from "../../services/stream-service"
 import { logger } from "../../lib/logger"
 import { queueEnrichmentForRetrieval } from "../../workers"
+import { Models } from "../../lib/ai-providers"
 
 /**
  * AriadneResearcher - Iterative research agent for complex questions.
@@ -118,14 +119,14 @@ export class AriadneResearcher {
 
     // Use Haiku for planning (fast, cheap)
     this.planModel = new ChatAnthropic({
-      model: "claude-haiku-4-5-20251001",
+      model: Models.CLAUDE_HAIKU,
       temperature: 0.3,
       maxTokens: 1024,
     })
 
     // Use Sonnet for synthesis (better quality)
     this.synthesisModel = new ChatAnthropic({
-      model: "claude-sonnet-4-20250514",
+      model: Models.CLAUDE_SONNET,
       temperature: 0.5,
       maxTokens: 2048,
     })

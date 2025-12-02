@@ -504,7 +504,7 @@ export function createStreamRoutes(
   // Get events for a stream
   router.get("/:workspaceId/streams/:streamId/events", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { streamId } = req.params
+      let { streamId } = req.params
       const userId = req.user?.id
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100)
       const offset = parseInt(req.query.offset as string) || 0
@@ -512,6 +512,40 @@ export function createStreamRoutes(
       if (!userId) {
         res.status(401).json({ error: "Unauthorized" })
         return
+      }
+
+      // Handle pending thread requests where streamId is actually an event ID
+      // The frontend uses event_xxx as the streamId for threads that may not exist yet
+      if (streamId.startsWith("event_")) {
+        const eventId = streamId
+        const existingThread = await streamService.getThreadForEvent(eventId)
+
+        if (existingThread) {
+          // Thread exists - use the actual thread's stream ID
+          streamId = existingThread.id
+        } else {
+          // No thread yet - check access to the parent stream and return empty events
+          const parentEvent = await streamService.getEventWithDetails(eventId)
+          if (!parentEvent) {
+            res.status(404).json({ error: "Event not found" })
+            return
+          }
+
+          const access = await streamService.checkStreamAccess(parentEvent.streamId, userId)
+          if (!access.hasAccess) {
+            res.status(403).json({ error: access.reason || "Access denied" })
+            return
+          }
+
+          // Return empty result for the pending thread
+          res.json({
+            events: [],
+            sessions: [],
+            lastReadEventId: null,
+            hasMore: false,
+          })
+          return
+        }
       }
 
       // Check access
@@ -780,6 +814,7 @@ export function createStreamRoutes(
   )
 
   // Get thread for an event by eventId only (simpler route for pending thread checks)
+  // Returns full thread context including parentStream and ancestors for navigation
   router.get(
     "/:workspaceId/streams/by-event/:eventId/thread",
     async (req: Request, res: Response, next: NextFunction) => {
@@ -794,13 +829,42 @@ export function createStreamRoutes(
 
         const thread = await streamService.getThreadForEvent(eventId)
 
-        // Also get the root event if thread exists
-        let rootEvent: Awaited<ReturnType<typeof streamService.getEventWithDetails>> | null = null
-        if (thread && thread.branchedFromEventId) {
-          rootEvent = await streamService.getEventWithDetails(thread.branchedFromEventId)
+        if (!thread) {
+          res.json({ thread: null, rootEvent: null, parentStream: null, ancestors: [] })
+          return
         }
 
-        res.json({ thread, rootEvent: rootEvent ? mapEventToResponse(rootEvent) : null })
+        // Build full response with thread context
+        const response: {
+          thread: typeof thread
+          rootEvent: ReturnType<typeof mapEventToResponse> | null
+          parentStream: typeof thread | null
+          ancestors: ReturnType<typeof mapEventToResponse>[]
+        } = { thread, rootEvent: null, parentStream: null, ancestors: [] }
+
+        // Get root event (the message this thread branched from)
+        if (thread.branchedFromEventId) {
+          const rootEvent = await streamService.getEventWithDetails(thread.branchedFromEventId)
+          if (rootEvent) {
+            response.rootEvent = mapEventToResponse(rootEvent)
+          }
+        }
+
+        // Get parent stream
+        if (thread.parentStreamId) {
+          const parent = await streamService.getStream(thread.parentStreamId)
+          if (parent) {
+            response.parentStream = parent
+          }
+        }
+
+        // Get ancestor events (for deep thread navigation breadcrumbs)
+        const { ancestors } = await streamService.getAncestorChain(thread.id)
+        if (ancestors.length > 0) {
+          response.ancestors = ancestors.map(mapEventToResponse)
+        }
+
+        res.json(response)
       } catch (error) {
         logger.error({ err: error }, "Failed to get thread by event")
         next(error)

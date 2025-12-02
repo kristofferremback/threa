@@ -26,6 +26,10 @@ export function getMemoEmbeddingTable(): "memo_embeddings_768" | "memo_embedding
   return EMBEDDING_PROVIDER === "openai" ? "memo_embeddings_1536" : "memo_embeddings_768"
 }
 
+export function getEventEmbeddingTable(): "event_embeddings_768" | "event_embeddings_1536" {
+  return EMBEDDING_PROVIDER === "openai" ? "event_embeddings_1536" : "event_embeddings_768"
+}
+
 /**
  * Get the SQL table name for text message embeddings (for dynamic queries).
  */
