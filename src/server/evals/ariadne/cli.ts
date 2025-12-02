@@ -66,8 +66,9 @@ Options:
                     Examples:
                       anthropic:claude-haiku-4-5-20251001
                       openai:gpt-4o-mini
-                      openrouter:ibm:granite-3.1-8b-instruct
+                      openrouter:ibm-granite/granite-4.0-h-micro
                     Note: Ollama models are NOT supported for agent evals
+                    OpenRouter: Copy model ID from https://openrouter.ai/models
   --verbose, -v     Show detailed output for each case
   --no-langfuse     Disable Langfuse tracking
   --dataset         Show dataset statistics
@@ -83,7 +84,7 @@ Examples:
   bun run eval:ariadne
   bun run eval:ariadne --model anthropic:claude-haiku-4-5-20251001 --verbose
   bun run eval:ariadne --model openai:gpt-4o-mini
-  bun run eval:ariadne --model openrouter:ibm:granite-3.1-8b-instruct
+  bun run eval:ariadne --model openrouter:ibm-granite/granite-4.0-h-micro
   bun run eval:ariadne --no-langfuse
 `)
 }

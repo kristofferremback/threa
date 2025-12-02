@@ -76,12 +76,17 @@ ${getConfiguredModels()
   .map((m) => `  - ${m}`)
   .join("\n")}
 
+OpenRouter:
+  Use any model from https://openrouter.ai/models
+  Copy the model ID and prefix with "openrouter:"
+  Example: openrouter:ibm-granite/granite-4.0-h-micro
+
 Examples:
   bun run eval:evolution
   bun run eval:evolution --model ollama:gemma3:1b --verbose
   bun run eval:evolution --model openai:gpt-4o-mini
   bun run eval:evolution --model anthropic:claude-3-5-haiku-latest
-  bun run eval:evolution --model openrouter:ibm:granite-3.1-8b-instruct
+  bun run eval:evolution --model openrouter:ibm-granite/granite-4.0-h-micro
   bun run eval:evolution --compare --no-langfuse
 `)
 }

@@ -95,23 +95,10 @@ const AVAILABLE_MODELS: Record<Provider, string[]> = {
     "claude-haiku-4-5-20251001",
     "claude-sonnet-4-5-20250929",
   ],
-  openrouter: [
-    // IBM Granite models
-    "ibm:granite-3.1-8b-instruct",
-    "ibm:granite-3.3-8b-instruct",
-    // Google Gemma
-    "google:gemma-3-4b-it",
-    "google:gemma-3-12b-it",
-    // Qwen
-    "qwen:qwen3-8b",
-    "qwen:qwen3-14b",
-    // DeepSeek
-    "deepseek:deepseek-chat-v3-0324",
-    "deepseek:deepseek-r1",
-    // Anthropic via OpenRouter
-    "anthropic:claude-3.5-haiku",
-    "anthropic:claude-sonnet-4",
-  ],
+  // OpenRouter: Use any model from https://openrouter.ai/models
+  // Format: openrouter:<model-id> where model-id is copied from OpenRouter
+  // Example: openrouter:ibm-granite/granite-4.0-h-micro
+  openrouter: [],
 }
 
 /**
