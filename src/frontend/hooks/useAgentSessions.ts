@@ -87,12 +87,15 @@ export function useAgentSessions({
   useEffect(() => {
     if (!enabled || !streamId) return
 
+    // Skip for pending threads (virtual streams that don't exist on server yet)
+    const isPendingThread = streamId.startsWith("pending_") || streamId.startsWith("event_")
+
     const socket = io({ withCredentials: true })
     socketRef.current = socket
 
     // Refetch sessions from API (called after socket connects to catch any we missed)
     const refetchSessions = async () => {
-      if (hasRefetchedRef.current) return
+      if (hasRefetchedRef.current || isPendingThread) return
       hasRefetchedRef.current = true
 
       try {

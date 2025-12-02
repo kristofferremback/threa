@@ -202,8 +202,38 @@ export function useStreamWithQuery({
       if (threadRes.ok) {
         const threadData = await threadRes.json()
         if (threadData.thread) {
-          // Thread exists! Use it
-          initStreamView(wsId, threadData.thread.id)
+          const realThreadId = threadData.thread.id
+
+          // Register alias so WebSocket events for realThreadId also update eventId cache
+          store.addStreamAlias(realThreadId, eventId)
+
+          // Init the real stream view (joins socket room, fetches data for realThreadId)
+          initStreamView(wsId, realThreadId)
+
+          // Also store under event ID so our subscription gets the data
+          // (component is subscribed to eventId, not realThreadId)
+          store.setStream(eventId, {
+            stream: threadData.thread,
+            parentStream: threadData.parentStream,
+            rootEvent: threadData.rootEvent,
+            ancestors: threadData.ancestors || [],
+            lastFetchedAt: Date.now(),
+          })
+
+          // Fetch events for the real thread and store under event ID
+          const eventsRes = await fetch(
+            `/api/workspace/${wsId}/streams/${realThreadId}/events?limit=50`,
+            { credentials: "include" },
+          )
+          if (eventsRes.ok) {
+            const eventsData = await eventsRes.json()
+            store.setEvents(eventId, {
+              events: eventsData.events || [],
+              hasMore: eventsData.hasMore || false,
+              lastFetchedAt: Date.now(),
+              lastReadEventId: eventsData.lastReadEventId,
+            })
+          }
           return
         }
       }

@@ -1,4 +1,3 @@
-import { useState } from "react"
 import {
   Hash,
   Lock,
@@ -12,7 +11,6 @@ import {
   Command,
   Bell,
   PinOff,
-  LogIn,
   Compass,
   PanelRightOpen,
   MessageCircle,
@@ -20,7 +18,10 @@ import {
   Brain,
   Archive,
   BookOpen,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react"
+import { useSidebarCollapse, type CollapseState, type SectionId } from "../../hooks/useSidebarCollapse"
 import { clsx } from "clsx"
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, ThemeSelector } from "../ui"
 import type { Stream, Workspace, OpenMode } from "../../types"
@@ -61,6 +62,7 @@ interface SidebarProps {
   onUnpinStream?: (streamId: string) => void
   onLeaveStream?: (streamId: string) => void
   onArchiveStream?: (streamId: string) => void
+  onOpenSettings?: () => void
   isInboxActive?: boolean
   inboxUnreadCount?: number
 }
@@ -88,10 +90,13 @@ export function Sidebar({
   onUnpinStream,
   onLeaveStream,
   onArchiveStream,
+  onOpenSettings,
   isInboxActive = false,
   inboxUnreadCount = 0,
   currentUserProfile,
 }: SidebarProps) {
+  const { getState, toggle, toggleHard } = useSidebarCollapse({ workspaceId: workspace.id })
+
   // Filter to only show channels the user is a member of
   const memberChannels = streams.filter((s) => s.streamType === "channel" && s.isMember)
   // Use truthy check for pinnedAt since it might be undefined or null
@@ -168,8 +173,12 @@ export function Sidebar({
             {pinnedChannels.length > 0 && (
               <StreamSection
                 title="Pinned"
+                sectionId="pinned"
                 streams={pinnedChannels}
                 activeStreamSlug={activeStreamSlug}
+                collapseState={getState("pinned")}
+                onToggleCollapse={() => toggle("pinned")}
+                onToggleHardCollapse={() => toggleHard("pinned")}
                 onSelectStream={onSelectStream}
                 onStreamSettings={onStreamSettings}
                 onPinStream={onPinStream}
@@ -180,8 +189,12 @@ export function Sidebar({
 
             <StreamSection
               title="Channels"
+              sectionId="channels"
               streams={unpinnedChannels}
               activeStreamSlug={activeStreamSlug}
+              collapseState={getState("channels")}
+              onToggleCollapse={() => toggle("channels")}
+              onToggleHardCollapse={() => toggleHard("channels")}
               onSelectStream={onSelectStream}
               onCreateChannel={onCreateChannel}
               onBrowseChannels={onBrowseChannels}
@@ -197,6 +210,9 @@ export function Sidebar({
         <ThinkingSpacesSection
           thinkingSpaces={thinkingSpaces}
           activeStreamSlug={activeStreamSlug}
+          collapseState={getState("thinkingSpaces")}
+          onToggleCollapse={() => toggle("thinkingSpaces")}
+          onToggleHardCollapse={() => toggleHard("thinkingSpaces")}
           onSelectStream={onSelectStream}
           onCreateThinkingSpace={onCreateThinkingSpace}
           onArchiveStream={onArchiveStream}
@@ -208,6 +224,9 @@ export function Sidebar({
           users={otherUsers}
           activeStreamSlug={activeStreamSlug}
           currentUserId={currentUserId}
+          collapseState={getState("directMessages")}
+          onToggleCollapse={() => toggle("directMessages")}
+          onToggleHardCollapse={() => toggleHard("directMessages")}
           onSelectStream={onSelectStream}
           onStartDM={onStartDM}
           onCreateDM={onCreateDM}
@@ -216,7 +235,7 @@ export function Sidebar({
         />
       </div>
 
-      <UserFooter onLogout={onLogout} onEditProfile={onEditProfile} profile={currentUserProfile} />
+      <UserFooter onLogout={onLogout} onEditProfile={onEditProfile} onOpenSettings={onOpenSettings} profile={currentUserProfile} />
     </div>
   )
 }
@@ -344,8 +363,12 @@ function WorkspaceHeader({ workspace, onInvitePeople }: WorkspaceHeaderProps) {
 
 interface StreamSectionProps {
   title: string
+  sectionId: SectionId
   streams: Stream[]
   activeStreamSlug: string | null
+  collapseState: CollapseState
+  onToggleCollapse: () => void
+  onToggleHardCollapse: () => void
   onSelectStream: (stream: Stream, mode: OpenMode) => void
   onCreateChannel?: () => void
   onBrowseChannels?: () => void
@@ -359,6 +382,9 @@ function StreamSection({
   title,
   streams,
   activeStreamSlug,
+  collapseState,
+  onToggleCollapse,
+  onToggleHardCollapse,
   onSelectStream,
   onCreateChannel,
   onBrowseChannels,
@@ -367,17 +393,49 @@ function StreamSection({
   onUnpinStream,
   onLeaveStream,
 }: StreamSectionProps) {
+  // Calculate total unread count for hard collapse mode
+  const totalUnread = streams.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+
+  // Filter streams for soft collapse mode (only show those with unread)
+  const visibleStreams =
+    collapseState === "soft" ? streams.filter((s) => s.unreadCount > 0) : streams
+
+  const isHardCollapsed = collapseState === "hard"
+  const ChevronIcon = isHardCollapsed ? ChevronRight : ChevronDown
+
   return (
     <div className="mb-4">
-      <div className="mb-2 px-2 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          {title}
-        </span>
+      <div
+        className="mb-2 px-2 flex items-center justify-between cursor-pointer select-none group"
+        onClick={onToggleCollapse}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onToggleHardCollapse()
+        }}
+        title="Click to toggle, right-click to fully collapse"
+      >
         <div className="flex items-center gap-1">
+          <ChevronIcon
+            className="h-3 w-3 transition-transform"
+            style={{ color: "var(--text-muted)" }}
+          />
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            {title}
+          </span>
+          {isHardCollapsed && totalUnread > 0 && (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded-full font-medium ml-1"
+              style={{ background: "var(--accent-secondary)", color: "white" }}
+            >
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {onBrowseChannels && (
             <button
               onClick={onBrowseChannels}
-              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors opacity-0 group-hover:opacity-100"
               style={{ color: "var(--text-muted)" }}
               title="Browse channels"
             >
@@ -387,7 +445,7 @@ function StreamSection({
           {onCreateChannel && (
             <button
               onClick={onCreateChannel}
-              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors opacity-0 group-hover:opacity-100"
               style={{ color: "var(--text-muted)" }}
               title="Add channel"
             >
@@ -397,20 +455,27 @@ function StreamSection({
         </div>
       </div>
 
-      <div className="space-y-0.5">
-        {streams.map((stream) => (
-          <StreamItem
-            key={stream.id}
-            stream={stream}
-            isActive={activeStreamSlug === stream.slug}
-            onClick={(e) => onSelectStream(stream, getOpenMode(e))}
-            onSettings={() => onStreamSettings(stream)}
-            onPin={onPinStream ? () => onPinStream(stream.id) : undefined}
-            onUnpin={onUnpinStream ? () => onUnpinStream(stream.id) : undefined}
-            onLeave={onLeaveStream ? () => onLeaveStream(stream.id) : undefined}
-          />
-        ))}
-      </div>
+      {!isHardCollapsed && (
+        <div className="space-y-0.5">
+          {visibleStreams.map((stream) => (
+            <StreamItem
+              key={stream.id}
+              stream={stream}
+              isActive={activeStreamSlug === stream.slug}
+              onClick={(e) => onSelectStream(stream, getOpenMode(e))}
+              onSettings={() => onStreamSettings(stream)}
+              onPin={onPinStream ? () => onPinStream(stream.id) : undefined}
+              onUnpin={onUnpinStream ? () => onUnpinStream(stream.id) : undefined}
+              onLeave={onLeaveStream ? () => onLeaveStream(stream.id) : undefined}
+            />
+          ))}
+          {collapseState === "soft" && visibleStreams.length === 0 && (
+            <div className="px-2 py-1 text-xs" style={{ color: "var(--text-muted)" }}>
+              No unread channels
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -523,6 +588,9 @@ function StreamItem({ stream, isActive, onClick, onSettings, onPin, onUnpin, onL
 interface ThinkingSpacesSectionProps {
   thinkingSpaces: Stream[]
   activeStreamSlug: string | null
+  collapseState: CollapseState
+  onToggleCollapse: () => void
+  onToggleHardCollapse: () => void
   onSelectStream: (stream: Stream, mode: OpenMode) => void
   onCreateThinkingSpace?: () => void
   onArchiveStream?: (streamId: string) => void
@@ -531,51 +599,97 @@ interface ThinkingSpacesSectionProps {
 function ThinkingSpacesSection({
   thinkingSpaces,
   activeStreamSlug,
+  collapseState,
+  onToggleCollapse,
+  onToggleHardCollapse,
   onSelectStream,
   onCreateThinkingSpace,
   onArchiveStream,
 }: ThinkingSpacesSectionProps) {
+  // Calculate total unread count for hard collapse mode
+  const totalUnread = thinkingSpaces.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+
+  // Filter spaces for soft collapse mode (only show those with unread)
+  const visibleSpaces =
+    collapseState === "soft" ? thinkingSpaces.filter((s) => s.unreadCount > 0) : thinkingSpaces
+
+  const isHardCollapsed = collapseState === "hard"
+  const ChevronIcon = isHardCollapsed ? ChevronRight : ChevronDown
+
   return (
     <div className="mb-4">
-      <div className="mb-2 px-2 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Thinking Spaces
-        </span>
-        {onCreateThinkingSpace && (
-          <button
-            onClick={onCreateThinkingSpace}
-            className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+      <div
+        className="mb-2 px-2 flex items-center justify-between cursor-pointer select-none group"
+        onClick={onToggleCollapse}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onToggleHardCollapse()
+        }}
+        title="Click to toggle, right-click to fully collapse"
+      >
+        <div className="flex items-center gap-1">
+          <ChevronIcon
+            className="h-3 w-3 transition-transform"
             style={{ color: "var(--text-muted)" }}
-            title="New thinking space"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        )}
+          />
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            Thinking Spaces
+          </span>
+          {isHardCollapsed && totalUnread > 0 && (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded-full font-medium ml-1"
+              style={{ background: "var(--accent-secondary)", color: "white" }}
+            >
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {onCreateThinkingSpace && (
+            <button
+              onClick={onCreateThinkingSpace}
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors opacity-0 group-hover:opacity-100"
+              style={{ color: "var(--text-muted)" }}
+              title="New thinking space"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-0.5">
-        {thinkingSpaces.length === 0 ? (
-          <button
-            onClick={onCreateThinkingSpace}
-            className="w-full text-left px-2 py-2 rounded-lg flex items-center gap-2 transition-colors hover:bg-[var(--hover-overlay)]"
-          >
-            <Brain className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Start thinking with Ariadne...
-            </span>
-          </button>
-        ) : (
-          thinkingSpaces.map((space) => (
-            <ThinkingSpaceItem
-              key={space.id}
-              space={space}
-              isActive={activeStreamSlug === space.slug || activeStreamSlug === space.id}
-              onClick={(e) => onSelectStream(space, getOpenMode(e))}
-              onArchive={onArchiveStream ? () => onArchiveStream(space.id) : undefined}
-            />
-          ))
-        )}
-      </div>
+      {!isHardCollapsed && (
+        <div className="space-y-0.5">
+          {thinkingSpaces.length === 0 ? (
+            <button
+              onClick={onCreateThinkingSpace}
+              className="w-full text-left px-2 py-2 rounded-lg flex items-center gap-2 transition-colors hover:bg-[var(--hover-overlay)]"
+            >
+              <Brain className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+              <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Start thinking with Ariadne...
+              </span>
+            </button>
+          ) : (
+            <>
+              {visibleSpaces.map((space) => (
+                <ThinkingSpaceItem
+                  key={space.id}
+                  space={space}
+                  isActive={activeStreamSlug === space.slug || activeStreamSlug === space.id}
+                  onClick={(e) => onSelectStream(space, getOpenMode(e))}
+                  onArchive={onArchiveStream ? () => onArchiveStream(space.id) : undefined}
+                />
+              ))}
+              {collapseState === "soft" && visibleSpaces.length === 0 && thinkingSpaces.length > 0 && (
+                <div className="px-2 py-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                  No unread spaces
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -663,6 +777,9 @@ interface DMSectionProps {
   users: User[]
   activeStreamSlug: string | null
   currentUserId?: string
+  collapseState: CollapseState
+  onToggleCollapse: () => void
+  onToggleHardCollapse: () => void
   onSelectStream: (stream: Stream, mode: OpenMode) => void
   onStartDM: (userId: string) => void
   onCreateDM?: () => void
@@ -686,6 +803,9 @@ function DMSection({
   users,
   activeStreamSlug,
   currentUserId,
+  collapseState,
+  onToggleCollapse,
+  onToggleHardCollapse,
   onSelectStream,
   onStartDM,
   onCreateDM,
@@ -732,68 +852,117 @@ function DMSection({
     return nameA.localeCompare(nameB)
   })
 
+  // Calculate total unread for hard collapse mode
+  const totalUnread = dmStreams.reduce((sum, s) => sum + (s.unreadCount || 0), 0)
+
+  // For soft collapse, filter to only show users/groups with unread
+  const visibleGroupDMs =
+    collapseState === "soft" ? groupDMs.filter((dm) => dm.unreadCount > 0) : groupDMs
+  const visibleUsers =
+    collapseState === "soft"
+      ? sortedUsers.filter((user) => {
+          const dm = userToDM.get(user.id)
+          return dm && dm.unreadCount > 0
+        })
+      : sortedUsers
+
+  const isHardCollapsed = collapseState === "hard"
+  const ChevronIcon = isHardCollapsed ? ChevronRight : ChevronDown
+
   return (
     <div className="mb-4">
-      <div className="mb-2 px-2 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Direct messages
-        </span>
-        {onCreateDM && (
-          <button
-            onClick={onCreateDM}
-            className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors"
+      <div
+        className="mb-2 px-2 flex items-center justify-between cursor-pointer select-none group"
+        onClick={onToggleCollapse}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onToggleHardCollapse()
+        }}
+        title="Click to toggle, right-click to fully collapse"
+      >
+        <div className="flex items-center gap-1">
+          <ChevronIcon
+            className="h-3 w-3 transition-transform"
             style={{ color: "var(--text-muted)" }}
-            title="New group message"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-0.5">
-        {/* Group DMs first */}
-        {groupDMs.map((dm) => (
-          <DMItem
-            key={dm.id}
-            stream={dm}
-            displayName={dm.name || "Group"}
-            isActive={activeStreamSlug === dm.id || activeStreamSlug === dm.slug}
-            onClick={(e) => onSelectStream(dm, getOpenMode(e))}
-            onPin={onPinStream ? () => onPinStream(dm.id) : undefined}
-            onUnpin={onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
           />
-        ))}
-
-        {/* Individual users */}
-        {sortedUsers.map((user) => {
-          const dm = userToDM.get(user.id)
-          return (
-            <UserDMItem
-              key={user.id}
-              user={user}
-              dm={dm}
-              isActive={dm ? activeStreamSlug === dm.id || activeStreamSlug === dm.slug : false}
-              onClick={(e) => {
-                if (dm) {
-                  onSelectStream(dm, getOpenMode(e))
-                } else {
-                  onStartDM(user.id)
-                }
-              }}
-              onPin={dm && onPinStream ? () => onPinStream(dm.id) : undefined}
-              onUnpin={dm && onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
-            />
-          )
-        })}
-
-        {sortedUsers.length === 0 && groupDMs.length === 0 && (
-          <div className="px-2 py-3 text-center">
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              No other users in workspace
-            </p>
-          </div>
-        )}
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            Direct messages
+          </span>
+          {isHardCollapsed && totalUnread > 0 && (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded-full font-medium ml-1"
+              style={{ background: "var(--accent-secondary)", color: "white" }}
+            >
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {onCreateDM && (
+            <button
+              onClick={onCreateDM}
+              className="p-1 rounded hover:bg-[var(--hover-overlay-strong)] transition-colors opacity-0 group-hover:opacity-100"
+              style={{ color: "var(--text-muted)" }}
+              title="New group message"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {!isHardCollapsed && (
+        <div className="space-y-0.5">
+          {/* Group DMs first */}
+          {visibleGroupDMs.map((dm) => (
+            <DMItem
+              key={dm.id}
+              stream={dm}
+              displayName={dm.name || "Group"}
+              isActive={activeStreamSlug === dm.id || activeStreamSlug === dm.slug}
+              onClick={(e) => onSelectStream(dm, getOpenMode(e))}
+              onPin={onPinStream ? () => onPinStream(dm.id) : undefined}
+              onUnpin={onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
+            />
+          ))}
+
+          {/* Individual users */}
+          {visibleUsers.map((user) => {
+            const dm = userToDM.get(user.id)
+            return (
+              <UserDMItem
+                key={user.id}
+                user={user}
+                dm={dm}
+                isActive={dm ? activeStreamSlug === dm.id || activeStreamSlug === dm.slug : false}
+                onClick={(e) => {
+                  if (dm) {
+                    onSelectStream(dm, getOpenMode(e))
+                  } else {
+                    onStartDM(user.id)
+                  }
+                }}
+                onPin={dm && onPinStream ? () => onPinStream(dm.id) : undefined}
+                onUnpin={dm && onUnpinStream ? () => onUnpinStream(dm.id) : undefined}
+              />
+            )
+          })}
+
+          {collapseState === "soft" && visibleGroupDMs.length === 0 && visibleUsers.length === 0 && (
+            <div className="px-2 py-1 text-xs" style={{ color: "var(--text-muted)" }}>
+              No unread messages
+            </div>
+          )}
+
+          {collapseState === "open" && sortedUsers.length === 0 && groupDMs.length === 0 && (
+            <div className="px-2 py-3 text-center">
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                No other users in workspace
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -975,10 +1144,11 @@ function UserDMItem({ user, dm, isActive, onClick, onPin, onUnpin }: UserDMItemP
 interface UserFooterProps {
   onLogout: () => void
   onEditProfile?: () => void
+  onOpenSettings?: () => void
   profile?: UserProfile | null
 }
 
-function UserFooter({ onLogout, onEditProfile, profile }: UserFooterProps) {
+function UserFooter({ onLogout, onEditProfile, onOpenSettings, profile }: UserFooterProps) {
   const displayName = profile?.displayName || "You"
   const title = profile?.title
 
@@ -1021,9 +1191,11 @@ function UserFooter({ onLogout, onEditProfile, profile }: UserFooterProps) {
               Edit profile
             </DropdownItem>
           )}
-          <DropdownItem onClick={() => {}} icon={<Settings className="h-4 w-4" />}>
-            Preferences
-          </DropdownItem>
+          {onOpenSettings && (
+            <DropdownItem onClick={onOpenSettings} icon={<Settings className="h-4 w-4" />}>
+              Preferences
+            </DropdownItem>
+          )}
           <DropdownDivider />
           <DropdownItem onClick={onLogout} icon={<LogOut className="h-4 w-4" />} variant="danger">
             Sign out

@@ -62,6 +62,11 @@ interface MessageState {
   streams: Map<string, StreamCache> // streamId -> StreamCache
   events: Map<string, EventsCache> // streamId -> EventsCache
 
+  // Alias mapping: realStreamId -> Set of alias keys (e.g., event_xxx)
+  // Used for pending threads where we cache data under event_xxx but receive
+  // WebSocket events for the real stream_xxx
+  streamAliases: Map<string, Set<string>>
+
   // Outbox
   outbox: OutboxMessage[]
 
@@ -82,6 +87,10 @@ interface MessageActions {
   updateEvent: (streamId: string, eventId: string, partial: Partial<StreamEvent>) => void
   removeEvent: (streamId: string, eventId: string) => void
   prependEvents: (streamId: string, events: StreamEvent[], hasMore: boolean, nextCursor?: string) => void
+
+  // Alias management (for pending threads viewed via event_xxx)
+  addStreamAlias: (realStreamId: string, aliasKey: string) => void
+  removeStreamAlias: (realStreamId: string, aliasKey: string) => void
 
   // Outbox actions
   addToOutbox: (message: Omit<OutboxMessage, "status" | "retryCount">) => void
@@ -116,6 +125,7 @@ export const useMessageStore = create<MessageStore>()(
     // Initial state
     streams: new Map(),
     events: new Map(),
+    streamAliases: new Map(),
     outbox: [],
     isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
     isWebSocketConnected: false,
@@ -162,41 +172,55 @@ export const useMessageStore = create<MessageStore>()(
 
     addEvent: (streamId, event) => {
       set((state) => {
-        const existing = state.events.get(streamId)
-        if (!existing) {
-          // No cache yet, create one
-          const newEvents = new Map(state.events)
-          newEvents.set(streamId, {
-            events: [event],
-            hasMore: false,
-            lastFetchedAt: Date.now(),
-          })
-          return { events: newEvents }
-        }
-
-        // Check for duplicates by ID
-        if (existing.events.some((e) => e.id === event.id)) {
-          return state
-        }
-
-        // Check if this event confirms an outbox message (clientMessageId match)
-        const confirmsOutbox = event.clientMessageId && existing.events.some((e) => e.id === event.clientMessageId)
-
         const newEvents = new Map(state.events)
-        if (confirmsOutbox) {
-          // Replace the temp event with the real one
-          newEvents.set(streamId, {
-            ...existing,
-            events: existing.events.map((e) =>
-              e.id === event.clientMessageId ? { ...event, pending: false, sendFailed: false } : e,
-            ),
-          })
-        } else {
-          // Add new event at the end (sorted by createdAt)
-          const events = [...existing.events, event].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          )
-          newEvents.set(streamId, { ...existing, events })
+
+        // Helper to add event to a specific cache key
+        const addToCache = (cacheKey: string) => {
+          const existing = newEvents.get(cacheKey) || state.events.get(cacheKey)
+          if (!existing) {
+            // No cache yet, create one
+            newEvents.set(cacheKey, {
+              events: [event],
+              hasMore: false,
+              lastFetchedAt: Date.now(),
+            })
+            return
+          }
+
+          // Check for duplicates by ID
+          if (existing.events.some((e) => e.id === event.id)) {
+            return
+          }
+
+          // Check if this event confirms an outbox message (clientMessageId match)
+          const confirmsOutbox = event.clientMessageId && existing.events.some((e) => e.id === event.clientMessageId)
+
+          if (confirmsOutbox) {
+            // Replace the temp event with the real one
+            newEvents.set(cacheKey, {
+              ...existing,
+              events: existing.events.map((e) =>
+                e.id === event.clientMessageId ? { ...event, pending: false, sendFailed: false } : e,
+              ),
+            })
+          } else {
+            // Add new event at the end (sorted by createdAt)
+            const events = [...existing.events, event].sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+            )
+            newEvents.set(cacheKey, { ...existing, events })
+          }
+        }
+
+        // Add to the primary stream ID
+        addToCache(streamId)
+
+        // Also add to any aliased cache keys (e.g., event_xxx aliases for stream_xxx)
+        const aliases = state.streamAliases.get(streamId)
+        if (aliases) {
+          for (const alias of aliases) {
+            addToCache(alias)
+          }
         }
 
         return { events: newEvents }
@@ -257,6 +281,33 @@ export const useMessageStore = create<MessageStore>()(
         }
 
         return { events: newEvents }
+      })
+    },
+
+    // Alias management (for pending threads viewed via event_xxx)
+    addStreamAlias: (realStreamId, aliasKey) => {
+      set((state) => {
+        const newAliases = new Map(state.streamAliases)
+        const existing = newAliases.get(realStreamId) || new Set()
+        existing.add(aliasKey)
+        newAliases.set(realStreamId, existing)
+        return { streamAliases: newAliases }
+      })
+    },
+
+    removeStreamAlias: (realStreamId, aliasKey) => {
+      set((state) => {
+        const newAliases = new Map(state.streamAliases)
+        const existing = newAliases.get(realStreamId)
+        if (existing) {
+          existing.delete(aliasKey)
+          if (existing.size === 0) {
+            newAliases.delete(realStreamId)
+          } else {
+            newAliases.set(realStreamId, existing)
+          }
+        }
+        return { streamAliases: newAliases }
       })
     },
 

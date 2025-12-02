@@ -161,14 +161,17 @@ export function StreamInterface({
 
       {isThread && parentStream && (
         <ThreadContext
-          ancestors={ancestors.map((e) => ({
-            id: e.id,
-            email: e.actorEmail,
-            message: e.content || "",
-            timestamp: e.createdAt,
-            channelId: e.streamId,
-            replyCount: e.replyCount,
-          }))}
+          ancestors={ancestors
+            // Filter out the root event since it's already shown in the message list
+            .filter((e) => e.id !== rootEvent?.id)
+            .map((e) => ({
+              id: e.id,
+              email: e.actorEmail,
+              message: e.content || "",
+              timestamp: e.createdAt,
+              channelId: e.streamId,
+              replyCount: e.replyCount,
+            }))}
           channelName={(parentStream.name || "").replace("#", "")}
           channelId={parentStream.id}
           onOpenThread={(msgId, _channelId, mode) => handleOpenThread(msgId, mode)}

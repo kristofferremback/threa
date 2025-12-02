@@ -15,6 +15,7 @@ import { ProfileSetupModal } from "./ProfileSetupModal"
 import { InviteModal } from "../InviteModal"
 import { InboxView } from "./InboxView"
 import { KnowledgeBrowserModal } from "./KnowledgeBrowserModal"
+import { UserSettingsModal } from "./UserSettingsModal"
 import { LoadingScreen, LoginScreen, NoWorkspaceScreen, ErrorScreen } from "./screens"
 import { ToolResultPanelProvider, ToolResultPanel } from "../chat/ToolResultViewer"
 import { OfflineBanner } from "../OfflineBanner"
@@ -31,6 +32,7 @@ export function LayoutSystem() {
   const [showBrowseChannels, setShowBrowseChannels] = useState(false)
   const [showKnowledgeBrowser, setShowKnowledgeBrowser] = useState(false)
   const [showProfileSetup, setShowProfileSetup] = useState(false)
+  const [showUserSettings, setShowUserSettings] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
 
@@ -714,6 +716,7 @@ export function LayoutSystem() {
             onOpenInbox={() => openItem({ title: "Activity", type: "activity", data: {} }, "replace")}
             onOpenKnowledge={() => setShowKnowledgeBrowser(true)}
             onBrowseChannels={() => setShowBrowseChannels(true)}
+            onOpenSettings={() => setShowUserSettings(true)}
             onPinStream={handlePinStream}
             onUnpinStream={handleUnpinStream}
             onLeaveStream={handleLeaveStream}
@@ -850,6 +853,12 @@ export function LayoutSystem() {
             }}
             onSkip={() => setShowProfileSetup(false)}
             canSkip={true}
+          />
+
+          <UserSettingsModal
+            isOpen={showUserSettings}
+            workspaceId={bootstrapData.workspace.id}
+            onClose={() => setShowUserSettings(false)}
           />
 
           {/* Tool result viewer panel */}
