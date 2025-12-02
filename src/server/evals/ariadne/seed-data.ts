@@ -371,7 +371,7 @@ async function createMemo(
     ) VALUES (
       ${params.id}, ${params.workspaceId}, ${params.summary}, ${params.topics},
       ${params.anchorEventIds}, ${params.contextStreamId},
-      ${params.confidence}, 'auto', 'workspace',
+      ${params.confidence}, 'ariadne', 'workspace',
       to_tsvector('english', ${params.summary} || ' ' || ${params.topics.join(" ")})
     )`,
   )
@@ -433,11 +433,25 @@ async function generateEmbeddingsForEvalData(
  * Clean up eval data from the database.
  */
 export async function cleanupAriadneEvalData(pool: Pool): Promise<void> {
+  // Helper to safely delete from a table that may not exist
+  const safeDelete = async (query: string) => {
+    try {
+      await pool.query(query)
+    } catch (err) {
+      // Ignore "relation does not exist" errors (42P01)
+      if ((err as { code?: string }).code !== "42P01") {
+        throw err
+      }
+    }
+  }
+
+  // Delete embeddings first (tables may not exist in test DB)
+  await safeDelete(`DELETE FROM memo_embeddings WHERE memo_id IN (SELECT id FROM memos WHERE workspace_id = 'ws_eval_ariadne')`)
+  await safeDelete(`DELETE FROM memo_embeddings_ollama WHERE memo_id IN (SELECT id FROM memos WHERE workspace_id = 'ws_eval_ariadne')`)
+  await safeDelete(`DELETE FROM text_message_embeddings WHERE text_message_id IN (SELECT content_id FROM stream_events WHERE id LIKE 'evt_eval_%')`)
+  await safeDelete(`DELETE FROM text_message_embeddings_ollama WHERE text_message_id IN (SELECT content_id FROM stream_events WHERE id LIKE 'evt_eval_%')`)
+
   // Delete in order respecting foreign keys
-  await pool.query(sql`DELETE FROM memo_embeddings WHERE memo_id LIKE 'memo_eval_%' OR memo_id IN (SELECT id FROM memos WHERE workspace_id = 'ws_eval_ariadne')`)
-  await pool.query(sql`DELETE FROM memo_embeddings_ollama WHERE memo_id LIKE 'memo_eval_%' OR memo_id IN (SELECT id FROM memos WHERE workspace_id = 'ws_eval_ariadne')`)
-  await pool.query(sql`DELETE FROM text_message_embeddings WHERE text_message_id IN (SELECT content_id FROM stream_events WHERE id LIKE 'evt_eval_%')`)
-  await pool.query(sql`DELETE FROM text_message_embeddings_ollama WHERE text_message_id IN (SELECT content_id FROM stream_events WHERE id LIKE 'evt_eval_%')`)
   await pool.query(sql`DELETE FROM memos WHERE workspace_id = 'ws_eval_ariadne'`)
   await pool.query(sql`DELETE FROM stream_members WHERE stream_id LIKE 'str_eval_%'`)
   await pool.query(sql`DELETE FROM stream_events WHERE id LIKE 'evt_eval_%'`)
