@@ -19,7 +19,7 @@ import { buildAriadneDataset, getAriadneDatasetStats, type AriadneEvalCase, type
 import { createAriadneTools, type AriadneToolsContext } from "../../ai/ariadne/tools"
 import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "../../ai/ariadne/prompts"
 import { parseModelString } from "../llm-verifier"
-import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL } from "../../config"
+import { LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_BASE_URL, OPENROUTER_API_KEY } from "../../config"
 import { closeTestPool } from "../../services/__tests__/test-helpers"
 
 export interface CapturedToolCall {
@@ -165,8 +165,25 @@ function createEvalAgent(
       temperature: isThinkingPartner ? 0.8 : 0.7,
       maxTokens: isThinkingPartner ? 4096 : 2048,
     })
+  } else if (config.provider === "openrouter") {
+    if (!OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY is not configured")
+    }
+    model = new ChatOpenAI({
+      model: config.model,
+      temperature: isThinkingPartner ? 0.8 : 0.7,
+      maxTokens: isThinkingPartner ? 4096 : 2048,
+      openAIApiKey: OPENROUTER_API_KEY,
+      configuration: {
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: {
+          "HTTP-Referer": "https://threa.app",
+          "X-Title": "Threa Evals",
+        },
+      },
+    })
   } else {
-    throw new Error(`Ollama models not supported in Ariadne evals - use anthropic or openai provider`)
+    throw new Error(`Ollama models not supported in Ariadne evals - use anthropic, openai, or openrouter provider`)
   }
 
   // Dynamic prompt

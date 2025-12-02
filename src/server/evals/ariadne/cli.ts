@@ -45,10 +45,14 @@ async function main() {
 }
 
 function printHelp() {
-  // Filter to only show Anthropic and OpenAI models (Ollama not supported for agent evals)
-  const supportedModels = getAvailableModels().filter((m) => m.startsWith("anthropic:") || m.startsWith("openai:"))
+  // Filter to only show Anthropic, OpenAI, and OpenRouter models (Ollama not supported for agent evals)
+  const supportedModels = getAvailableModels().filter(
+    (m) => m.startsWith("anthropic:") || m.startsWith("openai:") || m.startsWith("openrouter:"),
+  )
 
-  const configuredModels = getConfiguredModels().filter((m) => m.startsWith("anthropic:") || m.startsWith("openai:"))
+  const configuredModels = getConfiguredModels().filter(
+    (m) => m.startsWith("anthropic:") || m.startsWith("openai:") || m.startsWith("openrouter:"),
+  )
 
   console.log(`
 🧵 Ariadne Agent Eval CLI
@@ -58,7 +62,11 @@ Usage:
 
 Options:
   --model <name>    Model to evaluate (default: anthropic:claude-haiku-4-5-20251001)
-                    Format: provider:model (e.g., anthropic:claude-haiku-4-5-20251001, openai:gpt-4o-mini)
+                    Format: provider:model
+                    Examples:
+                      anthropic:claude-haiku-4-5-20251001
+                      openai:gpt-4o-mini
+                      openrouter:ibm:granite-3.1-8b-instruct
                     Note: Ollama models are NOT supported for agent evals
   --verbose, -v     Show detailed output for each case
   --no-langfuse     Disable Langfuse tracking
@@ -75,6 +83,7 @@ Examples:
   bun run eval:ariadne
   bun run eval:ariadne --model anthropic:claude-haiku-4-5-20251001 --verbose
   bun run eval:ariadne --model openai:gpt-4o-mini
+  bun run eval:ariadne --model openrouter:ibm:granite-3.1-8b-instruct
   bun run eval:ariadne --no-langfuse
 `)
 }

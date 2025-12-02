@@ -13,9 +13,9 @@
 import ollama from "ollama"
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
-import { ANTHROPIC_API_KEY, OPENAI_API_KEY } from "../config"
+import { ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY } from "../config"
 
-export type Provider = "ollama" | "openai" | "anthropic"
+export type Provider = "ollama" | "openai" | "anthropic" | "openrouter"
 
 export interface LLMVerificationResult {
   isSameTopic: boolean
@@ -66,6 +66,14 @@ export function parseModelString(modelString: string): ModelConfig {
     }
   }
 
+  if (parts[0] === "openrouter") {
+    return {
+      provider: "openrouter",
+      model: parts.slice(1).join("/"), // OpenRouter uses slashes: ibm/granite-3.1-8b-instruct
+      temperature: 0.7,
+    }
+  }
+
   // Default to ollama if no provider prefix
   return {
     provider: "ollama",
@@ -86,6 +94,23 @@ const AVAILABLE_MODELS: Record<Provider, string[]> = {
     "claude-3-haiku-20240307",
     "claude-haiku-4-5-20251001",
     "claude-sonnet-4-5-20250929",
+  ],
+  openrouter: [
+    // IBM Granite models
+    "ibm:granite-3.1-8b-instruct",
+    "ibm:granite-3.3-8b-instruct",
+    // Google Gemma
+    "google:gemma-3-4b-it",
+    "google:gemma-3-12b-it",
+    // Qwen
+    "qwen:qwen3-8b",
+    "qwen:qwen3-14b",
+    // DeepSeek
+    "deepseek:deepseek-chat-v3-0324",
+    "deepseek:deepseek-r1",
+    // Anthropic via OpenRouter
+    "anthropic:claude-3.5-haiku",
+    "anthropic:claude-sonnet-4",
   ],
 }
 
@@ -116,6 +141,10 @@ export function getConfiguredProviders(): Provider[] {
 
   if (ANTHROPIC_API_KEY) {
     providers.push("anthropic")
+  }
+
+  if (OPENROUTER_API_KEY) {
+    providers.push("openrouter")
   }
 
   return providers
@@ -170,6 +199,8 @@ export async function verifyWithLLM(
       return verifyWithOpenAI(prompt, config)
     case "anthropic":
       return verifyWithAnthropic(prompt, config)
+    case "openrouter":
+      return verifyWithOpenRouter(prompt, config)
     default:
       throw new Error(`Unknown provider: ${config.provider}`)
   }
@@ -258,6 +289,49 @@ async function verifyWithAnthropic(prompt: string, config: ModelConfig): Promise
 
     const latencyMs = performance.now() - start
     const content = response.content[0]?.type === "text" ? response.content[0].text.trim() : ""
+
+    return parseResponse(content, config, latencyMs)
+  } catch (err) {
+    return errorResult(err, config, performance.now() - start)
+  }
+}
+
+/**
+ * Verify using OpenRouter (OpenAI-compatible API).
+ */
+async function verifyWithOpenRouter(prompt: string, config: ModelConfig): Promise<LLMVerificationResult> {
+  if (!OPENROUTER_API_KEY) {
+    return {
+      isSameTopic: false,
+      relationship: "different",
+      explanation: "OpenRouter API key not configured",
+      model: config.model,
+      provider: config.provider,
+      latencyMs: 0,
+      rawResponse: null,
+      parsedResponse: null,
+    }
+  }
+
+  const client = new OpenAI({
+    apiKey: OPENROUTER_API_KEY,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": "https://threa.app",
+      "X-Title": "Threa Evals",
+    },
+  })
+  const start = performance.now()
+
+  try {
+    const response = await client.chat.completions.create({
+      model: config.model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: config.temperature ?? 0.7,
+    })
+
+    const latencyMs = performance.now() - start
+    const content = response.choices[0]?.message?.content?.trim() || ""
 
     return parseResponse(content, config, latencyMs)
   } catch (err) {

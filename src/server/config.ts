@@ -23,6 +23,7 @@ const config = {
   // AI Providers
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   TAVILY_API_KEY: process.env.TAVILY_API_KEY,
 
   // Ollama (local AI)
@@ -61,6 +62,7 @@ export const USE_STUB_AUTH = config.USE_STUB_AUTH
 // AI Providers
 export const ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY
 export const OPENAI_API_KEY = config.OPENAI_API_KEY
+export const OPENROUTER_API_KEY = config.OPENROUTER_API_KEY
 export const TAVILY_API_KEY = config.TAVILY_API_KEY
 
 // Ollama
