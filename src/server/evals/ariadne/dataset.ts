@@ -2,7 +2,7 @@
  * Ariadne agent eval dataset.
  *
  * Defines test cases for evaluating Ariadne's tool selection,
- * argument accuracy, and response quality.
+ * argument accuracy, and retrieval quality against seeded test data.
  */
 
 import type { AriadneMode } from "../../lib/job-queue"
@@ -60,15 +60,15 @@ export interface AriadneEvalCase {
    */
   strictOrder: boolean
   /**
+   * Expected source IDs that should be found in the response.
+   * These reference event IDs or memo IDs from the seeded data.
+   */
+  expectedSourceIds?: string[]
+  /**
    * Keywords that should appear in the response.
    * Used for basic response quality checks.
    */
   responseKeywords?: string[]
-  /**
-   * Mock tool responses to use during evaluation.
-   * Key is tool name, value is the mock response.
-   */
-  mockResponses: Record<ToolName, string>
 }
 
 export interface AriadneEvalDataset {
@@ -80,6 +80,7 @@ export interface AriadneEvalDataset {
 
 /**
  * Build the Ariadne evaluation dataset.
+ * Test cases reference seeded data from seed-data.ts.
  */
 export function buildAriadneDataset(): AriadneEvalDataset {
   const cases: AriadneEvalCase[] = [
@@ -91,17 +92,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       mode: "retrieval",
       expectedTools: [{ tool: "search_memos" }, { tool: "search_messages" }],
       strictOrder: false,
-      responseKeywords: ["API", "versioning"],
-      mockResponses: {
-        search_memos:
-          "[1] We decided to use URL-based versioning (v1, v2) for the REST API. Major breaking changes warrant new version. Source: #engineering",
-        search_messages:
-          "[1|evt_123|stream_456] Kris in #engineering (12/1/2024): We should use URL-based versioning for the API.\n\n---\n\n[2|evt_124|stream_456] Stefan in #engineering (12/1/2024): Agreed, URL versioning is cleaner than header-based.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_api_v1", "evt_eval_api_v2"],
+      responseKeywords: ["API", "versioning", "URL-based", "v1", "v2"],
     },
     {
       id: "retrieval_simple_02",
@@ -110,16 +102,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       mode: "retrieval",
       expectedTools: [{ tool: "search_memos" }],
       strictOrder: false,
-      responseKeywords: ["authentication", "auth"],
-      mockResponses: {
-        search_memos:
-          "[1] Authentication uses WorkOS AuthKit for SSO. JWT tokens are validated on each request. Source: #architecture",
-        search_messages: "No messages found matching that query.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_auth_1"],
+      responseKeywords: ["authentication", "WorkOS", "JWT"],
     },
 
     // === RETRIEVAL FILTERED ===
@@ -136,16 +120,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
         },
       ],
       strictOrder: false,
-      responseKeywords: ["deployment", "Kris"],
-      mockResponses: {
-        search_memos: "No memos found matching that query.",
-        search_messages:
-          "[1|evt_200|stream_789] Kris in #devops (11/28/2024): Our deployment pipeline should use GitHub Actions with staging environments.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_deploy_1"],
+      responseKeywords: ["deployment", "GitHub Actions", "staging"],
     },
     {
       id: "retrieval_filtered_02",
@@ -160,36 +136,21 @@ export function buildAriadneDataset(): AriadneEvalDataset {
         },
       ],
       strictOrder: false,
-      responseKeywords: ["roadmap", "product"],
-      mockResponses: {
-        search_memos: "No memos found matching that query.",
-        search_messages:
-          "[1|evt_300|stream_product] PM in #product (11/25/2024): Q1 roadmap includes auth improvements and mobile app MVP.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_roadmap_1"],
+      responseKeywords: ["roadmap", "Q1", "mobile"],
     },
 
     // === WEB RESEARCH ===
+    // Note: web_search and fetch_url require external API (Tavily)
+    // These cases test that the agent correctly chooses to use web search
     {
       id: "web_research_01",
       scenario: "web_research",
-      question: "What are the best practices for rate limiting in Node.js?",
+      question: "What are the best practices for rate limiting in Node.js according to the web?",
       mode: "retrieval",
       expectedTools: [{ tool: "search_memos" }, { tool: "web_search" }],
       strictOrder: false,
-      responseKeywords: ["rate limit", "Node"],
-      mockResponses: {
-        search_memos: "No memos found matching that query.",
-        search_messages: "No messages found matching that query.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search:
-          "**Summary:** Common rate limiting approaches include token bucket, sliding window, and fixed window algorithms.\n\n---\n\n**Sources:**\n\n[1] **Rate Limiting Best Practices**\nhttps://example.com/rate-limiting\nUse Redis for distributed rate limiting...",
-        fetch_url: "",
-      },
+      responseKeywords: ["rate limit"],
     },
     {
       id: "web_research_02",
@@ -199,15 +160,6 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       expectedTools: [{ tool: "fetch_url", argMatchers: { url: /example\.com\/article/ } }],
       strictOrder: true,
       responseKeywords: [],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url:
-          "**Understanding Microservices**\n*A guide to microservices architecture*\n\nMicroservices break applications into small, independent services...",
-      },
     },
 
     // === CONTEXT GATHERING ===
@@ -218,16 +170,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       mode: "retrieval",
       expectedTools: [{ tool: "get_stream_context" }],
       strictOrder: true,
-      responseKeywords: [],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context:
-          "Recent messages in #general:\n\n[10:00 AM] Kris: Good morning!\n[10:05 AM] Stefan: Hey! Ready for the sprint planning?\n[10:10 AM] Kris: Yes, let's do it.",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_recent_1", "evt_eval_recent_2", "evt_eval_recent_3"],
+      responseKeywords: ["morning", "sprint planning"],
     },
     {
       id: "context_gathering_02",
@@ -236,17 +180,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       mode: "retrieval",
       expectedTools: [{ tool: "search_messages" }, { tool: "get_thread_history" }],
       strictOrder: false,
-      responseKeywords: ["database", "migration"],
-      mockResponses: {
-        search_memos: "No memos found matching that query.",
-        search_messages:
-          "[1|evt_500|stream_thread1] Dev in thread (12/1/2024): We need to add a migration for the new user_settings table.",
-        get_stream_context: "",
-        get_thread_history:
-          "Thread started from message by Dev:\n\"Database migration discussion\"\n\n---\n\nThread messages:\n\n[9:00 AM] Dev: We need to add a migration.\n[9:05 AM] Kris: Use the existing migration pattern.",
-        web_search: "",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_migration_root", "evt_eval_migration_reply1", "evt_eval_migration_reply2"],
+      responseKeywords: ["database", "migration", "user_settings"],
     },
 
     // === MULTI-TOOL ===
@@ -262,17 +197,8 @@ export function buildAriadneDataset(): AriadneEvalDataset {
         { tool: "search_messages", argMatchers: { inChannels: /backend/i } },
       ],
       strictOrder: false,
-      responseKeywords: ["caching", "best practices"],
-      mockResponses: {
-        search_memos: "[1] We decided to use Redis for caching with a 5-minute TTL. Source: #architecture",
-        search_messages:
-          "[1|evt_600|stream_backend] Dev in #backend (12/1/2024): The caching layer is working well.",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search:
-          "**Summary:** Best practices include cache invalidation strategies, TTL configuration, and using CDN for static assets.",
-        fetch_url: "",
-      },
+      expectedSourceIds: ["evt_eval_caching_1"],
+      responseKeywords: ["caching", "Redis", "TTL"],
     },
 
     // === THINKING PARTNER ===
@@ -284,14 +210,6 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       expectedTools: [], // Thinking partner mode focuses on discussion, not retrieval
       strictOrder: true,
       responseKeywords: ["microservices", "monolith"],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
     },
     {
       id: "thinking_partner_02",
@@ -301,14 +219,6 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       expectedTools: [], // May optionally use web_search for context
       strictOrder: false,
       responseKeywords: ["GraphQL", "REST"],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
     },
 
     // === NO TOOLS NEEDED ===
@@ -320,14 +230,6 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       expectedTools: [],
       strictOrder: true,
       responseKeywords: [],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
     },
     {
       id: "no_tools_02",
@@ -337,20 +239,12 @@ export function buildAriadneDataset(): AriadneEvalDataset {
       expectedTools: [],
       strictOrder: true,
       responseKeywords: ["4"],
-      mockResponses: {
-        search_memos: "",
-        search_messages: "",
-        get_stream_context: "",
-        get_thread_history: "",
-        web_search: "",
-        fetch_url: "",
-      },
     },
   ]
 
   return {
-    name: "ariadne-agent-v1",
-    version: "1.0.0",
+    name: "ariadne-agent-v2",
+    version: "2.0.0",
     cases,
     createdAt: new Date().toISOString(),
   }

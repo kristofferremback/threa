@@ -24,7 +24,7 @@ async function main() {
   const help = args.includes("--help") || args.includes("-h")
 
   const modelIndex = args.indexOf("--model")
-  const model = modelIndex !== -1 ? args[modelIndex + 1] : "anthropic:claude-3-5-haiku-latest"
+  const model = modelIndex !== -1 ? args[modelIndex + 1] : "anthropic:claude-haiku-4-5-20251001"
 
   if (help) {
     printHelp()
@@ -61,8 +61,8 @@ Usage:
   bun run eval:ariadne [options]
 
 Options:
-  --model <name>    Model to evaluate (default: anthropic:claude-3-5-haiku-latest)
-                    Format: provider:model (e.g., anthropic:claude-3-5-haiku-latest, openai:gpt-4o-mini)
+  --model <name>    Model to evaluate (default: anthropic:claude-haiku-4-5-20251001)
+                    Format: provider:model (e.g., anthropic:claude-haiku-4-5-20251001, openai:gpt-4o-mini)
                     Note: Ollama models are NOT supported for agent evals
   --verbose, -v     Show detailed output for each case
   --no-langfuse     Disable Langfuse tracking
@@ -77,7 +77,7 @@ ${configuredModels.map((m) => `  - ${m}`).join("\n")}
 
 Examples:
   bun run eval:ariadne
-  bun run eval:ariadne --model anthropic:claude-3-5-haiku-latest --verbose
+  bun run eval:ariadne --model anthropic:claude-haiku-4-5-20251001 --verbose
   bun run eval:ariadne --model openai:gpt-4o-mini
   bun run eval:ariadne --no-langfuse
 `)

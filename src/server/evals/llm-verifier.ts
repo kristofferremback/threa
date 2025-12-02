@@ -75,11 +75,12 @@ export function parseModelString(modelString: string): ModelConfig {
 
 /**
  * Available models by provider.
+ * Uses the exact model names to match ai-providers.ts.
  */
 const AVAILABLE_MODELS: Record<Provider, string[]> = {
   ollama: ["granite4:350m", "granite4", "gemma3:1b", "gemma3:12b", "deepseek-r1:8b"],
   openai: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-  anthropic: ["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest"],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929"],
 }
 
 /**
