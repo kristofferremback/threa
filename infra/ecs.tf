@@ -9,6 +9,19 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
+# Capacity providers for Fargate and Fargate Spot
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name = aws_ecs_cluster.main.name
+
+  capacity_providers = var.use_spot ? ["FARGATE", "FARGATE_SPOT"] : ["FARGATE"]
+
+  default_capacity_provider_strategy {
+    base              = var.use_spot ? 0 : 1
+    weight            = 1
+    capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
+  }
+}
+
 # Security group for the ECS tasks
 resource "aws_security_group" "ecs_tasks" {
   name        = "${var.app_name}-ecs-tasks"
@@ -68,16 +81,20 @@ resource "aws_ecs_task_definition" "app" {
       ]
 
       # Secrets from SSM Parameter Store
-      secrets = [
-        {
-          name      = "DATABASE_URL"
-          valueFrom = aws_ssm_parameter.database_url.arn
-        },
-        {
-          name      = "REDIS_URL"
-          valueFrom = aws_ssm_parameter.redis_url.arn
-        }
-      ]
+      secrets = concat(
+        [
+          {
+            name      = "DATABASE_URL"
+            valueFrom = aws_ssm_parameter.database_url.arn
+          }
+        ],
+        var.enable_redis ? [
+          {
+            name      = "REDIS_URL"
+            valueFrom = aws_ssm_parameter.redis_url[0].arn
+          }
+        ] : []
+      )
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -105,7 +122,13 @@ resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+
+  # Use capacity provider strategy instead of launch_type for Spot support
+  capacity_provider_strategy {
+    capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+    base              = var.use_spot ? 0 : 1
+  }
 
   network_configuration {
     subnets          = data.aws_subnets.default.ids
@@ -120,4 +143,6 @@ resource "aws_ecs_service" "app" {
 
   # Force new deployment when task definition changes
   force_new_deployment = true
+
+  depends_on = [aws_ecs_cluster_capacity_providers.main]
 }

@@ -68,6 +68,8 @@ terraform apply
 
 ## Estimated Costs
 
+### Default Configuration (~$37/month)
+
 | Resource | Monthly Cost |
 |----------|-------------|
 | ECS Fargate (0.25 vCPU, 0.5GB) | ~$10 |
@@ -76,6 +78,18 @@ terraform apply
 | CloudWatch Logs | ~$1 |
 | ECR Storage | ~$0.10 |
 | **Total** | **~$37/month** |
+
+### Budget Configuration (~$17/month)
+
+With `use_spot = true` and `enable_redis = false`:
+
+| Resource | Monthly Cost |
+|----------|-------------|
+| ECS Fargate Spot (0.25 vCPU, 0.5GB) | ~$3 |
+| RDS PostgreSQL (db.t4g.micro) | ~$13 |
+| CloudWatch Logs | ~$1 |
+| ECR Storage | ~$0.10 |
+| **Total** | **~$17/month** |
 
 ## Configuration
 
@@ -95,6 +109,8 @@ terraform apply
 | `redis_node_type` | cache.t4g.micro | ElastiCache node size |
 | `container_cpu` | 256 | CPU units (256 = 0.25 vCPU) |
 | `container_memory` | 512 | Memory in MB |
+| `use_spot` | false | Use Fargate Spot (~70% savings, tasks may be interrupted) |
+| `enable_redis` | true | Enable ElastiCache Redis (set false for single-instance) |
 
 ### Adding App Secrets
 

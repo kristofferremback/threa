@@ -22,3 +22,7 @@ db_password       = "CHANGE_ME_TO_SECURE_PASSWORD"  # Use a strong password!
 
 # ElastiCache Redis
 redis_node_type = "cache.t4g.micro"  # ~$13/month
+enable_redis    = true               # Set to false for single-instance to save ~$13/month
+
+# Cost optimization
+use_spot = false  # Set to true for ~70% Fargate savings (tasks may be interrupted)

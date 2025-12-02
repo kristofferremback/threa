@@ -36,10 +36,10 @@ output "rds_database_name" {
   value       = aws_db_instance.main.db_name
 }
 
-# ElastiCache outputs
+# ElastiCache outputs (only when enabled)
 output "redis_endpoint" {
   description = "ElastiCache Redis endpoint"
-  value       = "${aws_elasticache_cluster.main.cache_nodes[0].address}:${aws_elasticache_cluster.main.cache_nodes[0].port}"
+  value       = var.enable_redis ? "${aws_elasticache_cluster.main[0].cache_nodes[0].address}:${aws_elasticache_cluster.main[0].cache_nodes[0].port}" : null
 }
 
 # Note: Public IP is dynamic with Fargate without ALB

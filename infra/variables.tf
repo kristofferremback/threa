@@ -82,3 +82,16 @@ variable "redis_node_type" {
   type        = string
   default     = "cache.t4g.micro" # Cheapest option (~$13/month)
 }
+
+# Cost optimization options
+variable "use_spot" {
+  description = "Use Fargate Spot for ~70% cost savings (tasks may be interrupted with 2-min warning)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_redis" {
+  description = "Enable ElastiCache Redis. Set to false for single-instance deployments to save ~$13/month"
+  type        = bool
+  default     = true
+}
