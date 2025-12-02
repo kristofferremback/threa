@@ -46,13 +46,9 @@ async function main() {
 
 function printHelp() {
   // Filter to only show Anthropic and OpenAI models (Ollama not supported for agent evals)
-  const supportedModels = getAvailableModels().filter(
-    (m) => m.startsWith("anthropic:") || m.startsWith("openai:"),
-  )
+  const supportedModels = getAvailableModels().filter((m) => m.startsWith("anthropic:") || m.startsWith("openai:"))
 
-  const configuredModels = getConfiguredModels().filter(
-    (m) => m.startsWith("anthropic:") || m.startsWith("openai:"),
-  )
+  const configuredModels = getConfiguredModels().filter((m) => m.startsWith("anthropic:") || m.startsWith("openai:"))
 
   console.log(`
 🧵 Ariadne Agent Eval CLI
@@ -105,10 +101,7 @@ ${Object.entries(stats.byMode)
 
 Cases:
 ${dataset.cases
-  .map(
-    (c) =>
-      `  ${c.id.padEnd(25)} [${c.mode}] ${c.expectedTools.map((t) => t.tool).join(", ") || "(no tools)"}`,
-  )
+  .map((c) => `  ${c.id.padEnd(25)} [${c.mode}] ${c.expectedTools.map((t) => t.tool).join(", ") || "(no tools)"}`)
   .join("\n")}
 `)
 }

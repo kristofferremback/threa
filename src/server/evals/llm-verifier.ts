@@ -24,7 +24,8 @@ export interface LLMVerificationResult {
   model: string
   provider: Provider
   latencyMs: number
-  rawResponse?: string
+  rawResponse: string | null
+  parsedResponse: Record<string, any> | null
 }
 
 export interface ModelConfig {
@@ -53,7 +54,7 @@ export function parseModelString(modelString: string): ModelConfig {
     return {
       provider: "openai",
       model: parts.slice(1).join(":"),
-      temperature: 0.1,
+      temperature: 1,
     }
   }
 
@@ -78,9 +79,14 @@ export function parseModelString(modelString: string): ModelConfig {
  * Uses the exact model names to match ai-providers.ts.
  */
 const AVAILABLE_MODELS: Record<Provider, string[]> = {
-  ollama: ["granite4:350m", "granite4", "gemma3:1b", "gemma3:12b", "deepseek-r1:8b"],
-  openai: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-  anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929"],
+  ollama: ["granite4:350m", "granite4:1b", "gemma3:1b", "deepseek-r1:1.5b", "qwen3:0.6b", "qwen3:1.7b"],
+  openai: ["gpt-5-nano", "gpt-5-mini", "gpt-5"],
+  anthropic: [
+    "claude-3-5-haiku-20241022",
+    "claude-3-haiku-20240307",
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-5-20250929",
+  ],
 }
 
 /**
@@ -251,8 +257,7 @@ async function verifyWithAnthropic(prompt: string, config: ModelConfig): Promise
     })
 
     const latencyMs = performance.now() - start
-    const content =
-      response.content[0]?.type === "text" ? response.content[0].text.trim() : ""
+    const content = response.content[0]?.type === "text" ? response.content[0].text.trim() : ""
 
     return parseResponse(content, config, latencyMs)
   } catch (err) {
@@ -274,6 +279,7 @@ function parseResponse(content: string, config: ModelConfig, latencyMs: number):
       provider: config.provider,
       latencyMs,
       rawResponse: content,
+      parsedResponse: null,
     }
   }
 
@@ -287,6 +293,7 @@ function parseResponse(content: string, config: ModelConfig, latencyMs: number):
       provider: config.provider,
       latencyMs,
       rawResponse: content,
+      parsedResponse: parsed,
     }
   } catch {
     return {
@@ -297,6 +304,7 @@ function parseResponse(content: string, config: ModelConfig, latencyMs: number):
       provider: config.provider,
       latencyMs,
       rawResponse: content,
+      parsedResponse: null,
     }
   }
 }
