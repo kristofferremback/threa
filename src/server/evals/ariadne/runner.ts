@@ -58,6 +58,10 @@ export interface AriadneEvalResult {
 
   // Combined score
   overallScore: number
+
+  // Error tracking
+  error?: string
+  errorStack?: string
 }
 
 export interface AriadneEvalRunSummary {
@@ -66,6 +70,7 @@ export interface AriadneEvalRunSummary {
   datasetName: string
   datasetVersion: string
   totalCases: number
+  errorCount: number
   startedAt: string
   completedAt: string
   durationMs: number
@@ -83,6 +88,7 @@ export interface AriadneEvalRunSummary {
     string,
     {
       total: number
+      errors: number
       avgToolSelectionScore: number
       avgRetrievalScore: number
       avgOverallScore: number
@@ -99,10 +105,7 @@ export interface AriadneEvalRunnerConfig {
 /**
  * Wrap tools to capture their calls while still executing them.
  */
-function wrapToolsForCapture(
-  tools: StructuredTool[],
-  capturedCalls: CapturedToolCall[],
-): StructuredTool[] {
+function wrapToolsForCapture(tools: StructuredTool[], capturedCalls: CapturedToolCall[]): StructuredTool[] {
   return tools.map((tool) => {
     const originalInvoke = tool.invoke.bind(tool)
 
@@ -198,6 +201,8 @@ async function runSingleCase(
 
   let response = ""
   let allToolResults = ""
+  let error: string | undefined
+  let errorStack: string | undefined
 
   try {
     const result = await agent.invoke({
@@ -215,10 +220,38 @@ async function runSingleCase(
     const lastMessage = messages[messages.length - 1]
     response = typeof lastMessage.content === "string" ? lastMessage.content : JSON.stringify(lastMessage.content)
   } catch (err) {
-    response = `Error: ${err instanceof Error ? err.message : String(err)}`
+    error = err instanceof Error ? err.message : String(err)
+    errorStack = err instanceof Error ? err.stack : undefined
+    response = ""
   }
 
   const latencyMs = performance.now() - start
+
+  // If there was an error, return a failed result with zero scores
+  if (error) {
+    return {
+      caseId: evalCase.id,
+      scenario: evalCase.scenario,
+      mode: evalCase.mode,
+      toolSelectionScore: 0,
+      toolArgumentScore: 0,
+      capturedTools: capturedCalls.map((c) => c.name),
+      expectedTools: evalCase.expectedTools.map((t) => t.tool),
+      missingTools: evalCase.expectedTools.map((t) => t.tool),
+      extraTools: [],
+      argErrors: [],
+      retrievalScore: 0,
+      expectedSources: evalCase.expectedSourceIds || [],
+      foundSources: [],
+      missingSources: evalCase.expectedSourceIds || [],
+      responseQualityScore: 0,
+      responseLength: 0,
+      latencyMs,
+      overallScore: 0,
+      error,
+      errorStack,
+    }
+  }
 
   // Evaluate tool calls
   const toolEval = evaluateToolCalls(capturedCalls, evalCase)
@@ -516,11 +549,18 @@ export async function runAriadneEval(config: AriadneEvalRunnerConfig): Promise<A
       process.stdout.write(`\r${progress} Running...`)
     }
 
-    try {
-      const result = await runSingleCase(pool, seededData, evalCase, config.model, langfuse, runId)
-      results.push(result)
+    const result = await runSingleCase(pool, seededData, evalCase, config.model, langfuse, runId)
+    results.push(result)
 
-      if (config.verbose) {
+    if (config.verbose) {
+      if (result.error) {
+        console.log(`  ❌ ERROR: ${result.error}`)
+        if (result.errorStack) {
+          // Print first 3 lines of stack trace for context
+          const stackLines = result.errorStack.split("\n").slice(0, 4).join("\n")
+          console.log(`     ${stackLines.replace(/\n/g, "\n     ")}`)
+        }
+      } else {
         const status = result.overallScore >= 0.7 ? "✅" : result.overallScore >= 0.4 ? "⚠️" : "❌"
         console.log(
           `  ${status} overall=${(result.overallScore * 100).toFixed(0)}% ` +
@@ -532,8 +572,9 @@ export async function runAriadneEval(config: AriadneEvalRunnerConfig): Promise<A
           console.log(`     Missing sources: ${result.missingSources.join(", ")}`)
         }
       }
-    } catch (err) {
-      console.error(`\n❌ Error on case ${evalCase.id}:`, err)
+    } else if (result.error) {
+      // Always show errors even in non-verbose mode
+      console.log(`\n❌ ${evalCase.id}: ${result.error}`)
     }
   }
 
@@ -571,34 +612,69 @@ function calculateSummary(
 ): AriadneEvalRunSummary {
   const completedAt = new Date()
 
-  // Averages
-  const avgToolSelectionScore = results.reduce((sum, r) => sum + r.toolSelectionScore, 0) / results.length
-  const avgToolArgumentScore = results.reduce((sum, r) => sum + r.toolArgumentScore, 0) / results.length
-  const avgRetrievalScore = results.reduce((sum, r) => sum + r.retrievalScore, 0) / results.length
-  const avgResponseQualityScore = results.reduce((sum, r) => sum + r.responseQualityScore, 0) / results.length
-  const avgOverallScore = results.reduce((sum, r) => sum + r.overallScore, 0) / results.length
-  const avgLatencyMs = results.reduce((sum, r) => sum + r.latencyMs, 0) / results.length
+  // Count errors
+  const errorCount = results.filter((r) => r.error).length
+  const successfulResults = results.filter((r) => !r.error)
+
+  // Averages (only count successful results)
+  const avgToolSelectionScore =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.toolSelectionScore, 0) / successfulResults.length
+      : 0
+  const avgToolArgumentScore =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.toolArgumentScore, 0) / successfulResults.length
+      : 0
+  const avgRetrievalScore =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.retrievalScore, 0) / successfulResults.length
+      : 0
+  const avgResponseQualityScore =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.responseQualityScore, 0) / successfulResults.length
+      : 0
+  const avgOverallScore =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.overallScore, 0) / successfulResults.length
+      : 0
+  const avgLatencyMs =
+    successfulResults.length > 0
+      ? successfulResults.reduce((sum, r) => sum + r.latencyMs, 0) / successfulResults.length
+      : 0
 
   // By scenario
   const byScenario: Record<
     string,
-    { total: number; avgToolSelectionScore: number; avgRetrievalScore: number; avgOverallScore: number }
+    { total: number; errors: number; avgToolSelectionScore: number; avgRetrievalScore: number; avgOverallScore: number }
   > = {}
 
   for (const r of results) {
     if (!byScenario[r.scenario]) {
-      byScenario[r.scenario] = { total: 0, avgToolSelectionScore: 0, avgRetrievalScore: 0, avgOverallScore: 0 }
+      byScenario[r.scenario] = {
+        total: 0,
+        errors: 0,
+        avgToolSelectionScore: 0,
+        avgRetrievalScore: 0,
+        avgOverallScore: 0,
+      }
     }
     byScenario[r.scenario].total++
-    byScenario[r.scenario].avgToolSelectionScore += r.toolSelectionScore
-    byScenario[r.scenario].avgRetrievalScore += r.retrievalScore
-    byScenario[r.scenario].avgOverallScore += r.overallScore
+    if (r.error) {
+      byScenario[r.scenario].errors++
+    } else {
+      byScenario[r.scenario].avgToolSelectionScore += r.toolSelectionScore
+      byScenario[r.scenario].avgRetrievalScore += r.retrievalScore
+      byScenario[r.scenario].avgOverallScore += r.overallScore
+    }
   }
 
   for (const scenario of Object.keys(byScenario)) {
-    byScenario[scenario].avgToolSelectionScore /= byScenario[scenario].total
-    byScenario[scenario].avgRetrievalScore /= byScenario[scenario].total
-    byScenario[scenario].avgOverallScore /= byScenario[scenario].total
+    const successCount = byScenario[scenario].total - byScenario[scenario].errors
+    if (successCount > 0) {
+      byScenario[scenario].avgToolSelectionScore /= successCount
+      byScenario[scenario].avgRetrievalScore /= successCount
+      byScenario[scenario].avgOverallScore /= successCount
+    }
   }
 
   return {
@@ -607,6 +683,7 @@ function calculateSummary(
     datasetName: dataset.name,
     datasetVersion: dataset.version,
     totalCases: results.length,
+    errorCount,
     startedAt: startedAt.toISOString(),
     completedAt: completedAt.toISOString(),
     durationMs: completedAt.getTime() - startedAt.getTime(),
@@ -674,6 +751,12 @@ async function logSummaryToLangfuse(langfuse: Langfuse, summary: AriadneEvalRunS
 function printSummary(summary: AriadneEvalRunSummary): void {
   console.log(`\n📈 Results`)
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+
+  if (summary.errorCount > 0) {
+    console.log(`⚠️  Errors: ${summary.errorCount}/${summary.totalCases} cases failed`)
+    console.log(``)
+  }
+
   console.log(`Tool Selection Score: ${(summary.avgToolSelectionScore * 100).toFixed(1)}%`)
   console.log(`Tool Argument Score: ${(summary.avgToolArgumentScore * 100).toFixed(1)}%`)
   console.log(`Retrieval Score: ${(summary.avgRetrievalScore * 100).toFixed(1)}%`)
@@ -686,9 +769,12 @@ function printSummary(summary: AriadneEvalRunSummary): void {
   console.log(`By Scenario:`)
 
   for (const [scenario, data] of Object.entries(summary.byScenario)) {
+    const successCount = data.total - data.errors
     const pct = (data.avgOverallScore * 100).toFixed(0)
-    const bar = "█".repeat(Math.round(data.avgOverallScore * 10)) + "░".repeat(10 - Math.round(data.avgOverallScore * 10))
-    console.log(`  ${scenario.padEnd(20)} ${bar} ${pct}% (n=${data.total})`)
+    const bar =
+      "█".repeat(Math.round(data.avgOverallScore * 10)) + "░".repeat(10 - Math.round(data.avgOverallScore * 10))
+    const errorSuffix = data.errors > 0 ? ` ❌${data.errors}` : ""
+    console.log(`  ${scenario.padEnd(20)} ${bar} ${pct}% (n=${successCount}/${data.total}${errorSuffix})`)
   }
 
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`)
