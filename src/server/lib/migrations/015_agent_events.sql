@@ -16,3 +16,4 @@ CREATE INDEX IF NOT EXISTS idx_stream_events_agent ON stream_events(agent_id) WH
 COMMENT ON COLUMN stream_events.agent_id IS 'AI agent/persona that created this event (mutually exclusive with actor_id for agent-generated content)';
 
 
+

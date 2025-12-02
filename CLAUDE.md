@@ -1,3 +1,9 @@
+## Important Documentation
+
+- **[docs/features.md](docs/features.md)** - UI component feature specifications. **MUST READ** before modifying frontend components to avoid accidentally removing features.
+
+---
+
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
