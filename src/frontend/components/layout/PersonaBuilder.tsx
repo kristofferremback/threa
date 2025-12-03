@@ -737,10 +737,10 @@ export function PersonaBuilder({
                     className="mt-0.5"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                    <div className="text-xs font-medium" style={{ color: enabledTools.includes(tool) ? "white" : "var(--text-primary)" }}>
                       {TOOL_DESCRIPTIONS[tool].name}
                     </div>
-                    <div className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                    <div className="text-xs truncate" style={{ color: enabledTools.includes(tool) ? "rgba(255,255,255,0.8)" : "var(--text-muted)" }}>
                       {TOOL_DESCRIPTIONS[tool].description}
                     </div>
                   </div>
