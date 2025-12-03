@@ -143,6 +143,10 @@ export async function setupStreamWebSocket(
     // Notifications & read state
     "event:notification.created",
     "event:read_cursor.updated",
+    // Personas
+    "event:persona.created",
+    "event:persona.updated",
+    "event:persona.deleted",
     // Ephemeral events (not persisted, real-time only)
     "ephemeral:session.started",
     "ephemeral:session.step",
@@ -186,7 +190,7 @@ export async function setupStreamWebSocket(
             // This is an agent message (e.g., Ariadne)
             agentId = agent_id
             const agentResult = await pool.query<{ name: string }>(
-              sql`SELECT name FROM ai_personas WHERE id = ${agent_id}`,
+              sql`SELECT name FROM agent_personas WHERE id = ${agent_id}`,
             )
             agentName = agentResult.rows[0]?.name || "AI Assistant"
             actorName = agentName
@@ -631,30 +635,65 @@ export async function setupStreamWebSocket(
         }
 
         // ========================================================================
+        // Persona Events
+        // ========================================================================
+
+        case "event:persona.created":
+        case "event:persona.updated":
+        case "event:persona.deleted": {
+          const { workspace_id, persona_id } = event
+
+          // Broadcast to entire workspace so all clients can invalidate their persona cache
+          io.to(room.workspace(workspace_id)).emit("persona:changed", {
+            workspaceId: workspace_id,
+            personaId: persona_id,
+            action: channel.split(".")[1], // "created", "updated", or "deleted"
+          })
+
+          logger.debug({ workspace_id, persona_id, action: channel }, "Persona change broadcast via Socket.IO")
+          break
+        }
+
+        // ========================================================================
         // Ephemeral Events - Agent Sessions
         // These are not persisted - just broadcast to connected clients
         // ========================================================================
 
         case "ephemeral:session.started": {
-          const { workspace_id, stream_id, session_stream_id, session_id, triggering_event_id } = event
+          const {
+            workspace_id,
+            stream_id,
+            session_stream_id,
+            session_id,
+            triggering_event_id,
+            persona_id,
+            persona_name,
+            persona_avatar,
+          } = event
 
           io.to(room.stream(workspace_id, stream_id)).emit("session:started", {
             streamId: session_stream_id, // The stream where the session actually lives
             sessionId: session_id,
             triggeringEventId: triggering_event_id,
+            personaId: persona_id,
+            personaName: persona_name,
+            personaAvatar: persona_avatar,
           })
 
-          logger.debug({ stream_id, session_stream_id, session_id }, "Session started broadcast")
+          logger.debug({ stream_id, session_stream_id, session_id, personaName: persona_name }, "Session started broadcast")
           break
         }
 
         case "ephemeral:session.step": {
-          const { workspace_id, stream_id, session_id, step } = event
+          const { workspace_id, stream_id, session_id, step, persona_id, persona_name, persona_avatar } = event
 
           io.to(room.stream(workspace_id, stream_id)).emit("session:step", {
             streamId: stream_id,
             sessionId: session_id,
             step,
+            personaId: persona_id,
+            personaName: persona_name,
+            personaAvatar: persona_avatar,
           })
 
           logger.debug({ stream_id, session_id, stepId: step?.id }, "Session step broadcast")

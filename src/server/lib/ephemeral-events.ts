@@ -85,6 +85,10 @@ export interface SessionStartedPayload {
   session_stream_id: string // The stream where the session actually lives
   session_id: string
   triggering_event_id: string
+  // Persona info for UI display
+  persona_id?: string
+  persona_name: string
+  persona_avatar?: string
 }
 
 export interface SessionStepPayload {
@@ -92,6 +96,10 @@ export interface SessionStepPayload {
   stream_id: string
   session_id: string
   step: SessionStep
+  // Persona info for fallback if session:started was missed
+  persona_id?: string
+  persona_name?: string
+  persona_avatar?: string
 }
 
 export interface SessionCompletedPayload {
@@ -209,14 +217,22 @@ export async function emitSessionStarted(
   streamId: string,
   sessionId: string,
   triggeringEventId: string,
-  sessionStreamId?: string,
+  options?: {
+    sessionStreamId?: string
+    personaId?: string
+    personaName?: string
+    personaAvatar?: string
+  },
 ): Promise<void> {
   await publishEphemeralEvent(EphemeralEventType.SESSION_STARTED, {
     workspace_id: workspaceId,
     stream_id: streamId,
-    session_stream_id: sessionStreamId ?? streamId,
+    session_stream_id: options?.sessionStreamId ?? streamId,
     session_id: sessionId,
     triggering_event_id: triggeringEventId,
+    persona_id: options?.personaId,
+    persona_name: options?.personaName ?? "Ariadne",
+    persona_avatar: options?.personaAvatar,
   })
 }
 
@@ -228,12 +244,20 @@ export async function emitSessionStep(
   streamId: string,
   sessionId: string,
   step: SessionStep,
+  options?: {
+    personaId?: string
+    personaName?: string
+    personaAvatar?: string
+  },
 ): Promise<void> {
   await publishEphemeralEvent(EphemeralEventType.SESSION_STEP, {
     workspace_id: workspaceId,
     stream_id: streamId,
     session_id: sessionId,
     step,
+    persona_id: options?.personaId,
+    persona_name: options?.personaName,
+    persona_avatar: options?.personaAvatar,
   })
 }
 

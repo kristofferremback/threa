@@ -62,7 +62,7 @@ export type EventType =
   | "agent_thinking"
 
 export interface Mention {
-  type: "user" | "channel" | "crosspost"
+  type: "user" | "channel" | "crosspost" | "agent"
   id: string
   label: string
   slug?: string

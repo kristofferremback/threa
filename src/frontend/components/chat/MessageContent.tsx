@@ -149,7 +149,7 @@ function parseInlineWithMentions(
 
   // Build regex for mentions
   const mentionPatterns = mentions.map((m) => {
-    if (m.type === "user") {
+    if (m.type === "user" || m.type === "agent") {
       return `@${escapeRegex(m.label)}`
     } else if (m.type === "crosspost") {
       return `#\\+${escapeRegex(m.slug || m.label)}`
@@ -167,7 +167,7 @@ function parseInlineWithMentions(
 
   return parts.flatMap((part, index) => {
     const mention = mentions.find((m) => {
-      if (m.type === "user" && part === `@${m.label}`) return true
+      if ((m.type === "user" || m.type === "agent") && part === `@${m.label}`) return true
       if (m.type === "crosspost" && part === `#+${m.slug || m.label}`) return true
       if (m.type === "channel" && part === `#${m.slug || m.label}`) return true
       return false
@@ -184,6 +184,16 @@ function parseInlineWithMentions(
           >
             @{mention.label}
           </button>
+        )
+      } else if (mention.type === "agent") {
+        return (
+          <span
+            key={index}
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-sm font-medium"
+            style={{ background: "rgba(99, 102, 241, 0.15)", color: "var(--accent-primary)" }}
+          >
+            @{mention.label}
+          </span>
         )
       } else {
         const isCrosspost = mention.type === "crosspost"

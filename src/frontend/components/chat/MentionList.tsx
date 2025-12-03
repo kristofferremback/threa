@@ -1,16 +1,19 @@
 import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from "react"
 import { Avatar } from "../ui"
-import { Hash, PlusCircle } from "lucide-react"
+import { Hash, PlusCircle, Bot } from "lucide-react"
 
 export interface MentionItem {
   id: string
   label: string
-  type: "user" | "channel" | "crosspost"
+  type: "user" | "channel" | "crosspost" | "agent"
   // For users
   email?: string
   name?: string
   // For channels
   slug?: string
+  // For agents
+  avatarEmoji?: string
+  description?: string
 }
 
 export interface MentionListRef {
@@ -108,6 +111,27 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(({ items
             <>
               <Avatar name={item.name || item.label || ""} size="sm" />
               <span className="font-medium truncate">{item.name || item.label}</span>
+            </>
+          ) : item.type === "agent" ? (
+            <>
+              <div
+                className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--accent-secondary)" }}
+              >
+                {item.avatarEmoji ? (
+                  <span className="text-sm">{item.avatarEmoji}</span>
+                ) : (
+                  <Bot className="w-3.5 h-3.5" style={{ color: "var(--accent-primary)" }} />
+                )}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium truncate">{item.label}</span>
+                {item.description && (
+                  <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                    {item.description}
+                  </span>
+                )}
+              </div>
             </>
           ) : item.type === "crosspost" ? (
             <>

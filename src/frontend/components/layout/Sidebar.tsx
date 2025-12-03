@@ -20,6 +20,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Bot,
 } from "lucide-react"
 import { useSidebarCollapse, type CollapseState, type SectionId } from "../../hooks/useSidebarCollapse"
 import { clsx } from "clsx"
@@ -1196,6 +1197,9 @@ function UserFooter({ onLogout, onEditProfile, onOpenSettings, profile }: UserFo
               Preferences
             </DropdownItem>
           )}
+          <DropdownItem onClick={() => window.location.href = "/personas"} icon={<Bot className="h-4 w-4" />}>
+            AI Personas
+          </DropdownItem>
           <DropdownDivider />
           <DropdownItem onClick={onLogout} icon={<LogOut className="h-4 w-4" />} variant="danger">
             Sign out

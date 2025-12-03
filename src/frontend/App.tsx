@@ -7,6 +7,7 @@ import { OfflineProvider } from "./contexts/OfflineContext"
 import { QueryProvider } from "./contexts/QueryContext"
 import { LayoutSystem } from "./components/layout/LayoutSystem"
 import { InvitePage } from "./components/InvitePage"
+import { PersonaBuilderPage } from "./components/layout/PersonaBuilderPage"
 import { startOutboxWorker } from "./workers/outbox-worker"
 import "./index.css"
 
@@ -18,6 +19,7 @@ function App() {
   // Simple URL-based routing
   const path = window.location.pathname
   const inviteMatch = path.match(/^\/invite\/([^/]+)$/)
+  const personaMatch = path.match(/^\/personas(?:\/([^/]+))?$/)
 
   if (inviteMatch) {
     const token = inviteMatch[1]
@@ -25,6 +27,16 @@ function App() {
       <>
         <Toaster position="top-center" richColors />
         <InvitePage token={token} />
+      </>
+    )
+  }
+
+  if (personaMatch) {
+    const personaId = personaMatch[1] // undefined for /personas, or the persona ID for /personas/:id
+    return (
+      <>
+        <Toaster position="top-center" richColors />
+        <PersonaBuilderPage personaId={personaId} />
       </>
     )
   }

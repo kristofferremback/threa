@@ -95,6 +95,7 @@ export interface RespondJobData {
   mentionedBy: string
   question: string
   mode?: AriadneMode
+  personaId?: string
 }
 
 export interface ExtractJobData {

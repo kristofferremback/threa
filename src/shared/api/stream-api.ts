@@ -219,4 +219,17 @@ export const streamApi = {
     })
     return handleResponse<{ event: StreamEvent; stream: Stream }>(response)
   },
+
+  /**
+   * Create a thinking space (convenience wrapper for createStream with streamType = thinking_space)
+   */
+  async createThinkingSpace(workspaceId: string, name: string, personaId?: string): Promise<Stream> {
+    const response = await fetch(`${getBaseUrl()}/api/workspace/${workspaceId}/thinking-spaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name, personaId }),
+    })
+    return handleResponse<Stream>(response)
+  },
 }

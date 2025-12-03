@@ -34,6 +34,7 @@ export interface CreateStreamInput {
   description?: string
   visibility?: "public" | "private"
   streamType?: "channel" | "thinking_space"
+  personaId?: string
 }
 
 export interface UpdateStreamInput {

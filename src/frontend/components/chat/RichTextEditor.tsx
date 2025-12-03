@@ -36,7 +36,7 @@ export interface RichTextEditorRef {
 }
 
 export interface ExtractedMention {
-  type: "user" | "channel" | "crosspost"
+  type: "user" | "channel" | "crosspost" | "agent"
   id: string
   label: string
   slug?: string
@@ -51,6 +51,7 @@ interface RichTextEditorProps {
   autofocus?: boolean
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string | null }>
+  agents?: Array<{ id: string; name: string; slug: string; description: string; avatarEmoji: string | null }>
   initialContent?: string
   initialMentions?: ExtractedMention[]
 }
@@ -66,6 +67,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
       autofocus = false,
       users = [],
       channels = [],
+      agents = [],
       initialContent = "",
       initialMentions = [],
     },
@@ -80,7 +82,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
     const linkInputRef = useRef<HTMLInputElement>(null)
 
     // Memoize suggestion options
-    const suggestionOptions = useMemo(() => ({ users, channels }), [users, channels])
+    const suggestionOptions = useMemo(() => ({ users, channels, agents }), [users, channels, agents])
 
     // Create mention extensions with tracking for popup state
     const userMention = useMemo(
@@ -188,6 +190,29 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
       [suggestionOptions],
     )
 
+    // Agent mention extension - shares suggestion popup with userMention via createUserSuggestion
+    // but has its own node type for proper serialization
+    const agentMention = useMemo(
+      () =>
+        Mention.extend({
+          name: "agentMention",
+          addAttributes() {
+            return {
+              id: { default: null },
+              label: { default: null },
+              slug: { default: null },
+            }
+          },
+        }).configure({
+          HTMLAttributes: {
+            class: "mention mention-agent",
+          },
+          // No suggestion config - agents are suggested via userMention's @ trigger
+          renderText: ({ node }) => `@${node.attrs.slug || node.attrs.label}`,
+        }),
+      [],
+    )
+
     const editor = useEditor({
       extensions: [
         StarterKit.configure({
@@ -246,6 +271,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
         }),
         userMention,
         channelMention,
+        agentMention,
       ],
       // Don't set content here - we'll set it after editor is created to parse markdown
       content: "",
@@ -519,6 +545,14 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
             id: node.attrs.id,
             label: node.attrs.label,
           })
+        } else if (node.type === "agentMention" && node.attrs) {
+          mentions.push({
+            type: "agent",
+            id: node.attrs.id,
+            // Use slug as label since content is serialized as @{slug}
+            label: node.attrs.slug || node.attrs.label,
+            slug: node.attrs.slug,
+          })
         } else if (node.type === "channelMention" && node.attrs) {
           mentions.push({
             type: node.attrs.type === "crosspost" ? "crosspost" : "channel",
@@ -773,6 +807,10 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>
           .mention-channel {
             background: var(--bg-secondary);
             color: var(--text-primary);
+          }
+          .mention-agent {
+            background: var(--accent-primary-muted, rgba(99, 102, 241, 0.15));
+            color: var(--accent-primary);
           }
 
           /* Tippy mention popup theme */
@@ -1036,6 +1074,10 @@ function serializeInlineContent(content: any[]): string {
 
       if (node.type === "userMention") {
         return `@${node.attrs?.label || ""}`
+      }
+
+      if (node.type === "agentMention") {
+        return `@${node.attrs?.slug || node.attrs?.label || ""}`
       }
 
       if (node.type === "channelMention") {

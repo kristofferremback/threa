@@ -114,6 +114,14 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 All server-side environment variables must be defined in `src/server/config.ts` and imported from there. Never use `process.env` directly in application code - only in config.ts.
 
+## Real-time Data Updates
+
+**All data that can be updated in the backend must be reactively updated in the frontend.** When implementing features:
+- Use TanStack Query's cache invalidation or WebSocket events to push updates
+- Never rely on page refresh to show updated data
+- Use `queryClient.invalidateQueries()` or `queryClient.setQueryData()` for reactive updates
+- Subscribe to relevant WebSocket events for real-time synchronization
+
 ## Architecture: Message Flow
 
 ### Posting a Message (Optimistic Updates + Outbox Pattern)

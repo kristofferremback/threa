@@ -77,9 +77,14 @@ export function MessageItem({
   const isPending = message.pending
   const isFailed = message.sendFailed
   const hasReplies = message.replyCount && message.replyCount > 0
-  // Show thinking badge if session is active and in a thread (not in this stream)
+  // Show thinking badge if session is active and NOT in the currently viewed stream
+  // This shows when viewing a parent channel for a session happening in a thread
   const showThinkingBadge =
-    sessionInThread && agentSession && (agentSession.status === "active" || agentSession.status === "summarizing")
+    agentSession &&
+    currentChannelId &&
+    agentSession.streamId !== currentChannelId &&
+    (agentSession.status === "active" || agentSession.status === "summarizing")
+
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(message.message)
   const [isSaving, setIsSaving] = useState(false)
@@ -343,14 +348,17 @@ export function MessageItem({
                 </button>
               )}
 
-              {/* Ariadne thinking badge - inline with reply count */}
-              {showThinkingBadge && (
+              {/* Agent thinking badge - inline with reply count */}
+              {showThinkingBadge && agentSession && (
                 <span
                   className="text-xs flex items-center gap-1.5"
                   style={{ color: "var(--accent-secondary, #8b5cf6)" }}
                 >
+                  {agentSession.personaAvatar && (
+                    <span className="text-sm">{agentSession.personaAvatar}</span>
+                  )}
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span className="font-medium">Ariadne is thinking</span>
+                  <span className="font-medium">{agentSession.personaName || "Ariadne"} is thinking</span>
                 </span>
               )}
 

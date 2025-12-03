@@ -61,6 +61,11 @@ export const OutboxEventType = {
 
   // Read State
   READ_CURSOR_UPDATED: "read_cursor.updated",
+
+  // Personas
+  PERSONA_CREATED: "persona.created",
+  PERSONA_UPDATED: "persona.updated",
+  PERSONA_DELETED: "persona.deleted",
 } as const
 
 export type OutboxEventType = (typeof OutboxEventType)[keyof typeof OutboxEventType]
@@ -253,6 +258,33 @@ export interface ReadCursorUpdatedPayload {
   event_id: string
 }
 
+// --- Personas ---
+
+export interface PersonaCreatedPayload {
+  persona_id: string
+  workspace_id: string
+  name: string
+  slug: string
+  is_default: boolean
+  created_by: string
+}
+
+export interface PersonaUpdatedPayload {
+  persona_id: string
+  workspace_id: string
+  name?: string
+  slug?: string
+  is_active?: boolean
+  is_default?: boolean
+  updated_by: string
+}
+
+export interface PersonaDeletedPayload {
+  persona_id: string
+  workspace_id: string
+  deleted_by: string
+}
+
 // ============================================================================
 // Payload Type Map - Maps event types to their payloads
 // ============================================================================
@@ -276,6 +308,9 @@ export interface OutboxPayloadMap {
   [OutboxEventType.INVITATION_REVOKED]: InvitationRevokedPayload
   [OutboxEventType.NOTIFICATION_CREATED]: NotificationCreatedPayload
   [OutboxEventType.READ_CURSOR_UPDATED]: ReadCursorUpdatedPayload
+  [OutboxEventType.PERSONA_CREATED]: PersonaCreatedPayload
+  [OutboxEventType.PERSONA_UPDATED]: PersonaUpdatedPayload
+  [OutboxEventType.PERSONA_DELETED]: PersonaDeletedPayload
 }
 
 // ============================================================================

@@ -32,6 +32,15 @@ const config = {
   OLLAMA_EMBEDDING_MODEL: process.env.OLLAMA_EMBEDDING_MODEL || "nomic-embed-text",
   EMBEDDING_PROVIDER: (process.env.EMBEDDING_PROVIDER || "ollama") as "ollama" | "openai",
 
+  // AI Models (configurable via env vars)
+  // Format: provider:model (e.g., anthropic:claude-haiku-4-5-20251001, openrouter:google/gemma-3-12b-it, ollama:granite4:1b)
+  // Ariadne agent model - the main conversational AI
+  ARIADNE_MODEL: process.env.ARIADNE_MODEL || "anthropic:claude-haiku-4-5-20251001",
+  // Classification fallback model - used when local SLM is uncertain
+  CLASSIFICATION_MODEL: process.env.CLASSIFICATION_MODEL || "anthropic:claude-haiku-4-5-20251001",
+  // OpenAI embedding model (when not using Ollama)
+  OPENAI_EMBEDDING_MODEL: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+
   // Langfuse (optional - for AI observability)
   LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
   LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
@@ -70,6 +79,11 @@ export const OLLAMA_HOST = config.OLLAMA_HOST
 export const OLLAMA_CLASSIFICATION_MODEL = config.OLLAMA_CLASSIFICATION_MODEL
 export const OLLAMA_EMBEDDING_MODEL = config.OLLAMA_EMBEDDING_MODEL
 export const EMBEDDING_PROVIDER = config.EMBEDDING_PROVIDER
+
+// AI Models
+export const ARIADNE_MODEL = config.ARIADNE_MODEL
+export const CLASSIFICATION_MODEL = config.CLASSIFICATION_MODEL
+export const OPENAI_EMBEDDING_MODEL = config.OPENAI_EMBEDDING_MODEL
 
 // Langfuse
 export const LANGFUSE_SECRET_KEY = config.LANGFUSE_SECRET_KEY

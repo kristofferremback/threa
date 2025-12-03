@@ -41,6 +41,10 @@ export interface AgentSession {
   errorMessage: string | null
   startedAt: string
   completedAt: string | null
+  // Persona info for UI display
+  personaId?: string | null
+  personaName?: string
+  personaAvatar?: string | null
 }
 
 interface AgentThinkingEventProps {
@@ -333,6 +337,10 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
   // Count steps with tool results
   const stepsWithResults = session.steps.filter((s) => s.type === "tool_call" && s.tool_result).length
 
+  // Persona display info
+  const personaName = session.personaName || "Ariadne"
+  const personaAvatar = session.personaAvatar
+
   return (
     <div className={`relative ${className}`}>
       {/* Main thinking event container */}
@@ -348,19 +356,25 @@ export function AgentThinkingEvent({ session, isLinkedToResponse = false, classN
           onClick={() => setIsExpanded(!isExpanded)}
           className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-[var(--hover-overlay)] transition-colors"
         >
-          {/* Ariadne avatar */}
-          <div
-            className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--accent-secondary, #8b5cf6) 0%, var(--accent-primary, #3b82f6) 100%)",
-            }}
-          >
-            <Sparkles className="w-3 h-3 text-white" />
-          </div>
+          {/* Agent avatar - emoji if available, otherwise gradient with sparkles */}
+          {personaAvatar ? (
+            <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-sm">
+              {personaAvatar}
+            </span>
+          ) : (
+            <div
+              className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--accent-secondary, #8b5cf6) 0%, var(--accent-primary, #3b82f6) 100%)",
+              }}
+            >
+              <Sparkles className="w-3 h-3 text-white" />
+            </div>
+          )}
 
           <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-            Ariadne
+            {personaName}
           </span>
 
           {/* Status indicator */}

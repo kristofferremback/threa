@@ -1,12 +1,20 @@
 import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { getJobQueue, RespondJobData } from "../lib/job-queue"
-import { invokeAriadne, streamAriadne, AriadneContext, ConversationMessage, StreamContext } from "../ai/ariadne/agent"
+import {
+  invokeAriadne,
+  streamAriadne,
+  AriadneContext,
+  ConversationMessage,
+  StreamContext,
+  PersonaConfig,
+} from "../ai/ariadne/agent"
 import { AriadneResearcher, classifyQuestionComplexity, Citation } from "../ai/ariadne/researcher"
 import { AIUsageService } from "../services/ai-usage-service"
 import { StreamService } from "../services/stream-service"
 import { MemoService } from "../services/memo-service"
 import { AgentSessionService, SessionStep } from "../services/agent-session-service"
+import { PersonaService, AgentPersona } from "../services/persona-service"
 import { logger } from "../lib/logger"
 import { Models, calculateCost } from "../lib/ai-providers"
 import { emitSessionStarted, emitSessionStep, emitSessionCompleted } from "../lib/ephemeral-events"
@@ -26,14 +34,30 @@ const langfuse =
       })
     : null
 
-const ARIADNE_PERSONA_ID = "pers_default_ariadne"
+const DEFAULT_PERSONA_ID = "pers_default_ariadne"
 const CHANNEL_CONTEXT_MESSAGES = 10
+
+/**
+ * Convert an AgentPersona from the DB to the PersonaConfig needed by the agent.
+ */
+function toPersonaConfig(persona: AgentPersona): PersonaConfig {
+  return {
+    id: persona.id,
+    name: persona.name,
+    slug: persona.slug,
+    systemPrompt: persona.systemPrompt,
+    model: persona.model,
+    temperature: persona.temperature,
+    maxTokens: persona.maxTokens,
+    enabledTools: persona.enabledTools,
+  }
+}
 
 /**
  * Ariadne Worker - Processes AI response jobs.
  *
  * Listens for ai.respond jobs from the queue and generates responses
- * using the Ariadne agent. Handles budget checking, context fetching,
+ * using AI agents. Handles budget checking, context fetching,
  * session tracking, and response posting.
  */
 export class AriadneWorker {
@@ -41,6 +65,7 @@ export class AriadneWorker {
   private streamService: StreamService
   private memoService: MemoService
   private sessionService: AgentSessionService
+  private personaService: PersonaService
   private isRunning = false
 
   constructor(
@@ -51,6 +76,7 @@ export class AriadneWorker {
     this.streamService = new StreamService(pool)
     this.memoService = new MemoService(pool)
     this.sessionService = new AgentSessionService(pool)
+    this.personaService = new PersonaService(pool)
   }
 
   async start(): Promise<void> {
@@ -81,7 +107,25 @@ export class AriadneWorker {
   }
 
   private async processJob(job: { id: string; data: RespondJobData }): Promise<void> {
-    const { workspaceId, streamId, eventId, mentionedBy, question, mode } = job.data
+    const { workspaceId, streamId, eventId, mentionedBy, question, mode, personaId } = job.data
+
+    // Load persona from DB (or fall back to default)
+    let persona: AgentPersona | null = null
+    let personaConfig: PersonaConfig | undefined
+
+    if (personaId) {
+      persona = await this.personaService.getPersona(personaId)
+      if (persona) {
+        personaConfig = toPersonaConfig(persona)
+        logger.info({ personaId, personaName: persona.name }, "Loaded custom persona")
+      } else {
+        logger.warn({ personaId }, "Persona not found, using default behavior")
+      }
+    }
+
+    // Use persona ID for events, or fall back to default
+    const agentId = persona?.id || DEFAULT_PERSONA_ID
+    const agentName = persona?.name || "Ariadne"
 
     // Determine where to respond - for channel @mentions in retrieval mode, respond in a thread
     // We determine this EARLY so the session is created in the right stream
@@ -90,9 +134,9 @@ export class AriadneWorker {
 
     if (mode !== "thinking_partner" && sourceStream?.streamType === "channel") {
       // Create thread for the response - the thinking UI will appear there
-      const { stream: thread } = await this.streamService.createThreadFromEvent(eventId, ARIADNE_PERSONA_ID)
+      const { stream: thread } = await this.streamService.createThreadFromEvent(eventId, agentId)
       responseStreamId = thread.id
-      logger.info({ eventId, threadId: thread.id }, "Ariadne will respond in thread")
+      logger.info({ eventId, threadId: thread.id, agentName }, `${agentName} will respond in thread`)
     }
 
     // Create or resume session in the response stream (thread or original stream)
@@ -100,6 +144,9 @@ export class AriadneWorker {
       workspaceId,
       streamId: responseStreamId,
       triggeringEventId: eventId,
+      personaId: agentId !== DEFAULT_PERSONA_ID ? agentId : undefined,
+      personaName: agentName,
+      personaAvatar: persona?.avatarEmoji || undefined,
     })
 
     // If session already completed or failed, don't retry
@@ -114,7 +161,7 @@ export class AriadneWorker {
       // This flows through normal event infrastructure and shows up immediately
       await this.streamService.createEvent({
         streamId: responseStreamId,
-        agentId: ARIADNE_PERSONA_ID,
+        agentId,
         eventType: "agent_thinking",
         payload: {
           sessionId: session.id,
@@ -123,20 +170,35 @@ export class AriadneWorker {
         },
       })
 
-      // Emit session:started to parent channel for the badge on the original message
-      // and to the pending thread room (users viewing via eventId before thread was created)
+      // Emit session:started to all relevant rooms
+      const sessionStartedOptions = {
+        sessionStreamId: responseStreamId,
+        personaId: agentId !== DEFAULT_PERSONA_ID ? agentId : undefined,
+        personaName: agentName,
+        personaAvatar: persona?.avatarEmoji,
+      }
+
+      // Always emit to the response stream so viewers there get the session with triggeringEventId
+      await emitSessionStarted(workspaceId, responseStreamId, session.id, eventId, sessionStartedOptions)
+
+      // Also emit to parent channel and pending thread room if responding in a different stream
       if (responseStreamId !== streamId) {
-        await emitSessionStarted(workspaceId, streamId, session.id, eventId, responseStreamId)
-        await emitSessionStarted(workspaceId, eventId, session.id, eventId, responseStreamId)
+        await emitSessionStarted(workspaceId, streamId, session.id, eventId, sessionStartedOptions)
+        await emitSessionStarted(workspaceId, eventId, session.id, eventId, sessionStartedOptions)
       }
     }
 
     // Helper to emit a step to all relevant rooms
+    const personaOptions = {
+      personaId: agentId !== DEFAULT_PERSONA_ID ? agentId : undefined,
+      personaName: agentName,
+      personaAvatar: persona?.avatarEmoji,
+    }
     const emitStepToAllRooms = async (step: SessionStep) => {
-      await emitSessionStep(workspaceId, responseStreamId, session.id, step)
+      await emitSessionStep(workspaceId, responseStreamId, session.id, step, personaOptions)
       // Also emit to pending thread room (users viewing via eventId before thread was created)
       if (responseStreamId !== streamId) {
-        await emitSessionStep(workspaceId, eventId, session.id, step)
+        await emitSessionStep(workspaceId, eventId, session.id, step, personaOptions)
       }
     }
 
@@ -200,6 +262,7 @@ export class AriadneWorker {
         await this.postResponse(
           responseStreamId,
           "I'm sorry, but the workspace's AI budget for this month has been reached. Please contact your workspace admin to increase the budget.",
+          agentId,
         )
         return
       }
@@ -313,7 +376,7 @@ export class AriadneWorker {
         // Also track by content for deduplication (same tool might show multiple times)
         const seenToolCalls = new Set<string>()
 
-        for await (const chunk of streamAriadne(this.pool, context, question)) {
+        for await (const chunk of streamAriadne(this.pool, context, question, undefined, personaConfig)) {
           if (chunk.type === "tool_call") {
             // Create a unique key for deduplication
             const toolKey = `${chunk.toolName}:${JSON.stringify(chunk.toolInput || {})}`
@@ -395,7 +458,7 @@ export class AriadneWorker {
       })
 
       // Post the response with citation details (responseStreamId was determined at the start)
-      const responseEvent = await this.postResponse(responseStreamId, finalResponse, session.id, citationDetails)
+      const responseEvent = await this.postResponse(responseStreamId, finalResponse, agentId, session.id, citationDetails)
 
       // Complete synthesize step
       await completeStep(synthesizeStepId, `Response: ${finalResponse.length} characters`)
@@ -474,6 +537,7 @@ export class AriadneWorker {
         await this.postResponse(
           responseStreamId,
           "I encountered an error while processing your request. Please try again.",
+          agentId,
         )
       } catch {
         // Ignore posting errors
@@ -486,6 +550,7 @@ export class AriadneWorker {
   private async postResponse(
     streamId: string,
     content: string,
+    agentId: string,
     sessionId?: string,
     citations?: Citation[],
   ): Promise<{ id: string }> {
@@ -501,7 +566,7 @@ export class AriadneWorker {
 
     return await this.streamService.createEvent({
       streamId,
-      agentId: ARIADNE_PERSONA_ID,
+      agentId,
       eventType: "message",
       content,
       mentions: [],
@@ -567,10 +632,11 @@ export class AriadneWorker {
       if (stream?.branchedFromEventId) {
         const rootEvent = await this.streamService.getEventWithDetails(stream.branchedFromEventId)
         if (rootEvent && rootEvent.content) {
-          const isAriadne = rootEvent.agentId === ARIADNE_PERSONA_ID
+          // Check if message is from any agent (not just Ariadne)
+          const isAgent = !!rootEvent.agentId
           conversationHistory.push({
-            role: isAriadne ? "assistant" : "user",
-            name: isAriadne ? "Ariadne" : rootEvent.actorName || rootEvent.actorEmail || "User",
+            role: isAgent ? "assistant" : "user",
+            name: isAgent ? "Agent" : rootEvent.actorName || rootEvent.actorEmail || "User",
             content: rootEvent.content,
           })
         }
@@ -583,10 +649,11 @@ export class AriadneWorker {
         if (event.eventType !== "message" || !event.content) continue
         if (event.id === eventId) continue
 
-        const isAriadne = event.agentId === ARIADNE_PERSONA_ID
+        // Check if message is from any agent (not just Ariadne)
+        const isAgent = !!event.agentId
         conversationHistory.push({
-          role: isAriadne ? "assistant" : "user",
-          name: isAriadne ? "Ariadne" : event.actorName || event.actorEmail || "User",
+          role: isAgent ? "assistant" : "user",
+          name: isAgent ? "Agent" : event.actorName || event.actorEmail || "User",
           content: event.content,
         })
       }
@@ -642,8 +709,8 @@ export class AriadneWorker {
         .reverse()
         .map((event) => {
           if (!event.content) return null
-          const name =
-            event.agent_id === ARIADNE_PERSONA_ID ? "Ariadne" : event.actor_name || event.actor_email || "User"
+          // Check if message is from any agent
+          const name = event.agent_id ? "Agent" : event.actor_name || event.actor_email || "User"
           return `[${name}]: ${event.content}`
         })
         .filter(Boolean)

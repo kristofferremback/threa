@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "../../auth"
-import { useBootstrapQuery, usePaneManager, useWorkspaceSocket } from "../../hooks"
+import { useBootstrapQuery, usePaneManager, useWorkspaceSocket, usePersonasQuery } from "../../hooks"
 import { initSocket } from "../../workers/socket-worker"
 import { StreamInterface } from "../StreamInterface"
 import { Sidebar } from "./Sidebar"
@@ -35,6 +35,8 @@ export function LayoutSystem() {
   const [showUserSettings, setShowUserSettings] = useState(false)
   const [streamToEdit, setStreamToEdit] = useState<Stream | null>(null)
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0)
+  // Track persona selection per thinking space (streamId -> personaId)
+  const [thinkingSpacePersonas, setThinkingSpacePersonas] = useState<Record<string, string>>({})
 
   // Bootstrap data - uses TanStack Query for offline-first caching
   const {
@@ -54,6 +56,12 @@ export function LayoutSystem() {
   } = useBootstrapQuery({
     workspaceId: "default",
     enabled: isAuthenticated && state === "loaded",
+  })
+
+  // Personas for @mentions
+  const { personas } = usePersonasQuery({
+    workspaceId: bootstrapData?.workspace.id,
+    enabled: isAuthenticated && !!bootstrapData?.workspace.id,
   })
 
   // Pane management
@@ -462,42 +470,46 @@ export function LayoutSystem() {
   )
 
   // Handle creating a new thinking space (virtual until first message)
-  const handleCreateThinkingSpace = useCallback(() => {
-    if (!bootstrapData) return
+  // personaId is encoded in the draft ID so it can be extracted when creating the real stream
+  const handleCreateThinkingSpace = useCallback(
+    (personaId: string) => {
+      if (!bootstrapData) return
 
-    // Create a draft/virtual thinking space - not persisted until first message
-    const draftId = `draft_thinking_space_${Date.now()}`
-    const draftThinkingSpace: Stream = {
-      id: draftId,
-      workspaceId: bootstrapData.workspace.id,
-      streamType: "thinking_space",
-      name: null, // Will be auto-named on first message
-      slug: draftId,
-      description: null,
-      topic: null,
-      parentStreamId: null,
-      branchedFromEventId: null,
-      visibility: "private",
-      status: "active",
-      isMember: true,
-      unreadCount: 0,
-      lastReadAt: new Date().toISOString(),
-      notifyLevel: "all",
-      pinnedAt: null,
-    }
+      // Encode personaId in the draft ID so useStreamWithQuery can extract it
+      const draftId = `draft_thinking_space_${Date.now()}_${personaId}`
+      const draftThinkingSpace: Stream = {
+        id: draftId,
+        workspaceId: bootstrapData.workspace.id,
+        streamType: "thinking_space",
+        name: null, // Will be auto-named on first message
+        slug: draftId,
+        description: null,
+        topic: null,
+        parentStreamId: null,
+        branchedFromEventId: null,
+        visibility: "private",
+        status: "active",
+        isMember: true,
+        unreadCount: 0,
+        lastReadAt: new Date().toISOString(),
+        notifyLevel: "all",
+        pinnedAt: null,
+      }
 
-    addStream(draftThinkingSpace)
+      addStream(draftThinkingSpace)
 
-    // Open the draft thinking space
-    openItem(
-      {
-        title: "New thinking space",
-        type: "stream",
-        data: { streamId: draftId },
-      },
-      "replace",
-    )
-  }, [bootstrapData, addStream, openItem])
+      // Open the draft thinking space
+      openItem(
+        {
+          title: "New thinking space",
+          type: "stream",
+          data: { streamId: draftId },
+        },
+        "replace",
+      )
+    },
+    [bootstrapData, addStream, openItem],
+  )
 
   // Callback for navigating to a specific event from tool results
   const handleNavigateToEvent = useCallback(
@@ -560,6 +572,28 @@ export function LayoutSystem() {
     const actualStreamId = stream?.id || tab.data?.streamSlug || tab.data?.streamId
     const streamName = (stream?.name || "").replace("#", "")
 
+    // For thinking spaces, get selected persona from state or extract from draft ID
+    const isThinkingSpace =
+      stream?.streamType === "thinking_space" || actualStreamId?.startsWith("draft_thinking_space_")
+    let selectedPersonaId: string | null = null
+    if (isThinkingSpace && actualStreamId) {
+      // First check state, then try to extract from draft ID
+      selectedPersonaId = thinkingSpacePersonas[actualStreamId] || null
+      if (!selectedPersonaId && actualStreamId.startsWith("draft_thinking_space_")) {
+        // Extract personaId from draft ID: draft_thinking_space_{timestamp}_{personaId}
+        // parts: ["draft", "thinking", "space", timestamp, personaId, ...]
+        const parts = actualStreamId.split("_")
+        if (parts.length >= 5) {
+          selectedPersonaId = parts.slice(4).join("_") // Join in case personaId has underscores
+        }
+      }
+      // If still no persona, use default
+      if (!selectedPersonaId) {
+        const defaultPersona = personas.find((p) => p.isDefault) || personas[0]
+        selectedPersonaId = defaultPersona?.id || null
+      }
+    }
+
     return (
       <StreamInterface
         workspaceId={bootstrapData.workspace.id}
@@ -574,6 +608,15 @@ export function LayoutSystem() {
           slug: s.slug, // Keep null for DMs - allows filtering in crosspost suggestions
           branchedFromEventId: s.branchedFromEventId,
         }))}
+        agents={personas.map((p) => ({ ...p, isDefault: p.isDefault }))}
+        selectedPersonaId={isThinkingSpace ? selectedPersonaId : undefined}
+        onPersonaChange={
+          isThinkingSpace && actualStreamId
+            ? (personaId) => {
+                setThinkingSpacePersonas((prev) => ({ ...prev, [actualStreamId]: personaId }))
+              }
+            : undefined
+        }
         onOpenThread={(threadIdOrEventId, parentStreamId, mode) => {
           // Find the parent stream to get its slug
           const parentStream = bootstrapData.streams.find((s) => s.id === parentStreamId)
@@ -613,7 +656,17 @@ export function LayoutSystem() {
           removeStream(draftId)
           addStream(realStream)
           // Update the current tab to point to the real stream
-          updateTabData(tab.id, { streamId: realStream.id, streamSlug: realStream.slug })
+          // For thinking spaces, use streamId only (not slug) for more reliable URL
+          updateTabData(tab.id, { streamId: realStream.id, streamSlug: null })
+          // Migrate persona state from draft ID to real stream ID
+          setThinkingSpacePersonas((prev) => {
+            const personaId = prev[draftId]
+            if (personaId) {
+              const { [draftId]: _, ...rest } = prev
+              return { ...rest, [realStream.id]: personaId }
+            }
+            return prev
+          })
         }}
         onStreamUpdate={(updatedStream) => {
           // Stream data changed (e.g., auto-named thread/thinking space) - update tab title
@@ -707,7 +760,12 @@ export function LayoutSystem() {
             }}
             onCreateChannel={() => setShowCreateChannel(true)}
             onCreateDM={() => setShowNewDM(true)}
-            onCreateThinkingSpace={handleCreateThinkingSpace}
+            onCreateThinkingSpace={() => {
+              const defaultPersona = personas.find((p) => p.isDefault) || personas[0]
+              if (defaultPersona) {
+                handleCreateThinkingSpace(defaultPersona.id)
+              }
+            }}
             onStreamSettings={(stream) => setStreamToEdit(stream)}
             onEditProfile={() => setShowProfileSetup(true)}
             onInvitePeople={() => setShowInviteModal(true)}

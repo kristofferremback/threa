@@ -62,9 +62,21 @@ export function useAgentSessions({
       const next = new Map(prev)
       for (const session of initialSessions) {
         const existing = next.get(session.id)
-        // Only add/update if we don't have it, or if the incoming one is more complete
-        if (!existing || (existing.status === "active" && session.status !== "active")) {
+        if (!existing) {
+          // Session doesn't exist yet, add it
           next.set(session.id, session)
+        } else if (existing.status === "active" && session.status !== "active") {
+          // Replace active with completed/failed from API
+          next.set(session.id, session)
+        } else if (existing.status === "active" && session.status === "active") {
+          // Both active - merge in any missing data from API (like triggeringEventId)
+          next.set(session.id, {
+            ...existing,
+            // Fill in triggeringEventId if missing from websocket-created session
+            triggeringEventId: existing.triggeringEventId || session.triggeringEventId,
+            // Also fill in streamId if it was placeholder
+            streamId: existing.streamId || session.streamId,
+          })
         }
       }
       return next
@@ -121,6 +133,9 @@ export function useAgentSessions({
                     errorMessage: s.errorMessage,
                     startedAt: s.startedAt,
                     completedAt: s.completedAt,
+                    personaId: s.personaId,
+                    personaName: s.personaName || "Ariadne",
+                    personaAvatar: s.personaAvatar,
                   })
                 }
               }
@@ -156,79 +171,117 @@ export function useAgentSessions({
     }
 
     // Handle session started
-    socket.on("session:started", (data: { streamId: string; sessionId: string; triggeringEventId: string }) => {
-      // Note: streamId in data is the session's actual stream, not necessarily the stream we're viewing
-      // We receive this event if we're viewing either the session's stream OR the triggering event's channel
+    socket.on(
+      "session:started",
+      (data: {
+        streamId: string
+        sessionId: string
+        triggeringEventId: string
+        personaId?: string
+        personaName?: string
+        personaAvatar?: string
+      }) => {
+        // Note: streamId in data is the session's actual stream, not necessarily the stream we're viewing
+        // We receive this event if we're viewing either the session's stream OR the triggering event's channel
 
-      setSessions((prev) => {
-        const existing = prev.get(data.sessionId)
-        const next = new Map(prev)
+        setSessions((prev) => {
+          const existing = prev.get(data.sessionId)
+          const next = new Map(prev)
 
-        if (existing) {
-          // Update existing session with triggeringEventId (might have been created by session:step first)
-          next.set(data.sessionId, {
-            ...existing,
-            triggeringEventId: data.triggeringEventId,
-            streamId: data.streamId,
-          })
-        } else {
-          // Create new session
-          next.set(data.sessionId, {
-            id: data.sessionId,
-            streamId: data.streamId,
-            triggeringEventId: data.triggeringEventId,
-            responseEventId: null,
-            status: "active",
-            steps: [],
-            summary: null,
-            errorMessage: null,
-            startedAt: new Date().toISOString(),
-            completedAt: null,
-          })
-        }
-        return next
-      })
-    })
+          if (existing) {
+            // Update existing session with triggeringEventId (might have been created by session:step first)
+            next.set(data.sessionId, {
+              ...existing,
+              triggeringEventId: data.triggeringEventId,
+              streamId: data.streamId,
+              personaId: data.personaId,
+              personaName: data.personaName || "Ariadne",
+              personaAvatar: data.personaAvatar,
+            })
+          } else {
+            // Create new session
+            next.set(data.sessionId, {
+              id: data.sessionId,
+              streamId: data.streamId,
+              triggeringEventId: data.triggeringEventId,
+              responseEventId: null,
+              status: "active",
+              steps: [],
+              summary: null,
+              errorMessage: null,
+              startedAt: new Date().toISOString(),
+              completedAt: null,
+              personaId: data.personaId,
+              personaName: data.personaName || "Ariadne",
+              personaAvatar: data.personaAvatar,
+            })
+          }
+          return next
+        })
+      },
+    )
 
     // Handle session step updates
-    socket.on("session:step", (data: { streamId: string; sessionId: string; step: SessionStep }) => {
-      // Accept updates for sessions we're tracking OR create a new session if we missed session:started
-      setSessions((prev) => {
-        const existing = prev.get(data.sessionId)
+    socket.on(
+      "session:step",
+      (data: {
+        streamId: string
+        sessionId: string
+        step: SessionStep
+        personaId?: string
+        personaName?: string
+        personaAvatar?: string
+      }) => {
+        // Accept updates for sessions we're tracking OR create a new session if we missed session:started
+        setSessions((prev) => {
+          const existing = prev.get(data.sessionId)
 
-        if (!existing) {
-          // Session not found - create a placeholder (we missed session:started)
+          if (!existing) {
+            // Session not found - create a placeholder (we missed session:started)
+            // Use persona info from the step event if available
+            const next = new Map(prev)
+            next.set(data.sessionId, {
+              id: data.sessionId,
+              streamId: data.streamId,
+              triggeringEventId: "", // Unknown, will be populated when we get more info
+              responseEventId: null,
+              status: "active",
+              steps: [data.step],
+              summary: null,
+              errorMessage: null,
+              startedAt: data.step.started_at,
+              completedAt: null,
+              personaId: data.personaId,
+              personaName: data.personaName || "Ariadne",
+              personaAvatar: data.personaAvatar,
+            })
+            return next
+          }
+
           const next = new Map(prev)
-          next.set(data.sessionId, {
-            id: data.sessionId,
-            streamId: data.streamId,
-            triggeringEventId: "", // Unknown, will be populated when we get more info
-            responseEventId: null,
-            status: "active",
-            steps: [data.step],
-            summary: null,
-            errorMessage: null,
-            startedAt: data.step.started_at,
-            completedAt: null,
-          })
+          // Update existing step or add new one
+          const stepIndex = existing.steps.findIndex((s) => s.id === data.step.id)
+          const updatedSteps =
+            stepIndex >= 0
+              ? existing.steps.map((s, i) => (i === stepIndex ? data.step : s))
+              : [...existing.steps, data.step]
+
+          // Also update persona info if we have it and existing doesn't
+          const updatedSession = {
+            ...existing,
+            steps: updatedSteps,
+          }
+          if (!existing.personaName && data.personaName) {
+            updatedSession.personaId = data.personaId
+            updatedSession.personaName = data.personaName
+            updatedSession.personaAvatar = data.personaAvatar
+          }
+
+          next.set(data.sessionId, updatedSession)
           return next
-        }
-
-        const next = new Map(prev)
-        // Update existing step or add new one
-        const stepIndex = existing.steps.findIndex((s) => s.id === data.step.id)
-        const updatedSteps =
-          stepIndex >= 0
-            ? existing.steps.map((s, i) => (i === stepIndex ? data.step : s))
-            : [...existing.steps, data.step]
-
-        next.set(data.sessionId, {
-          ...existing,
-          steps: updatedSteps,
         })
-        return next
-      })
-    })
+      },
+    )
 
     // Handle session completed
     socket.on(

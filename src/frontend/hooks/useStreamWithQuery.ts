@@ -54,6 +54,8 @@ interface UseStreamWithQueryOptions {
   streamId?: string
   enabled?: boolean
   onStreamUpdate?: (stream: Stream) => void
+  // For thinking spaces: persona to use when creating the stream
+  selectedPersonaId?: string | null
 }
 
 export interface MaterializedStreamResult {
@@ -93,6 +95,16 @@ interface UseStreamWithQueryReturn {
 const isPendingThread = (id: string | undefined): boolean => id?.startsWith("event_") === true
 const isDraftThinkingSpace = (id: string | undefined): boolean => id?.startsWith("draft_thinking_space_") === true
 
+// Extract personaId from draft thinking space ID (format: draft_thinking_space_{timestamp}_{personaId})
+const extractPersonaIdFromDraft = (draftId: string): string | null => {
+  const parts = draftId.split("_")
+  // draft_thinking_space_{timestamp}_{personaId} = 5 parts minimum
+  if (parts.length >= 5) {
+    return parts.slice(4).join("_") // Handle personaIds that might contain underscores
+  }
+  return null
+}
+
 // =============================================================================
 // Hook
 // =============================================================================
@@ -102,6 +114,7 @@ export function useStreamWithQuery({
   streamId,
   enabled = true,
   onStreamUpdate,
+  selectedPersonaId,
 }: UseStreamWithQueryOptions): UseStreamWithQueryReturn {
   // Subscribe to store slices
   const streamCache = useMessageStore(streamId ? selectStream(streamId) : () => undefined)
@@ -350,13 +363,15 @@ export function useStreamWithQuery({
       // Handle draft thinking space materialization
       if (isDraftThinkingSpace(streamId)) {
         const draftId = streamId
+        // Use selectedPersonaId from props, fall back to extracting from draft ID
+        const personaId = selectedPersonaId || extractPersonaIdFromDraft(draftId)
 
         // Create the real thinking space first
         const createRes = await fetch(`/api/workspace/${workspaceId}/thinking-spaces`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({}),
+          body: JSON.stringify(personaId ? { personaId } : {}),
         })
 
         if (!createRes.ok) {
@@ -411,7 +426,7 @@ export function useStreamWithQuery({
 
       pokeOutboxWorker()
     },
-    [workspaceId, streamId, currentUserId, currentUserEmail, streamCache?.parentStream?.id],
+    [workspaceId, streamId, currentUserId, currentUserEmail, streamCache?.parentStream?.id, selectedPersonaId],
   )
 
   const loadMoreEvents = useCallback(async () => {

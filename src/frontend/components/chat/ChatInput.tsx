@@ -11,6 +11,7 @@ interface ChatInputProps {
   disabled?: boolean
   users?: Array<{ id: string; name: string; email: string }>
   channels?: Array<{ id: string; name: string; slug: string | null }>
+  agents?: Array<{ id: string; name: string; slug: string; description: string; avatarEmoji: string | null }>
   streamId?: string
 }
 
@@ -29,6 +30,7 @@ export function ChatInput({
   disabled = false,
   users = [],
   channels = [],
+  agents = [],
   streamId,
 }: ChatInputProps) {
   const [isSending, setIsSending] = useState(false)
@@ -182,6 +184,7 @@ export function ChatInput({
           autofocus
           users={users}
           channels={channels}
+          agents={agents}
           initialContent={initialContent}
           initialMentions={initialMentions}
           key={streamId}

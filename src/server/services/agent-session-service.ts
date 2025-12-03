@@ -34,12 +34,19 @@ export interface AgentSession {
   completedAt: string | null
   createdAt: string
   updatedAt: string
+  // Persona info for UI display
+  personaId: string | null
+  personaName: string
+  personaAvatar: string | null
 }
 
 export interface CreateSessionParams {
   workspaceId: string
   streamId: string
   triggeringEventId: string
+  personaId?: string
+  personaName?: string
+  personaAvatar?: string
 }
 
 export interface AddStepParams {
@@ -63,7 +70,7 @@ export class AgentSessionService {
   constructor(private pool: Pool) {}
 
   /**
-   * Create a new agent session when Ariadne starts processing.
+   * Create a new agent session when an agent starts processing.
    * Returns existing session if one already exists for the triggering event (resume case).
    */
   async createSession(params: CreateSessionParams): Promise<{ session: AgentSession; isNew: boolean }> {
@@ -75,18 +82,22 @@ export class AgentSessionService {
     }
 
     const id = agentSessionId()
+    // Default to Ariadne if no persona specified
+    const personaName = params.personaName || "Ariadne"
+    const personaAvatar = params.personaAvatar || null
+    const personaId = params.personaId || null
 
     const result = await this.pool.query<AgentSessionRow>(
       sql`INSERT INTO agent_sessions (
-        id, workspace_id, stream_id, triggering_event_id
+        id, workspace_id, stream_id, triggering_event_id, persona_id, persona_name, persona_avatar
       ) VALUES (
-        ${id}, ${params.workspaceId}, ${params.streamId}, ${params.triggeringEventId}
+        ${id}, ${params.workspaceId}, ${params.streamId}, ${params.triggeringEventId}, ${personaId}, ${personaName}, ${personaAvatar}
       )
       RETURNING *`,
     )
 
     const session = rowToSession(result.rows[0]!)
-    logger.info({ sessionId: id, streamId: params.streamId }, "Agent session created")
+    logger.info({ sessionId: id, streamId: params.streamId, personaName }, "Agent session created")
     return { session, isNew: true }
   }
 
@@ -369,6 +380,9 @@ interface AgentSessionRow {
   completed_at: Date | null
   created_at: Date
   updated_at: Date
+  persona_id: string | null
+  persona_name: string | null
+  persona_avatar: string | null
 }
 
 function rowToSession(row: AgentSessionRow): AgentSession {
@@ -386,5 +400,8 @@ function rowToSession(row: AgentSessionRow): AgentSession {
     completedAt: row.completed_at?.toISOString() || null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    personaId: row.persona_id,
+    personaName: row.persona_name || "Ariadne",
+    personaAvatar: row.persona_avatar,
   }
 }

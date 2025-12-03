@@ -431,7 +431,7 @@ export function createStreamRoutes(
 
       await ensureUserExists(req)
 
-      const { name } = req.body
+      const { name, personaId } = req.body
 
       // Generate a unique slug suffix for thinking spaces
       const uniqueSuffix = Date.now().toString(36)
@@ -444,6 +444,7 @@ export function createStreamRoutes(
         name: spaceName,
         slug: createValidSlug(spaceName).slug + "-" + uniqueSuffix,
         visibility: "private",
+        personaId: personaId || undefined,
       })
 
       res.status(201).json({
@@ -574,6 +575,9 @@ export function createStreamRoutes(
           errorMessage: s.errorMessage,
           startedAt: s.startedAt,
           completedAt: s.completedAt,
+          personaId: s.personaId,
+          personaName: s.personaName,
+          personaAvatar: s.personaAvatar,
         })),
         lastReadEventId,
         hasMore: events.length === limit,
@@ -644,8 +648,18 @@ export function createStreamRoutes(
         return
       }
 
+      // Resolve stream by ID or slug
+      let stream = await streamService.getStream(streamId)
+      if (!stream) {
+        stream = await streamService.getStreamBySlug(workspaceId, streamId)
+      }
+      if (!stream) {
+        res.status(404).json({ error: "Stream not found" })
+        return
+      }
+
       // Regular stream - check access
-      const access = await streamService.checkStreamAccess(streamId, userId)
+      const access = await streamService.checkStreamAccess(stream.id, userId)
       if (!access.canPost) {
         res.status(403).json({ error: access.reason || "You must be a member to post messages" })
         return
@@ -657,7 +671,7 @@ export function createStreamRoutes(
       }
 
       const params: CreateEventParams = {
-        streamId,
+        streamId: stream.id,
         actorId: userId,
         eventType: "message",
         content: content.trim(),

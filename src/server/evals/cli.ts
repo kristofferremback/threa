@@ -3,16 +3,22 @@
  * CLI for running memo evolution evals.
  *
  * Usage:
- *   bun run eval:evolution                    # Run with default model (llama3.2:3b)
- *   bun run eval:evolution --model qwen2      # Run with specific model
- *   bun run eval:evolution --verbose          # Show detailed output
- *   bun run eval:evolution --no-langfuse      # Disable Langfuse tracking
- *   bun run eval:evolution --compare          # Compare multiple models
+ *   bun run eval:evolution                          # Run with default model from config
+ *   bun run eval:evolution --model ollama:gemma3:1b # Run with specific model
+ *   bun run eval:evolution --model preset:fast      # Use a preset (fast, local, cheap, quality, best)
+ *   bun run eval:evolution --verbose                # Show detailed output
+ *   bun run eval:evolution --no-langfuse            # Disable Langfuse tracking
+ *   bun run eval:evolution --compare                # Compare multiple models
+ *   bun run eval:evolution --config                 # Show current config
+ *
+ * Environment variables:
+ *   EVAL_MODEL=openrouter:ibm-granite/granite-4.0-h-micro
  */
 
 import { runEval } from "./runner"
 import { getAvailableModels, getConfiguredModels } from "./llm-verifier"
 import { buildDatasetFromFixtures, getDatasetStats } from "./dataset"
+import { getEvalConfig, printEvalConfig, resolveModel, MODEL_PRESETS } from "./config"
 
 async function main() {
   const args = process.argv.slice(2)
@@ -22,13 +28,22 @@ async function main() {
   const noLangfuse = args.includes("--no-langfuse")
   const compare = args.includes("--compare")
   const showDataset = args.includes("--dataset")
+  const showConfig = args.includes("--config")
   const help = args.includes("--help") || args.includes("-h")
 
+  // Get model from args or config
   const modelIndex = args.indexOf("--model")
-  const model = modelIndex !== -1 ? args[modelIndex + 1] : "ollama:granite4:350m"
+  const config = getEvalConfig()
+  const rawModel = modelIndex !== -1 ? args[modelIndex + 1] : config.evalModel
+  const model = resolveModel(rawModel)
 
   if (help) {
     printHelp()
+    process.exit(0)
+  }
+
+  if (showConfig) {
+    printEvalConfig()
     process.exit(0)
   }
 
@@ -51,6 +66,8 @@ async function main() {
 }
 
 function printHelp() {
+  const config = getEvalConfig()
+
   console.log(`
 📊 Memo Evolution Eval CLI
 
@@ -58,15 +75,21 @@ Usage:
   bun run eval:evolution [options]
 
 Options:
-  --model <name>    Model to evaluate (default: ollama:granite4:350m)
-                    Format: provider:model (e.g., ollama:gemma3:1b, openai:gpt-4o-mini)
+  --model <name>    Model to evaluate (default from config: ${config.evalModel})
+                    Format: provider:model or preset:name
   --verbose, -v     Show detailed output for each case
   --no-langfuse     Disable Langfuse tracking
   --compare         Run eval on all configured models
   --dataset         Show dataset statistics
+  --config          Show current eval configuration
   --help, -h        Show this help
 
-All Available Models:
+Presets (--model preset:NAME):
+${Object.entries(MODEL_PRESETS)
+  .map(([name, model]) => `  ${name.padEnd(10)} ${model}`)
+  .join("\n")}
+
+Available Models:
 ${getAvailableModels()
   .map((m) => `  - ${m}`)
   .join("\n")}
@@ -81,13 +104,17 @@ OpenRouter:
   Copy the model ID and prefix with "openrouter:"
   Example: openrouter:ibm-granite/granite-4.0-h-micro
 
+Environment Variables:
+  EVAL_MODEL           Override default eval model
+  EVAL_JUDGE_MODEL     Override judge model (for cross-family evaluation)
+  EVAL_EMBEDDING_MODEL Override embedding model
+
 Examples:
   bun run eval:evolution
-  bun run eval:evolution --model ollama:gemma3:1b --verbose
-  bun run eval:evolution --model openai:gpt-4o-mini
-  bun run eval:evolution --model anthropic:claude-3-5-haiku-latest
+  bun run eval:evolution --model preset:fast --verbose
+  bun run eval:evolution --model ollama:granite4:1b
   bun run eval:evolution --model openrouter:ibm-granite/granite-4.0-h-micro
-  bun run eval:evolution --compare --no-langfuse
+  EVAL_MODEL=preset:quality bun run eval:evolution
 `)
 }
 

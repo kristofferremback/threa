@@ -1,12 +1,86 @@
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
+import ollama from "ollama"
 import { logger } from "./logger"
 import { isOllamaEmbeddingAvailable, generateOllamaEmbedding, generateOllamaEmbeddingsBatch } from "./ollama"
-import { ANTHROPIC_API_KEY, OPENAI_API_KEY } from "../config"
+import {
+  ANTHROPIC_API_KEY,
+  OPENAI_API_KEY,
+  OPENROUTER_API_KEY,
+  ARIADNE_MODEL,
+  CLASSIFICATION_MODEL,
+  OPENAI_EMBEDDING_MODEL,
+} from "../config"
 
-// Lazy-loaded clients - only initialized when first used
+// ============================================================================
+// Provider types and model parsing
+// ============================================================================
+
+export type Provider = "ollama" | "openai" | "anthropic" | "openrouter"
+
+export interface ModelConfig {
+  provider: Provider
+  model: string
+  temperature?: number
+}
+
+/**
+ * Parse model string into provider and model name.
+ * Format: provider:model (e.g., "ollama:granite4:1b", "openai:gpt-4o-mini", "anthropic:claude-haiku-4-5-20251001")
+ * Default provider is "anthropic" if not specified (for backwards compatibility).
+ */
+export function parseModelString(modelString: string): ModelConfig {
+  const parts = modelString.split(":")
+
+  if (parts[0] === "ollama") {
+    return {
+      provider: "ollama",
+      model: parts.slice(1).join(":"),
+      temperature: 0.1,
+    }
+  }
+
+  if (parts[0] === "openai") {
+    return {
+      provider: "openai",
+      model: parts.slice(1).join(":"),
+      temperature: 1,
+    }
+  }
+
+  if (parts[0] === "anthropic") {
+    return {
+      provider: "anthropic",
+      model: parts.slice(1).join(":"),
+      temperature: 0.1,
+    }
+  }
+
+  if (parts[0] === "openrouter") {
+    return {
+      provider: "openrouter",
+      // OpenRouter uses slashes in model IDs: google/gemma-3-12b-it
+      // The format is openrouter:provider/model, so we join with / after removing the provider prefix
+      model: parts.slice(1).join("/"),
+      temperature: 0.7,
+    }
+  }
+
+  // Default to anthropic if no provider prefix (backwards compatibility)
+  return {
+    provider: "anthropic",
+    model: modelString,
+    temperature: 0.1,
+  }
+}
+
+// ============================================================================
+// Lazy-loaded clients
+// ============================================================================
+
 let _anthropic: Anthropic | null = null
 let _openai: OpenAI | null = null
+let _openrouter: OpenAI | null = null
 
 function getAnthropicClient(): Anthropic {
   if (!_anthropic) {
@@ -28,29 +102,252 @@ function getOpenAIClient(): OpenAI {
   return _openai
 }
 
+function getOpenRouterClient(): OpenAI {
+  if (!_openrouter) {
+    if (!OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY environment variable is not set")
+    }
+    _openrouter = new OpenAI({
+      apiKey: OPENROUTER_API_KEY,
+      baseURL: "https://openrouter.ai/api/v1",
+      defaultHeaders: {
+        "HTTP-Referer": "https://threa.app",
+        "X-Title": "Threa",
+      },
+    })
+  }
+  return _openrouter
+}
+
 /**
  * Check if AI providers are configured.
  */
-export function isAIConfigured(): { openai: boolean; anthropic: boolean } {
+export function isAIConfigured(): { openai: boolean; anthropic: boolean; openrouter: boolean } {
   return {
     openai: !!OPENAI_API_KEY,
     anthropic: !!ANTHROPIC_API_KEY,
+    openrouter: !!OPENROUTER_API_KEY,
   }
 }
 
-// Model constants
+// ============================================================================
+// Multi-provider chat function
+// ============================================================================
+
+export interface SimpleChatParams {
+  systemPrompt: string
+  userMessage: string
+  maxTokens?: number
+  temperature?: number
+}
+
+export interface SimpleChatResult {
+  content: string
+  usage: {
+    inputTokens: number
+    outputTokens: number
+  }
+  model: string
+  provider: Provider
+}
+
+/**
+ * Chat with any provider using the model string format: provider:model
+ * Examples:
+ *   - anthropic:claude-haiku-4-5-20251001
+ *   - openrouter:google/gemma-3-12b-it
+ *   - ollama:granite4:1b
+ *   - openai:gpt-4o-mini
+ */
+export async function chatWithModel(
+  modelString: string,
+  params: SimpleChatParams,
+): Promise<SimpleChatResult> {
+  const config = parseModelString(modelString)
+  const temperature = params.temperature ?? config.temperature ?? 0.1
+  const maxTokens = params.maxTokens ?? 1024
+
+  switch (config.provider) {
+    case "anthropic":
+      return chatWithAnthropic(config.model, params.systemPrompt, params.userMessage, maxTokens, temperature)
+    case "openai":
+      return chatWithOpenAI(config.model, params.systemPrompt, params.userMessage, maxTokens, temperature)
+    case "openrouter":
+      return chatWithOpenRouter(config.model, params.systemPrompt, params.userMessage, maxTokens, temperature)
+    case "ollama":
+      return chatWithOllama(config.model, params.systemPrompt, params.userMessage, maxTokens, temperature)
+    default:
+      throw new Error(`Unknown provider: ${config.provider}`)
+  }
+}
+
+async function chatWithAnthropic(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<SimpleChatResult> {
+  const client = getAnthropicClient()
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+    temperature,
+  })
+
+  const content = response.content
+    .filter((c): c is Anthropic.TextBlock => c.type === "text")
+    .map((c) => c.text)
+    .join("")
+
+  return {
+    content,
+    usage: {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    },
+    model,
+    provider: "anthropic",
+  }
+}
+
+async function chatWithOpenAI(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<SimpleChatResult> {
+  const client = getOpenAIClient()
+
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    temperature,
+  })
+
+  return {
+    content: response.choices[0]?.message?.content ?? "",
+    usage: {
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+    },
+    model,
+    provider: "openai",
+  }
+}
+
+async function chatWithOpenRouter(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<SimpleChatResult> {
+  const client = getOpenRouterClient()
+
+  const response = await client.chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    temperature,
+  })
+
+  return {
+    content: response.choices[0]?.message?.content ?? "",
+    usage: {
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+    },
+    model,
+    provider: "openrouter",
+  }
+}
+
+async function chatWithOllama(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<SimpleChatResult> {
+  const response = await ollama.chat({
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    options: {
+      temperature,
+      num_predict: maxTokens,
+    },
+  })
+
+  // Ollama doesn't provide token counts, so estimate
+  const inputTokens = estimateTokens(systemPrompt + userMessage)
+  const outputTokens = estimateTokens(response.message.content)
+
+  return {
+    content: response.message.content,
+    usage: {
+      inputTokens,
+      outputTokens,
+    },
+    model,
+    provider: "ollama",
+  }
+}
+
+// Model constants - use config values for runtime configuration
 export const Models = {
-  EMBEDDING: "text-embedding-3-small",
+  EMBEDDING: OPENAI_EMBEDDING_MODEL,
   CLAUDE_SONNET: "claude-sonnet-4-5-20250929",
-  CLAUDE_HAIKU: "claude-haiku-4-5-20251001",
+  CLAUDE_HAIKU: CLASSIFICATION_MODEL,
+  ARIADNE: ARIADNE_MODEL,
 } as const
 
-// Cost per 1M tokens (in cents)
+// Cost per 1M tokens (in cents) - keyed by model ID patterns
+// Note: Costs are approximate and should be updated as pricing changes
+const MODEL_COST_PATTERNS: Array<{ pattern: RegExp | string; costs: { input: number; output: number } }> = [
+  // OpenAI embeddings
+  { pattern: /^text-embedding/, costs: { input: 2, output: 0 } }, // $0.02/1M
+  // Anthropic models
+  { pattern: /claude-sonnet/, costs: { input: 300, output: 1500 } }, // $3/1M in, $15/1M out
+  { pattern: /claude-haiku/, costs: { input: 25, output: 125 } }, // $0.25/1M in, $1.25/1M out
+  { pattern: /claude-opus/, costs: { input: 1500, output: 7500 } }, // $15/1M in, $75/1M out
+]
+
+// Legacy export for backwards compatibility
 export const ModelCosts = {
-  [Models.EMBEDDING]: { input: 2, output: 0 }, // $0.02/1M
-  [Models.CLAUDE_SONNET]: { input: 300, output: 1500 }, // $3/1M in, $15/1M out
-  [Models.CLAUDE_HAIKU]: { input: 25, output: 125 }, // $0.25/1M in, $1.25/1M out
+  "text-embedding-3-small": { input: 2, output: 0 },
+  "claude-sonnet-4-5-20250929": { input: 300, output: 1500 },
+  "claude-haiku-4-5-20251001": { input: 25, output: 125 },
 } as const
+
+/**
+ * Get cost per 1M tokens for a model.
+ * Returns default Haiku costs if model not recognized.
+ */
+export function getModelCosts(model: string): { input: number; output: number } {
+  // Check patterns
+  for (const { pattern, costs } of MODEL_COST_PATTERNS) {
+    if (typeof pattern === "string" ? model === pattern : pattern.test(model)) {
+      return costs
+    }
+  }
+  // Default to Haiku costs
+  return { input: 25, output: 125 }
+}
 
 export interface EmbeddingResult {
   embedding: number[]
@@ -217,9 +514,11 @@ export async function chat(params: {
 }
 
 /**
- * Classify content using Claude Haiku (fallback when SLM is uncertain).
+ * Classify content using the configured classification model.
+ * Uses CLASSIFICATION_MODEL env var (format: provider:model).
+ * Defaults to anthropic:claude-haiku-4-5-20251001.
  */
-export async function classifyWithHaiku(
+export async function classifyWithModel(
   content: string,
   reactionCount?: number,
 ): Promise<{
@@ -227,10 +526,10 @@ export async function classifyWithHaiku(
   confidence: number
   suggestedTitle: string | null
   usage: { inputTokens: number; outputTokens: number }
+  model: string
+  provider: Provider
 }> {
-  const result = await chat({
-    model: "claude-haiku",
-    systemPrompt: `You are a content classifier. Analyze messages to determine if they contain reusable knowledge that would help others in the future.
+  const systemPrompt = `You are a content classifier. Analyze messages to determine if they contain reusable knowledge that would help others in the future.
 
 Knowledge includes:
 - How-to guides and explanations
@@ -246,20 +545,20 @@ NOT knowledge:
 - Questions without answers
 - Context-dependent discussions
 
-Respond with JSON only, no other text.`,
-    messages: [
-      {
-        role: "user",
-        content: `Classify this message:
+Respond with JSON only, no other text.`
+
+  const userMessage = `Classify this message:
 
 ${content.slice(0, 2000)}
 
 ${reactionCount && reactionCount > 0 ? `Note: ${reactionCount} people reacted positively to this message.` : ""}
 
 Respond with JSON:
-{"isKnowledge": boolean, "confidence": 0.0-1.0, "suggestedTitle": "string or null"}`,
-      },
-    ],
+{"isKnowledge": boolean, "confidence": 0.0-1.0, "suggestedTitle": "string or null"}`
+
+  const result = await chatWithModel(CLASSIFICATION_MODEL, {
+    systemPrompt,
+    userMessage,
     maxTokens: 150,
     temperature: 0,
   })
@@ -277,26 +576,52 @@ Respond with JSON:
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
       suggestedTitle: typeof parsed.suggestedTitle === "string" ? parsed.suggestedTitle : null,
       usage: result.usage,
+      model: result.model,
+      provider: result.provider,
     }
   } catch (err) {
-    logger.error({ err, response: result.content }, "Failed to parse Haiku classification response")
+    logger.error({ err, response: result.content, model: result.model }, "Failed to parse classification response")
     return {
       isKnowledge: false,
       confidence: 0,
       suggestedTitle: null,
       usage: result.usage,
+      model: result.model,
+      provider: result.provider,
     }
   }
 }
 
 /**
+ * @deprecated Use classifyWithModel instead. This is kept for backwards compatibility.
+ */
+export async function classifyWithHaiku(
+  content: string,
+  reactionCount?: number,
+): Promise<{
+  isKnowledge: boolean
+  confidence: number
+  suggestedTitle: string | null
+  usage: { inputTokens: number; outputTokens: number }
+}> {
+  const result = await classifyWithModel(content, reactionCount)
+  return {
+    isKnowledge: result.isKnowledge,
+    confidence: result.confidence,
+    suggestedTitle: result.suggestedTitle,
+    usage: result.usage,
+  }
+}
+
+/**
  * Calculate cost in cents for an AI operation.
+ * Accepts any model string and looks up costs dynamically.
  */
 export function calculateCost(
-  model: keyof typeof ModelCosts,
+  model: string,
   usage: { inputTokens: number; outputTokens?: number },
 ): number {
-  const costs = ModelCosts[model]
+  const costs = getModelCosts(model)
   const inputCost = (usage.inputTokens / 1_000_000) * costs.input
   const outputCost = usage.outputTokens ? (usage.outputTokens / 1_000_000) * costs.output : 0
   return inputCost + outputCost

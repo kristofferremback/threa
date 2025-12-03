@@ -3,9 +3,10 @@ import { sql } from "../lib/db"
 import { createRedisClient, connectRedisClient, type RedisClient } from "../lib/redis"
 import { getJobQueue, JobPriority, type AriadneMode } from "../lib/job-queue"
 import { checkAriadneEngagement } from "../lib/ollama"
+import { PersonaService } from "../services/persona-service"
 import { logger } from "../lib/logger"
 
-const ARIADNE_PERSONA_ID = "pers_default_ariadne"
+const DEFAULT_PERSONA_ID = "pers_default_ariadne"
 const MAX_LOW_RELEVANCE_MESSAGES = 10 // Ariadne "leaves" after this many low-relevance messages
 const ENGAGEMENT_CACHE_TTL = 3600 // 1 hour TTL for engagement tracking
 const RELEVANCE_THRESHOLD = 5 // Minimum score (1-7) to warrant a response
@@ -36,9 +37,12 @@ interface StreamEventPayload {
 export class AriadneTrigger {
   private redisSubscriber: RedisClient | null = null
   private redisClient: RedisClient | null = null
+  private personaService: PersonaService
   private isRunning = false
 
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) {
+    this.personaService = new PersonaService(pool)
+  }
 
   async start(): Promise<void> {
     if (this.isRunning) {
@@ -110,7 +114,7 @@ export class AriadneTrigger {
       const result = await this.pool.query<{ count: string }>(
         sql`SELECT COUNT(*) as count FROM stream_events
             WHERE stream_id = ${streamId}
-              AND agent_id = ${ARIADNE_PERSONA_ID}
+              AND agent_id IS NOT NULL
               AND deleted_at IS NULL
             LIMIT 1`,
       )
@@ -181,11 +185,11 @@ export class AriadneTrigger {
       for (const row of result.rows) {
         if (!row.content) continue
 
-        if (row.agent_id === ARIADNE_PERSONA_ID && !ariadneLastResponse) {
+        if (row.agent_id && !ariadneLastResponse) {
           ariadneLastResponse = row.content
         }
 
-        const name = row.agent_id === ARIADNE_PERSONA_ID ? "Ariadne" : row.actor_name || "User"
+        const name = row.agent_id ? "Assistant" : row.actor_name || "User"
         messages.push(`[${name}]: ${row.content}`)
       }
 
@@ -261,7 +265,61 @@ export class AriadneTrigger {
 
     const isThinkingSpace = event.stream_type === "thinking_space"
     const isThread = event.stream_type === "thread"
-    const ariadneMentioned = event.mentions?.some((m) => m.type === "user" && m.label?.toLowerCase() === "ariadne")
+
+    // For thinking spaces or threads, get the stream's configured persona_id
+    // Threads inherit the persona_id from their parent stream (e.g., thinking space)
+    let streamPersonaId: string | undefined
+    if (isThinkingSpace || isThread) {
+      try {
+        const result = await this.pool.query<{ persona_id: string | null }>(
+          sql`SELECT COALESCE(s.persona_id, parent.persona_id) as persona_id
+              FROM streams s
+              LEFT JOIN streams parent ON s.parent_stream_id = parent.id
+              WHERE s.id = ${event.stream_id}`,
+        )
+        streamPersonaId = result.rows[0]?.persona_id || undefined
+      } catch (err) {
+        logger.error({ err, streamId: event.stream_id }, "Failed to get stream persona_id")
+      }
+    }
+
+    // Check for any persona mention (not just "ariadne")
+    // Look up each user mention to see if it matches a persona slug
+    let mentionedPersonaId: string | undefined
+    let personaMentioned = false
+
+    if (event.mentions && event.mentions.length > 0) {
+      for (const mention of event.mentions) {
+        // Check for agent mentions (explicit persona) or user mentions (legacy/fallback)
+        if ((mention.type === "agent" || mention.type === "user") && mention.label) {
+          // For agent type, use the id directly as persona id
+          if (mention.type === "agent" && mention.id) {
+            const persona = await this.personaService.getPersona(mention.id)
+            if (persona && persona.isActive) {
+              mentionedPersonaId = persona.id
+              personaMentioned = true
+              logger.info(
+                { personaId: persona.id, personaName: persona.name, label: mention.label },
+                "Detected agent persona mention",
+              )
+              break
+            }
+          } else {
+            // Try to resolve the mention as a persona by slug (user type fallback)
+            const persona = await this.personaService.resolvePersonaMention(event.workspace_id, mention.label)
+            if (persona) {
+              mentionedPersonaId = persona.id
+              personaMentioned = true
+              logger.info(
+                { personaId: persona.id, personaName: persona.name, label: mention.label },
+                "Detected persona mention",
+              )
+              break
+            }
+          }
+        }
+      }
+    }
 
     logger.info(
       {
@@ -270,12 +328,13 @@ export class AriadneTrigger {
         stream_type: event.stream_type,
         isThread,
         isThinkingSpace,
-        ariadneMentioned,
+        personaMentioned,
+        mentionedPersonaId,
       },
-      "Ariadne trigger received event",
+      "Trigger received event",
     )
 
-    let shouldTrigger = isThinkingSpace || ariadneMentioned
+    let shouldTrigger = isThinkingSpace || personaMentioned
     let mode: AriadneMode = isThinkingSpace ? "thinking_partner" : "retrieval"
 
     // Auto-engagement only in threads (not channels - channels require explicit @Ariadne)
@@ -405,6 +464,7 @@ export class AriadneTrigger {
           mentionedBy: event.actor_id,
           question: event.content,
           mode,
+          personaId: mentionedPersonaId || streamPersonaId,
         },
         {
           priority: JobPriority.URGENT,
@@ -422,7 +482,7 @@ export class AriadneTrigger {
           eventId: event.event_id,
           streamId: event.stream_id,
           mode,
-          autoEngaged: !isThinkingSpace && !ariadneMentioned,
+          autoEngaged: !isThinkingSpace && !personaMentioned,
         },
         "Ariadne trigger queued AI response",
       )
@@ -443,6 +503,7 @@ export async function queueAriadneResponse(params: {
   mentionedBy: string
   question: string
   mode?: AriadneMode
+  personaId?: string
 }): Promise<string | null> {
   try {
     const boss = getJobQueue()
@@ -455,6 +516,7 @@ export async function queueAriadneResponse(params: {
         mentionedBy: params.mentionedBy,
         question: params.question,
         mode: params.mode || "retrieval",
+        personaId: params.personaId,
       },
       {
         priority: JobPriority.URGENT,

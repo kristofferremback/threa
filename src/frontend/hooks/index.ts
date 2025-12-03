@@ -14,6 +14,7 @@ export { useAgentSessions } from "./useAgentSessions"
 export { useBootstrapQuery, bootstrapKeys } from "../queries/useBootstrapQuery"
 export { useStreamQuery, streamKeys } from "../queries/useStreamQuery"
 export { useEventsQuery, eventKeys } from "../queries/useEventsQuery"
+export { usePersonasQuery, personaKeys } from "../queries/usePersonasQuery"
 
 // Mutations
 export { usePostMessage, outboxToEvent, getStreamOutboxMessages } from "../mutations/usePostMessage"

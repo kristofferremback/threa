@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
 import { useStreamWithQuery, useAgentSessions } from "../hooks"
 import type { MaterializedStreamResult } from "../hooks"
-import { ChatHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
+import { ChatHeader, ThinkingSpaceHeader, ChatInput, EventList, ThreadContext, ConnectionError } from "./chat"
 import type { AgentSession } from "./chat/AgentThinkingEvent"
 import type { OpenMode, Mention, Stream } from "../types"
 import { getOpenMode } from "../types"
@@ -19,6 +19,17 @@ interface StreamInterfaceProps {
   onStreamUpdate?: (stream: Stream) => void
   users?: Array<{ id: string; name: string; email: string }>
   streams?: Array<{ id: string; name: string; slug: string | null; branchedFromEventId?: string | null }>
+  agents?: Array<{
+    id: string
+    name: string
+    slug: string
+    description: string
+    avatarEmoji: string | null
+    isDefault?: boolean
+  }>
+  // Thinking space specific
+  selectedPersonaId?: string | null
+  onPersonaChange?: (personaId: string) => void
 }
 
 export function StreamInterface({
@@ -33,6 +44,9 @@ export function StreamInterface({
   onStreamUpdate,
   users = [],
   streams = [],
+  agents = [],
+  selectedPersonaId,
+  onPersonaChange,
 }: StreamInterfaceProps) {
   const {
     stream,
@@ -60,6 +74,7 @@ export function StreamInterface({
     streamId,
     enabled: true,
     onStreamUpdate,
+    selectedPersonaId,
   })
 
   // Track agent sessions with real-time updates
@@ -96,11 +111,15 @@ export function StreamInterface({
   const sessionsArray = useMemo(() => Array.from(sessions.values()), [sessions])
 
   const isThread = stream?.streamType === "thread"
+  const isThinkingSpace = stream?.streamType === "thinking_space" || streamId?.startsWith("draft_thinking_space_")
   // For threads, prefer the actual stream name over the static "Thread" title
   const streamDisplayName = (stream?.name || "").replace("#", "")
   const displayTitle = isThread
     ? streamDisplayName || title || "Thread"
     : title || streamName || streamDisplayName || "General"
+
+  // For thinking spaces, persona is locked once there are messages
+  const hasMessages = events.length > 0
 
   // Handler for sending messages
   const handleSend = useCallback(
@@ -157,7 +176,18 @@ export function StreamInterface({
 
   return (
     <div className="flex h-full w-full flex-col" style={{ background: "var(--bg-primary)", minHeight: "100%" }}>
-      <ChatHeader title={displayTitle} isThread={isThread} isConnected={isConnected} />
+      {isThinkingSpace ? (
+        <ThinkingSpaceHeader
+          title={displayTitle}
+          isConnected={isConnected}
+          personas={agents}
+          selectedPersonaId={selectedPersonaId || null}
+          onPersonaChange={onPersonaChange || (() => {})}
+          isLocked={hasMessages}
+        />
+      ) : (
+        <ChatHeader title={displayTitle} isThread={isThread} isConnected={isConnected} />
+      )}
 
       {isThread && parentStream && (
         <ThreadContext
@@ -188,7 +218,7 @@ export function StreamInterface({
             events={events}
             sessions={sessionsArray}
             workspaceId={workspaceId}
-            streamId={streamId}
+            streamId={actualStreamId}
             lastReadEventId={lastReadEventId}
             isLoading={isLoading}
             isLoadingMore={isLoadingMore}
@@ -215,6 +245,7 @@ export function StreamInterface({
         placeholder={isThread ? "Reply to thread..." : `Message ${displayTitle}`}
         users={users}
         channels={streams}
+        agents={agents}
         streamId={actualStreamId}
       />
     </div>

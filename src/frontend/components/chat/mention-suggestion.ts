@@ -3,11 +3,12 @@ import tippy, { type Instance as TippyInstance } from "tippy.js"
 import { MentionList, type MentionListRef, type MentionItem } from "./MentionList"
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion"
 
-export type MentionType = "user" | "channel" | "crosspost"
+export type MentionType = "user" | "channel" | "crosspost" | "agent"
 
 export interface MentionSuggestionOptions {
   users: Array<{ id: string; name: string; email: string }>
   channels: Array<{ id: string; name: string; slug: string | null }>
+  agents?: Array<{ id: string; name: string; slug: string; description: string; avatarEmoji: string | null }>
 }
 
 // Fuzzy search helper
@@ -32,12 +33,28 @@ export function createUserSuggestion(options: MentionSuggestionOptions): Partial
     allowSpaces: false,
     items: ({ query }): MentionItem[] => {
       const q = query.toLowerCase()
-      return options.users
+
+      // Filter matching agents (all returned from API are active)
+      const agentItems: MentionItem[] = (options.agents || [])
+        .filter((agent) => {
+          if (!q) return true
+          return fuzzyMatch(q, agent.name) || fuzzyMatch(q, agent.slug)
+        })
+        .map((agent) => ({
+          id: agent.id,
+          label: agent.name,
+          type: "agent" as const,
+          slug: agent.slug,
+          avatarEmoji: agent.avatarEmoji || undefined,
+          description: agent.description,
+        }))
+
+      // Filter matching users
+      const userItems: MentionItem[] = options.users
         .filter((user) => {
           if (!q) return true
           return fuzzyMatch(q, user.name) || fuzzyMatch(q, user.email)
         })
-        .slice(0, 8)
         .map((user) => ({
           id: user.id,
           label: user.name,
@@ -45,19 +62,24 @@ export function createUserSuggestion(options: MentionSuggestionOptions): Partial
           email: user.email,
           name: user.name,
         }))
+
+      // Show agents first, then users, limit total to 8
+      return [...agentItems, ...userItems].slice(0, 8)
     },
     // Custom command to pass all attributes
     command: ({ editor, range, props }) => {
+      const isAgent = props.type === "agent"
       editor
         .chain()
         .focus()
         .deleteRange(range)
         .insertContent([
           {
-            type: "userMention",
+            type: isAgent ? "agentMention" : "userMention",
             attrs: {
               id: props.id,
               label: props.label,
+              ...(isAgent && { slug: props.slug }),
             },
           },
           { type: "text", text: " " },

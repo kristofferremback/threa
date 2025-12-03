@@ -1,18 +1,44 @@
 import { createReactAgent } from "@langchain/langgraph/prebuilt"
 import { ChatAnthropic } from "@langchain/anthropic"
-import { BaseMessageLike } from "@langchain/core/messages"
+import { ChatOpenAI } from "@langchain/openai"
+import { ChatOllama } from "@langchain/ollama"
+import type { BaseMessageLike } from "@langchain/core/messages"
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { RunnableConfig } from "@langchain/core/runnables"
 import { MessagesAnnotation } from "@langchain/langgraph"
 import { Pool } from "pg"
 import { CallbackHandler } from "@langfuse/langchain"
 import { createAriadneTools, CitationAccumulator } from "./tools"
+import type { ToolName } from "../../services/persona-service"
 import { RETRIEVAL_PROMPT, THINKING_PARTNER_PROMPT } from "./prompts"
 import { logger } from "../../lib/logger"
 import { isLangfuseEnabled } from "../../lib/langfuse"
 import type { AriadneMode } from "../../lib/job-queue"
 import type { SearchScope } from "../../services/search-service"
 import type { Citation } from "./researcher"
-import { Models } from "../../lib/ai-providers"
+import {
+  ARIADNE_MODEL,
+  ANTHROPIC_API_KEY,
+  OPENAI_API_KEY,
+  OPENROUTER_API_KEY,
+  OLLAMA_HOST,
+} from "../../config"
+import { parseModelString, type Provider } from "../../lib/ai-providers"
+
+/**
+ * Configuration for a persona that can be passed to the agent.
+ * When provided, overrides the default Ariadne settings.
+ */
+export interface PersonaConfig {
+  id: string
+  name: string
+  slug: string
+  systemPrompt: string
+  model: string
+  temperature: number
+  maxTokens: number
+  enabledTools: ToolName[] | null
+}
 
 export interface ConversationMessage {
   role: "user" | "assistant"
@@ -74,25 +100,112 @@ function determineSearchScope(context: AriadneContext): SearchScope {
 }
 
 /**
+ * Create a LangChain chat model based on a model string.
+ * Supports: anthropic, openai, openrouter, ollama providers.
+ */
+function createChatModel(options: {
+  modelString?: string
+  temperature: number
+  maxTokens: number
+}): BaseChatModel {
+  const config = parseModelString(options.modelString || ARIADNE_MODEL)
+
+  logger.debug({ provider: config.provider, model: config.model }, "Creating chat model")
+
+  switch (config.provider) {
+    case "anthropic":
+      if (!ANTHROPIC_API_KEY) {
+        throw new Error("ANTHROPIC_API_KEY is required for anthropic models")
+      }
+      return new ChatAnthropic({
+        model: config.model,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        anthropicApiKey: ANTHROPIC_API_KEY,
+      })
+
+    case "openai":
+      if (!OPENAI_API_KEY) {
+        throw new Error("OPENAI_API_KEY is required for openai models")
+      }
+      return new ChatOpenAI({
+        model: config.model,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        openAIApiKey: OPENAI_API_KEY,
+      })
+
+    case "openrouter":
+      if (!OPENROUTER_API_KEY) {
+        throw new Error("OPENROUTER_API_KEY is required for openrouter models")
+      }
+      return new ChatOpenAI({
+        model: config.model,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        openAIApiKey: OPENROUTER_API_KEY,
+        configuration: {
+          baseURL: "https://openrouter.ai/api/v1",
+          defaultHeaders: {
+            "HTTP-Referer": "https://threa.app",
+            "X-Title": "Threa",
+          },
+        },
+      })
+
+    case "ollama":
+      return new ChatOllama({
+        model: config.model,
+        temperature: options.temperature,
+        baseUrl: OLLAMA_HOST,
+      })
+
+    default:
+      throw new Error(`Unsupported provider: ${config.provider}`)
+  }
+}
+
+/**
  * Create an Ariadne agent instance for a specific workspace context.
  * The mentionedBy user ID is used for permission-scoped searches.
  * The search scope is determined by the stream type and visibility.
+ *
+ * @param persona Optional persona configuration - when provided, uses the persona's
+ * system prompt, model, temperature, and enabled tools instead of defaults.
  */
-export function createAriadneAgent(pool: Pool, context: AriadneContext, citationAccumulator?: CitationAccumulator) {
+export function createAriadneAgent(
+  pool: Pool,
+  context: AriadneContext,
+  citationAccumulator?: CitationAccumulator,
+  persona?: PersonaConfig,
+) {
   const scope = determineSearchScope(context)
-  const tools = createAriadneTools(pool, {
+  let tools = createAriadneTools(pool, {
     workspaceId: context.workspaceId,
     userId: context.mentionedBy,
     currentStreamId: context.streamId,
     scope,
     citationAccumulator,
   })
+
+  // Filter tools if persona has enabledTools set
+  if (persona?.enabledTools) {
+    const enabledSet = new Set(persona.enabledTools)
+    tools = tools.filter((tool) => enabledSet.has(tool.name as ToolName))
+    logger.debug({ personaId: persona.id, enabledTools: persona.enabledTools }, "Filtered tools for persona")
+  }
+
   const isThinkingPartner = context.mode === "thinking_partner"
 
-  const model = new ChatAnthropic({
-    model: Models.CLAUDE_HAIKU,
-    temperature: isThinkingPartner ? 0.8 : 0.7, // Slightly higher temperature for thinking partner
-    maxTokens: isThinkingPartner ? 4096 : 2048, // Allow longer responses in thinking mode
+  // Use persona config when available, otherwise use defaults
+  const modelString = persona?.model
+  const temperature = persona?.temperature ?? (isThinkingPartner ? 0.8 : 0.7)
+  const maxTokens = persona?.maxTokens ?? (isThinkingPartner ? 4096 : 2048)
+
+  const model = createChatModel({
+    modelString,
+    temperature,
+    maxTokens,
   })
 
   // Dynamic prompt that includes context
@@ -101,9 +214,10 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext, citation
     const mentionedByName = config.configurable?.mentionedByName || "someone"
     const backgroundContext = config.configurable?.backgroundContext || ""
     const streamContext = config.configurable?.streamContext as StreamContext | undefined
+    const personaName = persona?.name || "Ariadne"
 
-    // Select base prompt based on mode
-    let systemPrompt = isThinkingPartner ? THINKING_PARTNER_PROMPT : RETRIEVAL_PROMPT
+    // Use persona's system prompt if available, otherwise use default based on mode
+    let systemPrompt = persona?.systemPrompt ?? (isThinkingPartner ? THINKING_PARTNER_PROMPT : RETRIEVAL_PROMPT)
 
     if (customInstructions) {
       systemPrompt += `\n\nAdditional context from workspace settings:\n${customInstructions}`
@@ -146,7 +260,7 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext, citation
 
     // Only add "mentioned by" context in retrieval mode
     if (!isThinkingPartner) {
-      systemPrompt += `\n\nYou were mentioned by ${mentionedByName}. Respond directly to them.`
+      systemPrompt += `\n\nYou (${personaName}) were mentioned by ${mentionedByName}. Respond directly to them.`
     }
 
     // Add background context for channel invocations (not conversation history)
@@ -167,18 +281,20 @@ export function createAriadneAgent(pool: Pool, context: AriadneContext, citation
 }
 
 /**
- * Invoke Ariadne with a question and context.
+ * Invoke an agent with a question and context.
  */
 export async function invokeAriadne(
   pool: Pool,
   context: AriadneContext,
   question: string,
   customInstructions?: string,
+  persona?: PersonaConfig,
 ): Promise<{
   response: string
   usage: { inputTokens: number; outputTokens: number }
 }> {
   const historyLength = context.conversationHistory?.length || 0
+  const agentName = persona?.name || "Ariadne"
   logger.info(
     {
       workspaceId: context.workspaceId,
@@ -186,11 +302,13 @@ export async function invokeAriadne(
       questionLength: question.length,
       mode: context.mode || "retrieval",
       historyMessages: historyLength,
+      personaId: persona?.id,
+      agentName,
     },
-    "Invoking Ariadne",
+    `Invoking ${agentName}`,
   )
 
-  const agent = createAriadneAgent(pool, context)
+  const agent = createAriadneAgent(pool, context, undefined, persona)
 
   // Build message array from conversation history
   const messages: Array<{ role: "user" | "assistant"; content: string }> = []
@@ -271,28 +389,32 @@ export type StreamChunk =
   | { type: "done"; content: string; citations: Citation[] }
 
 /**
- * Stream Ariadne's response for real-time output.
+ * Stream an agent's response for real-time output.
  */
 export async function* streamAriadne(
   pool: Pool,
   context: AriadneContext,
   question: string,
   customInstructions?: string,
+  persona?: PersonaConfig,
 ): AsyncGenerator<StreamChunk> {
   const historyLength = context.conversationHistory?.length || 0
+  const agentName = persona?.name || "Ariadne"
   logger.info(
     {
       workspaceId: context.workspaceId,
       streamId: context.streamId,
       mode: context.mode || "retrieval",
       historyMessages: historyLength,
+      personaId: persona?.id,
+      agentName,
     },
-    "Streaming Ariadne response",
+    `Streaming ${agentName} response`,
   )
 
   // Create citation accumulator to track sources from tool calls
   const citationAccumulator = new CitationAccumulator()
-  const agent = createAriadneAgent(pool, context, citationAccumulator)
+  const agent = createAriadneAgent(pool, context, citationAccumulator, persona)
 
   // Build message array from conversation history (same as invokeAriadne)
   const messages: Array<{ role: "user" | "assistant"; content: string }> = []
@@ -408,4 +530,5 @@ export async function* streamAriadne(
     throw err
   }
 }
+
 

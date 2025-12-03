@@ -45,6 +45,7 @@ export interface Stream {
   status: StreamStatus
   promotedAt: Date | null
   promotedBy: string | null
+  personaId: string | null // For thinking_space: the AI persona that responds automatically
   metadata: Record<string, unknown>
   createdAt: Date
   updatedAt: Date
@@ -166,6 +167,7 @@ export interface CreateStreamParams {
   parentStreamId?: string
   branchedFromEventId?: string
   metadata?: Record<string, unknown>
+  personaId?: string // For thinking_space: the AI persona that responds automatically
 }
 
 export interface CreateEventParams {
@@ -298,11 +300,7 @@ export class StreamService {
         !userProfile.profile_managed_by_sso &&
         (!userProfile.display_name || userProfile.display_name.trim() === "")
 
-      // Check if AI is enabled for this workspace
-      const aiEnabledRes = await client.query(sql`SELECT ai_enabled FROM workspaces WHERE id = ${workspaceId}`)
-      const aiEnabled = aiEnabledRes.rows[0]?.ai_enabled ?? false
-
-      // Build users list, optionally including Ariadne if AI is enabled
+      // Build users list (AI personas are handled separately via the personas endpoint)
       const users = usersRes.rows.map((row) => ({
         id: row.id,
         name: row.name,
@@ -311,18 +309,6 @@ export class StreamService {
         avatarUrl: row.avatar_url,
         role: row.role,
       }))
-
-      // Add Ariadne to the users list if AI is enabled
-      if (aiEnabled && !users.some((u) => u.email === "ariadne@threa.ai")) {
-        users.push({
-          id: `ariadne_${workspaceId}`,
-          name: "Ariadne",
-          email: "ariadne@threa.ai",
-          title: "AI Assistant",
-          avatarUrl: null,
-          role: "bot",
-        })
-      }
 
       return {
         workspace: {
@@ -390,13 +376,14 @@ export class StreamService {
       const result = await client.query<Stream>(
         sql`INSERT INTO streams (
               id, workspace_id, stream_type, name, slug, description,
-              visibility, parent_stream_id, branched_from_event_id, metadata
+              visibility, parent_stream_id, branched_from_event_id, metadata, persona_id
             )
             VALUES (
               ${streamId}, ${params.workspaceId}, ${params.streamType},
               ${params.name || null}, ${slug}, ${params.description || null},
               ${params.visibility || "public"}, ${params.parentStreamId || null},
-              ${params.branchedFromEventId || null}, ${JSON.stringify(params.metadata || {})}
+              ${params.branchedFromEventId || null}, ${JSON.stringify(params.metadata || {})},
+              ${params.personaId || null}
             )
             RETURNING *`,
       )
@@ -1603,7 +1590,7 @@ export class StreamService {
           INNER JOIN streams s ON e.stream_id = s.id
           LEFT JOIN users u ON e.actor_id = u.id
           LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
-          LEFT JOIN ai_personas ap ON e.agent_id = ap.id
+          LEFT JOIN agent_personas ap ON e.agent_id = ap.id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.stream_id = ${streamId}
@@ -1631,7 +1618,7 @@ export class StreamService {
             INNER JOIN streams s ON e.stream_id = s.id
             LEFT JOIN users u ON e.actor_id = u.id
             LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
-            LEFT JOIN ai_personas ap ON e.agent_id = ap.id
+            LEFT JOIN agent_personas ap ON e.agent_id = ap.id
             LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
             WHERE e.id = ANY(${originalIds})`,
       )
@@ -1668,7 +1655,7 @@ export class StreamService {
           INNER JOIN streams s ON e.stream_id = s.id
           LEFT JOIN users u ON e.actor_id = u.id
           LEFT JOIN workspace_profiles wp ON wp.workspace_id = s.workspace_id AND wp.user_id = e.actor_id
-          LEFT JOIN ai_personas ap ON e.agent_id = ap.id
+          LEFT JOIN agent_personas ap ON e.agent_id = ap.id
           LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
           LEFT JOIN shared_refs sr ON e.content_type = 'shared_ref' AND e.content_id = sr.id
           WHERE e.id = ${eventId}`,
