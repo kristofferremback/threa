@@ -61,6 +61,14 @@ interface ReplyCountData {
   replyCount: number
 }
 
+interface ThreadCreatedData {
+  threadId: string
+  parentStreamId: string
+  branchedFromEventId: string
+  name: string | null
+  slug: string | null
+}
+
 // =============================================================================
 // Room Name Builders (must match server)
 // =============================================================================
@@ -154,6 +162,11 @@ export function initSocket(workspaceId: string) {
   socket.on("replyCount:updated", (data: ReplyCountData) => {
     handleReplyCountUpdated(data)
   })
+
+  // Handle thread creation (for pending thread -> real thread conversion)
+  socket.on("thread:created", (data: ThreadCreatedData) => {
+    handleThreadCreated(data)
+  })
 }
 
 /**
@@ -176,18 +189,21 @@ export function disconnectSocket() {
 
 /**
  * Join a stream room to receive events for that stream.
+ * If socket isn't connected yet, queues the room to join on connect.
  */
 export function joinStream(streamId: string) {
+  if (joinedStreams.has(streamId)) {
+    return // Already joined or queued
+  }
+
+  // Always add to set - will be joined on connect if socket not ready
+  joinedStreams.add(streamId)
+
   if (!socket || !currentWorkspaceId) {
-    console.warn("[SocketWorker] Cannot join stream - socket not initialized")
+    console.log(`[SocketWorker] Queued stream ${streamId} to join on connect`)
     return
   }
 
-  if (joinedStreams.has(streamId)) {
-    return // Already joined
-  }
-
-  joinedStreams.add(streamId)
   socket.emit("join", room.stream(currentWorkspaceId, streamId))
   console.log(`[SocketWorker] Joined stream ${streamId}`)
 }
@@ -314,5 +330,77 @@ function handleReplyCountUpdated(data: ReplyCountData) {
       })
       break
     }
+  }
+}
+
+function handleThreadCreated(data: ThreadCreatedData) {
+  // Server may send branchedFromEventId with or without event_ prefix
+  // We join rooms with raw event ID, so strip prefix for comparison
+  const rawEventId = data.branchedFromEventId.replace(/^event_/, "")
+
+  // Check if we're viewing the pending thread
+  if (!joinedStreams.has(rawEventId)) {
+    return
+  }
+
+  const store = useMessageStore.getState()
+  const pendingKey = `event_${rawEventId}`
+
+  console.log(`[SocketWorker] Thread created: ${pendingKey} -> ${data.threadId}`)
+
+  // Create alias so events for realThreadId also update pendingKey cache
+  store.addStreamAlias(data.threadId, pendingKey)
+
+  // Join the real thread's room to receive future events
+  if (socket && currentWorkspaceId) {
+    joinedStreams.add(data.threadId)
+    socket.emit("join", room.stream(currentWorkspaceId, data.threadId))
+    console.log(`[SocketWorker] Joined real thread ${data.threadId}`)
+  }
+
+  // Fetch the real thread data and update the store
+  fetchRealThread(data.threadId, pendingKey)
+}
+
+async function fetchRealThread(threadId: string, pendingKey: string) {
+  if (!currentWorkspaceId) return
+
+  try {
+    // Fetch thread metadata
+    const threadRes = await fetch(`/api/workspace/${currentWorkspaceId}/streams/${threadId}`, {
+      credentials: "include",
+    })
+
+    if (!threadRes.ok) return
+
+    const threadData = await threadRes.json()
+    const store = useMessageStore.getState()
+
+    // Update the pending key with real thread data
+    store.setStream(pendingKey, {
+      stream: threadData.stream,
+      parentStream: threadData.parentStream,
+      rootEvent: threadData.rootEvent,
+      ancestors: threadData.ancestors || [],
+      lastFetchedAt: Date.now(),
+    })
+
+    // Fetch events for the real thread
+    const eventsRes = await fetch(
+      `/api/workspace/${currentWorkspaceId}/streams/${threadId}/events?limit=50`,
+      { credentials: "include" },
+    )
+
+    if (eventsRes.ok) {
+      const eventsData = await eventsRes.json()
+      store.setEvents(pendingKey, {
+        events: eventsData.events || [],
+        hasMore: eventsData.hasMore || false,
+        lastFetchedAt: Date.now(),
+        lastReadEventId: eventsData.lastReadEventId,
+      })
+    }
+  } catch (error) {
+    console.error("[SocketWorker] Failed to fetch real thread:", error)
   }
 }

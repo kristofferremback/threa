@@ -153,7 +153,9 @@ export function useAgentSessions({
 
     // Join stream room and refetch sessions
     const joinRoom = () => {
-      socket.emit("join", room.stream(workspaceId, streamId))
+      // For pending threads (event_xxx), join with raw event ID since server emits to that room
+      const roomStreamId = streamId.startsWith("event_") ? streamId.replace(/^event_/, "") : streamId
+      socket.emit("join", room.stream(workspaceId, roomStreamId))
       // Refetch sessions after delays to catch any we might have missed
       // First try quickly, then again after a longer delay for slow session creation
       timeouts.push(setTimeout(refetchSessions, 300))
@@ -398,7 +400,8 @@ export function useAgentSessions({
       // Clear pending refetch timeouts
       timeouts.forEach(clearTimeout)
       if (streamId) {
-        socket.emit("leave", room.stream(workspaceId, streamId))
+        const roomStreamId = streamId.startsWith("event_") ? streamId.replace(/^event_/, "") : streamId
+        socket.emit("leave", room.stream(workspaceId, roomStreamId))
       }
       socket.disconnect()
       socketRef.current = null

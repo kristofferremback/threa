@@ -18,7 +18,7 @@
 import { useEffect, useCallback, useMemo, useRef, useState } from "react"
 import { useMessageStore, generateTempId, selectStream, selectEvents } from "../stores/message-store"
 import { initStreamView, loadMoreEvents as fetchMoreEvents, fetchStream, fetchEvents } from "../workers/stream-fetcher"
-import { leaveStream } from "../workers/socket-worker"
+import { leaveStream, joinStream } from "../workers/socket-worker"
 import { pokeOutboxWorker } from "../workers/outbox-worker"
 import type { Stream, StreamEvent, Mention } from "../types"
 
@@ -188,7 +188,11 @@ export function useStreamWithQuery({
     // Handle pending threads
     if (isPendingThread(streamId)) {
       handlePendingThread(workspaceId, streamId)
-      return
+      // Cleanup: leave the raw event ID room we joined
+      const rawEventId = streamId.replace(/^event_/, "")
+      return () => {
+        leaveStream(rawEventId)
+      }
     }
 
     // Normal stream - init view (joins socket, fetches data)
@@ -205,6 +209,11 @@ export function useStreamWithQuery({
   // Helper to handle pending threads
   const handlePendingThread = async (wsId: string, eventId: string) => {
     const store = useMessageStore.getState()
+
+    // Join socket room FIRST so we receive thread:created event even during API fetches
+    // eventId is "event_xxx", server broadcasts to room with raw ID "xxx"
+    const rawEventId = eventId.replace(/^event_/, "")
+    joinStream(rawEventId)
 
     try {
       // Check if thread was created since we opened
