@@ -1,12 +1,13 @@
-import { Router, Request, Response, NextFunction, RequestHandler } from "express"
+import type { RequestHandler } from "express"
 import { WorkspaceService } from "../services/workspace-service"
 import { logger } from "../lib/logger"
 
-export function createInvitationRoutes(workspaceService: WorkspaceService, authMiddleware?: RequestHandler): Router {
-  const router = Router()
+export interface InvitationDeps {
+  workspaceService: WorkspaceService
+}
 
-  // Get invitation details by token (public - no auth required)
-  router.get("/:token", async (req: Request, res: Response, next: NextFunction) => {
+export function createInvitationHandlers({ workspaceService }: InvitationDeps) {
+  const getInvitation: RequestHandler = async (req, res, next) => {
     try {
       const { token } = req.params
 
@@ -17,7 +18,6 @@ export function createInvitationRoutes(workspaceService: WorkspaceService, authM
         return
       }
 
-      // Check if expired
       if (new Date(invitation.expiresAt) < new Date()) {
         res.json({
           ...invitation,
@@ -31,10 +31,9 @@ export function createInvitationRoutes(workspaceService: WorkspaceService, authM
       logger.error({ err: error }, "Failed to get invitation")
       next(error)
     }
-  })
+  }
 
-  // Accept invitation (requires auth)
-  const acceptHandler = async (req: Request, res: Response, next: NextFunction) => {
+  const acceptInvitation: RequestHandler = async (req, res, next) => {
     try {
       const { token } = req.params
       const user = req.user
@@ -77,11 +76,5 @@ export function createInvitationRoutes(workspaceService: WorkspaceService, authM
     }
   }
 
-  if (authMiddleware) {
-    router.post("/:token/accept", authMiddleware, acceptHandler)
-  } else {
-    router.post("/:token/accept", acceptHandler)
-  }
-
-  return router
+  return { getInvitation, acceptInvitation }
 }

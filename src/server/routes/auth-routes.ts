@@ -1,9 +1,12 @@
-import { Router, type Request, type Response, type NextFunction } from "express"
-import { AuthService } from "../services/auth-service"
-import { UserService } from "../services/user-service"
+import type { Request, Response, NextFunction, RequestHandler } from "express"
+import { type AuthService } from "../services/auth-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 import { logger } from "../lib/logger"
 import { User } from "@workos-inc/node"
+
+export interface AuthDeps {
+  authService: AuthService
+}
 
 export function createAuthMiddleware(
   authService: AuthService,
@@ -14,7 +17,6 @@ export function createAuthMiddleware(
     const result = await authService.authenticateSession(sealedSession || "")
 
     if (result.success && result.user) {
-      // If session was refreshed, update the cookie
       if (result.refreshed && result.sealedSession) {
         res.cookie("wos_session", result.sealedSession, SESSION_COOKIE_CONFIG)
       }
@@ -24,38 +26,31 @@ export function createAuthMiddleware(
       return next()
     }
 
-    // Authentication failed
     logger.debug({ reason: result.reason }, "Session authentication failed, redirecting to login")
     res.clearCookie("wos_session")
     return res.redirect("/api/auth/login")
   }
 }
 
-export function createAuthRoutes(
-  authService: AuthService,
-  authMiddleware: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-  userService?: UserService,
-): Router {
-  const routes = Router()
-
-  routes.get("/login", (req: Request, res: Response) => {
+export function createAuthHandlers({ authService }: AuthDeps) {
+  const login: RequestHandler = (req, res) => {
     if (req.cookies["wos_session"]) {
       logger.debug("Session cookie found, clearing for fresh login")
       res.clearCookie("wos_session")
     }
 
-    // Support redirect URL via query param (e.g., /api/auth/login?redirect=/invite/abc123)
     const redirectTo = req.query.redirect as string | undefined
     const authorizationUrl = authService.getAuthorizationUrl(redirectTo)
     res.redirect(authorizationUrl)
-  })
+  }
 
-  routes.all("/callback", async (req: Request, res: Response) => {
+  const callback: RequestHandler = async (req, res) => {
     const code = req.query.code as string
     const state = req.query.state as string | undefined
 
     if (!code) {
-      return res.status(400).json({ error: "No code provided" })
+      res.status(400).json({ error: "No code provided" })
+      return
     }
 
     const result = await authService.authenticateWithCode(code)
@@ -63,12 +58,10 @@ export function createAuthRoutes(
     if (result.success && result.sealedSession) {
       res.cookie("wos_session", result.sealedSession, SESSION_COOKIE_CONFIG)
 
-      // Decode redirect URL from state if present
       let redirectUrl = "/"
       if (state) {
         try {
           const decoded = Buffer.from(state, "base64").toString("utf-8")
-          // Only allow relative paths or same-origin URLs for security
           if (decoded.startsWith("/")) {
             redirectUrl = decoded
           }
@@ -82,12 +75,13 @@ export function createAuthRoutes(
       logger.error({ reason: result.reason }, "Authentication failed")
       res.status(401).json({ error: "Authentication failed" })
     }
-  })
+  }
 
-  routes.get("/logout", async (req: Request, res: Response) => {
+  const logout: RequestHandler = async (req, res) => {
     const sealedSession = req.cookies["wos_session"]
     if (!sealedSession) {
-      return res.status(400).json({ error: "No session found" })
+      res.status(400).json({ error: "No session found" })
+      return
     }
 
     const logoutUrl = await authService.getLogoutUrl(sealedSession)
@@ -98,17 +92,18 @@ export function createAuthRoutes(
     } else {
       res.status(500).json({ error: "Failed to get logout URL" })
     }
-  })
+  }
 
-  routes.get("/me", authMiddleware, async (req: Request, res: Response) => {
+  const me: RequestHandler = async (req, res) => {
     const user = req.user as User
 
     if (!user) {
-      return res.status(401).json({ error: "Not authenticated" })
+      res.status(401).json({ error: "Not authenticated" })
+      return
     }
 
     res.json(user)
-  })
+  }
 
-  return routes
+  return { login, callback, logout, me }
 }

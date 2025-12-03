@@ -6,7 +6,7 @@ import { Pool } from "pg"
 import { sql } from "../lib/db"
 import { logger } from "../lib/logger"
 import { StreamService } from "../services/stream-service"
-import { AuthService } from "../services/auth-service"
+import { WorkosAuthService } from "../services/auth-service"
 import { parseCookies } from "../lib/cookies"
 import { queueEmbedding } from "../workers/embedding-worker"
 import { AIUsageService } from "../services/ai-usage-service"
@@ -38,9 +38,9 @@ export async function setupStreamWebSocket(
   httpServer: HTTPServer,
   pool: Pool,
   streamService: StreamService,
-  authService?: AuthService,
+  authService?: WorkosAuthService,
 ): Promise<SocketIOServerWithCleanup> {
-  const auth = authService ?? new AuthService()
+  const auth = authService ?? new WorkosAuthService()
   const aiUsageService = new AIUsageService(pool)
 
   // Create Socket.IO server
@@ -680,7 +680,10 @@ export async function setupStreamWebSocket(
             personaAvatar: persona_avatar,
           })
 
-          logger.debug({ stream_id, session_stream_id, session_id, personaName: persona_name }, "Session started broadcast")
+          logger.debug(
+            { stream_id, session_stream_id, session_id, personaName: persona_name },
+            "Session started broadcast",
+          )
           break
         }
 

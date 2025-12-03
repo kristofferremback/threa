@@ -7,11 +7,11 @@ import { io as ioClient, Socket as ClientSocket } from "socket.io-client"
 import { promisify } from "util"
 
 import { StubAuthService } from "../../services/stub-auth-service"
-import { createAuthMiddleware, createAuthRoutes } from "../../routes/auth-routes"
-import { createStreamRoutes } from "../../routes/stream-routes"
-import { createSearchRoutes } from "../../routes/search-routes"
-import { createInvitationRoutes } from "../../routes/invitation-routes"
-import { createMemoRoutes } from "../../routes/memo-routes"
+import { createAuthMiddleware, createAuthHandlers } from "../../routes/auth-routes"
+import { createStreamHandlers } from "../../routes/stream-routes"
+import { createSearchHandlers } from "../../routes/search-routes"
+import { createInvitationHandlers } from "../../routes/invitation-routes"
+import { createMemoHandlers } from "../../routes/memo-routes"
 import { StreamService } from "../../services/stream-service"
 import { WorkspaceService } from "../../services/workspace-service"
 import { UserService } from "../../services/user-service"
@@ -129,19 +129,95 @@ export async function getTestServer(): Promise<TestServerContext> {
   // Create Redis clients
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
 
-  // Set up routes with stub auth
+  // Create middleware and handlers
   const authMiddleware = createAuthMiddleware(authService as any)
-  const authRoutes = createAuthRoutes(authService as any, authMiddleware, userService)
-  const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
-  const searchRoutes = createSearchRoutes(searchService)
-  const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
-  const memoRoutes = createMemoRoutes(pool)
+  const auth = createAuthHandlers({ authService: authService as any })
+  const streams = createStreamHandlers({ streamService, workspaceService, pool })
+  const search = createSearchHandlers({ searchService })
+  const invitations = createInvitationHandlers({ workspaceService })
+  const memos = createMemoHandlers({ pool })
 
-  app.use("/api/auth", authRoutes)
-  app.use("/api/workspace", authMiddleware, streamRoutes)
-  app.use("/api/workspace", authMiddleware, searchRoutes)
-  app.use("/api/workspace", authMiddleware, memoRoutes)
-  app.use("/api/invite", invitationRoutes)
+  // Auth routes
+  app.get("/api/auth/login", auth.login)
+  app.all("/api/auth/callback", auth.callback)
+  app.get("/api/auth/logout", auth.logout)
+  app.get("/api/auth/me", authMiddleware, auth.me)
+
+  // Invitation routes (public)
+  app.get("/api/invite/:token", invitations.getInvitation)
+  app.post("/api/invite/:token/accept", authMiddleware, invitations.acceptInvitation)
+
+  // Workspace routes
+  app.post("/api/workspace", authMiddleware, streams.createWorkspace)
+  app.get("/api/workspace/default/bootstrap", authMiddleware, streams.getDefaultBootstrap)
+  app.get("/api/workspace/:workspaceId/bootstrap", authMiddleware, streams.getBootstrap)
+
+  // Stream routes
+  app.get("/api/workspace/:workspaceId/streams/check-slug", authMiddleware, streams.checkSlug)
+  app.get("/api/workspace/:workspaceId/streams/browse", authMiddleware, streams.browseStreams)
+  app.get("/api/workspace/:workspaceId/streams/by-event/:eventId/thread", authMiddleware, streams.getThreadByEvent)
+  app.get("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.getStream)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/ancestors", authMiddleware, streams.getAncestors)
+  app.post("/api/workspace/:workspaceId/streams", authMiddleware, streams.createStream)
+  app.post("/api/workspace/:workspaceId/thinking-spaces", authMiddleware, streams.createThinkingSpace)
+  app.patch("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.updateStream)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.archiveStream)
+
+  // Stream membership
+  app.post("/api/workspace/:workspaceId/streams/:streamId/join", authMiddleware, streams.joinStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/leave", authMiddleware, streams.leaveStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/pin", authMiddleware, streams.pinStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/unpin", authMiddleware, streams.unpinStream)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/members", authMiddleware, streams.getMembers)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/members", authMiddleware, streams.addMember)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId/members/:memberId", authMiddleware, streams.removeMember)
+
+  // Stream read state
+  app.post("/api/workspace/:workspaceId/streams/:streamId/read", authMiddleware, streams.markAsRead)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/unread", authMiddleware, streams.markAsUnread)
+
+  // Thread operations
+  app.post("/api/workspace/:workspaceId/streams/:streamId/thread", authMiddleware, streams.createThread)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/events/:eventId/thread", authMiddleware, streams.getThreadForEvent)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/promote", authMiddleware, streams.promoteStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/share", authMiddleware, streams.shareEvent)
+
+  // Event routes
+  app.get("/api/workspace/:workspaceId/streams/:streamId/events", authMiddleware, streams.getEvents)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/events", authMiddleware, streams.createEvent)
+  app.patch("/api/workspace/:workspaceId/streams/:streamId/events/:eventId", authMiddleware, streams.editEvent)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId/events/:eventId", authMiddleware, streams.deleteEvent)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/events/:eventId/revisions", authMiddleware, streams.getEventRevisions)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/events/:eventId/reply", authMiddleware, streams.replyToEvent)
+  app.get("/api/workspace/:workspaceId/events/:eventId", authMiddleware, streams.getEventDetails)
+
+  // Search routes
+  app.post("/api/workspace/:workspaceId/search", authMiddleware, search.search)
+  app.get("/api/workspace/:workspaceId/search", authMiddleware, search.searchGet)
+  app.get("/api/workspace/:workspaceId/search/suggestions", authMiddleware, search.getSuggestions)
+
+  // Notification routes
+  app.get("/api/workspace/:workspaceId/notifications/count", authMiddleware, streams.getNotificationCount)
+  app.get("/api/workspace/:workspaceId/notifications", authMiddleware, streams.getNotifications)
+  app.post("/api/workspace/:workspaceId/notifications/:notificationId/read", authMiddleware, streams.markNotificationAsRead)
+  app.post("/api/workspace/:workspaceId/notifications/read-all", authMiddleware, streams.markAllNotificationsAsRead)
+
+  // Profile routes
+  app.get("/api/workspace/:workspaceId/profile", authMiddleware, streams.getProfile)
+  app.patch("/api/workspace/:workspaceId/profile", authMiddleware, streams.updateProfile)
+
+  // Workspace invitation routes
+  app.post("/api/workspace/:workspaceId/invitations", authMiddleware, streams.createInvitation)
+  app.get("/api/workspace/:workspaceId/invitations", authMiddleware, streams.getInvitations)
+  app.delete("/api/workspace/:workspaceId/invitations/:invitationId", authMiddleware, streams.revokeInvitation)
+
+  // Memo routes
+  app.get("/api/workspace/:workspaceId/memos", authMiddleware, memos.listMemos)
+  app.get("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.getMemo)
+  app.post("/api/workspace/:workspaceId/memos", authMiddleware, memos.createMemo)
+  app.patch("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.updateMemo)
+  app.delete("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.archiveMemo)
+  app.get("/api/workspace/:workspaceId/experts", authMiddleware, memos.getExperts)
 
   // Create HTTP server
   const server = http.createServer(app)

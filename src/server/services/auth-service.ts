@@ -14,8 +14,14 @@ export interface AuthResult {
   refreshed: boolean
   reason?: string
 }
+export interface AuthService {
+  authenticateSession(sealedSession: string): Promise<AuthResult>
+  authenticateWithCode(code: string): Promise<AuthResult>
+  getAuthorizationUrl(redirectTo?: string): string
+  getLogoutUrl(sealedSession: string): Promise<string | null>
+}
 
-export class AuthService {
+export class WorkosAuthService {
   private workos: WorkOS
   private clientId: string
   private cookiePassword: string

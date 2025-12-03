@@ -1,34 +1,24 @@
-import { Router } from "express"
+import type { RequestHandler } from "express"
 import { SearchService, TypedSearchFilters } from "../services/search-service"
 import { logger } from "../lib/logger"
 
-export function createSearchRoutes(searchService: SearchService): Router {
-  const router = Router()
+export interface SearchDeps {
+  searchService: SearchService
+}
 
-  /**
-   * POST /api/workspace/:workspaceId/search
-   *
-   * Search messages and knowledge base with typed filters.
-   *
-   * Body:
-   * - query: Search query text (semantic/full-text search)
-   * - filters: { userIds?: string[], streamIds?: string[], before?: string, after?: string, has?: string[], is?: string[] }
-   * - limit: Max results (default 50)
-   * - offset: Pagination offset (default 0)
-   * - type: "all" | "messages" | "knowledge" (default "all")
-   */
-  router.post("/:workspaceId/search", async (req, res, next) => {
+export function createSearchHandlers({ searchService }: SearchDeps) {
+  const search: RequestHandler = async (req, res, next) => {
     try {
       const { workspaceId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" })
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
 
       const { query = "", filters = {}, limit = 50, offset = 0, type = "all" } = req.body
 
-      // Parse typed filters from request body
       const typedFilters: TypedSearchFilters = {
         userIds: filters.userIds,
         withUserIds: filters.withUserIds,
@@ -46,7 +36,7 @@ export function createSearchRoutes(searchService: SearchService): Router {
         searchMessages: type === "all" || type === "messages",
         searchKnowledge: type === "all" || type === "knowledge",
         filters: typedFilters,
-        userId, // Permission scoping - only return content user can access
+        userId,
       }
 
       const results = await searchService.search(workspaceId, query, searchOptions)
@@ -62,26 +52,23 @@ export function createSearchRoutes(searchService: SearchService): Router {
         "Search executed",
       )
 
-      return res.json(results)
+      res.json(results)
     } catch (error) {
       next(error)
     }
-  })
+  }
 
-  /**
-   * GET /api/workspace/:workspaceId/search (legacy - for backwards compatibility)
-   * Accepts query string parameters, no filters.
-   */
-  router.get("/:workspaceId/search", async (req, res, next) => {
+  const searchGet: RequestHandler = async (req, res, next) => {
     try {
       const { workspaceId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" })
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
 
-      const query = (req.query.q as string) || ""
+      const query = (req.query.query as string) || (req.query.q as string) || ""
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100)
       const offset = parseInt(req.query.offset as string) || 0
       const type = (req.query.type as string) || "all"
@@ -91,7 +78,7 @@ export function createSearchRoutes(searchService: SearchService): Router {
         offset,
         searchMessages: type === "all" || type === "messages",
         searchKnowledge: type === "all" || type === "knowledge",
-        userId, // Permission scoping - only return content user can access
+        userId,
       }
 
       const results = await searchService.search(workspaceId, query, searchOptions)
@@ -103,33 +90,26 @@ export function createSearchRoutes(searchService: SearchService): Router {
           query,
           resultCount: results.total,
         },
-        "Search executed (legacy GET)",
+        "Search executed (GET)",
       )
 
-      return res.json(results)
+      res.json(results)
     } catch (error) {
       next(error)
     }
-  })
+  }
 
-  /**
-   * GET /api/workspace/:workspaceId/search/suggestions
-   *
-   * Get search suggestions based on recent activity.
-   * For autocomplete in the search UI.
-   */
-  router.get("/:workspaceId/search/suggestions", async (req, res, next) => {
+  const getSuggestions: RequestHandler = async (req, res, next) => {
     try {
       const { workspaceId } = req.params
       const userId = req.user?.id
 
       if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" })
+        res.status(401).json({ error: "Unauthorized" })
+        return
       }
 
-      // Return recent searches, popular searches, and filter suggestions
-      // For now, just return empty - can be expanded later
-      return res.json({
+      res.json({
         recentSearches: [],
         popularFilters: [
           { label: "from:@me", description: "Your messages" },
@@ -141,7 +121,7 @@ export function createSearchRoutes(searchService: SearchService): Router {
     } catch (error) {
       next(error)
     }
-  })
+  }
 
-  return router
+  return { search, searchGet, getSuggestions }
 }

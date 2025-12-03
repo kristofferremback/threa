@@ -5,13 +5,13 @@ import { fileURLToPath } from "url"
 import http from "http"
 import type { Server as HTTPServer } from "http"
 import pinoHttp from "pino-http"
-import { createAuthRoutes, createAuthMiddleware } from "./routes/auth-routes"
-import { createStreamRoutes } from "./routes/stream-routes"
-import { createInvitationRoutes } from "./routes/invitation-routes"
-import { createSearchRoutes } from "./routes/search-routes"
-import { createMemoRoutes } from "./routes/memo-routes"
-import { createPersonaRoutes } from "./routes/persona-routes"
-import { createSettingsRoutes } from "./routes/settings-routes"
+import { createAuthMiddleware, createAuthHandlers } from "./routes/auth-routes"
+import { createStreamHandlers } from "./routes/stream-routes"
+import { createInvitationHandlers } from "./routes/invitation-routes"
+import { createSearchHandlers } from "./routes/search-routes"
+import { createMemoHandlers } from "./routes/memo-routes"
+import { createPersonaHandlers } from "./routes/persona-routes"
+import { createSettingsHandlers } from "./routes/settings-routes"
 import { SearchService } from "./services/search-service"
 import { setupStreamWebSocket } from "./websockets/stream-socket"
 import {
@@ -27,7 +27,7 @@ import { randomUUID } from "crypto"
 import { runMigrations } from "./lib/migrations"
 import { createDatabasePool } from "./lib/db"
 import { Pool } from "pg"
-import { AuthService } from "./services/auth-service"
+import { WorkosAuthService, type AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/stub-auth-service"
 import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
@@ -50,9 +50,7 @@ const __dirname = path.dirname(__filename)
 // =============================================================================
 
 interface ShutdownConfig {
-  // How often the LB checks health (default: 10s)
   healthCheckIntervalMs: number
-  // How many failed checks before LB considers unhealthy (default: 2)
   failedChecksToUnhealthy: number
 }
 
@@ -78,7 +76,6 @@ class ShutdownCoordinator {
     return this._shutdownStartedAt
   }
 
-  // Time to wait for LB to stop sending traffic
   get lbDrainTimeMs(): number {
     return this.config.healthCheckIntervalMs * this.config.failedChecksToUnhealthy
   }
@@ -90,7 +87,6 @@ class ShutdownCoordinator {
     logger.info({ lbDrainTimeMs: this.lbDrainTimeMs }, "Shutdown initiated, waiting for LB to drain")
   }
 
-  // Wait for LB to stop sending traffic
   async waitForLbDrain(): Promise<void> {
     if (!this._isShuttingDown) return
     logger.info({ waitMs: this.lbDrainTimeMs }, "Waiting for load balancer to drain connections")
@@ -99,7 +95,6 @@ class ShutdownCoordinator {
   }
 }
 
-// Global shutdown coordinator
 export const shutdownCoordinator = new ShutdownCoordinator({
   healthCheckIntervalMs: HEALTH_CHECK_INTERVAL_MS,
   failedChecksToUnhealthy: HEALTH_CHECK_FAILURES_TO_UNHEALTHY,
@@ -132,26 +127,20 @@ function gracefulShutdown({
   timeoutMs: number
 }): void {
   const shutdown = async () => {
-    // Use the coordinator to track shutdown state (prevents double-shutdown)
     if (shutdownCoordinator.isShuttingDown) return
     shutdownCoordinator.startShutdown()
 
     const timeout = setTimeout(() => {
       logger.error({ timeoutMs }, "Server shutdown timed out, forcing exit")
-
       process.exit(1)
     }, timeoutMs)
 
     try {
       logger.info("Shutting down server gracefully")
-
-      // Wait for LB to stop sending traffic (health check returns 503)
       await shutdownCoordinator.waitForLbDrain()
-
       await attempt(() => preShutdown())
       await attempt(() => context.close())
       await attempt(() => onShutdown())
-
       logger.info("Server shut down gracefully")
     } finally {
       clearTimeout(timeout)
@@ -162,10 +151,6 @@ function gracefulShutdown({
   process.on("SIGINT", shutdown)
 }
 
-/**
- * Sets up and configures the Express application and HTTP server
- * Returns the app, server, and dependencies for testing or manual control
- */
 export async function createApp(): Promise<AppContext> {
   const app = express()
 
@@ -181,7 +166,7 @@ export async function createApp(): Promise<AppContext> {
       customLogLevel: (_req, res, err) => {
         if (res.statusCode >= 500 || err) return "error"
         if (res.statusCode >= 400) return "warn"
-        return "silent" // Don't log successful requests
+        return "silent"
       },
       genReqId: (req) => (req.headers["x-request-id"] as string) || randomUUID(),
       redact: {
@@ -215,8 +200,7 @@ export async function createApp(): Promise<AppContext> {
 
   const pool = createDatabasePool()
 
-  // Use stub auth service for testing when USE_STUB_AUTH is set
-  const authService = USE_STUB_AUTH ? new StubAuthService() : new AuthService()
+  const authService: AuthService = USE_STUB_AUTH ? new StubAuthService() : new WorkosAuthService()
 
   if (USE_STUB_AUTH) {
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
@@ -228,17 +212,19 @@ export async function createApp(): Promise<AppContext> {
   const searchService = new SearchService(pool)
   const outboxListener = new OutboxListener(pool, DATABASE_URL)
 
-  // Create Redis clients for Socket.IO
   const { pubClient: redisPubClient, subClient: redisSubClient } = await createSocketIORedisClients()
 
+  // Create middleware
   const authMiddleware = createAuthMiddleware(authService)
-  const authRoutes = createAuthRoutes(authService, authMiddleware)
-  const streamRoutes = createStreamRoutes(streamService, workspaceService, pool)
-  const invitationRoutes = createInvitationRoutes(workspaceService, authMiddleware)
-  const searchRoutes = createSearchRoutes(searchService)
-  const memoRoutes = createMemoRoutes(pool)
-  const personaRoutes = createPersonaRoutes(pool)
-  const settingsRoutes = createSettingsRoutes(pool)
+
+  // Create handlers
+  const auth = createAuthHandlers({ authService })
+  const streams = createStreamHandlers({ streamService, workspaceService, pool })
+  const invitations = createInvitationHandlers({ workspaceService })
+  const search = createSearchHandlers({ searchService })
+  const memos = createMemoHandlers({ pool })
+  const personas = createPersonaHandlers({ pool })
+  const settings = createSettingsHandlers({ pool })
 
   // Test endpoint for registering users in stub auth mode
   if (USE_STUB_AUTH && authService instanceof StubAuthService) {
@@ -248,7 +234,6 @@ export async function createApp(): Promise<AppContext> {
         return res.status(400).json({ error: "id and email required" })
       }
 
-      // Ensure user exists in database
       await userService.ensureUser({
         id,
         email,
@@ -261,14 +246,136 @@ export async function createApp(): Promise<AppContext> {
     })
   }
 
-  app.use("/api/auth", authRoutes)
-  app.use("/api/workspace", authMiddleware, streamRoutes)
-  app.use("/api/workspace", authMiddleware, searchRoutes)
-  app.use("/api/workspace", authMiddleware, memoRoutes)
-  app.use("/api/workspace", authMiddleware, personaRoutes)
-  app.use("/api/workspaces", authMiddleware, settingsRoutes)
-  // Invitation routes - get is public, accept requires auth
-  app.use("/api/invite", invitationRoutes)
+  // ==========================================================================
+  // Auth routes (no auth required except /me)
+  // ==========================================================================
+  app.get("/api/auth/login", auth.login)
+  app.all("/api/auth/callback", auth.callback)
+  app.get("/api/auth/logout", auth.logout)
+  app.get("/api/auth/me", authMiddleware, auth.me)
+
+  // ==========================================================================
+  // Invitation routes (public)
+  // ==========================================================================
+  app.get("/api/invite/:token", invitations.getInvitation)
+  app.post("/api/invite/:token/accept", authMiddleware, invitations.acceptInvitation)
+
+  // ==========================================================================
+  // Workspace routes (auth required)
+  // ==========================================================================
+  app.post("/api/workspace", authMiddleware, streams.createWorkspace)
+  app.get("/api/workspace/default/bootstrap", authMiddleware, streams.getDefaultBootstrap)
+  app.get("/api/workspace/:workspaceId/bootstrap", authMiddleware, streams.getBootstrap)
+
+  // ==========================================================================
+  // Stream routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/streams/check-slug", authMiddleware, streams.checkSlug)
+  app.get("/api/workspace/:workspaceId/streams/browse", authMiddleware, streams.browseStreams)
+  app.get("/api/workspace/:workspaceId/streams/by-event/:eventId/thread", authMiddleware, streams.getThreadByEvent)
+  app.get("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.getStream)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/ancestors", authMiddleware, streams.getAncestors)
+  app.post("/api/workspace/:workspaceId/streams", authMiddleware, streams.createStream)
+  app.post("/api/workspace/:workspaceId/thinking-spaces", authMiddleware, streams.createThinkingSpace)
+  app.patch("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.updateStream)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId", authMiddleware, streams.archiveStream)
+
+  // Stream membership
+  app.post("/api/workspace/:workspaceId/streams/:streamId/join", authMiddleware, streams.joinStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/leave", authMiddleware, streams.leaveStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/pin", authMiddleware, streams.pinStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/unpin", authMiddleware, streams.unpinStream)
+  app.get("/api/workspace/:workspaceId/streams/:streamId/members", authMiddleware, streams.getMembers)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/members", authMiddleware, streams.addMember)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId/members/:memberId", authMiddleware, streams.removeMember)
+
+  // Stream read state
+  app.post("/api/workspace/:workspaceId/streams/:streamId/read", authMiddleware, streams.markAsRead)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/unread", authMiddleware, streams.markAsUnread)
+
+  // Thread operations
+  app.post("/api/workspace/:workspaceId/streams/:streamId/thread", authMiddleware, streams.createThread)
+  app.get(
+    "/api/workspace/:workspaceId/streams/:streamId/events/:eventId/thread",
+    authMiddleware,
+    streams.getThreadForEvent,
+  )
+  app.post("/api/workspace/:workspaceId/streams/:streamId/promote", authMiddleware, streams.promoteStream)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/share", authMiddleware, streams.shareEvent)
+
+  // ==========================================================================
+  // Event routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/streams/:streamId/events", authMiddleware, streams.getEvents)
+  app.post("/api/workspace/:workspaceId/streams/:streamId/events", authMiddleware, streams.createEvent)
+  app.patch("/api/workspace/:workspaceId/streams/:streamId/events/:eventId", authMiddleware, streams.editEvent)
+  app.delete("/api/workspace/:workspaceId/streams/:streamId/events/:eventId", authMiddleware, streams.deleteEvent)
+  app.get(
+    "/api/workspace/:workspaceId/streams/:streamId/events/:eventId/revisions",
+    authMiddleware,
+    streams.getEventRevisions,
+  )
+  app.post("/api/workspace/:workspaceId/streams/:streamId/events/:eventId/reply", authMiddleware, streams.replyToEvent)
+  app.get("/api/workspace/:workspaceId/events/:eventId", authMiddleware, streams.getEventDetails)
+
+  // ==========================================================================
+  // Search routes (auth required)
+  // ==========================================================================
+  app.post("/api/workspace/:workspaceId/search", authMiddleware, search.search)
+  app.get("/api/workspace/:workspaceId/search", authMiddleware, search.searchGet)
+  app.get("/api/workspace/:workspaceId/search/suggestions", authMiddleware, search.getSuggestions)
+
+  // ==========================================================================
+  // Notification routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/notifications/count", authMiddleware, streams.getNotificationCount)
+  app.get("/api/workspace/:workspaceId/notifications", authMiddleware, streams.getNotifications)
+  app.post(
+    "/api/workspace/:workspaceId/notifications/:notificationId/read",
+    authMiddleware,
+    streams.markNotificationAsRead,
+  )
+  app.post("/api/workspace/:workspaceId/notifications/read-all", authMiddleware, streams.markAllNotificationsAsRead)
+
+  // ==========================================================================
+  // Profile routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/profile", authMiddleware, streams.getProfile)
+  app.patch("/api/workspace/:workspaceId/profile", authMiddleware, streams.updateProfile)
+
+  // ==========================================================================
+  // Workspace invitation routes (auth required)
+  // ==========================================================================
+  app.post("/api/workspace/:workspaceId/invitations", authMiddleware, streams.createInvitation)
+  app.get("/api/workspace/:workspaceId/invitations", authMiddleware, streams.getInvitations)
+  app.delete("/api/workspace/:workspaceId/invitations/:invitationId", authMiddleware, streams.revokeInvitation)
+
+  // ==========================================================================
+  // Memo routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/memos", authMiddleware, memos.listMemos)
+  app.get("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.getMemo)
+  app.post("/api/workspace/:workspaceId/memos", authMiddleware, memos.createMemo)
+  app.patch("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.updateMemo)
+  app.delete("/api/workspace/:workspaceId/memos/:memoId", authMiddleware, memos.archiveMemo)
+  app.get("/api/workspace/:workspaceId/experts", authMiddleware, memos.getExperts)
+
+  // ==========================================================================
+  // Persona routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/personas", authMiddleware, personas.listPersonas)
+  app.get("/api/workspace/:workspaceId/personas/:personaId", authMiddleware, personas.getPersona)
+  app.post("/api/workspace/:workspaceId/personas", authMiddleware, personas.createPersona)
+  app.patch("/api/workspace/:workspaceId/personas/:personaId", authMiddleware, personas.updatePersona)
+  app.delete("/api/workspace/:workspaceId/personas/:personaId", authMiddleware, personas.deletePersona)
+
+  // ==========================================================================
+  // Settings routes (auth required)
+  // ==========================================================================
+  app.get("/api/workspace/:workspaceId/settings", authMiddleware, settings.getSettings)
+  app.patch("/api/workspace/:workspaceId/settings", authMiddleware, settings.updateSettings)
+  app.put("/api/workspace/:workspaceId/settings/*", authMiddleware, settings.updateSettingByPath)
+  app.delete("/api/workspace/:workspaceId/settings", authMiddleware, settings.resetSettings)
 
   // Error handling middleware (must be last)
   app.use(createErrorHandler())
@@ -277,13 +384,11 @@ export async function createApp(): Promise<AppContext> {
   if (isProduction) {
     const distPath = path.join(__dirname, "../../dist/frontend")
     app.use(express.static(distPath))
-
     app.get("*", (_, res) => res.sendFile(path.join(distPath, "index.html")))
   }
 
   const server = http.createServer(app)
 
-  // Track all connections so we can force-close them during shutdown
   const connections = new Set<import("net").Socket>()
   server.on("connection", (socket) => {
     connections.add(socket)
@@ -302,14 +407,12 @@ export async function createApp(): Promise<AppContext> {
     redisSubClient,
     outboxListener,
     close: async () => {
-      // Force-close all HTTP connections (don't wait for keep-alive to timeout)
       logger.info({ count: connections.size }, "Destroying HTTP connections")
       for (const socket of connections) {
         socket.destroy()
       }
       connections.clear()
 
-      // Close server if still listening
       if (server.listening) {
         await attempt(() => promisify(server.close.bind(server))())
       }
@@ -322,16 +425,9 @@ export async function createApp(): Promise<AppContext> {
   }
 }
 
-/**
- * Starts the server with all dependencies (migrations, outbox listener, Socket.IO)
- * Sets up graceful shutdown handlers
- */
 export async function startServer(context: AppContext): Promise<void> {
   try {
-    // Validate environment variables first
     validateEnv()
-
-    // Initialize Langfuse tracing early (before any LangChain usage)
     initLangfuse()
 
     logger.info("Running database migrations...")
@@ -340,7 +436,6 @@ export async function startServer(context: AppContext): Promise<void> {
     logger.info("Starting outbox listener...")
     await context.outboxListener.start()
 
-    // Start AI workers (embedding, classification)
     const connectionString = DATABASE_URL
     logger.info("Starting AI workers...")
     await startWorkers(context.pool, connectionString)
@@ -368,14 +463,10 @@ export async function startServer(context: AppContext): Promise<void> {
   } catch (error) {
     logger.error({ err: error }, "Failed to start server")
     await context.close()
-
     process.exit(1)
   }
 }
 
-// Start server when this file is executed
-// When imported as a module, the exports are available but server will also start
-// For testing, y ou can import createApp() and startServer() separately
 if (esMain(import.meta.url)) {
   const context = await createApp()
   startServer(context)

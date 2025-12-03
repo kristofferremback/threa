@@ -1,10 +1,10 @@
-import type { AuthResult, AuthService } from "./auth-service"
+import type { AuthResult, WorkosAuthService } from "./auth-service"
 
 /**
  * A stub AuthService for e2e testing that bypasses WorkOS entirely.
  * Users are identified by a simple token format: "test_session_<userId>"
  */
-export class StubAuthService implements Pick<AuthService, keyof AuthService> {
+export class StubAuthService implements Pick<WorkosAuthService, keyof WorkosAuthService> {
   private users: Map<string, { id: string; email: string; firstName: string | null; lastName: string | null }> =
     new Map()
 
