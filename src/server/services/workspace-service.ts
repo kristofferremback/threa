@@ -96,38 +96,28 @@ export class WorkspaceService {
    * Get workspace by ID
    */
   async getWorkspace(workspaceId: string): Promise<Workspace | null> {
-    try {
-      const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
-         FROM workspaces
-         WHERE id = $1`,
-        [workspaceId],
-      )
+    const result = await this.pool.query<Workspace>(
+      `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+       FROM workspaces
+       WHERE id = $1`,
+      [workspaceId],
+    )
 
-      return result.rows[0] || null
-    } catch (error) {
-      logger.error({ err: error, workspace_id: workspaceId }, "Failed to get workspace")
-      throw error
-    }
+    return result.rows[0] || null
   }
 
   /**
    * Get workspace by WorkOS organization ID
    */
   async getWorkspaceByOrganization(workosOrganizationId: string): Promise<Workspace | null> {
-    try {
-      const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
-         FROM workspaces
-         WHERE workos_organization_id = $1`,
-        [workosOrganizationId],
-      )
+    const result = await this.pool.query<Workspace>(
+      `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+       FROM workspaces
+       WHERE workos_organization_id = $1`,
+      [workosOrganizationId],
+    )
 
-      return result.rows[0] || null
-    } catch (error) {
-      logger.error({ err: error, organization_id: workosOrganizationId }, "Failed to get workspace by organization")
-      throw error
-    }
+    return result.rows[0] || null
   }
 
   /**
@@ -213,31 +203,26 @@ export class WorkspaceService {
    * Returns stream ID
    */
   async getOrCreateDefaultChannel(workspaceId: string): Promise<string> {
-    try {
-      // Check if default channel exists (as a stream)
-      const streamResult = await this.pool.query(
-        "SELECT id FROM streams WHERE workspace_id = $1 AND slug = 'general' AND stream_type = 'channel'",
-        [workspaceId],
-      )
+    // Check if default channel exists (as a stream)
+    const streamResult = await this.pool.query(
+      "SELECT id FROM streams WHERE workspace_id = $1 AND slug = 'general' AND stream_type = 'channel'",
+      [workspaceId],
+    )
 
-      if (streamResult.rows.length > 0) {
-        return streamResult.rows[0].id
-      }
-
-      // Create default channel (as a stream)
-      const streamId = generateId("stream")
-      await this.pool.query(
-        `INSERT INTO streams (id, workspace_id, stream_type, name, slug, description, visibility)
-         VALUES ($1, $2, 'channel', 'general', 'general', 'General discussion', 'public')`,
-        [streamId, workspaceId],
-      )
-
-      logger.info({ workspace_id: workspaceId, stream_id: streamId }, "Created default channel")
-      return streamId
-    } catch (error) {
-      logger.error({ err: error, workspace_id: workspaceId }, "Failed to get or create default channel")
-      throw error
+    if (streamResult.rows.length > 0) {
+      return streamResult.rows[0].id
     }
+
+    // Create default channel (as a stream)
+    const streamId = generateId("stream")
+    await this.pool.query(
+      `INSERT INTO streams (id, workspace_id, stream_type, name, slug, description, visibility)
+       VALUES ($1, $2, 'channel', 'general', 'general', 'General discussion', 'public')`,
+      [streamId, workspaceId],
+    )
+
+    logger.info({ workspace_id: workspaceId, stream_id: streamId }, "Created default channel")
+    return streamId
   }
 
   // ==========================================================================

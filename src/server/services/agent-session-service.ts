@@ -150,7 +150,6 @@ export class AgentSessionService {
     // Fetch current steps, append, and update - safer with squid's parameterization
     const session = await this.getSession(params.sessionId)
     if (!session) {
-      logger.warn({ sessionId: params.sessionId }, "Session not found when adding step")
       return stepId
     }
 
@@ -190,7 +189,6 @@ export class AgentSessionService {
     // We fetch, modify in JS, and update - safer with squid's parameterization
     const session = await this.getSession(params.sessionId)
     if (!session) {
-      logger.warn({ sessionId: params.sessionId, stepId: params.stepId }, "Session not found when completing step")
       return
     }
 

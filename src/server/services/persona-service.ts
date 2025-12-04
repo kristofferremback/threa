@@ -343,7 +343,6 @@ export class PersonaService {
     )
 
     if (result.rowCount === 0) {
-      logger.warn({ personaId }, "Cannot delete persona (not found or is default)")
       return false
     }
 
