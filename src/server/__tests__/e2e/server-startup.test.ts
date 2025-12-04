@@ -95,7 +95,7 @@ describe("E2E: Blackbox Server", () => {
       expect(meData.email).toBe("blackbox@test.com")
 
       // Test unauthenticated request should redirect
-      const unauthRes = await fetch(`${BASE_URL}/api/workspace/ws_123/streams`, {
+      const unauthRes = await fetch(`${BASE_URL}/api/workspace/ws_123/streams/browse`, {
         redirect: "manual",
       })
       expect(unauthRes.status).toBe(302)
