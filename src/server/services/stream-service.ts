@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { sql, withTransaction } from "../lib/db"
+import { sql, withClient, withTransaction } from "../lib/db"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
@@ -21,14 +21,23 @@ import {
   MessageRevisionRepository,
   SharedRefRepository,
 } from "../repositories"
+import type {
+  Stream,
+  StreamType,
+  StreamVisibility,
+  StreamStatus,
+  NotifyLevel,
+  StreamWithMembership,
+  StreamWithUnreadCount,
+} from "../../shared/types"
+
+// Re-export shared types for consumers
+export type { Stream, StreamType, StreamVisibility, StreamStatus, NotifyLevel, StreamWithMembership, StreamWithUnreadCount }
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type StreamType = "channel" | "thread" | "dm" | "incident" | "thinking_space"
-export type StreamVisibility = "public" | "private" | "inherit"
-export type StreamStatus = "active" | "archived" | "resolved"
 export type EventType =
   | "message"
   | "shared"
@@ -38,29 +47,7 @@ export type EventType =
   | "poll"
   | "file"
   | "agent_thinking"
-export type NotifyLevel = "all" | "mentions" | "muted" | "default"
 export type MemberRole = "owner" | "admin" | "member"
-
-export interface Stream {
-  id: string
-  workspaceId: string
-  streamType: StreamType
-  name: string | null
-  slug: string | null
-  description: string | null
-  topic: string | null
-  parentStreamId: string | null
-  branchedFromEventId: string | null
-  visibility: StreamVisibility
-  status: StreamStatus
-  promotedAt: Date | null
-  promotedBy: string | null
-  personaId: string | null // For thinking_space: the AI persona that responds automatically
-  metadata: Record<string, unknown>
-  createdAt: Date
-  updatedAt: Date
-  archivedAt: Date | null
-}
 
 export interface StreamMember {
   streamId: string
@@ -111,23 +98,6 @@ export interface StreamEventWithDetails extends StreamEvent {
   isEdited?: boolean
 }
 
-// Bootstrap types
-export interface BootstrapStream {
-  id: string
-  name: string | null
-  slug: string | null
-  description: string | null
-  topic: string | null
-  streamType: StreamType
-  visibility: StreamVisibility
-  isMember: boolean
-  unreadCount: number
-  lastReadAt: Date | null
-  notifyLevel: NotifyLevel
-  parentStreamId: string | null
-  pinnedAt: Date | null
-}
-
 // Access control result
 export interface StreamAccessResult {
   hasAccess: boolean
@@ -161,7 +131,7 @@ export interface BootstrapResult {
     profileManagedBySso: boolean
   } | null
   needsProfileSetup: boolean
-  streams: BootstrapStream[]
+  streams: StreamWithUnreadCount[]
   users: BootstrapUser[]
 }
 
@@ -232,7 +202,7 @@ export class StreamService {
   async bootstrap(workspaceId: string, userId: string): Promise<BootstrapResult> {
     const client = await this.pool.connect()
     try {
-      const [workspaceRes, streamsRes, usersRes, userProfileRes] = await Promise.all([
+      const [workspaceRes, streams, usersRes, userProfileRes] = await Promise.all([
         // 1. Workspace info + user's role
         client.query(
           sql`SELECT
@@ -243,32 +213,8 @@ export class StreamService {
             WHERE w.id = ${workspaceId} AND wm.user_id = ${userId}`,
         ),
 
-        // 2. All streams user is a member of (not public streams they haven't joined)
-        client.query(
-          sql`SELECT
-              s.id, s.name, s.slug, s.description, s.topic,
-              s.stream_type, s.visibility, s.parent_stream_id,
-              true as is_member,
-              sm.last_read_at,
-              sm.pinned_at,
-              COALESCE(sm.notify_level, 'default') as notify_level,
-              COALESCE(
-                (SELECT COUNT(*)::int FROM stream_events e
-                 WHERE e.stream_id = s.id
-                 AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01'::timestamptz)
-                 AND e.deleted_at IS NULL
-                 AND e.actor_id != ${userId}),
-                0
-              ) as unread_count
-            FROM streams s
-            INNER JOIN stream_members sm ON s.id = sm.stream_id
-              AND sm.user_id = ${userId}
-              AND sm.left_at IS NULL
-            WHERE s.workspace_id = ${workspaceId}
-              AND s.archived_at IS NULL
-              AND s.stream_type IN ('channel', 'dm', 'thinking_space')
-            ORDER BY sm.pinned_at DESC NULLS LAST, s.name`,
-        ),
+        // 2. All streams user is a member of (without unread counts)
+        StreamRepository.findUserMemberStreams(client, workspaceId, userId),
 
         // 3. All workspace members (with workspace-scoped profile)
         client.query(
@@ -304,6 +250,14 @@ export class StreamService {
         throw new Error("Workspace not found or user is not a member")
       }
 
+      // Enrich streams with unread counts (separate query for flexibility)
+      const streamIds = streams.map((s) => s.id)
+      const unreadCounts = await StreamRepository.getUnreadCounts(client, streamIds, userId)
+      const streamsWithUnread: StreamWithUnreadCount[] = streams.map((s) => ({
+        ...s,
+        unreadCount: unreadCounts.get(s.id) ?? 0,
+      }))
+
       const userProfile = userProfileRes?.rows[0]
       const needsProfileSetup =
         userProfile &&
@@ -337,21 +291,7 @@ export class StreamService {
             }
           : null,
         needsProfileSetup: needsProfileSetup || false,
-        streams: streamsRes.rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          slug: row.slug,
-          description: row.description,
-          topic: row.topic,
-          streamType: row.stream_type as StreamType,
-          visibility: row.visibility as StreamVisibility,
-          isMember: row.is_member,
-          unreadCount: row.unread_count,
-          lastReadAt: row.last_read_at,
-          notifyLevel: row.notify_level as NotifyLevel,
-          parentStreamId: row.parent_stream_id,
-          pinnedAt: row.pinned_at,
-        })),
+        streams: streamsWithUnread,
         users,
       }
     } finally {
@@ -435,7 +375,7 @@ export class StreamService {
         creator_id: params.creatorId,
       })
 
-      return this.mapStreamRow(streamRow)
+      return streamRow
     })
 
     logger.info({ streamId, type: params.streamType }, "Stream created")
@@ -444,13 +384,7 @@ export class StreamService {
   }
 
   async getStream(streamId: string): Promise<Stream | null> {
-    const client = await this.pool.connect()
-    try {
-      const row = await StreamRepository.findStreamById(client, streamId)
-      return row ? this.mapStreamRow(row) : null
-    } finally {
-      client.release()
-    }
+    return withClient(this.pool, (client) => StreamRepository.findStreamById(client, streamId))
   }
 
   /**
@@ -462,13 +396,9 @@ export class StreamService {
       return null
     }
 
-    const client = await this.pool.connect()
-    try {
-      const row = await StreamRepository.findExistingDM(client, workspaceId, participantIds)
-      return row ? this.mapStreamRow(row) : null
-    } finally {
-      client.release()
-    }
+    return withClient(this.pool, (client) =>
+      StreamRepository.findExistingDM(client, workspaceId, participantIds),
+    )
   }
 
   /**
@@ -541,7 +471,7 @@ export class StreamService {
         participant_ids: allParticipants,
       })
 
-      return this.mapStreamRow(streamRow)
+      return streamRow
     })
 
     logger.info({ streamId, participantCount: allParticipants.length }, "DM created")
@@ -550,13 +480,9 @@ export class StreamService {
   }
 
   async getStreamBySlug(workspaceId: string, slug: string): Promise<Stream | null> {
-    const client = await this.pool.connect()
-    try {
-      const row = await StreamRepository.findStreamBySlug(client, workspaceId, slug)
-      return row ? this.mapStreamRow(row) : null
-    } finally {
-      client.release()
-    }
+    return withClient(this.pool, (client) =>
+      StreamRepository.findStreamBySlug(client, workspaceId, slug),
+    )
   }
 
   /**
@@ -623,7 +549,7 @@ export class StreamService {
       if (existingThread) {
         return {
           type: "existing",
-          stream: this.mapStreamRow(existingThread),
+          stream: existingThread,
           parentStreamId: originalEvent.stream_id,
           existingThreadId: existingThread.id,
         }
@@ -695,8 +621,8 @@ export class StreamService {
         creator_id: creatorId,
       })
 
-      const stream = this.mapStreamRow(streamRow)
-      stream.name = threadName
+      // Update the returned stream with the auto-generated name
+      const stream: Stream = { ...streamRow, name: threadName }
 
       return {
         type: "created",
@@ -747,13 +673,9 @@ export class StreamService {
    * Get thread for an event if it exists
    */
   async getThreadForEvent(eventId: string): Promise<Stream | null> {
-    const client = await this.pool.connect()
-    try {
-      const row = await StreamRepository.findStreamByBranchedFromEventId(client, eventId)
-      return row ? this.mapStreamRow(row) : null
-    } finally {
-      client.release()
-    }
+    return withClient(this.pool, (client) =>
+      StreamRepository.findStreamByBranchedFromEventId(client, eventId),
+    )
   }
 
   /**
@@ -773,21 +695,18 @@ export class StreamService {
       }
 
       // Check if thread already exists (with lock)
-      const existingThreadRow = await StreamRepository.findStreamByBranchedFromEventIdForUpdate(
-        client,
-        params.eventId,
-      )
+      const existingThreadRow = await StreamRepository.findStreamByBranchedFromEventIdForUpdate(client, params.eventId)
 
       let threadStream: Stream
       let threadCreated = false
 
       if (existingThreadRow) {
         // Thread exists - use it
-        threadStream = this.mapStreamRow(existingThreadRow)
+        threadStream = existingThreadRow
       } else {
         // Create the thread
         const streamId = generateId("stream")
-        const streamRow = await StreamRepository.insertStream(client, {
+        threadStream = await StreamRepository.insertStream(client, {
           id: streamId,
           workspaceId: originalEvent.workspace_id,
           streamType: "thread",
@@ -804,7 +723,6 @@ export class StreamService {
         // Copy parent stream membership to thread
         await StreamMemberRepository.copyParentMembership(client, streamId, params.parentStreamId)
 
-        threadStream = this.mapStreamRow(streamRow)
         threadCreated = true
 
         // Auto-name thread based on original message content (async, non-blocking)
@@ -1043,7 +961,7 @@ export class StreamService {
 
     logger.info({ streamId: params.streamId, newType: params.newType }, "Stream promoted")
 
-    return this.mapStreamRow(streamRow)
+    return streamRow
   }
 
   async archiveStream(streamId: string, archivedByUserId: string): Promise<void> {
@@ -1115,7 +1033,7 @@ export class StreamService {
       return updatedRow
     })
 
-    return this.mapStreamRow(streamRow)
+    return streamRow
   }
 
   // ==========================================================================
@@ -1552,10 +1470,9 @@ export class StreamService {
         added_by_user_id: userId,
       })
 
-      return { streamRow, eventId }
+      return { stream: streamRow, eventId }
     })
 
-    const stream = this.mapStreamRow(streamRow)
     const event = await this.getEventWithDetails(eventId)
 
     return { stream, event: event! }
@@ -1777,12 +1694,9 @@ export class StreamService {
   }
 
   async checkSlugExists(workspaceId: string, slug: string, excludeStreamId?: string): Promise<boolean> {
-    const client = await this.pool.connect()
-    try {
+    return withClient(this.pool, async (client) => {
       return await StreamRepository.slugExists(client, workspaceId, slug, excludeStreamId)
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -2008,43 +1922,10 @@ export class StreamService {
   /**
    * Get all public channels in a workspace that the user can discover
    */
-  async getDiscoverableStreams(workspaceId: string, userId: string): Promise<BootstrapStream[]> {
-    const result = await this.pool.query(
-      sql`SELECT
-            s.id, s.name, s.slug, s.description, s.topic,
-            s.stream_type, s.visibility, s.parent_stream_id,
-            CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
-            sm.last_read_at,
-            sm.pinned_at,
-            COALESCE(sm.notify_level, 'default') as notify_level,
-            (SELECT COUNT(*)::int FROM stream_members WHERE stream_id = s.id AND left_at IS NULL) as member_count
-          FROM streams s
-          LEFT JOIN stream_members sm ON s.id = sm.stream_id
-            AND sm.user_id = ${userId}
-            AND sm.left_at IS NULL
-          WHERE s.workspace_id = ${workspaceId}
-            AND s.archived_at IS NULL
-            AND s.stream_type = 'channel'
-            AND s.visibility = 'public'
-          ORDER BY s.name`,
+  async getDiscoverableStreams(workspaceId: string, userId: string): Promise<StreamWithMembership[]> {
+    return withClient(this.pool, (client) =>
+      StreamRepository.findDiscoverableStreams(client, workspaceId, userId),
     )
-
-    return result.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      description: row.description,
-      topic: row.topic,
-      streamType: row.stream_type as StreamType,
-      visibility: row.visibility as StreamVisibility,
-      isMember: row.is_member,
-      unreadCount: 0,
-      lastReadAt: row.last_read_at,
-      notifyLevel: row.notify_level as NotifyLevel,
-      parentStreamId: row.parent_stream_id,
-      pinnedAt: row.pinned_at,
-      memberCount: row.member_count,
-    }))
   }
 
   /**
@@ -2162,28 +2043,6 @@ export class StreamService {
   // ==========================================================================
   // Private Helpers
   // ==========================================================================
-
-  private mapStreamRow(row: any): Stream {
-    return {
-      id: row.id,
-      workspaceId: row.workspace_id,
-      streamType: row.stream_type as StreamType,
-      name: row.name,
-      slug: row.slug,
-      description: row.description,
-      topic: row.topic,
-      parentStreamId: row.parent_stream_id,
-      branchedFromEventId: row.branched_from_event_id,
-      visibility: row.visibility as StreamVisibility,
-      status: row.status as StreamStatus,
-      promotedAt: row.promoted_at,
-      promotedBy: row.promoted_by,
-      metadata: row.metadata || {},
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      archivedAt: row.archived_at,
-    }
-  }
 
   private mapEventRow(row: any): StreamEventWithDetails {
     return {

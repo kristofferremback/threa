@@ -1,10 +1,19 @@
 import type { PoolClient } from "pg"
 import { sql } from "../lib/db"
+import type {
+  Stream,
+  StreamType,
+  StreamVisibility,
+  StreamStatus,
+  StreamWithMembership,
+  NotifyLevel,
+} from "../../shared/types"
 
-/**
- * Raw database row for streams table.
- */
-export interface StreamRow {
+// ============================================================================
+// Internal Row Types (not exported)
+// ============================================================================
+
+interface StreamRow {
   id: string
   workspace_id: string
   stream_type: string
@@ -25,13 +34,55 @@ export interface StreamRow {
   persona_id: string | null
 }
 
-/**
- * Stream with additional discovery info.
- */
-export interface DiscoverableStreamRow extends StreamRow {
+interface StreamWithMembershipRow extends StreamRow {
   is_member: boolean
-  member_count: number
+  last_read_at: Date | null
+  notify_level: string
+  pinned_at: Date | null
+  member_count?: number
 }
+
+// ============================================================================
+// Row to Domain Mappers
+// ============================================================================
+
+function mapRowToStream(row: StreamRow): Stream {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    streamType: row.stream_type as StreamType,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    topic: row.topic,
+    parentStreamId: row.parent_stream_id,
+    branchedFromEventId: row.branched_from_event_id,
+    visibility: row.visibility as StreamVisibility,
+    status: row.status as StreamStatus,
+    promotedAt: row.promoted_at,
+    promotedBy: row.promoted_by,
+    personaId: row.persona_id,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  }
+}
+
+function mapRowToStreamWithMembership(row: StreamWithMembershipRow): StreamWithMembership {
+  return {
+    ...mapRowToStream(row),
+    isMember: row.is_member,
+    lastReadAt: row.last_read_at,
+    notifyLevel: (row.notify_level || "default") as NotifyLevel,
+    pinnedAt: row.pinned_at,
+    memberCount: row.member_count,
+  }
+}
+
+// ============================================================================
+// Exported Parameter Types
+// ============================================================================
 
 /**
  * Parameters for inserting a stream.
@@ -71,12 +122,16 @@ export interface UpdateStreamMetadataParams {
   topic?: string | null
 }
 
+// ============================================================================
+// Repository
+// ============================================================================
+
 /**
  * Repository for streams table operations.
  *
  * Design principles:
  * - Accepts PoolClient as first parameter (enables transaction control from service)
- * - Returns raw database rows (services handle mapping)
+ * - Returns domain types (Stream, StreamWithMembership)
  * - No side effects (no outbox events, no external calls)
  * - Uses explicit field selection (no SELECT *)
  */
@@ -84,7 +139,7 @@ export const StreamRepository = {
   /**
    * Find a stream by ID.
    */
-  async findStreamById(client: PoolClient, streamId: string): Promise<StreamRow | null> {
+  async findStreamById(client: PoolClient, streamId: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
       sql`SELECT
             id, workspace_id, stream_type, name, slug, description, topic,
@@ -94,17 +149,13 @@ export const StreamRepository = {
           FROM streams
           WHERE id = ${streamId}`,
     )
-    return result.rows[0] ?? null
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   /**
    * Find a stream by workspace and slug.
    */
-  async findStreamBySlug(
-    client: PoolClient,
-    workspaceId: string,
-    slug: string,
-  ): Promise<StreamRow | null> {
+  async findStreamBySlug(client: PoolClient, workspaceId: string, slug: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
       sql`SELECT
             id, workspace_id, stream_type, name, slug, description, topic,
@@ -114,16 +165,13 @@ export const StreamRepository = {
           FROM streams
           WHERE workspace_id = ${workspaceId} AND slug = ${slug}`,
     )
-    return result.rows[0] ?? null
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   /**
    * Find thread that branched from a specific event.
    */
-  async findStreamByBranchedFromEventId(
-    client: PoolClient,
-    eventId: string,
-  ): Promise<StreamRow | null> {
+  async findStreamByBranchedFromEventId(client: PoolClient, eventId: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
       sql`SELECT
             id, workspace_id, stream_type, name, slug, description, topic,
@@ -133,17 +181,14 @@ export const StreamRepository = {
           FROM streams
           WHERE branched_from_event_id = ${eventId}`,
     )
-    return result.rows[0] ?? null
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   /**
    * Find thread by branched_from_event_id with row lock.
    * Used for concurrent thread creation to prevent duplicates.
    */
-  async findStreamByBranchedFromEventIdForUpdate(
-    client: PoolClient,
-    eventId: string,
-  ): Promise<StreamRow | null> {
+  async findStreamByBranchedFromEventIdForUpdate(client: PoolClient, eventId: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
       sql`SELECT
             id, workspace_id, stream_type, name, slug, description, topic,
@@ -154,7 +199,7 @@ export const StreamRepository = {
           WHERE branched_from_event_id = ${eventId}
           FOR UPDATE`,
     )
-    return result.rows[0] ?? null
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   /**
@@ -181,7 +226,7 @@ export const StreamRepository = {
   /**
    * Insert a new stream.
    */
-  async insertStream(client: PoolClient, params: InsertStreamParams): Promise<StreamRow> {
+  async insertStream(client: PoolClient, params: InsertStreamParams): Promise<Stream> {
     const result = await client.query<StreamRow>(
       sql`INSERT INTO streams (
             id, workspace_id, stream_type, name, slug, description, topic,
@@ -202,17 +247,13 @@ export const StreamRepository = {
             promoted_at, promoted_by, metadata, created_at, updated_at,
             archived_at, persona_id`,
     )
-    return result.rows[0]
+    return mapRowToStream(result.rows[0])
   },
 
   /**
    * Update stream type (for promotion from thread to channel).
    */
-  async updateStreamType(
-    client: PoolClient,
-    streamId: string,
-    params: UpdateStreamTypeParams,
-  ): Promise<StreamRow> {
+  async updateStreamType(client: PoolClient, streamId: string, params: UpdateStreamTypeParams): Promise<Stream> {
     const result = await client.query<StreamRow>(
       sql`UPDATE streams SET
             stream_type = ${params.streamType},
@@ -229,16 +270,14 @@ export const StreamRepository = {
             promoted_at, promoted_by, metadata, created_at, updated_at,
             archived_at, persona_id`,
     )
-    return result.rows[0]
+    return mapRowToStream(result.rows[0])
   },
 
   /**
    * Update just the stream name (for auto-naming).
    */
   async updateStreamName(client: PoolClient, streamId: string, name: string): Promise<void> {
-    await client.query(
-      sql`UPDATE streams SET name = ${name}, updated_at = NOW() WHERE id = ${streamId}`,
-    )
+    await client.query(sql`UPDATE streams SET name = ${name}, updated_at = NOW() WHERE id = ${streamId}`)
   },
 
   /**
@@ -248,7 +287,7 @@ export const StreamRepository = {
     client: PoolClient,
     streamId: string,
     params: UpdateStreamMetadataParams,
-  ): Promise<StreamRow> {
+  ): Promise<Stream> {
     const result = await client.query<StreamRow>(
       sql`UPDATE streams SET
             name = COALESCE(${params.name}, name),
@@ -262,35 +301,27 @@ export const StreamRepository = {
             promoted_at, promoted_by, metadata, created_at, updated_at,
             archived_at, persona_id`,
     )
-    return result.rows[0]
+    return mapRowToStream(result.rows[0])
   },
 
   /**
    * Archive a stream by setting archived_at.
    */
   async archiveStream(client: PoolClient, streamId: string): Promise<void> {
-    await client.query(
-      sql`UPDATE streams SET archived_at = NOW(), updated_at = NOW() WHERE id = ${streamId}`,
-    )
+    await client.query(sql`UPDATE streams SET archived_at = NOW(), updated_at = NOW() WHERE id = ${streamId}`)
   },
 
   /**
    * Unarchive a stream by clearing archived_at.
    */
   async unarchiveStream(client: PoolClient, streamId: string): Promise<void> {
-    await client.query(
-      sql`UPDATE streams SET archived_at = NULL, updated_at = NOW() WHERE id = ${streamId}`,
-    )
+    await client.query(sql`UPDATE streams SET archived_at = NULL, updated_at = NOW() WHERE id = ${streamId}`)
   },
 
   /**
    * Find an existing DM with exact participants.
    */
-  async findExistingDM(
-    client: PoolClient,
-    workspaceId: string,
-    participantIds: string[],
-  ): Promise<StreamRow | null> {
+  async findExistingDM(client: PoolClient, workspaceId: string, participantIds: string[]): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
       sql`SELECT
             s.id, s.workspace_id, s.stream_type, s.name, s.slug, s.description, s.topic,
@@ -311,7 +342,7 @@ export const StreamRepository = {
               )
             )`,
     )
-    return result.rows[0] ?? null
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   /**
@@ -322,14 +353,17 @@ export const StreamRepository = {
     client: PoolClient,
     workspaceId: string,
     userId: string,
-  ): Promise<DiscoverableStreamRow[]> {
-    const result = await client.query<DiscoverableStreamRow>(
+  ): Promise<StreamWithMembership[]> {
+    const result = await client.query<StreamWithMembershipRow>(
       sql`SELECT
             s.id, s.workspace_id, s.stream_type, s.name, s.slug, s.description, s.topic,
             s.parent_stream_id, s.branched_from_event_id, s.visibility, s.status,
             s.promoted_at, s.promoted_by, s.metadata, s.created_at, s.updated_at,
             s.archived_at, s.persona_id,
             CASE WHEN sm.user_id IS NOT NULL THEN true ELSE false END as is_member,
+            sm.last_read_at,
+            COALESCE(sm.notify_level, 'default') as notify_level,
+            sm.pinned_at,
             (SELECT COUNT(*)::int FROM stream_members WHERE stream_id = s.id AND left_at IS NULL) as member_count
           FROM streams s
           LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId} AND sm.left_at IS NULL
@@ -339,6 +373,73 @@ export const StreamRepository = {
             AND s.visibility = 'public'
           ORDER BY s.name`,
     )
-    return result.rows
+    return result.rows.map(mapRowToStreamWithMembership)
+  },
+
+  /**
+   * Find streams that a user is a member of.
+   * Used for bootstrap - returns streams without unread counts.
+   */
+  async findUserMemberStreams(
+    client: PoolClient,
+    workspaceId: string,
+    userId: string,
+  ): Promise<StreamWithMembership[]> {
+    const result = await client.query<StreamWithMembershipRow>(
+      sql`SELECT
+            s.id, s.workspace_id, s.stream_type, s.name, s.slug, s.description, s.topic,
+            s.parent_stream_id, s.branched_from_event_id, s.visibility, s.status,
+            s.promoted_at, s.promoted_by, s.metadata, s.created_at, s.updated_at,
+            s.archived_at, s.persona_id,
+            true as is_member,
+            sm.last_read_at,
+            COALESCE(sm.notify_level, 'default') as notify_level,
+            sm.pinned_at
+          FROM streams s
+          INNER JOIN stream_members sm ON s.id = sm.stream_id
+            AND sm.user_id = ${userId}
+            AND sm.left_at IS NULL
+          WHERE s.workspace_id = ${workspaceId}
+            AND s.archived_at IS NULL
+            AND s.stream_type IN ('channel', 'dm', 'thinking_space')
+          ORDER BY sm.pinned_at DESC NULLS LAST, s.name`,
+    )
+    return result.rows.map(mapRowToStreamWithMembership)
+  },
+
+  /**
+   * Get unread counts for a list of streams.
+   * Separated from main query for flexibility and caching potential.
+   */
+  async getUnreadCounts(
+    client: PoolClient,
+    streamIds: string[],
+    userId: string,
+  ): Promise<Map<string, number>> {
+    if (streamIds.length === 0) return new Map()
+
+    const result = await client.query<{ stream_id: string; unread_count: number }>(
+      sql`SELECT
+            s.id as stream_id,
+            COALESCE(
+              (SELECT COUNT(*)::int FROM stream_events e
+               WHERE e.stream_id = s.id
+               AND e.created_at > COALESCE(sm.last_read_at, '1970-01-01'::timestamptz)
+               AND e.deleted_at IS NULL
+               AND e.actor_id != ${userId}),
+              0
+            ) as unread_count
+          FROM streams s
+          LEFT JOIN stream_members sm ON s.id = sm.stream_id
+            AND sm.user_id = ${userId}
+            AND sm.left_at IS NULL
+          WHERE s.id = ANY(${streamIds})`,
+    )
+
+    const counts = new Map<string, number>()
+    for (const row of result.rows) {
+      counts.set(row.stream_id, row.unread_count)
+    }
+    return counts
   },
 }

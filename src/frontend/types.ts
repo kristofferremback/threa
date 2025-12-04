@@ -14,6 +14,10 @@ export type StreamStatus = "active" | "archived" | "resolved"
 export type NotifyLevel = "all" | "mentions" | "muted" | "default"
 export type MemberRole = "owner" | "admin" | "member"
 
+/**
+ * Stream with all fields from the database plus user-specific membership context.
+ * This is the shape returned by the API after JSON serialization.
+ */
 export interface Stream {
   id: string
   workspaceId: string
@@ -26,12 +30,22 @@ export interface Stream {
   branchedFromEventId: string | null
   visibility: StreamVisibility
   status: StreamStatus
-  // Computed/joined fields
+  // Database fields (optional in API responses that don't include them)
+  promotedAt?: string | null
+  promotedBy?: string | null
+  personaId?: string | null
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+  archivedAt?: string | null
+  // User-specific membership context (always present in API responses)
   isMember: boolean
   unreadCount: number
   lastReadAt: string | null
   notifyLevel: NotifyLevel
   pinnedAt: string | null
+  // Optional for discoverable streams
+  memberCount?: number
 }
 
 export interface StreamMember {

@@ -3,7 +3,7 @@
  *
  * Design principles:
  * - Repositories accept PoolClient as first parameter (enables transaction control from service)
- * - Return raw database rows (services handle mapping to domain types)
+ * - Return domain types (repositories handle row-to-domain mapping)
  * - No side effects (no outbox events, no external calls)
  * - Uses explicit field selection (no SELECT *)
  * - Single responsibility: each method does one database operation
@@ -27,8 +27,6 @@ export {
 
 export {
   StreamRepository,
-  type StreamRow,
-  type DiscoverableStreamRow,
   type InsertStreamParams,
   type UpdateStreamTypeParams,
   type UpdateStreamMetadataParams,
