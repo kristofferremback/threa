@@ -24,3 +24,31 @@ export {
   type TextMessageRow,
   type InsertTextMessageParams,
 } from "./text-message-repository"
+
+export {
+  StreamRepository,
+  type StreamRow,
+  type DiscoverableStreamRow,
+  type InsertStreamParams,
+  type UpdateStreamTypeParams,
+  type UpdateStreamMetadataParams,
+} from "./stream-repository"
+
+export {
+  StreamMemberRepository,
+  type StreamMemberRow,
+  type StreamMemberWithUserRow,
+  type InsertMemberParams,
+  type UpsertMemberParams,
+  type UpsertMemberWithReadCursorParams,
+} from "./stream-member-repository"
+
+export {
+  StreamEventRepository,
+  type StreamEventRow,
+  type EventWithStreamRow,
+  type EventWithContentRow,
+  type StreamEventWithDetailsRow,
+  type InsertEventParams,
+  type FindEventsParams,
+} from "./stream-event-repository"
