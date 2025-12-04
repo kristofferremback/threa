@@ -52,3 +52,7 @@ export {
   type InsertEventParams,
   type FindEventsParams,
 } from "./stream-event-repository"
+
+export { MessageRevisionRepository, type InsertRevisionParams } from "./message-revision-repository"
+
+export { SharedRefRepository, type InsertSharedRefParams } from "./shared-ref-repository"

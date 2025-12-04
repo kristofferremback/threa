@@ -159,6 +159,29 @@ export const StreamEventRepository = {
   },
 
   /**
+   * Find an event with message content for threading/display, with row lock.
+   * Used for concurrent operations to prevent race conditions.
+   */
+  async findEventWithStreamAndContentForUpdate(
+    client: PoolClient,
+    eventId: string,
+  ): Promise<EventWithContentRow | null> {
+    const result = await client.query<EventWithContentRow>(
+      sql`SELECT
+            e.id, e.stream_id, e.event_type, e.actor_id, e.content_type, e.content_id,
+            e.payload, e.created_at, e.edited_at, e.deleted_at, e.agent_id, e.client_message_id,
+            s.workspace_id, s.parent_stream_id,
+            tm.content as message_content, tm.mentions
+          FROM stream_events e
+          INNER JOIN streams s ON e.stream_id = s.id
+          LEFT JOIN text_messages tm ON e.content_type = 'text_message' AND e.content_id = tm.id
+          WHERE e.id = ${eventId}
+          FOR UPDATE OF e`,
+    )
+    return result.rows[0] ?? null
+  },
+
+  /**
    * Find event by client message ID for idempotency checks.
    */
   async findEventByClientMessageId(

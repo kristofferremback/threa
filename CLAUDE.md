@@ -248,3 +248,4 @@ When replying to a message that doesn't have a thread yet:
 2. On page load, `resetSendingMessages()` resets stuck "sending" → "pending"
 3. On reconnect, retry all pending/failed messages
 4. Server idempotency via `client_message_id` prevents duplicates
+- You may not use SELECT * or any similar form of wildcard matching on fields in SQL code, always explicitly select fields.
