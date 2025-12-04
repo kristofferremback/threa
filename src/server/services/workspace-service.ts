@@ -1,4 +1,5 @@
 import { Pool } from "pg"
+import { withTransaction } from "../lib/db"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import type { Workspace, WorkspaceMember } from "../lib/types"
@@ -12,43 +13,32 @@ export class WorkspaceService {
    * Create a new workspace
    */
   async createWorkspace(name: string, creatorUserId: string): Promise<Workspace> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    const workspaceId = generateId("ws")
+    const slug = this.generateSlug(name) + "-" + workspaceId.slice(-6)
 
-      const workspaceId = generateId("ws")
-      const slug = this.generateSlug(name) + "-" + workspaceId.slice(-6)
-
+    await withTransaction(this.pool, async (client) => {
       await client.query(
         `INSERT INTO workspaces (id, name, slug, plan_tier, seat_limit)
          VALUES ($1, $2, $3, 'free', 5)`,
         [workspaceId, name, slug],
       )
+    })
 
-      await client.query("COMMIT")
+    logger.info({ workspace_id: workspaceId, creator: creatorUserId }, "Created workspace")
 
-      logger.info({ workspace_id: workspaceId, creator: creatorUserId }, "Created workspace")
+    const result = await this.pool.query<Workspace>(
+      `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
+       FROM workspaces
+       WHERE id = $1`,
+      [workspaceId],
+    )
 
-      const result = await this.pool.query<Workspace>(
-        `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
-         FROM workspaces
-         WHERE id = $1`,
-        [workspaceId],
-      )
-
-      const workspace = result.rows[0]
-      if (!workspace) {
-        throw new Error("Failed to create workspace")
-      }
-
-      return workspace
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error }, "Failed to create workspace")
-      throw error
-    } finally {
-      client.release()
+    const workspace = result.rows[0]
+    if (!workspace) {
+      throw new Error("Failed to create workspace")
     }
+
+    return workspace
   }
 
   /**
@@ -56,10 +46,7 @@ export class WorkspaceService {
    * Ensures 1-to-1 coupling between workspaces and WorkOS organizations
    */
   async getOrCreateWorkspaceForOrganization(workosOrganizationId: string, workspaceName?: string): Promise<Workspace> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    return withTransaction(this.pool, async (client) => {
       // Try to find existing workspace
       const existingResult = await client.query<Workspace>(
         `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
@@ -70,7 +57,6 @@ export class WorkspaceService {
 
       const existing = existingResult.rows[0]
       if (existing) {
-        await client.query("COMMIT")
         return existing
       }
 
@@ -85,14 +71,12 @@ export class WorkspaceService {
         [workspaceId, name, slug, workosOrganizationId],
       )
 
-      await client.query("COMMIT")
-
       logger.info(
         { workspace_id: workspaceId, organization_id: workosOrganizationId },
         "Created workspace for organization",
       )
 
-      const result = await this.pool.query<Workspace>(
+      const result = await client.query<Workspace>(
         `SELECT id, name, slug, workos_organization_id, stripe_customer_id, plan_tier, billing_status, seat_limit, ai_budget_limit, created_at
          FROM workspaces
          WHERE id = $1`,
@@ -105,13 +89,7 @@ export class WorkspaceService {
       }
 
       return workspace
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, organization_id: workosOrganizationId }, "Failed to get or create workspace")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -156,10 +134,7 @@ export class WorkspaceService {
    * Ensure user is a member of workspace with seat checking
    */
   async ensureWorkspaceMember(workspaceId: string, userId: string, role: string = "member"): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Check if already a member
       const existingMember = await client.query(
         "SELECT status FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
@@ -212,15 +187,8 @@ export class WorkspaceService {
         }
       }
 
-      await client.query("COMMIT")
       logger.debug({ workspace_id: workspaceId, user_id: userId, role }, "Workspace membership ensured")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, workspace_id: workspaceId, user_id: userId }, "Failed to ensure workspace member")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   private async checkSeatLimit(client: any, workspaceId: string): Promise<void> {
@@ -286,10 +254,12 @@ export class WorkspaceService {
     role: "admin" | "member" | "guest" = "member",
     expiresInDays: number = 7,
   ): Promise<{ id: string; token: string; expiresAt: Date }> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    const invitationId = generateId("inv")
+    const token = this.generateInviteToken()
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + expiresInDays)
 
+    await withTransaction(this.pool, async (client) => {
       // Check seat limits
       await this.checkSeatLimit(client, workspaceId)
 
@@ -321,12 +291,6 @@ export class WorkspaceService {
         )
       }
 
-      // Generate invitation
-      const invitationId = generateId("inv")
-      const token = this.generateInviteToken()
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + expiresInDays)
-
       await client.query(
         `INSERT INTO workspace_invitations (id, workspace_id, email, role, token, invited_by_user_id, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -349,19 +313,11 @@ export class WorkspaceService {
         invited_by_email: inviterEmail,
         expires_at: expiresAt.toISOString(),
       })
+    })
 
-      await client.query("COMMIT")
+    logger.info({ workspace_id: workspaceId, email, invited_by: invitedByUserId }, "Invitation created")
 
-      logger.info({ workspace_id: workspaceId, email, invited_by: invitedByUserId }, "Invitation created")
-
-      return { id: invitationId, token, expiresAt }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, workspace_id: workspaceId, email }, "Failed to create invitation")
-      throw error
-    } finally {
-      client.release()
-    }
+    return { id: invitationId, token, expiresAt }
   }
 
   /**
@@ -412,10 +368,7 @@ export class WorkspaceService {
     userFirstName?: string,
     userLastName?: string,
   ): Promise<{ workspaceId: string }> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    return withTransaction(this.pool, async (client) => {
       // Get invitation
       const inviteRes = await client.query(
         `SELECT id, workspace_id, email, role, status, expires_at
@@ -437,7 +390,6 @@ export class WorkspaceService {
         await client.query(`UPDATE workspace_invitations SET status = 'expired', updated_at = NOW() WHERE id = $1`, [
           invitation.id,
         ])
-        await client.query("COMMIT")
         throw new Error("Invitation has expired")
       }
 
@@ -514,28 +466,17 @@ export class WorkspaceService {
         role: invitation.role,
       })
 
-      await client.query("COMMIT")
-
       logger.info({ invitation_id: invitation.id, user_id: userId }, "Invitation accepted")
 
       return { workspaceId: invitation.workspace_id }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, token }, "Failed to accept invitation")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
    * Revoke an invitation
    */
   async revokeInvitation(invitationId: string, revokedByUserId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Get invitation details before revoking
       const inviteResult = await client.query<{ workspace_id: string; email: string }>(
         `SELECT workspace_id, email FROM workspace_invitations WHERE id = $1 AND status = 'pending'`,
@@ -543,7 +484,6 @@ export class WorkspaceService {
       )
 
       if (inviteResult.rows.length === 0) {
-        await client.query("ROLLBACK")
         throw new Error("Invitation not found or already processed")
       }
 
@@ -564,15 +504,8 @@ export class WorkspaceService {
         revoked_by_user_id: revokedByUserId,
       })
 
-      await client.query("COMMIT")
-
       logger.info({ invitation_id: invitationId, revoked_by: revokedByUserId }, "Invitation revoked")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -683,10 +616,7 @@ export class WorkspaceService {
     userId: string,
     updates: { displayName?: string; title?: string; avatarUrl?: string; bio?: string },
   ): Promise<boolean> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Check if user is a member
       const memberResult = await client.query(
         `SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
@@ -729,16 +659,10 @@ export class WorkspaceService {
         avatar_url: updates.avatarUrl,
       })
 
-      await client.query("COMMIT")
-
       logger.info({ workspaceId, userId, updates }, "Workspace profile updated")
-      return true
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
+
+    return true
   }
 
   /**

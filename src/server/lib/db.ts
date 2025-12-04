@@ -1,4 +1,4 @@
-import { Pool, type PoolConfig } from "pg"
+import { Pool, type PoolConfig, type PoolClient } from "pg"
 import { sql } from "squid/pg"
 import { DATABASE_URL } from "../config"
 import { logger } from "./logger"
@@ -12,6 +12,24 @@ import { logger } from "./logger"
 //
 // For Bun scripts, use Bun's built-in sql directly: import { sql } from "bun"
 export { sql }
+
+export async function withTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+
+    const result = await callback(client)
+    await client.query("COMMIT")
+
+    return result
+  } catch (error) {
+    await client.query("ROLLBACK")
+
+    throw error
+  } finally {
+    client.release()
+  }
+}
 
 /**
  * Create a database connection pool with consistent configuration

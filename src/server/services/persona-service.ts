@@ -1,4 +1,5 @@
 import { Pool } from "pg"
+import { withTransaction } from "../lib/db"
 import { logger } from "../lib/logger"
 import { aiPersonaId } from "../lib/id"
 
@@ -185,10 +186,7 @@ export class PersonaService {
     createdBy: string,
     input: CreatePersonaInput,
   ): Promise<AgentPersona> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    const persona = await withTransaction(this.pool, async (client) => {
       const id = aiPersonaId()
 
       // If this is marked as default, unset any existing default
@@ -224,31 +222,22 @@ export class PersonaService {
         ],
       )
 
-      await client.query("COMMIT")
-
       logger.info(
         { personaId: id, workspaceId, name: input.name, slug: input.slug },
         "Created agent persona",
       )
 
       return this.mapDbRow(result.rows[0])
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, workspaceId, input }, "Failed to create persona")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
+
+    return persona
   }
 
   /**
    * Update an existing persona.
    */
   async updatePersona(personaId: string, input: UpdatePersonaInput): Promise<AgentPersona | null> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    return withTransaction(this.pool, async (client) => {
       // Get current persona to find workspace_id
       const current = await client.query<{ workspace_id: string }>(
         `SELECT workspace_id FROM agent_personas WHERE id = $1`,
@@ -256,7 +245,6 @@ export class PersonaService {
       )
 
       if (current.rows.length === 0) {
-        await client.query("ROLLBACK")
         return null
       }
 
@@ -325,8 +313,12 @@ export class PersonaService {
       }
 
       if (updates.length === 0) {
-        await client.query("ROLLBACK")
-        return this.getPersona(personaId)
+        // No updates - fetch and return current persona
+        const result = await client.query<DbPersonaRow>(
+          `SELECT * FROM agent_personas WHERE id = $1`,
+          [personaId],
+        )
+        return result.rows[0] ? this.mapDbRow(result.rows[0]) : null
       }
 
       values.push(personaId)
@@ -335,18 +327,10 @@ export class PersonaService {
         values,
       )
 
-      await client.query("COMMIT")
-
       logger.info({ personaId, updates: Object.keys(input) }, "Updated agent persona")
 
       return this.mapDbRow(result.rows[0])
-    } catch (error) {
-      await client.query("ROLLBACK")
-      logger.error({ err: error, personaId, input }, "Failed to update persona")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**

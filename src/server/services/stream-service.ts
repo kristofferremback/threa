@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { sql } from "../lib/db"
+import { sql, withTransaction } from "../lib/db"
 import { logger } from "../lib/logger"
 import { generateId } from "../lib/id"
 import { createValidSlug } from "../../shared/slug"
@@ -354,14 +354,11 @@ export class StreamService {
   // ==========================================================================
 
   async createStream(params: CreateStreamParams): Promise<Stream> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    const streamId = generateId("stream")
+    // createValidSlug returns {slug, valid, error} - extract just the slug
+    const slug = params.slug || (params.name ? createValidSlug(params.name).slug : null)
 
-      const streamId = generateId("stream")
-      // createValidSlug returns {slug, valid, error} - extract just the slug
-      const slug = params.slug || (params.name ? createValidSlug(params.name).slug : null)
-
+    const stream = await withTransaction(this.pool, async (client) => {
       // Check slug uniqueness if provided
       if (slug) {
         const existingSlug = await client.query(
@@ -388,7 +385,7 @@ export class StreamService {
             RETURNING *`,
       )
 
-      const stream = result.rows[0]
+      const streamRow = result.rows[0]
 
       // Add creator as owner/member
       await client.query(
@@ -447,17 +444,12 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
+      return this.mapStreamRow(streamRow)
+    })
 
-      logger.info({ streamId, type: params.streamType }, "Stream created")
+    logger.info({ streamId, type: params.streamType }, "Stream created")
 
-      return this.mapStreamRow(stream)
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return stream
   }
 
   async getStream(streamId: string): Promise<Stream | null> {
@@ -531,12 +523,9 @@ export class StreamService {
     const otherParticipants = users.filter((u) => u.id !== creatorId)
     const dmName = otherParticipants.map((u) => u.name || u.email.split("@")[0]).join(", ")
 
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    const streamId = generateId("stream")
 
-      const streamId = generateId("stream")
-
+    const stream = await withTransaction(this.pool, async (client) => {
       // Create DM stream (no slug for DMs)
       const result = await client.query<Stream>(
         sql`INSERT INTO streams (
@@ -550,7 +539,7 @@ export class StreamService {
             RETURNING *`,
       )
 
-      const stream = result.rows[0]
+      const streamRow = result.rows[0]
 
       // Add all participants as members
       for (const participantId of allParticipants) {
@@ -577,17 +566,12 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
+      return this.mapStreamRow(streamRow)
+    })
 
-      logger.info({ streamId, participantCount: allParticipants.length }, "DM created")
+    logger.info({ streamId, participantCount: allParticipants.length }, "DM created")
 
-      return { stream: this.mapStreamRow(stream), created: true }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return { stream, created: true }
   }
 
   async getStreamBySlug(workspaceId: string, slug: string): Promise<Stream | null> {
@@ -637,10 +621,20 @@ export class StreamService {
     eventId: string,
     creatorId: string,
   ): Promise<{ stream: Stream; event: StreamEventWithDetails }> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    type TransactionResult =
+      | { type: "existing"; stream: Stream; parentStreamId: string; existingThreadId: string }
+      | {
+          type: "created"
+          stream: Stream
+          threadEventId: string
+          threadName: string | null
+          parentStreamId: string
+          workspaceId: string
+          contentType: string | null
+          contentId: string | null
+        }
 
+    const result = await withTransaction(this.pool, async (client): Promise<TransactionResult> => {
       // Get the original event and its stream (including message content for auto-naming)
       const eventResult = await client.query(
         sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id,
@@ -659,18 +653,12 @@ export class StreamService {
       // Check if thread already exists - if so, return it instead of creating a new one
       const existingThread = await client.query(sql`SELECT * FROM streams WHERE branched_from_event_id = ${eventId}`)
       if (existingThread.rows.length > 0) {
-        await client.query("COMMIT")
-        const stream = this.mapStreamRow(existingThread.rows[0])
-        // Return the existing stream with a placeholder event (the original thread_started event)
-        const threadStartedEvent = await this.pool.query(
-          sql`SELECT * FROM stream_events
-              WHERE stream_id = ${originalEvent.parent_stream_id}
-              AND event_type = 'thread_started'
-              AND payload->>'thread_id' = ${existingThread.rows[0].id}
-              LIMIT 1`,
-        )
-        const event = threadStartedEvent.rows[0] ? await this.getEventWithDetails(threadStartedEvent.rows[0].id) : null
-        return { stream, event: event || ({} as StreamEventWithDetails) }
+        return {
+          type: "existing",
+          stream: this.mapStreamRow(existingThread.rows[0]),
+          parentStreamId: originalEvent.parent_stream_id,
+          existingThreadId: existingThread.rows[0].id,
+        }
       }
 
       // Create the thread stream
@@ -739,32 +727,52 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
-
       const stream = this.mapStreamRow(streamResult.rows[0])
       stream.name = threadName
-      const event = await this.getEventWithDetails(threadEventId)
 
-      logger.info({ streamId, parentStreamId: originalEvent.parent_stream_id }, "Thread created")
-
-      // Queue enrichment for the parent message (thread creation is a signal of value)
-      if (originalEvent.content_type === "text_message" && originalEvent.content_id) {
-        queueEnrichmentForThreadParent({
-          workspaceId: originalEvent.workspace_id,
-          parentEventId: eventId,
-          parentTextMessageId: originalEvent.content_id,
-        }).catch((err) => {
-          logger.warn({ err, eventId }, "Failed to queue enrichment for thread parent")
-        })
+      return {
+        type: "created",
+        stream,
+        threadEventId,
+        threadName,
+        parentStreamId: originalEvent.parent_stream_id,
+        workspaceId: originalEvent.workspace_id,
+        contentType: originalEvent.content_type,
+        contentId: originalEvent.content_id,
       }
+    })
 
-      return { stream, event: event! }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
+    // Handle post-transaction work based on result type
+    if (result.type === "existing") {
+      // Return the existing stream with a placeholder event (the original thread_started event)
+      const threadStartedEvent = await this.pool.query(
+        sql`SELECT * FROM stream_events
+            WHERE stream_id = ${result.parentStreamId}
+            AND event_type = 'thread_started'
+            AND payload->>'thread_id' = ${result.existingThreadId}
+            LIMIT 1`,
+      )
+      const event = threadStartedEvent.rows[0] ? await this.getEventWithDetails(threadStartedEvent.rows[0].id) : null
+      return { stream: result.stream, event: event || ({} as StreamEventWithDetails) }
     }
+
+    // Thread was created
+    const event = await this.getEventWithDetails(result.threadEventId)
+
+    logger.info({ streamId: result.stream.id, parentStreamId: result.parentStreamId }, "Thread created")
+
+    // Queue enrichment for the parent message (thread creation is a signal of value)
+    if (result.contentType === "text_message" && result.contentId) {
+      queueEnrichmentForThreadParent({
+        workspaceId: result.workspaceId,
+        parentEventId: eventId,
+        parentTextMessageId: result.contentId,
+      }).catch((err) => {
+        logger.warn({ err, eventId }, "Failed to queue enrichment for thread parent")
+      })
+    }
+
+    return { stream: result.stream, event: event! }
   }
 
   /**
@@ -780,10 +788,11 @@ export class StreamService {
    * Handles race conditions by using SELECT FOR UPDATE
    */
   async replyToEvent(params: ReplyToEventParams): Promise<ReplyToEventResult> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
+    type TransactionResult =
+      | { type: "idempotent"; stream: Stream; event: StreamEventWithDetails }
+      | { type: "created"; stream: Stream; eventId: string; messageId: string; threadCreated: boolean }
 
+    const result = await withTransaction(this.pool, async (client): Promise<TransactionResult> => {
       // Get the original event with content and lock to prevent race conditions
       const eventResult = await client.query(
         sql`SELECT e.*, s.workspace_id, s.id as parent_stream_id,
@@ -883,11 +892,10 @@ export class StreamService {
                 AND se.stream_id = ${threadStream.id}`,
         )
         if (existingMessage.rows.length > 0) {
-          // Message already exists, commit and return existing event
-          // Don't release client here - the finally block will handle it
-          await client.query("COMMIT")
+          // Message already exists, return existing event
           const row = existingMessage.rows[0]
           return {
+            type: "idempotent",
             stream: threadStream,
             event: {
               id: row.id,
@@ -904,7 +912,6 @@ export class StreamService {
               isEdited: row.edited_at !== null,
               replyCount: 0,
             } as StreamEventWithDetails,
-            threadCreated: false,
           }
         }
       }
@@ -1007,40 +1014,48 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
-
-      const event = await this.getEventWithDetails(eventId)
-
-      // Queue classification for the reply message
-      maybeQueueClassification({
-        workspaceId: params.workspaceId,
-        streamId: threadStream.id,
-        eventId,
-        textMessageId: messageId,
-        content: params.content,
-        contentType: "message",
-      }).catch((err) => {
-        logger.warn({ err, eventId }, "Failed to queue classification for reply")
-      })
-
       return {
+        type: "created",
         stream: threadStream,
-        event: event!,
+        eventId,
+        messageId,
         threadCreated,
       }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
+    })
+
+    // Handle idempotent case - message already existed
+    if (result.type === "idempotent") {
+      return {
+        stream: result.stream,
+        event: result.event,
+        threadCreated: false,
+      }
+    }
+
+    // Get full event details after transaction
+    const event = await this.getEventWithDetails(result.eventId)
+
+    // Queue classification for the reply message
+    maybeQueueClassification({
+      workspaceId: params.workspaceId,
+      streamId: result.stream.id,
+      eventId: result.eventId,
+      textMessageId: result.messageId,
+      content: params.content,
+      contentType: "message",
+    }).catch((err) => {
+      logger.warn({ err, eventId: result.eventId }, "Failed to queue classification for reply")
+    })
+
+    return {
+      stream: result.stream,
+      event: event!,
+      threadCreated: result.threadCreated,
     }
   }
 
   async promoteStream(params: PromoteStreamParams): Promise<Stream> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    const streamRow = await withTransaction(this.pool, async (client) => {
       // Get current stream
       const currentResult = await client.query(sql`SELECT * FROM streams WHERE id = ${params.streamId}`)
       const current = currentResult.rows[0]
@@ -1107,24 +1122,16 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
+      return result.rows[0]
+    })
 
-      logger.info({ streamId: params.streamId, newType: params.newType }, "Stream promoted")
+    logger.info({ streamId: params.streamId, newType: params.newType }, "Stream promoted")
 
-      return this.mapStreamRow(result.rows[0])
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return this.mapStreamRow(streamRow)
   }
 
   async archiveStream(streamId: string, archivedByUserId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Get workspace_id before archiving
       const streamResult = await client.query<{ workspace_id: string }>(
         sql`SELECT workspace_id FROM streams WHERE id = ${streamId}`,
@@ -1145,21 +1152,11 @@ export class StreamService {
         archived: true,
         archived_by: archivedByUserId,
       })
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async unarchiveStream(streamId: string, unarchivedByUserId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Get workspace_id before unarchiving
       const streamResult = await client.query<{ workspace_id: string }>(
         sql`SELECT workspace_id FROM streams WHERE id = ${streamId}`,
@@ -1180,14 +1177,7 @@ export class StreamService {
         archived: false,
         archived_by: unarchivedByUserId,
       })
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
@@ -1198,10 +1188,7 @@ export class StreamService {
     updates: { name?: string; description?: string; topic?: string },
     updatedByUserId: string,
   ): Promise<Stream> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    const streamRow = await withTransaction(this.pool, async (client) => {
       // Get current stream
       const streamResult = await client.query<{
         id: string
@@ -1230,8 +1217,6 @@ export class StreamService {
             RETURNING *`,
       )
 
-      const updatedStream = this.mapStreamRow(result.rows[0])
-
       // Publish stream updated event
       await publishOutboxEvent(client, OutboxEventType.STREAM_UPDATED, {
         stream_id: streamId,
@@ -1243,15 +1228,10 @@ export class StreamService {
         updated_by: updatedByUserId,
       })
 
-      await client.query("COMMIT")
+      return result.rows[0]
+    })
 
-      return updatedStream
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return this.mapStreamRow(streamRow)
   }
 
   // ==========================================================================
@@ -1264,266 +1244,282 @@ export class StreamService {
       throw new Error("Either actorId or agentId must be provided")
     }
 
-    const client = await this.pool.connect()
+    // Discriminated union for transaction result
+    type TransactionResult =
+      | { type: "idempotent"; event: StreamEventWithDetails }
+      | {
+          type: "created"
+          eventId: string
+          contentId: string | null
+          stream: { workspace_id: string; stream_type: string; name: string | null }
+        }
+
     try {
-      await client.query("BEGIN")
-
-      // Idempotency check: if clientMessageId is provided, check if event already exists
-      if (params.clientMessageId) {
-        const existingEvent = await client.query(
-          sql`SELECT se.*, tm.content, tm.mentions,
-                     u.email as actor_email
-              FROM stream_events se
-              LEFT JOIN text_messages tm ON se.content_id = tm.id AND se.content_type = 'text_message'
-              LEFT JOIN users u ON se.actor_id = u.id
-              WHERE se.client_message_id = ${params.clientMessageId}
-                AND se.stream_id = ${params.streamId}`,
-        )
-
-        if (existingEvent.rows.length > 0) {
-          // Event already exists, commit and return existing event
-          // Don't release client here - the finally block will handle it
-          await client.query("COMMIT")
-          const row = existingEvent.rows[0]
-          return {
-            id: row.id,
-            streamId: row.stream_id,
-            eventType: row.event_type,
-            actorId: row.actor_id,
-            actorEmail: row.actor_email,
-            agentId: row.agent_id,
-            content: row.content,
-            mentions: row.mentions,
-            payload: row.payload,
-            createdAt: row.created_at,
-            editedAt: row.edited_at,
-            isEdited: row.is_edited,
-            replyCount: row.reply_count || 0,
-          }
-        }
-      }
-
-      const eventId = generateId("event")
-      let contentType: string | null = null
-      let contentId: string | null = null
-
-      // Create content based on event type
-      if (params.eventType === "message" && params.content) {
-        contentType = "text_message"
-        contentId = generateId("msg")
-        await client.query(
-          sql`INSERT INTO text_messages (id, content, mentions)
-              VALUES (${contentId}, ${params.content}, ${JSON.stringify(params.mentions || [])})`,
-        )
-      } else if (params.eventType === "shared" && params.originalEventId) {
-        contentType = "shared_ref"
-        contentId = generateId("share")
-        await client.query(
-          sql`INSERT INTO shared_refs (id, original_event_id, context)
-              VALUES (${contentId}, ${params.originalEventId}, ${params.shareContext || null})`,
-        )
-      }
-
-      // Create the event (with either actor_id or agent_id)
-      await client.query(
-        sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, payload, client_message_id)
-            VALUES (${eventId}, ${params.streamId}, ${params.eventType}, ${params.actorId || null}, ${params.agentId || null},
-                    ${contentType}, ${contentId}, ${params.payload ? JSON.stringify(params.payload) : null}, ${params.clientMessageId || null})`,
-      )
-
-      // Get stream info for notifications
-      const streamResult = await client.query(
-        sql`SELECT workspace_id, stream_type, parent_stream_id, slug, name FROM streams WHERE id = ${params.streamId}`,
-      )
-      const stream = streamResult.rows[0]
-
-      if (!stream) {
-        throw new Error(`Stream not found: ${params.streamId}`)
-      }
-
-      // Auto-name thinking spaces on first message (if name is empty or placeholder)
-      const isPlaceholderName = !stream.name || stream.name === "New thinking space"
-      if (stream.stream_type === "thinking_space" && isPlaceholderName && params.content) {
-        try {
-          const nameResult = await generateAutoName(params.content)
-          if (nameResult.success && nameResult.name) {
-            await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${params.streamId}`)
-            stream.name = nameResult.name
-            logger.debug({ streamId: params.streamId, name: nameResult.name }, "Thinking space auto-named")
-
-            // Emit stream.updated event so frontend can update tab titles
-            const updateOutboxId = generateId("outbox")
-            await client.query(
-              sql`INSERT INTO outbox (id, event_type, payload)
-                  VALUES (${updateOutboxId}, 'stream.updated', ${JSON.stringify({
-                    stream_id: params.streamId,
-                    workspace_id: stream.workspace_id,
-                    name: nameResult.name,
-                    updated_by: params.actorId || "system",
-                  })})`,
-            )
-            await client.query(`NOTIFY outbox_event, '${updateOutboxId.replace(/'/g, "''")}'`)
-          }
-        } catch (err) {
-          // Don't fail event creation if auto-naming fails
-          logger.warn({ err, streamId: params.streamId }, "Failed to auto-name thinking space")
-        }
-      }
-
-      // Handle mentions - create notifications (only for user-created events)
-      if (params.actorId && params.mentions && params.mentions.length > 0) {
-        const userMentions = params.mentions.filter((m) => m.type === "user")
-        for (const mention of userMentions) {
-          if (mention.id === params.actorId) continue // Don't notify self
-          if (mention.id?.startsWith("ariadne_")) continue // Ariadne is handled via job queue, not notifications
-
-          const notifId = generateId("notif")
-          await client.query(
-            sql`INSERT INTO notifications (id, workspace_id, user_id, notification_type,
-                                           stream_id, event_id, actor_id, preview)
-                VALUES (${notifId}, ${stream.workspace_id}, ${mention.id}, 'mention',
-                        ${params.streamId}, ${eventId}, ${params.actorId},
-                        ${params.content?.substring(0, 100) || null})
-                ON CONFLICT DO NOTHING`,
+      const result = await withTransaction(this.pool, async (client): Promise<TransactionResult> => {
+        // Idempotency check: if clientMessageId is provided, check if event already exists
+        if (params.clientMessageId) {
+          const existingEvent = await client.query(
+            sql`SELECT se.*, tm.content, tm.mentions,
+                       u.email as actor_email
+                FROM stream_events se
+                LEFT JOIN text_messages tm ON se.content_id = tm.id AND se.content_type = 'text_message'
+                LEFT JOIN users u ON se.actor_id = u.id
+                WHERE se.client_message_id = ${params.clientMessageId}
+                  AND se.stream_id = ${params.streamId}`,
           )
 
-          // Get actor info for notification
-          const actorResult = await client.query(sql`SELECT email, name FROM users WHERE id = ${params.actorId}`)
-          const actor = actorResult.rows[0]
-
-          // Emit notification event
-          const notifOutboxId = generateId("outbox")
-          await client.query(
-            sql`INSERT INTO outbox (id, event_type, payload)
-                VALUES (${notifOutboxId}, 'notification.created', ${JSON.stringify({
-                  id: notifId,
-                  workspace_id: stream.workspace_id,
-                  user_id: mention.id,
-                  notification_type: "mention",
-                  stream_id: params.streamId,
-                  stream_name: stream.name,
-                  stream_slug: stream.slug,
-                  event_id: eventId,
-                  actor_id: params.actorId,
-                  actor_email: actor?.email,
-                  actor_name: actor?.name,
-                  preview: params.content?.substring(0, 100),
-                })})`,
-          )
-          await client.query(`NOTIFY outbox_event, '${notifOutboxId.replace(/'/g, "''")}'`)
+          if (existingEvent.rows.length > 0) {
+            const row = existingEvent.rows[0]
+            return {
+              type: "idempotent",
+              event: {
+                id: row.id,
+                streamId: row.stream_id,
+                eventType: row.event_type,
+                actorId: row.actor_id,
+                actorEmail: row.actor_email,
+                agentId: row.agent_id,
+                content: row.content,
+                mentions: row.mentions,
+                payload: row.payload,
+                createdAt: row.created_at,
+                editedAt: row.edited_at,
+                isEdited: row.is_edited,
+                replyCount: row.reply_count || 0,
+              },
+            }
+          }
         }
 
-        // Handle crosspost mentions - share to other streams
-        const crossposts = params.mentions.filter((m) => m.type === "crosspost")
-        for (const crosspost of crossposts) {
-          const shareEventId = generateId("event")
-          const shareContentId = generateId("share")
+        const eventId = generateId("event")
+        let contentType: string | null = null
+        let contentId: string | null = null
 
+        // Create content based on event type
+        if (params.eventType === "message" && params.content) {
+          contentType = "text_message"
+          contentId = generateId("msg")
+          await client.query(
+            sql`INSERT INTO text_messages (id, content, mentions)
+                VALUES (${contentId}, ${params.content}, ${JSON.stringify(params.mentions || [])})`,
+          )
+        } else if (params.eventType === "shared" && params.originalEventId) {
+          contentType = "shared_ref"
+          contentId = generateId("share")
           await client.query(
             sql`INSERT INTO shared_refs (id, original_event_id, context)
-                VALUES (${shareContentId}, ${eventId}, null)`,
+                VALUES (${contentId}, ${params.originalEventId}, ${params.shareContext || null})`,
           )
-
-          await client.query(
-            sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id)
-                VALUES (${shareEventId}, ${crosspost.id}, 'shared', ${params.actorId},
-                        'shared_ref', ${shareContentId})`,
-          )
-
-          // Emit event for the target stream
-          const crosspostOutboxId = generateId("outbox")
-          await client.query(
-            sql`INSERT INTO outbox (id, event_type, payload)
-                VALUES (${crosspostOutboxId}, 'stream_event.created', ${JSON.stringify({
-                  event_id: shareEventId,
-                  stream_id: crosspost.id,
-                  workspace_id: stream.workspace_id,
-                  event_type: "shared",
-                  actor_id: params.actorId,
-                  is_crosspost: true,
-                  original_stream_id: params.streamId,
-                })})`,
-          )
-          await client.query(`NOTIFY outbox_event, '${crosspostOutboxId.replace(/'/g, "''")}'`)
         }
-      }
 
-      // Emit main event
-      const outboxId = generateId("outbox")
-      await client.query(
-        sql`INSERT INTO outbox (id, event_type, payload)
-            VALUES (${outboxId}, 'stream_event.created', ${JSON.stringify({
-              event_id: eventId,
-              stream_id: params.streamId,
-              workspace_id: stream.workspace_id,
-              stream_type: stream.stream_type,
-              stream_slug: stream.slug,
-              event_type: params.eventType,
-              actor_id: params.actorId || null,
-              agent_id: params.agentId || null,
-              content: params.content,
-              mentions: params.mentions,
-              payload: params.payload,
-              client_message_id: params.clientMessageId,
-            })})`,
-      )
-      await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
-
-      // Update read cursor for the author (only for user events, not agent events)
-      if (params.actorId) {
+        // Create the event (with either actor_id or agent_id)
         await client.query(
-          sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
-              WHERE stream_id = ${params.streamId} AND user_id = ${params.actorId}`,
+          sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, agent_id, content_type, content_id, payload, client_message_id)
+              VALUES (${eventId}, ${params.streamId}, ${params.eventType}, ${params.actorId || null}, ${params.agentId || null},
+                      ${contentType}, ${contentId}, ${params.payload ? JSON.stringify(params.payload) : null}, ${params.clientMessageId || null})`,
         )
 
-        // Emit read cursor update so other devices see the message as read
-        const readCursorOutboxId = generateId("outbox")
+        // Get stream info for notifications
+        const streamResult = await client.query(
+          sql`SELECT workspace_id, stream_type, parent_stream_id, slug, name FROM streams WHERE id = ${params.streamId}`,
+        )
+        const stream = streamResult.rows[0]
+
+        if (!stream) {
+          throw new Error(`Stream not found: ${params.streamId}`)
+        }
+
+        // Auto-name thinking spaces on first message (if name is empty or placeholder)
+        const isPlaceholderName = !stream.name || stream.name === "New thinking space"
+        if (stream.stream_type === "thinking_space" && isPlaceholderName && params.content) {
+          try {
+            const nameResult = await generateAutoName(params.content)
+            if (nameResult.success && nameResult.name) {
+              await client.query(sql`UPDATE streams SET name = ${nameResult.name} WHERE id = ${params.streamId}`)
+              stream.name = nameResult.name
+              logger.debug({ streamId: params.streamId, name: nameResult.name }, "Thinking space auto-named")
+
+              // Emit stream.updated event so frontend can update tab titles
+              const updateOutboxId = generateId("outbox")
+              await client.query(
+                sql`INSERT INTO outbox (id, event_type, payload)
+                    VALUES (${updateOutboxId}, 'stream.updated', ${JSON.stringify({
+                      stream_id: params.streamId,
+                      workspace_id: stream.workspace_id,
+                      name: nameResult.name,
+                      updated_by: params.actorId || "system",
+                    })})`,
+              )
+              await client.query(`NOTIFY outbox_event, '${updateOutboxId.replace(/'/g, "''")}'`)
+            }
+          } catch (err) {
+            // Don't fail event creation if auto-naming fails
+            logger.warn({ err, streamId: params.streamId }, "Failed to auto-name thinking space")
+          }
+        }
+
+        // Handle mentions - create notifications (only for user-created events)
+        if (params.actorId && params.mentions && params.mentions.length > 0) {
+          const userMentions = params.mentions.filter((m) => m.type === "user")
+          for (const mention of userMentions) {
+            if (mention.id === params.actorId) continue // Don't notify self
+            if (mention.id?.startsWith("ariadne_")) continue // Ariadne is handled via job queue, not notifications
+
+            const notifId = generateId("notif")
+            await client.query(
+              sql`INSERT INTO notifications (id, workspace_id, user_id, notification_type,
+                                             stream_id, event_id, actor_id, preview)
+                  VALUES (${notifId}, ${stream.workspace_id}, ${mention.id}, 'mention',
+                          ${params.streamId}, ${eventId}, ${params.actorId},
+                          ${params.content?.substring(0, 100) || null})
+                  ON CONFLICT DO NOTHING`,
+            )
+
+            // Get actor info for notification
+            const actorResult = await client.query(sql`SELECT email, name FROM users WHERE id = ${params.actorId}`)
+            const actor = actorResult.rows[0]
+
+            // Emit notification event
+            const notifOutboxId = generateId("outbox")
+            await client.query(
+              sql`INSERT INTO outbox (id, event_type, payload)
+                  VALUES (${notifOutboxId}, 'notification.created', ${JSON.stringify({
+                    id: notifId,
+                    workspace_id: stream.workspace_id,
+                    user_id: mention.id,
+                    notification_type: "mention",
+                    stream_id: params.streamId,
+                    stream_name: stream.name,
+                    stream_slug: stream.slug,
+                    event_id: eventId,
+                    actor_id: params.actorId,
+                    actor_email: actor?.email,
+                    actor_name: actor?.name,
+                    preview: params.content?.substring(0, 100),
+                  })})`,
+            )
+            await client.query(`NOTIFY outbox_event, '${notifOutboxId.replace(/'/g, "''")}'`)
+          }
+
+          // Handle crosspost mentions - share to other streams
+          const crossposts = params.mentions.filter((m) => m.type === "crosspost")
+          for (const crosspost of crossposts) {
+            const shareEventId = generateId("event")
+            const shareContentId = generateId("share")
+
+            await client.query(
+              sql`INSERT INTO shared_refs (id, original_event_id, context)
+                  VALUES (${shareContentId}, ${eventId}, null)`,
+            )
+
+            await client.query(
+              sql`INSERT INTO stream_events (id, stream_id, event_type, actor_id, content_type, content_id)
+                  VALUES (${shareEventId}, ${crosspost.id}, 'shared', ${params.actorId},
+                          'shared_ref', ${shareContentId})`,
+            )
+
+            // Emit event for the target stream
+            const crosspostOutboxId = generateId("outbox")
+            await client.query(
+              sql`INSERT INTO outbox (id, event_type, payload)
+                  VALUES (${crosspostOutboxId}, 'stream_event.created', ${JSON.stringify({
+                    event_id: shareEventId,
+                    stream_id: crosspost.id,
+                    workspace_id: stream.workspace_id,
+                    event_type: "shared",
+                    actor_id: params.actorId,
+                    is_crosspost: true,
+                    original_stream_id: params.streamId,
+                  })})`,
+            )
+            await client.query(`NOTIFY outbox_event, '${crosspostOutboxId.replace(/'/g, "''")}'`)
+          }
+        }
+
+        // Emit main event
+        const outboxId = generateId("outbox")
         await client.query(
           sql`INSERT INTO outbox (id, event_type, payload)
-              VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
-                stream_id: params.streamId,
-                user_id: params.actorId,
+              VALUES (${outboxId}, 'stream_event.created', ${JSON.stringify({
                 event_id: eventId,
+                stream_id: params.streamId,
                 workspace_id: stream.workspace_id,
+                stream_type: stream.stream_type,
+                stream_slug: stream.slug,
+                event_type: params.eventType,
+                actor_id: params.actorId || null,
+                agent_id: params.agentId || null,
+                content: params.content,
+                mentions: params.mentions,
+                payload: params.payload,
+                client_message_id: params.clientMessageId,
               })})`,
         )
-        await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
+        await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+
+        // Update read cursor for the author (only for user events, not agent events)
+        if (params.actorId) {
+          await client.query(
+            sql`UPDATE stream_members SET last_read_event_id = ${eventId}, last_read_at = NOW()
+                WHERE stream_id = ${params.streamId} AND user_id = ${params.actorId}`,
+          )
+
+          // Emit read cursor update so other devices see the message as read
+          const readCursorOutboxId = generateId("outbox")
+          await client.query(
+            sql`INSERT INTO outbox (id, event_type, payload)
+                VALUES (${readCursorOutboxId}, 'read_cursor.updated', ${JSON.stringify({
+                  stream_id: params.streamId,
+                  user_id: params.actorId,
+                  event_id: eventId,
+                  workspace_id: stream.workspace_id,
+                })})`,
+          )
+          await client.query(`NOTIFY outbox_event, '${readCursorOutboxId.replace(/'/g, "''")}'`)
+        }
+
+        return { type: "created", eventId, contentId, stream }
+      })
+
+      // Handle idempotent case - event already existed
+      if (result.type === "idempotent") {
+        return result.event
       }
 
-      await client.query("COMMIT")
-
+      // Post-transaction work
       logger.info(
-        { eventId, streamId: params.streamId, type: params.eventType, isAgent: !!params.agentId },
+        { eventId: result.eventId, streamId: params.streamId, type: params.eventType, isAgent: !!params.agentId },
         "Event created",
       )
 
       // Retry auto-naming for unnamed threads/thinking spaces after enough context
       // This runs async outside the transaction to not block the response
-      if ((stream.stream_type === "thread" || stream.stream_type === "thinking_space") && !stream.name) {
-        this.retryAutoNameIfNeeded(params.streamId, stream.workspace_id).catch((err) => {
+      if (
+        (result.stream.stream_type === "thread" || result.stream.stream_type === "thinking_space") &&
+        !result.stream.name
+      ) {
+        this.retryAutoNameIfNeeded(params.streamId, result.stream.workspace_id).catch((err) => {
           logger.warn({ err, streamId: params.streamId }, "Failed to retry auto-naming")
         })
       }
 
       // Queue classification for text messages to proactively identify valuable content
       // This enables early enrichment for announcements, explanations, and decisions
-      if (params.eventType === "message" && params.content && contentId && params.actorId) {
+      if (params.eventType === "message" && params.content && result.contentId && params.actorId) {
         maybeQueueClassification({
-          workspaceId: stream.workspace_id,
+          workspaceId: result.stream.workspace_id,
           streamId: params.streamId,
-          eventId,
-          textMessageId: contentId,
+          eventId: result.eventId,
+          textMessageId: result.contentId,
           content: params.content,
           contentType: "message",
         }).catch((err) => {
-          logger.warn({ err, eventId }, "Failed to queue classification")
+          logger.warn({ err, eventId: result.eventId }, "Failed to queue classification")
         })
       }
 
-      return (await this.getEventWithDetails(eventId))!
+      return (await this.getEventWithDetails(result.eventId))!
     } catch (error) {
-      await client.query("ROLLBACK")
-
       // Handle duplicate key error on client_message_id (race condition during retry)
       // If another request already created the event, fetch and return it
       const pgError = error as { code?: string; constraint?: string }
@@ -1565,8 +1561,6 @@ export class StreamService {
       }
 
       throw error
-    } finally {
-      client.release()
     }
   }
 
@@ -1677,10 +1671,7 @@ export class StreamService {
   }
 
   async editEvent(eventId: string, userId: string, newContent: string): Promise<StreamEventWithDetails> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Get the event
       const eventResult = await client.query(
         sql`SELECT e.*, s.workspace_id FROM stream_events e
@@ -1723,23 +1714,13 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
+    })
 
-      await client.query("COMMIT")
-
-      return (await this.getEventWithDetails(eventId))!
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return (await this.getEventWithDetails(eventId))!
   }
 
   async deleteEvent(eventId: string, userId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       const eventResult = await client.query(
         sql`SELECT e.*, s.workspace_id FROM stream_events e
             INNER JOIN streams s ON e.stream_id = s.id
@@ -1762,14 +1743,7 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   // ==========================================================================
@@ -1777,10 +1751,7 @@ export class StreamService {
   // ==========================================================================
 
   async joinStream(streamId: string, userId: string): Promise<{ stream: Stream; event: StreamEventWithDetails }> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    const { streamRow, eventId } = await withTransaction(this.pool, async (client) => {
       await client.query(
         sql`INSERT INTO stream_members (stream_id, user_id, role)
             VALUES (${streamId}, ${userId}, 'member')
@@ -1835,25 +1806,17 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${memberOutboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
+      return { streamRow, eventId }
+    })
 
-      const stream = this.mapStreamRow(streamRow)
-      const event = await this.getEventWithDetails(eventId)
+    const stream = this.mapStreamRow(streamRow)
+    const event = await this.getEventWithDetails(eventId)
 
-      return { stream, event: event! }
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    return { stream, event: event! }
   }
 
   async leaveStream(streamId: string, userId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       await client.query(
         sql`UPDATE stream_members SET left_at = NOW(), updated_at = NOW()
             WHERE stream_id = ${streamId} AND user_id = ${userId}`,
@@ -1897,21 +1860,11 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${memberOutboxId.replace(/'/g, "''")}'`)
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async addMember(streamId: string, userId: string, addedByUserId: string, role: MemberRole = "member"): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       await client.query(
         sql`INSERT INTO stream_members (stream_id, user_id, role, added_by_user_id)
             VALUES (${streamId}, ${userId}, ${role}, ${addedByUserId})
@@ -1941,21 +1894,11 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async removeMember(streamId: string, userId: string, removedByUserId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       await client.query(
         sql`UPDATE stream_members SET left_at = NOW(), updated_at = NOW()
             WHERE stream_id = ${streamId} AND user_id = ${userId}`,
@@ -1982,14 +1925,7 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async getStreamMembers(streamId: string): Promise<Array<StreamMember & { email: string; name: string }>> {
@@ -2020,10 +1956,7 @@ export class StreamService {
   // ==========================================================================
 
   async updateReadCursor(streamId: string, userId: string, eventId: string, workspaceId: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       await client.query(
         sql`UPDATE stream_members
             SET last_read_event_id = ${eventId}, last_read_at = NOW(), updated_at = NOW()
@@ -2041,14 +1974,7 @@ export class StreamService {
             })})`,
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
-
-      await client.query("COMMIT")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   async getReadCursor(streamId: string, userId: string): Promise<string | null> {
@@ -2579,10 +2505,7 @@ export class StreamService {
    * Add a reaction to a message.
    */
   async addReaction(eventId: string, userId: string, reaction: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    const txResult = await withTransaction(this.pool, async (client) => {
       // Get event info for workspace and content
       const eventResult = await client.query(
         sql`SELECT e.id, e.stream_id, e.content_type, e.content_id, s.workspace_id
@@ -2627,37 +2550,29 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
+      return { event, reactionCount }
+    })
 
-      // Queue enrichment if this is a text message with enough reactions
-      if (event.content_type === "text_message" && event.content_id) {
-        queueEnrichmentForReaction({
-          workspaceId: event.workspace_id,
-          eventId,
-          textMessageId: event.content_id,
-          reactionCount,
-        }).catch((err) => {
-          logger.warn({ err, eventId }, "Failed to queue enrichment for reaction")
-        })
-      }
-
-      logger.debug({ eventId, userId, reaction, reactionCount }, "Reaction added")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
+    // Queue enrichment if this is a text message with enough reactions
+    if (txResult.event.content_type === "text_message" && txResult.event.content_id) {
+      queueEnrichmentForReaction({
+        workspaceId: txResult.event.workspace_id,
+        eventId,
+        textMessageId: txResult.event.content_id,
+        reactionCount: txResult.reactionCount,
+      }).catch((err) => {
+        logger.warn({ err, eventId }, "Failed to queue enrichment for reaction")
+      })
     }
+
+    logger.debug({ eventId, userId, reaction, reactionCount: txResult.reactionCount }, "Reaction added")
   }
 
   /**
    * Remove a reaction from a message.
    */
   async removeReaction(eventId: string, userId: string, reaction: string): Promise<void> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("BEGIN")
-
+    await withTransaction(this.pool, async (client) => {
       // Get event info for workspace
       const eventResult = await client.query(
         sql`SELECT e.stream_id, s.workspace_id
@@ -2701,15 +2616,8 @@ export class StreamService {
       )
       await client.query(`NOTIFY outbox_event, '${outboxId.replace(/'/g, "''")}'`)
 
-      await client.query("COMMIT")
-
       logger.debug({ eventId, userId, reaction }, "Reaction removed")
-    } catch (error) {
-      await client.query("ROLLBACK")
-      throw error
-    } finally {
-      client.release()
-    }
+    })
   }
 
   /**
