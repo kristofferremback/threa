@@ -31,6 +31,15 @@ export async function withTransaction<T>(pool: Pool, callback: (client: PoolClie
   }
 }
 
+export async function withClient<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect()
+  try {
+    return await callback(client)
+  } finally {
+    client.release()
+  }
+}
+
 /**
  * Create a database connection pool with consistent configuration
  */
