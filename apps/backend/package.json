@@ -1,0 +1,32 @@
+{
+  "name": "@threa/backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4",
+    "cookie-parser": "^1",
+    "cors": "^2",
+    "socket.io": "^4.8",
+    "@socket.io/postgres-adapter": "^0.4",
+    "pg": "^8",
+    "squid": "^0.5",
+    "ulid": "^2",
+    "umzug": "^3",
+    "@workos-inc/node": "^7",
+    "pino": "^9",
+    "pino-http": "^10",
+    "pino-pretty": "^13"
+  },
+  "devDependencies": {
+    "@types/express": "^4",
+    "@types/cookie-parser": "^1",
+    "@types/cors": "^2",
+    "@types/pg": "^8",
+    "bun-types": "latest",
+    "typescript": "^5"
+  }
+}

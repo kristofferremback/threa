@@ -1,0 +1,20 @@
+{
+  "name": "threa",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "dev:backend": "bun --hot apps/backend/src/index.ts",
+    "dev:frontend": "bun run --cwd apps/frontend dev",
+    "db:start": "docker compose up -d postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:reset": "docker compose down -v && docker compose up -d postgres"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
