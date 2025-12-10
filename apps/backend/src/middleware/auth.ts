@@ -41,7 +41,11 @@ export function createAuthMiddleware({ authService, userService }: Dependencies)
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
     }
 
-    const user = await userService.getUserByWorkosUserId(result.user.id)
+    // Try WorkOS ID first (production), fall back to internal ID (stub auth)
+    let user = await userService.getUserByWorkosUserId(result.user.id)
+    if (!user) {
+      user = await userService.getUserById(result.user.id)
+    }
     if (!user) {
       return res.status(401).json({ error: "User not found" })
     }

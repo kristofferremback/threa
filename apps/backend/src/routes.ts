@@ -35,6 +35,41 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/auth/logout", auth.logout)
 
   // ===========================================================================
+  // Dev-only login (only works with USE_STUB_AUTH=true)
+  // ===========================================================================
+  if ("registerTestUser" in authService) {
+    app.post("/api/dev/login", async (req, res) => {
+      const stubAuth = authService as { registerTestUser: (user: { id: string; email: string; firstName?: string }) => string }
+      const { email, name } = req.body as { email?: string; name?: string }
+
+      const testEmail = email || "test@example.com"
+      const testName = name || "Test User"
+
+      // Ensure user exists in DB
+      const user = await userService.ensureUser({
+        email: testEmail,
+        name: testName,
+      })
+
+      // Register with stub auth and get session
+      const session = stubAuth.registerTestUser({
+        id: user.id,
+        email: user.email,
+        firstName: testName,
+      })
+
+      res.cookie("wos_session", session, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+      })
+
+      res.json({ user: { id: user.id, email: user.email, name: user.name } })
+    })
+  }
+
+  // ===========================================================================
   // Auth routes (protected)
   // ===========================================================================
   app.get("/api/auth/me", authMiddleware, auth.me)

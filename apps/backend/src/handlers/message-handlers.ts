@@ -1,6 +1,15 @@
 import type { Request, Response } from "express"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
+import type { Message } from "../repositories"
+
+// Convert BigInt to string for JSON serialization
+function serializeMessage(msg: Message) {
+  return {
+    ...msg,
+    sequence: msg.sequence.toString(),
+  }
+}
 
 interface Dependencies {
   eventService: EventService
@@ -28,7 +37,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         beforeSequence: before ? BigInt(before as string) : undefined,
       })
 
-      res.json({ messages })
+      res.json({ messages: messages.map(serializeMessage) })
     },
 
     async create(req: Request, res: Response) {
@@ -57,7 +66,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         contentFormat,
       })
 
-      res.status(201).json({ message })
+      res.status(201).json({ message: serializeMessage(message) })
     },
 
     async update(req: Request, res: Response) {
@@ -90,7 +99,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         actorId: userId,
       })
 
-      res.json({ message })
+      res.json({ message: message ? serializeMessage(message) : null })
     },
 
     async delete(req: Request, res: Response) {
@@ -149,7 +158,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         userId,
       })
 
-      res.json({ message })
+      res.json({ message: message ? serializeMessage(message) : null })
     },
 
     async removeReaction(req: Request, res: Response) {
@@ -172,7 +181,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         userId,
       })
 
-      res.json({ message })
+      res.json({ message: message ? serializeMessage(message) : null })
     },
   }
 }
