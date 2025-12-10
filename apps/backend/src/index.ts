@@ -9,6 +9,9 @@ import { createMigrator } from "./db/migrations"
 import { WorkosAuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
 import { UserService } from "./services/user-service"
+import { WorkspaceService } from "./services/workspace-service"
+import { StreamService } from "./services/stream-service"
+import { EventService } from "./services/event-service"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 
@@ -21,13 +24,22 @@ await migrator.up()
 logger.info("Database migrations complete")
 
 const userService = new UserService(pool)
+const workspaceService = new WorkspaceService(pool)
+const streamService = new StreamService(pool)
+const eventService = new EventService(pool)
 const authService = config.useStubAuth
   ? new StubAuthService()
   : new WorkosAuthService(config.workos)
 
 const app = createApp()
 
-registerRoutes(app, { authService, userService })
+registerRoutes(app, {
+  authService,
+  userService,
+  workspaceService,
+  streamService,
+  eventService,
+})
 
 const server = createServer(app)
 
