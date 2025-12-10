@@ -22,3 +22,19 @@ export type {
   StreamMember,
   UpdateStreamMemberParams,
 } from "./stream-member-repository"
+
+export { StreamEventRepository } from "./stream-event-repository"
+export type {
+  StreamEvent,
+  EventType,
+  InsertEventParams,
+} from "./stream-event-repository"
+
+export { MessageRepository } from "./message-repository"
+export type {
+  Message,
+  InsertMessageParams,
+} from "./message-repository"
+
+export { OutboxRepository } from "./outbox-repository"
+export type { OutboxEvent } from "./outbox-repository"
