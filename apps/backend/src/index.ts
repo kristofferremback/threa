@@ -12,6 +12,7 @@ import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
+import { OutboxListener } from "./lib/outbox-listener"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 
@@ -54,6 +55,10 @@ const io = new Server(server, {
 io.adapter(createAdapter(pool))
 
 registerSocketHandlers(io, { authService, userService })
+
+// Start outbox listener for real-time event delivery
+const outboxListener = new OutboxListener(pool, io)
+outboxListener.start()
 
 server.listen(config.port, () => {
   logger.info({ port: config.port }, "Server started")
