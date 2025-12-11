@@ -184,6 +184,14 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         return res.status(404).json({ error: "Stream not found" })
       }
 
+      // For private streams, check membership first to avoid leaking existence
+      if (stream.visibility !== "public") {
+        const isStreamMember = await streamService.isMember(streamId, userId)
+        if (!isStreamMember) {
+          return res.status(404).json({ error: "Stream not found" })
+        }
+      }
+
       // Only creator can archive (for now)
       if (stream.createdBy !== userId) {
         return res.status(403).json({ error: "Only the creator can archive this stream" })
