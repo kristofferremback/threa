@@ -15,7 +15,7 @@ import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { StreamNamingService } from "./services/stream-naming-service"
-import { OutboxListener } from "./lib/outbox-listener"
+import { BroadcastListener } from "./lib/broadcast-listener"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 import { OpenRouterClient } from "./lib/openrouter"
@@ -78,8 +78,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   registerSocketHandlers(io, { authService, userService, streamService })
 
-  const outboxListener = new OutboxListener(pool, io)
-  await outboxListener.start()
+  const broadcastListener = new BroadcastListener(pool, io)
+  await broadcastListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -90,7 +90,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
-    await outboxListener.stop()
+    await broadcastListener.stop()
     io.close()
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()))
