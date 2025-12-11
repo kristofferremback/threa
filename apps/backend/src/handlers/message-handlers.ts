@@ -122,6 +122,12 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(400).json({ error: "Emoji is required" })
       }
 
+      // Validate emoji format: single emoji or shortcode like :thumbsup:
+      const EMOJI_REGEX = /^(\p{Emoji_Presentation}|:[a-z0-9_+-]+:)$/u
+      if (!EMOJI_REGEX.test(emoji)) {
+        return res.status(400).json({ error: "Invalid emoji format" })
+      }
+
       const existing = await eventService.getMessageById(messageId)
       if (!existing) {
         return res.status(404).json({ error: "Message not found" })

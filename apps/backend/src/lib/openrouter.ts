@@ -51,6 +51,9 @@ export class OpenRouterClient {
     const maxTokens = options.maxTokens ?? 100
     const temperature = options.temperature ?? 0.3
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
+
     try {
       const response = await fetch(OPENROUTER_API_URL, {
         method: "POST",
@@ -66,6 +69,7 @@ export class OpenRouterClient {
           max_tokens: maxTokens,
           temperature,
         }),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
@@ -85,6 +89,8 @@ export class OpenRouterClient {
     } catch (error) {
       logger.error({ error }, "OpenRouter request failed")
       return null
+    } finally {
+      clearTimeout(timeout)
     }
   }
 }
