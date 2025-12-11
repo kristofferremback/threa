@@ -36,5 +36,5 @@ export type {
   InsertMessageParams,
 } from "./message-repository"
 
-export { OutboxRepository } from "./outbox-repository"
+export { OutboxRepository, OUTBOX_CHANNEL } from "./outbox-repository"
 export type { OutboxEvent } from "./outbox-repository"

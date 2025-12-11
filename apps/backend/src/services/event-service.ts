@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../db"
+import { withTransaction, withClient } from "../db"
 import { StreamEventRepository, EventType } from "../repositories/stream-event-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
@@ -254,13 +254,13 @@ export class EventService {
     streamId: string,
     options?: { limit?: number; beforeSequence?: bigint },
   ): Promise<Message[]> {
-    return withTransaction(this.pool, (client) =>
+    return withClient(this.pool, (client) =>
       MessageRepository.findByStream(client, streamId, options),
     )
   }
 
   async getMessageById(messageId: string): Promise<Message | null> {
-    return withTransaction(this.pool, (client) =>
+    return withClient(this.pool, (client) =>
       MessageRepository.findById(client, messageId),
     )
   }

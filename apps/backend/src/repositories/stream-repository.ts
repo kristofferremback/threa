@@ -208,4 +208,16 @@ export const StreamRepository = {
     const result = await client.query<StreamRow>(query, values)
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
+
+  async slugExistsInWorkspace(
+    client: PoolClient,
+    workspaceId: string,
+    slug: string,
+  ): Promise<boolean> {
+    const result = await client.query(sql`
+      SELECT 1 FROM streams
+      WHERE workspace_id = ${workspaceId} AND slug = ${slug}
+    `)
+    return result.rows.length > 0
+  },
 }

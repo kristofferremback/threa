@@ -6,14 +6,7 @@ import {
   WorkspaceMember,
 } from "../repositories"
 import { workspaceId } from "../lib/id"
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50)
-}
+import { generateUniqueSlug } from "../lib/slug"
 
 export interface CreateWorkspaceParams {
   name: string
@@ -44,7 +37,9 @@ export class WorkspaceService {
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
-      const slug = generateSlug(params.name)
+      const slug = await generateUniqueSlug(params.name, (slug) =>
+        WorkspaceRepository.slugExists(client, slug),
+      )
 
       const workspace = await WorkspaceRepository.insert(client, {
         id,

@@ -8,21 +8,13 @@ interface Dependencies {
 export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const workspaces = await workspaceService.getWorkspacesByUserId(userId)
       res.json({ workspaces })
     },
 
     async get(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { workspaceId } = req.params
       const workspace = await workspaceService.getWorkspaceById(workspaceId)
 
@@ -39,11 +31,7 @@ export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
     },
 
     async create(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { name } = req.body
       if (!name || typeof name !== "string") {
         return res.status(400).json({ error: "Name is required" })
@@ -58,11 +46,7 @@ export function createWorkspaceHandlers({ workspaceService }: Dependencies) {
     },
 
     async getMembers(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { workspaceId } = req.params
       const isMember = await workspaceService.isMember(workspaceId, userId)
       if (!isMember) {

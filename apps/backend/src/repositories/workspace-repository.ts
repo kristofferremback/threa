@@ -130,4 +130,11 @@ export const WorkspaceRepository = {
     `)
     return result.rows.length > 0
   },
+
+  async slugExists(client: PoolClient, slug: string): Promise<boolean> {
+    const result = await client.query(sql`
+      SELECT 1 FROM workspaces WHERE slug = ${slug}
+    `)
+    return result.rows.length > 0
+  },
 }

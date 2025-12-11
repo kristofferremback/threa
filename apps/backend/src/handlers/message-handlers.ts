@@ -2,13 +2,10 @@ import type { Request, Response } from "express"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
+import { serializeBigInt } from "../lib/serialization"
 
-// Convert BigInt to string for JSON serialization
 function serializeMessage(msg: Message) {
-  return {
-    ...msg,
-    sequence: msg.sequence.toString(),
-  }
+  return serializeBigInt(msg)
 }
 
 interface Dependencies {
@@ -19,11 +16,7 @@ interface Dependencies {
 export function createMessageHandlers({ eventService, streamService }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const { limit, before } = req.query
 
@@ -41,11 +34,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
     },
 
     async create(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const { content, contentFormat } = req.body
 
@@ -70,11 +59,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
     },
 
     async update(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { messageId } = req.params
       const { content } = req.body
 
@@ -99,15 +84,15 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         actorId: userId,
       })
 
-      res.json({ message: message ? serializeMessage(message) : null })
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      res.json({ message: serializeMessage(message) })
     },
 
     async delete(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { messageId } = req.params
 
       const existing = await eventService.getMessageById(messageId)
@@ -129,11 +114,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
     },
 
     async addReaction(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { messageId } = req.params
       const { emoji } = req.body
 
@@ -158,15 +139,15 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         userId,
       })
 
-      res.json({ message: message ? serializeMessage(message) : null })
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      res.json({ message: serializeMessage(message) })
     },
 
     async removeReaction(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { messageId, emoji } = req.params
 
       const existing = await eventService.getMessageById(messageId)
@@ -181,7 +162,11 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         userId,
       })
 
-      res.json({ message: message ? serializeMessage(message) : null })
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      res.json({ message: serializeMessage(message) })
     },
   }
 }

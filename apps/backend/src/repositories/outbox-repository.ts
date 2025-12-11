@@ -1,10 +1,6 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
-
-// JSON replacer that converts BigInt to string
-function jsonReplacer(_key: string, value: unknown): unknown {
-  return typeof value === "bigint" ? value.toString() : value
-}
+import { bigIntReplacer } from "../lib/serialization"
 
 export interface OutboxEvent {
   id: bigint
@@ -32,6 +28,8 @@ function mapRowToOutbox(row: OutboxRow): OutboxEvent {
   }
 }
 
+export const OUTBOX_CHANNEL = "outbox_events"
+
 export const OutboxRepository = {
   async insert(
     client: PoolClient,
@@ -40,9 +38,13 @@ export const OutboxRepository = {
   ): Promise<OutboxEvent> {
     const result = await client.query<OutboxRow>(sql`
       INSERT INTO outbox (event_type, payload)
-      VALUES (${eventType}, ${JSON.stringify(payload, jsonReplacer)})
+      VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
       RETURNING id, event_type, payload, created_at, processed_at
     `)
+
+    // Notify listeners that new events are available
+    await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
+
     return mapRowToOutbox(result.rows[0])
   },
 

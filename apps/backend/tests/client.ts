@@ -94,6 +94,7 @@ export interface Message {
   content: string
   sequence: string
   authorId: string
+  reactions: Record<string, string[]>
 }
 
 export async function loginAs(
@@ -167,4 +168,49 @@ export async function listMessages(
     throw new Error(`List messages failed: ${JSON.stringify(data)}`)
   }
   return data.messages
+}
+
+export async function createChannel(
+  client: TestClient,
+  workspaceId: string,
+  name: string,
+  visibility: "public" | "private" = "private"
+): Promise<Stream & { slug: string }> {
+  const { status, data } = await client.post<{ stream: Stream & { slug: string } }>(
+    `/api/workspaces/${workspaceId}/channels`,
+    { name, visibility }
+  )
+  if (status !== 201) {
+    throw new Error(`Create channel failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
+export async function addReaction(
+  client: TestClient,
+  messageId: string,
+  emoji: string
+): Promise<Message> {
+  const { status, data } = await client.post<{ message: Message }>(
+    `/api/messages/${messageId}/reactions`,
+    { emoji }
+  )
+  if (status !== 200) {
+    throw new Error(`Add reaction failed: ${JSON.stringify(data)}`)
+  }
+  return data.message
+}
+
+export async function removeReaction(
+  client: TestClient,
+  messageId: string,
+  emoji: string
+): Promise<Message> {
+  const { status, data } = await client.delete<{ message: Message }>(
+    `/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`
+  )
+  if (status !== 200) {
+    throw new Error(`Remove reaction failed: ${JSON.stringify(data)}`)
+  }
+  return data.message
 }

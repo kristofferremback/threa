@@ -3,6 +3,7 @@ import { Server } from "socket.io"
 import { createAdapter } from "@socket.io/postgres-adapter"
 import { createApp } from "./app"
 import { registerRoutes } from "./routes"
+import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePool } from "./db"
 import { createMigrator } from "./db/migrations"
@@ -42,6 +43,8 @@ registerRoutes(app, {
   eventService,
 })
 
+app.use(errorHandler)
+
 const server = createServer(app)
 
 const io = new Server(server, {
@@ -54,11 +57,11 @@ const io = new Server(server, {
 
 io.adapter(createAdapter(pool))
 
-registerSocketHandlers(io, { authService, userService })
+registerSocketHandlers(io, { authService, userService, streamService })
 
 // Start outbox listener for real-time event delivery
 const outboxListener = new OutboxListener(pool, io)
-outboxListener.start()
+await outboxListener.start()
 
 server.listen(config.port, () => {
   logger.info({ port: config.port }, "Server started")

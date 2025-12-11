@@ -11,11 +11,7 @@ interface Dependencies {
 export function createStreamHandlers({ streamService, workspaceService }: Dependencies) {
   return {
     async get(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const stream = await streamService.getStreamById(streamId)
 
@@ -33,11 +29,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async listScratchpads(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { workspaceId } = req.params
       const isMember = await workspaceService.isMember(workspaceId, userId)
       if (!isMember) {
@@ -49,11 +41,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async createScratchpad(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { workspaceId } = req.params
       const { name, description, companionMode, companionPersonaId } = req.body
 
@@ -79,11 +67,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async createChannel(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { workspaceId } = req.params
       const { name, description, visibility } = req.body
 
@@ -108,11 +92,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async updateCompanionMode(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const { companionMode, companionPersonaId } = req.body as {
         companionMode: CompanionMode
@@ -143,11 +123,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async pin(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const { pinned } = req.body
 
@@ -164,11 +140,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async mute(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const { muted } = req.body
 
@@ -185,11 +157,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     },
 
     async archive(req: Request, res: Response) {
-      const userId = req.userId
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" })
-      }
-
+      const userId = req.userId!
       const { streamId } = req.params
       const stream = await streamService.getStreamById(streamId)
 

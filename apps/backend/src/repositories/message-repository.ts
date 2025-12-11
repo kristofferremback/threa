@@ -11,10 +11,15 @@ interface MessageRow {
   content: string
   content_format: string
   reply_count: number
-  reactions: Record<string, string[]>
   edited_at: Date | null
   deleted_at: Date | null
   created_at: Date
+}
+
+interface ReactionRow {
+  message_id: string
+  user_id: string
+  emoji: string
 }
 
 // Domain type (camelCase, exported)
@@ -43,7 +48,10 @@ export interface InsertMessageParams {
   contentFormat?: "markdown" | "plaintext"
 }
 
-function mapRowToMessage(row: MessageRow): Message {
+function mapRowToMessage(
+  row: MessageRow,
+  reactions: Record<string, string[]> = {},
+): Message {
   return {
     id: row.id,
     streamId: row.stream_id,
@@ -53,16 +61,50 @@ function mapRowToMessage(row: MessageRow): Message {
     content: row.content,
     contentFormat: row.content_format as "markdown" | "plaintext",
     replyCount: row.reply_count,
-    reactions: row.reactions,
+    reactions,
     editedAt: row.edited_at,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
   }
 }
 
+function aggregateReactions(rows: ReactionRow[]): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  for (const row of rows) {
+    if (!result[row.emoji]) {
+      result[row.emoji] = []
+    }
+    result[row.emoji].push(row.user_id)
+  }
+  // Filter out empty arrays (shouldn't happen, but defensive)
+  for (const emoji of Object.keys(result)) {
+    if (result[emoji].length === 0) {
+      delete result[emoji]
+    }
+  }
+  return result
+}
+
+function aggregateReactionsByMessage(
+  rows: ReactionRow[],
+): Map<string, Record<string, string[]>> {
+  const byMessage = new Map<string, ReactionRow[]>()
+  for (const row of rows) {
+    const existing = byMessage.get(row.message_id) ?? []
+    existing.push(row)
+    byMessage.set(row.message_id, existing)
+  }
+
+  const result = new Map<string, Record<string, string[]>>()
+  for (const [messageId, reactions] of byMessage) {
+    result.set(messageId, aggregateReactions(reactions))
+  }
+  return result
+}
+
 const SELECT_FIELDS = `
   id, stream_id, sequence, author_id, author_type,
-  content, content_format, reply_count, reactions,
+  content, content_format, reply_count,
   edited_at, deleted_at, created_at
 `
 
@@ -71,7 +113,14 @@ export const MessageRepository = {
     const result = await client.query<MessageRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`,
     )
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : null
+    if (!result.rows[0]) return null
+
+    const reactionsResult = await client.query<ReactionRow>(
+      sql`SELECT message_id, user_id, emoji FROM reactions WHERE message_id = ${id}`,
+    )
+    const reactions = aggregateReactions(reactionsResult.rows)
+
+    return mapRowToMessage(result.rows[0], reactions)
   },
 
   async findByStream(
@@ -81,6 +130,7 @@ export const MessageRepository = {
   ): Promise<Message[]> {
     const limit = options?.limit ?? 50
 
+    let messageRows: MessageRow[]
     if (options?.beforeSequence) {
       const result = await client.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
@@ -90,17 +140,30 @@ export const MessageRepository = {
         ORDER BY sequence DESC
         LIMIT ${limit}
       `)
-      return result.rows.map(mapRowToMessage).reverse()
+      messageRows = result.rows
+    } else {
+      const result = await client.query<MessageRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND deleted_at IS NULL
+        ORDER BY sequence DESC
+        LIMIT ${limit}
+      `)
+      messageRows = result.rows
     }
 
-    const result = await client.query<MessageRow>(sql`
-      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
-      WHERE stream_id = ${streamId}
-        AND deleted_at IS NULL
-      ORDER BY sequence DESC
-      LIMIT ${limit}
+    if (messageRows.length === 0) return []
+
+    const messageIds = messageRows.map((r) => r.id)
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
     `)
-    return result.rows.map(mapRowToMessage).reverse()
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return messageRows
+      .map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+      .reverse()
   },
 
   async insert(client: PoolClient, params: InsertMessageParams): Promise<Message> {
@@ -131,7 +194,8 @@ export const MessageRepository = {
       WHERE id = ${id}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : null
+    if (!result.rows[0]) return null
+    return this.findById(client, id)
   },
 
   async softDelete(client: PoolClient, id: string): Promise<Message | null> {
@@ -141,7 +205,8 @@ export const MessageRepository = {
       WHERE id = ${id}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : null
+    if (!result.rows[0]) return null
+    return this.findById(client, id)
   },
 
   async addReaction(
@@ -150,19 +215,13 @@ export const MessageRepository = {
     emoji: string,
     userId: string,
   ): Promise<Message | null> {
-    // Add user to emoji's array, create array if doesn't exist
-    const result = await client.query<MessageRow>(sql`
-      UPDATE messages
-      SET reactions = jsonb_set(
-        COALESCE(reactions, '{}'::jsonb),
-        ${`{${emoji}}`}::text[],
-        COALESCE(reactions->${emoji}, '[]'::jsonb) || ${JSON.stringify([userId])}::jsonb
-      )
-      WHERE id = ${messageId}
-        AND NOT (COALESCE(reactions->${emoji}, '[]'::jsonb) ? ${userId})
-      RETURNING ${sql.raw(SELECT_FIELDS)}
+    // Insert into reactions table (ON CONFLICT DO NOTHING handles duplicates)
+    await client.query(sql`
+      INSERT INTO reactions (message_id, user_id, emoji)
+      VALUES (${messageId}, ${userId}, ${emoji})
+      ON CONFLICT DO NOTHING
     `)
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : this.findById(client, messageId)
+    return this.findById(client, messageId)
   },
 
   async removeReaction(
@@ -171,19 +230,13 @@ export const MessageRepository = {
     emoji: string,
     userId: string,
   ): Promise<Message | null> {
-    const result = await client.query<MessageRow>(sql`
-      UPDATE messages
-      SET reactions = jsonb_set(
-        reactions,
-        ${`{${emoji}}`}::text[],
-        (SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
-         FROM jsonb_array_elements(COALESCE(reactions->${emoji}, '[]'::jsonb)) elem
-         WHERE elem::text != ${JSON.stringify(userId)})
-      )
-      WHERE id = ${messageId}
-      RETURNING ${sql.raw(SELECT_FIELDS)}
+    await client.query(sql`
+      DELETE FROM reactions
+      WHERE message_id = ${messageId}
+        AND user_id = ${userId}
+        AND emoji = ${emoji}
     `)
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : null
+    return this.findById(client, messageId)
   },
 
   async incrementReplyCount(client: PoolClient, id: string): Promise<void> {

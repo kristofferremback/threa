@@ -3,14 +3,7 @@ import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream, StreamType, CompanionMode } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { streamId } from "../lib/id"
-
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50)
-}
+import { generateUniqueSlug } from "../lib/slug"
 
 export interface CreateScratchpadParams {
   workspaceId: string
@@ -91,7 +84,9 @@ export class StreamService {
   async createChannel(params: CreateChannelParams): Promise<Stream> {
     return withTransaction(this.pool, async (client) => {
       const id = streamId()
-      const slug = generateSlug(params.name)
+      const slug = await generateUniqueSlug(params.name, (slug) =>
+        StreamRepository.slugExistsInWorkspace(client, params.workspaceId, slug),
+      )
 
       const stream = await StreamRepository.insert(client, {
         id,
