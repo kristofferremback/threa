@@ -66,6 +66,10 @@ export class DebounceWithMaxWait {
   }
 
   private executeCallback(): void {
+    // Guard against race condition when both timers fire in same event loop tick
+    if (this.isExecuting) {
+      return
+    }
     this.isExecuting = true
 
     try {
