@@ -123,8 +123,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       // Validate emoji format: emoji (with optional variation selectors/ZWJ sequences) or shortcode
-      // Matches: single emoji, emoji + variation selector (❤️), ZWJ sequences (👨‍👩‍👧), or :shortcode:
-      const EMOJI_REGEX = /^(\p{Emoji}(\p{Emoji_Modifier}|\u{FE0F}|\u{200D}\p{Emoji})*|:[a-z0-9_+-]+:)$/u
+      // Uses Emoji_Presentation for base emoji (excludes digits/#/*), then allows modifiers/ZWJ sequences
+      // Also allows Extended_Pictographic for symbols like ❤ that need variation selector
+      const EMOJI_REGEX = /^((\p{Emoji_Presentation}|\p{Extended_Pictographic})(\p{Emoji_Modifier}|\u{FE0F}|\u{200D}(\p{Emoji_Presentation}|\p{Extended_Pictographic}))*|:[a-z0-9_+-]+:)$/u
       if (!EMOJI_REGEX.test(emoji)) {
         return res.status(400).json({ error: "Invalid emoji format" })
       }
