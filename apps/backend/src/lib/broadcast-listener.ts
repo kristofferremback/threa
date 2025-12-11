@@ -16,12 +16,8 @@ export class BroadcastListener extends BaseOutboxListener {
   }
 
   protected async handleEvent(event: OutboxEvent): Promise<void> {
-    const payload = event.payload as { streamId?: string; [key: string]: unknown }
-
-    if (payload.streamId) {
-      this.io.to(`stream:${payload.streamId}`).emit(event.eventType, payload)
-    } else {
-      this.io.emit(event.eventType, payload)
-    }
+    // All outbox payloads have streamId - broadcast to that stream's room
+    const { streamId } = event.payload
+    this.io.to(`stream:${streamId}`).emit(event.eventType, event.payload)
   }
 }

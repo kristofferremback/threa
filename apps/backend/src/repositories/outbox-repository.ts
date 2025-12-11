@@ -1,12 +1,76 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
+import type { Message } from "./message-repository"
 
-export interface OutboxEvent {
+/**
+ * Outbox event types and their payloads.
+ * Use the OutboxEventPayload type to get type-safe payload access.
+ */
+export type OutboxEventType =
+  | "message:created"
+  | "message:edited"
+  | "message:deleted"
+  | "reaction:added"
+  | "reaction:removed"
+  | "stream:display_name_updated"
+
+export interface MessageCreatedOutboxPayload {
+  streamId: string
+  message: Message
+}
+
+export interface MessageEditedOutboxPayload {
+  streamId: string
+  message: Message
+}
+
+export interface MessageDeletedOutboxPayload {
+  streamId: string
+  messageId: string
+}
+
+export interface ReactionOutboxPayload {
+  streamId: string
+  messageId: string
+  emoji: string
+  userId: string
+}
+
+export interface StreamDisplayNameUpdatedPayload {
+  streamId: string
+  displayName: string
+}
+
+/**
+ * Maps event types to their payload types for type-safe event handling.
+ */
+export interface OutboxEventPayloadMap {
+  "message:created": MessageCreatedOutboxPayload
+  "message:edited": MessageEditedOutboxPayload
+  "message:deleted": MessageDeletedOutboxPayload
+  "reaction:added": ReactionOutboxPayload
+  "reaction:removed": ReactionOutboxPayload
+  "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+}
+
+export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
+
+export interface OutboxEvent<T extends OutboxEventType = OutboxEventType> {
   id: bigint
-  eventType: string
-  payload: unknown
+  eventType: T
+  payload: OutboxEventPayloadMap[T]
   createdAt: Date
+}
+
+/**
+ * Type guard to narrow an OutboxEvent to a specific event type.
+ */
+export function isOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventType: T,
+): event is OutboxEvent<T> {
+  return event.eventType === eventType
 }
 
 interface OutboxRow {
@@ -19,8 +83,8 @@ interface OutboxRow {
 function mapRowToOutbox(row: OutboxRow): OutboxEvent {
   return {
     id: BigInt(row.id),
-    eventType: row.event_type,
-    payload: row.payload,
+    eventType: row.event_type as OutboxEventType,
+    payload: row.payload as OutboxEventPayloadMap[OutboxEventType],
     createdAt: row.created_at,
   }
 }
@@ -28,11 +92,11 @@ function mapRowToOutbox(row: OutboxRow): OutboxEvent {
 export const OUTBOX_CHANNEL = "outbox_events"
 
 export const OutboxRepository = {
-  async insert(
+  async insert<T extends OutboxEventType>(
     client: PoolClient,
-    eventType: string,
-    payload: unknown,
-  ): Promise<OutboxEvent> {
+    eventType: T,
+    payload: OutboxEventPayloadMap[T],
+  ): Promise<OutboxEvent<T>> {
     const result = await client.query<OutboxRow>(sql`
       INSERT INTO outbox (event_type, payload)
       VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
@@ -42,7 +106,7 @@ export const OutboxRepository = {
     // Notify listeners that new events are available
     await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
 
-    return mapRowToOutbox(result.rows[0])
+    return mapRowToOutbox(result.rows[0]) as OutboxEvent<T>
   },
 
   /**
@@ -62,19 +126,5 @@ export const OutboxRepository = {
       LIMIT ${limit}
     `)
     return result.rows.map(mapRowToOutbox)
-  },
-
-  /**
-   * Deletes events older than a given date that all listeners have processed.
-   * This is a retention cleanup function.
-   */
-  async deleteOlderThan(client: PoolClient, olderThan: Date): Promise<number> {
-    // Only delete events that all listeners have moved past
-    const result = await client.query(sql`
-      DELETE FROM outbox
-      WHERE created_at < ${olderThan}
-        AND id <= (SELECT MIN(last_processed_id) FROM outbox_listeners)
-    `)
-    return result.rowCount ?? 0
   },
 }

@@ -293,29 +293,52 @@ describe("Outbox Multi-Listener", () => {
   })
 
   describe("OutboxRepository.fetchAfterId", () => {
+    // Helper to create test message payload
+    const testMessagePayload = (streamId: string) => ({
+      streamId,
+      message: {
+        id: `msg_test_${Date.now()}`,
+        streamId,
+        sequence: 1n,
+        authorId: "usr_test",
+        authorType: "user" as const,
+        content: "test",
+        contentFormat: "markdown" as const,
+        replyCount: 0,
+        reactions: {},
+        editedAt: null,
+        deletedAt: null,
+        createdAt: new Date(),
+      },
+    })
+
     test("should fetch events after cursor", async () => {
       await withTransaction(pool, async (client) => {
         // Insert some test events
-        await OutboxRepository.insert(client, "test:event1", { data: "first" })
-        const second = await OutboxRepository.insert(client, "test:event2", { data: "second" })
-        await OutboxRepository.insert(client, "test:event3", { data: "third" })
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
+        const second = await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_3"))
 
         // Fetch events after the second one
         const events = await OutboxRepository.fetchAfterId(client, second.id)
 
         expect(events.length).toBe(1)
-        expect(events[0].eventType).toBe("test:event3")
+        expect(events[0].eventType).toBe("message:created")
       })
     })
 
     test("should respect limit parameter", async () => {
       await withTransaction(pool, async (client) => {
+        // Get baseline to avoid counting old events
+        const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
+        const baselineId = BigInt(maxResult.rows[0].max_id)
+
         // Insert many events
         for (let i = 0; i < 10; i++) {
-          await OutboxRepository.insert(client, `test:event${i}`, { index: i })
+          await OutboxRepository.insert(client, "message:created", testMessagePayload(`stream_${i}`))
         }
 
-        const events = await OutboxRepository.fetchAfterId(client, 0n, 3)
+        const events = await OutboxRepository.fetchAfterId(client, baselineId, 3)
 
         expect(events.length).toBe(3)
       })
@@ -330,6 +353,25 @@ describe("Outbox Multi-Listener", () => {
   })
 
   describe("Multi-listener isolation", () => {
+    // Helper to create test message payload
+    const testMessagePayload = (streamId: string) => ({
+      streamId,
+      message: {
+        id: `msg_test_${Date.now()}`,
+        streamId,
+        sequence: 1n,
+        authorId: "usr_test",
+        authorType: "user" as const,
+        content: "test",
+        contentFormat: "markdown" as const,
+        replyCount: 0,
+        reactions: {},
+        editedAt: null,
+        deletedAt: null,
+        createdAt: new Date(),
+      },
+    })
+
     test("should allow independent cursor progress", async () => {
       await withTransaction(pool, async (client) => {
         // Get current max outbox id to use as baseline
@@ -341,9 +383,9 @@ describe("Outbox Multi-Listener", () => {
         await OutboxListenerRepository.ensureListener(client, "test_listener_b", baselineId)
 
         // Insert events
-        const e1 = await OutboxRepository.insert(client, "test:event", { n: 1 })
-        await OutboxRepository.insert(client, "test:event", { n: 2 })
-        await OutboxRepository.insert(client, "test:event", { n: 3 })
+        const e1 = await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_3"))
 
         // Listener A processes first event only
         await OutboxListenerRepository.updateCursor(client, "test_listener_a", e1.id)
@@ -363,6 +405,89 @@ describe("Outbox Multi-Listener", () => {
         const eventsA = await OutboxRepository.fetchAfterId(client, stateA!.lastProcessedId)
         expect(eventsA.length).toBe(2)
       })
+    })
+  })
+
+  describe("Concurrent claim prevention", () => {
+    test("should block concurrent claims with FOR UPDATE", async () => {
+      // Set up a listener
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_concurrent")
+      })
+
+      // Track which transaction got the lock first
+      const executionOrder: string[] = []
+      const lockAcquired = { first: false, second: false }
+
+      // Start two concurrent transactions trying to claim the same listener
+      const tx1 = (async () => {
+        const client1 = await pool.connect()
+        try {
+          await client1.query("BEGIN")
+
+          // Claim the listener (this acquires FOR UPDATE lock)
+          const state = await OutboxListenerRepository.claimListener(client1, "test_concurrent")
+          executionOrder.push("tx1_claimed")
+          lockAcquired.first = true
+
+          // Hold the lock for a bit
+          await new Promise((resolve) => setTimeout(resolve, 100))
+
+          // Update cursor
+          await OutboxListenerRepository.updateCursor(client1, "test_concurrent", 999n)
+          executionOrder.push("tx1_updated")
+
+          await client1.query("COMMIT")
+          executionOrder.push("tx1_committed")
+
+          return state
+        } catch (err) {
+          await client1.query("ROLLBACK")
+          throw err
+        } finally {
+          client1.release()
+        }
+      })()
+
+      // Small delay to ensure tx1 gets the lock first
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      const tx2 = (async () => {
+        const client2 = await pool.connect()
+        try {
+          await client2.query("BEGIN")
+
+          // This should block until tx1 commits
+          executionOrder.push("tx2_waiting")
+          const state = await OutboxListenerRepository.claimListener(client2, "test_concurrent")
+          executionOrder.push("tx2_claimed")
+          lockAcquired.second = true
+
+          await client2.query("COMMIT")
+          executionOrder.push("tx2_committed")
+
+          return state
+        } catch (err) {
+          await client2.query("ROLLBACK")
+          throw err
+        } finally {
+          client2.release()
+        }
+      })()
+
+      // Wait for both transactions to complete
+      const [state1, state2] = await Promise.all([tx1, tx2])
+
+      // tx1 should have claimed with original cursor (0)
+      expect(state1!.lastProcessedId).toBe(0n)
+
+      // tx2 should see the updated cursor from tx1 (999)
+      expect(state2!.lastProcessedId).toBe(999n)
+
+      // Verify execution order: tx1 must complete before tx2 can claim
+      const tx1CommitIndex = executionOrder.indexOf("tx1_committed")
+      const tx2ClaimedIndex = executionOrder.indexOf("tx2_claimed")
+      expect(tx2ClaimedIndex).toBeGreaterThan(tx1CommitIndex)
     })
   })
 })
