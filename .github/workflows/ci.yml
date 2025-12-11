@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: threa
+          POSTGRES_PASSWORD: threa
+          POSTGRES_DB: threa
+        ports:
+          - 5454:5432
+        options: >-
+          --health-cmd "pg_isready -U threa -d threa"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=threa psql -h localhost -p 5454 -U threa -d postgres -c "CREATE DATABASE threa_test;"
+
+      - name: Run E2E tests
+        run: bun run --cwd apps/backend test:e2e
+        env:
+          TEST_DATABASE_URL: postgresql://threa:threa@localhost:5454/threa_test

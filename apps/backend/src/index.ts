@@ -1,78 +1,14 @@
-import { createServer } from "http"
-import { Server } from "socket.io"
-import { createAdapter } from "@socket.io/postgres-adapter"
-import { createApp } from "./app"
-import { registerRoutes } from "./routes"
-import { errorHandler } from "./middleware/error-handler"
-import { registerSocketHandlers } from "./socket"
-import { createDatabasePool } from "./db"
-import { createMigrator } from "./db/migrations"
-import { WorkosAuthService } from "./services/auth-service"
-import { StubAuthService } from "./services/auth-service.stub"
-import { UserService } from "./services/user-service"
-import { WorkspaceService } from "./services/workspace-service"
-import { StreamService } from "./services/stream-service"
-import { EventService } from "./services/event-service"
-import { StreamNamingService } from "./services/stream-naming-service"
-import { OutboxListener } from "./lib/outbox-listener"
-import { loadConfig } from "./lib/env"
-import { logger } from "./lib/logger"
-import { OpenRouterClient } from "./lib/openrouter"
+import { startServer } from "./server"
 
-const config = loadConfig()
+const { server, stop } = await startServer()
 
-const pool = createDatabasePool(config.databaseUrl)
-
-const migrator = createMigrator(pool)
-await migrator.up()
-logger.info("Database migrations complete")
-
-const userService = new UserService(pool)
-const workspaceService = new WorkspaceService(pool)
-const streamService = new StreamService(pool)
-const eventService = new EventService(pool)
-const authService = config.useStubAuth
-  ? new StubAuthService()
-  : new WorkosAuthService(config.workos)
-
-// Set up stream naming service for auto-generated display names
-const openRouterClient = new OpenRouterClient(
-  config.openrouter.apiKey,
-  config.openrouter.defaultModel,
-)
-const streamNamingService = new StreamNamingService(pool, openRouterClient)
-eventService.setStreamNamingService(streamNamingService)
-
-const app = createApp()
-
-registerRoutes(app, {
-  authService,
-  userService,
-  workspaceService,
-  streamService,
-  eventService,
+// Handle graceful shutdown
+process.on("SIGTERM", async () => {
+  await stop()
+  process.exit(0)
 })
 
-app.use(errorHandler)
-
-const server = createServer(app)
-
-const io = new Server(server, {
-  path: "/socket.io/",
-  cors: {
-    origin: true,
-    credentials: true,
-  },
-})
-
-io.adapter(createAdapter(pool))
-
-registerSocketHandlers(io, { authService, userService, streamService })
-
-// Start outbox listener for real-time event delivery
-const outboxListener = new OutboxListener(pool, io)
-await outboxListener.start()
-
-server.listen(config.port, () => {
-  logger.info({ port: config.port }, "Server started")
+process.on("SIGINT", async () => {
+  await stop()
+  process.exit(0)
 })
