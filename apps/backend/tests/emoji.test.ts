@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from "bun:test"
-import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames } from "../src/lib/emoji"
+import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames, normalizeMessage } from "../src/lib/emoji"
 
 describe("Emoji Library", () => {
   describe("toShortcode", () => {
@@ -117,5 +117,36 @@ describe("Emoji Library", () => {
         expect(toEmoji(shortcode)).toBe(emoji)
       })
     }
+  })
+
+  describe("normalizeMessage", () => {
+    test("should convert emoji in text to shortcodes", () => {
+      expect(normalizeMessage("Hi there 👋")).toBe("Hi there :wave:")
+      expect(normalizeMessage("Great job! 👍")).toBe("Great job! :+1:")
+      expect(normalizeMessage("I ❤️ this")).toBe("I :heart: this")
+    })
+
+    test("should handle multiple emoji", () => {
+      expect(normalizeMessage("🎉 Party time! 🚀")).toBe(":tada: Party time! :rocket:")
+      expect(normalizeMessage("👍👍👍")).toBe(":+1::+1::+1:")
+    })
+
+    test("should leave text without emoji unchanged", () => {
+      expect(normalizeMessage("Hello world")).toBe("Hello world")
+      expect(normalizeMessage("No emoji here!")).toBe("No emoji here!")
+    })
+
+    test("should leave existing shortcodes unchanged", () => {
+      expect(normalizeMessage("Already :+1: normalized")).toBe("Already :+1: normalized")
+    })
+
+    test("should handle emoji without variation selector", () => {
+      expect(normalizeMessage("Love ❤")).toBe("Love :heart:")
+    })
+
+    test("should handle complex emoji sequences", () => {
+      // Pirate flag is in our mapping
+      expect(normalizeMessage("Arr 🏴‍☠️")).toBe("Arr :pirate_flag:")
+    })
   })
 })
