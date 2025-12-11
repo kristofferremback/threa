@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../db"
+import { withTransaction } from "../db"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
@@ -22,13 +22,16 @@ export class StreamNamingService {
   /**
    * Attempts to auto-generate a display name for a stream.
    * Called after each message is created in scratchpads/threads.
+   * Uses SELECT FOR UPDATE SKIP LOCKED to prevent concurrent LLM calls.
    * Returns true if a name was successfully generated.
    */
   async attemptAutoNaming(streamId: string): Promise<boolean> {
-    return withClient(this.pool, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
+    return withTransaction(this.pool, async (client) => {
+      // Lock the stream row - if another transaction is already naming, skip
+      const stream = await StreamRepository.findByIdForUpdate(client, streamId)
       if (!stream) {
-        logger.warn({ streamId }, "Stream not found for auto-naming")
+        // Either not found or locked by another transaction
+        logger.debug({ streamId }, "Stream not found or locked, skipping auto-naming")
         return false
       }
 
@@ -75,17 +78,15 @@ export class StreamNamingService {
       }
 
       // Update the stream with the generated name
-      await withTransaction(this.pool, async (txClient) => {
-        await StreamRepository.update(txClient, streamId, {
-          displayName: cleanName,
-          displayNameGeneratedAt: new Date(),
-        })
+      await StreamRepository.update(client, streamId, {
+        displayName: cleanName,
+        displayNameGeneratedAt: new Date(),
+      })
 
-        // Emit to outbox for real-time delivery
-        await OutboxRepository.insert(txClient, "stream:display_name_updated", {
-          streamId,
-          displayName: cleanName,
-        })
+      // Emit to outbox for real-time delivery
+      await OutboxRepository.insert(client, "stream:display_name_updated", {
+        streamId,
+        displayName: cleanName,
       })
 
       logger.info({ streamId, displayName: cleanName }, "Auto-generated stream display name")

@@ -89,11 +89,3 @@ export class OpenRouterClient {
   }
 }
 
-let clientInstance: OpenRouterClient | null = null
-
-export function getOpenRouterClient(apiKey: string, defaultModel: string): OpenRouterClient {
-  if (!clientInstance) {
-    clientInstance = new OpenRouterClient(apiKey, defaultModel)
-  }
-  return clientInstance
-}

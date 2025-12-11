@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import type { StreamService } from "../services/stream-service"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { CompanionMode } from "../repositories"
+import { DuplicateSlugError } from "../lib/errors"
 
 interface Dependencies {
   streamService: StreamService
@@ -70,11 +71,11 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         return res.status(400).json({ error: "Slug is required" })
       }
 
-      // Validate slug format (lowercase, alphanumeric, hyphens)
-      if (!/^[a-z0-9-]+$/.test(slug)) {
+      // Validate slug format (lowercase, alphanumeric, hyphens - no leading/trailing hyphens)
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
         return res
           .status(400)
-          .json({ error: "Slug must be lowercase alphanumeric with hyphens only" })
+          .json({ error: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)" })
       }
 
       const isMember = await workspaceService.isMember(workspaceId, userId)
@@ -93,7 +94,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
 
         res.status(201).json({ stream })
       } catch (error) {
-        if (error instanceof Error && error.message.includes("already exists")) {
+        if (error instanceof DuplicateSlugError) {
           return res.status(409).json({ error: error.message })
         }
         throw error

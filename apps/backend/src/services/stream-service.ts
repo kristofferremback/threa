@@ -3,6 +3,7 @@ import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream, StreamType, CompanionMode } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { streamId } from "../lib/id"
+import { DuplicateSlugError } from "../lib/errors"
 
 export interface CreateScratchpadParams {
   workspaceId: string
@@ -90,7 +91,7 @@ export class StreamService {
         params.slug,
       )
       if (slugExists) {
-        throw new Error(`Channel with slug "${params.slug}" already exists`)
+        throw new DuplicateSlugError(params.slug)
       }
 
       const stream = await StreamRepository.insert(client, {

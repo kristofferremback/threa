@@ -4,6 +4,7 @@ import { StreamEventRepository, EventType } from "../repositories/stream-event-r
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
+import { logger } from "../lib/logger"
 import type { StreamNamingService } from "./stream-naming-service"
 
 // Event payloads
@@ -119,7 +120,7 @@ export class EventService {
         // Don't await - let this run async without blocking the response
         this.streamNamingService.attemptAutoNaming(params.streamId).catch((err) => {
           // Log but don't fail the message creation
-          console.error("Auto-naming failed:", err)
+          logger.error({ err, streamId: params.streamId }, "Auto-naming failed")
         })
       }
 

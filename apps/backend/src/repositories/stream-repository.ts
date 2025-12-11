@@ -108,6 +108,17 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
+  /**
+   * Locks the stream row for update, skipping if already locked.
+   * Returns null if not found or already locked by another transaction.
+   */
+  async findByIdForUpdate(client: PoolClient, id: string): Promise<Stream | null> {
+    const result = await client.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id} FOR UPDATE SKIP LOCKED`,
+    )
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
   async findByWorkspaceAndType(
     client: PoolClient,
     workspaceId: string,
