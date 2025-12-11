@@ -49,10 +49,8 @@ export class StreamNamingService {
       }
 
       // Build conversation context for LLM
-      const conversationText = messages
-        .map((m) => m.content)
-        .reverse() // Messages come DESC, we want chronological order
-        .join("\n---\n")
+      // Messages are already in chronological order (repository reverses the DESC query)
+      const conversationText = messages.map((m) => m.content).join("\n---\n")
 
       const prompt = `${NAMING_PROMPT}\n\n${conversationText}`
 

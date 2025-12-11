@@ -155,6 +155,11 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
+      const isMember = await streamService.isMember(existing.streamId, userId)
+      if (!isMember) {
+        return res.status(403).json({ error: "Not a member of this stream" })
+      }
+
       const message = await eventService.removeReaction({
         messageId,
         streamId: existing.streamId,

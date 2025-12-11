@@ -20,10 +20,19 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         return res.status(404).json({ error: "Stream not found" })
       }
 
-      // Check access via workspace or stream membership
-      const isWorkspaceMember = await workspaceService.isMember(stream.workspaceId, userId)
-      if (!isWorkspaceMember) {
-        return res.status(403).json({ error: "Not authorized" })
+      // Access control: public streams require workspace membership,
+      // private streams (scratchpads, private channels, threads) require stream membership
+      if (stream.visibility === "public") {
+        const isWorkspaceMember = await workspaceService.isMember(stream.workspaceId, userId)
+        if (!isWorkspaceMember) {
+          return res.status(403).json({ error: "Not authorized" })
+        }
+      } else {
+        const isStreamMember = await streamService.isMember(streamId, userId)
+        if (!isStreamMember) {
+          // Return 404 to avoid leaking existence of private streams
+          return res.status(404).json({ error: "Stream not found" })
+        }
       }
 
       res.json({ stream })
