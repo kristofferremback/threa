@@ -6,7 +6,7 @@
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "test": "bun test tests/",
-    "test:e2e": "bun test tests/api.test.ts"
+    "test:e2e": "bun test --preload ./tests/setup.ts tests/api.test.ts"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.2",

@@ -3,7 +3,10 @@
  * Black box testing - treats the API as an external service.
  */
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3001"
+function getBaseUrl(): string {
+  // Read at call time, not import time, so setup.ts can set it
+  return process.env.TEST_BASE_URL || "http://localhost:3001"
+}
 
 export class TestClient {
   private cookies: Map<string, string> = new Map()
@@ -25,7 +28,7 @@ export class TestClient {
         .join("; ")
     }
 
-    const response = await fetch(`${BASE_URL}${path}`, {
+    const response = await fetch(`${getBaseUrl()}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,

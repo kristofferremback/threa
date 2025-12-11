@@ -1,11 +1,11 @@
 /**
  * E2E API tests - black box testing via HTTP.
  *
- * Requires server running at localhost:3001 with USE_STUB_AUTH=true.
+ * The test server starts automatically via setup.ts preload.
  * Run with: bun test tests/api.test.ts
  */
 
-import { describe, test, expect, beforeAll } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import {
   TestClient,
   loginAs,
@@ -18,32 +18,17 @@ import {
   removeReaction,
 } from "./client"
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3001"
-
 // Generate unique identifier for this test run to avoid collisions
 const testRunId = Math.random().toString(36).substring(7)
 const testEmail = (name: string) => `${name}-${testRunId}@test.com`
 
 describe("API E2E Tests", () => {
-  beforeAll(async () => {
-    // Verify server is running
-    try {
-      const response = await fetch(`${BASE_URL}/health`)
-      if (!response.ok) {
-        throw new Error(`Health check failed: ${response.status}`)
-      }
-    } catch (error) {
-      throw new Error(
-        `Server not reachable at ${BASE_URL}. Start it with: cd apps/backend && bun run dev`
-      )
-    }
-  })
 
   describe("Health", () => {
     test("should return ok", async () => {
-      const response = await fetch(`${BASE_URL}/health`)
-      expect(response.status).toBe(200)
-      const data = await response.json()
+      const client = new TestClient()
+      const { status, data } = await client.get<{ status: string }>("/health")
+      expect(status).toBe(200)
       expect(data.status).toBe("ok")
     })
   })

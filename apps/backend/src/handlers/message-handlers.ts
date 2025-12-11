@@ -122,8 +122,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(400).json({ error: "Emoji is required" })
       }
 
-      // Validate emoji format: single emoji or shortcode like :thumbsup:
-      const EMOJI_REGEX = /^(\p{Emoji_Presentation}|:[a-z0-9_+-]+:)$/u
+      // Validate emoji format: emoji (with optional variation selectors/ZWJ sequences) or shortcode
+      // Matches: single emoji, emoji + variation selector (❤️), ZWJ sequences (👨‍👩‍👧), or :shortcode:
+      const EMOJI_REGEX = /^(\p{Emoji}(\p{Emoji_Modifier}|\u{FE0F}|\u{200D}\p{Emoji})*|:[a-z0-9_+-]+:)$/u
       if (!EMOJI_REGEX.test(emoji)) {
         return res.status(400).json({ error: "Invalid emoji format" })
       }
