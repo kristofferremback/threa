@@ -7,11 +7,17 @@ export interface WorkosConfig {
   cookiePassword: string
 }
 
+export interface OpenRouterConfig {
+  apiKey: string
+  defaultModel: string
+}
+
 export interface Config {
   port: number
   databaseUrl: string
   useStubAuth: boolean
   workos: WorkosConfig
+  openrouter: OpenRouterConfig
 }
 
 export function loadConfig(): Config {
@@ -43,6 +49,10 @@ export function loadConfig(): Config {
       clientId: process.env.WORKOS_CLIENT_ID || "",
       redirectUri: process.env.WORKOS_REDIRECT_URI || "",
       cookiePassword: process.env.WORKOS_COOKIE_PASSWORD || "",
+    },
+    openrouter: {
+      apiKey: process.env.OPENROUTER_API_KEY || "",
+      defaultModel: process.env.OPENROUTER_DEFAULT_MODEL || "anthropic/claude-3-haiku",
     },
   }
 

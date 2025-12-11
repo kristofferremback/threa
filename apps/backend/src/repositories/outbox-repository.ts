@@ -1,0 +1,86 @@
+import { PoolClient } from "pg"
+import { sql } from "../db"
+import { bigIntReplacer } from "../lib/serialization"
+
+export interface OutboxEvent {
+  id: bigint
+  eventType: string
+  payload: unknown
+  createdAt: Date
+  processedAt: Date | null
+}
+
+interface OutboxRow {
+  id: string
+  event_type: string
+  payload: unknown
+  created_at: Date
+  processed_at: Date | null
+}
+
+function mapRowToOutbox(row: OutboxRow): OutboxEvent {
+  return {
+    id: BigInt(row.id),
+    eventType: row.event_type,
+    payload: row.payload,
+    createdAt: row.created_at,
+    processedAt: row.processed_at,
+  }
+}
+
+export const OUTBOX_CHANNEL = "outbox_events"
+
+export const OutboxRepository = {
+  async insert(
+    client: PoolClient,
+    eventType: string,
+    payload: unknown,
+  ): Promise<OutboxEvent> {
+    const result = await client.query<OutboxRow>(sql`
+      INSERT INTO outbox (event_type, payload)
+      VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
+      RETURNING id, event_type, payload, created_at, processed_at
+    `)
+
+    // Notify listeners that new events are available
+    await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
+
+    return mapRowToOutbox(result.rows[0])
+  },
+
+  async fetchUnprocessed(
+    client: PoolClient,
+    limit: number = 100,
+  ): Promise<OutboxEvent[]> {
+    // Use FOR UPDATE SKIP LOCKED for concurrent processing
+    const result = await client.query<OutboxRow>(sql`
+      SELECT id, event_type, payload, created_at, processed_at
+      FROM outbox
+      WHERE processed_at IS NULL
+      ORDER BY id
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    `)
+    return result.rows.map(mapRowToOutbox)
+  },
+
+  async markProcessed(client: PoolClient, ids: bigint[]): Promise<void> {
+    if (ids.length === 0) return
+
+    const idStrings = ids.map((id) => id.toString())
+    await client.query(sql`
+      UPDATE outbox
+      SET processed_at = NOW()
+      WHERE id = ANY(${idStrings}::bigint[])
+    `)
+  },
+
+  async deleteProcessed(client: PoolClient, olderThan: Date): Promise<number> {
+    const result = await client.query(sql`
+      DELETE FROM outbox
+      WHERE processed_at IS NOT NULL
+        AND processed_at < ${olderThan}
+    `)
+    return result.rowCount ?? 0
+  },
+}
