@@ -6,7 +6,7 @@ interface StreamRow {
   id: string
   workspace_id: string
   type: string
-  name: string | null
+  display_name: string | null
   slug: string | null
   description: string | null
   visibility: string
@@ -19,6 +19,7 @@ interface StreamRow {
   created_at: Date
   updated_at: Date
   archived_at: Date | null
+  display_name_generated_at: Date | null
 }
 
 // Domain type (camelCase, exported)
@@ -29,7 +30,7 @@ export interface Stream {
   id: string
   workspaceId: string
   type: StreamType
-  name: string | null
+  displayName: string | null
   slug: string | null
   description: string | null
   visibility: "public" | "private"
@@ -42,13 +43,14 @@ export interface Stream {
   createdAt: Date
   updatedAt: Date
   archivedAt: Date | null
+  displayNameGeneratedAt: Date | null
 }
 
 export interface InsertStreamParams {
   id: string
   workspaceId: string
   type: StreamType
-  name?: string
+  displayName?: string
   slug?: string
   description?: string
   visibility?: "public" | "private"
@@ -61,11 +63,12 @@ export interface InsertStreamParams {
 }
 
 export interface UpdateStreamParams {
-  name?: string
+  displayName?: string
   description?: string
   companionMode?: CompanionMode
   companionPersonaId?: string | null
   archivedAt?: Date | null
+  displayNameGeneratedAt?: Date | null
 }
 
 function mapRowToStream(row: StreamRow): Stream {
@@ -73,7 +76,7 @@ function mapRowToStream(row: StreamRow): Stream {
     id: row.id,
     workspaceId: row.workspace_id,
     type: row.type as StreamType,
-    name: row.name,
+    displayName: row.display_name,
     slug: row.slug,
     description: row.description,
     visibility: row.visibility as "public" | "private",
@@ -86,14 +89,15 @@ function mapRowToStream(row: StreamRow): Stream {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
+    displayNameGeneratedAt: row.display_name_generated_at,
   }
 }
 
 const SELECT_FIELDS = `
-  id, workspace_id, type, name, slug, description, visibility,
+  id, workspace_id, type, display_name, slug, description, visibility,
   parent_stream_id, parent_message_id, root_stream_id,
   companion_mode, companion_persona_id,
-  created_by, created_at, updated_at, archived_at
+  created_by, created_at, updated_at, archived_at, display_name_generated_at
 `
 
 export const StreamRepository = {
@@ -142,14 +146,14 @@ export const StreamRepository = {
   async insert(client: PoolClient, params: InsertStreamParams): Promise<Stream> {
     const result = await client.query<StreamRow>(sql`
       INSERT INTO streams (
-        id, workspace_id, type, name, slug, description, visibility,
+        id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
         companion_mode, companion_persona_id, created_by
       ) VALUES (
         ${params.id},
         ${params.workspaceId},
         ${params.type},
-        ${params.name ?? null},
+        ${params.displayName ?? null},
         ${params.slug ?? null},
         ${params.description ?? null},
         ${params.visibility ?? "private"},
@@ -174,9 +178,9 @@ export const StreamRepository = {
     const values: unknown[] = []
     let paramIndex = 1
 
-    if (params.name !== undefined) {
-      sets.push(`name = $${paramIndex++}`)
-      values.push(params.name)
+    if (params.displayName !== undefined) {
+      sets.push(`display_name = $${paramIndex++}`)
+      values.push(params.displayName)
     }
     if (params.description !== undefined) {
       sets.push(`description = $${paramIndex++}`)
@@ -193,6 +197,10 @@ export const StreamRepository = {
     if (params.archivedAt !== undefined) {
       sets.push(`archived_at = $${paramIndex++}`)
       values.push(params.archivedAt)
+    }
+    if (params.displayNameGeneratedAt !== undefined) {
+      sets.push(`display_name_generated_at = $${paramIndex++}`)
+      values.push(params.displayNameGeneratedAt)
     }
 
     if (sets.length === 0) return this.findById(client, id)

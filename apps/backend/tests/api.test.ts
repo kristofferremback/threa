@@ -120,16 +120,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("scratchpad"), "Scratchpad Test")
       const workspace = await createWorkspace(client, `SP Test WS ${testRunId}`)
 
-      const scratchpad = await createScratchpad(
-        client,
-        workspace.id,
-        `My Scratchpad ${testRunId}`,
-        "on"
-      )
+      const scratchpad = await createScratchpad(client, workspace.id, "on")
 
       expect(scratchpad.id).toMatch(/^stream_/)
       expect(scratchpad.type).toBe("scratchpad")
-      expect(scratchpad.name).toBe(`My Scratchpad ${testRunId}`)
+      // displayName starts null, gets auto-generated from conversation
+      expect(scratchpad.displayName).toBeNull()
       expect(scratchpad.companionMode).toBe("on")
     })
 
@@ -138,8 +134,8 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("splist"), "SP List Test")
       const workspace = await createWorkspace(client, `SP List WS ${testRunId}`)
 
-      await createScratchpad(client, workspace.id, `Pad 1 ${testRunId}`)
-      await createScratchpad(client, workspace.id, `Pad 2 ${testRunId}`)
+      await createScratchpad(client, workspace.id)
+      await createScratchpad(client, workspace.id)
 
       const { status, data } = await client.get<{ streams: unknown[] }>(
         `/api/workspaces/${workspace.id}/scratchpads`
@@ -152,12 +148,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("companion"), "Companion Test")
       const workspace = await createWorkspace(client, `Companion WS ${testRunId}`)
-      const scratchpad = await createScratchpad(
-        client,
-        workspace.id,
-        `Companion Pad ${testRunId}`,
-        "off"
-      )
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
 
       expect(scratchpad.companionMode).toBe("off")
 
@@ -176,7 +167,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("messages"), "Messages Test")
       const workspace = await createWorkspace(client, `Msg WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `Msg Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
 
       const message = await sendMessage(client, scratchpad.id, `Hello ${testRunId}!`)
 
@@ -194,7 +185,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("sequence"), "Sequence Test")
       const workspace = await createWorkspace(client, `Seq WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `Seq Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
 
       const m1 = await sendMessage(client, scratchpad.id, "First")
       const m2 = await sendMessage(client, scratchpad.id, "Second")
@@ -209,7 +200,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("edit"), "Edit Test")
       const workspace = await createWorkspace(client, `Edit WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `Edit Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "Original content")
 
       const { status, data } = await client.patch<{ message: { content: string } }>(
@@ -225,7 +216,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("delete"), "Delete Test")
       const workspace = await createWorkspace(client, `Del WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `Del Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "To be deleted")
 
       const { status } = await client.delete(`/api/messages/${message.id}`)
@@ -243,7 +234,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reaction-add"), "Reaction Add Test")
       const workspace = await createWorkspace(client, `React Add WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `React Add Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "React to this!")
 
       const updated = await addReaction(client, message.id, "👍")
@@ -255,7 +246,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reaction-remove"), "Reaction Remove Test")
       const workspace = await createWorkspace(client, `React Rm WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `React Rm Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "React then unreact")
 
       await addReaction(client, message.id, "❤️")
@@ -268,7 +259,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reaction-multi"), "Reaction Multi Test")
       const workspace = await createWorkspace(client, `React Multi WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `React Multi Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "Multiple reactions")
 
       await addReaction(client, message.id, "👍")
@@ -283,7 +274,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reaction-dup"), "Reaction Dup Test")
       const workspace = await createWorkspace(client, `React Dup WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client, workspace.id, `React Dup Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "Duplicate reaction test")
 
       await addReaction(client, message.id, "🎉")
@@ -300,7 +291,7 @@ describe("API E2E Tests", () => {
       const user2 = await loginAs(client2, testEmail("reaction-u2"), "Reaction User 2")
 
       const workspace = await createWorkspace(client1, `React Users WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client1, workspace.id, `React Users Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client1, workspace.id)
 
       // Add user2 to workspace by having them create content (they auto-join)
       // Actually, user2 needs to be a member. Let's use the same workspace differently.
@@ -320,12 +311,13 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("channel-create"), "Channel Create Test")
       const workspace = await createWorkspace(client, `Chan Create WS ${testRunId}`)
 
-      const channel = await createChannel(client, workspace.id, `General Discussion ${testRunId}`)
+      const channel = await createChannel(client, workspace.id, `general-${testRunId}`)
 
       expect(channel.id).toMatch(/^stream_/)
       expect(channel.type).toBe("channel")
-      expect(channel.name).toBe(`General Discussion ${testRunId}`)
-      expect(channel.slug).toMatch(/^general-discussion-/)
+      // Channels use slug as display name, no separate displayName field
+      expect(channel.displayName).toBeNull()
+      expect(channel.slug).toBe(`general-${testRunId}`)
     })
 
     test("should create public and private channels", async () => {
@@ -335,11 +327,11 @@ describe("API E2E Tests", () => {
 
       const { status: pubStatus, data: pubData } = await client.post<{ stream: { visibility: string } }>(
         `/api/workspaces/${workspace.id}/channels`,
-        { name: `Public Chan ${testRunId}`, visibility: "public" }
+        { slug: `public-${testRunId}`, visibility: "public" }
       )
       const { status: privStatus, data: privData } = await client.post<{ stream: { visibility: string } }>(
         `/api/workspaces/${workspace.id}/channels`,
-        { name: `Private Chan ${testRunId}`, visibility: "private" }
+        { slug: `private-${testRunId}`, visibility: "private" }
       )
 
       expect(pubStatus).toBe(201)
@@ -352,7 +344,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("channel-msg"), "Channel Msg Test")
       const workspace = await createWorkspace(client, `Chan Msg WS ${testRunId}`)
-      const channel = await createChannel(client, workspace.id, `Msg Channel ${testRunId}`)
+      const channel = await createChannel(client, workspace.id, `msg-channel-${testRunId}`)
 
       const message = await sendMessage(client, channel.id, "Hello channel!")
 
@@ -360,6 +352,36 @@ describe("API E2E Tests", () => {
 
       const messages = await listMessages(client, channel.id)
       expect(messages).toHaveLength(1)
+    })
+
+    test("should reject duplicate slug in same workspace", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("channel-dup"), "Channel Dup Test")
+      const workspace = await createWorkspace(client, `Chan Dup WS ${testRunId}`)
+
+      await createChannel(client, workspace.id, `announcements-${testRunId}`)
+
+      const { status, data } = await client.post<{ error: string }>(
+        `/api/workspaces/${workspace.id}/channels`,
+        { slug: `announcements-${testRunId}` }
+      )
+
+      expect(status).toBe(409)
+      expect(data.error).toContain("already exists")
+    })
+
+    test("should reject invalid slug format", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("channel-invalid"), "Channel Invalid Test")
+      const workspace = await createWorkspace(client, `Chan Invalid WS ${testRunId}`)
+
+      const { status, data } = await client.post<{ error: string }>(
+        `/api/workspaces/${workspace.id}/channels`,
+        { slug: "Invalid Slug With Spaces" }
+      )
+
+      expect(status).toBe(400)
+      expect(data.error).toContain("lowercase alphanumeric")
     })
   })
 
@@ -376,18 +398,8 @@ describe("API E2E Tests", () => {
       expect(ws1.slug).toMatch(/^duplicate-ws-/)
       expect(ws2.slug).toBe(`${ws1.slug}-1`)
     })
-
-    test("should generate unique channel slugs within workspace", async () => {
-      const client = new TestClient()
-      await loginAs(client, testEmail("slug-chan"), "Slug Chan Test")
-      const workspace = await createWorkspace(client, `Slug Chan WS ${testRunId}`)
-
-      const ch1 = await createChannel(client, workspace.id, "announcements")
-      const ch2 = await createChannel(client, workspace.id, "announcements")
-
-      expect(ch1.slug).toBe("announcements")
-      expect(ch2.slug).toBe("announcements-1")
-    })
+    // Note: Channel slug collision now returns 409 error instead of auto-generating
+    // since channels accept slug directly. See "should reject duplicate slug" test above.
   })
 
   describe("Error Handling", () => {
@@ -424,7 +436,7 @@ describe("API E2E Tests", () => {
       await loginAs(client2, testEmail("err-stream-u2"), "Error Stream User 2")
 
       const workspace = await createWorkspace(client1, `Stream Err WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client1, workspace.id, `Private Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client1, workspace.id)
 
       const { status, data } = await client2.get<{ error: string }>(
         `/api/streams/${scratchpad.id}/messages`
@@ -467,7 +479,7 @@ describe("API E2E Tests", () => {
       const user2 = await loginAs(client2, testEmail("err-edit-u2"), "Error Edit User 2")
 
       const workspace = await createWorkspace(client1, `Edit Err WS ${testRunId}`)
-      const scratchpad = await createScratchpad(client1, workspace.id, `Edit Err Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client1, workspace.id)
       const message = await sendMessage(client1, scratchpad.id, "User 1's message")
 
       // User 2 tries to edit user 1's message
@@ -496,14 +508,15 @@ describe("API E2E Tests", () => {
 
       const workspace = await createWorkspace(client, `Err 400 WS ${testRunId}`)
 
-      const { status: spStatus, data: spData } = await client.post<{ error: string }>(
-        `/api/workspaces/${workspace.id}/scratchpads`,
+      // Scratchpads no longer require name, but channels require slug
+      const { status: chStatus, data: chData } = await client.post<{ error: string }>(
+        `/api/workspaces/${workspace.id}/channels`,
         {}
       )
-      expect(spStatus).toBe(400)
-      expect(spData.error).toBe("Name is required")
+      expect(chStatus).toBe(400)
+      expect(chData.error).toBe("Slug is required")
 
-      const scratchpad = await createScratchpad(client, workspace.id, `Err 400 Pad ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
 
       const { status: msgStatus, data: msgData } = await client.post<{ error: string }>(
         `/api/streams/${scratchpad.id}/messages`,
@@ -527,13 +540,10 @@ describe("API E2E Tests", () => {
       expect(workspace.id).toMatch(/^ws_/)
 
       // 3. Create scratchpad with AI companion
-      const scratchpad = await createScratchpad(
-        client,
-        workspace.id,
-        `My Ideas ${testRunId}`,
-        "on"
-      )
+      const scratchpad = await createScratchpad(client, workspace.id, "on")
       expect(scratchpad.companionMode).toBe("on")
+      // Display name starts null, gets auto-generated from conversation
+      expect(scratchpad.displayName).toBeNull()
 
       // 4. Send messages
       const m1 = await sendMessage(client, scratchpad.id, "I need to plan my startup")

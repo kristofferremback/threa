@@ -3,11 +3,9 @@ import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream, StreamType, CompanionMode } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { streamId } from "../lib/id"
-import { generateUniqueSlug } from "../lib/slug"
 
 export interface CreateScratchpadParams {
   workspaceId: string
-  name: string
   description?: string
   createdBy: string
   companionMode?: CompanionMode
@@ -16,7 +14,7 @@ export interface CreateScratchpadParams {
 
 export interface CreateChannelParams {
   workspaceId: string
-  name: string
+  slug: string
   description?: string
   visibility?: "public" | "private"
   createdBy: string
@@ -66,7 +64,7 @@ export class StreamService {
         id,
         workspaceId: params.workspaceId,
         type: "scratchpad",
-        name: params.name,
+        // displayName starts NULL, will be auto-generated from conversation
         description: params.description,
         visibility: "private",
         companionMode: params.companionMode ?? "off",
@@ -84,16 +82,23 @@ export class StreamService {
   async createChannel(params: CreateChannelParams): Promise<Stream> {
     return withTransaction(this.pool, async (client) => {
       const id = streamId()
-      const slug = await generateUniqueSlug(params.name, (slug) =>
-        StreamRepository.slugExistsInWorkspace(client, params.workspaceId, slug),
+
+      // Check if slug already exists
+      const slugExists = await StreamRepository.slugExistsInWorkspace(
+        client,
+        params.workspaceId,
+        params.slug,
       )
+      if (slugExists) {
+        throw new Error(`Channel with slug "${params.slug}" already exists`)
+      }
 
       const stream = await StreamRepository.insert(client, {
         id,
         workspaceId: params.workspaceId,
         type: "channel",
-        name: params.name,
-        slug,
+        // Channels use slug as display name, no separate displayName field
+        slug: params.slug,
         description: params.description,
         visibility: params.visibility ?? "private",
         createdBy: params.createdBy,
@@ -153,6 +158,19 @@ export class StreamService {
   async archiveStream(streamId: string): Promise<Stream | null> {
     return withTransaction(this.pool, (client) =>
       StreamRepository.update(client, streamId, { archivedAt: new Date() }),
+    )
+  }
+
+  async updateDisplayName(
+    streamId: string,
+    displayName: string,
+    markAsGenerated: boolean = false,
+  ): Promise<Stream | null> {
+    return withTransaction(this.pool, (client) =>
+      StreamRepository.update(client, streamId, {
+        displayName,
+        displayNameGeneratedAt: markAsGenerated ? new Date() : undefined,
+      }),
     )
   }
 

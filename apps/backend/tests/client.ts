@@ -85,7 +85,8 @@ export interface Workspace {
 export interface Stream {
   id: string
   type: string
-  name: string | null
+  displayName: string | null
+  slug: string | null
   companionMode: string
 }
 
@@ -129,12 +130,11 @@ export async function createWorkspace(
 export async function createScratchpad(
   client: TestClient,
   workspaceId: string,
-  name: string,
   companionMode: "off" | "on" | "next_message_only" = "on"
 ): Promise<Stream> {
   const { status, data } = await client.post<{ stream: Stream }>(
     `/api/workspaces/${workspaceId}/scratchpads`,
-    { name, companionMode }
+    { companionMode }
   )
   if (status !== 201) {
     throw new Error(`Create scratchpad failed: ${JSON.stringify(data)}`)
@@ -173,12 +173,12 @@ export async function listMessages(
 export async function createChannel(
   client: TestClient,
   workspaceId: string,
-  name: string,
+  slug: string,
   visibility: "public" | "private" = "private"
-): Promise<Stream & { slug: string }> {
-  const { status, data } = await client.post<{ stream: Stream & { slug: string } }>(
+): Promise<Stream> {
+  const { status, data } = await client.post<{ stream: Stream }>(
     `/api/workspaces/${workspaceId}/channels`,
-    { name, visibility }
+    { slug, visibility }
   )
   if (status !== 201) {
     throw new Error(`Create channel failed: ${JSON.stringify(data)}`)

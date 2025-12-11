@@ -43,11 +43,7 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     async createScratchpad(req: Request, res: Response) {
       const userId = req.userId!
       const { workspaceId } = req.params
-      const { name, description, companionMode, companionPersonaId } = req.body
-
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ error: "Name is required" })
-      }
+      const { description, companionMode, companionPersonaId } = req.body
 
       const isMember = await workspaceService.isMember(workspaceId, userId)
       if (!isMember) {
@@ -56,7 +52,6 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
 
       const stream = await streamService.createScratchpad({
         workspaceId,
-        name,
         description,
         companionMode,
         companionPersonaId,
@@ -69,10 +64,17 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
     async createChannel(req: Request, res: Response) {
       const userId = req.userId!
       const { workspaceId } = req.params
-      const { name, description, visibility } = req.body
+      const { slug, description, visibility } = req.body
 
-      if (!name || typeof name !== "string") {
-        return res.status(400).json({ error: "Name is required" })
+      if (!slug || typeof slug !== "string") {
+        return res.status(400).json({ error: "Slug is required" })
+      }
+
+      // Validate slug format (lowercase, alphanumeric, hyphens)
+      if (!/^[a-z0-9-]+$/.test(slug)) {
+        return res
+          .status(400)
+          .json({ error: "Slug must be lowercase alphanumeric with hyphens only" })
       }
 
       const isMember = await workspaceService.isMember(workspaceId, userId)
@@ -80,15 +82,22 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         return res.status(403).json({ error: "Not a member of this workspace" })
       }
 
-      const stream = await streamService.createChannel({
-        workspaceId,
-        name,
-        description,
-        visibility,
-        createdBy: userId,
-      })
+      try {
+        const stream = await streamService.createChannel({
+          workspaceId,
+          slug,
+          description,
+          visibility,
+          createdBy: userId,
+        })
 
-      res.status(201).json({ stream })
+        res.status(201).json({ stream })
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("already exists")) {
+          return res.status(409).json({ error: error.message })
+        }
+        throw error
+      }
     },
 
     async updateCompanionMode(req: Request, res: Response) {

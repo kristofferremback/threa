@@ -13,9 +13,11 @@ import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
+import { StreamNamingService } from "./services/stream-naming-service"
 import { OutboxListener } from "./lib/outbox-listener"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
+import { OpenRouterClient } from "./lib/openrouter"
 
 const config = loadConfig()
 
@@ -32,6 +34,14 @@ const eventService = new EventService(pool)
 const authService = config.useStubAuth
   ? new StubAuthService()
   : new WorkosAuthService(config.workos)
+
+// Set up stream naming service for auto-generated display names
+const openRouterClient = new OpenRouterClient(
+  config.openrouter.apiKey,
+  config.openrouter.defaultModel,
+)
+const streamNamingService = new StreamNamingService(pool, openRouterClient)
+eventService.setStreamNamingService(streamNamingService)
 
 const app = createApp()
 
