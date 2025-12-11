@@ -50,7 +50,7 @@ CREATE TABLE streams (
     root_stream_id TEXT,                -- Non-thread ancestor (for visibility inheritance)
 
     -- AI companion configuration (stream-level, not per-user)
-    companion_mode TEXT NOT NULL DEFAULT 'off',  -- 'off' | 'on' | 'next_message_only'
+    companion_mode TEXT NOT NULL DEFAULT 'mentions',  -- 'off' | 'mentions' | 'on'
     companion_persona_id TEXT,                   -- Which persona (null = workspace default)
 
     -- Full-text search (for finding scratchpads/channels by name)

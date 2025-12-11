@@ -1,9 +1,10 @@
 import { Pool, PoolClient } from "pg"
 import { Server } from "socket.io"
 import { withTransaction } from "../db"
-import { OutboxRepository, OUTBOX_CHANNEL } from "../repositories"
+import { OutboxRepository, OUTBOX_CHANNEL, OutboxEvent } from "../repositories"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
+import type { CompanionService } from "../services/companion-service"
 
 interface OutboxListenerOptions {
   batchSize?: number
@@ -24,6 +25,7 @@ export class OutboxListener {
   private listenClient: PoolClient | null = null
   private debouncer: DebounceWithMaxWait | null = null
   private fallbackTimer: Timer | null = null
+  private companionService: CompanionService | null = null
 
   constructor(pool: Pool, io: Server, options: OutboxListenerOptions = {}) {
     this.pool = pool
@@ -32,6 +34,10 @@ export class OutboxListener {
     this.debounceMs = options.debounceMs ?? 50
     this.maxWaitMs = options.maxWaitMs ?? 200
     this.fallbackPollMs = options.fallbackPollMs ?? 500
+  }
+
+  setCompanionService(service: CompanionService): void {
+    this.companionService = service
   }
 
   async start() {
@@ -145,6 +151,8 @@ export class OutboxListener {
   private async processEvents() {
     if (!this.running) return
 
+    let processedEvents: OutboxEvent[] = []
+
     await withTransaction(this.pool, async (client) => {
       const events = await OutboxRepository.fetchUnprocessed(client, this.batchSize)
 
@@ -159,8 +167,37 @@ export class OutboxListener {
         events.map((e) => e.id),
       )
 
+      processedEvents = events
       logger.debug({ count: events.length }, "Processed outbox events")
     })
+
+    // Trigger companion responses after transaction commits (non-blocking)
+    for (const event of processedEvents) {
+      this.triggerCompanionIfNeeded(event)
+    }
+  }
+
+  private triggerCompanionIfNeeded(event: OutboxEvent): void {
+    if (!this.companionService) return
+    if (event.eventType !== "message:created") return
+
+    const payload = event.payload as {
+      streamId?: string
+      message?: { id: string; authorType: string }
+    }
+
+    if (!payload.streamId || !payload.message) return
+
+    // Fire and forget - don't await, don't block
+    this.companionService
+      .handleMessageCreated({
+        streamId: payload.streamId,
+        messageId: payload.message.id,
+        authorType: payload.message.authorType as "user" | "persona",
+      })
+      .catch((err) => {
+        logger.error({ err, streamId: payload.streamId }, "Companion response failed")
+      })
   }
 
   private broadcast(eventType: string, payload: unknown) {

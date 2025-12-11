@@ -38,3 +38,6 @@ export type {
 
 export { OutboxRepository, OUTBOX_CHANNEL } from "./outbox-repository"
 export type { OutboxEvent } from "./outbox-repository"
+
+export { PersonaRepository } from "./persona-repository"
+export type { Persona } from "./persona-repository"

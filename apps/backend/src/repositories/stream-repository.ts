@@ -24,7 +24,7 @@ interface StreamRow {
 
 // Domain type (camelCase, exported)
 export type StreamType = "scratchpad" | "channel" | "dm" | "thread"
-export type CompanionMode = "off" | "on" | "next_message_only"
+export type CompanionMode = "off" | "mentions" | "on"
 
 export interface Stream {
   id: string
@@ -171,7 +171,7 @@ export const StreamRepository = {
         ${params.parentStreamId ?? null},
         ${params.parentMessageId ?? null},
         ${params.rootStreamId ?? null},
-        ${params.companionMode ?? "off"},
+        ${params.companionMode ?? "mentions"},
         ${params.companionPersonaId ?? null},
         ${params.createdBy}
       )

@@ -118,8 +118,8 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         companionPersonaId?: string | null
       }
 
-      if (!companionMode || !["off", "on", "next_message_only"].includes(companionMode)) {
-        return res.status(400).json({ error: "Valid companionMode is required" })
+      if (!companionMode || !["off", "mentions", "on"].includes(companionMode)) {
+        return res.status(400).json({ error: "Valid companionMode is required (off, mentions, on)" })
       }
 
       const stream = await streamService.getStreamById(streamId)

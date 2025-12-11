@@ -15,6 +15,8 @@ import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { StreamNamingService } from "./services/stream-naming-service"
+import { AIService } from "./services/ai-service"
+import { CompanionService } from "./services/companion-service"
 import { OutboxListener } from "./lib/outbox-listener"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
@@ -52,6 +54,9 @@ export async function startServer(): Promise<ServerInstance> {
   const streamNamingService = new StreamNamingService(pool, openRouterClient)
   eventService.setStreamNamingService(streamNamingService)
 
+  const aiService = new AIService(config.openrouter.apiKey)
+  const companionService = new CompanionService(pool, aiService, eventService)
+
   const app = createApp()
 
   registerRoutes(app, {
@@ -79,6 +84,7 @@ export async function startServer(): Promise<ServerInstance> {
   registerSocketHandlers(io, { authService, userService, streamService })
 
   const outboxListener = new OutboxListener(pool, io)
+  outboxListener.setCompanionService(companionService)
   await outboxListener.start()
 
   await new Promise<void>((resolve) => {
