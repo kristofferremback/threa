@@ -1,4 +1,10 @@
 import type { AuthResult, AuthService } from "./auth-service"
+import type { UserService } from "./user-service"
+
+export interface DevLoginResult {
+  user: { id: string; email: string; name: string }
+  session: string
+}
 
 /**
  * A stub AuthService for e2e testing that bypasses WorkOS entirely.
@@ -9,6 +15,31 @@ export class StubAuthService implements AuthService {
     string,
     { id: string; email: string; firstName: string | null; lastName: string | null }
   > = new Map()
+
+  /**
+   * Dev login endpoint - creates/ensures user in DB and registers for auth.
+   * Returns user data and session token for cookie.
+   */
+  async devLogin(
+    userService: UserService,
+    options: { email?: string; name?: string } = {},
+  ): Promise<DevLoginResult> {
+    const email = options.email || "test@example.com"
+    const name = options.name || "Test User"
+
+    const user = await userService.ensureUser({ email, name })
+
+    const session = this.registerTestUser({
+      id: user.id,
+      email: user.email,
+      firstName: name,
+    })
+
+    return {
+      user: { id: user.id, email: user.email, name: user.name },
+      session,
+    }
+  }
 
   /**
    * Register a test user that can authenticate.

@@ -5,6 +5,7 @@ import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
 import type { AuthService } from "./services/auth-service"
+import { StubAuthService } from "./services/auth-service.stub"
 import type { UserService } from "./services/user-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { StreamService } from "./services/stream-service"
@@ -37,26 +38,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // ===========================================================================
   // Dev-only login (only works with USE_STUB_AUTH=true)
   // ===========================================================================
-  if ("registerTestUser" in authService) {
+  if (authService instanceof StubAuthService) {
     app.post("/api/dev/login", async (req, res) => {
-      const stubAuth = authService as { registerTestUser: (user: { id: string; email: string; firstName?: string }) => string }
       const { email, name } = req.body as { email?: string; name?: string }
 
-      const testEmail = email || "test@example.com"
-      const testName = name || "Test User"
-
-      // Ensure user exists in DB
-      const user = await userService.ensureUser({
-        email: testEmail,
-        name: testName,
-      })
-
-      // Register with stub auth and get session
-      const session = stubAuth.registerTestUser({
-        id: user.id,
-        email: user.email,
-        firstName: testName,
-      })
+      const { user, session } = await authService.devLogin(userService, { email, name })
 
       res.cookie("wos_session", session, {
         httpOnly: true,
@@ -65,7 +51,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
         path: "/",
       })
 
-      res.json({ user: { id: user.id, email: user.email, name: user.name } })
+      res.json({ user })
     })
   }
 
