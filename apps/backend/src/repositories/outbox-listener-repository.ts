@@ -63,6 +63,8 @@ export const OutboxListenerRepository = {
   /**
    * Updates the cursor after successfully processing events.
    * Resets retry state on success.
+   *
+   * IMPORTANT: Must be called within a transaction where claimListener() was called first.
    */
   async updateCursor(
     client: PoolClient,
@@ -85,6 +87,9 @@ export const OutboxListenerRepository = {
   /**
    * Records an error and sets up retry with exponential backoff.
    * Returns the new retry_after time, or null if max retries exceeded.
+   *
+   * IMPORTANT: Must be called within a transaction where claimListener() was called first.
+   * The row lock from claimListener() prevents concurrent updates to retry_count.
    */
   async recordError(
     client: PoolClient,
@@ -134,6 +139,8 @@ export const OutboxListenerRepository = {
 
   /**
    * Moves an event to the dead letter table after max retries exceeded.
+   *
+   * IMPORTANT: Must be called within a transaction where claimListener() was called first.
    */
   async moveToDeadLetter(
     client: PoolClient,
@@ -186,6 +193,9 @@ export const OutboxListenerRepository = {
   /**
    * Ensures a listener exists, creating it if necessary.
    * Used during startup to register new listeners.
+   *
+   * WARNING: Default startFromId=0 will cause new listeners to process ALL historical events.
+   * Use ensureListenerFromLatest() to start from the current position instead.
    */
   async ensureListener(
     client: PoolClient,
@@ -195,6 +205,23 @@ export const OutboxListenerRepository = {
     await client.query(sql`
       INSERT INTO outbox_listeners (listener_id, last_processed_id)
       VALUES (${listenerId}, ${startFromId.toString()})
+      ON CONFLICT (listener_id) DO NOTHING
+    `)
+  },
+
+  /**
+   * Ensures a listener exists, starting from the latest outbox event.
+   * New listeners will only process events created after registration.
+   * Use this for listeners that don't need to backfill historical events.
+   */
+  async ensureListenerFromLatest(
+    client: PoolClient,
+    listenerId: string,
+  ): Promise<void> {
+    await client.query(sql`
+      INSERT INTO outbox_listeners (listener_id, last_processed_id)
+      SELECT ${listenerId}, COALESCE(MAX(id), 0)
+      FROM outbox
       ON CONFLICT (listener_id) DO NOTHING
     `)
   },

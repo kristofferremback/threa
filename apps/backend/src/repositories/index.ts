@@ -36,8 +36,18 @@ export type {
   InsertMessageParams,
 } from "./message-repository"
 
-export { OutboxRepository, OUTBOX_CHANNEL } from "./outbox-repository"
-export type { OutboxEvent } from "./outbox-repository"
+export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "./outbox-repository"
+export type {
+  OutboxEvent,
+  OutboxEventType,
+  OutboxEventPayload,
+  OutboxEventPayloadMap,
+  MessageCreatedOutboxPayload,
+  MessageEditedOutboxPayload,
+  MessageDeletedOutboxPayload,
+  ReactionOutboxPayload,
+  StreamDisplayNameUpdatedPayload,
+} from "./outbox-repository"
 
 export { OutboxListenerRepository } from "./outbox-listener-repository"
 export type { ListenerState } from "./outbox-listener-repository"
