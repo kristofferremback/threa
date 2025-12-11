@@ -7,7 +7,6 @@ export interface OutboxEvent {
   eventType: string
   payload: unknown
   createdAt: Date
-  processedAt: Date | null
 }
 
 interface OutboxRow {
@@ -15,7 +14,6 @@ interface OutboxRow {
   event_type: string
   payload: unknown
   created_at: Date
-  processed_at: Date | null
 }
 
 function mapRowToOutbox(row: OutboxRow): OutboxEvent {
@@ -24,7 +22,6 @@ function mapRowToOutbox(row: OutboxRow): OutboxEvent {
     eventType: row.event_type,
     payload: row.payload,
     createdAt: row.created_at,
-    processedAt: row.processed_at,
   }
 }
 
@@ -39,7 +36,7 @@ export const OutboxRepository = {
     const result = await client.query<OutboxRow>(sql`
       INSERT INTO outbox (event_type, payload)
       VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
-      RETURNING id, event_type, payload, created_at, processed_at
+      RETURNING id, event_type, payload, created_at
     `)
 
     // Notify listeners that new events are available
@@ -48,38 +45,35 @@ export const OutboxRepository = {
     return mapRowToOutbox(result.rows[0])
   },
 
-  async fetchUnprocessed(
+  /**
+   * Fetches events after a cursor ID for cursor-based processing.
+   * No locking - the caller should hold a lock on their listener's cursor row.
+   */
+  async fetchAfterId(
     client: PoolClient,
+    afterId: bigint,
     limit: number = 100,
   ): Promise<OutboxEvent[]> {
-    // Use FOR UPDATE SKIP LOCKED for concurrent processing
     const result = await client.query<OutboxRow>(sql`
-      SELECT id, event_type, payload, created_at, processed_at
+      SELECT id, event_type, payload, created_at
       FROM outbox
-      WHERE processed_at IS NULL
+      WHERE id > ${afterId.toString()}
       ORDER BY id
       LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
     `)
     return result.rows.map(mapRowToOutbox)
   },
 
-  async markProcessed(client: PoolClient, ids: bigint[]): Promise<void> {
-    if (ids.length === 0) return
-
-    const idStrings = ids.map((id) => id.toString())
-    await client.query(sql`
-      UPDATE outbox
-      SET processed_at = NOW()
-      WHERE id = ANY(${idStrings}::bigint[])
-    `)
-  },
-
-  async deleteProcessed(client: PoolClient, olderThan: Date): Promise<number> {
+  /**
+   * Deletes events older than a given date that all listeners have processed.
+   * This is a retention cleanup function.
+   */
+  async deleteOlderThan(client: PoolClient, olderThan: Date): Promise<number> {
+    // Only delete events that all listeners have moved past
     const result = await client.query(sql`
       DELETE FROM outbox
-      WHERE processed_at IS NOT NULL
-        AND processed_at < ${olderThan}
+      WHERE created_at < ${olderThan}
+        AND id <= (SELECT MIN(last_processed_id) FROM outbox_listeners)
     `)
     return result.rowCount ?? 0
   },

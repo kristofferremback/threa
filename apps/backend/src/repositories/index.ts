@@ -38,3 +38,6 @@ export type {
 
 export { OutboxRepository, OUTBOX_CHANNEL } from "./outbox-repository"
 export type { OutboxEvent } from "./outbox-repository"
+
+export { OutboxListenerRepository } from "./outbox-listener-repository"
+export type { ListenerState } from "./outbox-listener-repository"

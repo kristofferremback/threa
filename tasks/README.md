@@ -6,7 +6,7 @@ Work items broken into separate PRs for better checkpoints.
 
 | Task | Status | PR |
 |------|--------|-----|
-| [001: Multi-Listener Outbox](./001-outbox-multi-listener.md) | Planning | - |
+| [001: Multi-Listener Outbox](./001-outbox-multi-listener.md) | In Progress | - |
 | [002: Agentic Companion](./002-agentic-companion.md) | Planning | - |
 
 ## Dependencies
