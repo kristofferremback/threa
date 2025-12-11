@@ -215,16 +215,30 @@ describe("API E2E Tests", () => {
   })
 
   describe("Reactions", () => {
-    test("should add reaction to message", async () => {
+    test("should add reaction to message and store as shortcode", async () => {
       const client = new TestClient()
       await loginAs(client, testEmail("reaction-add"), "Reaction Add Test")
       const workspace = await createWorkspace(client, `React Add WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
       const message = await sendMessage(client, scratchpad.id, "React to this!")
 
+      // Send raw emoji, expect shortcode in response
       const updated = await addReaction(client, message.id, "👍")
 
-      expect(updated.reactions).toEqual({ "👍": [expect.stringMatching(/^usr_/)] })
+      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^usr_/)] })
+    })
+
+    test("should accept shortcode input directly", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("reaction-shortcode"), "Reaction Shortcode Test")
+      const workspace = await createWorkspace(client, `React SC WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+      const message = await sendMessage(client, scratchpad.id, "React with shortcode!")
+
+      // Send shortcode directly
+      const updated = await addReaction(client, message.id, ":heart:")
+
+      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^usr_/)] })
     })
 
     test("should remove reaction from message", async () => {
@@ -235,7 +249,22 @@ describe("API E2E Tests", () => {
       const message = await sendMessage(client, scratchpad.id, "React then unreact")
 
       await addReaction(client, message.id, "❤️")
+      // Can remove with raw emoji (normalized to shortcode internally)
       const updated = await removeReaction(client, message.id, "❤️")
+
+      expect(updated.reactions).toEqual({})
+    })
+
+    test("should remove reaction using shortcode", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("reaction-rm-sc"), "Reaction Remove SC Test")
+      const workspace = await createWorkspace(client, `React RmSC WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+      const message = await sendMessage(client, scratchpad.id, "React then unreact with shortcode")
+
+      await addReaction(client, message.id, ":fire:")
+      // Remove with shortcode
+      const updated = await removeReaction(client, message.id, ":fire:")
 
       expect(updated.reactions).toEqual({})
     })
@@ -251,8 +280,8 @@ describe("API E2E Tests", () => {
       const updated = await addReaction(client, message.id, "❤️")
 
       expect(Object.keys(updated.reactions)).toHaveLength(2)
-      expect(updated.reactions["👍"]).toHaveLength(1)
-      expect(updated.reactions["❤️"]).toHaveLength(1)
+      expect(updated.reactions[":+1:"]).toHaveLength(1)
+      expect(updated.reactions[":heart:"]).toHaveLength(1)
     })
 
     test("should handle duplicate reaction gracefully", async () => {
@@ -265,7 +294,7 @@ describe("API E2E Tests", () => {
       await addReaction(client, message.id, "🎉")
       const updated = await addReaction(client, message.id, "🎉")
 
-      expect(updated.reactions["🎉"]).toHaveLength(1)
+      expect(updated.reactions[":tada:"]).toHaveLength(1)
     })
 
     test("should handle multiple users reacting with same emoji", async () => {
@@ -286,7 +315,39 @@ describe("API E2E Tests", () => {
       const message = await sendMessage(client1, scratchpad.id, "Multi-user reactions")
       const updated = await addReaction(client1, message.id, "👍")
 
-      expect(updated.reactions["👍"]).toContain(user1.id)
+      expect(updated.reactions[":+1:"]).toContain(user1.id)
+    })
+
+    test("should reject invalid emoji", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("reaction-invalid"), "Reaction Invalid Test")
+      const workspace = await createWorkspace(client, `React Invalid WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+      const message = await sendMessage(client, scratchpad.id, "Invalid reaction test")
+
+      const { status, data } = await client.post<{ error: string }>(
+        `/api/messages/${message.id}/reactions`,
+        { emoji: "not-an-emoji" }
+      )
+
+      expect(status).toBe(400)
+      expect(data.error).toBe("Invalid emoji")
+    })
+
+    test("should reject unknown shortcode", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("reaction-unknown"), "Reaction Unknown Test")
+      const workspace = await createWorkspace(client, `React Unknown WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+      const message = await sendMessage(client, scratchpad.id, "Unknown shortcode test")
+
+      const { status, data } = await client.post<{ error: string }>(
+        `/api/messages/${message.id}/reactions`,
+        { emoji: ":not_a_real_shortcode:" }
+      )
+
+      expect(status).toBe(400)
+      expect(data.error).toBe("Invalid emoji")
     })
   })
 

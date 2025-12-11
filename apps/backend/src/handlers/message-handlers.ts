@@ -3,6 +3,7 @@ import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
+import { toShortcode } from "../lib/emoji"
 
 function serializeMessage(msg: Message) {
   return serializeBigInt(msg)
@@ -122,12 +123,10 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(400).json({ error: "Emoji is required" })
       }
 
-      // Validate emoji format: emoji (with optional variation selectors/ZWJ sequences) or shortcode
-      // Uses Emoji_Presentation for base emoji (excludes digits/#/*), then allows modifiers/ZWJ sequences
-      // Also allows Extended_Pictographic for symbols like ❤ that need variation selector
-      const EMOJI_REGEX = /^((\p{Emoji_Presentation}|\p{Extended_Pictographic})(\p{Emoji_Modifier}|\u{FE0F}|\u{200D}(\p{Emoji_Presentation}|\p{Extended_Pictographic}))*|:[a-z0-9_+-]+:)$/u
-      if (!EMOJI_REGEX.test(emoji)) {
-        return res.status(400).json({ error: "Invalid emoji format" })
+      // Normalize to shortcode format (accepts both raw emoji and shortcodes)
+      const shortcode = toShortcode(emoji)
+      if (!shortcode) {
+        return res.status(400).json({ error: "Invalid emoji" })
       }
 
       const existing = await eventService.getMessageById(messageId)
@@ -143,7 +142,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       const message = await eventService.addReaction({
         messageId,
         streamId: existing.streamId,
-        emoji,
+        emoji: shortcode,
         userId,
       })
 
@@ -158,6 +157,12 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       const userId = req.userId!
       const { messageId, emoji } = req.params
 
+      // Normalize to shortcode format (accepts both raw emoji and shortcodes)
+      const shortcode = toShortcode(emoji)
+      if (!shortcode) {
+        return res.status(400).json({ error: "Invalid emoji" })
+      }
+
       const existing = await eventService.getMessageById(messageId)
       if (!existing) {
         return res.status(404).json({ error: "Message not found" })
@@ -171,7 +176,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       const message = await eventService.removeReaction({
         messageId,
         streamId: existing.streamId,
-        emoji,
+        emoji: shortcode,
         userId,
       })
 
