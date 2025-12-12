@@ -15,30 +15,34 @@ export type OutboxEventType =
   | "reaction:removed"
   | "stream:display_name_updated"
 
-export interface MessageCreatedOutboxPayload {
+/**
+ * Base fields present on all outbox event payloads.
+ * workspaceId is required for room scoping in broadcast.
+ */
+interface BaseOutboxPayload {
+  workspaceId: string
   streamId: string
+}
+
+export interface MessageCreatedOutboxPayload extends BaseOutboxPayload {
   message: Message
 }
 
-export interface MessageEditedOutboxPayload {
-  streamId: string
+export interface MessageEditedOutboxPayload extends BaseOutboxPayload {
   message: Message
 }
 
-export interface MessageDeletedOutboxPayload {
-  streamId: string
+export interface MessageDeletedOutboxPayload extends BaseOutboxPayload {
   messageId: string
 }
 
-export interface ReactionOutboxPayload {
-  streamId: string
+export interface ReactionOutboxPayload extends BaseOutboxPayload {
   messageId: string
   emoji: string
   userId: string
 }
 
-export interface StreamDisplayNameUpdatedPayload {
-  streamId: string
+export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
   displayName: string
 }
 

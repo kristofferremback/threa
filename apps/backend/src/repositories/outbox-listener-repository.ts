@@ -1,5 +1,7 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { Pool, PoolClient } from "pg"
+import { sql, withTransaction } from "../db"
+import { logger } from "../lib/logger"
+import { OutboxRepository, OutboxEvent } from "./outbox-repository"
 
 export interface ListenerState {
   listenerId: string
@@ -225,4 +227,161 @@ export const OutboxListenerRepository = {
       ON CONFLICT (listener_id) DO NOTHING
     `)
   },
+}
+
+/**
+ * Simplified API provided to withClaim callbacks.
+ * Encapsulates the client and listenerId to prevent misuse.
+ */
+export interface ClaimContext {
+  /** Fetch events after the current cursor position */
+  fetchEvents(limit?: number): Promise<OutboxEvent[]>
+  /** Update cursor after successfully processing events */
+  updateCursor(newCursor: bigint): Promise<void>
+  /** Current listener state (cursor position, etc.) */
+  state: ListenerState
+}
+
+export interface WithClaimConfig {
+  maxRetries?: number
+  baseBackoffMs?: number
+}
+
+const DEFAULT_CLAIM_CONFIG: Required<WithClaimConfig> = {
+  maxRetries: 5,
+  baseBackoffMs: 1000,
+}
+
+export type WithClaimResult =
+  | { status: "processed"; lastProcessedId: bigint }
+  | { status: "not_ready" }
+  | { status: "no_events" }
+
+/**
+ * Encapsulates the claim-process-update cycle with proper error handling.
+ *
+ * Handles:
+ * - Transaction management
+ * - Readiness check (retry_after backoff)
+ * - Claiming exclusive lock (FOR UPDATE)
+ * - Error recording with exponential backoff
+ * - Dead lettering after max retries
+ *
+ * The callback receives a simplified ClaimContext API with only the operations
+ * that are safe to call within the claimed transaction.
+ *
+ * @example
+ * ```ts
+ * await withClaim(pool, "broadcast", async (ctx) => {
+ *   const events = await ctx.fetchEvents(100)
+ *   for (const event of events) {
+ *     await handleEvent(event)
+ *   }
+ *   if (events.length > 0) {
+ *     await ctx.updateCursor(events[events.length - 1].id)
+ *   }
+ * })
+ * ```
+ */
+export async function withClaim(
+  pool: Pool,
+  listenerId: string,
+  callback: (ctx: ClaimContext) => Promise<void>,
+  config?: WithClaimConfig,
+): Promise<WithClaimResult> {
+  const { maxRetries, baseBackoffMs } = { ...DEFAULT_CLAIM_CONFIG, ...config }
+
+  return withTransaction(pool, async (client) => {
+    // Check if we're in retry backoff
+    const isReady = await OutboxListenerRepository.isReadyToProcess(
+      client,
+      listenerId,
+    )
+    if (!isReady) {
+      return { status: "not_ready" as const }
+    }
+
+    // Claim exclusive lock on our cursor row
+    const state = await OutboxListenerRepository.claimListener(
+      client,
+      listenerId,
+    )
+    if (!state) {
+      logger.warn({ listenerId }, "Listener not found in database")
+      return { status: "not_ready" as const }
+    }
+
+    // Track cursor updates within this transaction
+    let currentCursor = state.lastProcessedId
+    let cursorUpdated = false
+
+    // Build the simplified context API
+    const ctx: ClaimContext = {
+      state,
+      async fetchEvents(limit = 100) {
+        return OutboxRepository.fetchAfterId(client, currentCursor, limit)
+      },
+      async updateCursor(newCursor: bigint) {
+        await OutboxListenerRepository.updateCursor(client, listenerId, newCursor)
+        currentCursor = newCursor
+        cursorUpdated = true
+      },
+    }
+
+    try {
+      await callback(ctx)
+      return cursorUpdated
+        ? { status: "processed" as const, lastProcessedId: currentCursor }
+        : { status: "no_events" as const }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      logger.error(
+        { err, listenerId, lastProcessedId: currentCursor.toString() },
+        "Error in withClaim callback",
+      )
+
+      // Try to schedule retry
+      const retryAfter = await OutboxListenerRepository.recordError(
+        client,
+        listenerId,
+        errorMessage,
+        maxRetries,
+        baseBackoffMs,
+      )
+
+      if (retryAfter === null) {
+        // Max retries exceeded - move current event to dead letter
+        // We need to know which event failed - it's the one after currentCursor
+        const failedEvents = await OutboxRepository.fetchAfterId(client, currentCursor, 1)
+        if (failedEvents.length > 0) {
+          const failedEvent = failedEvents[0]
+          logger.error(
+            {
+              listenerId,
+              eventId: failedEvent.id.toString(),
+              eventType: failedEvent.eventType,
+            },
+            "Max retries exceeded, moving to dead letter",
+          )
+          await OutboxListenerRepository.moveToDeadLetter(
+            client,
+            listenerId,
+            failedEvent.id,
+            errorMessage,
+          )
+          // Update cursor past this event so we continue with the next
+          await OutboxListenerRepository.updateCursor(
+            client,
+            listenerId,
+            failedEvent.id,
+          )
+        }
+      }
+
+      // Re-throw so the transaction commits with the error state recorded
+      // (we want the retry_count and dead_letter updates to persist)
+      // Actually, we should NOT re-throw - we've handled the error
+      return { status: "not_ready" as const }
+    }
+  })
 }
