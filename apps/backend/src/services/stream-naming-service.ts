@@ -83,6 +83,7 @@ export class StreamNamingService {
 
       // Emit to outbox for real-time delivery
       await OutboxRepository.insert(client, "stream:display_name_updated", {
+        workspaceId: stream.workspaceId,
         streamId,
         displayName: cleanName,
       })

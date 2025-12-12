@@ -43,12 +43,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(400).json({ error: "Content is required" })
       }
 
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
       const isMember = await streamService.isMember(streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.createMessage({
+        workspaceId: stream.workspaceId,
         streamId,
         authorId: userId,
         authorType: "user",
@@ -78,7 +84,13 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(403).json({ error: "Can only edit your own messages" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
       const message = await eventService.editMessage({
+        workspaceId: stream.workspaceId,
         messageId,
         streamId: existing.streamId,
         content,
@@ -105,7 +117,13 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(403).json({ error: "Can only delete your own messages" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
       await eventService.deleteMessage({
+        workspaceId: stream.workspaceId,
         messageId,
         streamId: existing.streamId,
         actorId: userId,
@@ -134,12 +152,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
       const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.addReaction({
+        workspaceId: stream.workspaceId,
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,
@@ -168,12 +192,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
       const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.removeReaction({
+        workspaceId: stream.workspaceId,
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,

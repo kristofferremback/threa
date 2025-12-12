@@ -36,6 +36,7 @@ export interface ThreadCreatedPayload {
 
 // Service params
 export interface CreateMessageParams {
+  workspaceId: string
   streamId: string
   authorId: string
   authorType: "user" | "persona"
@@ -44,6 +45,7 @@ export interface CreateMessageParams {
 }
 
 export interface EditMessageParams {
+  workspaceId: string
   messageId: string
   streamId: string
   content: string
@@ -51,12 +53,14 @@ export interface EditMessageParams {
 }
 
 export interface DeleteMessageParams {
+  workspaceId: string
   messageId: string
   streamId: string
   actorId: string
 }
 
 export interface AddReactionParams {
+  workspaceId: string
   messageId: string
   streamId: string
   emoji: string
@@ -64,6 +68,7 @@ export interface AddReactionParams {
 }
 
 export interface RemoveReactionParams {
+  workspaceId: string
   messageId: string
   streamId: string
   emoji: string
@@ -111,6 +116,7 @@ export class EventService {
 
       // 3. Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "message:created", {
+        workspaceId: params.workspaceId,
         streamId: params.streamId,
         message,
       })
@@ -153,6 +159,7 @@ export class EventService {
       if (message) {
         // 3. Publish to outbox
         await OutboxRepository.insert(client, "message:edited", {
+          workspaceId: params.workspaceId,
           streamId: params.streamId,
           message,
         })
@@ -182,6 +189,7 @@ export class EventService {
       if (message) {
         // 3. Publish to outbox
         await OutboxRepository.insert(client, "message:deleted", {
+          workspaceId: params.workspaceId,
           streamId: params.streamId,
           messageId: params.messageId,
         })
@@ -218,6 +226,7 @@ export class EventService {
       if (message) {
         // 3. Publish to outbox
         await OutboxRepository.insert(client, "reaction:added", {
+          workspaceId: params.workspaceId,
           streamId: params.streamId,
           messageId: params.messageId,
           emoji: params.emoji,
@@ -256,6 +265,7 @@ export class EventService {
       if (message) {
         // 3. Publish to outbox
         await OutboxRepository.insert(client, "reaction:removed", {
+          workspaceId: params.workspaceId,
           streamId: params.streamId,
           messageId: params.messageId,
           emoji: params.emoji,
