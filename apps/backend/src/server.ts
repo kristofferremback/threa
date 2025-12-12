@@ -15,7 +15,7 @@ import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { StreamNamingService } from "./services/stream-naming-service"
-import { BroadcastListener } from "./lib/broadcast-listener"
+import { createBroadcastListener } from "./lib/broadcast-listener"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 import { OpenRouterClient } from "./lib/openrouter"
@@ -78,7 +78,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   registerSocketHandlers(io, { authService, userService, streamService })
 
-  const broadcastListener = new BroadcastListener(pool, io)
+  const broadcastListener = createBroadcastListener(pool, io)
   await broadcastListener.start()
 
   await new Promise<void>((resolve) => {

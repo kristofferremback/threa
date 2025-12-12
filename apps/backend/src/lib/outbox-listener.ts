@@ -1,16 +1,17 @@
 import { Pool, PoolClient } from "pg"
 import { withTransaction } from "../db"
 import {
-  OutboxRepository,
   OutboxListenerRepository,
   OUTBOX_CHANNEL,
   OutboxEvent,
+  withClaim,
 } from "../repositories"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
 
 export interface OutboxListenerConfig {
   listenerId: string
+  handler: (event: OutboxEvent) => Promise<void>
   batchSize?: number
   maxRetries?: number
   baseBackoffMs?: number
@@ -28,15 +29,30 @@ const DEFAULT_CONFIG = {
   fallbackPollMs: 500,
 }
 
-export abstract class BaseOutboxListener {
-  protected pool: Pool
-  protected listenerId: string
-  protected batchSize: number
-  protected maxRetries: number
-  protected baseBackoffMs: number
-  protected debounceMs: number
-  protected maxWaitMs: number
-  protected fallbackPollMs: number
+/**
+ * Processes outbox events with NOTIFY/LISTEN for real-time delivery.
+ *
+ * @example
+ * ```ts
+ * const listener = new OutboxListener(pool, {
+ *   listenerId: "broadcast",
+ *   handler: async (event) => {
+ *     io.to(`stream:${event.payload.streamId}`).emit(event.eventType, event.payload)
+ *   },
+ * })
+ * await listener.start()
+ * ```
+ */
+export class OutboxListener {
+  private pool: Pool
+  private listenerId: string
+  private handler: (event: OutboxEvent) => Promise<void>
+  private batchSize: number
+  private maxRetries: number
+  private baseBackoffMs: number
+  private debounceMs: number
+  private maxWaitMs: number
+  private fallbackPollMs: number
 
   private running: boolean = false
   private listenClient: PoolClient | null = null
@@ -46,6 +62,7 @@ export abstract class BaseOutboxListener {
   constructor(pool: Pool, config: OutboxListenerConfig) {
     this.pool = pool
     this.listenerId = config.listenerId
+    this.handler = config.handler
     this.batchSize = config.batchSize ?? DEFAULT_CONFIG.batchSize
     this.maxRetries = config.maxRetries ?? DEFAULT_CONFIG.maxRetries
     this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
@@ -53,11 +70,6 @@ export abstract class BaseOutboxListener {
     this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
     this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
   }
-
-  /**
-   * Handle a single event. Implementations should throw on failure.
-   */
-  protected abstract handleEvent(event: OutboxEvent): Promise<void>
 
   async start(): Promise<void> {
     if (this.running) return
@@ -138,7 +150,10 @@ export abstract class BaseOutboxListener {
       })
 
       await this.listenClient.query(`LISTEN ${OUTBOX_CHANNEL}`)
-      logger.debug({ listenerId: this.listenerId }, "LISTEN connection established")
+      logger.debug(
+        { listenerId: this.listenerId },
+        "LISTEN connection established",
+      )
     } catch (err) {
       logger.error(
         { err, listenerId: this.listenerId },
@@ -170,6 +185,11 @@ export abstract class BaseOutboxListener {
     }, 1000)
   }
 
+  /**
+   * Fallback polling ensures events are processed even if NOTIFY is missed.
+   * This also handles retry_after timing - the polling interval will eventually
+   * pick up events once the backoff period has elapsed.
+   */
   private startFallbackPoll(): void {
     if (!this.running) return
 
@@ -189,114 +209,29 @@ export abstract class BaseOutboxListener {
   private async processEvents(): Promise<void> {
     if (!this.running) return
 
-    await withTransaction(this.pool, async (client) => {
-      // Check if we're in retry backoff
-      const isReady = await OutboxListenerRepository.isReadyToProcess(
-        client,
-        this.listenerId,
-      )
-      if (!isReady) {
-        return
-      }
+    await withClaim(
+      this.pool,
+      this.listenerId,
+      async (ctx) => {
+        while (true) {
+          const events = await ctx.fetchEvents(this.batchSize)
+          if (events.length === 0) break
 
-      // Claim exclusive lock on our cursor row
-      const state = await OutboxListenerRepository.claimListener(
-        client,
-        this.listenerId,
-      )
-      if (!state) {
-        logger.warn(
-          { listenerId: this.listenerId },
-          "Listener not found in database",
-        )
-        return
-      }
-
-      // Fetch events after our cursor (no lock needed)
-      const events = await OutboxRepository.fetchAfterId(
-        client,
-        state.lastProcessedId,
-        this.batchSize,
-      )
-
-      if (events.length === 0) return
-
-      // Process each event
-      let lastProcessedId = state.lastProcessedId
-      for (const event of events) {
-        try {
-          await this.handleEvent(event)
-          lastProcessedId = event.id
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err)
-          logger.error(
-            {
-              err,
-              listenerId: this.listenerId,
-              eventId: event.id.toString(),
-              eventType: event.eventType,
-            },
-            "Error processing outbox event",
-          )
-
-          // Update cursor to last successfully processed event
-          if (lastProcessedId > state.lastProcessedId) {
-            await OutboxListenerRepository.updateCursor(
-              client,
-              this.listenerId,
-              lastProcessedId,
-            )
+          for (const event of events) {
+            await this.handler(event)
           }
 
-          // Try to schedule retry
-          const retryAfter = await OutboxListenerRepository.recordError(
-            client,
-            this.listenerId,
-            errorMessage,
-            this.maxRetries,
-            this.baseBackoffMs,
+          // Update cursor after processing the batch
+          const lastEvent = events[events.length - 1]
+          await ctx.updateCursor(lastEvent.id)
+
+          logger.debug(
+            { listenerId: this.listenerId, count: events.length },
+            "Processed outbox events",
           )
-
-          if (retryAfter === null) {
-            // Max retries exceeded - move to dead letter
-            logger.error(
-              {
-                listenerId: this.listenerId,
-                eventId: event.id.toString(),
-                eventType: event.eventType,
-              },
-              "Max retries exceeded, moving to dead letter",
-            )
-            await OutboxListenerRepository.moveToDeadLetter(
-              client,
-              this.listenerId,
-              event.id,
-              errorMessage,
-            )
-            // Update cursor past this event so we don't retry it
-            await OutboxListenerRepository.updateCursor(
-              client,
-              this.listenerId,
-              event.id,
-            )
-          }
-
-          // Stop processing this batch - will retry or continue with next event
-          return
         }
-      }
-
-      // All events processed successfully - update cursor
-      await OutboxListenerRepository.updateCursor(
-        client,
-        this.listenerId,
-        lastProcessedId,
-      )
-
-      logger.debug(
-        { listenerId: this.listenerId, count: events.length },
-        "Processed outbox events",
-      )
-    })
+      },
+      { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs },
+    )
   }
 }

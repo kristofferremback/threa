@@ -1,23 +1,23 @@
 import { Pool } from "pg"
 import { Server } from "socket.io"
-import { OutboxEvent } from "../repositories"
-import { BaseOutboxListener, OutboxListenerConfig } from "./base-outbox-listener"
+import { OutboxListener, OutboxListenerConfig } from "./outbox-listener"
 
-export class BroadcastListener extends BaseOutboxListener {
-  private io: Server
-
-  constructor(
-    pool: Pool,
-    io: Server,
-    config?: Omit<OutboxListenerConfig, "listenerId">,
-  ) {
-    super(pool, { ...config, listenerId: "broadcast" })
-    this.io = io
-  }
-
-  protected async handleEvent(event: OutboxEvent): Promise<void> {
-    // All outbox payloads have streamId - broadcast to that stream's room
-    const { streamId } = event.payload
-    this.io.to(`stream:${streamId}`).emit(event.eventType, event.payload)
-  }
+/**
+ * Creates a broadcast listener that emits outbox events to Socket.io rooms.
+ *
+ * Events are broadcast to workspace-scoped stream rooms: `ws:${workspaceId}:stream:${streamId}`
+ */
+export function createBroadcastListener(
+  pool: Pool,
+  io: Server,
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">,
+): OutboxListener {
+  return new OutboxListener(pool, {
+    ...config,
+    listenerId: "broadcast",
+    handler: async (event) => {
+      const { workspaceId, streamId } = event.payload
+      io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
+    },
+  })
 }
