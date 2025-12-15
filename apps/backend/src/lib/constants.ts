@@ -30,6 +30,6 @@ export const CompanionModes = {
   NEXT_MESSAGE_ONLY: "next_message_only",
 } as const satisfies Record<string, CompanionMode>
 
-export const CONTENT_FORMATS = ["plain", "markdown"] as const
+export const CONTENT_FORMATS = ["plaintext", "markdown"] as const
 export const contentFormatSchema = z.enum(CONTENT_FORMATS)
 export type ContentFormat = z.infer<typeof contentFormatSchema>

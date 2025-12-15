@@ -71,7 +71,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
-          details: result.error.flatten().fieldErrors,
+          details: z.flattenError(result.error).fieldErrors,
         })
       }
 
@@ -130,7 +130,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
-          details: result.error.flatten().fieldErrors,
+          details: z.flattenError(result.error).fieldErrors,
         })
       }
 
@@ -161,7 +161,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
-          details: result.error.flatten().fieldErrors,
+          details: z.flattenError(result.error).fieldErrors,
         })
       }
 
@@ -184,7 +184,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
-          details: result.error.flatten().fieldErrors,
+          details: z.flattenError(result.error).fieldErrors,
         })
       }
 
