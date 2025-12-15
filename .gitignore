@@ -4,4 +4,7 @@ dist/
 .env.local
 *.log
 .DS_Store
-.claude/
+.claude/*
+!.claude/commands/
+!.claude/skills/
+!.claude/settings.json
