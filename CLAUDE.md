@@ -173,3 +173,17 @@ Adding `workspaceId` to paths touched routes, handlers, services, outbox events,
 - Each piece testable in isolation
 - Routes can use different combinations
 - Adding new checks is additive, not invasive
+
+### Derive types from schemas, not alongside them
+Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift:
+```typescript
+const STREAM_TYPES = ["scratchpad", "channel"] as const
+const streamTypeSchema = z.enum(STREAM_TYPES)
+type StreamType = z.infer<typeof streamTypeSchema>
+```
+
+### Errors should carry their own HTTP semantics
+An `HttpError` base class with `status` and `code` lets handlers just `throw`. Centralized error handler middleware formats the response. Handlers focus on business logic, not response formatting.
+
+### Prefer iteration over recursion for middleware chains
+Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, and is easier to debug. The middleware pattern is inherently iterative anyway.
