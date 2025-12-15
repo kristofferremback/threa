@@ -418,42 +418,32 @@ describe("Outbox Multi-Listener", () => {
   })
 
   describe("Concurrent claim prevention", () => {
-    test("should block concurrent claims with FOR UPDATE", async () => {
+    test("should skip locked row with FOR UPDATE SKIP LOCKED", async () => {
       // Set up a listener
       await withTransaction(pool, async (client) => {
         await OutboxListenerRepository.ensureListener(client, "test_concurrent")
       })
 
-      // Promise-based synchronization instead of setTimeout
+      // Promise-based synchronization
       let resolveTx1Claimed: () => void
-      let resolveTx1Done: () => void
+      let resolveTx2Done: () => void
       const tx1Claimed = new Promise<void>((resolve) => { resolveTx1Claimed = resolve })
-      const tx1Done = new Promise<void>((resolve) => { resolveTx1Done = resolve })
+      const tx2Done = new Promise<void>((resolve) => { resolveTx2Done = resolve })
 
-      // Track execution order
-      const executionOrder: string[] = []
-
-      // tx1: Claims lock, signals, waits for permission, then updates and commits
+      // tx1: Claims lock and holds it until tx2 finishes
       const tx1 = (async () => {
         const client1 = await pool.connect()
         try {
           await client1.query("BEGIN")
 
-          // Claim the listener (this acquires FOR UPDATE lock)
+          // Claim the listener (this acquires FOR UPDATE SKIP LOCKED lock)
           const state = await OutboxListenerRepository.claimListener(client1, "test_concurrent")
-          executionOrder.push("tx1_claimed")
           resolveTx1Claimed() // Signal that we have the lock
 
-          // Wait until tx2 is ready and waiting for the lock
-          await tx1Done
-
-          // Update cursor and commit
-          await OutboxListenerRepository.updateCursor(client1, "test_concurrent", 999n)
-          executionOrder.push("tx1_updated")
+          // Hold lock until tx2 completes its attempt
+          await tx2Done
 
           await client1.query("COMMIT")
-          executionOrder.push("tx1_committed")
-
           return state
         } catch (err) {
           await client1.query("ROLLBACK")
@@ -463,7 +453,7 @@ describe("Outbox Multi-Listener", () => {
         }
       })()
 
-      // tx2: Waits for tx1 to claim, then tries to claim (will block until tx1 commits)
+      // tx2: Waits for tx1 to claim, then tries to claim (should get null with SKIP LOCKED)
       const tx2 = (async () => {
         const client2 = await pool.connect()
         try {
@@ -471,17 +461,12 @@ describe("Outbox Multi-Listener", () => {
 
           // Wait for tx1 to have the lock first
           await tx1Claimed
-          executionOrder.push("tx2_waiting")
 
-          // Signal tx1 that we're about to try claiming (so tx1 can release)
-          resolveTx1Done()
-
-          // This should block until tx1 commits
+          // With SKIP LOCKED, this should immediately return null (not block)
           const state = await OutboxListenerRepository.claimListener(client2, "test_concurrent")
-          executionOrder.push("tx2_claimed")
 
           await client2.query("COMMIT")
-          executionOrder.push("tx2_committed")
+          resolveTx2Done() // Let tx1 know we're done
 
           return state
         } catch (err) {
@@ -495,16 +480,12 @@ describe("Outbox Multi-Listener", () => {
       // Wait for both transactions to complete
       const [state1, state2] = await Promise.all([tx1, tx2])
 
-      // tx1 should have claimed with original cursor (0)
+      // tx1 should have successfully claimed
+      expect(state1).not.toBeNull()
       expect(state1!.lastProcessedId).toBe(0n)
 
-      // tx2 should see the updated cursor from tx1 (999)
-      expect(state2!.lastProcessedId).toBe(999n)
-
-      // Verify execution order: tx1 must commit before tx2 can claim
-      const tx1CommitIndex = executionOrder.indexOf("tx1_committed")
-      const tx2ClaimedIndex = executionOrder.indexOf("tx2_claimed")
-      expect(tx2ClaimedIndex).toBeGreaterThan(tx1CommitIndex)
+      // tx2 should get null because row was locked (SKIP LOCKED behavior)
+      expect(state2).toBeNull()
     })
   })
 })

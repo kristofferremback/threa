@@ -15,6 +15,7 @@ Items identified during PR #6 review but deferred for later:
 
 1. **More stream-related events** (Severity 2) - Add more stream event types as needed
 2. **Local testing strategy revision** (Severity 2) - Improve test isolation to prevent data pollution between tests
+3. **More broadcast room types** (Severity 2) - Add workspace-scoped rooms for app harness events (users added, channels pinned, mentions, etc.)
 
 ## Dependencies
 

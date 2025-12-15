@@ -49,5 +49,5 @@ export type {
   StreamDisplayNameUpdatedPayload,
 } from "./outbox-repository"
 
-export { OutboxListenerRepository, withClaim } from "./outbox-listener-repository"
+export { OutboxListenerRepository, withClaim, CLAIM_STATUS } from "./outbox-listener-repository"
 export type { ListenerState, ClaimContext, WithClaimConfig, WithClaimResult } from "./outbox-listener-repository"

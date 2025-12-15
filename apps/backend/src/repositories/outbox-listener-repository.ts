@@ -36,7 +36,10 @@ export const OutboxListenerRepository = {
   /**
    * Claims exclusive lock on a listener's cursor row.
    * This must be called within a transaction - the lock is held until COMMIT/ROLLBACK.
-   * Returns null if listener doesn't exist.
+   * Returns null if listener doesn't exist or is already locked by another transaction.
+   *
+   * Uses SKIP LOCKED to prevent transaction build-up when multiple processes
+   * compete for the same listener. Callers should retry via polling rather than blocking.
    */
   async claimListener(
     client: PoolClient,
@@ -52,7 +55,7 @@ export const OutboxListenerRepository = {
         last_error
       FROM outbox_listeners
       WHERE listener_id = ${listenerId}
-      FOR UPDATE
+      FOR UPDATE SKIP LOCKED
     `)
 
     if (result.rows.length === 0) {
@@ -252,10 +255,16 @@ const DEFAULT_CLAIM_CONFIG: Required<WithClaimConfig> = {
   baseBackoffMs: 1000,
 }
 
+export const CLAIM_STATUS = {
+  PROCESSED: "processed",
+  NOT_READY: "not_ready",
+  NO_EVENTS: "no_events",
+} as const
+
 export type WithClaimResult =
-  | { status: "processed"; lastProcessedId: bigint }
-  | { status: "not_ready" }
-  | { status: "no_events" }
+  | { status: typeof CLAIM_STATUS.PROCESSED; lastProcessedId: bigint }
+  | { status: typeof CLAIM_STATUS.NOT_READY }
+  | { status: typeof CLAIM_STATUS.NO_EVENTS }
 
 /**
  * Encapsulates the claim-process-update cycle with proper error handling.
@@ -298,7 +307,7 @@ export async function withClaim(
       listenerId,
     )
     if (!isReady) {
-      return { status: "not_ready" as const }
+      return { status: CLAIM_STATUS.NOT_READY }
     }
 
     // Claim exclusive lock on our cursor row
@@ -308,7 +317,7 @@ export async function withClaim(
     )
     if (!state) {
       logger.warn({ listenerId }, "Listener not found in database")
-      return { status: "not_ready" as const }
+      return { status: CLAIM_STATUS.NOT_READY }
     }
 
     // Track cursor updates within this transaction
@@ -331,8 +340,8 @@ export async function withClaim(
     try {
       await callback(ctx)
       return cursorUpdated
-        ? { status: "processed" as const, lastProcessedId: currentCursor }
-        : { status: "no_events" as const }
+        ? { status: CLAIM_STATUS.PROCESSED, lastProcessedId: currentCursor }
+        : { status: CLAIM_STATUS.NO_EVENTS }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       logger.error(
@@ -381,7 +390,7 @@ export async function withClaim(
       // Re-throw so the transaction commits with the error state recorded
       // (we want the retry_count and dead_letter updates to persist)
       // Actually, we should NOT re-throw - we've handled the error
-      return { status: "not_ready" as const }
+      return { status: CLAIM_STATUS.NOT_READY }
     }
   })
 }
