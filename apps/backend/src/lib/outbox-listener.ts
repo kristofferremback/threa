@@ -55,6 +55,7 @@ export class OutboxListener {
   private fallbackPollMs: number
 
   private running: boolean = false
+  private startPromise: Promise<void> | null = null
   private listenClient: PoolClient | null = null
   private debouncer: DebounceWithMaxWait | null = null
   private fallbackTimer: Timer | null = null
@@ -73,41 +74,61 @@ export class OutboxListener {
 
   async start(): Promise<void> {
     if (this.running) return
-    this.running = true
 
+    // If start is already in progress, wait for it
+    if (this.startPromise) {
+      return this.startPromise
+    }
+
+    this.startPromise = this.doStart()
+
+    try {
+      await this.startPromise
+    } finally {
+      this.startPromise = null
+    }
+  }
+
+  private async doStart(): Promise<void> {
     // Ensure listener exists in the database
     await withTransaction(this.pool, async (client) => {
       await OutboxListenerRepository.ensureListener(client, this.listenerId)
     })
 
-    this.debouncer = new DebounceWithMaxWait(
-      () => this.processEvents(),
-      this.debounceMs,
-      this.maxWaitMs,
-      (err) =>
-        logger.error(
-          { err, listenerId: this.listenerId },
-          "OutboxListener debouncer error",
-        ),
-    )
+    try {
+      this.debouncer = new DebounceWithMaxWait(
+        () => this.processEvents(),
+        this.debounceMs,
+        this.maxWaitMs,
+        (err) =>
+          logger.error(
+            { err, listenerId: this.listenerId },
+            "OutboxListener debouncer error",
+          ),
+      )
 
-    await this.setupListener()
-    this.startFallbackPoll()
+      await this.setupListener()
 
-    logger.info(
-      {
-        listenerId: this.listenerId,
-        debounceMs: this.debounceMs,
-        maxWaitMs: this.maxWaitMs,
-        fallbackPollMs: this.fallbackPollMs,
-      },
-      "OutboxListener started",
-    )
+      this.startFallbackPoll()
+
+      this.running = true
+
+      logger.info(
+        {
+          listenerId: this.listenerId,
+          debounceMs: this.debounceMs,
+          maxWaitMs: this.maxWaitMs,
+          fallbackPollMs: this.fallbackPollMs,
+        },
+        "OutboxListener started",
+      )
+    } catch (err) {
+      this.cleanup()
+      throw err
+    }
   }
 
-  async stop(): Promise<void> {
-    this.running = false
-
+  private cleanup(): void {
     if (this.debouncer) {
       this.debouncer.cancel()
       this.debouncer = null
@@ -120,14 +141,27 @@ export class OutboxListener {
 
     if (this.listenClient) {
       try {
-        await this.listenClient.query(`UNLISTEN ${OUTBOX_CHANNEL}`)
         this.listenClient.release()
       } catch {
         // Ignore errors during cleanup
       }
       this.listenClient = null
     }
+  }
 
+  async stop(): Promise<void> {
+    this.running = false
+
+    // UNLISTEN before releasing for graceful shutdown
+    if (this.listenClient) {
+      try {
+        await this.listenClient.query(`UNLISTEN ${OUTBOX_CHANNEL}`)
+      } catch {
+        // Ignore - cleanup will release the client anyway
+      }
+    }
+
+    this.cleanup()
     logger.info({ listenerId: this.listenerId }, "OutboxListener stopped")
   }
 
@@ -191,9 +225,9 @@ export class OutboxListener {
    * pick up events once the backoff period has elapsed.
    */
   private startFallbackPoll(): void {
-    if (!this.running) return
-
     this.fallbackTimer = setTimeout(async () => {
+      if (!this.running) return
+
       try {
         await this.processEvents()
       } catch (err) {
