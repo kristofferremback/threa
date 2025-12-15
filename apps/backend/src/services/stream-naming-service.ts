@@ -40,7 +40,7 @@ export class StreamNamingService {
       }
 
       // Fetch recent messages to build context
-      const messages = await MessageRepository.findByStream(client, streamId, {
+      const messages = await MessageRepository.list(client, streamId, {
         limit: MAX_MESSAGES_FOR_NAMING,
       })
 
@@ -83,6 +83,7 @@ export class StreamNamingService {
 
       // Emit to outbox for real-time delivery
       await OutboxRepository.insert(client, "stream:display_name_updated", {
+        workspaceId: stream.workspaceId,
         streamId,
         displayName: cleanName,
       })

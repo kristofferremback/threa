@@ -136,3 +136,54 @@ bun run db:reset
 # Run backend tests
 cd apps/backend && bun test
 ```
+
+## Lessons Learned
+
+### Foundation code requires more scrutiny than feature code
+Routes, schemas, and core abstractions are infrastructure. Errors compound - every feature built on a crooked foundation inherits its problems. Review infrastructure PRs more carefully; the cost of fixing later grows with each dependent feature.
+
+### URL structure encodes domain truths
+Design URLs from domain understanding, not REST conventions:
+- `/workspaces/:workspaceId/...` exists because workspaces are the sharding boundary
+- Events on streams (not messages) because events are polymorphic
+- Messages NOT under streams because they may span multiple streams
+- Query params for filtering (`?stream_type=`) instead of multiple endpoints
+
+URLs are domain models. They should guide correct usage.
+
+### Authorization middleware must model resource lifecycle
+```
+Does resource exist? → 404
+Does user have access? → 403
+Proceed → handler
+```
+Checking access without checking existence returns 403 for non-existent resources. Wrong semantics, even if it leaks no information.
+
+### Push checks up, consolidate checks down
+- **Up:** Move repeated checks (workspace membership) into middleware. Fail earlier, fail once.
+- **Down:** Move complex validation logic (stream access) into service helpers. Single source of truth.
+
+Handlers become thin orchestrators, not validators.
+
+### Path changes are cross-cutting
+Adding `workspaceId` to paths touched routes, handlers, services, outbox events, and tests (14 files). Path structure isn't "just URLs" - it's a cross-cutting architectural decision.
+
+### Compose small middlewares
+`compose(auth, workspaceMember)` beats a monolithic `authAndWorkspace` middleware:
+- Each piece testable in isolation
+- Routes can use different combinations
+- Adding new checks is additive, not invasive
+
+### Derive types from schemas, not alongside them
+Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift:
+```typescript
+const STREAM_TYPES = ["scratchpad", "channel"] as const
+const streamTypeSchema = z.enum(STREAM_TYPES)
+type StreamType = z.infer<typeof streamTypeSchema>
+```
+
+### Errors should carry their own HTTP semantics
+An `HttpError` base class with `status` and `code` lets handlers just `throw`. Centralized error handler middleware formats the response. Handlers focus on business logic, not response formatting.
+
+### Prefer iteration over recursion for middleware chains
+Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, and is easier to debug. The middleware pattern is inherently iterative anyway.

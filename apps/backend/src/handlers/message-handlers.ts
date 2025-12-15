@@ -1,9 +1,27 @@
+import { z } from "zod"
 import type { Request, Response } from "express"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
 import { toShortcode } from "../lib/emoji"
+import { contentFormatSchema } from "../lib/constants"
+
+const createMessageSchema = z.object({
+  streamId: z.string().min(1, "streamId is required"),
+  content: z.string().min(1, "content is required"),
+  contentFormat: contentFormatSchema.optional(),
+})
+
+const updateMessageSchema = z.object({
+  content: z.string().min(1, "content is required"),
+})
+
+const addReactionSchema = z.object({
+  emoji: z.string().min(1, "emoji is required"),
+})
+
+export { createMessageSchema, updateMessageSchema, addReactionSchema }
 
 function serializeMessage(msg: Message) {
   return serializeBigInt(msg)
@@ -16,39 +34,32 @@ interface Dependencies {
 
 export function createMessageHandlers({ eventService, streamService }: Dependencies) {
   return {
-    async list(req: Request, res: Response) {
-      const userId = req.userId!
-      const { streamId } = req.params
-      const { limit, before } = req.query
-
-      const isMember = await streamService.isMember(streamId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
-
-      const messages = await eventService.getMessages(streamId, {
-        limit: limit ? parseInt(limit as string, 10) : undefined,
-        beforeSequence: before ? BigInt(before as string) : undefined,
-      })
-
-      res.json({ messages: messages.map(serializeMessage) })
-    },
-
     async create(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
-      const { content, contentFormat } = req.body
+      const workspaceId = req.workspaceId!
 
-      if (!content || typeof content !== "string") {
-        return res.status(400).json({ error: "Content is required" })
+      const result = createMessageSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
-      const isMember = await streamService.isMember(streamId, userId)
-      if (!isMember) {
+      const { streamId, content, contentFormat } = result.data
+
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
+      const isStreamMember = await streamService.isMember(streamId, userId)
+      if (!isStreamMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.createMessage({
+        workspaceId,
         streamId,
         authorId: userId,
         authorType: "user",
@@ -61,16 +72,24 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
 
     async update(req: Request, res: Response) {
       const userId = req.userId!
+      const workspaceId = req.workspaceId!
       const { messageId } = req.params
-      const { content } = req.body
 
-      if (!content || typeof content !== "string") {
-        return res.status(400).json({ error: "Content is required" })
+      const result = updateMessageSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
-      // Get message to check ownership and get streamId
       const existing = await eventService.getMessageById(messageId)
       if (!existing) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Message not found" })
       }
 
@@ -79,9 +98,10 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       const message = await eventService.editMessage({
+        workspaceId,
         messageId,
         streamId: existing.streamId,
-        content,
+        content: result.data.content,
         actorId: userId,
       })
 
@@ -94,10 +114,16 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
 
     async delete(req: Request, res: Response) {
       const userId = req.userId!
+      const workspaceId = req.workspaceId!
       const { messageId } = req.params
 
       const existing = await eventService.getMessageById(messageId)
       if (!existing) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Message not found" })
       }
 
@@ -106,6 +132,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       await eventService.deleteMessage({
+        workspaceId,
         messageId,
         streamId: existing.streamId,
         actorId: userId,
@@ -116,15 +143,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
 
     async addReaction(req: Request, res: Response) {
       const userId = req.userId!
+      const workspaceId = req.workspaceId!
       const { messageId } = req.params
-      const { emoji } = req.body
 
-      if (!emoji || typeof emoji !== "string") {
-        return res.status(400).json({ error: "Emoji is required" })
+      const result = addReactionSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
       }
 
-      // Normalize to shortcode format (accepts both raw emoji and shortcodes)
-      const shortcode = toShortcode(emoji)
+      const shortcode = toShortcode(result.data.emoji)
       if (!shortcode) {
         return res.status(400).json({ error: "Invalid emoji" })
       }
@@ -134,12 +164,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
       const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.addReaction({
+        workspaceId,
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,
@@ -155,9 +191,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
 
     async removeReaction(req: Request, res: Response) {
       const userId = req.userId!
+      const workspaceId = req.workspaceId!
       const { messageId, emoji } = req.params
 
-      // Normalize to shortcode format (accepts both raw emoji and shortcodes)
       const shortcode = toShortcode(emoji)
       if (!shortcode) {
         return res.status(400).json({ error: "Invalid emoji" })
@@ -168,12 +204,18 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
+      const stream = await streamService.getStreamById(existing.streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Message not found" })
+      }
+
       const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
       const message = await eventService.removeReaction({
+        workspaceId,
         messageId,
         streamId: existing.streamId,
         emoji: shortcode,

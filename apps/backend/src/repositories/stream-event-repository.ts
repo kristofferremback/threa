@@ -93,13 +93,27 @@ export const StreamEventRepository = {
     return mapRowToEvent(result.rows[0])
   },
 
-  async findByStream(
+  async list(
     client: PoolClient,
     streamId: string,
-    options?: { afterSequence?: bigint; limit?: number },
+    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number },
   ): Promise<StreamEvent[]> {
-    const limit = options?.limit ?? 50
-    const afterSequence = options?.afterSequence ?? BigInt(-1)
+    const limit = filters?.limit ?? 50
+    const afterSequence = filters?.afterSequence ?? BigInt(-1)
+    const types = filters?.types
+
+    if (types && types.length > 0) {
+      const result = await client.query<StreamEventRow>(sql`
+        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+        FROM stream_events
+        WHERE stream_id = ${streamId}
+          AND sequence > ${afterSequence.toString()}
+          AND event_type = ANY(${types})
+        ORDER BY sequence ASC
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToEvent)
+    }
 
     const result = await client.query<StreamEventRow>(sql`
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at

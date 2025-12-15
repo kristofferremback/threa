@@ -91,6 +91,7 @@ export interface Stream {
   displayName: string | null
   slug: string | null
   companionMode: string
+  workspaceId: string
 }
 
 export interface Message {
@@ -99,6 +100,18 @@ export interface Message {
   sequence: string
   authorId: string
   reactions: Record<string, string[]>
+  streamId: string
+}
+
+export interface StreamEvent {
+  id: string
+  streamId: string
+  sequence: string
+  eventType: string
+  payload: unknown
+  actorId: string | null
+  actorType: string | null
+  createdAt: string
 }
 
 export async function loginAs(
@@ -130,47 +143,32 @@ export async function createWorkspace(
   return data.workspace
 }
 
+export async function createStream(
+  client: TestClient,
+  workspaceId: string,
+  type: "scratchpad" | "channel",
+  options?: {
+    slug?: string
+    companionMode?: "off" | "on" | "next_message_only"
+    visibility?: "public" | "private"
+  }
+): Promise<Stream> {
+  const { status, data } = await client.post<{ stream: Stream }>(
+    `/api/workspaces/${workspaceId}/streams`,
+    { type, ...options }
+  )
+  if (status !== 201) {
+    throw new Error(`Create stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
 export async function createScratchpad(
   client: TestClient,
   workspaceId: string,
   companionMode: "off" | "on" | "next_message_only" = "on"
 ): Promise<Stream> {
-  const { status, data } = await client.post<{ stream: Stream }>(
-    `/api/workspaces/${workspaceId}/scratchpads`,
-    { companionMode }
-  )
-  if (status !== 201) {
-    throw new Error(`Create scratchpad failed: ${JSON.stringify(data)}`)
-  }
-  return data.stream
-}
-
-export async function sendMessage(
-  client: TestClient,
-  streamId: string,
-  content: string
-): Promise<Message> {
-  const { status, data } = await client.post<{ message: Message }>(
-    `/api/streams/${streamId}/messages`,
-    { content }
-  )
-  if (status !== 201) {
-    throw new Error(`Send message failed: ${JSON.stringify(data)}`)
-  }
-  return data.message
-}
-
-export async function listMessages(
-  client: TestClient,
-  streamId: string
-): Promise<Message[]> {
-  const { status, data } = await client.get<{ messages: Message[] }>(
-    `/api/streams/${streamId}/messages`
-  )
-  if (status !== 200) {
-    throw new Error(`List messages failed: ${JSON.stringify(data)}`)
-  }
-  return data.messages
+  return createStream(client, workspaceId, "scratchpad", { companionMode })
 }
 
 export async function createChannel(
@@ -179,23 +177,74 @@ export async function createChannel(
   slug: string,
   visibility: "public" | "private" = "private"
 ): Promise<Stream> {
-  const { status, data } = await client.post<{ stream: Stream }>(
-    `/api/workspaces/${workspaceId}/channels`,
-    { slug, visibility }
+  return createStream(client, workspaceId, "channel", { slug, visibility })
+}
+
+export async function listStreams(
+  client: TestClient,
+  workspaceId: string,
+  types?: string[]
+): Promise<Stream[]> {
+  const params = new URLSearchParams()
+  if (types) {
+    types.forEach((t) => params.append("stream_type", t))
+  }
+  const query = params.toString() ? `?${params.toString()}` : ""
+
+  const { status, data } = await client.get<{ streams: Stream[] }>(
+    `/api/workspaces/${workspaceId}/streams${query}`
+  )
+  if (status !== 200) {
+    throw new Error(`List streams failed: ${JSON.stringify(data)}`)
+  }
+  return data.streams
+}
+
+export async function sendMessage(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  content: string
+): Promise<Message> {
+  const { status, data } = await client.post<{ message: Message }>(
+    `/api/workspaces/${workspaceId}/messages`,
+    { streamId, content }
   )
   if (status !== 201) {
-    throw new Error(`Create channel failed: ${JSON.stringify(data)}`)
+    throw new Error(`Send message failed: ${JSON.stringify(data)}`)
   }
-  return data.stream
+  return data.message
+}
+
+export async function listEvents(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  types?: string[]
+): Promise<StreamEvent[]> {
+  const params = new URLSearchParams()
+  if (types) {
+    types.forEach((t) => params.append("type", t))
+  }
+  const query = params.toString() ? `?${params.toString()}` : ""
+
+  const { status, data } = await client.get<{ events: StreamEvent[] }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/events${query}`
+  )
+  if (status !== 200) {
+    throw new Error(`List events failed: ${JSON.stringify(data)}`)
+  }
+  return data.events
 }
 
 export async function addReaction(
   client: TestClient,
+  workspaceId: string,
   messageId: string,
   emoji: string
 ): Promise<Message> {
   const { status, data } = await client.post<{ message: Message }>(
-    `/api/messages/${messageId}/reactions`,
+    `/api/workspaces/${workspaceId}/messages/${messageId}/reactions`,
     { emoji }
   )
   if (status !== 200) {
@@ -206,14 +255,74 @@ export async function addReaction(
 
 export async function removeReaction(
   client: TestClient,
+  workspaceId: string,
   messageId: string,
   emoji: string
 ): Promise<Message> {
   const { status, data } = await client.delete<{ message: Message }>(
-    `/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`
+    `/api/workspaces/${workspaceId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`
   )
   if (status !== 200) {
     throw new Error(`Remove reaction failed: ${JSON.stringify(data)}`)
   }
   return data.message
+}
+
+export async function getStream(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string
+): Promise<Stream> {
+  const { status, data } = await client.get<{ stream: Stream }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}`
+  )
+  if (status !== 200) {
+    throw new Error(`Get stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
+export async function updateCompanionMode(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  companionMode: "off" | "on" | "next_message_only"
+): Promise<Stream> {
+  const { status, data } = await client.patch<{ stream: Stream }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/companion`,
+    { companionMode }
+  )
+  if (status !== 200) {
+    throw new Error(`Update companion mode failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
+export async function updateMessage(
+  client: TestClient,
+  workspaceId: string,
+  messageId: string,
+  content: string
+): Promise<Message> {
+  const { status, data } = await client.patch<{ message: Message }>(
+    `/api/workspaces/${workspaceId}/messages/${messageId}`,
+    { content }
+  )
+  if (status !== 200) {
+    throw new Error(`Update message failed: ${JSON.stringify(data)}`)
+  }
+  return data.message
+}
+
+export async function deleteMessage(
+  client: TestClient,
+  workspaceId: string,
+  messageId: string
+): Promise<void> {
+  const { status } = await client.delete(
+    `/api/workspaces/${workspaceId}/messages/${messageId}`
+  )
+  if (status !== 204) {
+    throw new Error(`Delete message failed with status ${status}`)
+  }
 }

@@ -1,9 +1,11 @@
-import type { Express } from "express"
+import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./middleware/auth"
+import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createAuthHandlers } from "./handlers/auth"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
+import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
 import type { UserService } from "./services/user-service"
@@ -22,22 +24,20 @@ interface Dependencies {
 export function registerRoutes(app: Express, deps: Dependencies) {
   const { authService, userService, workspaceService, streamService, eventService } = deps
 
-  const authMiddleware = createAuthMiddleware({ authService, userService })
-  const auth = createAuthHandlers({ authService, userService })
+  const auth = createAuthMiddleware({ authService, userService })
+  const workspaceMember = createWorkspaceMemberMiddleware({ workspaceService })
+  // Express natively chains handlers - spread array at usage sites
+  const authed: RequestHandler[] = [auth, workspaceMember]
+
+  const authHandlers = createAuthHandlers({ authService, userService })
   const workspace = createWorkspaceHandlers({ workspaceService })
-  const stream = createStreamHandlers({ streamService, workspaceService })
+  const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
 
-  // ===========================================================================
-  // Auth routes (public)
-  // ===========================================================================
-  app.get("/api/auth/login", auth.login)
-  app.all("/api/auth/callback", auth.callback)
-  app.get("/api/auth/logout", auth.logout)
+  app.get("/api/auth/login", authHandlers.login)
+  app.all("/api/auth/callback", authHandlers.callback)
+  app.get("/api/auth/logout", authHandlers.logout)
 
-  // ===========================================================================
-  // Dev-only login (only works with USE_STUB_AUTH=true)
-  // ===========================================================================
   if (authService instanceof StubAuthService) {
     app.post("/api/dev/login", async (req, res) => {
       const { email, name } = req.body as { email?: string; name?: string }
@@ -55,38 +55,28 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     })
   }
 
-  // ===========================================================================
-  // Auth routes (protected)
-  // ===========================================================================
-  app.get("/api/auth/me", authMiddleware, auth.me)
+  app.get("/api/auth/me", auth, authHandlers.me)
 
-  // ===========================================================================
-  // Workspace routes
-  // ===========================================================================
-  app.get("/api/workspaces", authMiddleware, workspace.list)
-  app.post("/api/workspaces", authMiddleware, workspace.create)
-  app.get("/api/workspaces/:workspaceId", authMiddleware, workspace.get)
-  app.get("/api/workspaces/:workspaceId/members", authMiddleware, workspace.getMembers)
+  app.get("/api/workspaces", auth, workspace.list)
+  app.post("/api/workspaces", auth, workspace.create)
+  app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
+  app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
 
-  // ===========================================================================
-  // Stream routes
-  // ===========================================================================
-  app.get("/api/workspaces/:workspaceId/scratchpads", authMiddleware, stream.listScratchpads)
-  app.post("/api/workspaces/:workspaceId/scratchpads", authMiddleware, stream.createScratchpad)
-  app.post("/api/workspaces/:workspaceId/channels", authMiddleware, stream.createChannel)
-  app.get("/api/streams/:streamId", authMiddleware, stream.get)
-  app.patch("/api/streams/:streamId/companion", authMiddleware, stream.updateCompanionMode)
-  app.post("/api/streams/:streamId/pin", authMiddleware, stream.pin)
-  app.post("/api/streams/:streamId/mute", authMiddleware, stream.mute)
-  app.post("/api/streams/:streamId/archive", authMiddleware, stream.archive)
+  app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
+  app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
+  app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", ...authed, stream.mute)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
 
-  // ===========================================================================
-  // Message routes
-  // ===========================================================================
-  app.get("/api/streams/:streamId/messages", authMiddleware, message.list)
-  app.post("/api/streams/:streamId/messages", authMiddleware, message.create)
-  app.patch("/api/messages/:messageId", authMiddleware, message.update)
-  app.delete("/api/messages/:messageId", authMiddleware, message.delete)
-  app.post("/api/messages/:messageId/reactions", authMiddleware, message.addReaction)
-  app.delete("/api/messages/:messageId/reactions/:emoji", authMiddleware, message.removeReaction)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
+
+  app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
+  app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
+  app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
+
+  app.use(errorHandler)
 }

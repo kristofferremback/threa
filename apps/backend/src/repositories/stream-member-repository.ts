@@ -59,26 +59,33 @@ export const StreamMemberRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
-  async findByUser(client: PoolClient, userId: string): Promise<StreamMember[]> {
-    const result = await client.query<StreamMemberRow>(sql`
-      SELECT stream_id, user_id, pinned, pinned_at, muted,
-             last_read_event_id, last_read_at, joined_at
-      FROM stream_members
-      WHERE user_id = ${userId}
-      ORDER BY pinned DESC, pinned_at DESC NULLS LAST, joined_at DESC
-    `)
-    return result.rows.map(mapRowToMember)
-  },
+  async list(
+    client: PoolClient,
+    filters: { userId?: string; streamId?: string },
+  ): Promise<StreamMember[]> {
+    if (filters.userId && !filters.streamId) {
+      const result = await client.query<StreamMemberRow>(sql`
+        SELECT stream_id, user_id, pinned, pinned_at, muted,
+               last_read_event_id, last_read_at, joined_at
+        FROM stream_members
+        WHERE user_id = ${filters.userId}
+        ORDER BY pinned DESC, pinned_at DESC NULLS LAST, joined_at DESC
+      `)
+      return result.rows.map(mapRowToMember)
+    }
 
-  async findByStream(client: PoolClient, streamId: string): Promise<StreamMember[]> {
-    const result = await client.query<StreamMemberRow>(sql`
-      SELECT stream_id, user_id, pinned, pinned_at, muted,
-             last_read_event_id, last_read_at, joined_at
-      FROM stream_members
-      WHERE stream_id = ${streamId}
-      ORDER BY joined_at
-    `)
-    return result.rows.map(mapRowToMember)
+    if (filters.streamId && !filters.userId) {
+      const result = await client.query<StreamMemberRow>(sql`
+        SELECT stream_id, user_id, pinned, pinned_at, muted,
+               last_read_event_id, last_read_at, joined_at
+        FROM stream_members
+        WHERE stream_id = ${filters.streamId}
+        ORDER BY joined_at
+      `)
+      return result.rows.map(mapRowToMember)
+    }
+
+    throw new Error("StreamMemberRepository.list requires either userId or streamId filter")
   },
 
   async insert(

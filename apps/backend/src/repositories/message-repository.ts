@@ -123,19 +123,19 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0], reactions)
   },
 
-  async findByStream(
+  async list(
     client: PoolClient,
     streamId: string,
-    options?: { limit?: number; beforeSequence?: bigint },
+    filters?: { limit?: number; beforeSequence?: bigint },
   ): Promise<Message[]> {
-    const limit = options?.limit ?? 50
+    const limit = filters?.limit ?? 50
 
     let messageRows: MessageRow[]
-    if (options?.beforeSequence) {
+    if (filters?.beforeSequence) {
       const result = await client.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
-          AND sequence < ${options.beforeSequence.toString()}
+          AND sequence < ${filters.beforeSequence.toString()}
           AND deleted_at IS NULL
         ORDER BY sequence DESC
         LIMIT ${limit}
