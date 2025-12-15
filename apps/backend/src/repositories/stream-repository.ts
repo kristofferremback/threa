@@ -1,5 +1,8 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
+import type { StreamType, Visibility, CompanionMode } from "../lib/constants"
+
+export type { StreamType, Visibility, CompanionMode }
 
 // Internal row type (snake_case, not exported)
 interface StreamRow {
@@ -22,10 +25,6 @@ interface StreamRow {
   display_name_generated_at: Date | null
 }
 
-// Domain type (camelCase, exported)
-export type StreamType = "scratchpad" | "channel" | "dm" | "thread"
-export type CompanionMode = "off" | "on" | "next_message_only"
-
 export interface Stream {
   id: string
   workspaceId: string
@@ -33,7 +32,7 @@ export interface Stream {
   displayName: string | null
   slug: string | null
   description: string | null
-  visibility: "public" | "private"
+  visibility: Visibility
   parentStreamId: string | null
   parentMessageId: string | null
   rootStreamId: string | null
@@ -53,7 +52,7 @@ export interface InsertStreamParams {
   displayName?: string
   slug?: string
   description?: string
-  visibility?: "public" | "private"
+  visibility?: Visibility
   parentStreamId?: string
   parentMessageId?: string
   rootStreamId?: string
@@ -79,7 +78,7 @@ function mapRowToStream(row: StreamRow): Stream {
     displayName: row.display_name,
     slug: row.slug,
     description: row.description,
-    visibility: row.visibility as "public" | "private",
+    visibility: row.visibility as Visibility,
     parentStreamId: row.parent_stream_id,
     parentMessageId: row.parent_message_id,
     rootStreamId: row.root_stream_id,

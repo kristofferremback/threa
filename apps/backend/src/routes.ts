@@ -6,6 +6,7 @@ import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
 import { compose } from "./lib/middleware"
+import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
 import type { UserService } from "./services/user-service"
@@ -76,4 +77,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", authed, message.delete)
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", authed, message.addReaction)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", authed, message.removeReaction)
+
+  app.use(errorHandler)
 }

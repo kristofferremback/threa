@@ -1,43 +1,60 @@
+import { z } from "zod"
 import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
-import { StreamRepository, Stream, StreamType, CompanionMode } from "../repositories/stream-repository"
+import { StreamRepository, Stream } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { streamId } from "../lib/id"
 import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
+import {
+  streamTypeSchema,
+  visibilitySchema,
+  companionModeSchema,
+  type StreamType,
+  type Visibility,
+  type CompanionMode,
+} from "../lib/constants"
 
-export interface CreateScratchpadParams {
-  workspaceId: string
-  description?: string
-  createdBy: string
-  companionMode?: CompanionMode
-  companionPersonaId?: string
-}
+const createScratchpadParamsSchema = z.object({
+  workspaceId: z.string(),
+  description: z.string().optional(),
+  createdBy: z.string(),
+  companionMode: companionModeSchema.optional(),
+  companionPersonaId: z.string().optional(),
+})
 
-export interface CreateChannelParams {
-  workspaceId: string
-  slug: string
-  description?: string
-  visibility?: "public" | "private"
-  createdBy: string
-}
+export type CreateScratchpadParams = z.infer<typeof createScratchpadParamsSchema>
 
-export interface CreateThreadParams {
-  workspaceId: string
-  parentStreamId: string
-  parentMessageId: string
-  createdBy: string
-}
+const createChannelParamsSchema = z.object({
+  workspaceId: z.string(),
+  slug: z.string(),
+  description: z.string().optional(),
+  visibility: visibilitySchema.optional(),
+  createdBy: z.string(),
+})
 
-export interface CreateStreamParams {
-  workspaceId: string
-  type: StreamType
-  slug?: string
-  description?: string
-  visibility?: "public" | "private"
-  companionMode?: CompanionMode
-  companionPersonaId?: string
-  createdBy: string
-}
+export type CreateChannelParams = z.infer<typeof createChannelParamsSchema>
+
+const createThreadParamsSchema = z.object({
+  workspaceId: z.string(),
+  parentStreamId: z.string(),
+  parentMessageId: z.string(),
+  createdBy: z.string(),
+})
+
+export type CreateThreadParams = z.infer<typeof createThreadParamsSchema>
+
+const createStreamParamsSchema = z.object({
+  workspaceId: z.string(),
+  type: streamTypeSchema,
+  slug: z.string().optional(),
+  description: z.string().optional(),
+  visibility: visibilitySchema.optional(),
+  companionMode: companionModeSchema.optional(),
+  companionPersonaId: z.string().optional(),
+  createdBy: z.string(),
+})
+
+export type CreateStreamParams = z.infer<typeof createStreamParamsSchema>
 
 export class StreamService {
   constructor(private pool: Pool) {}

@@ -3,13 +3,15 @@ import type { Request, Response } from "express"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
+import { asyncHandler } from "../lib/middleware"
 import { serializeBigInt } from "../lib/serialization"
 import { toShortcode } from "../lib/emoji"
+import { contentFormatSchema } from "../lib/constants"
 
 const createMessageSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
-  contentFormat: z.enum(["plain", "markdown"]).optional(),
+  contentFormat: contentFormatSchema.optional(),
 })
 
 const updateMessageSchema = z.object({
@@ -33,7 +35,7 @@ interface Dependencies {
 
 export function createMessageHandlers({ eventService, streamService }: Dependencies) {
   return {
-    async create(req: Request, res: Response) {
+    create: asyncHandler(async (req: Request, res: Response) => {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
@@ -67,9 +69,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       })
 
       res.status(201).json({ message: serializeMessage(message) })
-    },
+    }),
 
-    async update(req: Request, res: Response) {
+    update: asyncHandler(async (req: Request, res: Response) => {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -109,9 +111,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    },
+    }),
 
-    async delete(req: Request, res: Response) {
+    delete: asyncHandler(async (req: Request, res: Response) => {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -138,9 +140,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       })
 
       res.status(204).send()
-    },
+    }),
 
-    async addReaction(req: Request, res: Response) {
+    addReaction: asyncHandler(async (req: Request, res: Response) => {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -186,9 +188,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    },
+    }),
 
-    async removeReaction(req: Request, res: Response) {
+    removeReaction: asyncHandler(async (req: Request, res: Response) => {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId, emoji } = req.params
@@ -226,6 +228,6 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    },
+    }),
   }
 }
