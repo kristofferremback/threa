@@ -119,7 +119,7 @@ export class StreamService {
 
       return StreamRepository.list(client, workspaceId, {
         types: filters?.types,
-        visibleToMemberIds: memberStreamIds,
+        userMembershipStreamIds: memberStreamIds,
       })
     })
   }

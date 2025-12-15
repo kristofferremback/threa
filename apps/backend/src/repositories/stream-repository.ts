@@ -124,12 +124,12 @@ export const StreamRepository = {
     filters?: {
       types?: StreamType[]
       parentStreamId?: string
-      visibleToMemberIds?: string[]
+      userMembershipStreamIds?: string[]
     },
   ): Promise<Stream[]> {
     const types = filters?.types
     const parentStreamId = filters?.parentStreamId
-    const visibleToMemberIds = filters?.visibleToMemberIds
+    const userMembershipStreamIds = filters?.userMembershipStreamIds
 
     if (parentStreamId) {
       const result = await client.query<StreamRow>(
@@ -142,15 +142,15 @@ export const StreamRepository = {
       return result.rows.map(mapRowToStream)
     }
 
-    // Build query with visibility filter if member IDs provided
-    if (visibleToMemberIds !== undefined) {
+    // Build query with visibility filter if user's membership stream IDs provided
+    if (userMembershipStreamIds !== undefined) {
       if (types && types.length > 0) {
         const result = await client.query<StreamRow>(
           sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
               WHERE workspace_id = ${workspaceId}
                 AND type = ANY(${types})
                 AND archived_at IS NULL
-                AND (visibility = 'public' OR id = ANY(${visibleToMemberIds}))
+                AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
               ORDER BY created_at DESC`,
         )
         return result.rows.map(mapRowToStream)
@@ -160,7 +160,7 @@ export const StreamRepository = {
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND archived_at IS NULL
-              AND (visibility = 'public' OR id = ANY(${visibleToMemberIds}))
+              AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
             ORDER BY created_at DESC`,
       )
       return result.rows.map(mapRowToStream)
