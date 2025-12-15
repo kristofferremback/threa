@@ -6,11 +6,13 @@ import { StreamMemberRepository, StreamMember } from "../repositories/stream-mem
 import { streamId } from "../lib/id"
 import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
 import {
+  StreamTypes,
+  Visibilities,
+  CompanionModes,
   streamTypeSchema,
   visibilitySchema,
   companionModeSchema,
   type StreamType,
-  type Visibility,
   type CompanionMode,
 } from "../lib/constants"
 
@@ -75,7 +77,7 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
-      if (stream.visibility !== "public") {
+      if (stream.visibility !== Visibilities.PUBLIC) {
         const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
         if (!isMember) {
           throw new StreamNotFoundError()
@@ -94,7 +96,7 @@ export class StreamService {
       if (streamIds.length === 0) return []
 
       const streams = await StreamRepository.list(client, workspaceId, {
-        types: ["scratchpad"],
+        types: [StreamTypes.SCRATCHPAD],
       })
       return streams.filter((s) => streamIds.includes(s.id))
     })
@@ -113,22 +115,18 @@ export class StreamService {
   ): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
       const memberships = await StreamMemberRepository.list(client, { userId })
-      const memberStreamIds = new Set(memberships.map((m) => m.streamId))
+      const memberStreamIds = memberships.map((m) => m.streamId)
 
-      const streams = await StreamRepository.list(client, workspaceId, {
+      return StreamRepository.list(client, workspaceId, {
         types: filters?.types,
+        visibleToMemberIds: memberStreamIds,
       })
-
-      // Return public streams OR streams user is member of
-      return streams.filter(
-        (s) => s.visibility === "public" || memberStreamIds.has(s.id),
-      )
     })
   }
 
   async create(params: CreateStreamParams): Promise<Stream> {
     switch (params.type) {
-      case "scratchpad":
+      case StreamTypes.SCRATCHPAD:
         return this.createScratchpad({
           workspaceId: params.workspaceId,
           description: params.description,
@@ -136,7 +134,7 @@ export class StreamService {
           companionPersonaId: params.companionPersonaId,
           createdBy: params.createdBy,
         })
-      case "channel":
+      case StreamTypes.CHANNEL:
         if (!params.slug) {
           throw new Error("Slug is required for channels")
         }
@@ -159,11 +157,11 @@ export class StreamService {
       const stream = await StreamRepository.insert(client, {
         id,
         workspaceId: params.workspaceId,
-        type: "scratchpad",
+        type: StreamTypes.SCRATCHPAD,
         // displayName starts NULL, will be auto-generated from conversation
         description: params.description,
-        visibility: "private",
-        companionMode: params.companionMode ?? "off",
+        visibility: Visibilities.PRIVATE,
+        companionMode: params.companionMode ?? CompanionModes.OFF,
         companionPersonaId: params.companionPersonaId,
         createdBy: params.createdBy,
       })
@@ -192,11 +190,11 @@ export class StreamService {
       const stream = await StreamRepository.insert(client, {
         id,
         workspaceId: params.workspaceId,
-        type: "channel",
+        type: StreamTypes.CHANNEL,
         // Channels use slug as display name, no separate displayName field
         slug: params.slug,
         description: params.description,
-        visibility: params.visibility ?? "private",
+        visibility: params.visibility ?? Visibilities.PRIVATE,
         createdBy: params.createdBy,
       })
 
@@ -223,11 +221,11 @@ export class StreamService {
       const stream = await StreamRepository.insert(client, {
         id,
         workspaceId: params.workspaceId,
-        type: "thread",
+        type: StreamTypes.THREAD,
         parentStreamId: params.parentStreamId,
         parentMessageId: params.parentMessageId,
         rootStreamId,
-        visibility: "private",
+        visibility: Visibilities.PRIVATE,
         createdBy: params.createdBy,
       })
 

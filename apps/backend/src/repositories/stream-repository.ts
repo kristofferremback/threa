@@ -121,10 +121,15 @@ export const StreamRepository = {
   async list(
     client: PoolClient,
     workspaceId: string,
-    filters?: { types?: StreamType[]; parentStreamId?: string },
+    filters?: {
+      types?: StreamType[]
+      parentStreamId?: string
+      visibleToMemberIds?: string[]
+    },
   ): Promise<Stream[]> {
     const types = filters?.types
     const parentStreamId = filters?.parentStreamId
+    const visibleToMemberIds = filters?.visibleToMemberIds
 
     if (parentStreamId) {
       const result = await client.query<StreamRow>(
@@ -132,6 +137,30 @@ export const StreamRepository = {
             WHERE workspace_id = ${workspaceId}
               AND parent_stream_id = ${parentStreamId}
               AND archived_at IS NULL
+            ORDER BY created_at DESC`,
+      )
+      return result.rows.map(mapRowToStream)
+    }
+
+    // Build query with visibility filter if member IDs provided
+    if (visibleToMemberIds !== undefined) {
+      if (types && types.length > 0) {
+        const result = await client.query<StreamRow>(
+          sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+              WHERE workspace_id = ${workspaceId}
+                AND type = ANY(${types})
+                AND archived_at IS NULL
+                AND (visibility = 'public' OR id = ANY(${visibleToMemberIds}))
+              ORDER BY created_at DESC`,
+        )
+        return result.rows.map(mapRowToStream)
+      }
+
+      const result = await client.query<StreamRow>(
+        sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+            WHERE workspace_id = ${workspaceId}
+              AND archived_at IS NULL
+              AND (visibility = 'public' OR id = ANY(${visibleToMemberIds}))
             ORDER BY created_at DESC`,
       )
       return result.rows.map(mapRowToStream)
