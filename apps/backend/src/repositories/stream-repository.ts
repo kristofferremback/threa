@@ -119,35 +119,39 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
-  async findByWorkspaceAndType(
+  async list(
     client: PoolClient,
     workspaceId: string,
-    type: StreamType,
+    filters?: { types?: StreamType[]; parentStreamId?: string },
   ): Promise<Stream[]> {
+    const types = filters?.types
+    const parentStreamId = filters?.parentStreamId
+
+    if (parentStreamId) {
+      const result = await client.query<StreamRow>(
+        sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+            WHERE workspace_id = ${workspaceId}
+              AND parent_stream_id = ${parentStreamId}
+              AND archived_at IS NULL
+            ORDER BY created_at DESC`,
+      )
+      return result.rows.map(mapRowToStream)
+    }
+
+    if (types && types.length > 0) {
+      const result = await client.query<StreamRow>(
+        sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+            WHERE workspace_id = ${workspaceId}
+              AND type = ANY(${types})
+              AND archived_at IS NULL
+            ORDER BY created_at DESC`,
+      )
+      return result.rows.map(mapRowToStream)
+    }
+
     const result = await client.query<StreamRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
           WHERE workspace_id = ${workspaceId}
-            AND type = ${type}
-            AND archived_at IS NULL
-          ORDER BY created_at DESC`,
-    )
-    return result.rows.map(mapRowToStream)
-  },
-
-  async findByWorkspace(client: PoolClient, workspaceId: string): Promise<Stream[]> {
-    const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-          WHERE workspace_id = ${workspaceId}
-            AND archived_at IS NULL
-          ORDER BY created_at DESC`,
-    )
-    return result.rows.map(mapRowToStream)
-  },
-
-  async findByParentStream(client: PoolClient, parentStreamId: string): Promise<Stream[]> {
-    const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
-          WHERE parent_stream_id = ${parentStreamId}
             AND archived_at IS NULL
           ORDER BY created_at DESC`,
     )

@@ -79,12 +79,12 @@ export const WorkspaceRepository = {
     return result.rows[0] ? mapRowToWorkspace(result.rows[0]) : null
   },
 
-  async findByUserId(client: PoolClient, userId: string): Promise<Workspace[]> {
+  async list(client: PoolClient, filters: { userId: string }): Promise<Workspace[]> {
     const result = await client.query<WorkspaceRow>(sql`
       SELECT w.id, w.name, w.slug, w.created_by, w.created_at, w.updated_at
       FROM workspaces w
       JOIN workspace_members wm ON wm.workspace_id = w.id
-      WHERE wm.user_id = ${userId}
+      WHERE wm.user_id = ${filters.userId}
       ORDER BY w.created_at DESC
     `)
     return result.rows.map(mapRowToWorkspace)
@@ -113,7 +113,7 @@ export const WorkspaceRepository = {
     return mapRowToMember(result.rows[0])
   },
 
-  async findMembers(client: PoolClient, workspaceId: string): Promise<WorkspaceMember[]> {
+  async listMembers(client: PoolClient, workspaceId: string): Promise<WorkspaceMember[]> {
     const result = await client.query<WorkspaceMemberRow>(sql`
       SELECT workspace_id, user_id, role, joined_at
       FROM workspace_members

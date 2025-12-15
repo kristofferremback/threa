@@ -28,6 +28,17 @@ export interface CreateThreadParams {
   createdBy: string
 }
 
+export interface CreateStreamParams {
+  workspaceId: string
+  type: StreamType
+  slug?: string
+  description?: string
+  visibility?: "public" | "private"
+  companionMode?: CompanionMode
+  companionPersonaId?: string
+  createdBy: string
+}
+
 export class StreamService {
   constructor(private pool: Pool) {}
 
@@ -37,24 +48,68 @@ export class StreamService {
 
   async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.findByUser(client, userId)
+      const memberships = await StreamMemberRepository.list(client, { userId })
       const streamIds = memberships.map((m) => m.streamId)
 
       if (streamIds.length === 0) return []
 
-      const streams = await StreamRepository.findByWorkspaceAndType(
-        client,
-        workspaceId,
-        "scratchpad",
-      )
+      const streams = await StreamRepository.list(client, workspaceId, {
+        types: ["scratchpad"],
+      })
       return streams.filter((s) => streamIds.includes(s.id))
     })
   }
 
   async getStreamsByWorkspace(workspaceId: string): Promise<Stream[]> {
     return withClient(this.pool, (client) =>
-      StreamRepository.findByWorkspace(client, workspaceId),
+      StreamRepository.list(client, workspaceId),
     )
+  }
+
+  async list(
+    workspaceId: string,
+    userId: string,
+    filters?: { types?: StreamType[] },
+  ): Promise<Stream[]> {
+    return withClient(this.pool, async (client) => {
+      const memberships = await StreamMemberRepository.list(client, { userId })
+      const memberStreamIds = new Set(memberships.map((m) => m.streamId))
+
+      const streams = await StreamRepository.list(client, workspaceId, {
+        types: filters?.types,
+      })
+
+      // Return public streams OR streams user is member of
+      return streams.filter(
+        (s) => s.visibility === "public" || memberStreamIds.has(s.id),
+      )
+    })
+  }
+
+  async create(params: CreateStreamParams): Promise<Stream> {
+    switch (params.type) {
+      case "scratchpad":
+        return this.createScratchpad({
+          workspaceId: params.workspaceId,
+          description: params.description,
+          companionMode: params.companionMode,
+          companionPersonaId: params.companionPersonaId,
+          createdBy: params.createdBy,
+        })
+      case "channel":
+        if (!params.slug) {
+          throw new Error("Slug is required for channels")
+        }
+        return this.createChannel({
+          workspaceId: params.workspaceId,
+          slug: params.slug,
+          description: params.description,
+          visibility: params.visibility,
+          createdBy: params.createdBy,
+        })
+      default:
+        throw new Error(`Unsupported stream type for create: ${params.type}`)
+    }
   }
 
   async createScratchpad(params: CreateScratchpadParams): Promise<Stream> {
@@ -190,7 +245,7 @@ export class StreamService {
 
   async getMembers(streamId: string): Promise<StreamMember[]> {
     return withClient(this.pool, (client) =>
-      StreamMemberRepository.findByStream(client, streamId),
+      StreamMemberRepository.list(client, { streamId }),
     )
   }
 

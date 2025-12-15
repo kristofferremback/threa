@@ -1,103 +1,77 @@
 import type { Request, Response } from "express"
 import type { StreamService } from "../services/stream-service"
 import type { WorkspaceService } from "../services/workspace-service"
-import type { CompanionMode } from "../repositories"
+import type { EventService } from "../services/event-service"
+import type { CompanionMode, StreamType, EventType, StreamEvent } from "../repositories"
 import { DuplicateSlugError } from "../lib/errors"
+import { serializeBigInt } from "../lib/serialization"
 
 interface Dependencies {
   streamService: StreamService
   workspaceService: WorkspaceService
+  eventService: EventService
 }
 
-export function createStreamHandlers({ streamService, workspaceService }: Dependencies) {
+function serializeEvent(event: StreamEvent) {
+  return serializeBigInt(event)
+}
+
+export function createStreamHandlers({ streamService, workspaceService, eventService }: Dependencies) {
   return {
-    async get(req: Request, res: Response) {
+    async list(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
-      const stream = await streamService.getStreamById(streamId)
+      const { workspaceId } = req.params
+      const { stream_type } = req.query
 
-      if (!stream) {
-        return res.status(404).json({ error: "Stream not found" })
+      const isMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
       }
 
-      // Access control: public streams require workspace membership,
-      // private streams (scratchpads, private channels, threads) require stream membership
-      if (stream.visibility === "public") {
-        const isWorkspaceMember = await workspaceService.isMember(stream.workspaceId, userId)
-        if (!isWorkspaceMember) {
-          return res.status(403).json({ error: "Not authorized" })
+      // Parse stream_type query param - supports ?stream_type=scratchpad&stream_type=channel
+      const types = stream_type
+        ? (Array.isArray(stream_type) ? stream_type : [stream_type]) as StreamType[]
+        : undefined
+
+      const streams = await streamService.list(workspaceId, userId, { types })
+      res.json({ streams })
+    },
+
+    async create(req: Request, res: Response) {
+      const userId = req.userId!
+      const { workspaceId } = req.params
+      const { type, slug, description, visibility, companionMode, companionPersonaId } = req.body
+
+      if (!type || !["scratchpad", "channel"].includes(type)) {
+        return res.status(400).json({ error: "Valid type is required (scratchpad or channel)" })
+      }
+
+      const isMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      // Channels require slug
+      if (type === "channel") {
+        if (!slug || typeof slug !== "string") {
+          return res.status(400).json({ error: "Slug is required for channels" })
         }
-      } else {
-        const isStreamMember = await streamService.isMember(streamId, userId)
-        if (!isStreamMember) {
-          // Return 404 to avoid leaking existence of private streams
-          return res.status(404).json({ error: "Stream not found" })
+        if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+          return res.status(400).json({
+            error: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+          })
         }
-      }
-
-      res.json({ stream })
-    },
-
-    async listScratchpads(req: Request, res: Response) {
-      const userId = req.userId!
-      const { workspaceId } = req.params
-      const isMember = await workspaceService.isMember(workspaceId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this workspace" })
-      }
-
-      const scratchpads = await streamService.getScratchpadsByUser(workspaceId, userId)
-      res.json({ streams: scratchpads })
-    },
-
-    async createScratchpad(req: Request, res: Response) {
-      const userId = req.userId!
-      const { workspaceId } = req.params
-      const { description, companionMode, companionPersonaId } = req.body
-
-      const isMember = await workspaceService.isMember(workspaceId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this workspace" })
-      }
-
-      const stream = await streamService.createScratchpad({
-        workspaceId,
-        description,
-        companionMode,
-        companionPersonaId,
-        createdBy: userId,
-      })
-
-      res.status(201).json({ stream })
-    },
-
-    async createChannel(req: Request, res: Response) {
-      const userId = req.userId!
-      const { workspaceId } = req.params
-      const { slug, description, visibility } = req.body
-
-      if (!slug || typeof slug !== "string") {
-        return res.status(400).json({ error: "Slug is required" })
-      }
-
-      // Validate slug format (lowercase, alphanumeric, hyphens - no leading/trailing hyphens)
-      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-        return res
-          .status(400)
-          .json({ error: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)" })
-      }
-
-      const isMember = await workspaceService.isMember(workspaceId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this workspace" })
       }
 
       try {
-        const stream = await streamService.createChannel({
+        const stream = await streamService.create({
           workspaceId,
+          type,
           slug,
           description,
           visibility,
+          companionMode,
+          companionPersonaId,
           createdBy: userId,
         })
 
@@ -110,9 +84,74 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
       }
     },
 
+    async get(req: Request, res: Response) {
+      const userId = req.userId!
+      const { workspaceId, streamId } = req.params
+
+      // First verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
+      // For private streams, also check stream membership
+      if (stream.visibility !== "public") {
+        const isStreamMember = await streamService.isMember(streamId, userId)
+        if (!isStreamMember) {
+          return res.status(404).json({ error: "Stream not found" })
+        }
+      }
+
+      res.json({ stream })
+    },
+
+    async listEvents(req: Request, res: Response) {
+      const userId = req.userId!
+      const { workspaceId, streamId } = req.params
+      const { type, limit, after } = req.query
+
+      // Verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      // Verify stream belongs to workspace and user has access
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Stream not found" })
+      }
+
+      // Check stream membership for private streams
+      if (stream.visibility !== "public") {
+        const isStreamMember = await streamService.isMember(streamId, userId)
+        if (!isStreamMember) {
+          return res.status(404).json({ error: "Stream not found" })
+        }
+      }
+
+      // Parse type filter - supports ?type=message_created&type=reaction_added
+      const types = type
+        ? (Array.isArray(type) ? type : [type]) as EventType[]
+        : undefined
+
+      const events = await eventService.listEvents(streamId, {
+        types,
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+        afterSequence: after ? BigInt(after as string) : undefined,
+      })
+
+      res.json({ events: events.map(serializeEvent) })
+    },
+
     async updateCompanionMode(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
+      const { workspaceId, streamId } = req.params
       const { companionMode, companionPersonaId } = req.body as {
         companionMode: CompanionMode
         companionPersonaId?: string | null
@@ -122,8 +161,14 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
         return res.status(400).json({ error: "Valid companionMode is required" })
       }
 
+      // Verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
       const stream = await streamService.getStreamById(streamId)
-      if (!stream) {
+      if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Stream not found" })
       }
 
@@ -143,11 +188,23 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
 
     async pin(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
+      const { workspaceId, streamId } = req.params
       const { pinned } = req.body
 
       if (typeof pinned !== "boolean") {
         return res.status(400).json({ error: "pinned must be a boolean" })
+      }
+
+      // Verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      // Verify stream belongs to workspace
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Stream not found" })
       }
 
       const membership = await streamService.pinStream(streamId, userId, pinned)
@@ -160,11 +217,23 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
 
     async mute(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
+      const { workspaceId, streamId } = req.params
       const { muted } = req.body
 
       if (typeof muted !== "boolean") {
         return res.status(400).json({ error: "muted must be a boolean" })
+      }
+
+      // Verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      // Verify stream belongs to workspace
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Stream not found" })
       }
 
       const membership = await streamService.muteStream(streamId, userId, muted)
@@ -177,10 +246,16 @@ export function createStreamHandlers({ streamService, workspaceService }: Depend
 
     async archive(req: Request, res: Response) {
       const userId = req.userId!
-      const { streamId } = req.params
-      const stream = await streamService.getStreamById(streamId)
+      const { workspaceId, streamId } = req.params
 
-      if (!stream) {
+      // Verify workspace membership
+      const isWorkspaceMember = await workspaceService.isMember(workspaceId, userId)
+      if (!isWorkspaceMember) {
+        return res.status(403).json({ error: "Not a member of this workspace" })
+      }
+
+      const stream = await streamService.getStreamById(streamId)
+      if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Stream not found" })
       }
 

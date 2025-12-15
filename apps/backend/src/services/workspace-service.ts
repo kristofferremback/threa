@@ -30,7 +30,7 @@ export class WorkspaceService {
 
   async getWorkspacesByUserId(userId: string): Promise<Workspace[]> {
     return withClient(this.pool, (client) =>
-      WorkspaceRepository.findByUserId(client, userId),
+      WorkspaceRepository.list(client, { userId }),
     )
   }
 
@@ -67,7 +67,7 @@ export class WorkspaceService {
 
   async getMembers(workspaceId: string): Promise<WorkspaceMember[]> {
     return withClient(this.pool, (client) =>
-      WorkspaceRepository.findMembers(client, workspaceId),
+      WorkspaceRepository.listMembers(client, workspaceId),
     )
   }
 

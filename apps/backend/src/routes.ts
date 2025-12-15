@@ -25,8 +25,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const authMiddleware = createAuthMiddleware({ authService, userService })
   const auth = createAuthHandlers({ authService, userService })
   const workspace = createWorkspaceHandlers({ workspaceService })
-  const stream = createStreamHandlers({ streamService, workspaceService })
-  const message = createMessageHandlers({ eventService, streamService })
+  const stream = createStreamHandlers({ streamService, workspaceService, eventService })
+  const message = createMessageHandlers({ eventService, streamService, workspaceService })
 
   // ===========================================================================
   // Auth routes (public)
@@ -69,24 +69,27 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/members", authMiddleware, workspace.getMembers)
 
   // ===========================================================================
-  // Stream routes
+  // Stream routes (all workspace-scoped)
   // ===========================================================================
-  app.get("/api/workspaces/:workspaceId/scratchpads", authMiddleware, stream.listScratchpads)
-  app.post("/api/workspaces/:workspaceId/scratchpads", authMiddleware, stream.createScratchpad)
-  app.post("/api/workspaces/:workspaceId/channels", authMiddleware, stream.createChannel)
-  app.get("/api/streams/:streamId", authMiddleware, stream.get)
-  app.patch("/api/streams/:streamId/companion", authMiddleware, stream.updateCompanionMode)
-  app.post("/api/streams/:streamId/pin", authMiddleware, stream.pin)
-  app.post("/api/streams/:streamId/mute", authMiddleware, stream.mute)
-  app.post("/api/streams/:streamId/archive", authMiddleware, stream.archive)
+  app.get("/api/workspaces/:workspaceId/streams", authMiddleware, stream.list)
+  app.post("/api/workspaces/:workspaceId/streams", authMiddleware, stream.create)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId", authMiddleware, stream.get)
+  app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", authMiddleware, stream.updateCompanionMode)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", authMiddleware, stream.pin)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", authMiddleware, stream.mute)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", authMiddleware, stream.archive)
 
   // ===========================================================================
-  // Message routes
+  // Events route (replaces messages listing)
   // ===========================================================================
-  app.get("/api/streams/:streamId/messages", authMiddleware, message.list)
-  app.post("/api/streams/:streamId/messages", authMiddleware, message.create)
-  app.patch("/api/messages/:messageId", authMiddleware, message.update)
-  app.delete("/api/messages/:messageId", authMiddleware, message.delete)
-  app.post("/api/messages/:messageId/reactions", authMiddleware, message.addReaction)
-  app.delete("/api/messages/:messageId/reactions/:emoji", authMiddleware, message.removeReaction)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/events", authMiddleware, stream.listEvents)
+
+  // ===========================================================================
+  // Message routes (workspace-scoped, not stream-scoped)
+  // ===========================================================================
+  app.post("/api/workspaces/:workspaceId/messages", authMiddleware, message.create)
+  app.patch("/api/workspaces/:workspaceId/messages/:messageId", authMiddleware, message.update)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId", authMiddleware, message.delete)
+  app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", authMiddleware, message.addReaction)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", authMiddleware, message.removeReaction)
 }
