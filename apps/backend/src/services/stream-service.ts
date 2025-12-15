@@ -3,7 +3,7 @@ import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream, StreamType, CompanionMode } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { streamId } from "../lib/id"
-import { DuplicateSlugError } from "../lib/errors"
+import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
 
 export interface CreateScratchpadParams {
   workspaceId: string
@@ -44,6 +44,29 @@ export class StreamService {
 
   async getStreamById(id: string): Promise<Stream | null> {
     return withClient(this.pool, (client) => StreamRepository.findById(client, id))
+  }
+
+  async validateStreamAccess(
+    streamId: string,
+    workspaceId: string,
+    userId: string,
+  ): Promise<Stream> {
+    return withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
+
+      if (!stream || stream.workspaceId !== workspaceId) {
+        throw new StreamNotFoundError()
+      }
+
+      if (stream.visibility !== "public") {
+        const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
+        if (!isMember) {
+          throw new StreamNotFoundError()
+        }
+      }
+
+      return stream
+    })
   }
 
   async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {

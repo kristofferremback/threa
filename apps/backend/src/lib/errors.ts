@@ -6,3 +6,12 @@ export class DuplicateSlugError extends Error {
     this.name = "DuplicateSlugError"
   }
 }
+
+export class StreamNotFoundError extends Error {
+  readonly code = "STREAM_NOT_FOUND"
+
+  constructor() {
+    super("Stream not found")
+    this.name = "StreamNotFoundError"
+  }
+}

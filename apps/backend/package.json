@@ -22,7 +22,8 @@
     "socket.io": "^4.8",
     "squid": "^0.5",
     "ulid": "^2",
-    "umzug": "^3"
+    "umzug": "^3",
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@types/express": "^4",

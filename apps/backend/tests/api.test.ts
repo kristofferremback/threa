@@ -416,13 +416,14 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("channel-invalid"), "Channel Invalid Test")
       const workspace = await createWorkspace(client, `Chan Invalid WS ${testRunId}`)
 
-      const { status, data } = await client.post<{ error: string }>(
+      const { status, data } = await client.post<{ error: string; details?: Record<string, string[]> }>(
         `/api/workspaces/${workspace.id}/streams`,
         { type: "channel", slug: "Invalid Slug With Spaces" }
       )
 
       expect(status).toBe(400)
-      expect(data.error).toContain("lowercase alphanumeric")
+      expect(data.error).toBe("Validation failed")
+      expect(data.details?.slug?.[0]).toContain("lowercase alphanumeric")
     })
   })
 
@@ -540,32 +541,35 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("err-400"), "Error 400 Test")
 
-      const { status: wsStatus, data: wsData } = await client.post<{ error: string }>(
+      const { status: wsStatus, data: wsData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
         "/api/workspaces",
         {}
       )
       expect(wsStatus).toBe(400)
-      expect(wsData.error).toBe("Name is required")
+      expect(wsData.error).toBe("Validation failed")
+      expect(wsData.details?.name).toBeDefined()
 
       const workspace = await createWorkspace(client, `Err 400 WS ${testRunId}`)
 
       // Channels require slug
-      const { status: chStatus, data: chData } = await client.post<{ error: string }>(
+      const { status: chStatus, data: chData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
         `/api/workspaces/${workspace.id}/streams`,
         { type: "channel" }
       )
       expect(chStatus).toBe(400)
-      expect(chData.error).toBe("Slug is required for channels")
+      expect(chData.error).toBe("Validation failed")
+      expect(chData.details?.slug).toBeDefined()
 
       const scratchpad = await createScratchpad(client, workspace.id)
 
       // Messages require streamId and content
-      const { status: msgStatus, data: msgData } = await client.post<{ error: string }>(
+      const { status: msgStatus, data: msgData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
         `/api/workspaces/${workspace.id}/messages`,
         { streamId: scratchpad.id }
       )
       expect(msgStatus).toBe(400)
-      expect(msgData.error).toBe("Content is required")
+      expect(msgData.error).toBe("Validation failed")
+      expect(msgData.details?.content).toBeDefined()
     })
   })
 
