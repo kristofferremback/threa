@@ -3,7 +3,6 @@ import type { Request, Response } from "express"
 import type { StreamService } from "../services/stream-service"
 import type { EventService } from "../services/event-service"
 import type { EventType, StreamEvent } from "../repositories"
-import { asyncHandler } from "../lib/middleware"
 import { serializeBigInt } from "../lib/serialization"
 import {
   streamTypeSchema,
@@ -51,7 +50,7 @@ function serializeEvent(event: StreamEvent) {
 
 export function createStreamHandlers({ streamService, eventService }: Dependencies) {
   return {
-    list: asyncHandler(async (req: Request, res: Response) => {
+    async list(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { stream_type } = req.query
@@ -62,9 +61,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const streams = await streamService.list(workspaceId, userId, { types })
       res.json({ streams })
-    }),
+    },
 
-    create: asyncHandler(async (req: Request, res: Response) => {
+    async create(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
@@ -90,18 +89,18 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       })
 
       res.status(201).json({ stream })
-    }),
+    },
 
-    get: asyncHandler(async (req: Request, res: Response) => {
+    async get(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
       res.json({ stream })
-    }),
+    },
 
-    listEvents: asyncHandler(async (req: Request, res: Response) => {
+    async listEvents(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
@@ -120,9 +119,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       })
 
       res.json({ events: events.map(serializeEvent) })
-    }),
+    },
 
-    updateCompanionMode: asyncHandler(async (req: Request, res: Response) => {
+    async updateCompanionMode(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
@@ -151,9 +150,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       )
 
       res.json({ stream: updated })
-    }),
+    },
 
-    pin: asyncHandler(async (req: Request, res: Response) => {
+    async pin(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
@@ -174,9 +173,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       }
 
       res.json({ membership })
-    }),
+    },
 
-    mute: asyncHandler(async (req: Request, res: Response) => {
+    async mute(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
@@ -197,9 +196,9 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       }
 
       res.json({ membership })
-    }),
+    },
 
-    archive: asyncHandler(async (req: Request, res: Response) => {
+    async archive(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
@@ -212,6 +211,6 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const archived = await streamService.archiveStream(streamId)
       res.json({ stream: archived })
-    }),
+    },
   }
 }

@@ -3,7 +3,6 @@ import type { Request, Response } from "express"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
-import { asyncHandler } from "../lib/middleware"
 import { serializeBigInt } from "../lib/serialization"
 import { toShortcode } from "../lib/emoji"
 import { contentFormatSchema } from "../lib/constants"
@@ -35,7 +34,7 @@ interface Dependencies {
 
 export function createMessageHandlers({ eventService, streamService }: Dependencies) {
   return {
-    create: asyncHandler(async (req: Request, res: Response) => {
+    async create(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
@@ -69,9 +68,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       })
 
       res.status(201).json({ message: serializeMessage(message) })
-    }),
+    },
 
-    update: asyncHandler(async (req: Request, res: Response) => {
+    async update(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -111,9 +110,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    }),
+    },
 
-    delete: asyncHandler(async (req: Request, res: Response) => {
+    async delete(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -140,9 +139,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       })
 
       res.status(204).send()
-    }),
+    },
 
-    addReaction: asyncHandler(async (req: Request, res: Response) => {
+    async addReaction(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId } = req.params
@@ -188,9 +187,9 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    }),
+    },
 
-    removeReaction: asyncHandler(async (req: Request, res: Response) => {
+    async removeReaction(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { messageId, emoji } = req.params
@@ -228,6 +227,6 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
       }
 
       res.json({ message: serializeMessage(message) })
-    }),
+    },
   }
 }
