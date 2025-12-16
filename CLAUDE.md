@@ -103,6 +103,26 @@ createStreamHandlers({ pool, authService, ...deps })
 - Business logic in one place (code), not spread across DB + code
 - Prefixed ULIDs for all entity IDs (`stream_xxx`, `user_xxx`, etc.)
 
+## Project Invariants
+
+Invariants are constraints that must hold across the entire codebase. Reference them by ID when planning or reviewing changes.
+
+| ID | Name | Rule |
+|----|------|------|
+| **INV-1** | No Foreign Keys | Application manages relationships, not database |
+| **INV-2** | Prefixed ULIDs | All entity IDs use format `prefix_ulid` (e.g., `stream_xxx`, `user_xxx`) |
+| **INV-3** | No DB Enums | Use TEXT columns, validate in application code |
+| **INV-4** | Outbox for Real-time | All real-time events go through the outbox table |
+| **INV-5** | Repository Pattern | Data access through repositories with `PoolClient` first parameter |
+| **INV-6** | Transactions in Services | Services manage transaction boundaries, not handlers |
+| **INV-7** | Events + Projections | Events are source of truth; projections for queries; both updated in same transaction |
+| **INV-8** | Workspace Scoping | Resources belong to workspaces; workspace is the sharding boundary |
+
+When introducing a new invariant:
+1. Document it here with next available ID
+2. Add tests that enforce it
+3. Reference it in related code comments if non-obvious
+
 ## Service Guidelines
 
 - Services <500 lines
@@ -168,6 +188,89 @@ bun run dev
 ```
 
 Each worktree gets its own database (e.g., `threa_feature_xyz`) while sharing the same postgres container.
+
+## Agent Workflow
+
+### Divergence Protocol
+
+After significant implementation milestones, explicitly compare plan vs. reality:
+
+```
+PLAN SAID: [what the plan/task specified]
+ACTUALLY DID: [what was implemented]
+DIVERGENCE: [none | description of difference]
+REASON: [why divergence occurred, if any]
+```
+
+If there was meaningful divergence:
+1. Stop and surface it before continuing
+2. Assess whether the divergence was correct (better approach discovered) or a mistake
+3. Update the plan if the divergence should be preserved
+4. Get confirmation before proceeding
+
+**Key prompt**: "Did you follow the plan so far, or did you diverge? If you diverged, how and why?"
+
+### Work Notes for Multi-Session Tasks
+
+For features spanning multiple sessions, create `docs/plans/<feature>/work_notes.md`:
+
+```markdown
+# <Feature Name> - Work Notes
+
+**Started**: <date>
+**Branch**: <branch-name>
+**Status**: <In Progress | Blocked | Complete>
+
+## Session Log
+
+### <date> - <Focus Area>
+
+**Context reviewed**:
+- Read <file> - understood <what>
+
+**Applicable invariants**: INV-X, INV-Y
+
+**Completed**:
+- [x] <task>
+
+**Discovered**:
+- <insight or issue found>
+
+**Next steps**:
+1. <next task>
+
+---
+
+## Key Decisions
+
+### <Decision Title>
+**Choice**: <what was decided>
+**Rationale**: <why>
+**Alternatives considered**: <what else was considered>
+
+---
+
+## Blockers / Open Questions
+
+- [ ] <unresolved issue>
+
+---
+
+## Files Modified
+
+- `path/to/file` - <what changed>
+```
+
+### Request Protocol for Blockers
+
+When blocked by tech debt or a bug that's outside current scope:
+
+1. Document the blocker in `docs/requests/<issue-name>.md`
+2. Include: problem statement, proposed solution, affected files, acceptance criteria
+3. Continue with workaround if possible, or stop and surface to Kris
+4. When the fix lands, merge and revisit the original plan
+
+This enables parallel work: one agent continues on the feature, another fixes the blocker.
 
 ## Lessons Learned
 
