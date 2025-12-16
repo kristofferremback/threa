@@ -2,7 +2,7 @@
  * E2E API tests - black box testing via HTTP.
  *
  * The test server starts automatically via setup.ts preload.
- * Run with: bun test tests/api.test.ts
+ * Run with: bun test --preload ./tests/setup.ts tests/e2e/
  */
 
 import { describe, test, expect } from "bun:test"
@@ -21,7 +21,7 @@ import {
   updateCompanionMode,
   updateMessage,
   deleteMessage,
-} from "./client"
+} from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
 const testRunId = Math.random().toString(36).substring(7)
