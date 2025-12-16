@@ -75,7 +75,8 @@ export class OutboxListener {
   async start(): Promise<void> {
     if (this.running) return
 
-    // If start is already in progress, wait for it
+    // If start is already in progress, wait for it and return early.
+    // If a concurrent start fails, so would probably this one too.
     if (this.startPromise) {
       return this.startPromise
     }

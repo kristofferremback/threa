@@ -187,3 +187,6 @@ An `HttpError` base class with `status` and `code` lets handlers just `throw`. C
 
 ### Prefer iteration over recursion for middleware chains
 Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, and is easier to debug. The middleware pattern is inherently iterative anyway.
+
+### Comments justifying changes belong in commit messages, not code
+Comments like "Uses composition instead of inheritance" reference a previous design that no longer exists. Future readers won't know or care about the old approach. Put change justifications in commit messages where they provide context for reviewers; code comments should explain the current design's "why", not contrast with history.
