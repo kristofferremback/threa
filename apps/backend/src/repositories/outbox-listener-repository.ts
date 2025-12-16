@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from "pg"
 import { sql, withTransaction } from "../db"
+import { calculateBackoffMs } from "../lib/backoff"
 import { logger } from "../lib/logger"
 import { OutboxRepository, OutboxEvent } from "./outbox-repository"
 
@@ -121,13 +122,8 @@ export const OutboxListenerRepository = {
       return null
     }
 
-    // Exponential backoff with jitter: base * 2^(retry-1) + random(0-base)
-    const backoffMs =
-      baseBackoffMs * Math.pow(2, newRetryCount - 1) +
-      Math.random() * baseBackoffMs
-    // Cap at 5 minutes
-    const cappedBackoffMs = Math.min(backoffMs, 5 * 60 * 1000)
-    const retryAfter = new Date(Date.now() + cappedBackoffMs)
+    const backoffMs = calculateBackoffMs({ baseMs: baseBackoffMs, retryCount: newRetryCount })
+    const retryAfter = new Date(Date.now() + backoffMs)
 
     await client.query(sql`
       UPDATE outbox_listeners
