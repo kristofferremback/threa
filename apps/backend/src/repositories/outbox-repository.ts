@@ -1,13 +1,80 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
+import type { Message } from "./message-repository"
 
-export interface OutboxEvent {
+/**
+ * Outbox event types and their payloads.
+ * Use the OutboxEventPayload type to get type-safe payload access.
+ */
+export type OutboxEventType =
+  | "message:created"
+  | "message:edited"
+  | "message:deleted"
+  | "reaction:added"
+  | "reaction:removed"
+  | "stream:display_name_updated"
+
+/**
+ * Base fields present on all outbox event payloads.
+ * workspaceId is required for room scoping in broadcast.
+ */
+interface BaseOutboxPayload {
+  workspaceId: string
+  streamId: string
+}
+
+export interface MessageCreatedOutboxPayload extends BaseOutboxPayload {
+  message: Message
+}
+
+export interface MessageEditedOutboxPayload extends BaseOutboxPayload {
+  message: Message
+}
+
+export interface MessageDeletedOutboxPayload extends BaseOutboxPayload {
+  messageId: string
+}
+
+export interface ReactionOutboxPayload extends BaseOutboxPayload {
+  messageId: string
+  emoji: string
+  userId: string
+}
+
+export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
+  displayName: string
+}
+
+/**
+ * Maps event types to their payload types for type-safe event handling.
+ */
+export interface OutboxEventPayloadMap {
+  "message:created": MessageCreatedOutboxPayload
+  "message:edited": MessageEditedOutboxPayload
+  "message:deleted": MessageDeletedOutboxPayload
+  "reaction:added": ReactionOutboxPayload
+  "reaction:removed": ReactionOutboxPayload
+  "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+}
+
+export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
+
+export interface OutboxEvent<T extends OutboxEventType = OutboxEventType> {
   id: bigint
-  eventType: string
-  payload: unknown
+  eventType: T
+  payload: OutboxEventPayloadMap[T]
   createdAt: Date
-  processedAt: Date | null
+}
+
+/**
+ * Type guard to narrow an OutboxEvent to a specific event type.
+ */
+export function isOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventType: T,
+): event is OutboxEvent<T> {
+  return event.eventType === eventType
 }
 
 interface OutboxRow {
@@ -15,72 +82,53 @@ interface OutboxRow {
   event_type: string
   payload: unknown
   created_at: Date
-  processed_at: Date | null
 }
 
 function mapRowToOutbox(row: OutboxRow): OutboxEvent {
   return {
     id: BigInt(row.id),
-    eventType: row.event_type,
-    payload: row.payload,
+    eventType: row.event_type as OutboxEventType,
+    payload: row.payload as OutboxEventPayloadMap[OutboxEventType],
     createdAt: row.created_at,
-    processedAt: row.processed_at,
   }
 }
 
 export const OUTBOX_CHANNEL = "outbox_events"
 
 export const OutboxRepository = {
-  async insert(
+  async insert<T extends OutboxEventType>(
     client: PoolClient,
-    eventType: string,
-    payload: unknown,
-  ): Promise<OutboxEvent> {
+    eventType: T,
+    payload: OutboxEventPayloadMap[T],
+  ): Promise<OutboxEvent<T>> {
     const result = await client.query<OutboxRow>(sql`
       INSERT INTO outbox (event_type, payload)
       VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
-      RETURNING id, event_type, payload, created_at, processed_at
+      RETURNING id, event_type, payload, created_at
     `)
 
     // Notify listeners that new events are available
     await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
 
-    return mapRowToOutbox(result.rows[0])
+    return mapRowToOutbox(result.rows[0]) as OutboxEvent<T>
   },
 
-  async fetchUnprocessed(
+  /**
+   * Fetches events after a cursor ID for cursor-based processing.
+   * No locking - the caller should hold a lock on their listener's cursor row.
+   */
+  async fetchAfterId(
     client: PoolClient,
+    afterId: bigint,
     limit: number = 100,
   ): Promise<OutboxEvent[]> {
-    // Use FOR UPDATE SKIP LOCKED for concurrent processing
     const result = await client.query<OutboxRow>(sql`
-      SELECT id, event_type, payload, created_at, processed_at
+      SELECT id, event_type, payload, created_at
       FROM outbox
-      WHERE processed_at IS NULL
+      WHERE id > ${afterId.toString()}
       ORDER BY id
       LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
     `)
     return result.rows.map(mapRowToOutbox)
-  },
-
-  async markProcessed(client: PoolClient, ids: bigint[]): Promise<void> {
-    if (ids.length === 0) return
-
-    const idStrings = ids.map((id) => id.toString())
-    await client.query(sql`
-      UPDATE outbox
-      SET processed_at = NOW()
-      WHERE id = ANY(${idStrings}::bigint[])
-    `)
-  },
-
-  async deleteProcessed(client: PoolClient, olderThan: Date): Promise<number> {
-    const result = await client.query(sql`
-      DELETE FROM outbox
-      WHERE processed_at IS NOT NULL
-        AND processed_at < ${olderThan}
-    `)
-    return result.rowCount ?? 0
   },
 }

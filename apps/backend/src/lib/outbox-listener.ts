@@ -1,66 +1,134 @@
 import { Pool, PoolClient } from "pg"
-import { Server } from "socket.io"
 import { withTransaction } from "../db"
-import { OutboxRepository, OUTBOX_CHANNEL } from "../repositories"
+import {
+  OutboxListenerRepository,
+  OUTBOX_CHANNEL,
+  OutboxEvent,
+  withClaim,
+} from "../repositories"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
 
-interface OutboxListenerOptions {
+export interface OutboxListenerConfig {
+  listenerId: string
+  handler: (event: OutboxEvent) => Promise<void>
   batchSize?: number
+  maxRetries?: number
+  baseBackoffMs?: number
   debounceMs?: number
   maxWaitMs?: number
   fallbackPollMs?: number
 }
 
+const DEFAULT_CONFIG = {
+  batchSize: 100,
+  maxRetries: 5,
+  baseBackoffMs: 1000,
+  debounceMs: 50,
+  maxWaitMs: 200,
+  fallbackPollMs: 500,
+}
+
+/**
+ * Processes outbox events with NOTIFY/LISTEN for real-time delivery.
+ *
+ * @example
+ * ```ts
+ * const listener = new OutboxListener(pool, {
+ *   listenerId: "broadcast",
+ *   handler: async (event) => {
+ *     io.to(`stream:${event.payload.streamId}`).emit(event.eventType, event.payload)
+ *   },
+ * })
+ * await listener.start()
+ * ```
+ */
 export class OutboxListener {
   private pool: Pool
-  private io: Server
+  private listenerId: string
+  private handler: (event: OutboxEvent) => Promise<void>
   private batchSize: number
+  private maxRetries: number
+  private baseBackoffMs: number
   private debounceMs: number
   private maxWaitMs: number
   private fallbackPollMs: number
 
   private running: boolean = false
+  private startPromise: Promise<void> | null = null
   private listenClient: PoolClient | null = null
   private debouncer: DebounceWithMaxWait | null = null
   private fallbackTimer: Timer | null = null
 
-  constructor(pool: Pool, io: Server, options: OutboxListenerOptions = {}) {
+  constructor(pool: Pool, config: OutboxListenerConfig) {
     this.pool = pool
-    this.io = io
-    this.batchSize = options.batchSize ?? 100
-    this.debounceMs = options.debounceMs ?? 50
-    this.maxWaitMs = options.maxWaitMs ?? 200
-    this.fallbackPollMs = options.fallbackPollMs ?? 500
+    this.listenerId = config.listenerId
+    this.handler = config.handler
+    this.batchSize = config.batchSize ?? DEFAULT_CONFIG.batchSize
+    this.maxRetries = config.maxRetries ?? DEFAULT_CONFIG.maxRetries
+    this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
+    this.debounceMs = config.debounceMs ?? DEFAULT_CONFIG.debounceMs
+    this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
+    this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
   }
 
-  async start() {
+  async start(): Promise<void> {
     if (this.running) return
-    this.running = true
 
-    this.debouncer = new DebounceWithMaxWait(
-      () => this.processEvents(),
-      this.debounceMs,
-      this.maxWaitMs,
-      (err) => logger.error({ err }, "OutboxListener debouncer error"),
-    )
+    // If start is already in progress, wait for it
+    if (this.startPromise) {
+      return this.startPromise
+    }
 
-    await this.setupListener()
-    this.startFallbackPoll()
+    this.startPromise = this.doStart()
 
-    logger.info(
-      {
-        debounceMs: this.debounceMs,
-        maxWaitMs: this.maxWaitMs,
-        fallbackPollMs: this.fallbackPollMs,
-      },
-      "OutboxListener started",
-    )
+    try {
+      await this.startPromise
+    } finally {
+      this.startPromise = null
+    }
   }
 
-  async stop() {
-    this.running = false
+  private async doStart(): Promise<void> {
+    // Ensure listener exists in the database
+    await withTransaction(this.pool, async (client) => {
+      await OutboxListenerRepository.ensureListener(client, this.listenerId)
+    })
 
+    try {
+      this.debouncer = new DebounceWithMaxWait(
+        () => this.processEvents(),
+        this.debounceMs,
+        this.maxWaitMs,
+        (err) =>
+          logger.error(
+            { err, listenerId: this.listenerId },
+            "OutboxListener debouncer error",
+          ),
+      )
+
+      await this.setupListener()
+
+      this.startFallbackPoll()
+
+      this.running = true
+
+      logger.info(
+        {
+          listenerId: this.listenerId,
+          debounceMs: this.debounceMs,
+          maxWaitMs: this.maxWaitMs,
+          fallbackPollMs: this.fallbackPollMs,
+        },
+        "OutboxListener started",
+      )
+    } catch (err) {
+      this.cleanup()
+      throw err
+    }
+  }
+
+  private cleanup(): void {
     if (this.debouncer) {
       this.debouncer.cancel()
       this.debouncer = null
@@ -73,18 +141,31 @@ export class OutboxListener {
 
     if (this.listenClient) {
       try {
-        await this.listenClient.query(`UNLISTEN ${OUTBOX_CHANNEL}`)
         this.listenClient.release()
       } catch {
         // Ignore errors during cleanup
       }
       this.listenClient = null
     }
-
-    logger.info("OutboxListener stopped")
   }
 
-  private async setupListener() {
+  async stop(): Promise<void> {
+    this.running = false
+
+    // UNLISTEN before releasing for graceful shutdown
+    if (this.listenClient) {
+      try {
+        await this.listenClient.query(`UNLISTEN ${OUTBOX_CHANNEL}`)
+      } catch {
+        // Ignore - cleanup will release the client anyway
+      }
+    }
+
+    this.cleanup()
+    logger.info({ listenerId: this.listenerId }, "OutboxListener stopped")
+  }
+
+  private async setupListener(): Promise<void> {
     try {
       this.listenClient = await this.pool.connect()
 
@@ -95,19 +176,28 @@ export class OutboxListener {
       })
 
       this.listenClient.on("error", (err) => {
-        logger.error({ err }, "LISTEN client error, reconnecting...")
+        logger.error(
+          { err, listenerId: this.listenerId },
+          "LISTEN client error, reconnecting...",
+        )
         this.reconnectListener()
       })
 
       await this.listenClient.query(`LISTEN ${OUTBOX_CHANNEL}`)
-      logger.debug("LISTEN connection established")
+      logger.debug(
+        { listenerId: this.listenerId },
+        "LISTEN connection established",
+      )
     } catch (err) {
-      logger.error({ err }, "Failed to setup LISTEN connection")
+      logger.error(
+        { err, listenerId: this.listenerId },
+        "Failed to setup LISTEN connection",
+      )
       this.scheduleReconnect()
     }
   }
 
-  private reconnectListener() {
+  private reconnectListener(): void {
     if (this.listenClient) {
       try {
         this.listenClient.release()
@@ -119,7 +209,7 @@ export class OutboxListener {
     this.scheduleReconnect()
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(): void {
     if (!this.running) return
 
     setTimeout(() => {
@@ -129,47 +219,53 @@ export class OutboxListener {
     }, 1000)
   }
 
-  private startFallbackPoll() {
-    if (!this.running) return
-
+  /**
+   * Fallback polling ensures events are processed even if NOTIFY is missed.
+   * This also handles retry_after timing - the polling interval will eventually
+   * pick up events once the backoff period has elapsed.
+   */
+  private startFallbackPoll(): void {
     this.fallbackTimer = setTimeout(async () => {
+      if (!this.running) return
+
       try {
         await this.processEvents()
       } catch (err) {
-        logger.error({ err }, "OutboxListener fallback poll error")
+        logger.error(
+          { err, listenerId: this.listenerId },
+          "OutboxListener fallback poll error",
+        )
       }
       this.startFallbackPoll()
     }, this.fallbackPollMs)
   }
 
-  private async processEvents() {
+  private async processEvents(): Promise<void> {
     if (!this.running) return
 
-    await withTransaction(this.pool, async (client) => {
-      const events = await OutboxRepository.fetchUnprocessed(client, this.batchSize)
+    await withClaim(
+      this.pool,
+      this.listenerId,
+      async (ctx) => {
+        while (true) {
+          const events = await ctx.fetchEvents(this.batchSize)
+          if (events.length === 0) break
 
-      if (events.length === 0) return
+          for (const event of events) {
+            await this.handler(event)
+          }
 
-      for (const event of events) {
-        this.broadcast(event.eventType, event.payload)
-      }
+          // Update cursor after processing the batch
+          const lastEvent = events[events.length - 1]
+          await ctx.updateCursor(lastEvent.id)
 
-      await OutboxRepository.markProcessed(
-        client,
-        events.map((e) => e.id),
-      )
-
-      logger.debug({ count: events.length }, "Processed outbox events")
-    })
-  }
-
-  private broadcast(eventType: string, payload: unknown) {
-    const data = payload as { streamId?: string; [key: string]: unknown }
-
-    if (data.streamId) {
-      this.io.to(`stream:${data.streamId}`).emit(eventType, data)
-    } else {
-      this.io.emit(eventType, data)
-    }
+          logger.debug(
+            { listenerId: this.listenerId, count: events.length },
+            "Processed outbox events",
+          )
+        }
+      },
+      { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs },
+    )
   }
 }
