@@ -1,16 +1,14 @@
 import type { Pool, PoolClient } from "pg"
-import { withTransaction, withClient } from "../db"
+import { withClient } from "../db"
 import type { CompanionJobData, JobHandler } from "../lib/job-queue"
-import { ProviderRegistry } from "../lib/ai"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import {
   AgentSessionRepository,
   SessionStatuses,
-  type AgentSession,
 } from "../repositories/agent-session-repository"
-import { runCompanionAgent, type CompanionContext } from "../agents/companion-agent"
+import { runCompanionGraph } from "../agents/companion-runner"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 
@@ -18,7 +16,8 @@ const MAX_CONTEXT_MESSAGES = 20
 
 export interface CompanionWorkerDeps {
   pool: Pool
-  providerRegistry: ProviderRegistry
+  /** OpenRouter API key for LangChain model */
+  apiKey: string
   serverId: string
   createMessage: (params: {
     workspaceId: string
@@ -35,7 +34,7 @@ export interface CompanionWorkerDeps {
 export function createCompanionWorker(
   deps: CompanionWorkerDeps,
 ): JobHandler<CompanionJobData> {
-  const { pool, providerRegistry, serverId, createMessage } = deps
+  const { pool, apiKey, serverId, createMessage } = deps
 
   return async (job) => {
     const { streamId, messageId, triggeredBy } = job.data
@@ -108,20 +107,20 @@ export function createCompanionWorker(
     const { session, stream, persona, recentMessages } = context
 
     try {
-      // Step 2: Run agent (with step checkpointing)
-      const result = await withTransaction(pool, async (client) => {
-        const model = providerRegistry.getModel(persona.model)
-
-        const agentContext: CompanionContext = {
-          session,
-          stream,
-          recentMessages,
-          personaName: persona.name,
-          systemPrompt: persona.systemPrompt || "",
-        }
-
-        return runCompanionAgent(client, model, agentContext)
-      })
+      // Step 2: Run agent via LangGraph (checkpointing handled by LangGraph)
+      const systemPrompt = buildSystemPrompt(persona, stream)
+      const result = await runCompanionGraph(
+        { apiKey },
+        {
+          threadId: session.id,
+          modelId: persona.model,
+          systemPrompt,
+          messages: recentMessages.map((m) => ({
+            role: m.authorType === "user" ? ("user" as const) : ("assistant" as const),
+            content: m.content,
+          })),
+        },
+      )
 
       // Step 3: Post response (EventService handles its own transaction)
       const responseMessage = await createMessage({
@@ -146,7 +145,6 @@ export function createCompanionWorker(
         {
           sessionId: session.id,
           responseMessageId: responseMessage.id,
-          tokens: result.tokensUsed,
         },
         "Companion response posted",
       )
@@ -182,4 +180,28 @@ async function getPersona(
     }
   }
   return PersonaRepository.getSystemDefault(client)
+}
+
+/**
+ * Build the system prompt for the companion agent.
+ */
+function buildSystemPrompt(
+  persona: Persona,
+  stream: { type: string; displayName: string | null; description: string | null },
+): string {
+  let prompt =
+    persona.systemPrompt || `You are ${persona.name}, an AI companion in a chat application.`
+
+  prompt += `\n\nYou are currently in a ${stream.type}`
+  if (stream.displayName) {
+    prompt += ` called "${stream.displayName}"`
+  }
+  if (stream.description) {
+    prompt += `: ${stream.description}`
+  }
+  prompt += "."
+
+  prompt += `\n\nBe helpful, concise, and conversational.`
+
+  return prompt
 }
