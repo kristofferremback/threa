@@ -132,10 +132,42 @@ bun run db:start
 
 # Reset database
 bun run db:reset
-
-# Run backend tests
-cd apps/backend && bun test
 ```
+
+### Testing
+
+Tests are organized by type:
+- **Unit tests** (`src/**/*.test.ts`) - Pure unit tests, no external dependencies
+- **Integration tests** (`tests/integration/`) - Tests requiring database
+- **E2E tests** (`tests/e2e/`) - Full HTTP API tests
+
+```bash
+cd apps/backend
+
+bun test              # All tests
+bun test:unit         # Unit tests only (fast, no db needed)
+bun test:integration  # Integration tests (needs postgres)
+bun test:e2e          # E2E tests (needs server + postgres)
+bun test:watch        # Watch mode for TDD
+```
+
+### Git Worktrees
+
+For working on multiple branches simultaneously:
+
+```bash
+# Create a new worktree
+git worktree add ../threa-feature-xyz feature/xyz
+cd ../threa-feature-xyz
+
+# Set up the worktree (copies .env, creates database)
+bun run setup:worktree
+
+# Start development
+bun run dev
+```
+
+Each worktree gets its own database (e.g., `threa_feature_xyz`) while sharing the same postgres container.
 
 ## Lessons Learned
 

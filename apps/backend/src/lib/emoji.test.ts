@@ -1,10 +1,5 @@
-/**
- * Unit tests for emoji shortcode library.
- * Run with: bun test tests/emoji.test.ts
- */
-
 import { describe, test, expect } from "bun:test"
-import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames, normalizeMessage } from "../src/lib/emoji"
+import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames, normalizeMessage } from "./emoji"
 
 describe("Emoji Library", () => {
   describe("toShortcode", () => {

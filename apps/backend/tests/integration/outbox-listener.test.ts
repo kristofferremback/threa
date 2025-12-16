@@ -1,15 +1,8 @@
-/**
- * Unit tests for outbox multi-listener infrastructure.
- * Tests the OutboxListenerRepository and cursor management logic.
- *
- * Run with: bun test tests/outbox-listener.test.ts
- */
-
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool, PoolClient } from "pg"
-import { createDatabasePool, withTransaction } from "../src/db"
-import { OutboxRepository, OutboxListenerRepository } from "../src/repositories"
-import { createMigrator } from "../src/db/migrations"
+import { createDatabasePool, withTransaction } from "../../src/db"
+import { OutboxRepository, OutboxListenerRepository } from "../../src/repositories"
+import { createMigrator } from "../../src/db/migrations"
 
 describe("Outbox Multi-Listener", () => {
   let pool: Pool
