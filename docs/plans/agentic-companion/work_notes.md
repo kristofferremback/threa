@@ -7,6 +7,32 @@
 
 ## Session Log
 
+### 2025-12-17 - Proper Stubbing Layer (Round 4)
+
+**Context reviewed**:
+- PR #10 feedback: stub was at wrong layer (duplicating orchestration logic)
+- `CompanionAgent` and `StubCompanionAgent` were nearly identical
+- `withSession` wasn't fully encapsulating session lifecycle
+
+**Applicable invariants**:
+- INV-13: Construct, Don't Assemble (added this session)
+- Abstractions should fully own their domain (lesson learned)
+
+**Completed**:
+- [x] Created `ResponseGenerator` interface for AI response generation
+- [x] Implemented `LangGraphResponseGenerator` (real LangGraph implementation)
+- [x] Implemented `StubResponseGenerator` (returns canned response)
+- [x] `CompanionAgent` now takes `responseGenerator` - stub is at the right layer
+- [x] Deleted `companion-agent.stub.ts` (no longer needed)
+- [x] Deleted `companion-worker.stub.ts` (redundant)
+- [x] Refactored `withSession` to fully own session lifecycle (takes pool, handles status)
+- [x] Added INV-13: Construct, Don't Assemble
+- [x] Added lesson: Abstractions should fully own their domain
+
+**Key insight**: Stub the expensive/non-deterministic part (AI call), not the business logic. The orchestration code should run in tests - only the LLM call is stubbed.
+
+---
+
 ### 2025-12-17 - Worker Refactoring (Round 3)
 
 **Context reviewed**:
@@ -206,11 +232,9 @@ All resolved:
 - `apps/backend/src/repositories/agent-session-repository.ts` - Session CRUD
 - `apps/backend/src/repositories/persona-repository.ts` - Persona lookups
 - `apps/backend/src/agents/companion-graph.ts` - LangGraph StateGraph definition
-- `apps/backend/src/agents/companion-runner.ts` - Graph compilation and invocation
-- `apps/backend/src/agents/companion-agent.ts` - Agent orchestration (extracted from worker)
-- `apps/backend/src/agents/companion-agent.stub.ts` - Stub agent for testing
+- `apps/backend/src/agents/companion-runner.ts` - ResponseGenerator interface + LangGraph/Stub implementations
+- `apps/backend/src/agents/companion-agent.ts` - Agent orchestration with withSession lifecycle helper
 - `apps/backend/src/workers/companion-worker.ts` - Thin job handler wrapper
-- `apps/backend/src/workers/companion-worker.stub.ts` - Thin stub worker wrapper
 - `apps/backend/src/db/migrations/007_agent_sessions.sql` - Session tables
 - `tasks/003-stream-context-enrichment.md` - Deferred task for stream context
 - `tasks/004-agent-message-tool.md` - Deferred task for createMessage as tool
@@ -227,9 +251,10 @@ All resolved:
 ## Files Deleted
 
 - `apps/backend/src/lib/openrouter.ts` - Replaced by ProviderRegistry
-- `apps/backend/src/agents/companion-agent.ts` - Dead code (superseded by LangGraph)
 - `apps/backend/src/lib/ai/langchain-provider.ts` - Merged into ProviderRegistry
 - `apps/backend/src/lib/ai/checkpointer.ts` - Replaced by postgresql-checkpointer.ts
+- `apps/backend/src/agents/companion-agent.stub.ts` - Stub moved to ResponseGenerator layer
+- `apps/backend/src/workers/companion-worker.stub.ts` - Redundant (worker is thin, stub at agent level)
 
 ---
 
