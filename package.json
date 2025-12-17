@@ -10,7 +10,10 @@
     "db:start": "docker compose up -d postgres",
     "db:stop": "docker compose stop postgres",
     "db:reset": "docker compose down -v && docker compose up -d postgres",
-    "setup:worktree": "bun scripts/setup-worktree.ts"
+    "setup:worktree": "bun scripts/setup-worktree.ts",
+    "test": "bun run --cwd apps/backend test",
+    "test:unit": "bun run --cwd apps/backend test:unit",
+    "test:e2e": "bun run --cwd apps/backend test:e2e"
   },
   "devDependencies": {
     "@types/bun": "latest"

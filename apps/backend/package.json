@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
-    "test": "bun test src/ tests/",
+    "test": "bun run test:unit && bun run test:e2e",
     "test:unit": "bun test src/",
     "test:integration": "bun test tests/integration/",
     "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
