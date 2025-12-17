@@ -1,14 +1,9 @@
-// AI SDK provider registry (used by stream-naming-service)
+// Provider registry for AI SDK and LangChain models
 export {
   ProviderRegistry,
-  parseProviderModel,
-  isSupportedProvider,
   type ProviderRegistryConfig,
   type SupportedProvider,
 } from "./provider-registry"
 
-// LangGraph checkpointer
-export { initCheckpointer, getCheckpointer } from "./checkpointer"
-
-// LangChain model provider
-export { createChatModel, parseModelId } from "./langchain-provider"
+// LangGraph PostgreSQL checkpointer
+export { createPostgresCheckpointer } from "./postgresql-checkpointer"

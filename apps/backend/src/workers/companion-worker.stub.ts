@@ -1,10 +1,13 @@
 import type { Pool } from "pg"
 import { withClient } from "../db"
 import type { CompanionJobData, JobHandler } from "../lib/job-queue"
+import { CompanionModes } from "../lib/constants"
 import { StreamRepository } from "../repositories/stream-repository"
+import { PersonaRepository } from "../repositories/persona-repository"
 import {
   AgentSessionRepository,
   SessionStatuses,
+  StepTypes,
 } from "../repositories/agent-session-repository"
 import { sessionId, stepId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -51,12 +54,19 @@ export function createStubCompanionWorker(
 
     const context = await withClient(pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.companionMode !== "on") {
+      if (!stream || stream.companionMode !== CompanionModes.ON) {
         return null
       }
 
-      // Use default persona ID
-      const personaId = stream.companionPersonaId || "persona_system_ariadne"
+      // Get persona - fail if not configured
+      let personaId = stream.companionPersonaId
+      if (!personaId) {
+        const defaultPersona = await PersonaRepository.getSystemDefault(client)
+        if (!defaultPersona) {
+          throw new Error("No persona configured and no system default available")
+        }
+        personaId = defaultPersona.id
+      }
 
       // Check for existing session
       let session = await AgentSessionRepository.findByTriggerMessage(client, messageId)
@@ -105,7 +115,7 @@ export function createStubCompanionWorker(
           id: stepId(),
           sessionId: session.id,
           stepNumber: 1,
-          stepType: "response",
+          stepType: StepTypes.RESPONSE,
           content: { text: STUB_RESPONSE, stub: true },
           tokensUsed: 0,
         })

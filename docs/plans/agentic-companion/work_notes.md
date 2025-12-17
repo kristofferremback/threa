@@ -2,10 +2,46 @@
 
 **Started**: 2025-12-16
 **Branch**: feature/agentic-companion
-**Status**: Complete (LangGraph migration done)
+**Status**: Complete (PR review feedback addressed)
 **Task Doc**: tasks/002-agentic-companion.md
 
 ## Session Log
+
+### 2025-12-17 - PR Review Feedback
+
+**Context reviewed**:
+- PR #10 received review feedback identifying multiple architectural issues
+- Documented learnings as new invariants (INV-9 through INV-12) and lessons learned in CLAUDE.md
+
+**Applicable invariants**:
+- INV-9 (No Singletons) - removed singleton pattern from checkpointer
+- INV-10 (Self-Describing Dependencies) - renamed ambiguous `apiKey` params
+- INV-11 (No Silent Fallbacks) - removed system prompt fallback
+- INV-12 (Pass Dependencies, Not Configuration) - pass modelRegistry, not apiKey
+
+**Completed**:
+- [x] Deleted `companion-agent.ts` (dead code)
+- [x] Consolidated `langchain-provider.ts` into `ProviderRegistry` class
+- [x] Renamed `checkpointer.ts` to `postgresql-checkpointer.ts`, removed singleton
+- [x] Fixed nested ternary in `companion-graph.ts` (now uses switch)
+- [x] Updated `companion-runner.ts` to take `modelRegistry` + `checkpointer` dependencies
+- [x] Added `AuthorTypes` constant, used existing `CompanionModes` constant
+- [x] Removed system prompt fallback - now throws if persona has no prompt
+- [x] Updated `server.ts` to construct checkpointer and pass as dependency
+- [x] Updated `companion-worker.ts` and stub to use constants and new deps
+- [x] Moved `parseProviderModel` and `isSupportedProvider` into ProviderRegistry class
+- [x] Added `getLangChainModel()` method to ProviderRegistry
+- [x] Updated PR description to reflect LangGraph architecture
+
+**Key learnings documented**:
+1. Extend existing abstractions instead of creating parallel ones
+2. Dependencies should be self-describing
+3. Pass dependencies, not configuration
+4. Delete dead code immediately
+5. Avoid nested ternaries
+6. Magic strings should be constants or enums
+
+---
 
 ### 2025-12-16 - LangGraph Migration
 
@@ -89,44 +125,34 @@ All resolved:
 
 ## Files Created
 
-### Initial Implementation
-- `apps/backend/src/lib/ai/provider-registry.ts` - AI SDK provider abstraction
+- `apps/backend/src/lib/ai/provider-registry.ts` - Unified AI SDK + LangChain provider registry
+- `apps/backend/src/lib/ai/postgresql-checkpointer.ts` - LangGraph PostgreSQL checkpointer (no singleton)
 - `apps/backend/src/lib/ai/index.ts` - Exports
 - `apps/backend/src/lib/job-queue.ts` - pg-boss wrapper with typed helpers
 - `apps/backend/src/lib/companion-listener.ts` - Outbox listener for companion jobs
 - `apps/backend/src/repositories/agent-session-repository.ts` - Session CRUD
 - `apps/backend/src/repositories/persona-repository.ts` - Persona lookups
-- `apps/backend/src/agents/companion-agent.ts` - Agent execution logic (replaced by LangGraph)
-- `apps/backend/src/workers/companion-worker.ts` - Job handler
+- `apps/backend/src/agents/companion-graph.ts` - LangGraph StateGraph definition
+- `apps/backend/src/agents/companion-runner.ts` - Graph compilation and invocation
+- `apps/backend/src/workers/companion-worker.ts` - Job handler (uses modelRegistry)
 - `apps/backend/src/workers/companion-worker.stub.ts` - Test stub
 - `apps/backend/src/db/migrations/007_agent_sessions.sql` - Session tables
 
-### LangGraph Migration
-- `apps/backend/src/lib/ai/langchain-provider.ts` - ChatOpenAI with OpenRouter
-- `apps/backend/src/lib/ai/checkpointer.ts` - LangGraph PostgreSQL checkpointer
-- `apps/backend/src/agents/companion-graph.ts` - LangGraph StateGraph definition
-- `apps/backend/src/agents/companion-runner.ts` - Graph compilation and invocation
-
 ## Files Modified
 
-### Initial Implementation
-- `apps/backend/src/server.ts` - Integrated job queue, listeners, workers
+- `apps/backend/src/server.ts` - Job queue, checkpointer creation, dependency injection
 - `apps/backend/src/lib/env.ts` - Added AIConfig and useStubCompanion
-- `apps/backend/src/services/stream-naming-service.ts` - Uses AI SDK
+- `apps/backend/src/lib/constants.ts` - Added AuthorTypes constant
+- `apps/backend/src/services/stream-naming-service.ts` - Uses AI SDK via ProviderRegistry
 - `apps/backend/src/lib/id.ts` - Added sessionId(), stepId()
-
-### LangGraph Migration
-- `apps/backend/src/server.ts` - Added checkpointer init, worker uses apiKey
-- `apps/backend/src/workers/companion-worker.ts` - Uses runCompanionGraph
-- `apps/backend/src/lib/ai/index.ts` - Added LangGraph exports
+- `CLAUDE.md` - Added INV-9 through INV-12, new lessons learned
 
 ## Files Deleted
 
-- `apps/backend/src/lib/openrouter.ts` - Replaced by AI SDK
-
-## Files Deprecated (kept as reference)
-
-- `apps/backend/src/agents/companion-agent.ts` - Replaced by companion-graph.ts
+- `apps/backend/src/lib/openrouter.ts` - Replaced by ProviderRegistry
+- `apps/backend/src/agents/companion-agent.ts` - Dead code (superseded by LangGraph)
+- `apps/backend/src/lib/ai/langchain-provider.ts` - Merged into ProviderRegistry
+- `apps/backend/src/lib/ai/checkpointer.ts` - Replaced by postgresql-checkpointer.ts
 
 ---
 

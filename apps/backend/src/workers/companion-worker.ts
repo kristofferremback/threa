@@ -1,6 +1,9 @@
 import type { Pool, PoolClient } from "pg"
+import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import { withClient } from "../db"
 import type { CompanionJobData, JobHandler } from "../lib/job-queue"
+import { AuthorTypes, CompanionModes, type AuthorType } from "../lib/constants"
+import type { ProviderRegistry } from "../lib/ai"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
@@ -16,14 +19,14 @@ const MAX_CONTEXT_MESSAGES = 20
 
 export interface CompanionWorkerDeps {
   pool: Pool
-  /** OpenRouter API key for LangChain model */
-  apiKey: string
+  modelRegistry: ProviderRegistry
+  checkpointer: PostgresSaver
   serverId: string
   createMessage: (params: {
     workspaceId: string
     streamId: string
     authorId: string
-    authorType: "user" | "persona"
+    authorType: AuthorType
     content: string
   }) => Promise<{ id: string }>
 }
@@ -34,7 +37,7 @@ export interface CompanionWorkerDeps {
 export function createCompanionWorker(
   deps: CompanionWorkerDeps,
 ): JobHandler<CompanionJobData> {
-  const { pool, apiKey, serverId, createMessage } = deps
+  const { pool, modelRegistry, checkpointer, serverId, createMessage } = deps
 
   return async (job) => {
     const { streamId, messageId, triggeredBy } = job.data
@@ -47,7 +50,7 @@ export function createCompanionWorker(
     // Step 1: Load context and create/get session
     const context = await withClient(pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.companionMode !== "on") {
+      if (!stream || stream.companionMode !== CompanionModes.ON) {
         return null
       }
 
@@ -107,16 +110,16 @@ export function createCompanionWorker(
     const { session, stream, persona, recentMessages } = context
 
     try {
-      // Step 2: Run agent via LangGraph (checkpointing handled by LangGraph)
+      // Step 2: Run agent via LangGraph
       const systemPrompt = buildSystemPrompt(persona, stream)
       const result = await runCompanionGraph(
-        { apiKey },
+        { modelRegistry, checkpointer },
         {
           threadId: session.id,
           modelId: persona.model,
           systemPrompt,
           messages: recentMessages.map((m) => ({
-            role: m.authorType === "user" ? ("user" as const) : ("assistant" as const),
+            role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
             content: m.content,
           })),
         },
@@ -127,7 +130,7 @@ export function createCompanionWorker(
         workspaceId: stream.workspaceId,
         streamId,
         authorId: persona.id,
-        authorType: "persona",
+        authorType: AuthorTypes.PERSONA,
         content: result.response,
       })
 
@@ -184,13 +187,17 @@ async function getPersona(
 
 /**
  * Build the system prompt for the companion agent.
+ * Requires persona to have a system prompt configured.
  */
 function buildSystemPrompt(
   persona: Persona,
   stream: { type: string; displayName: string | null; description: string | null },
 ): string {
-  let prompt =
-    persona.systemPrompt || `You are ${persona.name}, an AI companion in a chat application.`
+  if (!persona.systemPrompt) {
+    throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
+  }
+
+  let prompt = persona.systemPrompt
 
   prompt += `\n\nYou are currently in a ${stream.type}`
   if (stream.displayName) {

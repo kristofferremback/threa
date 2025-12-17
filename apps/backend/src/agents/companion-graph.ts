@@ -38,15 +38,22 @@ function createAgentNode(model: ChatOpenAI) {
     const response = await model.invoke([systemMessage, ...state.messages])
 
     // Extract text content from response
-    const responseText =
-      typeof response.content === "string"
-        ? response.content
-        : Array.isArray(response.content)
-          ? response.content
-              .filter((c): c is { type: "text"; text: string } => c.type === "text")
-              .map((c) => c.text)
-              .join("")
-          : ""
+    let responseText: string
+    switch (true) {
+      case typeof response.content === "string":
+        responseText = response.content
+        break
+
+      case Array.isArray(response.content):
+        responseText = response.content
+          .filter((c): c is { type: "text"; text: string } => c.type === "text")
+          .map((c) => c.text)
+          .join("")
+        break
+
+      default:
+        responseText = ""
+    }
 
     return {
       messages: [response],

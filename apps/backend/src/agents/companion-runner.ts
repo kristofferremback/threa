@@ -1,13 +1,14 @@
+import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import { createCompanionGraph, toLangChainMessages } from "./companion-graph"
-import { createChatModel, parseModelId } from "../lib/ai/langchain-provider"
-import { getCheckpointer } from "../lib/ai/checkpointer"
+import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
 
 /**
  * Dependencies required by the companion runner.
  */
 export interface CompanionRunnerDeps {
-  apiKey: string
+  modelRegistry: ProviderRegistry
+  checkpointer: PostgresSaver
 }
 
 /**
@@ -42,7 +43,7 @@ export async function runCompanionGraph(
   deps: CompanionRunnerDeps,
   params: RunCompanionParams,
 ): Promise<CompanionRunResult> {
-  const { apiKey } = deps
+  const { modelRegistry, checkpointer } = deps
   const { threadId, modelId, systemPrompt, messages } = params
 
   logger.debug(
@@ -54,13 +55,11 @@ export async function runCompanionGraph(
     "Running companion graph",
   )
 
-  // Parse model ID and create LangChain model
-  const parsedModelId = parseModelId(modelId)
-  const model = createChatModel(parsedModelId, apiKey)
+  // Get LangChain model from registry
+  const model = modelRegistry.getLangChainModel(modelId)
 
   // Create and compile graph with checkpointer
   const graph = createCompanionGraph(model)
-  const checkpointer = getCheckpointer()
   const compiledGraph = graph.compile({ checkpointer })
 
   // Convert messages to LangChain format

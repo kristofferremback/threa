@@ -117,6 +117,10 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-6** | Transactions in Services | Services manage transaction boundaries, not handlers |
 | **INV-7** | Events + Projections | Events are source of truth; projections for queries; both updated in same transaction |
 | **INV-8** | Workspace Scoping | Resources belong to workspaces; workspace is the sharding boundary |
+| **INV-9** | No Singletons | Pass dependencies explicitly; no module-level state or `getInstance()` patterns |
+| **INV-10** | Self-Describing Dependencies | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`) |
+| **INV-11** | No Silent Fallbacks | Fail loudly on misconfiguration; don't paper over missing data with defaults |
+| **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies. |
 
 When introducing a new invariant:
 1. Document it here with next available ID
@@ -325,3 +329,42 @@ Recursive implementations work but iteration is harder to get wrong, has no stac
 
 ### Comments justifying changes belong in commit messages, not code
 Comments like "Uses composition instead of inheritance" reference a previous design that no longer exists. Future readers won't know or care about the old approach. Put change justifications in commit messages where they provide context for reviewers; code comments should explain the current design's "why", not contrast with history.
+
+### Extend existing abstractions instead of creating parallel ones
+When adding new functionality, check if existing abstractions can be extended. Creating parallel implementations (e.g., a new `langchain-provider.ts` when `ProviderRegistry` already exists) violates DRY and confuses readers about which to use. The question "why are there two ways to do this?" should never arise.
+
+### Dependencies should be self-describing
+A parameter named `apiKey` is ambiguous - OpenRouter? Anthropic? Gmail? Pass a `modelRegistry` that knows how to create models, not a string that could mean anything. The type and name should tell you what it is without reading the implementation.
+
+### Pass dependencies, not configuration
+Configuration values (`apiKey`, `connectionString`, `port`) go to factories that construct dependencies. After construction, pass the dependency itself:
+```typescript
+// Bad - passing config through layers
+function createWorker(apiKey: string) { ... }
+
+// Good - config used at construction, dependency passed thereafter
+const registry = new ModelRegistry({ openrouter: { apiKey } })
+function createWorker(registry: ModelRegistry) { ... }
+```
+This makes the dependency graph explicit and testable. Workers don't need to know about API keys - they need models.
+
+### Delete dead code immediately
+Code "kept as reference" is noise. It confuses reviewers, adds cognitive load, and suggests the codebase is unreliable. Git has history - delete unused code. If it's needed later, recover it from version control.
+
+### Avoid nested ternaries
+Multi-level ternaries are clever but hard to debug. The first thing you do when troubleshooting is flatten them. Use switch statements instead - they're roughly as terse but explain each case explicitly:
+```typescript
+// Bad - requires mental stack to parse
+const x = a ? b : c ? d : e ? f : g
+
+// Good - each case is explicit
+switch (true) {
+  case a: return b
+  case c: return d
+  case e: return f
+  default: return g
+}
+```
+
+### Magic strings should be constants or enums
+Checking `companionMode === "on"` scatters knowledge about valid modes throughout the codebase. Define constants or enums at the source of truth and import them. This catches typos at compile time and makes valid values discoverable.

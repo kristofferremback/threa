@@ -23,8 +23,7 @@ import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
-import { ProviderRegistry } from "./lib/ai"
-import { initCheckpointer } from "./lib/ai/checkpointer"
+import { ProviderRegistry, createPostgresCheckpointer } from "./lib/ai"
 import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
 
 export interface ServerInstance {
@@ -46,7 +45,7 @@ export async function startServer(): Promise<ServerInstance> {
   logger.info("Database migrations complete")
 
   // Initialize LangGraph checkpointer (creates tables in langgraph schema)
-  await initCheckpointer(pool)
+  const checkpointer = await createPostgresCheckpointer(pool)
 
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
@@ -101,7 +100,8 @@ export async function startServer(): Promise<ServerInstance> {
       })
     : createCompanionWorker({
         pool,
-        apiKey: config.ai.openRouterApiKey,
+        modelRegistry: providerRegistry,
+        checkpointer,
         serverId,
         createMessage: (params) => eventService.createMessage(params),
       })

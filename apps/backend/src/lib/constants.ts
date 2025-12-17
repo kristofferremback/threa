@@ -33,3 +33,12 @@ export const CompanionModes = {
 export const CONTENT_FORMATS = ["plaintext", "markdown"] as const
 export const contentFormatSchema = z.enum(CONTENT_FORMATS)
 export type ContentFormat = z.infer<typeof contentFormatSchema>
+
+export const AUTHOR_TYPES = ["user", "persona"] as const
+export const authorTypeSchema = z.enum(AUTHOR_TYPES)
+export type AuthorType = z.infer<typeof authorTypeSchema>
+
+export const AuthorTypes = {
+  USER: "user",
+  PERSONA: "persona",
+} as const satisfies Record<string, AuthorType>

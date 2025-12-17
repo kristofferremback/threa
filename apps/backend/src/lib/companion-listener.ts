@@ -3,6 +3,7 @@ import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import { AuthorTypes, CompanionModes } from "./constants"
 import { logger } from "./logger"
 
 /**
@@ -33,7 +34,7 @@ export function createCompanionListener(
       const { message, streamId } = payload
 
       // Ignore persona messages (avoid infinite loops)
-      if (message.authorType !== "user") {
+      if (message.authorType !== AuthorTypes.USER) {
         return
       }
 
@@ -48,8 +49,8 @@ export function createCompanionListener(
 
         // Only trigger if companion mode is 'on'
         // 'off' = no companion
-        // 'mentions' mode is out of scope for this task
-        if (stream.companionMode !== "on") {
+        // 'next_message_only' mode is out of scope for this task
+        if (stream.companionMode !== CompanionModes.ON) {
           return
         }
 
