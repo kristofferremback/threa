@@ -18,7 +18,7 @@ import { logger } from "./logger"
 
 // Job type definitions
 export const JobQueues = {
-  COMPANION_RESPOND: "companion:respond",
+  COMPANION_RESPOND: "companion.respond",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -73,6 +73,9 @@ export class JobQueueManager {
 
     // Register all handlers after start
     for (const [queue, handler] of this.handlers) {
+      // Ensure queue exists before polling
+      await this.boss.createQueue(queue)
+
       // pg-boss passes an array of jobs; we process them sequentially
       await this.boss.work(queue, async (jobs: Job<unknown>[]) => {
         for (const job of jobs) {
