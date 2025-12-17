@@ -21,6 +21,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      "/test-auth-login": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
     },
   },
 })
