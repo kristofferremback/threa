@@ -1,9 +1,9 @@
 ---
-name: pr-review
+name: respond-to-pr-review
 description: Fetch, analyze, and respond to PR review comments. Use when asked to check PR comments, address review feedback, respond to reviewers, or fix issues raised in code reviews.
 ---
 
-# PR Review Response
+# Respond to PR Review
 
 Fetch and respond to review comments on pull requests.
 
