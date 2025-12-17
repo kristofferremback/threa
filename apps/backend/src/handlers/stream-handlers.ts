@@ -212,5 +212,32 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       const archived = await streamService.archiveStream(streamId)
       res.json({ stream: archived })
     },
+
+    async bootstrap(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      const [events, members, membership] = await Promise.all([
+        eventService.listEvents(streamId, { limit: 50 }),
+        streamService.getMembers(streamId),
+        streamService.getMembership(streamId, userId),
+      ])
+
+      // Get the latest sequence number from the most recent event
+      const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
+
+      res.json({
+        data: {
+          stream,
+          events: events.map(serializeEvent),
+          members,
+          membership,
+          latestSequence: latestSequence.toString(),
+        },
+      })
+    },
   }
 }
