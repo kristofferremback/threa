@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: E2E Tests
+    name: Tests
     runs-on: ubuntu-latest
 
     services:
@@ -42,7 +42,7 @@ jobs:
         run: |
           PGPASSWORD=threa psql -h localhost -p 5454 -U threa -d postgres -c "CREATE DATABASE threa_test;"
 
-      - name: Run E2E tests
-        run: bun run --cwd apps/backend test:e2e
+      - name: Run tests
+        run: bun run test
         env:
           TEST_DATABASE_URL: postgresql://threa:threa@localhost:5454/threa_test

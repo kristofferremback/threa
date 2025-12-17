@@ -1,9 +1,10 @@
 import { Pool } from "pg"
+import { generateText } from "ai"
 import { withTransaction } from "../db"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
-import { OpenRouterClient } from "../lib/openrouter"
+import { ProviderRegistry } from "../lib/ai"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 
@@ -16,7 +17,8 @@ const MAX_MESSAGES_FOR_NAMING = 10
 export class StreamNamingService {
   constructor(
     private pool: Pool,
-    private openRouterClient: OpenRouterClient,
+    private providerRegistry: ProviderRegistry,
+    private namingModel: string,
   ) {}
 
   /**
@@ -55,9 +57,20 @@ export class StreamNamingService {
       const prompt = `${NAMING_PROMPT}\n\n${conversationText}`
 
       // Call LLM
-      const generatedName = await this.openRouterClient.generateText([
-        { role: "user", content: prompt },
-      ])
+      let generatedName: string | null = null
+      try {
+        const model = this.providerRegistry.getModel(this.namingModel)
+        const result = await generateText({
+          model,
+          prompt,
+          maxOutputTokens: 100,
+          temperature: 0.3,
+        })
+        generatedName = result.text?.trim() || null
+      } catch (error) {
+        logger.error({ error, streamId }, "Failed to generate stream name")
+        return false
+      }
 
       if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
         logger.debug(

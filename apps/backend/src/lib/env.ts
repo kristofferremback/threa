@@ -7,17 +7,19 @@ export interface WorkosConfig {
   cookiePassword: string
 }
 
-export interface OpenRouterConfig {
-  apiKey: string
-  defaultModel: string
+export interface AIConfig {
+  openRouterApiKey: string
+  /** Model for stream auto-naming, in provider:model format (e.g., "openrouter:anthropic/claude-3-haiku") */
+  namingModel: string
 }
 
 export interface Config {
   port: number
   databaseUrl: string
   useStubAuth: boolean
+  useStubCompanion: boolean
   workos: WorkosConfig
-  openrouter: OpenRouterConfig
+  ai: AIConfig
 }
 
 export function loadConfig(): Config {
@@ -40,24 +42,31 @@ export function loadConfig(): Config {
     }
   }
 
+  const useStubCompanion = process.env.USE_STUB_COMPANION === "true"
+
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
     useStubAuth,
+    useStubCompanion,
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",
       redirectUri: process.env.WORKOS_REDIRECT_URI || "",
       cookiePassword: process.env.WORKOS_COOKIE_PASSWORD || "",
     },
-    openrouter: {
-      apiKey: process.env.OPENROUTER_API_KEY || "",
-      defaultModel: process.env.OPENROUTER_DEFAULT_MODEL || "anthropic/claude-3-haiku",
+    ai: {
+      openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
+      namingModel: process.env.AI_NAMING_MODEL || "openrouter:anthropic/claude-3-haiku",
     },
   }
 
   if (useStubAuth) {
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
+  }
+
+  if (useStubCompanion) {
+    logger.warn("Using stub companion service - NOT FOR PRODUCTION")
   }
 
   return config

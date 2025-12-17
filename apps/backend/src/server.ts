@@ -16,14 +16,22 @@ import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { StreamNamingService } from "./services/stream-naming-service"
 import { createBroadcastListener } from "./lib/broadcast-listener"
+import { createCompanionListener } from "./lib/companion-listener"
+import { createCompanionWorker } from "./workers/companion-worker"
+import { CompanionAgent } from "./agents/companion-agent"
+import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
+import { JobQueues } from "./lib/job-queue"
+import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
-import { OpenRouterClient } from "./lib/openrouter"
+import { ProviderRegistry, createPostgresCheckpointer } from "./lib/ai"
+import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
 
 export interface ServerInstance {
   server: Server
   io: SocketIOServer
   pool: Pool
+  jobQueue: JobQueueManager
   port: number
   stop: () => Promise<void>
 }
@@ -37,6 +45,9 @@ export async function startServer(): Promise<ServerInstance> {
   await migrator.up()
   logger.info("Database migrations complete")
 
+  // Initialize LangGraph checkpointer (creates tables in langgraph schema)
+  const checkpointer = await createPostgresCheckpointer(pool)
+
   const userService = new UserService(pool)
   const workspaceService = new WorkspaceService(pool)
   const streamService = new StreamService(pool)
@@ -45,11 +56,10 @@ export async function startServer(): Promise<ServerInstance> {
     ? new StubAuthService()
     : new WorkosAuthService(config.workos)
 
-  const openRouterClient = new OpenRouterClient(
-    config.openrouter.apiKey,
-    config.openrouter.defaultModel,
-  )
-  const streamNamingService = new StreamNamingService(pool, openRouterClient)
+  const providerRegistry = new ProviderRegistry({
+    openrouter: { apiKey: config.ai.openRouterApiKey },
+  })
+  const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
   eventService.setStreamNamingService(streamNamingService)
 
   const app = createApp()
@@ -78,8 +88,29 @@ export async function startServer(): Promise<ServerInstance> {
 
   registerSocketHandlers(io, { authService, userService, streamService })
 
+  // Job queue for durable background work (companion responses, etc.)
+  const jobQueue = createJobQueue(pool)
+  const serverId = `server_${ulid()}`
+
+  // Create companion agent and register worker
+  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) =>
+    eventService.createMessage(params)
+
+  const responseGenerator = config.useStubCompanion
+    ? new StubResponseGenerator()
+    : new LangGraphResponseGenerator({ modelRegistry: providerRegistry, checkpointer })
+
+  const companionAgent = new CompanionAgent({ pool, responseGenerator, createMessage })
+  const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })
+  jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
+
+  await jobQueue.start()
+
+  // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)
+  const companionListener = createCompanionListener(pool, jobQueue)
   await broadcastListener.start()
+  await companionListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -90,7 +121,9 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
+    await companionListener.stop()
     await broadcastListener.stop()
+    await jobQueue.stop()
     io.close()
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()))
@@ -99,5 +132,5 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Server stopped")
   }
 
-  return { server, io, pool, port: config.port, stop }
+  return { server, io, pool, jobQueue, port: config.port, stop }
 }

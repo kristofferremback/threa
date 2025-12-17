@@ -1,9 +1,9 @@
 ---
-name: pr-review
+name: respond-to-pr-review
 description: Fetch, analyze, and respond to PR review comments. Use when asked to check PR comments, address review feedback, respond to reviewers, or fix issues raised in code reviews.
 ---
 
-# PR Review Response
+# Respond to PR Review
 
 Fetch and respond to review comments on pull requests.
 
@@ -64,17 +64,34 @@ For each valid issue:
 
 1. Fix the code
 
-2. Reply to the thread:
+2. Reply to the thread with Claude signature:
+
+**IMPORTANT:** All responses MUST end with the Claude signature to make it clear the response was AI-generated:
+
+```
+🤖 _Response by [Claude Code](https://claude.com/claude-code)_
+```
+
+Write the response to a temp file first (to avoid heredoc issues), then post:
+
 ```bash
+# Write response with signature
+printf '%s\n' \
+  'Fixed! [explanation of what was changed]' \
+  '' \
+  '🤖 _Response by [Claude Code](https://claude.com/claude-code)_' \
+  > /tmp/claude/pr-comment.md
+
+# Post the comment
 gh api graphql -f query='
-mutation {
+mutation($body: String!) {
   addPullRequestReviewThreadReply(input: {
     pullRequestReviewThreadId: "{thread_id}"
-    body: "{response}"
+    body: $body
   }) {
     comment { id }
   }
-}'
+}' -f body="$(cat /tmp/claude/pr-comment.md)"
 ```
 
 3. Resolve the thread:
@@ -85,6 +102,11 @@ mutation {
     thread { isResolved }
   }
 }'
+```
+
+4. Clean up:
+```bash
+rm /tmp/claude/pr-comment.md
 ```
 
 ### 7. Commit and push
