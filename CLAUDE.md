@@ -117,7 +117,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-6** | Transactions in Services | Services manage transaction boundaries, not handlers |
 | **INV-7** | Events + Projections | Events are source of truth; projections for queries; both updated in same transaction |
 | **INV-8** | Workspace Scoping | Resources belong to workspaces; workspace is the sharding boundary |
-| **INV-9** | No Singletons | Pass dependencies explicitly; no module-level state or `getInstance()` patterns |
+| **INV-9** | No Singletons | Pass dependencies explicitly; no module-level state or `getInstance()` patterns. Exception: the logger (Pino) is imported as a singleton for convenience since it's stateless and side-effect-free. |
 | **INV-10** | Self-Describing Dependencies | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`) |
 | **INV-11** | No Silent Fallbacks | Fail loudly on misconfiguration; don't paper over missing data with defaults |
 | **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies. |

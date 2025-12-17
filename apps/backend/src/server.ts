@@ -19,6 +19,8 @@ import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createStubCompanionWorker } from "./workers/companion-worker.stub"
+import { CompanionAgent } from "./agents/companion-agent"
+import { StubCompanionAgent } from "./agents/companion-agent.stub"
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
@@ -91,20 +93,17 @@ export async function startServer(): Promise<ServerInstance> {
   const jobQueue = createJobQueue(pool)
   const serverId = `server_${ulid()}`
 
-  // Register companion worker
+  // Create companion agent and register worker
+  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) =>
+    eventService.createMessage(params)
+
+  const companionAgent = config.useStubCompanion
+    ? new StubCompanionAgent({ pool, createMessage })
+    : new CompanionAgent({ pool, modelRegistry: providerRegistry, checkpointer, createMessage })
+
   const companionWorker = config.useStubCompanion
-    ? createStubCompanionWorker({
-        pool,
-        serverId,
-        createMessage: (params) => eventService.createMessage(params),
-      })
-    : createCompanionWorker({
-        pool,
-        modelRegistry: providerRegistry,
-        checkpointer,
-        serverId,
-        createMessage: (params) => eventService.createMessage(params),
-      })
+    ? createStubCompanionWorker({ agent: companionAgent as StubCompanionAgent, serverId })
+    : createCompanionWorker({ agent: companionAgent as CompanionAgent, serverId })
   jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
 
   await jobQueue.start()

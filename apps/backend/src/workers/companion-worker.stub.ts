@@ -1,18 +1,10 @@
-import type { Pool } from "pg"
 import type { CompanionJobData, JobHandler } from "../lib/job-queue"
-import { runStubCompanionAgent } from "../agents/companion-agent.stub"
+import type { StubCompanionAgent } from "../agents/companion-agent.stub"
 import { logger } from "../lib/logger"
 
 export interface StubCompanionWorkerDeps {
-  pool: Pool
+  agent: StubCompanionAgent
   serverId: string
-  createMessage: (params: {
-    workspaceId: string
-    streamId: string
-    authorId: string
-    authorType: "user" | "persona"
-    content: string
-  }) => Promise<{ id: string }>
 }
 
 /**
@@ -24,7 +16,7 @@ export interface StubCompanionWorkerDeps {
 export function createStubCompanionWorker(
   deps: StubCompanionWorkerDeps,
 ): JobHandler<CompanionJobData> {
-  const { pool, serverId, createMessage } = deps
+  const { agent, serverId } = deps
 
   return async (job) => {
     const { streamId, messageId } = job.data
@@ -34,10 +26,7 @@ export function createStubCompanionWorker(
       "Processing companion job (STUB)",
     )
 
-    const result = await runStubCompanionAgent(
-      { pool, createMessage },
-      { streamId, messageId, serverId },
-    )
+    const result = await agent.run({ streamId, messageId, serverId })
 
     if (result.status === "failed") {
       throw new Error(`Stub companion agent failed for session ${result.sessionId}`)

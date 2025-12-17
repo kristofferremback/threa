@@ -76,17 +76,13 @@ export class ProviderRegistry {
   getModel(providerModelString: string): LanguageModel {
     const { provider, modelId } = this.parseProviderModel(providerModelString)
 
-    if (!this.isSupportedProvider(provider)) {
-      throw new Error(
-        `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
-      )
-    }
-
     switch (provider) {
       case "openrouter":
         return this.getOpenRouterModel(modelId)
       default:
-        throw new Error(`Provider "${provider}" is not implemented`)
+        throw new Error(
+          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+        )
     }
   }
 
@@ -97,17 +93,13 @@ export class ProviderRegistry {
   getLangChainModel(providerModelString: string): ChatOpenAI {
     const { provider, modelId } = this.parseProviderModel(providerModelString)
 
-    if (!this.isSupportedProvider(provider)) {
-      throw new Error(
-        `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
-      )
-    }
-
     switch (provider) {
       case "openrouter":
         return this.getLangChainOpenRouterModel(modelId)
       default:
-        throw new Error(`Provider "${provider}" is not implemented for LangChain`)
+        throw new Error(
+          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+        )
     }
   }
 

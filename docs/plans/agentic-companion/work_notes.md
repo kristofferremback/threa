@@ -2,10 +2,37 @@
 
 **Started**: 2025-12-16
 **Branch**: feature/agentic-companion
-**Status**: In Progress (worker refactoring)
+**Status**: In Progress (awaiting PR approval)
 **Task Doc**: tasks/002-agentic-companion.md
 
 ## Session Log
+
+### 2025-12-17 - Worker Refactoring (Round 3)
+
+**Context reviewed**:
+- PR #10 received final review feedback (13 unresolved comments)
+- Main concerns: agent encapsulation, withSession helper, redundant checks
+
+**Applicable invariants**:
+- INV-9: No Singletons (logger is exception)
+- INV-10: Self-Describing Dependencies
+
+**Completed**:
+- [x] Refactored `runCompanionAgent` function to `CompanionAgent` class for encapsulation
+- [x] Refactored `runStubCompanionAgent` function to `StubCompanionAgent` class
+- [x] Workers now receive pre-constructed agent instance (deps.agent)
+- [x] Extracted `withSession` helper for session find/create/resume logic
+- [x] Removed redundant `isSupportedProvider` checks in ProviderRegistry (switch default handles it)
+- [x] Added logger exception to INV-9 in CLAUDE.md
+- [x] Resolved all 13 PR review threads
+
+**Key changes**:
+- `CompanionAgent` class encapsulates all deps, exposes `run(input)` method
+- Workers are now ~40 lines each, just extract job data and delegate
+- `withSession` helper handles the idempotent session create/resume pattern
+- Both agents (real and stub) share the `withSession` helper
+
+---
 
 ### 2025-12-17 - Worker Refactoring (Round 2)
 
