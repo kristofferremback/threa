@@ -1,9 +1,14 @@
 import type { CompanionJobData, JobHandler } from "../lib/job-queue"
-import type { CompanionAgent } from "../agents/companion-agent"
+import type { CompanionAgentInput, CompanionAgentResult } from "../agents/companion-agent"
 import { logger } from "../lib/logger"
 
+/** Interface for any agent that can handle companion jobs */
+export interface CompanionAgentLike {
+  run(input: CompanionAgentInput): Promise<CompanionAgentResult>
+}
+
 export interface CompanionWorkerDeps {
-  agent: CompanionAgent
+  agent: CompanionAgentLike
   serverId: string
 }
 
