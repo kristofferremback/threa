@@ -1,8 +1,6 @@
 import type { Pool, PoolClient } from "pg"
-import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import { withClient } from "../db"
 import { AuthorTypes, CompanionModes, type AuthorType } from "../lib/constants"
-import type { ProviderRegistry } from "../lib/ai"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
@@ -11,7 +9,7 @@ import {
   SessionStatuses,
   type AgentSession,
 } from "../repositories/agent-session-repository"
-import { runCompanionGraph } from "./companion-runner"
+import type { ResponseGenerator } from "./companion-runner"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 
@@ -78,8 +76,7 @@ export async function withSession<T>(
  */
 export interface CompanionAgentDeps {
   pool: Pool
-  modelRegistry: ProviderRegistry
-  checkpointer: PostgresSaver
+  responseGenerator: ResponseGenerator
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -126,12 +123,12 @@ export class CompanionAgent {
    * 2. Resolves the persona to use
    * 3. Creates or resumes an agent session
    * 4. Loads conversation history
-   * 5. Runs the LangGraph agent
+   * 5. Generates a response via the response generator
    * 6. Posts the response message
    * 7. Updates session status
    */
   async run(input: CompanionAgentInput): Promise<CompanionAgentResult> {
-    const { pool, modelRegistry, checkpointer, createMessage } = this.deps
+    const { pool, responseGenerator, createMessage } = this.deps
     const { streamId, messageId, serverId } = input
 
     // Step 1: Load context and create/get session
@@ -181,20 +178,17 @@ export class CompanionAgent {
     const { session, stream, persona, recentMessages } = context
 
     try {
-      // Step 2: Run agent via LangGraph
+      // Step 2: Generate response
       const systemPrompt = buildSystemPrompt(persona, stream)
-      const result = await runCompanionGraph(
-        { modelRegistry, checkpointer },
-        {
-          threadId: session.id,
-          modelId: persona.model,
-          systemPrompt,
-          messages: recentMessages.map((m) => ({
-            role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-            content: m.content,
-          })),
-        },
-      )
+      const result = await responseGenerator.run({
+        threadId: session.id,
+        modelId: persona.model,
+        systemPrompt,
+        messages: recentMessages.map((m) => ({
+          role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
+          content: m.content,
+        })),
+      })
 
       // Step 3: Post response
       const responseMessage = await createMessage({

@@ -121,6 +121,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-10** | Self-Describing Dependencies | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`) |
 | **INV-11** | No Silent Fallbacks | Fail loudly on misconfiguration; don't paper over missing data with defaults |
 | **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies. |
+| **INV-13** | Construct, Don't Assemble | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies. |
 
 When introducing a new invariant:
 1. Document it here with next available ID

@@ -4,17 +4,9 @@ import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
 
 /**
- * Dependencies required by the companion runner.
+ * Parameters for generating a response.
  */
-export interface CompanionRunnerDeps {
-  modelRegistry: ProviderRegistry
-  checkpointer: PostgresSaver
-}
-
-/**
- * Parameters for running the companion graph.
- */
-export interface RunCompanionParams {
+export interface GenerateResponseParams {
   /** Thread ID for checkpointing (typically session.id) */
   threadId: string
   /** Model identifier in provider:model format */
@@ -26,66 +18,95 @@ export interface RunCompanionParams {
 }
 
 /**
- * Result from running the companion graph.
+ * Result from generating a response.
  */
-export interface CompanionRunResult {
+export interface GenerateResponseResult {
   response: string
 }
 
 /**
- * Run the companion agent graph.
- *
- * Compiles the graph with the PostgreSQL checkpointer and invokes it
- * with the provided conversation context. The checkpointer automatically
- * handles durability and recovery via thread_id.
+ * Interface for response generators.
+ * Allows swapping LangGraph for a stub in tests.
  */
-export async function runCompanionGraph(
-  deps: CompanionRunnerDeps,
-  params: RunCompanionParams,
-): Promise<CompanionRunResult> {
-  const { modelRegistry, checkpointer } = deps
-  const { threadId, modelId, systemPrompt, messages } = params
+export interface ResponseGenerator {
+  run(params: GenerateResponseParams): Promise<GenerateResponseResult>
+}
 
-  logger.debug(
-    {
-      threadId,
-      modelId,
-      messageCount: messages.length,
+/**
+ * LangGraph-based response generator.
+ * Uses the companion graph with PostgreSQL checkpointing for durability.
+ */
+export class LangGraphResponseGenerator implements ResponseGenerator {
+  constructor(
+    private readonly deps: {
+      modelRegistry: ProviderRegistry
+      checkpointer: PostgresSaver
     },
-    "Running companion graph",
-  )
+  ) {}
 
-  // Get LangChain model from registry
-  const model = modelRegistry.getLangChainModel(modelId)
+  async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
+    const { modelRegistry, checkpointer } = this.deps
+    const { threadId, modelId, systemPrompt, messages } = params
 
-  // Create and compile graph with checkpointer
-  const graph = createCompanionGraph(model)
-  const compiledGraph = graph.compile({ checkpointer })
+    logger.debug(
+      {
+        threadId,
+        modelId,
+        messageCount: messages.length,
+      },
+      "Running companion graph",
+    )
 
-  // Convert messages to LangChain format
-  const langchainMessages = toLangChainMessages(messages)
+    // Get LangChain model from registry
+    const model = modelRegistry.getLangChainModel(modelId)
 
-  // Invoke the graph
-  const result = await compiledGraph.invoke(
-    {
-      messages: langchainMessages,
-      systemPrompt,
-      finalResponse: null,
-    },
-    {
-      configurable: { thread_id: threadId },
-    },
-  )
+    // Create and compile graph with checkpointer
+    const graph = createCompanionGraph(model)
+    const compiledGraph = graph.compile({ checkpointer })
 
-  const response = result.finalResponse ?? ""
+    // Convert messages to LangChain format
+    const langchainMessages = toLangChainMessages(messages)
 
-  logger.info(
-    {
-      threadId,
-      responseLength: response.length,
-    },
-    "Companion graph completed",
-  )
+    // Invoke the graph
+    const result = await compiledGraph.invoke(
+      {
+        messages: langchainMessages,
+        systemPrompt,
+        finalResponse: null,
+      },
+      {
+        configurable: { thread_id: threadId },
+      },
+    )
 
-  return { response }
+    const response = result.finalResponse ?? ""
+
+    logger.info(
+      {
+        threadId,
+        responseLength: response.length,
+      },
+      "Companion graph completed",
+    )
+
+    return { response }
+  }
+}
+
+/**
+ * Stub response generator for testing.
+ * Returns a canned response without calling any AI.
+ */
+export class StubResponseGenerator implements ResponseGenerator {
+  constructor(
+    private readonly response: string = "This is a stub response from the companion. The real AI integration is disabled.",
+  ) {}
+
+  async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
+    logger.debug(
+      { threadId: params.threadId, messageCount: params.messages.length },
+      "Running stub response generator",
+    )
+    return { response: this.response }
+  }
 }

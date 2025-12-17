@@ -19,7 +19,7 @@ import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { CompanionAgent } from "./agents/companion-agent"
-import { StubCompanionAgent } from "./agents/companion-agent.stub"
+import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
@@ -96,10 +96,11 @@ export async function startServer(): Promise<ServerInstance> {
   const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) =>
     eventService.createMessage(params)
 
-  const companionAgent = config.useStubCompanion
-    ? new StubCompanionAgent({ pool, createMessage })
-    : new CompanionAgent({ pool, modelRegistry: providerRegistry, checkpointer, createMessage })
+  const responseGenerator = config.useStubCompanion
+    ? new StubResponseGenerator()
+    : new LangGraphResponseGenerator({ modelRegistry: providerRegistry, checkpointer })
 
+  const companionAgent = new CompanionAgent({ pool, responseGenerator, createMessage })
   const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })
   jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
 
