@@ -381,3 +381,6 @@ If a helper exists (`withClient`, `withTransaction`), use it everywhere. Bypassi
 
 ### Don't add speculative features
 Don't add comments about features that weren't requested, and don't design for imagined requirements. YAGNI applies to comments too - a comment about a hypothetical mode creates confusion about what's actually supported.
+
+### Abstractions should fully own their domain
+A helper that extracts part of a workflow but leaves the caller managing the rest adds indirection without reducing complexity. If you're creating an abstraction for session lifecycle, it should handle find/create, run work, AND track status - not just find/create while the caller still manages status with separate calls. Partial abstractions can be worse than no abstraction because they add a layer of indirection while still requiring the caller to understand the full workflow.
