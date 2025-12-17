@@ -1,4 +1,5 @@
 import type { Pool } from "pg"
+import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -39,17 +40,13 @@ export function createCompanionListener(
       }
 
       // Look up stream to check companion mode
-      const client = await pool.connect()
-      try {
+      await withClient(pool, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
         if (!stream) {
           logger.warn({ streamId }, "Companion listener: stream not found")
           return
         }
 
-        // Only trigger if companion mode is 'on'
-        // 'off' = no companion
-        // 'next_message_only' mode is out of scope for this task
         if (stream.companionMode !== CompanionModes.ON) {
           return
         }
@@ -65,9 +62,7 @@ export function createCompanionListener(
           { streamId, messageId: message.id },
           "Companion job dispatched",
         )
-      } finally {
-        client.release()
-      }
+      })
     },
   })
 }

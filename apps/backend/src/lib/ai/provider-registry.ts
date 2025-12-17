@@ -122,8 +122,14 @@ export class ProviderRegistry {
     return this.openRouterClient.chat(modelId)
   }
 
+  /**
+   * Create a LangChain ChatOpenAI instance for the given model.
+   * Unlike AI SDK which uses a shared client, LangChain models are created per-call
+   * since each ChatOpenAI instance is tied to a specific model. This is intentional -
+   * ChatOpenAI is stateless and cheap to construct.
+   */
   private getLangChainOpenRouterModel(modelId: string): ChatOpenAI {
-    if (!this.openRouterApiKey) {
+    if (!this.openRouterClient) {
       throw new Error(
         "OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.",
       )
@@ -132,7 +138,7 @@ export class ProviderRegistry {
     logger.debug({ provider: "openrouter", modelId }, "Creating LangChain model instance")
     return new ChatOpenAI({
       modelName: modelId,
-      openAIApiKey: this.openRouterApiKey,
+      openAIApiKey: this.openRouterApiKey!,
       configuration: {
         baseURL: OPENROUTER_BASE_URL,
       },

@@ -2,10 +2,56 @@
 
 **Started**: 2025-12-16
 **Branch**: feature/agentic-companion
-**Status**: Complete (PR review feedback addressed)
+**Status**: In Progress (worker refactoring)
 **Task Doc**: tasks/002-agentic-companion.md
 
 ## Session Log
+
+### 2025-12-17 - Worker Refactoring (Round 2)
+
+**Context reviewed**:
+- PR #10 received additional review feedback (18 unresolved comments)
+- Main concern: companion worker does too much, should be thin like HTTP handlers
+- Created tasks 003 (stream context enrichment) and 004 (createMessage as tool) for deferred work
+
+**Applicable invariants**:
+- Workers/handlers should be thin orchestrators (new lesson learned)
+- Use existing helpers consistently (`withClient`)
+
+**New learnings documented**:
+1. Workers and handlers should be thin
+2. Be consistent in initialization patterns
+3. Use existing helpers consistently
+4. Don't add speculative features
+
+**Plan - Thin Worker Refactor**:
+1. Create `agents/companion-agent.ts` - the agent module that orchestrates everything
+2. Move from worker: persona resolution, session management, context building, message posting
+3. Worker becomes: extract job data → call agent → done
+4. Stub moves to agent level (stub the agent, not the worker)
+5. Fix minor comments: `withClient` usage, remove speculative comment, provider init consistency
+
+**Files to create**:
+- `agents/companion-agent.ts` - Agent orchestration (the "service" for companion)
+
+**Files to modify**:
+- `workers/companion-worker.ts` - Thin wrapper around agent
+- `workers/companion-worker.stub.ts` - Delete (stub moves to agent)
+- `lib/companion-listener.ts` - Use `withClient`, remove speculative comment
+- `lib/job-queue.ts` - Use `withClient`
+- `lib/ai/provider-registry.ts` - Consistent initialization
+
+**Completed**:
+- [x] Documented learnings in CLAUDE.md
+- [x] Created task 003 (stream context enrichment)
+- [x] Created task 004 (createMessage as tool)
+- [x] Updated tasks/README.md
+- [x] Fix minor PR comments (withClient, remove speculative comment, provider init consistency)
+- [x] Extract agent from worker → `agents/companion-agent.ts`
+- [x] Create agent stub → `agents/companion-agent.stub.ts`
+- [x] Update worker to be thin (50 lines vs 215 lines)
+
+---
 
 ### 2025-12-17 - PR Review Feedback
 
@@ -134,9 +180,13 @@ All resolved:
 - `apps/backend/src/repositories/persona-repository.ts` - Persona lookups
 - `apps/backend/src/agents/companion-graph.ts` - LangGraph StateGraph definition
 - `apps/backend/src/agents/companion-runner.ts` - Graph compilation and invocation
-- `apps/backend/src/workers/companion-worker.ts` - Job handler (uses modelRegistry)
-- `apps/backend/src/workers/companion-worker.stub.ts` - Test stub
+- `apps/backend/src/agents/companion-agent.ts` - Agent orchestration (extracted from worker)
+- `apps/backend/src/agents/companion-agent.stub.ts` - Stub agent for testing
+- `apps/backend/src/workers/companion-worker.ts` - Thin job handler wrapper
+- `apps/backend/src/workers/companion-worker.stub.ts` - Thin stub worker wrapper
 - `apps/backend/src/db/migrations/007_agent_sessions.sql` - Session tables
+- `tasks/003-stream-context-enrichment.md` - Deferred task for stream context
+- `tasks/004-agent-message-tool.md` - Deferred task for createMessage as tool
 
 ## Files Modified
 

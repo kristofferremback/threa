@@ -368,3 +368,15 @@ switch (true) {
 
 ### Magic strings should be constants or enums
 Checking `companionMode === "on"` scatters knowledge about valid modes throughout the codebase. Define constants or enums at the source of truth and import them. This catches typos at compile time and makes valid values discoverable.
+
+### Workers and handlers should be thin
+Workers (job handlers) and HTTP handlers are infrastructure code. They should receive input, delegate to domain logic, and return results. Business logic belongs in dedicated modules (agents, services) that are reusable across invocation contexts, independently testable, and focused on domain concerns. Think: "Would I want to duplicate this logic if I needed to call it from an API endpoint AND a job worker AND an eval harness?"
+
+### Be consistent in initialization patterns
+When a class has multiple similar resources (clients, connections), initialize them the same way. Mixed patterns (some eager, some lazy) create confusion about expected behavior and make the code harder to reason about.
+
+### Use existing helpers consistently
+If a helper exists (`withClient`, `withTransaction`), use it everywhere. Bypassing it with raw operations suggests either the helper is inadequate or the code is inconsistent. Both are problems worth fixing.
+
+### Don't add speculative features
+Don't add comments about features that weren't requested, and don't design for imagined requirements. YAGNI applies to comments too - a comment about a hypothetical mode creates confusion about what's actually supported.

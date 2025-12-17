@@ -1,5 +1,6 @@
 import { PgBoss, type Job, type SendOptions, type WorkHandler } from "pg-boss"
 import type { Pool } from "pg"
+import { withClient } from "../db"
 import { logger } from "./logger"
 
 /**
@@ -56,13 +57,10 @@ export class JobQueueManager {
     this.boss = new PgBoss({
       db: {
         executeSql: async (text: string, values?: unknown[]) => {
-          const client = await pool.connect()
-          try {
-            const result = await client.query(text, values as unknown[])
-            return { rows: result.rows }
-          } finally {
-            client.release()
-          }
+          const result = await withClient(pool, (client) =>
+            client.query(text, values as unknown[]),
+          )
+          return { rows: result.rows }
         },
       },
       schema: "pgboss",
