@@ -36,7 +36,7 @@ async function main() {
     env: {
       ...process.env,
       DATABASE_URL: "postgresql://threa:threa@localhost:5454/threa",
-      USE_STUB_AUTH: process.env.USE_STUB_AUTH ?? "true",
+      USE_STUB_AUTH: process.env.USE_STUB_AUTH ?? "false",
     },
   })
 

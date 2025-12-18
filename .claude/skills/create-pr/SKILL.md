@@ -85,6 +85,9 @@ The PR must include these sections:
 
 - [x] Completed tests
 - [ ] Manual verification steps
+
+---
+🤖 _PR by [Claude Code](https://claude.com/claude-code)_
 ```
 
 ### 4. Create the PR

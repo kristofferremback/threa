@@ -15,6 +15,7 @@ const createStreamSchema = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
     message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
   }).optional(),
+  displayName: z.string().min(1).max(100).optional(),
   description: z.string().optional(),
   visibility: visibilitySchema.optional(),
   companionMode: companionModeSchema.optional(),
@@ -23,6 +24,11 @@ const createStreamSchema = z.object({
   (data) => data.type !== "channel" || data.slug,
   { message: "Slug is required for channels", path: ["slug"] },
 )
+
+const updateStreamSchema = z.object({
+  displayName: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+})
 
 const updateCompanionModeSchema = z.object({
   companionMode: companionModeSchema,
@@ -37,7 +43,7 @@ const muteSchema = z.object({
   muted: z.boolean(),
 })
 
-export { createStreamSchema, updateCompanionModeSchema, pinSchema, muteSchema }
+export { createStreamSchema, updateStreamSchema, updateCompanionModeSchema, pinSchema, muteSchema }
 
 interface Dependencies {
   streamService: StreamService
@@ -75,12 +81,13 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         })
       }
 
-      const { type, slug, description, visibility, companionMode, companionPersonaId } = result.data
+      const { type, slug, displayName, description, visibility, companionMode, companionPersonaId } = result.data
 
       const stream = await streamService.create({
         workspaceId,
         type,
         slug,
+        displayName,
         description,
         visibility,
         companionMode,
@@ -98,6 +105,30 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
       res.json({ stream })
+    },
+
+    async update(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const result = updateStreamSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      // Only allow updates to scratchpads (channels have fixed slugs/names)
+      if (stream.type !== "scratchpad") {
+        return res.status(403).json({ error: "Only scratchpads can be updated" })
+      }
+
+      const updated = await streamService.updateStream(streamId, result.data)
+      res.json({ stream: updated })
     },
 
     async listEvents(req: Request, res: Response) {
@@ -211,6 +242,33 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const archived = await streamService.archiveStream(streamId)
       res.json({ stream: archived })
+    },
+
+    async bootstrap(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      const [events, members, membership] = await Promise.all([
+        eventService.listEvents(streamId, { limit: 50 }),
+        streamService.getMembers(streamId),
+        streamService.getMembership(streamId, userId),
+      ])
+
+      // Get the latest sequence number from the most recent event
+      const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
+
+      res.json({
+        data: {
+          stream,
+          events: events.map(serializeEvent),
+          members,
+          membership,
+          latestSequence: latestSequence.toString(),
+        },
+      })
     },
   }
 }

@@ -18,6 +18,7 @@ import {
 
 const createScratchpadParamsSchema = z.object({
   workspaceId: z.string(),
+  displayName: z.string().optional(),
   description: z.string().optional(),
   createdBy: z.string(),
   companionMode: companionModeSchema.optional(),
@@ -49,6 +50,7 @@ const createStreamParamsSchema = z.object({
   workspaceId: z.string(),
   type: streamTypeSchema,
   slug: z.string().optional(),
+  displayName: z.string().optional(),
   description: z.string().optional(),
   visibility: visibilitySchema.optional(),
   companionMode: companionModeSchema.optional(),
@@ -129,6 +131,7 @@ export class StreamService {
       case StreamTypes.SCRATCHPAD:
         return this.createScratchpad({
           workspaceId: params.workspaceId,
+          displayName: params.displayName,
           description: params.description,
           companionMode: params.companionMode,
           companionPersonaId: params.companionPersonaId,
@@ -158,7 +161,7 @@ export class StreamService {
         id,
         workspaceId: params.workspaceId,
         type: StreamTypes.SCRATCHPAD,
-        // displayName starts NULL, will be auto-generated from conversation
+        displayName: params.displayName,
         description: params.description,
         visibility: Visibilities.PRIVATE,
         companionMode: params.companionMode ?? CompanionModes.OFF,
@@ -252,6 +255,15 @@ export class StreamService {
   async archiveStream(streamId: string): Promise<Stream | null> {
     return withTransaction(this.pool, (client) =>
       StreamRepository.update(client, streamId, { archivedAt: new Date() }),
+    )
+  }
+
+  async updateStream(
+    streamId: string,
+    data: { displayName?: string; description?: string },
+  ): Promise<Stream | null> {
+    return withTransaction(this.pool, (client) =>
+      StreamRepository.update(client, streamId, data),
     )
   }
 

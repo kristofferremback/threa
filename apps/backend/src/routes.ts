@@ -30,7 +30,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const authed: RequestHandler[] = [auth, workspaceMember]
 
   const authHandlers = createAuthHandlers({ authService, userService })
-  const workspace = createWorkspaceHandlers({ workspaceService })
+  const workspace = createWorkspaceHandlers({ workspaceService, streamService })
   const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
 
@@ -60,11 +60,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces", auth, workspace.list)
   app.post("/api/workspaces", auth, workspace.create)
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
+  app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
   app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
 
   app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
   app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
   app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", ...authed, stream.mute)
