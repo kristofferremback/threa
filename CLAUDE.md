@@ -265,7 +265,7 @@ If there was meaningful divergence:
 
 ### Work Notes for Multi-Session Tasks
 
-For features spanning multiple sessions, create `docs/plans/<feature>/work_notes.md`:
+For features spanning multiple sessions, create `docs/plans/<feature>/work_notes.md`. **Include work notes in the PR** - they document context, decisions, and rationale that are valuable for future reference.
 
 ```markdown
 # <Feature Name> - Work Notes

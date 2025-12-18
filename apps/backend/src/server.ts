@@ -17,7 +17,9 @@ import { EventService } from "./services/event-service"
 import { StreamNamingService } from "./services/stream-naming-service"
 import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
+import { createNamingListener } from "./lib/naming-listener"
 import { createCompanionWorker } from "./workers/companion-worker"
+import { createNamingWorker } from "./workers/naming-worker"
 import { CompanionAgent } from "./agents/companion-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -58,7 +60,6 @@ export async function startServer(): Promise<ServerInstance> {
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
   const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
-  eventService.setStreamNamingService(streamNamingService)
 
   const app = createApp()
 
@@ -101,13 +102,18 @@ export async function startServer(): Promise<ServerInstance> {
   const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })
   jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
 
+  const namingWorker = createNamingWorker({ streamNamingService })
+  jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker)
+
   await jobQueue.start()
 
   // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)
   const companionListener = createCompanionListener(pool, jobQueue)
+  const namingListener = createNamingListener(pool, jobQueue)
   await broadcastListener.start()
   await companionListener.start()
+  await namingListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -118,6 +124,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
+    await namingListener.stop()
     await companionListener.stop()
     await broadcastListener.stop()
     await jobQueue.stop()
