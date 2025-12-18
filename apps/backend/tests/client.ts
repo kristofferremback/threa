@@ -139,7 +139,7 @@ export async function createStream(
   type: "scratchpad" | "channel",
   options?: {
     slug?: string
-    companionMode?: "off" | "on" | "next_message_only"
+    companionMode?: "off" | "on"
     visibility?: "public" | "private"
   }
 ): Promise<Stream> {
@@ -156,7 +156,7 @@ export async function createStream(
 export async function createScratchpad(
   client: TestClient,
   workspaceId: string,
-  companionMode: "off" | "on" | "next_message_only" = "on"
+  companionMode: "off" | "on" = "on"
 ): Promise<Stream> {
   return createStream(client, workspaceId, "scratchpad", { companionMode })
 }
@@ -264,7 +264,7 @@ export async function updateCompanionMode(
   client: TestClient,
   workspaceId: string,
   streamId: string,
-  companionMode: "off" | "on" | "next_message_only"
+  companionMode: "off" | "on"
 ): Promise<Stream> {
   const { status, data } = await client.patch<{ stream: Stream }>(
     `/api/workspaces/${workspaceId}/streams/${streamId}/companion`,

@@ -19,13 +19,12 @@ export const Visibilities = {
 } as const satisfies Record<string, Visibility>
 
 // Companion modes
-export const COMPANION_MODES = ["off", "on", "next_message_only"] as const
+export const COMPANION_MODES = ["off", "on"] as const
 export type CompanionMode = (typeof COMPANION_MODES)[number]
 
 export const CompanionModes = {
   OFF: "off",
   ON: "on",
-  NEXT_MESSAGE_ONLY: "next_message_only",
 } as const satisfies Record<string, CompanionMode>
 
 // Content formats

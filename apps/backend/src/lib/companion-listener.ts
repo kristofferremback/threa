@@ -4,7 +4,7 @@ import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
-import { AuthorTypes, CompanionModes } from "./constants"
+import { AuthorTypes, CompanionModes } from "@threa/types"
 import { logger } from "./logger"
 
 interface MessageCreatedEventPayload {

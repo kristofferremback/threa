@@ -4,7 +4,7 @@ import type { StreamService } from "../services/stream-service"
 import type { EventService } from "../services/event-service"
 import type { EventType, StreamEvent } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
-import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/constants"
+import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/schemas"
 
 const createStreamSchema = z
   .object({

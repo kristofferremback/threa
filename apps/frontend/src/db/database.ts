@@ -28,7 +28,7 @@ export interface CachedStream {
   slug: string | null
   description: string | null
   visibility: "public" | "private"
-  companionMode: "off" | "on" | "next_message_only"
+  companionMode: "off" | "on"
   companionPersonaId: string | null
   createdBy: string
   createdAt: string
@@ -93,7 +93,7 @@ export interface DraftScratchpad {
   id: string // draft_xxx format
   workspaceId: string
   displayName: string | null
-  companionMode: "off" | "on" | "next_message_only"
+  companionMode: "off" | "on"
   createdAt: number
 }
 

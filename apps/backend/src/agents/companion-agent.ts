@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient } from "../db"
-import { AuthorTypes, CompanionModes, type AuthorType } from "../lib/constants"
+import { AuthorTypes, CompanionModes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"

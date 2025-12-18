@@ -5,7 +5,7 @@ import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
 import { toShortcode } from "../lib/emoji"
-import { contentFormatSchema } from "../lib/constants"
+import { contentFormatSchema } from "../lib/schemas"
 
 const createMessageSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
