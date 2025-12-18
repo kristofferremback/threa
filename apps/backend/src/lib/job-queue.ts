@@ -19,6 +19,7 @@ import { logger } from "./logger"
 // Job type definitions
 export const JobQueues = {
   COMPANION_RESPOND: "companion.respond",
+  NAMING_GENERATE: "naming.generate",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -29,9 +30,14 @@ export interface CompanionJobData {
   triggeredBy: string
 }
 
+export interface NamingJobData {
+  streamId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.COMPANION_RESPOND]: CompanionJobData
+  [JobQueues.NAMING_GENERATE]: NamingJobData
 }
 
 // Default options for companion jobs

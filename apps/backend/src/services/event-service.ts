@@ -4,8 +4,6 @@ import { StreamEventRepository, EventType, StreamEvent } from "../repositories/s
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
-import { logger } from "../lib/logger"
-import type { StreamNamingService } from "./stream-naming-service"
 
 // Event payloads
 export interface MessageCreatedPayload {
@@ -76,13 +74,7 @@ export interface RemoveReactionParams {
 }
 
 export class EventService {
-  private streamNamingService: StreamNamingService | null = null
-
   constructor(private pool: Pool) {}
-
-  setStreamNamingService(service: StreamNamingService): void {
-    this.streamNamingService = service
-  }
 
   async createMessage(params: CreateMessageParams): Promise<Message> {
     return withTransaction(this.pool, async (client) => {
@@ -120,15 +112,6 @@ export class EventService {
         streamId: params.streamId,
         message,
       })
-
-      // 4. Trigger auto-naming in background (non-blocking)
-      if (this.streamNamingService) {
-        // Don't await - let this run async without blocking the response
-        this.streamNamingService.attemptAutoNaming(params.streamId).catch((err) => {
-          // Log but don't fail the message creation
-          logger.error({ err, streamId: params.streamId }, "Auto-naming failed")
-        })
-      }
 
       return message
     })
