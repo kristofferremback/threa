@@ -1,8 +1,8 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
-import type { Message } from "./message-repository"
 import type { Stream } from "./stream-repository"
+import type { StreamEvent } from "./stream-event-repository"
 
 /**
  * Outbox event types and their payloads.
@@ -29,11 +29,11 @@ interface BaseOutboxPayload {
 }
 
 export interface MessageCreatedOutboxPayload extends BaseOutboxPayload {
-  message: Message
+  event: StreamEvent
 }
 
 export interface MessageEditedOutboxPayload extends BaseOutboxPayload {
-  message: Message
+  event: StreamEvent
 }
 
 export interface MessageDeletedOutboxPayload extends BaseOutboxPayload {

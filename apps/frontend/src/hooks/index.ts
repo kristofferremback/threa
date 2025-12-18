@@ -17,3 +17,5 @@ export { useDraftScratchpads, isDraftId } from "./use-draft-scratchpads"
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
 export { useSocketEvents } from "./use-socket-events"
+
+export { useStreamSocket } from "./use-stream-socket"
