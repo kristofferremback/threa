@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
 import { MessageEvent } from "./message-event"
 import { MembershipEvent } from "./membership-event"
 import { SystemEvent } from "./system-event"

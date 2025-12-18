@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
 import { EventItem } from "./event-item"
 
 interface EventListProps {

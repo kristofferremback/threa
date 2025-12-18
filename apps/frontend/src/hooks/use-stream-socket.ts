@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
-import type { StreamEvent } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
 
 interface MessageEventPayload {
   workspaceId: string

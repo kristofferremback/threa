@@ -1,15 +1,7 @@
 import { api } from "./client"
-import type { Message, ContentFormat } from "@/types/domain"
+import type { Message, CreateMessageInput, UpdateMessageInput } from "@threa/types"
 
-export interface CreateMessageInput {
-  streamId: string
-  content: string
-  contentFormat?: ContentFormat
-}
-
-export interface UpdateMessageInput {
-  content: string
-}
+export type { CreateMessageInput, UpdateMessageInput }
 
 export const messagesApi = {
   async create(workspaceId: string, streamId: string, data: CreateMessageInput): Promise<Message> {

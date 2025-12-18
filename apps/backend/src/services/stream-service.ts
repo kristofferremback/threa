@@ -6,16 +6,8 @@ import { StreamMemberRepository, StreamMember } from "../repositories/stream-mem
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { streamId } from "../lib/id"
 import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
-import {
-  StreamTypes,
-  Visibilities,
-  CompanionModes,
-  streamTypeSchema,
-  visibilitySchema,
-  companionModeSchema,
-  type StreamType,
-  type CompanionMode,
-} from "../lib/constants"
+import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"
+import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/schemas"
 
 const createScratchpadParamsSchema = z.object({
   workspaceId: z.string(),

@@ -1,0 +1,73 @@
+/**
+ * API request/response types.
+ *
+ * These types define the contracts between frontend and backend.
+ */
+
+import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
+import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember } from "./domain"
+
+// ============================================================================
+// Streams API
+// ============================================================================
+
+export interface CreateStreamInput {
+  type: StreamType
+  displayName?: string
+  slug?: string
+  description?: string
+  visibility?: Visibility
+  companionMode?: CompanionMode
+  companionPersonaId?: string
+}
+
+export interface UpdateStreamInput {
+  displayName?: string
+  description?: string
+  visibility?: Visibility
+  companionMode?: CompanionMode
+  companionPersonaId?: string
+}
+
+export interface UpdateCompanionModeInput {
+  companionMode: CompanionMode
+  companionPersonaId?: string | null
+}
+
+export interface StreamBootstrap {
+  stream: Stream
+  events: StreamEvent[]
+  members: StreamMember[]
+  membership: StreamMember | null
+  latestSequence: string
+}
+
+// ============================================================================
+// Messages API
+// ============================================================================
+
+export interface CreateMessageInput {
+  streamId: string
+  content: string
+  contentFormat?: ContentFormat
+}
+
+export interface UpdateMessageInput {
+  content: string
+}
+
+// ============================================================================
+// Workspaces API
+// ============================================================================
+
+export interface CreateWorkspaceInput {
+  name: string
+  slug?: string
+}
+
+export interface WorkspaceBootstrap {
+  workspace: Workspace
+  members: WorkspaceMember[]
+  streams: Stream[]
+  streamMemberships: StreamMember[]
+}

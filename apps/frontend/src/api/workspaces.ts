@@ -1,13 +1,7 @@
 import { api } from "./client"
-import type { Workspace, WorkspaceMember, Stream, StreamMember } from "@/types/domain"
+import type { Workspace, WorkspaceBootstrap, CreateWorkspaceInput } from "@threa/types"
 
-// Bootstrap response - everything needed to render a workspace
-export interface WorkspaceBootstrap {
-  workspace: Workspace
-  members: WorkspaceMember[]
-  streams: Stream[]
-  streamMemberships: StreamMember[]
-}
+export type { WorkspaceBootstrap, CreateWorkspaceInput }
 
 export const workspacesApi = {
   async list(): Promise<Workspace[]> {
@@ -25,7 +19,7 @@ export const workspacesApi = {
     return res.data
   },
 
-  async create(data: { name: string; slug?: string }): Promise<Workspace> {
+  async create(data: CreateWorkspaceInput): Promise<Workspace> {
     const res = await api.post<{ workspace: Workspace }>("/api/workspaces", data)
     return res.workspace
   },

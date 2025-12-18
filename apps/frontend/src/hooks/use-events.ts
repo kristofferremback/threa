@@ -3,7 +3,7 @@ import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { useStreamService } from "@/contexts"
 import { useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import { db } from "@/db"
-import type { StreamEvent } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
 
 export const eventKeys = {
   all: ["events"] as const,

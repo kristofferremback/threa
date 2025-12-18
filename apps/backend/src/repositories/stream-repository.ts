@@ -1,6 +1,6 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
-import type { StreamType, Visibility, CompanionMode } from "../lib/constants"
+import type { StreamType, Visibility, CompanionMode } from "@threa/types"
 
 export type { StreamType, Visibility, CompanionMode }
 

@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button"
 import { useMessageService, useStreamService } from "@/contexts"
 import { streamKeys, useDraftScratchpads, workspaceKeys, useDraftMessage, getDraftMessageKey } from "@/hooks"
 import { db } from "@/db"
-import type { StreamEvent } from "@/types/domain"
-import { StreamTypes } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 
 interface MessageInputProps {
   workspaceId: string
