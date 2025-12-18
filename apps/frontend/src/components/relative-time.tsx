@@ -46,34 +46,44 @@ export function RelativeTime({ date, className }: RelativeTimeProps) {
 
 function formatRelativeTime(date: Date): string {
   const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffSec = Math.floor(diffMs / 1000)
-  const diffMin = Math.floor(diffSec / 60)
-  const diffHour = Math.floor(diffMin / 60)
-  const diffDay = Math.floor(diffHour / 24)
+  const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
 
-  if (diffSec < 60) {
-    return "just now"
-  }
-  if (diffMin < 60) {
-    return `${diffMin}m ago`
-  }
-  if (diffHour < 24) {
-    return `${diffHour}h ago`
-  }
-  if (diffDay === 1) {
-    return "yesterday"
-  }
-  if (diffDay < 7) {
-    return `${diffDay}d ago`
+  // Same day: just show time
+  if (isSameDay(date, now)) {
+    return time
   }
 
-  // For older dates, show the date
-  const isThisYear = date.getFullYear() === now.getFullYear()
-  if (isThisYear) {
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+  // Yesterday
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (isSameDay(date, yesterday)) {
+    return `yesterday ${time}`
   }
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+
+  // Within the last week: show day name
+  const daysAgo = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+  if (daysAgo < 7) {
+    const dayName = date.toLocaleDateString(undefined, { weekday: "long" })
+    return `${dayName} ${time}`
+  }
+
+  // Same year: show month and day
+  if (date.getFullYear() === now.getFullYear()) {
+    const monthDay = date.toLocaleDateString(undefined, { month: "long", day: "numeric" })
+    return `${monthDay} ${time}`
+  }
+
+  // Different year: show full date
+  const fullDate = date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+  return `${fullDate} ${time}`
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
 }
 
 function formatFullDateTime(date: Date): string {

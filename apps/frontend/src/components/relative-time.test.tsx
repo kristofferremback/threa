@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react"
 import { RelativeTime } from "./relative-time"
 
 describe("RelativeTime", () => {
+  // Fixed to Sunday, June 15, 2025 at 12:00:00 UTC
   const fixedNow = new Date("2025-06-15T12:00:00Z")
 
   beforeEach(() => {
@@ -14,46 +15,39 @@ describe("RelativeTime", () => {
     vi.useRealTimers()
   })
 
-  it("should render 'just now' for times less than a minute ago", () => {
-    const thirtySecondsAgo = new Date(fixedNow.getTime() - 30 * 1000)
-    render(<RelativeTime date={thirtySecondsAgo} />)
-    expect(screen.getByText("just now")).toBeInTheDocument()
+  it("should show just time for same day", () => {
+    // 30 minutes ago, same day
+    const sameDay = new Date("2025-06-15T11:30:00Z")
+    render(<RelativeTime date={sameDay} />)
+    // Time format depends on locale, just check it contains digits
+    expect(screen.getByText(/\d{1,2}:\d{2}/)).toBeInTheDocument()
   })
 
-  it("should render minutes ago for times 1-59 minutes ago", () => {
-    const fiveMinutesAgo = new Date(fixedNow.getTime() - 5 * 60 * 1000)
-    render(<RelativeTime date={fiveMinutesAgo} />)
-    expect(screen.getByText("5m ago")).toBeInTheDocument()
-  })
-
-  it("should render hours ago for times 1-23 hours ago", () => {
-    const threeHoursAgo = new Date(fixedNow.getTime() - 3 * 60 * 60 * 1000)
-    render(<RelativeTime date={threeHoursAgo} />)
-    expect(screen.getByText("3h ago")).toBeInTheDocument()
-  })
-
-  it("should render 'yesterday' for times 24-47 hours ago", () => {
-    const yesterday = new Date(fixedNow.getTime() - 30 * 60 * 60 * 1000)
+  it("should show 'yesterday' with time for yesterday", () => {
+    // Yesterday at 15:20
+    const yesterday = new Date("2025-06-14T15:20:00Z")
     render(<RelativeTime date={yesterday} />)
-    expect(screen.getByText("yesterday")).toBeInTheDocument()
+    expect(screen.getByText(/yesterday/i)).toBeInTheDocument()
   })
 
-  it("should render days ago for times 2-6 days ago", () => {
-    const threeDaysAgo = new Date(fixedNow.getTime() - 3 * 24 * 60 * 60 * 1000)
-    render(<RelativeTime date={threeDaysAgo} />)
-    expect(screen.getByText("3d ago")).toBeInTheDocument()
+  it("should show day name with time for dates within the last week", () => {
+    // Thursday (3 days ago from Sunday)
+    const thursday = new Date("2025-06-12T10:30:00Z")
+    render(<RelativeTime date={thursday} />)
+    expect(screen.getByText(/Thursday/i)).toBeInTheDocument()
   })
 
-  it("should render month and day for dates in the same year but over a week ago", () => {
-    const twoWeeksAgo = new Date("2025-06-01T12:00:00Z")
+  it("should show month and day with time for dates in same year over a week ago", () => {
+    // June 1st (14 days ago)
+    const twoWeeksAgo = new Date("2025-06-01T14:00:00Z")
     render(<RelativeTime date={twoWeeksAgo} />)
-    expect(screen.getByText("Jun 1")).toBeInTheDocument()
+    expect(screen.getByText(/June 1/i)).toBeInTheDocument()
   })
 
-  it("should render month, day, and year for dates in previous years", () => {
-    const lastYear = new Date("2024-03-15T12:00:00Z")
+  it("should show full date with time for dates in previous years", () => {
+    const lastYear = new Date("2024-03-15T09:45:00Z")
     render(<RelativeTime date={lastYear} />)
-    expect(screen.getByText("Mar 15, 2024")).toBeInTheDocument()
+    expect(screen.getByText(/March 15, 2024/i)).toBeInTheDocument()
   })
 
   it("should render '--' for invalid dates", () => {
@@ -72,14 +66,16 @@ describe("RelativeTime", () => {
   })
 
   it("should accept Date objects", () => {
-    const date = new Date(fixedNow.getTime() - 10 * 60 * 1000)
+    const date = new Date("2025-06-15T10:00:00Z")
     render(<RelativeTime date={date} />)
-    expect(screen.getByText("10m ago")).toBeInTheDocument()
+    // Same day, should just show time
+    expect(screen.getByText(/\d{1,2}:\d{2}/)).toBeInTheDocument()
   })
 
   it("should accept ISO string dates", () => {
-    const isoString = new Date(fixedNow.getTime() - 2 * 60 * 60 * 1000).toISOString()
+    const isoString = "2025-06-14T08:30:00Z"
     render(<RelativeTime date={isoString} />)
-    expect(screen.getByText("2h ago")).toBeInTheDocument()
+    // Yesterday
+    expect(screen.getByText(/yesterday/i)).toBeInTheDocument()
   })
 })
