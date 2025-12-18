@@ -55,6 +55,18 @@ export const StreamMemberRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
+  async findByStreamsAndUser(client: PoolClient, streamIds: string[], userId: string): Promise<StreamMember[]> {
+    if (streamIds.length === 0) return []
+
+    const result = await client.query<StreamMemberRow>(sql`
+      SELECT stream_id, user_id, pinned, pinned_at, muted,
+             last_read_event_id, last_read_at, joined_at
+      FROM stream_members
+      WHERE stream_id = ANY(${streamIds}) AND user_id = ${userId}
+    `)
+    return result.rows.map(mapRowToMember)
+  },
+
   async list(client: PoolClient, filters: { userId?: string; streamId?: string }): Promise<StreamMember[]> {
     if (filters.userId && !filters.streamId) {
       const result = await client.query<StreamMemberRow>(sql`

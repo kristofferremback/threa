@@ -72,9 +72,9 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
         return res.status(404).json({ error: "Workspace not found" })
       }
 
-      // Get stream memberships for all streams the user has access to
-      const streamMemberships = await Promise.all(
-        streams.map((stream) => streamService.getMembership(stream.id, userId))
+      const streamMemberships = await streamService.getMembershipsBatch(
+        streams.map((s) => s.id),
+        userId
       )
 
       res.json({
@@ -82,7 +82,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
           workspace,
           members,
           streams,
-          streamMemberships: streamMemberships.filter(Boolean),
+          streamMemberships,
         },
       })
     },
