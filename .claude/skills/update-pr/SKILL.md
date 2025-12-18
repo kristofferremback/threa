@@ -112,13 +112,16 @@ Follow this template for consistency:
 ## Test plan
 
 - [ ] Test item
+
+---
+🤖 _PR by [Claude Code](https://claude.com/claude-code)_
 ```
 
 ## Examples
 
 **Quick body update:**
 ```bash
-printf '%s\n' '## Problem' '' 'Users cannot login' '' '## Solution' '' 'Fixed auth token validation' > /tmp/claude/pr-body.md
+printf '%s\n' '## Problem' '' 'Users cannot login' '' '## Solution' '' 'Fixed auth token validation' '' '---' '🤖 _PR by [Claude Code](https://claude.com/claude-code)_' > /tmp/claude/pr-body.md
 gh pr edit 123 --body-file /tmp/claude/pr-body.md
 ```
 
