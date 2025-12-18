@@ -5,30 +5,21 @@ function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        // Data is considered fresh for 30 seconds
         staleTime: 30 * 1000,
-        // Refetch on window focus for fresh data
         refetchOnWindowFocus: true,
-        // Don't retry on error by default (we handle errors explicitly)
         retry: false,
       },
     },
   })
 }
 
-let browserQueryClient: QueryClient | undefined = undefined
+let queryClientSingleton: QueryClient | undefined = undefined
 
-function getQueryClient() {
-  // Server: always make a new query client
-  if (typeof window === "undefined") {
-    return makeQueryClient()
+export function getQueryClient() {
+  if (!queryClientSingleton) {
+    queryClientSingleton = makeQueryClient()
   }
-  // Browser: make a new query client if we don't already have one
-  // This helps ensure we don't re-create the client during hydration
-  if (!browserQueryClient) {
-    browserQueryClient = makeQueryClient()
-  }
-  return browserQueryClient
+  return queryClientSingleton
 }
 
 interface QueryClientProviderProps {
@@ -44,6 +35,3 @@ export function QueryClientProvider({ children }: QueryClientProviderProps) {
     </TanStackQueryClientProvider>
   )
 }
-
-// Export for direct access when needed (e.g., invalidating queries from socket handlers)
-export { getQueryClient }

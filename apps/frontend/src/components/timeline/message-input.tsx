@@ -187,8 +187,8 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // Cmd/Ctrl + Enter to send
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      // Enter to send, Shift+Enter for newline
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault()
         handleSubmit()
       }
@@ -204,7 +204,7 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
           value={content}
           onChange={(e) => handleContentChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message... (Cmd+Enter to send)"
+          placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
           className="min-h-[80px] resize-none"
           disabled={sendMutation.isPending}
         />

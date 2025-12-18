@@ -1,5 +1,6 @@
 import type { StreamEvent } from "@/types/domain"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { RelativeTime } from "@/components/relative-time"
 import { cn } from "@/lib/utils"
 
 interface MessagePayload {
@@ -30,9 +31,7 @@ export function MessageEvent({ event }: MessageEventProps) {
           <span className="font-medium text-sm">
             {isPersona ? "AI Companion" : formatActorId(event.actorId)}
           </span>
-          <span className="text-xs text-muted-foreground">
-            {formatTime(event.createdAt)}
-          </span>
+          <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
         </div>
         <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">
           {payload.content}
@@ -54,7 +53,3 @@ function formatActorId(actorId: string | null): string {
   return actorId.substring(0, 8)
 }
 
-function formatTime(isoString: string): string {
-  const date = new Date(isoString)
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-}

@@ -12,6 +12,11 @@ export function serializeBigInt<T>(value: T): T {
   if (typeof value === "bigint") {
     return value.toString() as unknown as T
   }
+  // Date objects must be passed through - JSON.stringify handles Date -> ISO string
+  // Object.entries(new Date()) returns [] which would convert dates to {}
+  if (value instanceof Date) {
+    return value as unknown as T
+  }
   if (Array.isArray(value)) {
     return value.map(serializeBigInt) as unknown as T
   }
