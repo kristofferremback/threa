@@ -8,4 +8,6 @@ export type {
   PendingMessage,
   SyncCursor,
   EventType,
+  DraftScratchpad,
+  DraftMessage,
 } from "./database"

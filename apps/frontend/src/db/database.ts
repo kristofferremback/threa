@@ -89,6 +89,22 @@ export interface SyncCursor {
   updatedAt: number
 }
 
+export interface DraftScratchpad {
+  id: string // draft_xxx format
+  workspaceId: string
+  displayName: string | null
+  companionMode: "off" | "on" | "next_message_only"
+  createdAt: number
+}
+
+export interface DraftMessage {
+  // Key format: "stream:{streamId}" or "thread:{parentMessageId}" for new threads
+  id: string
+  workspaceId: string
+  content: string
+  updatedAt: number
+}
+
 // Database class with typed tables
 class ThreaDatabase extends Dexie {
   workspaces!: EntityTable<CachedWorkspace, "id">
@@ -98,6 +114,8 @@ class ThreaDatabase extends Dexie {
   users!: EntityTable<CachedUser, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
   syncCursors!: EntityTable<SyncCursor, "key">
+  draftScratchpads!: EntityTable<DraftScratchpad, "id">
+  draftMessages!: EntityTable<DraftMessage, "id">
 
   constructor() {
     super("threa")
@@ -110,6 +128,14 @@ class ThreaDatabase extends Dexie {
       users: "id, email, _cachedAt",
       pendingMessages: "clientId, streamId, createdAt",
       syncCursors: "key, updatedAt",
+    })
+
+    this.version(2).stores({
+      draftScratchpads: "id, workspaceId, createdAt",
+    })
+
+    this.version(3).stores({
+      draftMessages: "id, workspaceId, updatedAt",
     })
   }
 }

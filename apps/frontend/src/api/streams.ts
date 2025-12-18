@@ -76,8 +76,8 @@ export const streamsApi = {
     return res.stream
   },
 
-  delete(workspaceId: string, streamId: string): Promise<void> {
-    return api.delete(`/api/workspaces/${workspaceId}/streams/${streamId}`)
+  archive(workspaceId: string, streamId: string): Promise<void> {
+    return api.post(`/api/workspaces/${workspaceId}/streams/${streamId}/archive`)
   },
 
   // Event fetching for pagination

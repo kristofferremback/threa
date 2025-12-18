@@ -4,7 +4,11 @@ import { useEvents } from "@/hooks"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 
-export function TimelineView() {
+interface TimelineViewProps {
+  isDraft?: boolean
+}
+
+export function TimelineView({ isDraft = false }: TimelineViewProps) {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
@@ -16,7 +20,7 @@ export function TimelineView() {
     fetchOlderEvents,
     hasOlderEvents,
     isFetchingOlder,
-  } = useEvents(workspaceId!, streamId!)
+  } = useEvents(workspaceId!, streamId!, { enabled: !isDraft })
 
   // Auto-scroll to bottom when new events arrive
   const scrollToBottom = useCallback(() => {
@@ -51,7 +55,7 @@ export function TimelineView() {
     return null
   }
 
-  if (error) {
+  if (error && !isDraft) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-destructive">Failed to load timeline</p>
@@ -66,19 +70,27 @@ export function TimelineView() {
         className="flex-1 overflow-y-auto"
         onScroll={handleScroll}
       >
-        {isFetchingOlder && (
+        {!isDraft && isFetchingOlder && (
           <div className="flex justify-center py-2">
             <p className="text-sm text-muted-foreground">Loading older messages...</p>
           </div>
         )}
-        <EventList
-          events={events}
-          isLoading={isLoading}
-          workspaceId={workspaceId}
-          streamId={streamId}
-        />
+        {isDraft ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              Start typing to begin this conversation...
+            </p>
+          </div>
+        ) : (
+          <EventList
+            events={events}
+            isLoading={isLoading}
+            workspaceId={workspaceId}
+            streamId={streamId}
+          />
+        )}
       </div>
-      <MessageInput workspaceId={workspaceId} streamId={streamId} />
+      <MessageInput workspaceId={workspaceId} streamId={streamId} isDraft={isDraft} />
     </div>
   )
 }

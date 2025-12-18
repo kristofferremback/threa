@@ -11,8 +11,15 @@ export const eventKeys = {
     [...eventKeys.all, "list", workspaceId, streamId] as const,
 }
 
-export function useEvents(workspaceId: string, streamId: string) {
-  const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId)
+export function useEvents(
+  workspaceId: string,
+  streamId: string,
+  options?: { enabled?: boolean },
+) {
+  const shouldFetch = options?.enabled ?? true
+  const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: shouldFetch,
+  })
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
@@ -44,7 +51,7 @@ export function useEvents(workspaceId: string, streamId: string) {
       return lastPage.events[0].sequence
     },
     initialPageParam: undefined as string | undefined,
-    enabled: !!workspaceId && !!streamId && !!bootstrap,
+    enabled: shouldFetch && !!workspaceId && !!streamId && !!bootstrap,
   })
 
   // Combine bootstrap events with paginated older events

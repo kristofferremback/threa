@@ -1,51 +1,122 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { useMessageService } from "@/contexts"
-import { streamKeys } from "@/hooks"
+import { useMessageService, useStreamService } from "@/contexts"
+import { streamKeys, useDraftScratchpads, workspaceKeys, useDraftMessage, getDraftMessageKey } from "@/hooks"
 import { db } from "@/db"
 import type { StreamEvent } from "@/types/domain"
+import { StreamTypes } from "@/types/domain"
 
 interface MessageInputProps {
   workspaceId: string
   streamId: string
+  isDraft?: boolean
 }
 
-export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
-  const [content, setContent] = useState("")
+export function MessageInput({ workspaceId, streamId, isDraft = false }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messageService = useMessageService()
+  const streamService = useStreamService()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const { deleteDraft } = useDraftScratchpads(workspaceId)
+
+  // Draft message persistence
+  const draftKey = getDraftMessageKey({ type: "stream", streamId })
+  const { content: savedDraft, saveDraftDebounced, clearDraft } = useDraftMessage(workspaceId, draftKey)
+
+  // Local state for immediate UI updates
+  const [content, setContent] = useState("")
+  const hasInitialized = useRef(false)
+
+  // Initialize content from saved draft (only once per stream)
+  useEffect(() => {
+    if (!hasInitialized.current && savedDraft) {
+      setContent(savedDraft)
+      hasInitialized.current = true
+    }
+  }, [savedDraft])
+
+  // Reset initialization flag when stream changes
+  useEffect(() => {
+    hasInitialized.current = false
+    setContent("")
+  }, [streamId])
+
+  // Re-initialize after stream change if there's a saved draft
+  useEffect(() => {
+    if (!hasInitialized.current && savedDraft) {
+      setContent(savedDraft)
+      hasInitialized.current = true
+    }
+  }, [savedDraft, streamId])
 
   // Auto-focus on mount and when streamId changes
   useEffect(() => {
     textareaRef.current?.focus()
   }, [streamId])
 
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setContent(newContent)
+      saveDraftDebounced(newContent)
+    },
+    [saveDraftDebounced],
+  )
+
   const sendMutation = useMutation({
     mutationFn: async (messageContent: string) => {
-      // Generate client-side ID for optimistic update
+      // For drafts: create stream first, then send message
+      if (isDraft) {
+        // Read draft directly from IndexedDB to get latest data (not stale hook cache)
+        const draft = await db.draftScratchpads.get(streamId)
+        const companionMode = draft?.companionMode ?? "on"
+
+        // Create the stream on server
+        const newStream = await streamService.create(workspaceId, {
+          type: StreamTypes.SCRATCHPAD,
+          displayName: draft?.displayName ?? undefined,
+          companionMode,
+        })
+
+        // Send the message to the new stream
+        await messageService.create(workspaceId, newStream.id, {
+          streamId: newStream.id,
+          content: messageContent,
+          contentFormat: "markdown",
+        })
+
+        // Delete the draft
+        await deleteDraft(streamId)
+
+        // Invalidate queries to refresh sidebar
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+
+        // Return the new stream ID for navigation
+        return { newStreamId: newStream.id }
+      }
+
+      // Regular message sending (not a draft)
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
-      // Create optimistic event
       const optimisticEvent: StreamEvent = {
         id: clientId,
         streamId,
-        sequence: "0", // Placeholder, will be replaced
+        sequence: "0",
         eventType: "message_created",
         payload: {
           messageId: clientId,
           content: messageContent,
           contentFormat: "markdown",
         },
-        actorId: "current_user", // Will be replaced with actual user
+        actorId: "current_user",
         actorType: "user",
         createdAt: now,
       }
 
-      // Add to pending messages queue (persists across refresh)
       await db.pendingMessages.add({
         clientId,
         workspaceId,
@@ -56,7 +127,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         retryCount: 0,
       })
 
-      // Add optimistic event to cache
       await db.events.add({
         ...optimisticEvent,
         _clientId: clientId,
@@ -64,7 +134,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         _cachedAt: Date.now(),
       })
 
-      // Update query cache for immediate UI update
       queryClient.setQueryData(
         streamKeys.bootstrap(workspaceId, streamId),
         (old: unknown) => {
@@ -78,31 +147,31 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       )
 
       try {
-        // Send to server
         const message = await messageService.create(workspaceId, streamId, {
           streamId,
           content: messageContent,
           contentFormat: "markdown",
         })
 
-        // Remove from pending queue
         await db.pendingMessages.delete(clientId)
-
-        // Update the optimistic event with real data
         await db.events.delete(clientId)
 
-        return message
+        return { message }
       } catch (error) {
-        // Mark as failed but keep in queue for retry
         await db.events.update(clientId, { _status: "failed" })
         throw error
       }
     },
-    onSuccess: () => {
-      // Invalidate to get fresh data with server-assigned IDs
-      queryClient.invalidateQueries({
-        queryKey: streamKeys.bootstrap(workspaceId, streamId),
-      })
+    onSuccess: (result) => {
+      if (result && "newStreamId" in result) {
+        // Navigate to the new stream (draft was converted)
+        navigate(`/w/${workspaceId}/s/${result.newStreamId}`)
+      } else {
+        // Invalidate to get fresh data with server-assigned IDs
+        queryClient.invalidateQueries({
+          queryKey: streamKeys.bootstrap(workspaceId, streamId),
+        })
+      }
     },
   })
 
@@ -112,8 +181,9 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
 
     sendMutation.mutate(trimmed)
     setContent("")
+    clearDraft()
     textareaRef.current?.focus()
-  }, [content, sendMutation])
+  }, [content, sendMutation, clearDraft])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -132,7 +202,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         <Textarea
           ref={textareaRef}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => handleContentChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type a message... (Cmd+Enter to send)"
           className="min-h-[80px] resize-none"
