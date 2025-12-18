@@ -2,6 +2,7 @@ import { PoolClient } from "pg"
 import { sql } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
 import type { Message } from "./message-repository"
+import type { Stream } from "./stream-repository"
 
 /**
  * Outbox event types and their payloads.
@@ -13,6 +14,9 @@ export type OutboxEventType =
   | "message:deleted"
   | "reaction:added"
   | "reaction:removed"
+  | "stream:created"
+  | "stream:updated"
+  | "stream:archived"
   | "stream:display_name_updated"
 
 /**
@@ -42,6 +46,18 @@ export interface ReactionOutboxPayload extends BaseOutboxPayload {
   userId: string
 }
 
+export interface StreamCreatedOutboxPayload extends BaseOutboxPayload {
+  stream: Stream
+}
+
+export interface StreamUpdatedOutboxPayload extends BaseOutboxPayload {
+  stream: Stream
+}
+
+export interface StreamArchivedOutboxPayload extends BaseOutboxPayload {
+  stream: Stream
+}
+
 export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
   displayName: string
 }
@@ -55,6 +71,9 @@ export interface OutboxEventPayloadMap {
   "message:deleted": MessageDeletedOutboxPayload
   "reaction:added": ReactionOutboxPayload
   "reaction:removed": ReactionOutboxPayload
+  "stream:created": StreamCreatedOutboxPayload
+  "stream:updated": StreamUpdatedOutboxPayload
+  "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
 }
 

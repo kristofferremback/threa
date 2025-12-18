@@ -15,3 +15,5 @@ export { useEvents, eventKeys } from "./use-events"
 export { useDraftScratchpads, isDraftId } from "./use-draft-scratchpads"
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
+
+export { useSocketEvents } from "./use-socket-events"

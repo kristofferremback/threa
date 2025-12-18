@@ -1,6 +1,6 @@
 import { RouterProvider } from "react-router-dom"
 import { AuthProvider } from "./auth"
-import { QueryClientProvider, ServicesProvider } from "./contexts"
+import { QueryClientProvider, ServicesProvider, SocketProvider } from "./contexts"
 import { router } from "./routes"
 
 export function App() {
@@ -8,7 +8,9 @@ export function App() {
     <AuthProvider>
       <QueryClientProvider>
         <ServicesProvider>
-          <RouterProvider router={router} />
+          <SocketProvider>
+            <RouterProvider router={router} />
+          </SocketProvider>
         </ServicesProvider>
       </QueryClientProvider>
     </AuthProvider>

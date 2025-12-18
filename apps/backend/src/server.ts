@@ -85,7 +85,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   io.adapter(createAdapter(pool))
 
-  registerSocketHandlers(io, { authService, userService, streamService })
+  registerSocketHandlers(io, { authService, userService, streamService, workspaceService })
 
   // Job queue for durable background work (companion responses, etc.)
   const jobQueue = createJobQueue(pool)
