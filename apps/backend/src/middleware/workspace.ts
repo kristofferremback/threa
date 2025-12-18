@@ -14,11 +14,7 @@ interface Dependencies {
 }
 
 export function createWorkspaceMemberMiddleware({ workspaceService }: Dependencies) {
-  return async function workspaceMemberMiddleware(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) {
+  return async function workspaceMemberMiddleware(req: Request, res: Response, next: NextFunction) {
     const { workspaceId } = req.params
 
     if (!workspaceId) {

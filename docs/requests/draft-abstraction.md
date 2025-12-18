@@ -5,6 +5,7 @@
 Draft vs non-draft handling is scattered throughout the codebase. Components need to check `isDraft` and handle both cases, which is error-prone and creates code duplication.
 
 Example from `sidebar.tsx`:
+
 ```typescript
 if (isDraft) {
   onRename(trimmed)
@@ -14,6 +15,7 @@ if (isDraft) {
 ```
 
 This pattern repeats in:
+
 - `sidebar.tsx` - rename, archive, display name
 - `message-input.tsx` - create stream from draft on first message
 - `stream.tsx` - header display, title editing

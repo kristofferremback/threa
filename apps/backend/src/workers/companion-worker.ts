@@ -18,18 +18,13 @@ export interface CompanionWorkerDeps {
  * This is a thin wrapper that extracts job data and delegates to the companion agent.
  * All business logic lives in the agent module for reusability and testability.
  */
-export function createCompanionWorker(
-  deps: CompanionWorkerDeps,
-): JobHandler<CompanionJobData> {
+export function createCompanionWorker(deps: CompanionWorkerDeps): JobHandler<CompanionJobData> {
   const { agent, serverId } = deps
 
   return async (job) => {
     const { streamId, messageId } = job.data
 
-    logger.info(
-      { jobId: job.id, streamId, messageId },
-      "Processing companion job",
-    )
+    logger.info({ jobId: job.id, streamId, messageId }, "Processing companion job")
 
     const result = await agent.run({ streamId, messageId, serverId })
 
@@ -38,9 +33,6 @@ export function createCompanionWorker(
       throw new Error(`Companion agent failed for session ${result.sessionId}`)
     }
 
-    logger.info(
-      { jobId: job.id, ...result },
-      "Companion job completed",
-    )
+    logger.info({ jobId: job.id, ...result }, "Companion job completed")
   }
 }

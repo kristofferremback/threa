@@ -6,9 +6,7 @@ The workspace bootstrap handler fetches stream memberships with N+1 queries:
 
 ```typescript
 // apps/backend/src/handlers/workspace-handlers.ts:76
-const streamMemberships = await Promise.all(
-  streams.map((s) => streamService.getMembers(s.id))
-)
+const streamMemberships = await Promise.all(streams.map((s) => streamService.getMembers(s.id)))
 ```
 
 While `Promise.all` parallelizes the queries, this still creates N database round-trips.

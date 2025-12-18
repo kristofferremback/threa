@@ -58,7 +58,7 @@ export function useStream(workspaceId: string, streamId: string) {
 export function useStreamBootstrap(
   workspaceId: string,
   streamId: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean }
 ) {
   const streamService = useStreamService()
 
@@ -113,29 +113,21 @@ export function useUpdateStream(workspaceId: string, streamId: string) {
       queryClient.setQueryData<Stream>(streamKeys.detail(workspaceId, streamId), updatedStream)
 
       // Update stream-specific bootstrap cache (preserving events, members, etc.)
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, streamId),
-        (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          return { ...old, stream: updatedStream }
-        },
-      )
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        return { ...old, stream: updatedStream }
+      })
 
       // Update workspace bootstrap cache (sidebar uses this)
-      queryClient.setQueryData(
-        workspaceKeys.bootstrap(workspaceId),
-        (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          const bootstrap = old as { streams?: Stream[] }
-          if (!bootstrap.streams) return old
-          return {
-            ...bootstrap,
-            streams: bootstrap.streams.map((s) =>
-              s.id === streamId ? updatedStream : s,
-            ),
-          }
-        },
-      )
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { streams?: Stream[] }
+        if (!bootstrap.streams) return old
+        return {
+          ...bootstrap,
+          streams: bootstrap.streams.map((s) => (s.id === streamId ? updatedStream : s)),
+        }
+      })
 
       // Invalidate lists as fallback
       queryClient.invalidateQueries({ queryKey: streamKeys.lists() })
@@ -158,18 +150,15 @@ export function useArchiveStream(workspaceId: string) {
       queryClient.removeQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
 
       // Remove from workspace bootstrap cache (sidebar)
-      queryClient.setQueryData(
-        workspaceKeys.bootstrap(workspaceId),
-        (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          const bootstrap = old as { streams?: Stream[] }
-          if (!bootstrap.streams) return old
-          return {
-            ...bootstrap,
-            streams: bootstrap.streams.filter((s) => s.id !== streamId),
-          }
-        },
-      )
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { streams?: Stream[] }
+        if (!bootstrap.streams) return old
+        return {
+          ...bootstrap,
+          streams: bootstrap.streams.filter((s) => s.id !== streamId),
+        }
+      })
 
       // Invalidate lists as fallback
       queryClient.invalidateQueries({ queryKey: streamKeys.lists() })

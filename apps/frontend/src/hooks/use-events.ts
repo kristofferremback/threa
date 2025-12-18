@@ -11,13 +11,13 @@ export const eventKeys = {
     [...eventKeys.all, "list", workspaceId, streamId] as const,
 }
 
-export function useEvents(
-  workspaceId: string,
-  streamId: string,
-  options?: { enabled?: boolean },
-) {
+export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
   const shouldFetch = options?.enabled ?? true
-  const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, {
+  const {
+    data: bootstrap,
+    isLoading,
+    error,
+  } = useStreamBootstrap(workspaceId, streamId, {
     enabled: shouldFetch,
   })
   const streamService = useStreamService()
@@ -57,8 +57,7 @@ export function useEvents(
   // Combine bootstrap events with paginated older events
   const events = useMemo(() => {
     const bootstrapEvents = bootstrap?.events ?? []
-    const olderEvents =
-      paginatedData?.pages.flatMap((page) => page.events).filter((e) => e) ?? []
+    const olderEvents = paginatedData?.pages.flatMap((page) => page.events).filter((e) => e) ?? []
 
     // Merge and dedupe by ID, sorted by sequence ascending
     const eventMap = new Map<string, StreamEvent>()
@@ -88,12 +87,12 @@ export function useEvents(
             events: [...old.events, event],
             latestSequence: event.sequence,
           }
-        },
+        }
       )
       // Also cache to IndexedDB
       await db.events.put({ ...event, _cachedAt: Date.now() })
     },
-    [queryClient, workspaceId, streamId],
+    [queryClient, workspaceId, streamId]
   )
 
   // Handler to update an existing event (edit/delete)
@@ -107,12 +106,12 @@ export function useEvents(
             ...old,
             events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)),
           }
-        },
+        }
       )
       // Update IndexedDB
       await db.events.update(eventId, updates)
     },
-    [queryClient, workspaceId, streamId],
+    [queryClient, workspaceId, streamId]
   )
 
   return {

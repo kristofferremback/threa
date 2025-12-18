@@ -23,9 +23,7 @@ export function useWorkspaces() {
 
       // Cache to IndexedDB
       const now = Date.now()
-      await db.workspaces.bulkPut(
-        workspaces.map((w) => ({ ...w, _cachedAt: now })),
-      )
+      await db.workspaces.bulkPut(workspaces.map((w) => ({ ...w, _cachedAt: now })))
 
       return workspaces
     },
@@ -71,7 +69,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
             id: `${m.workspaceId}:${m.userId}`,
             ...m,
             _cachedAt: now,
-          })),
+          }))
         ),
         db.streams.bulkPut(
           bootstrap.streams.map((s) => ({
@@ -82,7 +80,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
             lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)
               ?.lastReadEventId,
             _cachedAt: now,
-          })),
+          }))
         ),
       ])
 
@@ -101,7 +99,7 @@ export function useCreateWorkspace() {
     onSuccess: (newWorkspace) => {
       // Update cache
       queryClient.setQueryData<Workspace[]>(workspaceKeys.list(), (old) =>
-        old ? [...old, newWorkspace] : [newWorkspace],
+        old ? [...old, newWorkspace] : [newWorkspace]
       )
 
       // Cache to IndexedDB

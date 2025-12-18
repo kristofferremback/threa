@@ -6,7 +6,7 @@ import { db } from "@/db"
 // - "stream:{streamId}" for messages in existing streams
 // - "thread:{parentMessageId}" for new threads (reply to a message that doesn't have a thread yet)
 export function getDraftMessageKey(
-  location: { type: "stream"; streamId: string } | { type: "thread"; parentMessageId: string },
+  location: { type: "stream"; streamId: string } | { type: "thread"; parentMessageId: string }
 ): string {
   if (location.type === "stream") {
     return `stream:${location.streamId}`
@@ -19,11 +19,7 @@ const DEBOUNCE_MS = 500
 export function useDraftMessage(workspaceId: string, draftKey: string) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const draft = useLiveQuery(
-    () => db.draftMessages.get(draftKey),
-    [draftKey],
-    undefined,
-  )
+  const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], undefined)
 
   const saveDraft = useCallback(
     async (content: string) => {
@@ -46,7 +42,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         updatedAt: Date.now(),
       })
     },
-    [draftKey, workspaceId],
+    [draftKey, workspaceId]
   )
 
   const saveDraftDebounced = useCallback(
@@ -61,7 +57,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         debounceRef.current = null
       }, DEBOUNCE_MS)
     },
-    [saveDraft],
+    [saveDraft]
   )
 
   const clearDraft = useCallback(async () => {

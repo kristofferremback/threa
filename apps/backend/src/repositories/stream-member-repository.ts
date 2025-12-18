@@ -48,7 +48,7 @@ export const StreamMemberRepository = {
   async findByStreamAndUser(
     client: PoolClient,
     streamId: string,
-    userId: string,
+    userId: string
   ): Promise<StreamMember | null> {
     const result = await client.query<StreamMemberRow>(sql`
       SELECT stream_id, user_id, pinned, pinned_at, muted,
@@ -61,7 +61,7 @@ export const StreamMemberRepository = {
 
   async list(
     client: PoolClient,
-    filters: { userId?: string; streamId?: string },
+    filters: { userId?: string; streamId?: string }
   ): Promise<StreamMember[]> {
     if (filters.userId && !filters.streamId) {
       const result = await client.query<StreamMemberRow>(sql`
@@ -88,11 +88,7 @@ export const StreamMemberRepository = {
     throw new Error("StreamMemberRepository.list requires either userId or streamId filter")
   },
 
-  async insert(
-    client: PoolClient,
-    streamId: string,
-    userId: string,
-  ): Promise<StreamMember> {
+  async insert(client: PoolClient, streamId: string, userId: string): Promise<StreamMember> {
     const result = await client.query<StreamMemberRow>(sql`
       INSERT INTO stream_members (stream_id, user_id)
       VALUES (${streamId}, ${userId})
@@ -113,7 +109,7 @@ export const StreamMemberRepository = {
     client: PoolClient,
     streamId: string,
     userId: string,
-    params: UpdateStreamMemberParams,
+    params: UpdateStreamMemberParams
   ): Promise<StreamMember | null> {
     const sets: string[] = []
     const values: unknown[] = []
@@ -160,11 +156,7 @@ export const StreamMemberRepository = {
     return result.rowCount !== null && result.rowCount > 0
   },
 
-  async isMember(
-    client: PoolClient,
-    streamId: string,
-    userId: string,
-  ): Promise<boolean> {
+  async isMember(client: PoolClient, streamId: string, userId: string): Promise<boolean> {
     const result = await client.query(sql`
       SELECT 1 FROM stream_members
       WHERE stream_id = ${streamId} AND user_id = ${userId}

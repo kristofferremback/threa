@@ -10,17 +10,18 @@ Fetch and respond to review comments on a pull request.
 
 When reviewing code or presenting comments, use this severity scale:
 
-| Rating | Level | Description | Examples |
-|--------|-------|-------------|----------|
-| **7** | Critical | Security vulnerability, data loss, or crash | SQL injection, auth bypass, unhandled null causing crash |
-| **6** | High | Significant bug or major architectural issue | Race condition, missing validation on user input, broken business logic |
-| **5** | Medium-High | Bug that affects functionality but has workarounds | Missing error handling, incorrect edge case behavior |
-| **4** | Medium | Code quality issue that should be fixed | Missing rate limiting, no input length limits, potential performance issue |
-| **3** | Medium-Low | Improvement that would make code better | Missing timeout, could use better abstraction |
-| **2** | Low | Minor suggestion or style preference | Magic numbers, could extract constant |
-| **1** | Nit | Trivial, cosmetic, or highly subjective | Naming preference, comment wording |
+| Rating | Level       | Description                                        | Examples                                                                   |
+| ------ | ----------- | -------------------------------------------------- | -------------------------------------------------------------------------- |
+| **7**  | Critical    | Security vulnerability, data loss, or crash        | SQL injection, auth bypass, unhandled null causing crash                   |
+| **6**  | High        | Significant bug or major architectural issue       | Race condition, missing validation on user input, broken business logic    |
+| **5**  | Medium-High | Bug that affects functionality but has workarounds | Missing error handling, incorrect edge case behavior                       |
+| **4**  | Medium      | Code quality issue that should be fixed            | Missing rate limiting, no input length limits, potential performance issue |
+| **3**  | Medium-Low  | Improvement that would make code better            | Missing timeout, could use better abstraction                              |
+| **2**  | Low         | Minor suggestion or style preference               | Magic numbers, could extract constant                                      |
+| **1**  | Nit         | Trivial, cosmetic, or highly subjective            | Naming preference, comment wording                                         |
 
 **Guidelines:**
+
 - Always include severity rating in review comments
 - Prioritize fixing 5+ issues before merging
 - 4 and below can be deferred to follow-up PRs
@@ -33,11 +34,13 @@ When reviewing code or presenting comments, use this severity scale:
    - Otherwise, detect the PR from the current branch using `gh pr view --json number -q .number`
 
 2. **Fetch all review comments**:
+
    ```bash
    gh api repos/{owner}/{repo}/pulls/{pr}/comments
    ```
 
 3. **Fetch review threads to check resolution status**:
+
    ```bash
    gh api graphql -f query='
    query {
@@ -115,6 +118,7 @@ When presenting comments, use this format:
 ```
 
 Example:
+
 ```
 #### src/handlers/auth.ts:45
 **Severity**: 6 (High)
@@ -126,6 +130,7 @@ Example:
 ```
 
 After fixes, summarize:
+
 ```
 ## Fixed Issues
 

@@ -9,7 +9,7 @@ export const parseCookies = (cookieHeader: string): Record<string, string> => {
       }
       return acc
     },
-    {} as Record<string, string>,
+    {} as Record<string, string>
   )
 }
 

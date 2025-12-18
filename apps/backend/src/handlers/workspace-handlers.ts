@@ -74,7 +74,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
 
       // Get stream memberships for all streams the user has access to
       const streamMemberships = await Promise.all(
-        streams.map((stream) => streamService.getMembership(stream.id, userId)),
+        streams.map((stream) => streamService.getMembership(stream.id, userId))
       )
 
       res.json({

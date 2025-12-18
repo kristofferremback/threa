@@ -41,37 +41,34 @@ export const streamsApi = {
     if (params?.type) searchParams.set("stream_type", params.type)
     const query = searchParams.toString()
     const res = await api.get<{ streams: Stream[] }>(
-      `/api/workspaces/${workspaceId}/streams${query ? `?${query}` : ""}`,
+      `/api/workspaces/${workspaceId}/streams${query ? `?${query}` : ""}`
     )
     return res.streams
   },
 
   async get(workspaceId: string, streamId: string): Promise<Stream> {
     const res = await api.get<{ stream: Stream }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}`,
+      `/api/workspaces/${workspaceId}/streams/${streamId}`
     )
     return res.stream
   },
 
   async bootstrap(workspaceId: string, streamId: string): Promise<StreamBootstrap> {
     const res = await api.get<{ data: StreamBootstrap }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`,
+      `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
     )
     return res.data
   },
 
   async create(workspaceId: string, data: CreateStreamInput): Promise<Stream> {
-    const res = await api.post<{ stream: Stream }>(
-      `/api/workspaces/${workspaceId}/streams`,
-      data,
-    )
+    const res = await api.post<{ stream: Stream }>(`/api/workspaces/${workspaceId}/streams`, data)
     return res.stream
   },
 
   async update(workspaceId: string, streamId: string, data: UpdateStreamInput): Promise<Stream> {
     const res = await api.patch<{ stream: Stream }>(
       `/api/workspaces/${workspaceId}/streams/${streamId}`,
-      data,
+      data
     )
     return res.stream
   },
@@ -84,14 +81,14 @@ export const streamsApi = {
   async getEvents(
     workspaceId: string,
     streamId: string,
-    params?: { before?: string; limit?: number },
+    params?: { before?: string; limit?: number }
   ): Promise<StreamEvent[]> {
     const searchParams = new URLSearchParams()
     if (params?.before) searchParams.set("after", params.before)
     if (params?.limit) searchParams.set("limit", params.limit.toString())
     const query = searchParams.toString()
     const res = await api.get<{ events: StreamEvent[] }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`,
+      `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`
     )
     return res.events
   },

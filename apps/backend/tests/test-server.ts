@@ -27,9 +27,7 @@ async function ensureTestDatabaseExists(): Promise<void> {
   })
 
   try {
-    const result = await adminPool.query(
-      "SELECT 1 FROM pg_database WHERE datname = 'threa_test'"
-    )
+    const result = await adminPool.query("SELECT 1 FROM pg_database WHERE datname = 'threa_test'")
 
     if (result.rows.length === 0) {
       await adminPool.query("CREATE DATABASE threa_test")
@@ -67,7 +65,8 @@ export async function startTestServer(): Promise<TestServer> {
   const port = await findAvailablePort()
 
   // Configure environment for test server
-  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test"
+  process.env.DATABASE_URL =
+    process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test"
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
 

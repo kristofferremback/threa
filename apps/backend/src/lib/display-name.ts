@@ -21,7 +21,7 @@ export interface EffectiveDisplayName {
  */
 export function getEffectiveDisplayName(
   stream: Stream,
-  context?: DisplayNameContext,
+  context?: DisplayNameContext
 ): EffectiveDisplayName {
   switch (stream.type) {
     case "channel":
@@ -51,7 +51,8 @@ export function getEffectiveDisplayName(
       }
       // Placeholder for threads without a generated name
       if (context?.parentStream) {
-        const parentName = context.parentStream.slug ?? context.parentStream.displayName ?? "channel"
+        const parentName =
+          context.parentStream.slug ?? context.parentStream.displayName ?? "channel"
         return {
           displayName: `Thread in #${parentName}`,
           source: "placeholder",
@@ -91,7 +92,7 @@ export function getEffectiveDisplayName(
  */
 export function formatParticipantNames(
   participants: { id: string; name: string }[],
-  viewingUserId: string,
+  viewingUserId: string
 ): string {
   const others = participants.filter((p) => p.id !== viewingUserId)
 

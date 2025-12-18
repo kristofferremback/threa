@@ -10,15 +10,18 @@
 ### 2025-12-17 - Proper Stubbing Layer (Round 4)
 
 **Context reviewed**:
+
 - PR #10 feedback: stub was at wrong layer (duplicating orchestration logic)
 - `CompanionAgent` and `StubCompanionAgent` were nearly identical
 - `withSession` wasn't fully encapsulating session lifecycle
 
 **Applicable invariants**:
+
 - INV-13: Construct, Don't Assemble (added this session)
 - Abstractions should fully own their domain (lesson learned)
 
 **Completed**:
+
 - [x] Created `ResponseGenerator` interface for AI response generation
 - [x] Implemented `LangGraphResponseGenerator` (real LangGraph implementation)
 - [x] Implemented `StubResponseGenerator` (returns canned response)
@@ -36,14 +39,17 @@
 ### 2025-12-17 - Worker Refactoring (Round 3)
 
 **Context reviewed**:
+
 - PR #10 received final review feedback (13 unresolved comments)
 - Main concerns: agent encapsulation, withSession helper, redundant checks
 
 **Applicable invariants**:
+
 - INV-9: No Singletons (logger is exception)
 - INV-10: Self-Describing Dependencies
 
 **Completed**:
+
 - [x] Refactored `runCompanionAgent` function to `CompanionAgent` class for encapsulation
 - [x] Refactored `runStubCompanionAgent` function to `StubCompanionAgent` class
 - [x] Workers now receive pre-constructed agent instance (deps.agent)
@@ -53,6 +59,7 @@
 - [x] Resolved all 13 PR review threads
 
 **Key changes**:
+
 - `CompanionAgent` class encapsulates all deps, exposes `run(input)` method
 - Workers are now ~40 lines each, just extract job data and delegate
 - `withSession` helper handles the idempotent session create/resume pattern
@@ -63,21 +70,25 @@
 ### 2025-12-17 - Worker Refactoring (Round 2)
 
 **Context reviewed**:
+
 - PR #10 received additional review feedback (18 unresolved comments)
 - Main concern: companion worker does too much, should be thin like HTTP handlers
 - Created tasks 003 (stream context enrichment) and 004 (createMessage as tool) for deferred work
 
 **Applicable invariants**:
+
 - Workers/handlers should be thin orchestrators (new lesson learned)
 - Use existing helpers consistently (`withClient`)
 
 **New learnings documented**:
+
 1. Workers and handlers should be thin
 2. Be consistent in initialization patterns
 3. Use existing helpers consistently
 4. Don't add speculative features
 
 **Plan - Thin Worker Refactor**:
+
 1. Create `agents/companion-agent.ts` - the agent module that orchestrates everything
 2. Move from worker: persona resolution, session management, context building, message posting
 3. Worker becomes: extract job data → call agent → done
@@ -85,9 +96,11 @@
 5. Fix minor comments: `withClient` usage, remove speculative comment, provider init consistency
 
 **Files to create**:
+
 - `agents/companion-agent.ts` - Agent orchestration (the "service" for companion)
 
 **Files to modify**:
+
 - `workers/companion-worker.ts` - Thin wrapper around agent
 - `workers/companion-worker.stub.ts` - Delete (stub moves to agent)
 - `lib/companion-listener.ts` - Use `withClient`, remove speculative comment
@@ -95,6 +108,7 @@
 - `lib/ai/provider-registry.ts` - Consistent initialization
 
 **Completed**:
+
 - [x] Documented learnings in CLAUDE.md
 - [x] Created task 003 (stream context enrichment)
 - [x] Created task 004 (createMessage as tool)
@@ -109,16 +123,19 @@
 ### 2025-12-17 - PR Review Feedback
 
 **Context reviewed**:
+
 - PR #10 received review feedback identifying multiple architectural issues
 - Documented learnings as new invariants (INV-9 through INV-12) and lessons learned in CLAUDE.md
 
 **Applicable invariants**:
+
 - INV-9 (No Singletons) - removed singleton pattern from checkpointer
 - INV-10 (Self-Describing Dependencies) - renamed ambiguous `apiKey` params
 - INV-11 (No Silent Fallbacks) - removed system prompt fallback
 - INV-12 (Pass Dependencies, Not Configuration) - pass modelRegistry, not apiKey
 
 **Completed**:
+
 - [x] Deleted `companion-agent.ts` (dead code)
 - [x] Consolidated `langchain-provider.ts` into `ProviderRegistry` class
 - [x] Renamed `checkpointer.ts` to `postgresql-checkpointer.ts`, removed singleton
@@ -133,6 +150,7 @@
 - [x] Updated PR description to reflect LangGraph architecture
 
 **Key learnings documented**:
+
 1. Extend existing abstractions instead of creating parallel ones
 2. Dependencies should be self-describing
 3. Pass dependencies, not configuration
@@ -145,15 +163,18 @@
 ### 2025-12-16 - LangGraph Migration
 
 **Context reviewed**:
+
 - Original implementation used AI SDK `generateText()` with manual step checkpointing
 - User requested LangGraph for GAM research capability (multi-step agent with tools)
 - LangGraph + LangChain dependencies already installed but unused
 
 **Applicable invariants**:
+
 - INV-4 (Outbox for Real-time) - unchanged, outbox still triggers companion jobs
 - INV-5 (Repository Pattern) - session repository still used for status tracking
 
 **Completed**:
+
 - [x] Added `@langchain/langgraph-checkpoint-postgres`, `@langchain/openai` dependencies
 - [x] Created `langchain-provider.ts` - ChatOpenAI with OpenRouter baseURL
 - [x] Created `checkpointer.ts` - LangGraph PostgreSQL checkpointer in `langgraph` schema
@@ -170,6 +191,7 @@
 ### 2025-12-16 - Full Implementation (Initial)
 
 **Context reviewed**:
+
 - Read task doc (002-agentic-companion.md) - comprehensive design for durable agentic pipeline
 - Verified Task 001 complete - multi-listener outbox infrastructure exists
 - Read openrouter.ts - simple HTTP client (96 lines), replaced by AI SDK
@@ -177,11 +199,13 @@
 - Confirmed Ariadne persona seeded in migrations
 
 **Applicable invariants**:
+
 - INV-4 (Outbox for Real-time) - outbox triggers companion jobs
 - INV-5 (Repository Pattern) - agent-session-repository follows pattern
 - INV-7 (Events + Projections) - agent sessions are persisted state
 
 **Completed all 7 phases**:
+
 - [x] Phase 1: AI SDK + Provider Registry
 - [x] Phase 2: pg-boss Setup
 - [x] Phase 3: Agent Sessions (migration + repository)
@@ -195,20 +219,24 @@
 ## Key Decisions
 
 ### AI SDK Provider Package
+
 **Choice**: `@openrouter/ai-sdk-provider` instead of `@ai-sdk/openrouter`
 **Rationale**: The `@ai-sdk/` package doesn't exist; OpenRouter provides their own AI SDK compatible package
 **Alternatives considered**: `@ai-sdk/openrouter` (doesn't exist)
 
 ### Simplified Agent Architecture
+
 **Choice**: Simple `generateText()` with step checkpointing instead of full LangGraph
 **Rationale**: LangGraph uses LangChain's model interface which conflicts with AI SDK. A single-turn generation with step recording provides the needed durability without extra complexity. Tools can be added later using AI SDK's native tool support.
 **Alternatives considered**: LangGraph (model interface mismatch), LangChain (different provider abstraction)
 
 ### Job Handler Array Handling
+
 **Choice**: Wrap single-job handlers in `registerHandler` to iterate over job arrays
 **Rationale**: pg-boss v12 passes `Job<T>[]` to handlers, not single jobs. The wrapper maintains the simple `JobHandler<T>` interface while handling the array internally.
 
 ### Transaction Boundaries
+
 **Choice**: Separate transactions for session management, agent execution, and message creation
 **Rationale**: EventService manages its own transaction. Nesting would cause issues. Session state provides recovery point if any step fails.
 
@@ -217,6 +245,7 @@
 ## Blockers / Open Questions
 
 All resolved:
+
 - [x] Migration number: Used 007 (checked existing migrations)
 - [x] pg-boss vs outbox: Outbox dispatches jobs, pg-boss provides durability and retries
 
@@ -260,27 +289,29 @@ All resolved:
 
 ## Implementation Phases
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | AI SDK + Provider Registry | Complete |
-| 2 | pg-boss Setup | Complete |
-| 3 | Agent Sessions | Complete |
-| 4 | CompanionListener | Complete |
-| 5 | Companion Agent | Complete |
-| 6 | CompanionJobWorker | Complete |
-| 7 | Stub + Tests | Complete |
+| Phase | Description                | Status   |
+| ----- | -------------------------- | -------- |
+| 1     | AI SDK + Provider Registry | Complete |
+| 2     | pg-boss Setup              | Complete |
+| 3     | Agent Sessions             | Complete |
+| 4     | CompanionListener          | Complete |
+| 5     | Companion Agent            | Complete |
+| 6     | CompanionJobWorker         | Complete |
+| 7     | Stub + Tests               | Complete |
 
 ---
 
 ## Divergence Report
 
 ### Initial Implementation (reverted)
+
 **PLAN SAID**: Use LangGraph for agent orchestration
 **ACTUALLY DID**: Used AI SDK's native `generateText()` with manual step checkpointing
 **DIVERGENCE**: Simplified architecture - no LangGraph dependency
 **REASON**: LangGraph uses LangChain's model interface which is incompatible with AI SDK providers.
 
 ### LangGraph Migration (current)
+
 **PLAN SAID**: Migrate to LangGraph for GAM research capability
 **ACTUALLY DID**: Implemented LangGraph StateGraph with PostgreSQL checkpointer
 **DIVERGENCE**: None - followed plan exactly

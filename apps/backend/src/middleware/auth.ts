@@ -19,11 +19,7 @@ interface Dependencies {
 }
 
 export function createAuthMiddleware({ authService, userService }: Dependencies) {
-  return async function authMiddleware(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) {
+  return async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const session = req.cookies[SESSION_COOKIE_NAME]
 
     if (!session) {

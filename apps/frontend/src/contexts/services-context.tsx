@@ -48,7 +48,7 @@ export function ServicesProvider({ children, services: overrides }: ServicesProv
       streams: overrides?.streams ?? streamsApi,
       messages: overrides?.messages ?? messagesApi,
     }),
-    [overrides],
+    [overrides]
   )
 
   return <ServicesContext.Provider value={services}>{children}</ServicesContext.Provider>

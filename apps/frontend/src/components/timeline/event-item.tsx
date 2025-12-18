@@ -14,13 +14,7 @@ export function EventItem({ event, workspaceId, streamId }: EventItemProps) {
     case "message_created":
     case "message_edited":
     case "companion_response":
-      return (
-        <MessageEvent
-          event={event}
-          workspaceId={workspaceId}
-          streamId={streamId}
-        />
-      )
+      return <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
 
     case "message_deleted":
       return <DeletedMessageEvent event={event} />

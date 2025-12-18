@@ -13,17 +13,17 @@ export interface UpdateMessageInput {
 
 export const messagesApi = {
   async create(workspaceId: string, streamId: string, data: CreateMessageInput): Promise<Message> {
-    const res = await api.post<{ message: Message }>(
-      `/api/workspaces/${workspaceId}/messages`,
-      { ...data, streamId },
-    )
+    const res = await api.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
+      ...data,
+      streamId,
+    })
     return res.message
   },
 
   async update(workspaceId: string, messageId: string, data: UpdateMessageInput): Promise<Message> {
     const res = await api.patch<{ message: Message }>(
       `/api/workspaces/${workspaceId}/messages/${messageId}`,
-      data,
+      data
     )
     return res.message
   },

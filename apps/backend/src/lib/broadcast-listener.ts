@@ -10,7 +10,7 @@ import { OutboxListener, OutboxListenerConfig } from "./outbox-listener"
 export function createBroadcastListener(
   pool: Pool,
   io: Server,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">,
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
 ): OutboxListener {
   return new OutboxListener(pool, {
     ...config,

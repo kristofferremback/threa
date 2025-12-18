@@ -30,11 +30,13 @@ git diff main...HEAD --stat
 ### 2. Analyze the changes
 
 For each commit, understand:
+
 - What problem does it solve?
 - What design decisions were made?
 - What alternatives were considered?
 
 Read relevant files if needed:
+
 - Task docs in `tasks/` or `docs/plans/`
 - Work notes if they exist
 - The actual code changes
@@ -65,20 +67,20 @@ The PR must include these sections:
 
 ## New files
 
-| File | Purpose |
-|------|---------|
+| File              | Purpose           |
+| ----------------- | ----------------- |
 | `path/to/file.ts` | Brief description |
 
 ## Modified files
 
-| File | Change |
-|------|--------|
+| File              | Change       |
+| ----------------- | ------------ |
 | `path/to/file.ts` | What changed |
 
 ## Deleted files (if any)
 
-| File | Reason |
-|------|--------|
+| File              | Reason      |
+| ----------------- | ----------- |
 | `path/to/file.ts` | Why removed |
 
 ## Test plan
@@ -87,6 +89,7 @@ The PR must include these sections:
 - [ ] Manual verification steps
 
 ---
+
 🤖 _PR by [Claude Code](https://claude.com/claude-code)_
 ```
 
@@ -101,6 +104,7 @@ gh pr create --base main --title "[type]: [short description]" --body-file /tmp/
 ```
 
 If `gh pr create` fails with GraphQL errors, use the API directly:
+
 ```bash
 gh api repos/{owner}/{repo}/pulls --method POST \
   -f title="[type]: [short description]" \
@@ -116,6 +120,7 @@ Always provide the PR URL to the user when done.
 ## PR Title Conventions
 
 Use conventional commit format:
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `refactor:` - Code restructuring without behavior change

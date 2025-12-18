@@ -25,11 +25,7 @@ export function createApp(): Express {
       },
       genReqId: (req) => (req.headers["x-request-id"] as string) || randomUUID(),
       redact: {
-        paths: [
-          "req.headers.authorization",
-          "req.headers.cookie",
-          "res.headers['set-cookie']",
-        ],
+        paths: ["req.headers.authorization", "req.headers.cookie", "res.headers['set-cookie']"],
         censor: "[REDACTED]",
       },
       customSuccessMessage: (req, res) => {
@@ -38,7 +34,7 @@ export function createApp(): Express {
       customErrorMessage: (req, res, err) => {
         return `${req.method} ${req.url} ${res.statusCode} - ${err?.message || "Error"}`
       },
-    }),
+    })
   )
 
   app.get("/health", (_, res) => res.json({ status: "ok" }))

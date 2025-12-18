@@ -3,6 +3,7 @@
 ## Problem
 
 The closed PR #5 implemented companion responses as simple chat:
+
 - Fire-and-forget with no durability
 - Plain request/response, not agentic
 - Doesn't follow GAM pattern
@@ -16,6 +17,7 @@ The closed PR #5 implemented companion responses as simple chat:
 ## Target State
 
 Durable, retriable agentic pipeline:
+
 1. Message arrives in stream with `companion_mode = 'on'`
 2. OutboxListener dispatches durable job to pg-boss
 3. Job worker picks up, runs agentic loop with LangGraph
@@ -58,16 +60,17 @@ EventService.createMessage()
 ### 1. Vercel AI SDK Integration
 
 Replace `OpenRouterClient` with Vercel AI SDK for:
+
 - Provider abstraction (one API for multiple providers)
 - Built-in streaming support
 - Tool calling standardization
 - Better TypeScript types
 
 ```typescript
-import { generateText, streamText } from 'ai'
-import { createOpenRouter } from '@ai-sdk/openrouter'
-import { createAnthropic } from '@ai-sdk/anthropic'
-import { createOllama } from 'ollama-ai-provider'
+import { generateText, streamText } from "ai"
+import { createOpenRouter } from "@ai-sdk/openrouter"
+import { createAnthropic } from "@ai-sdk/anthropic"
+import { createOllama } from "ollama-ai-provider"
 ```
 
 ### 2. Provider Registry
@@ -95,13 +98,13 @@ For now, only register `openrouter` provider and fail on others.
 Durable job queue backed by PostgreSQL:
 
 ```typescript
-import PgBoss from 'pg-boss'
+import PgBoss from "pg-boss"
 
 // Job types
 interface CompanionJobData {
   streamId: string
   messageId: string
-  triggeredBy: string  // user ID who sent the message
+  triggeredBy: string // user ID who sent the message
 }
 
 // In server.ts
@@ -109,7 +112,7 @@ const boss = new PgBoss(pool)
 await boss.start()
 
 // Register worker
-boss.work('companion:respond', async (job) => {
+boss.work("companion:respond", async (job) => {
   await companionWorker.handleJob(job.data)
 })
 ```
@@ -161,18 +164,19 @@ CREATE INDEX idx_agent_sessions_orphan
 Agentic loop with tool calling:
 
 ```typescript
-import { StateGraph, MessagesAnnotation } from '@langchain/langgraph'
+import { StateGraph, MessagesAnnotation } from "@langchain/langgraph"
 
 const agentGraph = new StateGraph(MessagesAnnotation)
-  .addNode('agent', callModel)
-  .addNode('tools', executeTools)
-  .addEdge('__start__', 'agent')
-  .addConditionalEdges('agent', shouldContinue)
-  .addEdge('tools', 'agent')
+  .addNode("agent", callModel)
+  .addNode("tools", executeTools)
+  .addEdge("__start__", "agent")
+  .addConditionalEdges("agent", shouldContinue)
+  .addEdge("tools", "agent")
   .compile()
 ```
 
 Tools for GAM pattern:
+
 - `search_memos` - Search knowledge base (memos table, Phase 2)
 - `search_messages` - Search conversation history
 - `get_context` - Get current stream/workspace context
@@ -183,20 +187,20 @@ Outbox listener that dispatches jobs:
 
 ```typescript
 class CompanionListener extends BaseOutboxListener {
-  readonly listenerId = 'companion'
+  readonly listenerId = "companion"
 
   async handleEvent(event: OutboxEvent): Promise<void> {
-    if (event.eventType !== 'message:created') return
+    if (event.eventType !== "message:created") return
 
     const payload = event.payload as MessageCreatedPayload
-    if (payload.message.authorType !== 'user') return
+    if (payload.message.authorType !== "user") return
 
     // Check if stream has companion mode enabled
     const stream = await this.streamService.getById(payload.streamId)
-    if (stream?.companionMode !== 'on') return
+    if (stream?.companionMode !== "on") return
 
     // Dispatch durable job
-    await this.boss.send('companion:respond', {
+    await this.boss.send("companion:respond", {
       streamId: payload.streamId,
       messageId: payload.message.id,
       triggeredBy: payload.message.authorId,
@@ -226,7 +230,7 @@ class CompanionJobWorker {
     await this.eventService.createMessage({
       streamId: data.streamId,
       authorId: persona.id,
-      authorType: 'persona',
+      authorType: "persona",
       content: response,
     })
 

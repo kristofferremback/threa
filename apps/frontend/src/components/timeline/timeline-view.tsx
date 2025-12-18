@@ -13,14 +13,11 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
 
-  const {
-    events,
-    isLoading,
-    error,
-    fetchOlderEvents,
-    hasOlderEvents,
-    isFetchingOlder,
-  } = useEvents(workspaceId!, streamId!, { enabled: !isDraft })
+  const { events, isLoading, error, fetchOlderEvents, hasOlderEvents, isFetchingOlder } = useEvents(
+    workspaceId!,
+    streamId!,
+    { enabled: !isDraft }
+  )
 
   // Auto-scroll to bottom when new events arrive
   const scrollToBottom = useCallback(() => {
@@ -65,11 +62,7 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto"
-        onScroll={handleScroll}
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         {!isDraft && isFetchingOlder && (
           <div className="flex justify-center py-2">
             <p className="text-sm text-muted-foreground">Loading older messages...</p>

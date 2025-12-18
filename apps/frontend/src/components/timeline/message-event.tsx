@@ -33,9 +33,7 @@ export function MessageEvent({ event }: MessageEventProps) {
           </span>
           <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
         </div>
-        <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">
-          {payload.content}
-        </div>
+        <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">{payload.content}</div>
       </div>
     </div>
   )
@@ -52,4 +50,3 @@ function formatActorId(actorId: string | null): string {
   // For now, show truncated ID - will be replaced with user lookup
   return actorId.substring(0, 8)
 }
-

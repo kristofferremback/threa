@@ -2,7 +2,9 @@
   "name": "threa",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "dev:backend": "bun --hot apps/backend/src/index.ts",
@@ -13,12 +15,19 @@
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",
-    "test:e2e": "bun run --cwd apps/backend test:e2e"
+    "test:e2e": "bun run --cwd apps/backend test:e2e",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,css,md,html}": "prettier --write"
   }
 }

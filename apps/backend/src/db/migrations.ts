@@ -26,15 +26,11 @@ export function createMigrator(pool: Pool) {
             executed_at TIMESTAMPTZ DEFAULT NOW()
           )
         `)
-        const result = await pool.query(
-          "SELECT name FROM umzug_migrations ORDER BY name",
-        )
+        const result = await pool.query("SELECT name FROM umzug_migrations ORDER BY name")
         return result.rows.map((r) => r.name)
       },
       async logMigration({ name }) {
-        await pool.query("INSERT INTO umzug_migrations (name) VALUES ($1)", [
-          name,
-        ])
+        await pool.query("INSERT INTO umzug_migrations (name) VALUES ($1)", [name])
       },
       async unlogMigration({ name }) {
         await pool.query("DELETE FROM umzug_migrations WHERE name = $1", [name])

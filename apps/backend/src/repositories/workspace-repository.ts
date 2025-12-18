@@ -103,7 +103,7 @@ export const WorkspaceRepository = {
     client: PoolClient,
     workspaceId: string,
     userId: string,
-    role: WorkspaceMember["role"] = "member",
+    role: WorkspaceMember["role"] = "member"
   ): Promise<WorkspaceMember> {
     const result = await client.query<WorkspaceMemberRow>(sql`
       INSERT INTO workspace_members (workspace_id, user_id, role)

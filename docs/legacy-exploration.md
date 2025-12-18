@@ -10,12 +10,12 @@
 
 ### The Value Proposition Hierarchy
 
-| Stage | Primary Value | Secondary Value |
-|-------|---------------|-----------------|
-| Solo founder (1) | Thinking partner + personal knowledge base | Future-proofing for team |
-| Small team (2-5) | Shared knowledge + AI assistant | Less "where was that discussed?" |
-| Growing (6-50) | Institutional memory | Onboarding new hires faster |
-| Scale-up (50-1000) | Knowledge graph + smart search | Reduced information overload |
+| Stage              | Primary Value                              | Secondary Value                  |
+| ------------------ | ------------------------------------------ | -------------------------------- |
+| Solo founder (1)   | Thinking partner + personal knowledge base | Future-proofing for team         |
+| Small team (2-5)   | Shared knowledge + AI assistant            | Less "where was that discussed?" |
+| Growing (6-50)     | Institutional memory                       | Onboarding new hires faster      |
+| Scale-up (50-1000) | Knowledge graph + smart search             | Reduced information overload     |
 
 ### Core Reframe
 
@@ -23,12 +23,14 @@
 **New framing (solo-first):** "Your AI co-founder that never forgets. When you hire, your team inherits your brain."
 
 For solo use:
+
 - **Scratchpad** is the entry point (not channels)
 - **AI companion** is optional, toggleable (not always-on @mentions)
 - **Knowledge capture** happens automatically from day one
 - **Files** are first-class citizens (upload, search, reference)
 
 When team arrives:
+
 - Channels and DMs activate
 - The knowledge base is already populated
 - New hires can search the founder's thinking
@@ -38,6 +40,7 @@ When team arrives:
 Scratchpads merge the concepts of "notes to self" and "thinking space with AI". Users can create multiple scratchpads, each focused on a topic.
 
 **Examples:**
+
 - "Redis Research" - exploring caching options
 - "Q4 Planning" - business strategy thinking
 - "Random Thoughts" - catch-all for quick notes
@@ -47,6 +50,7 @@ Scratchpads merge the concepts of "notes to self" and "thinking space with AI". 
 **AI Companion Toggle:**
 
 Each scratchpad has a companion mode toggle:
+
 - **Off** - You're writing notes. AI is passive (watching, learning, indexing for GAM, but not responding).
 - **On** - AI persona responds to your messages.
 - **Next message only** - Toggle companion for just the next message, then auto-off.
@@ -75,6 +79,7 @@ Each scratchpad has a companion mode toggle:
 ```
 
 **Sharing & Promotion:**
+
 - Scratchpads start as private (single member: the creator)
 - Can be shared with specific people (becomes collaborative scratchpad)
 - Can be promoted to a channel (if the topic warrants team visibility)
@@ -83,12 +88,14 @@ Each scratchpad has a companion mode toggle:
 ### Files: First-Class Citizens
 
 Files are critical for solo founders who:
+
 - Upload research documents
 - Attach screenshots and designs
 - Reference code snippets
 - Store meeting notes
 
 Files should be:
+
 - Searchable (text extraction + embeddings)
 - Referenceable by AI across conversations
 - Part of GAM (important file content becomes memos)
@@ -96,6 +103,7 @@ Files should be:
 ### Feature Priority (Solo-First)
 
 #### Phase 1: Solo Foundation
+
 1. Workspaces + Streams schema
 2. **Scratchpad stream type** (the home base)
 3. Basic messaging (events + projection)
@@ -103,17 +111,20 @@ Files should be:
 5. **File uploads** (attach, store, display)
 
 #### Phase 2: Knowledge Layer
+
 6. File text extraction (PDFs, docs → searchable)
 7. Basic GAM (memos from scratchpad content)
 8. Search (find your own stuff)
 
 #### Phase 3: Team Ready
+
 9. Channels (public/private)
 10. DMs (one-on-one)
 11. Invitations (add team members)
 12. Threads (branching conversations)
 
 #### Phase 4: Intelligence
+
 13. Knowledge explorer (graph view of memos)
 14. Cross-conversation context (AI knows what you discussed elsewhere)
 15. Integrations (GitHub, Notion, etc.)
@@ -123,6 +134,7 @@ Files should be:
 ## Exploration Plan
 
 ### Phase 1: High-Level Overview
+
 - [x] Examine root configuration files (package.json, tsconfig, vite.config)
 - [x] Map the directory structure
 - [x] Identify major components and their relationships
@@ -130,6 +142,7 @@ Files should be:
 - [x] Document the tech stack
 
 ### Phase 2: Detailed Analysis
+
 - [x] Server architecture (entry points, middleware, routing)
 - [x] Database layer (repositories, migrations, queries)
 - [x] Services layer (business logic, patterns used)
@@ -140,6 +153,7 @@ Files should be:
 - [x] Testing approach
 
 ### Phase 3: Assessment
+
 - [x] Identify good patterns worth preserving
 - [x] Document anti-patterns and problems
 - [x] List fundamental issues the rewrite should fix
@@ -193,6 +207,7 @@ threa-bak/
 ### Tech Stack
 
 **Backend:**
+
 - Runtime: Bun (with `--watch` for dev)
 - Framework: Express.js
 - Database: PostgreSQL via `pg` + `squid/pg` (template tags)
@@ -204,6 +219,7 @@ threa-bak/
 - AI: Anthropic SDK, Langchain, Langfuse
 
 **Frontend:**
+
 - Framework: React 19
 - Build: Vite with PWA plugin
 - State: TanStack Query + Zustand
@@ -213,6 +229,7 @@ threa-bak/
 - Offline: IndexedDB (custom)
 
 **Infrastructure:**
+
 - Docker Compose for local dev
 - PWA support with service workers
 - Workbox for offline caching
@@ -246,6 +263,7 @@ threa-bak/
 ### Server Architecture
 
 **Entry Point (`index.ts`)**
+
 - Large file (~475 lines) combining:
   - ShutdownCoordinator class (graceful shutdown)
   - AppContext interface with all dependencies
@@ -256,12 +274,14 @@ threa-bak/
 - Graceful shutdown with LB drain time calculation
 
 **Route Registration (Problem Area)**
+
 - ALL routes registered directly in `index.ts` (~130 route definitions)
 - Makes it hard to see the full API surface
 - No clear separation between concerns
 - Each route file exports factory functions that return handlers
 
 **Middleware**
+
 - `pino-http` for logging (sensible defaults)
 - `cookie-parser` for auth cookies
 - Custom `createAuthMiddleware` for session validation
@@ -270,11 +290,13 @@ threa-bak/
 ### Database Layer
 
 **Connection Management (`lib/db.ts`)**
+
 - Clean utilities: `withTransaction`, `withClient`
 - Factory function `createDatabasePool`
 - Exports `sql` from squid/pg
 
 **Repository Pattern** - EXCELLENT
+
 - Each repository is a namespace object with static-like methods
 - All methods take `PoolClient` as first parameter (enables transaction control)
 - Internal row types (snake_case) mapped to domain types (camelCase)
@@ -282,6 +304,7 @@ threa-bak/
 - Example: `StreamRepository`, `UserRepository`, etc.
 
 **Migrations**
+
 - 21+ migrations in SQL files
 - Custom runner in `lib/migrations.ts`
 - Sequential naming: `001_schema_v2.sql`, etc.
@@ -289,6 +312,7 @@ threa-bak/
 ### Services Layer
 
 **Service Pattern** - Classes with constructor DI
+
 - Take `Pool` in constructor
 - Use repositories for data access
 - Manage transactions, publish outbox events
@@ -307,11 +331,13 @@ threa-bak/
   ```
 
 **Problem: StreamService is 76KB!**
+
 - 2000+ lines of code
 - Handles everything: streams, events, threads, DMs, notifications, read state
 - Should be split into multiple services
 
 **Outbox Pattern** - EXCELLENT
+
 - All real-time events go through outbox table
 - `publishOutboxEvent()` called within transactions
 - `OutboxListener` polls outbox, publishes to Redis
@@ -321,12 +347,14 @@ threa-bak/
 ### Authentication System
 
 **WorkOS Integration** - Clean and complete
+
 - `WorkosAuthService` class implementing `AuthService` interface
 - `StubAuthService` for testing (uses simple token format)
 - Session stored in sealed cookie (`wos_session`)
 - Auto-refresh handled transparently
 
 **Auth Flow:**
+
 1. Login redirects to WorkOS
 2. Callback receives code, exchanges for session
 3. Session stored in cookie
@@ -335,6 +363,7 @@ threa-bak/
 ### Real-time Features
 
 **Socket.io Setup (`websockets/stream-socket.ts`)** - 874 lines
+
 - Redis adapter for horizontal scaling
 - Cookie-based auth (parses `wos_session`)
 - Room naming convention: `ws:{workspaceId}:stream:{streamId}`
@@ -344,11 +373,13 @@ threa-bak/
   - `user` - Personal notifications
 
 **Event Subscription Pattern:**
+
 - Subscribes to Redis channels for each event type
 - Giant switch statement handles each event type
 - Re-emits to appropriate rooms
 
 **Problem:**
+
 - Single file handles ALL event types
 - Lots of inline database queries
 - Hard to test in isolation
@@ -356,11 +387,13 @@ threa-bak/
 ### Frontend Architecture
 
 **State Management:**
+
 1. TanStack Query - API data caching
 2. Zustand stores - Local UI state
 3. IndexedDB - Offline persistence
 
 **Key Hooks:**
+
 - `useStream` (DEPRECATED, 35KB!) - Legacy IndexedDB approach
 - `useStreamWithQuery` (18KB) - TanStack Query approach
 - `useWorkspaceSocket` - Workspace-level real-time updates
@@ -368,17 +401,20 @@ threa-bak/
 - `usePaneManager` - Multi-pane layout management
 
 **Offline Support (`lib/offline/`):**
+
 - Custom IndexedDB abstraction
 - Stores: streams, events, drafts, outbox
 - `outbox-worker.ts` processes pending messages
 - Handles optimistic updates with client-generated IDs
 
 **Problem: Type Duplication**
+
 - `frontend/types.ts` has 300+ lines of type definitions
 - Many overlap with `shared/types/`
 - No single source of truth
 
 **Routing:**
+
 - Simple `window.location.pathname` matching in App.tsx
 - No proper router library
 - Works but not scalable
@@ -386,12 +422,14 @@ threa-bak/
 ### Testing Approach
 
 **Server Tests:**
+
 - Located in `__tests__` directories
 - E2E tests hit real DB
 - Uses separate test database
 - Test utilities for setup/teardown
 
 **No Frontend Tests Visible**
+
 - No test files in frontend/
 - Manual testing only?
 
@@ -550,13 +588,13 @@ threa-bak/
 
 ### Size Metrics (Warning Signs)
 
-| File | Lines | Problem? |
-|------|-------|----------|
-| stream-service.ts | 2000+ | YES - God service |
-| stream-socket.ts | 874 | YES - Too much in one place |
-| useStream.ts | 1000+ | YES - Should use TanStack Query |
-| stream-routes.ts | 1000+ | Borderline - many routes is expected |
-| index.ts (server) | 475 | YES - Route registration should be separate |
+| File              | Lines | Problem?                                    |
+| ----------------- | ----- | ------------------------------------------- |
+| stream-service.ts | 2000+ | YES - God service                           |
+| stream-socket.ts  | 874   | YES - Too much in one place                 |
+| useStream.ts      | 1000+ | YES - Should use TanStack Query             |
+| stream-routes.ts  | 1000+ | Borderline - many routes is expected        |
+| index.ts (server) | 475   | YES - Route registration should be separate |
 
 ### What the PoC Proves
 
@@ -578,15 +616,15 @@ threa-bak/
 
 ## Files Worth Copying
 
-| Source | Purpose | Notes |
-|--------|---------|-------|
-| `lib/db.ts` | Transaction helpers | Already copied |
-| `services/auth-service.ts` | WorkOS integration | Already copied |
-| `services/stub-auth-service.ts` | Test auth | Already copied |
-| `lib/logger.ts` | Pino config | Already copied |
-| `lib/cookies.ts` | Cookie parsing | Already copied |
-| `lib/outbox-events.ts` | Event definitions | Pattern to follow |
-| `lib/outbox-listener.ts` | Event processing | Pattern to follow |
+| Source                              | Purpose             | Notes             |
+| ----------------------------------- | ------------------- | ----------------- |
+| `lib/db.ts`                         | Transaction helpers | Already copied    |
+| `services/auth-service.ts`          | WorkOS integration  | Already copied    |
+| `services/stub-auth-service.ts`     | Test auth           | Already copied    |
+| `lib/logger.ts`                     | Pino config         | Already copied    |
+| `lib/cookies.ts`                    | Cookie parsing      | Already copied    |
+| `lib/outbox-events.ts`              | Event definitions   | Pattern to follow |
+| `lib/outbox-listener.ts`            | Event processing    | Pattern to follow |
 | `repositories/stream-repository.ts` | Data access pattern | Pattern to follow |
 
 ---
@@ -594,6 +632,7 @@ threa-bak/
 ## Recommendations for Rewrite
 
 ### Immediate (Do Now)
+
 1. Keep current monorepo structure (apps/backend, apps/frontend)
 2. Use @socket.io/postgres-adapter (no Redis)
 3. Keep repository pattern exactly as-is
@@ -601,6 +640,7 @@ threa-bak/
 5. Centralize routes in routes.ts (already done)
 
 ### Short-term (When Adding Features)
+
 1. Create separate services from the start:
    - StreamService (CRUD only)
    - EventService (messages, edits)
@@ -610,6 +650,7 @@ threa-bak/
 2. Each service <500 lines rule
 
 ### Long-term (Consider Later)
+
 1. Generated API types from OpenAPI or similar
 2. Frontend testing with Playwright/Vitest
 3. Event sourcing for audit trail
@@ -661,6 +702,7 @@ src/server/
 #### 1. Ariadne Agent Core (`ai/ariadne/`)
 
 **agent.ts (535 lines)** - Main agent implementation
+
 - Uses LangChain's `createReactAgent` with tool calling
 - **Multi-provider support**: Anthropic, OpenAI, OpenRouter, Ollama
 - **Two modes**:
@@ -670,23 +712,27 @@ src/server/
 - **Session tracking**: Creates `AgentSession` records in DB for replay
 
 **Good patterns:**
+
 - Clean separation of modes via prompts
 - CitationAccumulator tracks sources across tool calls
 - Configurable model per persona
 - Graceful error handling with summarization
 
 **Problems:**
+
 - 535 lines is borderline too large
 - Mode switching logic is implicit in prompts
 - No easy way to add new modes
 
 **prompts.ts (121 lines)** - Clean and focused
+
 - `RETRIEVAL_PROMPT` - For knowledge retrieval
 - `THINKING_PARTNER_PROMPT` - For extended reasoning
 - Well-crafted with XML-style sections
 - Includes citation formatting instructions
 
 **tools.ts (641 lines)** - Tool definitions
+
 - `search_memos` - Vector search over memos
 - `search_messages` - Vector search over messages
 - `get_stream_context` - Fetch recent messages in a stream
@@ -695,15 +741,18 @@ src/server/
 - `fetch_url` - Web page fetching
 
 **Good patterns:**
+
 - `CitationAccumulator` class tracks sources elegantly
 - Tools return structured results with metadata
 - Clear separation between search and retrieval
 
 **Problems:**
+
 - Some tools do inline SQL (should use repositories)
 - Web tools are tightly coupled to implementation
 
 **researcher.ts (588 lines)** - Iterative research agent
+
 - Plan → Search → Reflect loop
 - Multiple search iterations with refinement
 - Quality scoring of results
@@ -712,11 +761,13 @@ src/server/
 #### 2. AI Workers (`workers/`)
 
 **ariadne-trigger.ts** - Job creation
+
 - Listens to outbox for messages mentioning @ariadne or personas
 - Creates pg-boss jobs for agent execution
 - Extracts persona from mention text
 
 **ariadne-worker.ts (~500 lines)** - Agent execution
+
 - Processes pg-boss jobs
 - Creates AgentSession in DB
 - Streams thinking events via outbox → Socket.io
@@ -724,31 +775,37 @@ src/server/
 - Updates session with summary on completion
 
 **Good patterns:**
+
 - Separation of trigger vs worker
 - Session persistence enables replay
 - Thinking events are ephemeral but informative
 
 **Problems:**
+
 - Worker is stateful and hard to test
 - Error recovery is basic
 - No rate limiting per user/workspace
 
 **classification-worker.ts** - Content classification
+
 - Uses AI to determine if messages contain "knowledge"
 - Flags high-signal content for memo creation
 - Configurable model (defaults to Haiku)
 
 **embedding-worker.ts** - Vector embeddings
+
 - Generates embeddings for messages/memos
 - **Hybrid approach**: Tries Ollama first (free), falls back to OpenAI
 - Batching support for efficiency
 
 **enrichment-worker.ts** - Memo enrichment
+
 - Generates summaries for memos
 - Creates embeddings for memos
 - Updates memo metadata
 
 **memo-worker.ts** - Auto memo creation
+
 - Creates memos from highly-rated messages
 - Uses classification results to decide
 
@@ -757,12 +814,14 @@ src/server/
 **637 lines** - Comprehensive but getting large
 
 **Model string format**: `provider:model`
+
 - `anthropic:claude-haiku-4-5-20251001`
 - `openai:gpt-4o-mini`
 - `openrouter:google/gemma-3-12b-it`
 - `ollama:granite4:1b`
 
 **Functions:**
+
 - `chatWithModel()` - Unified chat across providers
 - `generateEmbedding()` - Single text embedding
 - `generateEmbeddingsBatch()` - Batch embeddings
@@ -770,12 +829,14 @@ src/server/
 - `calculateCost()` - Cost estimation
 
 **Good patterns:**
+
 - Lazy client initialization
 - Unified interface across providers
 - Cost tracking built-in
 - Ollama-first for embeddings (free)
 
 **Problems:**
+
 - File is getting large (637 lines)
 - Should split into separate provider modules
 - Duplicate `parseModelString` in llm-verifier.ts
@@ -785,6 +846,7 @@ src/server/
 **437 lines** - Agent persona management
 
 **AgentPersona fields:**
+
 - `name`, `slug`, `description`, `avatarEmoji`
 - `systemPrompt` - Custom instructions
 - `enabledTools` - Array of tool names
@@ -794,48 +856,57 @@ src/server/
 - `isDefault`, `isActive`
 
 **Good patterns:**
+
 - Progressive disclosure (Level 1 metadata vs full config)
 - Workspace-scoped personas
 
 **Improvement needed:**
+
 - `isActive` boolean → `status` enum (pending/active/disabled/archived)
 - `is_system` boolean → `managed_by` enum (system/workspace)
 
 **Problems:**
+
 - Uses inline SQL instead of repository pattern
 - Should follow same pattern as other services
 
 #### 5. Evaluation Framework (`evals/`)
 
 **runner.ts (~433 lines)** - Eval execution
+
 - Runs evals against real models
 - Calculates accuracy, precision, recall
 - Per-scenario breakdown
 - Langfuse integration for tracking
 
 **llm-verifier.ts (437 lines)** - LLM-as-judge
+
 - Multi-provider support
 - Topic similarity verification
 - JSON response parsing with fallbacks
 - Error classification (rate limit, auth, timeout)
 
 **cli.ts (193 lines)** - Clean CLI
+
 - Model presets (fast, local, cheap, quality, best)
 - `--compare` mode runs all configured models
 - `--verbose` for detailed output
 
 **ariadne/runner.ts (~800 lines)** - Agent evals
+
 - Seeds test workspace with synthetic data
 - Runs agent against test queries
 - Verifies response quality
 
 **Good patterns:**
+
 - Fixture-based datasets
 - Langfuse tracking for debugging
 - Model comparison mode
 - Detailed metrics per scenario
 
 **Problems:**
+
 - Ariadne evals are complex and slow
 - No CI integration visible
 - Dataset management is manual
@@ -843,6 +914,7 @@ src/server/
 #### 6. Frontend AI Integration
 
 **useAgentSessions.ts (421 lines)**
+
 - Tracks agent sessions for a stream
 - Persists across page reloads
 - Real-time updates via Socket.io events:
@@ -852,11 +924,13 @@ src/server/
 - Merges API data with live updates
 
 **useAriadneThinking.ts (183 lines)**
+
 - Ephemeral thinking indicator
 - Auto-clears after completion
 - Simpler than full sessions
 
 **AgentThinkingEvent.tsx (486 lines)**
+
 - Rich UI for agent sessions
 - Collapsible step timeline
 - Tool result expansion
@@ -864,26 +938,31 @@ src/server/
 - Persona avatar support
 
 **ToolResultViewer.tsx (348 lines)**
+
 - Slide-out panel for full results
 - Search result parsing and navigation
 - Copy functionality
 - Peek preview on hover
 
 **AriadneThinkingIndicator.tsx (191 lines)**
+
 - Inline thinking indicator
 - Step type icons (Brain, Search, Wrench)
 - Animated status badges
 
 **usePersonasQuery.ts (44 lines)**
+
 - TanStack Query for personas
 - 5-minute stale time
 
 **Good patterns:**
+
 - Session persistence enables history
 - Thinking indicator is non-blocking
 - Tool results are navigable
 
 **Problems:**
+
 - Two overlapping systems (sessions vs thinking)
 - Frontend components are large (should split)
 - No error boundary for AI failures
@@ -1007,29 +1086,29 @@ src/server/
 
 ### AI Files Worth Copying
 
-| Source | Purpose | Notes |
-|--------|---------|-------|
-| `lib/ai-providers.ts` | Multi-provider chat | Split into modules first |
-| `ai/ariadne/prompts.ts` | Agent prompts | Rename to `ai/agent/prompts.ts`, make persona-configurable |
-| `ai/ariadne/tools.ts` | Tool definitions | Rename to `ai/agent/tools.ts`, extract CitationAccumulator |
-| `services/persona-service.ts` | Persona CRUD | Convert to repository pattern, add `is_system` support |
-| `workers/ariadne-trigger.ts` | Outbox → job pattern | Rename to `agent-trigger.ts`, make persona-generic |
-| `evals/cli.ts` | Eval CLI | Clean and useful |
-| `evals/config.ts` | Model presets | Good configuration pattern |
-| Frontend `AgentThinkingEvent.tsx` | Session UI | Rename, make persona-aware (show persona avatar/name) |
+| Source                            | Purpose              | Notes                                                      |
+| --------------------------------- | -------------------- | ---------------------------------------------------------- |
+| `lib/ai-providers.ts`             | Multi-provider chat  | Split into modules first                                   |
+| `ai/ariadne/prompts.ts`           | Agent prompts        | Rename to `ai/agent/prompts.ts`, make persona-configurable |
+| `ai/ariadne/tools.ts`             | Tool definitions     | Rename to `ai/agent/tools.ts`, extract CitationAccumulator |
+| `services/persona-service.ts`     | Persona CRUD         | Convert to repository pattern, add `is_system` support     |
+| `workers/ariadne-trigger.ts`      | Outbox → job pattern | Rename to `agent-trigger.ts`, make persona-generic         |
+| `evals/cli.ts`                    | Eval CLI             | Clean and useful                                           |
+| `evals/config.ts`                 | Model presets        | Good configuration pattern                                 |
+| Frontend `AgentThinkingEvent.tsx` | Session UI           | Rename, make persona-aware (show persona avatar/name)      |
 
 ### AI Size Metrics
 
-| File | Lines | Problem? |
-|------|-------|----------|
-| ai-providers.ts | 637 | Borderline - split |
-| ariadne/agent.ts | 535 | Borderline - monitor |
-| ariadne/tools.ts | 641 | YES - should split |
-| ariadne/researcher.ts | 588 | YES - too complex |
-| evals/ariadne/runner.ts | ~800 | YES - simplify |
-| AgentThinkingEvent.tsx | 486 | Borderline - could split |
-| useAgentSessions.ts | 421 | OK for hook |
-| persona-service.ts | 437 | OK |
+| File                    | Lines | Problem?                 |
+| ----------------------- | ----- | ------------------------ |
+| ai-providers.ts         | 637   | Borderline - split       |
+| ariadne/agent.ts        | 535   | Borderline - monitor     |
+| ariadne/tools.ts        | 641   | YES - should split       |
+| ariadne/researcher.ts   | 588   | YES - too complex        |
+| evals/ariadne/runner.ts | ~800  | YES - simplify           |
+| AgentThinkingEvent.tsx  | 486   | Borderline - could split |
+| useAgentSessions.ts     | 421   | OK for hook              |
+| persona-service.ts      | 437   | OK                       |
 
 ---
 
@@ -1037,19 +1116,20 @@ src/server/
 
 **Problem:** The legacy code has Ariadne hardcoded as a special entity separate from the persona system:
 
-| File | Issue |
-|------|-------|
-| `ariadne-trigger.ts` | Special listener just for @ariadne |
-| `ariadne-worker.ts` | Dedicated worker for Ariadne |
-| `useAriadneThinking.ts` | Frontend hook specific to Ariadne |
+| File                           | Issue                               |
+| ------------------------------ | ----------------------------------- |
+| `ariadne-trigger.ts`           | Special listener just for @ariadne  |
+| `ariadne-worker.ts`            | Dedicated worker for Ariadne        |
+| `useAriadneThinking.ts`        | Frontend hook specific to Ariadne   |
 | `AriadneThinkingIndicator.tsx` | UI component with her name baked in |
-| `ai/ariadne/*` | Directory named after one persona |
+| `ai/ariadne/*`                 | Directory named after one persona   |
 
 This creates two parallel systems: "Ariadne" and "Personas" - a classic anti-pattern.
 
 **Solution:** Ariadne should be a **seed persona** - the default one that ships with Threa, managed by the system (not user-editable). All code paths treat personas uniformly.
 
 **Schema:**
+
 ```sql
 CREATE TABLE personas (
     id TEXT PRIMARY KEY,
@@ -1064,32 +1144,36 @@ CREATE TABLE personas (
 ```
 
 **Why TEXT over database enums / Why no foreign keys:**
+
 - Business logic in code, not DB - keeps validation in one place
 - Simpler migrations - no `ALTER TYPE ... ADD VALUE` hassle
 - Portable - can move to any store without losing constraints that lived in DB
 - Decoupled - no strict ordering requirements for inserts/deletes
 
 **Why enums (in code) over booleans:**
+
 - `status` vs `is_active`: Distinguishes `disabled` (temporary) from `archived` (permanent), extensible
 - `managed_by` vs `is_system`: Clearer intent, extensible (could add `'user'` for personal personas later)
 
 **Code mapping:**
 
-| Legacy | New | Rationale |
-|--------|-----|-----------|
-| `ai/ariadne/` | `ai/agent/` | Generic agent code, not persona-specific |
-| `ariadne-trigger.ts` | `agent-trigger.ts` | Triggers on @mention of ANY persona |
-| `ariadne-worker.ts` | `agent-worker.ts` | Executes ANY persona |
-| `useAriadneThinking.ts` | DELETE | Use `useAgentSessions` for all personas |
-| `AriadneThinkingIndicator.tsx` | `AgentThinkingIndicator.tsx` | Shows persona avatar/name dynamically |
+| Legacy                         | New                          | Rationale                                |
+| ------------------------------ | ---------------------------- | ---------------------------------------- |
+| `ai/ariadne/`                  | `ai/agent/`                  | Generic agent code, not persona-specific |
+| `ariadne-trigger.ts`           | `agent-trigger.ts`           | Triggers on @mention of ANY persona      |
+| `ariadne-worker.ts`            | `agent-worker.ts`            | Executes ANY persona                     |
+| `useAriadneThinking.ts`        | DELETE                       | Use `useAgentSessions` for all personas  |
+| `AriadneThinkingIndicator.tsx` | `AgentThinkingIndicator.tsx` | Shows persona avatar/name dynamically    |
 
 **@mention resolution flow:**
+
 1. Parse mention text for persona slug (e.g., `@ariadne`, `@customer-support`)
 2. Look up persona in DB: first workspace-scoped, then system
 3. If not found, fall back to default system persona (Ariadne)
 4. Execute agent with that persona's config (model, tools, prompt)
 
 **Benefits:**
+
 - Single code path for all agents
 - Personas are fully data-driven
 - Easy to add new system personas (e.g., `@helper` for onboarding)
@@ -1097,6 +1181,7 @@ CREATE TABLE personas (
 - No special-casing in trigger/worker/frontend code
 
 **Seed data:**
+
 ```sql
 INSERT INTO personas (id, workspace_id, slug, name, managed_by, status, system_prompt, model)
 VALUES (
@@ -1121,12 +1206,12 @@ VALUES (
 
 #### Eagerness Spectrum
 
-| Level | Behavior |
-|-------|----------|
-| `silent` | Only responds when explicitly @mentioned |
-| `reserved` | Responds to direct questions in their domain |
-| `engaged` | Proactively offers input when highly relevant |
-| `eager` | Jumps in frequently, lower relevance threshold |
+| Level      | Behavior                                       |
+| ---------- | ---------------------------------------------- |
+| `silent`   | Only responds when explicitly @mentioned       |
+| `reserved` | Responds to direct questions in their domain   |
+| `engaged`  | Proactively offers input when highly relevant  |
+| `eager`    | Jumps in frequently, lower relevance threshold |
 
 #### Persona Expertise Profile (Pre-computed, Stored)
 
@@ -1165,14 +1250,14 @@ This is critical for cost control—only rostered personas evaluate messages in 
 
 When a message arrives in a stream with rostered personas:
 
-| Factor | Weight | Notes |
-|--------|--------|-------|
-| Direct @mention | ∞ | Instant win, skip other scoring |
-| Reply to agent's last message | Heavy (~0.4) | Conversation continuity |
-| Embedding similarity to expertise | Medium (~0.3) | Cosine sim against `expertise_embedding` |
-| GAM topic match | Medium (~0.2) | "Has this agent discussed similar before?" |
-| Time since agent last spoke | Negative | Cooldown, prevents domination |
-| Question detected | Small boost (~0.1) | Agents more likely to respond to questions |
+| Factor                            | Weight             | Notes                                      |
+| --------------------------------- | ------------------ | ------------------------------------------ |
+| Direct @mention                   | ∞                  | Instant win, skip other scoring            |
+| Reply to agent's last message     | Heavy (~0.4)       | Conversation continuity                    |
+| Embedding similarity to expertise | Medium (~0.3)      | Cosine sim against `expertise_embedding`   |
+| GAM topic match                   | Medium (~0.2)      | "Has this agent discussed similar before?" |
+| Time since agent last spoke       | Negative           | Cooldown, prevents domination              |
+| Question detected                 | Small boost (~0.1) | Agents more likely to respond to questions |
 
 #### Response Selection Flow
 
@@ -1204,16 +1289,17 @@ The lightweight classifier (embedding + cosine sim + heuristics) runs on every m
 
 #### Eagerness Thresholds
 
-| Eagerness | Threshold | Meaning |
-|-----------|-----------|---------|
-| `silent` | ∞ | Only @mention triggers |
-| `reserved` | 0.7 | High confidence required |
-| `engaged` | 0.5 | Moderate relevance triggers |
-| `eager` | 0.3 | Low bar, responds frequently |
+| Eagerness  | Threshold | Meaning                      |
+| ---------- | --------- | ---------------------------- |
+| `silent`   | ∞         | Only @mention triggers       |
+| `reserved` | 0.7       | High confidence required     |
+| `engaged`  | 0.5       | Moderate relevance triggers  |
+| `eager`    | 0.3       | Low bar, responds frequently |
 
 #### Multi-Agent Conflict Resolution
 
 When multiple agents exceed their threshold:
+
 1. **Highest relevance score wins** - avoids multiple agents info-dumping
 2. Ties broken by: persona priority (if set) → most recent activity → random
 
@@ -1286,12 +1372,14 @@ This is a **power user feature**, not MVP:
 #### Why Not Slack-Style?
 
 Slack's model:
+
 - Thread ID = parent message timestamp
 - Thread replies are messages with `thread_ts` set
 - No separate entity for threads
 - **Limited to 1 level of nesting**
 
 Our model:
+
 - Threads are streams with `type = 'thread'`
 - `parent_stream_id` points to parent (can be channel OR another thread)
 - `parent_message_id` points to the message being discussed
@@ -1315,10 +1403,10 @@ T2 branches from T1—this is impossible in Slack. Each thread is a full stream 
 
 #### Visibility vs Membership
 
-| Concept | Who | Determined By |
-|---------|-----|---------------|
-| **Can view** | All members of root stream | `root_stream_id` → check membership there |
-| **Is member** | Participated (replied, reacted, followed) | Explicit in `stream_members` |
+| Concept       | Who                                       | Determined By                             |
+| ------------- | ----------------------------------------- | ----------------------------------------- |
+| **Can view**  | All members of root stream                | `root_stream_id` → check membership there |
+| **Is member** | Participated (replied, reacted, followed) | Explicit in `stream_members`              |
 
 **Why this distinction matters:**
 
@@ -1340,6 +1428,7 @@ CREATE TABLE streams (
 ```
 
 When creating a thread:
+
 - If parent is channel/scratchpad: `root_stream_id = parent_stream_id`
 - If parent is thread: `root_stream_id = parent.root_stream_id`
 
@@ -1364,6 +1453,7 @@ WHERE parent_message_id = ?;
 #### Thread Membership Triggers
 
 Users become thread members when they:
+
 - Reply to the thread
 - React to a message in the thread
 - Explicitly follow the thread
@@ -1414,6 +1504,7 @@ Clients A, B, C watching thread
 ```
 
 **Client reconnection flow**:
+
 1. Client disconnects (network blip, tab switch, etc.)
 2. Client reconnects, sends: `{ sessionId, lastTokenPosition: 847 }`
 3. Server sends buffered tokens 848+ from storage
@@ -1432,6 +1523,7 @@ Agent Session
 ```
 
 **Recovery**:
+
 1. New server picks up orphaned session (status = 'running', stale heartbeat)
 2. Loads completed steps 1-3 as context
 3. Restarts step 4 from scratch
@@ -1515,13 +1607,13 @@ for (const session of orphaned) {
 
 #### Recovery Matrix
 
-| Scenario | Solution | Data Loss |
-|----------|----------|-----------|
-| Client disconnects | Token buffer + position-based replay | None |
-| Client joins mid-stream | Same buffer, start from position 0 | None |
-| Server dies between steps | Resume from last checkpoint | None |
-| Server dies mid-step | Restart current step | Partial tokens from that step |
-| LLM provider dies | Retry with exponential backoff | Current step tokens |
+| Scenario                  | Solution                             | Data Loss                     |
+| ------------------------- | ------------------------------------ | ----------------------------- |
+| Client disconnects        | Token buffer + position-based replay | None                          |
+| Client joins mid-stream   | Same buffer, start from position 0   | None                          |
+| Server dies between steps | Resume from last checkpoint          | None                          |
+| Server dies mid-step      | Restart current step                 | Partial tokens from that step |
+| LLM provider dies         | Retry with exponential backoff       | Current step tokens           |
 
 **Key insight**: Design for step-level durability. The granularity of checkpointing matches the natural granularity of agent work (think → tool → tool → respond).
 
@@ -1536,6 +1628,7 @@ for (const session of orphaned) {
 #### Why Both?
 
 **Events give us**:
+
 - **Audit trail**: Who said what, when, what got edited/deleted
 - **Temporal queries**: "Show me #engineering last Tuesday at 3pm"
 - **Sync foundation**: Replay events to catch up (offline-first later)
@@ -1543,6 +1636,7 @@ for (const session of orphaned) {
 - **Edit history**: Show previous versions of a message
 
 **Projections give us**:
+
 - **Query performance**: "Last 50 messages" without replaying events
 - **Current state access**: Show message content without computing edits
 - **Aggregations**: Reaction counts, reply counts
@@ -1565,11 +1659,13 @@ stream_events (source of truth)     messages (projection)
 Both tables exist from day one. Events are source of truth (for sync, audit, undo), projections are what you query.
 
 **What we're NOT doing (yet)**:
+
 - Complex derived projections (e.g., per-user unread counts)
 - Event versioning/upcasting
 - Separate read replicas
 
 **Database philosophy** (applies to all schemas):
+
 - No foreign keys - application manages relationships
 - No database enums - use TEXT, validate in code
 - Business logic in one place (code), not spread across DB + code
@@ -1626,17 +1722,26 @@ CREATE INDEX idx_messages_thread
 
 ```typescript
 type StreamEvent =
-  | { type: 'message_created'; payload: { messageId: string; content: string; authorId: string; authorType: 'user' | 'persona'; threadId?: string } }
-  | { type: 'message_edited'; payload: { messageId: string; content: string; editedAt: string } }
-  | { type: 'message_deleted'; payload: { messageId: string; deletedAt: string } }
-  | { type: 'reaction_added'; payload: { messageId: string; emoji: string; userId: string } }
-  | { type: 'reaction_removed'; payload: { messageId: string; emoji: string; userId: string } }
-  | { type: 'member_joined'; payload: { userId: string } }
-  | { type: 'member_left'; payload: { userId: string } }
-  | { type: 'thread_created'; payload: { threadId: string; parentMessageId: string } }
-  | { type: 'agent_session_started'; payload: { sessionId: string; personaId: string } }
-  | { type: 'agent_session_step'; payload: { sessionId: string; step: AgentStep } }
-  | { type: 'agent_session_completed'; payload: { sessionId: string } }
+  | {
+      type: "message_created"
+      payload: {
+        messageId: string
+        content: string
+        authorId: string
+        authorType: "user" | "persona"
+        threadId?: string
+      }
+    }
+  | { type: "message_edited"; payload: { messageId: string; content: string; editedAt: string } }
+  | { type: "message_deleted"; payload: { messageId: string; deletedAt: string } }
+  | { type: "reaction_added"; payload: { messageId: string; emoji: string; userId: string } }
+  | { type: "reaction_removed"; payload: { messageId: string; emoji: string; userId: string } }
+  | { type: "member_joined"; payload: { userId: string } }
+  | { type: "member_left"; payload: { userId: string } }
+  | { type: "thread_created"; payload: { threadId: string; parentMessageId: string } }
+  | { type: "agent_session_started"; payload: { sessionId: string; personaId: string } }
+  | { type: "agent_session_step"; payload: { sessionId: string; step: AgentStep } }
+  | { type: "agent_session_completed"; payload: { sessionId: string } }
 ```
 
 #### Event → Projection Flow
@@ -1756,14 +1861,14 @@ CREATE INDEX idx_memos_tags ON memos USING GIN (tags);
 
 Not every message is knowledge. The classifier looks for:
 
-| Memo-worthy | Not memo-worthy |
-|-------------|-----------------|
-| Decisions made | Casual chat |
-| Problems solved | Greetings |
-| Architecture discussions | Status updates without context |
-| Process explanations | "Thanks!" / "Got it" |
-| External links with context | Links without explanation |
-| Action items with outcomes | Questions without answers |
+| Memo-worthy                 | Not memo-worthy                |
+| --------------------------- | ------------------------------ |
+| Decisions made              | Casual chat                    |
+| Problems solved             | Greetings                      |
+| Architecture discussions    | Status updates without context |
+| Process explanations        | "Thanks!" / "Got it"           |
+| External links with context | Links without explanation      |
+| Action items with outcomes  | Questions without answers      |
 
 The classifier runs on cheap/fast models (Haiku, local Ollama) since it processes every message.
 
@@ -1800,6 +1905,7 @@ Memos can link to each other, forming a knowledge graph:
 ```
 
 This enables:
+
 - "Show me everything related to caching"
 - Graph-based exploration in UI
 - Agent traversal for deeper context
@@ -1808,10 +1914,10 @@ This enables:
 
 #### Manual vs Auto Memos
 
-| Type | Created by | Use case |
-|------|------------|----------|
-| Auto | Classification + Memorizer workers | Capture knowledge passively |
-| Manual | Users | Intentionally document something important |
+| Type   | Created by                         | Use case                                   |
+| ------ | ---------------------------------- | ------------------------------------------ |
+| Auto   | Classification + Memorizer workers | Capture knowledge passively                |
+| Manual | Users                              | Intentionally document something important |
 
 Both have the same schema. Manual memos might skip classification but still get enrichment (embedding, tags).
 
@@ -1831,17 +1937,18 @@ Both have the same schema. Manual memos might skip classification but still get 
 
 #### Filter Operators
 
-| Operator | Meaning | Example |
-|----------|---------|---------|
-| `from:@user` | Messages authored by user | `from:@jane` |
-| `with:@user` | Messages in streams where user is member | `with:@jane with:@joe` |
-| `in:#channel` | Messages in specific channel | `in:#engineering` |
-| `is:thread` | Only thread messages | `is:thread` |
-| `is:dm` | Only direct messages | `is:dm` |
-| `before:date` | Messages before date | `before:2025-01-01` |
-| `after:date` | Messages after date | `after:2024-06-01` |
+| Operator      | Meaning                                  | Example                |
+| ------------- | ---------------------------------------- | ---------------------- |
+| `from:@user`  | Messages authored by user                | `from:@jane`           |
+| `with:@user`  | Messages in streams where user is member | `with:@jane with:@joe` |
+| `in:#channel` | Messages in specific channel             | `in:#engineering`      |
+| `is:thread`   | Only thread messages                     | `is:thread`            |
+| `is:dm`       | Only direct messages                     | `is:dm`                |
+| `before:date` | Messages before date                     | `before:2025-01-01`    |
+| `after:date`  | Messages after date                      | `after:2024-06-01`     |
 
 **Example**: `scones with:@jane with:@joe is:thread`
+
 - Finds thread messages
 - Where Jane and Joe both participated
 - Semantically related to "scones" (matches "biscuits", "baking", etc.)
@@ -1878,7 +1985,7 @@ async function search(query: SearchQuery): Promise<SearchResult[]> {
   // 3. Run both searches in parallel
   const [keywordResults, semanticResults] = await Promise.all([
     keywordSearch(terms, filterConditions),
-    semanticSearch(terms, filterConditions),  // terms → embedding via API
+    semanticSearch(terms, filterConditions), // terms → embedding via API
   ])
 
   // 4. Combine with Reciprocal Rank Fusion (RRF)
@@ -1892,6 +1999,7 @@ async function search(query: SearchQuery): Promise<SearchResult[]> {
 #### Embedding Generation
 
 Messages get embeddings async via worker (same pattern as legacy):
+
 1. `message_created` event triggers embedding job
 2. Worker generates embedding (Ollama-first, fallback to OpenAI)
 3. Updates `messages.embedding` column
@@ -1935,12 +2043,14 @@ src/server/
 #### 1. What Are Memos?
 
 Memos are **semantic pointers to valuable conversations**, not extracted content. They store:
+
 - `summary` - Auto-generated or user-provided description
 - `topics` - Array of tags for categorization
 - `anchor_event_ids` - Links to the actual messages (source of truth)
 - `context_*` - Window of surrounding context for retrieval
 
 Key insight: Memos point TO content, they don't duplicate it. This means:
+
 - Source messages can evolve (edits preserved)
 - No sync issues between memo and source
 - Retrieval fetches current content from anchors
@@ -1949,11 +2059,11 @@ Key insight: Memos point TO content, they don't duplicate it. This means:
 
 Messages aren't enriched immediately. Three tiers:
 
-| Tier | What | Trigger |
-|------|------|---------|
-| 0 | Unprocessed | Default state |
-| 1 | Basic embedding | Structural score ≥ 3 + classification |
-| 2 | Contextual header | Social signals (2+ reactions, 2+ replies, retrieved) |
+| Tier | What              | Trigger                                              |
+| ---- | ----------------- | ---------------------------------------------------- |
+| 0    | Unprocessed       | Default state                                        |
+| 1    | Basic embedding   | Structural score ≥ 3 + classification                |
+| 2    | Contextual header | Social signals (2+ reactions, 2+ replies, retrieved) |
 
 **Contextual header**: AI-generated summary like "In the context of discussing Redis caching options, Jane explained..." - embeds better than raw message.
 
@@ -1962,11 +2072,13 @@ Messages aren't enriched immediately. Three tiers:
 Memos aren't static. They evolve via:
 
 **Reinforcement**: When similar content appears, existing memo gets reinforced:
+
 - `anchor_event_ids` grows (adds new source)
 - `confidence` increases (5% per reinforce, capped at 1.0)
 - Recency bonus: 10% for last 7 days, 5% for last 30 days
 
 **Supersession**: When better content replaces old memo:
+
 - Old memo archived
 - New memo created with reference to old
 
@@ -1989,6 +2101,7 @@ Queue for embedding
 ```
 
 Structural signals checked:
+
 - Code blocks, lists, links
 - Announcement/explanation/decision patterns
 - Length, line count
@@ -2116,16 +2229,17 @@ Memo created/updated + embedding stored + reinforcement tracked
 
 **Worker configurations:**
 
-| Worker | Job type | Batch | Poll | Singleton |
-|--------|----------|-------|------|-----------|
-| ClassificationWorker | `ai.classify` | 1 | 5s | - |
-| EmbeddingWorker | `ai.embed` | 50 | 2s | - |
-| EnrichmentWorker | `memory.enrich` | 1 | 5s | 5 min |
-| MemoWorker | `memory.create-memo` | 1 | 5s | 24 hours |
+| Worker               | Job type             | Batch | Poll | Singleton |
+| -------------------- | -------------------- | ----- | ---- | --------- |
+| ClassificationWorker | `ai.classify`        | 1     | 5s   | -         |
+| EmbeddingWorker      | `ai.embed`           | 50    | 2s   | -         |
+| EnrichmentWorker     | `memory.enrich`      | 1     | 5s   | 5 min     |
+| MemoWorker           | `memory.create-memo` | 1     | 5s   | 24 hours  |
 
 ### Key Services
 
 **MemoService** (635 lines):
+
 - `createMemo()` - Full creation with auto-summary, topics, context detection
 - `getMemos()` - List with pagination, topic filtering, content enrichment
 - `logRetrieval()` - Track what gets retrieved
@@ -2133,11 +2247,13 @@ Memo created/updated + embedding stored + reinforcement tracked
 - `createFromAriadneSuccess()` - Auto-memo from good agent responses
 
 **MemoScoringService** (426 lines):
+
 - `getContentSignals()` - Extract structural signals
 - `score()` - Calculate memo-worthiness (0-100)
 - `classifyCategory()` - LLM-based categorization
 
 **MemoEvolutionService** (modular):
+
 - `evaluateForEvolution()` - Decide action based on similarity
 - `reinforceMemo()` - Add anchor, boost confidence
 - Similarity thresholds: 0.65 (consider), 0.85 (trust embeddings)
@@ -2217,18 +2333,18 @@ Memo created/updated + embedding stored + reinforcement tracked
 
 ### What to Keep vs Change
 
-| Legacy Pattern | Keep? | Notes |
-|----------------|-------|-------|
-| Semantic pointers | ✅ Keep | Core concept is sound |
-| Lazy enrichment tiers | ✅ Keep | Optimize with signals |
-| Event-based similarity | ✅ Keep | Consistency in embedding space |
-| Reinforcement + decay | ✅ Keep | But simplify confidence math |
-| Dual-tier classification | ✅ Keep | Cost-effective |
-| Retrieval logging | ✅ Keep | Essential for evolution |
-| Expert routing | ⚠️ Defer | Nice-to-have, not MVP |
+| Legacy Pattern           | Keep?       | Notes                          |
+| ------------------------ | ----------- | ------------------------------ |
+| Semantic pointers        | ✅ Keep     | Core concept is sound          |
+| Lazy enrichment tiers    | ✅ Keep     | Optimize with signals          |
+| Event-based similarity   | ✅ Keep     | Consistency in embedding space |
+| Reinforcement + decay    | ✅ Keep     | But simplify confidence math   |
+| Dual-tier classification | ✅ Keep     | Cost-effective                 |
+| Retrieval logging        | ✅ Keep     | Essential for evolution        |
+| Expert routing           | ⚠️ Defer    | Nice-to-have, not MVP          |
 | Provider-flexible tables | ⚠️ Simplify | Single table, dimension column |
-| Enrichment on messages | ❌ Change | Separate table |
-| 635-line MemoService | ❌ Split | MemoService + RetrievalService |
+| Enrichment on messages   | ❌ Change   | Separate table                 |
+| 635-line MemoService     | ❌ Split    | MemoService + RetrievalService |
 
 ### Simplified Schema for Rewrite
 
@@ -2289,30 +2405,31 @@ CREATE TABLE retrieval_log (
 
 ### Size Metrics
 
-| File | Lines | Problem? |
-|------|-------|----------|
-| memo-service.ts | 635 | YES - split it |
-| classification-worker.ts | 490 | Borderline - extract logic |
-| memo-scoring-service.ts | 426 | OK |
-| memo-worker.ts | 319 | OK |
-| enrichment-worker.ts | 274 | OK |
-| memo-revision-service.ts | 260 | OK |
-| embedding-worker.ts | 207 | OK |
-| memo-routes.ts | 203 | OK |
+| File                     | Lines | Problem?                   |
+| ------------------------ | ----- | -------------------------- |
+| memo-service.ts          | 635   | YES - split it             |
+| classification-worker.ts | 490   | Borderline - extract logic |
+| memo-scoring-service.ts  | 426   | OK                         |
+| memo-worker.ts           | 319   | OK                         |
+| enrichment-worker.ts     | 274   | OK                         |
+| memo-revision-service.ts | 260   | OK                         |
+| embedding-worker.ts      | 207   | OK                         |
+| memo-routes.ts           | 203   | OK                         |
 
 ### Files Worth Copying
 
-| Source | Purpose | Notes |
-|--------|---------|-------|
-| `memo-scoring-service.ts` | Content signals + scoring | Clean patterns |
-| `memo-evolution/` | Evolution logic | Modular structure is good |
-| `embedding-worker.ts` | Batch embeddings | Ollama-first pattern |
-| `enrichment-worker.ts` | Lazy enrichment | Queue helpers |
-| `018_memory_system.sql` | Schema reference | Simplify for rewrite |
+| Source                    | Purpose                   | Notes                     |
+| ------------------------- | ------------------------- | ------------------------- |
+| `memo-scoring-service.ts` | Content signals + scoring | Clean patterns            |
+| `memo-evolution/`         | Evolution logic           | Modular structure is good |
+| `embedding-worker.ts`     | Batch embeddings          | Ollama-first pattern      |
+| `enrichment-worker.ts`    | Lazy enrichment           | Queue helpers             |
+| `018_memory_system.sql`   | Schema reference          | Simplify for rewrite      |
 
 ### Memo Recommendations
 
 #### Immediate (Do Now)
+
 1. Use semantic pointer model (anchors, not content)
 2. Implement lazy enrichment with social signals
 3. Event-based similarity for deduplication
@@ -2321,12 +2438,14 @@ CREATE TABLE retrieval_log (
 6. Separate `message_enrichments` table
 
 #### Short-term (When Building Memos)
+
 1. Split MemoService: MemoService + RetrievalService
 2. Create MemoRepository (repository pattern)
 3. Retrieval logging from day one
 4. Reinforcement tracking
 
 #### Long-term (Consider Later)
+
 1. Expert routing based on retrieval data
 2. Knowledge graph connections between memos
 3. User feedback loops for training
@@ -2336,16 +2455,16 @@ CREATE TABLE retrieval_log (
 
 The problem statement outlines a GAM-based knowledge system. Here's how the legacy implementation compares:
 
-| Problem Statement Vision | Legacy Implementation | Status |
-|--------------------------|----------------------|--------|
-| **GAM memorizer** - inspects high-value info, stores memos linking to sources | Classification + memo workers create memos with `anchor_event_ids` | ✅ Aligned |
-| **GAM deep researcher** - iterative plan/search/reflect loop | `researcher.ts` exists but marked "too complex" | ⚠️ Partial |
-| **Pages** (conversational chunks) | Links to individual messages, not chunks | ❌ Missing |
-| **Conversational boundaries** - cheap model extracts conversation scope | Structural signals (code blocks, patterns), not conversation detection | ❌ Missing |
-| **Knowledge graph** - memos connected for related info discovery | Flat `topics[]` tags, no graph relationships | ❌ Missing |
-| **Knowledge explorer** - graph-based UI | `KnowledgeBrowserModal` is a list with topic filters | ⚠️ Simplified |
-| **Auto-answer** - answer without explicit reply | Not implemented | ❌ Missing |
-| **Smart notifications** - urgency-based | TODO in problem statement, not built | ❌ Missing |
+| Problem Statement Vision                                                      | Legacy Implementation                                                  | Status        |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------- |
+| **GAM memorizer** - inspects high-value info, stores memos linking to sources | Classification + memo workers create memos with `anchor_event_ids`     | ✅ Aligned    |
+| **GAM deep researcher** - iterative plan/search/reflect loop                  | `researcher.ts` exists but marked "too complex"                        | ⚠️ Partial    |
+| **Pages** (conversational chunks)                                             | Links to individual messages, not chunks                               | ❌ Missing    |
+| **Conversational boundaries** - cheap model extracts conversation scope       | Structural signals (code blocks, patterns), not conversation detection | ❌ Missing    |
+| **Knowledge graph** - memos connected for related info discovery              | Flat `topics[]` tags, no graph relationships                           | ❌ Missing    |
+| **Knowledge explorer** - graph-based UI                                       | `KnowledgeBrowserModal` is a list with topic filters                   | ⚠️ Simplified |
+| **Auto-answer** - answer without explicit reply                               | Not implemented                                                        | ❌ Missing    |
+| **Smart notifications** - urgency-based                                       | TODO in problem statement, not built                                   | ❌ Missing    |
 
 #### What Legacy Got Right
 
@@ -2359,6 +2478,7 @@ The problem statement outlines a GAM-based knowledge system. Here's how the lega
 **1. Conversational Boundaries**
 
 Problem statement:
+
 > "the system will run cheap models on all messages in their context, attempting to extract conversational boundaries"
 
 The example shows messages spanning main channel + thread that are "all the same conversation":
@@ -2387,6 +2507,7 @@ No memo-to-memo connections. Can't answer "show me everything related to caching
 **4. Deep Researcher**
 
 `researcher.ts` (588 lines) attempts GAM's iterative loop but:
+
 - Marked "too complex" in exploration
 - Missing the "pages" foundation it needs
 - Unclear if actually used
@@ -2402,6 +2523,7 @@ No memo-to-memo connections. Can't answer "show me everything related to caching
 **Short-term**
 
 3. **Memo relationships** - Add connections between memos:
+
    ```sql
    CREATE TABLE memo_links (
        id TEXT PRIMARY KEY,
@@ -2462,6 +2584,7 @@ The key addition is `related_stream_ids` - when a conversation spans main channe
 #### Phase 1: Solo Foundation (Do Now)
 
 **Core Infrastructure:**
+
 1. Workspaces schema (multi-tenant from day one, even for solo)
 2. Streams schema with `type` enum: `scratchpad`, `channel`, `dm`, `thread`
 3. Stream members schema (user ↔ stream relationship)
@@ -2469,19 +2592,12 @@ The key addition is `related_stream_ids` - when a conversation spans main channe
 5. **Messages projection** (events + projection in same transaction)
 6. **Attachments schema** (files are first-class)
 
-**Scratchpad-Specific:**
-7. Multiple scratchpads per user (no auto-created default)
-8. **Pinning** for user-controlled sidebar organization
-9. **AI companion toggle** stored on streams (stream-level, not per-user)
-10. Companion state: `off` | `on` | `next_message_only`
-11. Sharing: scratchpads can be shared or promoted to channels
+**Scratchpad-Specific:** 7. Multiple scratchpads per user (no auto-created default) 8. **Pinning** for user-controlled sidebar organization 9. **AI companion toggle** stored on streams (stream-level, not per-user) 10. Companion state: `off` | `on` | `next_message_only` 11. Sharing: scratchpads can be shared or promoted to channels
 
-**Personas (Minimal):**
-12. Personas table with `managed_by` enum (`system` | `workspace`)
-13. Seed Ariadne as default system persona
-14. Keep `provider:model` format for model selection
+**Personas (Minimal):** 12. Personas table with `managed_by` enum (`system` | `workspace`) 13. Seed Ariadne as default system persona 14. Keep `provider:model` format for model selection
 
 **Patterns to Apply:**
+
 - Repository pattern with `PoolClient` as first param
 - Outbox pattern for real-time events
 - Handler factory pattern for routes
@@ -2490,62 +2606,44 @@ The key addition is `related_stream_ids` - when a conversation spans main channe
 #### Phase 2: Knowledge Layer (When Scratchpad Works)
 
 **Files:**
+
 1. S3 upload/download integration
 2. Text extraction pipeline (PDFs, docs)
 3. File embeddings for semantic search
 
-**Basic GAM:**
-4. Memos as semantic pointers (anchor to source messages)
-5. Lazy enrichment (social signals trigger deeper processing)
-6. Basic memo creation from high-signal content
-7. Simple search (full-text first, vector later)
+**Basic GAM:** 4. Memos as semantic pointers (anchor to source messages) 5. Lazy enrichment (social signals trigger deeper processing) 6. Basic memo creation from high-signal content 7. Simple search (full-text first, vector later)
 
-**AI Integration:**
-8. `lib/ai/` module structure (NOT `ai/ariadne/`)
-9. `AgentService` class (<500 lines) - generic, persona-aware
-10. Session persistence with step-level checkpointing
-11. Outbox-based triggering for companion responses
+**AI Integration:** 8. `lib/ai/` module structure (NOT `ai/ariadne/`) 9. `AgentService` class (<500 lines) - generic, persona-aware 10. Session persistence with step-level checkpointing 11. Outbox-based triggering for companion responses
 
 #### Phase 3: Team Ready (When Solo is Solid)
 
 **Stream Types:**
+
 1. Channels (public/private with slugs)
 2. DMs (exactly two members)
 3. Threads (nested under messages)
 
-**Team Features:**
-4. Invitations and workspace membership
-5. @mentions in messages
-6. Presence indicators
-7. Unread counts and notifications
+**Team Features:** 4. Invitations and workspace membership 5. @mentions in messages 6. Presence indicators 7. Unread counts and notifications
 
-**Search Upgrades:**
-8. Hybrid search (keyword + semantic)
-9. Filter operators (`from:@user`, `in:#channel`, etc.)
+**Search Upgrades:** 8. Hybrid search (keyword + semantic) 9. Filter operators (`from:@user`, `in:#channel`, etc.)
 
 #### Phase 4: Intelligence (Long-term)
 
 **Knowledge System:**
+
 1. Memo links table (knowledge graph foundation)
 2. Knowledge explorer with graph view
 3. Cross-conversation context for AI
 4. Conversation boundary detection
 
-**Advanced AI:**
-5. Dual-tier classification (SLM → LLM escalation)
-6. Context windows in memos (sequence ranges)
-7. Cross-stream conversation tracking
-8. Auto-answer (surface memos without @mention)
+**Advanced AI:** 5. Dual-tier classification (SLM → LLM escalation) 6. Context windows in memos (sequence ranges) 7. Cross-stream conversation tracking 8. Auto-answer (surface memos without @mention)
 
-**Platform:**
-9. Integrations (GitHub, Notion, Figma, etc.)
-10. Smart notifications (urgency detection)
-11. Expert routing based on retrieval data
-12. Cost dashboards per workspace
+**Platform:** 9. Integrations (GitHub, Notion, Figma, etc.) 10. Smart notifications (urgency detection) 11. Expert routing based on retrieval data 12. Cost dashboards per workspace
 
 #### Deferred (Not Priority)
 
 These were in the original recommendations but are premature for solo-first:
+
 - Multi-client token streaming (solo = one client)
 - Orphan session recovery (complexity for later)
 - Full offline-first with CRDTs (nice-to-have)

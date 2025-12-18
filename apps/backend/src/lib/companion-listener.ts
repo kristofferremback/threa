@@ -20,7 +20,7 @@ import { logger } from "./logger"
 export function createCompanionListener(
   pool: Pool,
   jobQueue: JobQueueManager,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">,
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
 ): OutboxListener {
   return new OutboxListener(pool, {
     ...config,
@@ -58,10 +58,7 @@ export function createCompanionListener(
           triggeredBy: message.authorId,
         })
 
-        logger.info(
-          { streamId, messageId: message.id },
-          "Companion job dispatched",
-        )
+        logger.info({ streamId, messageId: message.id }, "Companion job dispatched")
       })
     },
   })

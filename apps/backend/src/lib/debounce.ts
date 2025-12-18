@@ -18,7 +18,7 @@ export class DebounceWithMaxWait {
     private callback: () => void | Promise<void>,
     private debounceMs: number,
     private maxWaitMs: number,
-    private onError?: (error: unknown) => void,
+    private onError?: (error: unknown) => void
   ) {}
 
   trigger(): void {

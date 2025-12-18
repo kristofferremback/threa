@@ -17,7 +17,7 @@ export function useDraftScratchpads(workspaceId: string) {
   const drafts = useLiveQuery(
     () => db.draftScratchpads.where("workspaceId").equals(workspaceId).toArray(),
     [workspaceId],
-    [],
+    []
   )
 
   const createDraft = useCallback(
@@ -32,14 +32,14 @@ export function useDraftScratchpads(workspaceId: string) {
       })
       return id
     },
-    [workspaceId],
+    [workspaceId]
   )
 
   const updateDraft = useCallback(
     async (id: string, data: Partial<Pick<DraftScratchpad, "displayName" | "companionMode">>) => {
       await db.draftScratchpads.update(id, data)
     },
-    [],
+    []
   )
 
   const deleteDraft = useCallback(async (id: string) => {
@@ -50,7 +50,7 @@ export function useDraftScratchpads(workspaceId: string) {
     (id: string): DraftScratchpad | undefined => {
       return drafts?.find((d) => d.id === id)
     },
-    [drafts],
+    [drafts]
   )
 
   return {

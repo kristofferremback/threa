@@ -3,6 +3,7 @@
 ## Problem Statement
 
 The `MessageInput` component contains a full mutation that handles:
+
 - Draft detection and promotion
 - Optimistic updates with IndexedDB
 - Query cache updates
@@ -28,7 +29,7 @@ export const messageSender = {
   }) => {
     // All the logic currently in the mutation
     // Returns { success: true, newStreamId?: string } or throws
-  }
+  },
 }
 ```
 

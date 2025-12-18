@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react"
+import { createContext, useCallback, useEffect, useState, type ReactNode } from "react"
 import type { AuthState, User } from "./types"
 
 interface AuthContextValue extends AuthState {

@@ -42,10 +42,7 @@ export const OutboxListenerRepository = {
    * Uses SKIP LOCKED to prevent transaction build-up when multiple processes
    * compete for the same listener. Callers should retry via polling rather than blocking.
    */
-  async claimListener(
-    client: PoolClient,
-    listenerId: string,
-  ): Promise<ListenerState | null> {
+  async claimListener(client: PoolClient, listenerId: string): Promise<ListenerState | null> {
     const result = await client.query<ListenerRow>(sql`
       SELECT
         listener_id,
@@ -72,11 +69,7 @@ export const OutboxListenerRepository = {
    *
    * IMPORTANT: Must be called within a transaction where claimListener() was called first.
    */
-  async updateCursor(
-    client: PoolClient,
-    listenerId: string,
-    newCursor: bigint,
-  ): Promise<void> {
+  async updateCursor(client: PoolClient, listenerId: string, newCursor: bigint): Promise<void> {
     await client.query(sql`
       UPDATE outbox_listeners
       SET
@@ -102,7 +95,7 @@ export const OutboxListenerRepository = {
     listenerId: string,
     error: string,
     maxRetries: number,
-    baseBackoffMs: number,
+    baseBackoffMs: number
   ): Promise<Date | null> {
     // First get current retry count
     const current = await client.query<{ retry_count: number }>(sql`
@@ -147,7 +140,7 @@ export const OutboxListenerRepository = {
     client: PoolClient,
     listenerId: string,
     eventId: bigint,
-    error: string,
+    error: string
   ): Promise<void> {
     await client.query(sql`
       INSERT INTO outbox_dead_letters (listener_id, outbox_event_id, error)
@@ -169,10 +162,7 @@ export const OutboxListenerRepository = {
   /**
    * Checks if a listener is ready to process (not in retry backoff).
    */
-  async isReadyToProcess(
-    client: PoolClient,
-    listenerId: string,
-  ): Promise<boolean> {
+  async isReadyToProcess(client: PoolClient, listenerId: string): Promise<boolean> {
     const result = await client.query<{ retry_after: Date | null }>(sql`
       SELECT retry_after
       FROM outbox_listeners
@@ -201,7 +191,7 @@ export const OutboxListenerRepository = {
   async ensureListener(
     client: PoolClient,
     listenerId: string,
-    startFromId: bigint = 0n,
+    startFromId: bigint = 0n
   ): Promise<void> {
     await client.query(sql`
       INSERT INTO outbox_listeners (listener_id, last_processed_id)
@@ -215,10 +205,7 @@ export const OutboxListenerRepository = {
    * New listeners will only process events created after registration.
    * Use this for listeners that don't need to backfill historical events.
    */
-  async ensureListenerFromLatest(
-    client: PoolClient,
-    listenerId: string,
-  ): Promise<void> {
+  async ensureListenerFromLatest(client: PoolClient, listenerId: string): Promise<void> {
     await client.query(sql`
       INSERT INTO outbox_listeners (listener_id, last_processed_id)
       SELECT ${listenerId}, COALESCE(MAX(id), 0)
@@ -292,25 +279,19 @@ export async function withClaim(
   pool: Pool,
   listenerId: string,
   callback: (ctx: ClaimContext) => Promise<void>,
-  config?: WithClaimConfig,
+  config?: WithClaimConfig
 ): Promise<WithClaimResult> {
   const { maxRetries, baseBackoffMs } = { ...DEFAULT_CLAIM_CONFIG, ...config }
 
   return withTransaction(pool, async (client) => {
     // Check if we're in retry backoff
-    const isReady = await OutboxListenerRepository.isReadyToProcess(
-      client,
-      listenerId,
-    )
+    const isReady = await OutboxListenerRepository.isReadyToProcess(client, listenerId)
     if (!isReady) {
       return { status: CLAIM_STATUS.NOT_READY }
     }
 
     // Claim exclusive lock on our cursor row
-    const state = await OutboxListenerRepository.claimListener(
-      client,
-      listenerId,
-    )
+    const state = await OutboxListenerRepository.claimListener(client, listenerId)
     if (!state) {
       logger.warn({ listenerId }, "Listener not found in database")
       return { status: CLAIM_STATUS.NOT_READY }
@@ -342,7 +323,7 @@ export async function withClaim(
       const errorMessage = err instanceof Error ? err.message : String(err)
       logger.error(
         { err, listenerId, lastProcessedId: currentCursor.toString() },
-        "Error in withClaim callback",
+        "Error in withClaim callback"
       )
 
       // Try to schedule retry
@@ -351,7 +332,7 @@ export async function withClaim(
         listenerId,
         errorMessage,
         maxRetries,
-        baseBackoffMs,
+        baseBackoffMs
       )
 
       if (retryAfter === null) {
@@ -366,20 +347,16 @@ export async function withClaim(
               eventId: failedEvent.id.toString(),
               eventType: failedEvent.eventType,
             },
-            "Max retries exceeded, moving to dead letter",
+            "Max retries exceeded, moving to dead letter"
           )
           await OutboxListenerRepository.moveToDeadLetter(
             client,
             listenerId,
             failedEvent.id,
-            errorMessage,
+            errorMessage
           )
           // Update cursor past this event so we continue with the next
-          await OutboxListenerRepository.updateCursor(
-            client,
-            listenerId,
-            failedEvent.id,
-          )
+          await OutboxListenerRepository.updateCursor(client, listenerId, failedEvent.id)
         }
       }
 

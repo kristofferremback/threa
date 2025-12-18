@@ -71,10 +71,7 @@ export const StreamEventRepository = {
     return BigInt(result.rows[0].next_sequence)
   },
 
-  async insert(
-    client: PoolClient,
-    params: InsertEventParams,
-  ): Promise<StreamEvent> {
+  async insert(client: PoolClient, params: InsertEventParams): Promise<StreamEvent> {
     const sequence = await this.getNextSequence(client, params.streamId)
 
     const result = await client.query<StreamEventRow>(sql`
@@ -96,7 +93,7 @@ export const StreamEventRepository = {
   async list(
     client: PoolClient,
     streamId: string,
-    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number },
+    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number }
   ): Promise<StreamEvent[]> {
     const limit = filters?.limit ?? 50
     const afterSequence = filters?.afterSequence ?? BigInt(-1)

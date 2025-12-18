@@ -46,7 +46,7 @@ export class ProviderRegistry {
     const colonIndex = providerModelString.indexOf(":")
     if (colonIndex === -1) {
       throw new Error(
-        `Invalid provider:model format: "${providerModelString}". Expected format: "provider:model_id"`,
+        `Invalid provider:model format: "${providerModelString}". Expected format: "provider:model_id"`
       )
     }
 
@@ -55,7 +55,7 @@ export class ProviderRegistry {
 
     if (!provider || !modelId) {
       throw new Error(
-        `Invalid provider:model format: "${providerModelString}". Both provider and model_id are required.`,
+        `Invalid provider:model format: "${providerModelString}". Both provider and model_id are required.`
       )
     }
 
@@ -81,7 +81,7 @@ export class ProviderRegistry {
         return this.getOpenRouterModel(modelId)
       default:
         throw new Error(
-          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
         )
     }
   }
@@ -98,16 +98,14 @@ export class ProviderRegistry {
         return this.getLangChainOpenRouterModel(modelId)
       default:
         throw new Error(
-          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
         )
     }
   }
 
   private getOpenRouterModel(modelId: string): LanguageModel {
     if (!this.openRouterClient) {
-      throw new Error(
-        "OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.",
-      )
+      throw new Error("OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.")
     }
 
     logger.debug({ provider: "openrouter", modelId }, "Creating AI SDK model instance")
@@ -122,9 +120,7 @@ export class ProviderRegistry {
    */
   private getLangChainOpenRouterModel(modelId: string): ChatOpenAI {
     if (!this.openRouterClient) {
-      throw new Error(
-        "OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.",
-      )
+      throw new Error("OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.")
     }
 
     logger.debug({ provider: "openrouter", modelId }, "Creating LangChain model instance")

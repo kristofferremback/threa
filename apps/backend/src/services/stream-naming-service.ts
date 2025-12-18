@@ -18,7 +18,7 @@ export class StreamNamingService {
   constructor(
     private pool: Pool,
     private providerRegistry: ProviderRegistry,
-    private namingModel: string,
+    private namingModel: string
   ) {}
 
   /**
@@ -75,7 +75,7 @@ export class StreamNamingService {
       if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
         logger.debug(
           { streamId, messageCount: messages.length },
-          "Not enough context for auto-naming yet",
+          "Not enough context for auto-naming yet"
         )
         return false
       }

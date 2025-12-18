@@ -11,14 +11,12 @@ export class UserService {
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    return withClient(this.pool, (client) =>
-      UserRepository.findByEmail(client, email),
-    )
+    return withClient(this.pool, (client) => UserRepository.findByEmail(client, email))
   }
 
   async getUserByWorkosUserId(workosUserId: string): Promise<User | null> {
     return withClient(this.pool, (client) =>
-      UserRepository.findByWorkosUserId(client, workosUserId),
+      UserRepository.findByWorkosUserId(client, workosUserId)
     )
   }
 

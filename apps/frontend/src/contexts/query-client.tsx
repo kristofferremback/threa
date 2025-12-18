@@ -1,4 +1,7 @@
-import { QueryClient, QueryClientProvider as TanStackQueryClientProvider } from "@tanstack/react-query"
+import {
+  QueryClient,
+  QueryClientProvider as TanStackQueryClientProvider,
+} from "@tanstack/react-query"
 import { ReactNode, useState } from "react"
 
 function makeQueryClient() {
@@ -29,9 +32,5 @@ interface QueryClientProviderProps {
 export function QueryClientProvider({ children }: QueryClientProviderProps) {
   const [queryClient] = useState(getQueryClient)
 
-  return (
-    <TanStackQueryClientProvider client={queryClient}>
-      {children}
-    </TanStackQueryClientProvider>
-  )
+  return <TanStackQueryClientProvider client={queryClient}>{children}</TanStackQueryClientProvider>
 }

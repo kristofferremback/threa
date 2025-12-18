@@ -35,17 +35,14 @@ export function createAuthHandlers({ authService, userService }: Dependencies) {
       await userService.ensureUser({
         email: result.user.email,
         name:
-          [result.user.firstName, result.user.lastName]
-            .filter(Boolean)
-            .join(" ") || result.user.email,
+          [result.user.firstName, result.user.lastName].filter(Boolean).join(" ") ||
+          result.user.email,
         workosUserId: result.user.id,
       })
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
 
-      const redirectTo = state
-        ? Buffer.from(state, "base64").toString("utf-8")
-        : "/"
+      const redirectTo = state ? Buffer.from(state, "base64").toString("utf-8") : "/"
 
       res.redirect(redirectTo)
     },

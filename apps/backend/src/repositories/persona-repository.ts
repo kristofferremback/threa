@@ -72,7 +72,7 @@ export const PersonaRepository = {
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
         WHERE id = ${id}
-      `,
+      `
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
@@ -80,7 +80,7 @@ export const PersonaRepository = {
   async findBySlug(
     client: PoolClient,
     slug: string,
-    workspaceId?: string | null,
+    workspaceId?: string | null
   ): Promise<Persona | null> {
     // System personas have null workspace_id
     if (workspaceId === null || workspaceId === undefined) {
@@ -89,7 +89,7 @@ export const PersonaRepository = {
           SELECT ${sql.raw(SELECT_FIELDS)}
           FROM personas
           WHERE slug = ${slug} AND workspace_id IS NULL
-        `,
+        `
       )
       return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
     }
@@ -102,7 +102,7 @@ export const PersonaRepository = {
         WHERE slug = ${slug} AND (workspace_id = ${workspaceId} OR workspace_id IS NULL)
         ORDER BY workspace_id NULLS LAST
         LIMIT 1
-      `,
+      `
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
@@ -118,7 +118,7 @@ export const PersonaRepository = {
         WHERE managed_by = 'system' AND status = 'active'
         ORDER BY created_at ASC
         LIMIT 1
-      `,
+      `
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },

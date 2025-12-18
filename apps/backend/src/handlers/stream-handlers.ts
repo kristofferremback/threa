@@ -4,26 +4,27 @@ import type { StreamService } from "../services/stream-service"
 import type { EventService } from "../services/event-service"
 import type { EventType, StreamEvent } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
-import {
-  streamTypeSchema,
-  visibilitySchema,
-  companionModeSchema,
-} from "../lib/constants"
+import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/constants"
 
-const createStreamSchema = z.object({
-  type: streamTypeSchema.extract(["scratchpad", "channel"]),
-  slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-    message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
-  }).optional(),
-  displayName: z.string().min(1).max(100).optional(),
-  description: z.string().optional(),
-  visibility: visibilitySchema.optional(),
-  companionMode: companionModeSchema.optional(),
-  companionPersonaId: z.string().optional(),
-}).refine(
-  (data) => data.type !== "channel" || data.slug,
-  { message: "Slug is required for channels", path: ["slug"] },
-)
+const createStreamSchema = z
+  .object({
+    type: streamTypeSchema.extract(["scratchpad", "channel"]),
+    slug: z
+      .string()
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
+        message: "Slug must be lowercase alphanumeric with hyphens (no leading/trailing hyphens)",
+      })
+      .optional(),
+    displayName: z.string().min(1).max(100).optional(),
+    description: z.string().optional(),
+    visibility: visibilitySchema.optional(),
+    companionMode: companionModeSchema.optional(),
+    companionPersonaId: z.string().optional(),
+  })
+  .refine((data) => data.type !== "channel" || data.slug, {
+    message: "Slug is required for channels",
+    path: ["slug"],
+  })
 
 const updateStreamSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -62,7 +63,10 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       const { stream_type } = req.query
 
       const types = stream_type
-        ? (Array.isArray(stream_type) ? stream_type : [stream_type]) as ("scratchpad" | "channel")[]
+        ? ((Array.isArray(stream_type) ? stream_type : [stream_type]) as (
+            | "scratchpad"
+            | "channel"
+          )[])
         : undefined
 
       const streams = await streamService.list(workspaceId, userId, { types })
@@ -81,7 +85,15 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         })
       }
 
-      const { type, slug, displayName, description, visibility, companionMode, companionPersonaId } = result.data
+      const {
+        type,
+        slug,
+        displayName,
+        description,
+        visibility,
+        companionMode,
+        companionPersonaId,
+      } = result.data
 
       const stream = await streamService.create({
         workspaceId,
@@ -139,9 +151,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const types = type
-        ? (Array.isArray(type) ? type : [type]) as EventType[]
-        : undefined
+      const types = type ? ((Array.isArray(type) ? type : [type]) as EventType[]) : undefined
 
       const events = await eventService.listEvents(streamId, {
         types,
@@ -177,7 +187,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       const updated = await streamService.updateCompanionMode(
         streamId,
         companionMode,
-        companionPersonaId,
+        companionPersonaId
       )
 
       res.json({ stream: updated })

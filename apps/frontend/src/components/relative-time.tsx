@@ -74,7 +74,11 @@ function formatRelativeTime(date: Date): string {
   }
 
   // Different year: show full date
-  const fullDate = date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+  const fullDate = date.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
   return `${fullDate} ${time}`
 }
 

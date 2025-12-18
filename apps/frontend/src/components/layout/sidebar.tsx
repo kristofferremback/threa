@@ -44,7 +44,11 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const handleCreateChannel = async () => {
     const name = prompt("Channel name:")
     if (!name?.trim()) return
-    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    const slug = name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
     if (!slug) return
 
     const stream = await createStream.mutateAsync({ type: StreamTypes.CHANNEL, slug })
@@ -94,13 +98,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                       isDraft={item.isDraft}
                       isActive={item.id === activeStreamId}
                       onRename={(newName) =>
-                        item.isDraft
-                          ? updateDraft(item.id, { displayName: newName })
-                          : undefined
+                        item.isDraft ? updateDraft(item.id, { displayName: newName }) : undefined
                       }
-                      onArchive={() =>
-                        item.isDraft ? deleteDraft(item.id) : undefined
-                      }
+                      onArchive={() => (item.isDraft ? deleteDraft(item.id) : undefined)}
                     />
                   ))
                 )}
@@ -171,7 +171,7 @@ function StreamItem({ workspaceId, streamId, name, isActive }: StreamItemProps) 
       to={`/w/${workspaceId}/s/${streamId}`}
       className={cn(
         "block rounded-md px-2 py-1.5 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
       )}
     >
       {name}
@@ -270,7 +270,7 @@ function ScratchpadItem({
     <div
       className={cn(
         "group flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
       )}
     >
       <Link to={`/w/${workspaceId}/s/${id}`} className="flex-1 truncate">

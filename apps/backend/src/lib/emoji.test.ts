@@ -1,5 +1,11 @@
 import { describe, test, expect } from "bun:test"
-import { toShortcode, toEmoji, isValidShortcode, getShortcodeNames, normalizeMessage } from "./emoji"
+import {
+  toShortcode,
+  toEmoji,
+  isValidShortcode,
+  getShortcodeNames,
+  normalizeMessage,
+} from "./emoji"
 
 describe("Emoji Library", () => {
   describe("toShortcode", () => {
