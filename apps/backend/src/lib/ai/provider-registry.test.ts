@@ -43,20 +43,6 @@ describe("ProviderRegistry", () => {
     })
   })
 
-  describe("isSupportedProvider", () => {
-    it("should return true for openrouter", () => {
-      expect(registry.isSupportedProvider("openrouter")).toBe(true)
-    })
-
-    it("should return false for anthropic (not yet supported)", () => {
-      expect(registry.isSupportedProvider("anthropic")).toBe(false)
-    })
-
-    it("should return false for unknown provider", () => {
-      expect(registry.isSupportedProvider("unknown")).toBe(false)
-    })
-  })
-
   describe("getModel", () => {
     it("should throw for unsupported provider", () => {
       expect(() => registry.getModel("anthropic:claude-3")).toThrow('Unsupported provider: "anthropic"')
@@ -76,19 +62,6 @@ describe("ProviderRegistry", () => {
       expect(() => registry.getLangChainModel("openrouter:anthropic/claude-3-haiku")).toThrow(
         "OpenRouter is not configured"
       )
-    })
-  })
-
-  describe("hasConfiguredProviders", () => {
-    it("should return false when no providers configured", () => {
-      expect(registry.hasConfiguredProviders()).toBe(false)
-    })
-
-    it("should return true when openrouter configured", () => {
-      const configuredRegistry = new ProviderRegistry({
-        openrouter: { apiKey: "test-key" },
-      })
-      expect(configuredRegistry.hasConfiguredProviders()).toBe(true)
     })
   })
 })

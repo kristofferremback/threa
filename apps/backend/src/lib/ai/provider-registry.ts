@@ -5,9 +5,9 @@ import { logger } from "../logger"
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-export type SupportedProvider = "openrouter"
+const SUPPORTED_PROVIDERS = ["openrouter"] as const
 
-const SUPPORTED_PROVIDERS: SupportedProvider[] = ["openrouter"]
+export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number]
 
 export interface ProviderRegistryConfig {
   openrouter?: {
@@ -23,7 +23,7 @@ export class ProviderRegistry {
   private openRouterClient: ReturnType<typeof createOpenRouter> | null = null
   private openRouterApiKey: string | null = null
 
-  constructor(private config: ProviderRegistryConfig) {
+  constructor(config: ProviderRegistryConfig) {
     if (config.openrouter?.apiKey) {
       this.openRouterClient = createOpenRouter({
         apiKey: config.openrouter.apiKey,
@@ -58,13 +58,6 @@ export class ProviderRegistry {
     }
 
     return { provider, modelId }
-  }
-
-  /**
-   * Check if a provider is supported.
-   */
-  isSupportedProvider(provider: string): provider is SupportedProvider {
-    return SUPPORTED_PROVIDERS.includes(provider as SupportedProvider)
   }
 
   /**
@@ -106,31 +99,18 @@ export class ProviderRegistry {
     return this.openRouterClient.chat(modelId)
   }
 
-  /**
-   * Create a LangChain ChatOpenAI instance for the given model.
-   * Unlike AI SDK which uses a shared client, LangChain models are created per-call
-   * since each ChatOpenAI instance is tied to a specific model. This is intentional -
-   * ChatOpenAI is stateless and cheap to construct.
-   */
   private getLangChainOpenRouterModel(modelId: string): ChatOpenAI {
-    if (!this.openRouterClient) {
+    if (!this.openRouterApiKey) {
       throw new Error("OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.")
     }
 
     logger.debug({ provider: "openrouter", modelId }, "Creating LangChain model instance")
     return new ChatOpenAI({
-      modelName: modelId,
-      openAIApiKey: this.openRouterApiKey!,
+      model: modelId,
+      apiKey: this.openRouterApiKey,
       configuration: {
         baseURL: OPENROUTER_BASE_URL,
       },
     })
-  }
-
-  /**
-   * Check if the registry has any configured providers.
-   */
-  hasConfiguredProviders(): boolean {
-    return this.openRouterClient !== null
   }
 }

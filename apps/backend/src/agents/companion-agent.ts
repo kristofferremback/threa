@@ -90,12 +90,12 @@ export async function withSession(
         sessionId: session.id,
         responseMessageId,
       }
-    } catch (error) {
-      logger.error({ error, sessionId: session.id }, "Session failed")
+    } catch (err) {
+      logger.error({ err, sessionId: session.id }, "Session failed")
 
       await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.FAILED, {
-        error: String(error),
-      }).catch((e) => logger.error({ e }, "Failed to mark session as failed"))
+        error: String(err),
+      }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
 
       return { status: "failed" as const, sessionId: session.id }
     }

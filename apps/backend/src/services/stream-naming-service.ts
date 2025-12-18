@@ -67,8 +67,8 @@ export class StreamNamingService {
           temperature: 0.3,
         })
         generatedName = result.text?.trim() || null
-      } catch (error) {
-        logger.error({ error, streamId }, "Failed to generate stream name")
+      } catch (err) {
+        logger.error({ err, streamId }, "Failed to generate stream name")
         return false
       }
 
