@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useStreamBootstrap, useDraftScratchpads, useUpdateStream, useDeleteStream, isDraftId } from "@/hooks"
 import { TimelineView } from "@/components/timeline"
-import { StreamTypes } from "@/types/domain"
+import { StreamTypes } from "@threa/types"
 import { db } from "@/db"
 
 export function StreamPage() {

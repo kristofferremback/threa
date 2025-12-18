@@ -21,7 +21,7 @@ import {
   useDraftScratchpads,
   workspaceKeys,
 } from "@/hooks"
-import { StreamTypes } from "@/types/domain"
+import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 
 interface SidebarProps {

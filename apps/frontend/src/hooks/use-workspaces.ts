@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useWorkspaceService } from "@/contexts"
 import { db } from "@/db"
-import type { Workspace } from "@/types/domain"
+import type { Workspace } from "@threa/types"
 
 // Query keys for cache management
 export const workspaceKeys = {

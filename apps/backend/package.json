@@ -12,6 +12,7 @@
     "test:watch": "bun test --watch src/"
   },
   "dependencies": {
+    "@threa/types": "workspace:*",
     "@langchain/core": "^1.1.5",
     "@langchain/langgraph": "^1.0.5",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.0",

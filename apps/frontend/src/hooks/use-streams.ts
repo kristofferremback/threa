@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useStreamService } from "@/contexts"
 import { db } from "@/db"
-import type { Stream, StreamType } from "@/types/domain"
+import type { Stream, StreamType } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
 

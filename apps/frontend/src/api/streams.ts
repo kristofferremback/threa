@@ -1,32 +1,14 @@
 import { api } from "./client"
-import type { Stream, StreamMember, StreamEvent, StreamType, Visibility, CompanionMode } from "@/types/domain"
+import type {
+  Stream,
+  StreamEvent,
+  StreamType,
+  StreamBootstrap,
+  CreateStreamInput,
+  UpdateStreamInput,
+} from "@threa/types"
 
-// Bootstrap response - everything needed to render a stream
-export interface StreamBootstrap {
-  stream: Stream
-  events: StreamEvent[]
-  members: StreamMember[]
-  membership: StreamMember | null
-  latestSequence: string
-}
-
-export interface CreateStreamInput {
-  type: StreamType
-  displayName?: string
-  slug?: string
-  description?: string
-  visibility?: Visibility
-  companionMode?: CompanionMode
-  companionPersonaId?: string
-}
-
-export interface UpdateStreamInput {
-  displayName?: string
-  description?: string
-  visibility?: Visibility
-  companionMode?: CompanionMode
-  companionPersonaId?: string
-}
+export type { StreamBootstrap, CreateStreamInput, UpdateStreamInput }
 
 export const streamsApi = {
   async list(workspaceId: string, params?: { type?: StreamType }): Promise<Stream[]> {

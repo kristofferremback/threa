@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback } from "react"
 import { db, type DraftScratchpad } from "@/db"
-import type { CompanionMode } from "@/types/domain"
+import type { CompanionMode } from "@threa/types"
 
 function generateDraftId(): string {
   const timestamp = Date.now().toString(36)

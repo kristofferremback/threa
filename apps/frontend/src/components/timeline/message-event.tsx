@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@/types/domain"
+import type { StreamEvent } from "@threa/types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { RelativeTime } from "@/components/relative-time"
 import { cn } from "@/lib/utils"

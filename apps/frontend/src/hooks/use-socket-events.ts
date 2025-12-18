@@ -4,7 +4,7 @@ import { useSocket } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { Stream } from "@/types/domain"
+import type { Stream } from "@threa/types"
 
 interface StreamPayload {
   workspaceId: string
