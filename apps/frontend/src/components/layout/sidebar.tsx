@@ -1,10 +1,11 @@
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useNavigate } from "react-router-dom"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useWorkspaceBootstrap } from "@/hooks"
-import { StreamTypes } from "@/types/domain"
+import { useWorkspaceBootstrap, useCreateStream, workspaceKeys } from "@/hooks"
+import { StreamTypes, type StreamType } from "@/types/domain"
+import { useQueryClient } from "@tanstack/react-query"
 
 interface SidebarProps {
   workspaceId: string
@@ -13,6 +14,28 @@ interface SidebarProps {
 export function Sidebar({ workspaceId }: SidebarProps) {
   const { streamId: activeStreamId } = useParams<{ streamId: string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
+  const createStream = useCreateStream(workspaceId)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const handleCreateStream = async (type: StreamType) => {
+    let displayName: string | undefined
+    let slug: string | undefined
+
+    if (type === StreamTypes.CHANNEL) {
+      const name = prompt("Channel name:")
+      if (!name?.trim()) return
+      slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+      if (!slug) return
+    } else {
+      displayName = "New Scratchpad"
+    }
+
+    const stream = await createStream.mutateAsync({ type, displayName, slug })
+    // Invalidate workspace bootstrap to refresh sidebar
+    queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+    navigate(`/w/${workspaceId}/s/${stream.id}`)
+  }
 
   const streams = bootstrap?.streams ?? []
   const scratchpads = streams.filter((s) => s.type === StreamTypes.SCRATCHPAD)
@@ -50,7 +73,13 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                     />
                   ))
                 )}
-                <Button variant="ghost" size="sm" className="mt-1 w-full justify-start text-xs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-full justify-start text-xs"
+                  onClick={() => handleCreateStream(StreamTypes.SCRATCHPAD)}
+                  disabled={createStream.isPending}
+                >
                   + New Scratchpad
                 </Button>
               </SidebarSection>
@@ -72,7 +101,13 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                     />
                   ))
                 )}
-                <Button variant="ghost" size="sm" className="mt-1 w-full justify-start text-xs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-full justify-start text-xs"
+                  onClick={() => handleCreateStream(StreamTypes.CHANNEL)}
+                  disabled={createStream.isPending}
+                >
                   + New Channel
                 </Button>
               </SidebarSection>
