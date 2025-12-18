@@ -3,6 +3,7 @@ import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
+import { OutboxRepository } from "../repositories/outbox-repository"
 import { streamId } from "../lib/id"
 import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
 import {
@@ -162,6 +163,13 @@ export class StreamService {
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
 
+      // Publish to outbox for real-time delivery
+      await OutboxRepository.insert(client, "stream:created", {
+        workspaceId: params.workspaceId,
+        streamId: stream.id,
+        stream,
+      })
+
       return stream
     })
   }
@@ -189,6 +197,13 @@ export class StreamService {
 
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
+
+      // Publish to outbox for real-time delivery
+      await OutboxRepository.insert(client, "stream:created", {
+        workspaceId: params.workspaceId,
+        streamId: stream.id,
+        stream,
+      })
 
       return stream
     })
@@ -221,6 +236,13 @@ export class StreamService {
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
 
+      // Publish to outbox for real-time delivery
+      await OutboxRepository.insert(client, "stream:created", {
+        workspaceId: params.workspaceId,
+        streamId: stream.id,
+        stream,
+      })
+
       return stream
     })
   }
@@ -239,11 +261,31 @@ export class StreamService {
   }
 
   async archiveStream(streamId: string): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) => StreamRepository.update(client, streamId, { archivedAt: new Date() }))
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.update(client, streamId, { archivedAt: new Date() })
+      if (stream) {
+        await OutboxRepository.insert(client, "stream:archived", {
+          workspaceId: stream.workspaceId,
+          streamId: stream.id,
+          stream,
+        })
+      }
+      return stream
+    })
   }
 
   async updateStream(streamId: string, data: { displayName?: string; description?: string }): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) => StreamRepository.update(client, streamId, data))
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.update(client, streamId, data)
+      if (stream) {
+        await OutboxRepository.insert(client, "stream:updated", {
+          workspaceId: stream.workspaceId,
+          streamId: stream.id,
+          stream,
+        })
+      }
+      return stream
+    })
   }
 
   async updateDisplayName(
