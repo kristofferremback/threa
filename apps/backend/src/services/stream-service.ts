@@ -276,6 +276,10 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamMemberRepository.findByStreamAndUser(client, streamId, userId))
   }
 
+  async getMembershipsBatch(streamIds: string[], userId: string): Promise<StreamMember[]> {
+    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndUser(client, streamIds, userId))
+  }
+
   async isMember(streamId: string, userId: string): Promise<boolean> {
     return withClient(this.pool, (client) => StreamMemberRepository.isMember(client, streamId, userId))
   }
