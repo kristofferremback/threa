@@ -46,6 +46,40 @@ threa/
 - Build: Vite
 - Routing: react-router-dom v7
 - Real-time: socket.io-client
+- UI Components: Shadcn UI (Golden Thread theme)
+- Styling: Tailwind CSS
+
+## Shadcn UI Reference
+
+Shadcn UI is a collection of accessible components built on Radix UI primitives and Tailwind CSS. Components are copied into the codebase (not imported from npm), allowing full customization.
+
+**Installation:**
+```bash
+cd apps/frontend
+bunx shadcn@latest add <component-name>
+```
+
+**Installed components** (`apps/frontend/src/components/ui/`):
+accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, context-menu, dialog, drawer, dropdown-menu, form, hover-card, input, input-otp, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner, switch, table, tabs, textarea, toggle, toggle-group, tooltip
+
+All core Shadcn components are installed. If a new component is added to shadcn/ui, install via `bunx shadcn@latest add <component>`.
+
+**Usage pattern:**
+```tsx
+import { Button } from "@/components/ui/button"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+
+<Card>
+  <CardHeader>
+    <CardTitle>Title</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <Button>Click me</Button>
+  </CardContent>
+</Card>
+```
+
+**Golden Thread theme**: The custom theme uses warm neutrals with gold accents. Primary color is gold (`--primary: 38 65% 50%`). Use sparingly for key UI moments. Custom utilities available: `thread-gradient`, `text-thread`, `border-thread`, `thread-glow`.
 
 ## Core Concepts
 
@@ -122,6 +156,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-11** | No Silent Fallbacks | Fail loudly on misconfiguration; don't paper over missing data with defaults |
 | **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies. |
 | **INV-13** | Construct, Don't Assemble | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies. |
+| **INV-14** | Shadcn UI Components | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components. |
 
 When introducing a new invariant:
 1. Document it here with next available ID
