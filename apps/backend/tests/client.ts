@@ -114,11 +114,7 @@ export interface StreamEvent {
   createdAt: string
 }
 
-export async function loginAs(
-  client: TestClient,
-  email: string,
-  name: string
-): Promise<User> {
+export async function loginAs(client: TestClient, email: string, name: string): Promise<User> {
   const { status, data } = await client.post<{ user: User }>("/api/dev/login", {
     email,
     name,
@@ -129,14 +125,8 @@ export async function loginAs(
   return data.user
 }
 
-export async function createWorkspace(
-  client: TestClient,
-  name: string
-): Promise<Workspace> {
-  const { status, data } = await client.post<{ workspace: Workspace }>(
-    "/api/workspaces",
-    { name }
-  )
+export async function createWorkspace(client: TestClient, name: string): Promise<Workspace> {
+  const { status, data } = await client.post<{ workspace: Workspace }>("/api/workspaces", { name })
   if (status !== 201) {
     throw new Error(`Create workspace failed: ${JSON.stringify(data)}`)
   }
@@ -319,9 +309,7 @@ export async function deleteMessage(
   workspaceId: string,
   messageId: string
 ): Promise<void> {
-  const { status } = await client.delete(
-    `/api/workspaces/${workspaceId}/messages/${messageId}`
-  )
+  const { status } = await client.delete(`/api/workspaces/${workspaceId}/messages/${messageId}`)
   if (status !== 204) {
     throw new Error(`Delete message failed with status ${status}`)
   }

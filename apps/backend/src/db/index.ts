@@ -4,10 +4,7 @@ import { logger } from "../lib/logger"
 
 export { sql }
 
-export function createDatabasePool(
-  connectionString: string,
-  config?: Partial<PoolConfig>,
-): Pool {
+export function createDatabasePool(connectionString: string, config?: Partial<PoolConfig>): Pool {
   const pool = new Pool({
     connectionString,
     max: 20,
@@ -25,7 +22,7 @@ export function createDatabasePool(
 
 export async function withTransaction<T>(
   pool: Pool,
-  callback: (client: PoolClient) => Promise<T>,
+  callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect()
   try {
@@ -43,7 +40,7 @@ export async function withTransaction<T>(
 
 export async function withClient<T>(
   pool: Pool,
-  callback: (client: PoolClient) => Promise<T>,
+  callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect()
   try {

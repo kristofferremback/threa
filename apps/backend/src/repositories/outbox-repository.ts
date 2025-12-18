@@ -72,7 +72,7 @@ export interface OutboxEvent<T extends OutboxEventType = OutboxEventType> {
  */
 export function isOutboxEventType<T extends OutboxEventType>(
   event: OutboxEvent,
-  eventType: T,
+  eventType: T
 ): event is OutboxEvent<T> {
   return event.eventType === eventType
 }
@@ -99,7 +99,7 @@ export const OutboxRepository = {
   async insert<T extends OutboxEventType>(
     client: PoolClient,
     eventType: T,
-    payload: OutboxEventPayloadMap[T],
+    payload: OutboxEventPayloadMap[T]
   ): Promise<OutboxEvent<T>> {
     const result = await client.query<OutboxRow>(sql`
       INSERT INTO outbox (event_type, payload)
@@ -120,7 +120,7 @@ export const OutboxRepository = {
   async fetchAfterId(
     client: PoolClient,
     afterId: bigint,
-    limit: number = 100,
+    limit: number = 100
   ): Promise<OutboxEvent[]> {
     const result = await client.query<OutboxRow>(sql`
       SELECT id, event_type, payload, created_at

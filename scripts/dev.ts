@@ -3,8 +3,7 @@ import { $ } from "bun"
 async function waitForPostgres(maxAttempts = 30): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const result =
-        await $`docker compose exec -T postgres pg_isready -U threa -d threa`.quiet()
+      const result = await $`docker compose exec -T postgres pg_isready -U threa -d threa`.quiet()
       if (result.exitCode === 0) {
         return true
       }

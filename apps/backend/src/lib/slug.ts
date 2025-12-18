@@ -10,7 +10,7 @@ export function generateSlug(name: string): string {
 
 export async function generateUniqueSlug(
   baseName: string,
-  checkExists: (slug: string) => Promise<boolean>,
+  checkExists: (slug: string) => Promise<boolean>
 ): Promise<string> {
   let baseSlug = generateSlug(baseName)
 

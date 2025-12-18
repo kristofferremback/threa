@@ -22,7 +22,7 @@ export function serializeBigInt<T>(value: T): T {
   }
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, serializeBigInt(v)]),
+      Object.entries(value).map(([k, v]) => [k, serializeBigInt(v)])
     ) as unknown as T
   }
   return value

@@ -1,6 +1,10 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
-import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
+import {
+  StreamEventRepository,
+  EventType,
+  StreamEvent,
+} from "../repositories/stream-event-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
@@ -153,7 +157,7 @@ export class EventService {
       const message = await MessageRepository.updateContent(
         client,
         params.messageId,
-        params.content,
+        params.content
       )
 
       if (message) {
@@ -220,7 +224,7 @@ export class EventService {
         client,
         params.messageId,
         params.emoji,
-        params.userId,
+        params.userId
       )
 
       if (message) {
@@ -259,7 +263,7 @@ export class EventService {
         client,
         params.messageId,
         params.emoji,
-        params.userId,
+        params.userId
       )
 
       if (message) {
@@ -279,25 +283,19 @@ export class EventService {
 
   async getMessages(
     streamId: string,
-    options?: { limit?: number; beforeSequence?: bigint },
+    options?: { limit?: number; beforeSequence?: bigint }
   ): Promise<Message[]> {
-    return withClient(this.pool, (client) =>
-      MessageRepository.list(client, streamId, options),
-    )
+    return withClient(this.pool, (client) => MessageRepository.list(client, streamId, options))
   }
 
   async getMessageById(messageId: string): Promise<Message | null> {
-    return withClient(this.pool, (client) =>
-      MessageRepository.findById(client, messageId),
-    )
+    return withClient(this.pool, (client) => MessageRepository.findById(client, messageId))
   }
 
   async listEvents(
     streamId: string,
-    filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint },
+    filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint }
   ): Promise<StreamEvent[]> {
-    return withClient(this.pool, (client) =>
-      StreamEventRepository.list(client, streamId, filters),
-    )
+    return withClient(this.pool, (client) => StreamEventRepository.list(client, streamId, filters))
   }
 }

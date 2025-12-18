@@ -70,10 +70,7 @@ export class WorkosAuthService implements AuthService {
           cookiePassword: this.cookiePassword,
         })
         if (refreshResult.authenticated && refreshResult.sealedSession) {
-          logger.debug(
-            { email: refreshResult.user.email },
-            "Session refreshed successfully",
-          )
+          logger.debug({ email: refreshResult.user.email }, "Session refreshed successfully")
           return {
             success: true,
             user: {
@@ -87,10 +84,7 @@ export class WorkosAuthService implements AuthService {
           }
         }
       } catch (error) {
-        logger.error(
-          { err: error, reason: authRes.reason },
-          "Session refresh error",
-        )
+        logger.error({ err: error, reason: authRes.reason }, "Session refresh error")
       }
     }
 
@@ -103,16 +97,15 @@ export class WorkosAuthService implements AuthService {
 
   async authenticateWithCode(code: string): Promise<AuthResult> {
     try {
-      const { user, sealedSession } =
-        await this.workos.userManagement.authenticateWithCode({
-          code,
-          clientId: this.clientId,
-          session: { sealSession: true, cookiePassword: this.cookiePassword },
-        })
+      const { user, sealedSession } = await this.workos.userManagement.authenticateWithCode({
+        code,
+        clientId: this.clientId,
+        session: { sealSession: true, cookiePassword: this.cookiePassword },
+      })
 
       logger.info(
         { email: user.email, sealedSession: !!sealedSession },
-        "User authenticated with code",
+        "User authenticated with code"
       )
 
       return {

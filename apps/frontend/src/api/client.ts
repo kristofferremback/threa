@@ -4,7 +4,7 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
-    public details?: Record<string, unknown>,
+    public details?: Record<string, unknown>
   ) {
     super(message)
     this.name = "ApiError"
@@ -25,10 +25,7 @@ interface ErrorResponse {
 }
 
 // Base fetch wrapper with error handling
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
     credentials: "include", // Include cookies for auth
@@ -48,11 +45,7 @@ async function apiFetch<T>(
   try {
     body = await response.json()
   } catch {
-    throw new ApiError(
-      response.status,
-      "PARSE_ERROR",
-      "Failed to parse server response",
-    )
+    throw new ApiError(response.status, "PARSE_ERROR", "Failed to parse server response")
   }
 
   // Handle error responses
@@ -61,7 +54,7 @@ async function apiFetch<T>(
       response.status,
       body.error?.code || "UNKNOWN_ERROR",
       body.error?.message || `Request failed with status ${response.status}`,
-      body.error?.details,
+      body.error?.details
     )
   }
 

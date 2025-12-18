@@ -22,7 +22,7 @@ export class StubAuthService implements AuthService {
    */
   async devLogin(
     userService: UserService,
-    options: { email?: string; name?: string } = {},
+    options: { email?: string; name?: string } = {}
   ): Promise<DevLoginResult> {
     const email = options.email || "test@example.com"
     const name = options.name || "Test User"

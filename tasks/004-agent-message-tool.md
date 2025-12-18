@@ -17,6 +17,7 @@ const responseMessage = await createMessage({
 ```
 
 This is inflexible:
+
 1. **Agent can't choose silence** - Sometimes the right response is no response
 2. **Agent can't send multiple messages** - Can't break up long responses or send follow-ups
 3. **Agent can't delay responses** - Can't "think" and then respond later
@@ -38,6 +39,7 @@ This is inflexible:
 ```
 
 The agent can then:
+
 - Choose not to respond (return without calling the tool)
 - Send one message (call once)
 - Send multiple messages (call multiple times)
@@ -121,6 +123,7 @@ Recommend **Option B** for simplicity - we can always query messages by time ran
 ### Handling "No Response"
 
 If the agent chooses not to respond:
+
 - Session still completes successfully
 - No `responseMessageId` set (already nullable)
 - Log the choice for observability
@@ -138,16 +141,19 @@ if (shouldRespond(context)) {
 ## Implementation Phases
 
 ### Phase 1: Tool Infrastructure
+
 - Create tool definition interface
 - Create `message-tool.ts`
 - Wire into graph
 
 ### Phase 2: Multi-Message Support
+
 - Update session schema if needed (probably not)
 - Handle multiple tool calls in single turn
 - Rate limiting? (prevent runaway message spam)
 
 ### Phase 3: Silence Handling
+
 - Update session completion logic
 - Add observability for silence cases
 - Consider: should silence trigger a different session status?

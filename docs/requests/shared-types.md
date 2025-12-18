@@ -5,6 +5,7 @@
 Frontend has duplicated type definitions that mirror the backend. These are maintained separately with "keep in sync" comments, which is error-prone and creates maintenance burden.
 
 Files affected:
+
 - `apps/frontend/src/types/domain.ts` - duplicates backend domain types
 - `apps/frontend/src/api/streams.ts` - defines `StreamBootstrap` and other API response types
 

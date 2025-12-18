@@ -1,11 +1,6 @@
 import { Pool, PoolClient } from "pg"
 import { withTransaction } from "../db"
-import {
-  OutboxListenerRepository,
-  OUTBOX_CHANNEL,
-  OutboxEvent,
-  withClaim,
-} from "../repositories"
+import { OutboxListenerRepository, OUTBOX_CHANNEL, OutboxEvent, withClaim } from "../repositories"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
 
@@ -102,10 +97,7 @@ export class OutboxListener {
         this.debounceMs,
         this.maxWaitMs,
         (err) =>
-          logger.error(
-            { err, listenerId: this.listenerId },
-            "OutboxListener debouncer error",
-          ),
+          logger.error({ err, listenerId: this.listenerId }, "OutboxListener debouncer error")
       )
 
       await this.setupListener()
@@ -121,7 +113,7 @@ export class OutboxListener {
           maxWaitMs: this.maxWaitMs,
           fallbackPollMs: this.fallbackPollMs,
         },
-        "OutboxListener started",
+        "OutboxListener started"
       )
     } catch (err) {
       this.cleanup()
@@ -177,23 +169,14 @@ export class OutboxListener {
       })
 
       this.listenClient.on("error", (err) => {
-        logger.error(
-          { err, listenerId: this.listenerId },
-          "LISTEN client error, reconnecting...",
-        )
+        logger.error({ err, listenerId: this.listenerId }, "LISTEN client error, reconnecting...")
         this.reconnectListener()
       })
 
       await this.listenClient.query(`LISTEN ${OUTBOX_CHANNEL}`)
-      logger.debug(
-        { listenerId: this.listenerId },
-        "LISTEN connection established",
-      )
+      logger.debug({ listenerId: this.listenerId }, "LISTEN connection established")
     } catch (err) {
-      logger.error(
-        { err, listenerId: this.listenerId },
-        "Failed to setup LISTEN connection",
-      )
+      logger.error({ err, listenerId: this.listenerId }, "Failed to setup LISTEN connection")
       this.scheduleReconnect()
     }
   }
@@ -232,10 +215,7 @@ export class OutboxListener {
       try {
         await this.processEvents()
       } catch (err) {
-        logger.error(
-          { err, listenerId: this.listenerId },
-          "OutboxListener fallback poll error",
-        )
+        logger.error({ err, listenerId: this.listenerId }, "OutboxListener fallback poll error")
       }
       this.startFallbackPoll()
     }, this.fallbackPollMs)
@@ -262,11 +242,11 @@ export class OutboxListener {
 
           logger.debug(
             { listenerId: this.listenerId, count: events.length },
-            "Processed outbox events",
+            "Processed outbox events"
           )
         }
       },
-      { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs },
+      { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs }
     )
   }
 }

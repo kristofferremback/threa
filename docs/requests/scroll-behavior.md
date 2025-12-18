@@ -12,26 +12,31 @@ Current scroll behavior auto-scrolls to the bottom on new messages, which is pro
 ## Requirements
 
 ### When opening a stream (existing member)
+
 - Find the earliest unread message
 - Center it in the viewport
 - Show unread divider if applicable
 
 ### When opening a stream (just joined)
+
 - Start at the bottom
 - No unread handling needed
 
 ### When new message arrives (user at bottom)
+
 - Show new message immediately
 - New message should appear to "push up" old messages
 - No smooth scroll animation
 
 ### When new message arrives (user NOT at bottom)
+
 - Do NOT scroll
 - Optionally show "New messages" indicator
 
 ## Implementation Approach
 
 ### 1. Track scroll position
+
 ```typescript
 const [isAtBottom, setIsAtBottom] = useState(true)
 
@@ -43,22 +48,24 @@ const handleScroll = (e) => {
 ```
 
 ### 2. Conditional scroll on new messages
+
 ```typescript
 useEffect(() => {
   if (isAtBottom && newMessage) {
-    scrollToBottom({ behavior: 'instant' }) // Not 'smooth'
+    scrollToBottom({ behavior: "instant" }) // Not 'smooth'
   }
 }, [events, isAtBottom])
 ```
 
 ### 3. Unread message positioning
+
 ```typescript
 // On initial load for existing members
 const firstUnreadRef = useRef<HTMLDivElement>(null)
 
 useEffect(() => {
   if (firstUnreadRef.current && membership.lastReadSequence) {
-    firstUnreadRef.current.scrollIntoView({ block: 'center' })
+    firstUnreadRef.current.scrollIntoView({ block: "center" })
   }
 }, [])
 ```

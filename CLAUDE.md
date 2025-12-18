@@ -33,6 +33,7 @@ threa/
 ## Tech Stack
 
 **Backend:**
+
 - Runtime: Bun
 - Framework: Express.js
 - Database: PostgreSQL via `pg` + `squid` (template tags)
@@ -42,6 +43,7 @@ threa/
 - Logging: Pino
 
 **Frontend:**
+
 - Framework: React 19
 - Build: Vite
 - Routing: react-router-dom v7
@@ -54,6 +56,7 @@ threa/
 Shadcn UI is a collection of accessible components built on Radix UI primitives and Tailwind CSS. Components are copied into the codebase (not imported from npm), allowing full customization.
 
 **Installation:**
+
 ```bash
 cd apps/frontend
 bunx shadcn@latest add <component-name>
@@ -65,11 +68,11 @@ accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, button,
 All core Shadcn components are installed. If a new component is added to shadcn/ui, install via `bunx shadcn@latest add <component>`.
 
 **Usage pattern:**
+
 ```tsx
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-
-<Card>
+;<Card>
   <CardHeader>
     <CardTitle>Title</CardTitle>
   </CardHeader>
@@ -86,6 +89,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 ### Streams
 
 Everything that can send messages is a stream. Types:
+
 - `scratchpad` - Personal notes + AI companion (primary for solo users)
 - `channel` - Public/private team channels
 - `dm` - Direct messages (exactly two members)
@@ -94,6 +98,7 @@ Everything that can send messages is a stream. Types:
 ### Memos (GAM)
 
 Memos are semantic pointers to valuable conversations - they link to source messages, not copy content. Created via:
+
 1. Message arrives
 2. Classification worker (cheap model) determines if knowledge-worthy
 3. Memorizer extracts key info into memo
@@ -108,24 +113,28 @@ Schema uses `managed_by` enum (`system` | `workspace`), not `is_system` boolean.
 ## Architecture Patterns
 
 ### Repository Pattern
+
 - Each repository is a namespace with static-like methods
 - All methods take `PoolClient` as first parameter (transaction control)
 - Internal row types (snake_case) mapped to domain types (camelCase)
 - Pure data access - no side effects
 
 ### Outbox Pattern
+
 - Real-time events go through outbox table
 - `publishOutboxEvent()` called within transactions
 - Listener polls outbox, publishes to Socket.io
 - Ensures exactly-once delivery
 
 ### Handler Factory Pattern
+
 ```typescript
 createStreamHandlers({ pool, authService, ...deps })
 // Returns object of handlers
 ```
 
 ### Event Sourcing + Projections
+
 - Events are source of truth (audit, sync, undo)
 - Projections for query performance
 - Both tables updated in same transaction
@@ -141,24 +150,25 @@ createStreamHandlers({ pool, authService, ...deps })
 
 Invariants are constraints that must hold across the entire codebase. Reference them by ID when planning or reviewing changes.
 
-| ID | Name | Rule |
-|----|------|------|
-| **INV-1** | No Foreign Keys | Application manages relationships, not database |
-| **INV-2** | Prefixed ULIDs | All entity IDs use format `prefix_ulid` (e.g., `stream_xxx`, `user_xxx`) |
-| **INV-3** | No DB Enums | Use TEXT columns, validate in application code |
-| **INV-4** | Outbox for Real-time | All real-time events go through the outbox table |
-| **INV-5** | Repository Pattern | Data access through repositories with `PoolClient` first parameter |
-| **INV-6** | Transactions in Services | Services manage transaction boundaries, not handlers |
-| **INV-7** | Events + Projections | Events are source of truth; projections for queries; both updated in same transaction |
-| **INV-8** | Workspace Scoping | Resources belong to workspaces; workspace is the sharding boundary |
-| **INV-9** | No Singletons | Pass dependencies explicitly; no module-level state or `getInstance()` patterns. Exception: the logger (Pino) is imported as a singleton for convenience since it's stateless and side-effect-free. |
-| **INV-10** | Self-Describing Dependencies | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`) |
-| **INV-11** | No Silent Fallbacks | Fail loudly on misconfiguration; don't paper over missing data with defaults |
-| **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies. |
-| **INV-13** | Construct, Don't Assemble | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies. |
-| **INV-14** | Shadcn UI Components | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components. |
+| ID         | Name                                 | Rule                                                                                                                                                                                                                                                                                                        |
+| ---------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **INV-1**  | No Foreign Keys                      | Application manages relationships, not database                                                                                                                                                                                                                                                             |
+| **INV-2**  | Prefixed ULIDs                       | All entity IDs use format `prefix_ulid` (e.g., `stream_xxx`, `user_xxx`)                                                                                                                                                                                                                                    |
+| **INV-3**  | No DB Enums                          | Use TEXT columns, validate in application code                                                                                                                                                                                                                                                              |
+| **INV-4**  | Outbox for Real-time                 | All real-time events go through the outbox table                                                                                                                                                                                                                                                            |
+| **INV-5**  | Repository Pattern                   | Data access through repositories with `PoolClient` first parameter                                                                                                                                                                                                                                          |
+| **INV-6**  | Transactions in Services             | Services manage transaction boundaries, not handlers                                                                                                                                                                                                                                                        |
+| **INV-7**  | Events + Projections                 | Events are source of truth; projections for queries; both updated in same transaction                                                                                                                                                                                                                       |
+| **INV-8**  | Workspace Scoping                    | Resources belong to workspaces; workspace is the sharding boundary                                                                                                                                                                                                                                          |
+| **INV-9**  | No Singletons                        | Pass dependencies explicitly; no module-level state or `getInstance()` patterns. Exception: the logger (Pino) is imported as a singleton for convenience since it's stateless and side-effect-free.                                                                                                         |
+| **INV-10** | Self-Describing Dependencies         | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`)                                                                                                                                                                                                                         |
+| **INV-11** | No Silent Fallbacks                  | Fail loudly on misconfiguration; don't paper over missing data with defaults                                                                                                                                                                                                                                |
+| **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies.                                                                                                                                          |
+| **INV-13** | Construct, Don't Assemble            | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies.                                                      |
+| **INV-14** | Shadcn UI Components                 | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components. |
 
 When introducing a new invariant:
+
 1. Document it here with next available ID
 2. Add tests that enforce it
 3. Reference it in related code comments if non-obvious
@@ -173,6 +183,7 @@ When introducing a new invariant:
 ## AI Integration
 
 Multi-provider system with `provider:model` format:
+
 - `anthropic:claude-sonnet-4-20250514`
 - `openai:gpt-4o-mini`
 - `ollama:granite4:1b`
@@ -197,6 +208,7 @@ bun run db:reset
 ### Testing
 
 Tests are organized by type:
+
 - **Unit tests** (`src/**/*.test.ts`) - Pure unit tests, no external dependencies
 - **Integration tests** (`tests/integration/`) - Tests requiring database
 - **E2E tests** (`tests/e2e/`) - Full HTTP API tests
@@ -243,6 +255,7 @@ REASON: [why divergence occurred, if any]
 ```
 
 If there was meaningful divergence:
+
 1. Stop and surface it before continuing
 2. Assess whether the divergence was correct (better approach discovered) or a mistake
 3. Update the plan if the divergence should be preserved
@@ -266,17 +279,21 @@ For features spanning multiple sessions, create `docs/plans/<feature>/work_notes
 ### <date> - <Focus Area>
 
 **Context reviewed**:
+
 - Read <file> - understood <what>
 
 **Applicable invariants**: INV-X, INV-Y
 
 **Completed**:
+
 - [x] <task>
 
 **Discovered**:
+
 - <insight or issue found>
 
 **Next steps**:
+
 1. <next task>
 
 ---
@@ -284,6 +301,7 @@ For features spanning multiple sessions, create `docs/plans/<feature>/work_notes
 ## Key Decisions
 
 ### <Decision Title>
+
 **Choice**: <what was decided>
 **Rationale**: <why>
 **Alternatives considered**: <what else was considered>
@@ -315,10 +333,13 @@ This enables parallel work: one agent continues on the feature, another fixes th
 ## Lessons Learned
 
 ### Foundation code requires more scrutiny than feature code
+
 Routes, schemas, and core abstractions are infrastructure. Errors compound - every feature built on a crooked foundation inherits its problems. Review infrastructure PRs more carefully; the cost of fixing later grows with each dependent feature.
 
 ### URL structure encodes domain truths
+
 Design URLs from domain understanding, not REST conventions:
+
 - `/workspaces/:workspaceId/...` exists because workspaces are the sharding boundary
 - Events on streams (not messages) because events are polymorphic
 - Messages NOT under streams because they may span multiple streams
@@ -327,30 +348,38 @@ Design URLs from domain understanding, not REST conventions:
 URLs are domain models. They should guide correct usage.
 
 ### Authorization middleware must model resource lifecycle
+
 ```
 Does resource exist? → 404
 Does user have access? → 403
 Proceed → handler
 ```
+
 Checking access without checking existence returns 403 for non-existent resources. Wrong semantics, even if it leaks no information.
 
 ### Push checks up, consolidate checks down
+
 - **Up:** Move repeated checks (workspace membership) into middleware. Fail earlier, fail once.
 - **Down:** Move complex validation logic (stream access) into service helpers. Single source of truth.
 
 Handlers become thin orchestrators, not validators.
 
 ### Path changes are cross-cutting
+
 Adding `workspaceId` to paths touched routes, handlers, services, outbox events, and tests (14 files). Path structure isn't "just URLs" - it's a cross-cutting architectural decision.
 
 ### Compose small middlewares
+
 `compose(auth, workspaceMember)` beats a monolithic `authAndWorkspace` middleware:
+
 - Each piece testable in isolation
 - Routes can use different combinations
 - Adding new checks is additive, not invasive
 
 ### Derive types from schemas, not alongside them
+
 Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift:
+
 ```typescript
 const STREAM_TYPES = ["scratchpad", "channel"] as const
 const streamTypeSchema = z.enum(STREAM_TYPES)
@@ -358,22 +387,29 @@ type StreamType = z.infer<typeof streamTypeSchema>
 ```
 
 ### Errors should carry their own HTTP semantics
+
 An `HttpError` base class with `status` and `code` lets handlers just `throw`. Centralized error handler middleware formats the response. Handlers focus on business logic, not response formatting.
 
 ### Prefer iteration over recursion for middleware chains
+
 Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, and is easier to debug. The middleware pattern is inherently iterative anyway.
 
 ### Comments justifying changes belong in commit messages, not code
+
 Comments like "Uses composition instead of inheritance" reference a previous design that no longer exists. Future readers won't know or care about the old approach. Put change justifications in commit messages where they provide context for reviewers; code comments should explain the current design's "why", not contrast with history.
 
 ### Extend existing abstractions instead of creating parallel ones
+
 When adding new functionality, check if existing abstractions can be extended. Creating parallel implementations (e.g., a new `langchain-provider.ts` when `ProviderRegistry` already exists) violates DRY and confuses readers about which to use. The question "why are there two ways to do this?" should never arise.
 
 ### Dependencies should be self-describing
+
 A parameter named `apiKey` is ambiguous - OpenRouter? Anthropic? Gmail? Pass a `modelRegistry` that knows how to create models, not a string that could mean anything. The type and name should tell you what it is without reading the implementation.
 
 ### Pass dependencies, not configuration
+
 Configuration values (`apiKey`, `connectionString`, `port`) go to factories that construct dependencies. After construction, pass the dependency itself:
+
 ```typescript
 // Bad - passing config through layers
 function createWorker(apiKey: string) { ... }
@@ -382,40 +418,54 @@ function createWorker(apiKey: string) { ... }
 const registry = new ModelRegistry({ openrouter: { apiKey } })
 function createWorker(registry: ModelRegistry) { ... }
 ```
+
 This makes the dependency graph explicit and testable. Workers don't need to know about API keys - they need models.
 
 ### Delete dead code immediately
+
 Code "kept as reference" is noise. It confuses reviewers, adds cognitive load, and suggests the codebase is unreliable. Git has history - delete unused code. If it's needed later, recover it from version control.
 
 ### Avoid nested ternaries
+
 Multi-level ternaries are clever but hard to debug. The first thing you do when troubleshooting is flatten them. Use switch statements instead - they're roughly as terse but explain each case explicitly:
+
 ```typescript
 // Bad - requires mental stack to parse
 const x = a ? b : c ? d : e ? f : g
 
 // Good - each case is explicit
 switch (true) {
-  case a: return b
-  case c: return d
-  case e: return f
-  default: return g
+  case a:
+    return b
+  case c:
+    return d
+  case e:
+    return f
+  default:
+    return g
 }
 ```
 
 ### Magic strings should be constants or enums
+
 Checking `companionMode === "on"` scatters knowledge about valid modes throughout the codebase. Define constants or enums at the source of truth and import them. This catches typos at compile time and makes valid values discoverable.
 
 ### Workers and handlers should be thin
+
 Workers (job handlers) and HTTP handlers are infrastructure code. They should receive input, delegate to domain logic, and return results. Business logic belongs in dedicated modules (agents, services) that are reusable across invocation contexts, independently testable, and focused on domain concerns. Think: "Would I want to duplicate this logic if I needed to call it from an API endpoint AND a job worker AND an eval harness?"
 
 ### Be consistent in initialization patterns
+
 When a class has multiple similar resources (clients, connections), initialize them the same way. Mixed patterns (some eager, some lazy) create confusion about expected behavior and make the code harder to reason about.
 
 ### Use existing helpers consistently
+
 If a helper exists (`withClient`, `withTransaction`), use it everywhere. Bypassing it with raw operations suggests either the helper is inadequate or the code is inconsistent. Both are problems worth fixing.
 
 ### Don't add speculative features
+
 Don't add comments about features that weren't requested, and don't design for imagined requirements. YAGNI applies to comments too - a comment about a hypothetical mode creates confusion about what's actually supported.
 
 ### Abstractions should fully own their domain
+
 A helper that extracts part of a workflow but leaves the caller managing the rest adds indirection without reducing complexity. If you're creating an abstraction for session lifecycle, it should handle find/create, run work, AND track status - not just find/create while the caller still manages status with separate calls. Partial abstractions can be worse than no abstraction because they add a layer of indirection while still requiring the caller to understand the full workflow.

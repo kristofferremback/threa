@@ -28,7 +28,6 @@ const testRunId = Math.random().toString(36).substring(7)
 const testEmail = (name: string) => `${name}-${testRunId}@test.com`
 
 describe("API E2E Tests", () => {
-
   describe("Health", () => {
     test("should return ok", async () => {
       const client = new TestClient()
@@ -96,9 +95,7 @@ describe("API E2E Tests", () => {
 
       await createWorkspace(client, `List Test WS ${testRunId}`)
 
-      const { status, data } = await client.get<{ workspaces: unknown[] }>(
-        "/api/workspaces"
-      )
+      const { status, data } = await client.get<{ workspaces: unknown[] }>("/api/workspaces")
       expect(status).toBe(200)
       expect(data.workspaces.length).toBeGreaterThan(0)
     })
@@ -228,7 +225,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-shortcode"), "Reaction Shortcode Test")
       const workspace = await createWorkspace(client, `React SC WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(client, workspace.id, scratchpad.id, "React with shortcode!")
+      const message = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "React with shortcode!"
+      )
 
       // Send shortcode directly
       const updated = await addReaction(client, workspace.id, message.id, ":heart:")
@@ -255,7 +257,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-rm-sc"), "Reaction Remove SC Test")
       const workspace = await createWorkspace(client, `React RmSC WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(client, workspace.id, scratchpad.id, "React then unreact with shortcode")
+      const message = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "React then unreact with shortcode"
+      )
 
       await addReaction(client, workspace.id, message.id, ":fire:")
       // Remove with shortcode
@@ -284,7 +291,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-dup"), "Reaction Dup Test")
       const workspace = await createWorkspace(client, `React Dup WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(client, workspace.id, scratchpad.id, "Duplicate reaction test")
+      const message = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "Duplicate reaction test"
+      )
 
       await addReaction(client, workspace.id, message.id, "🎉")
       const updated = await addReaction(client, workspace.id, message.id, "🎉")
@@ -307,7 +319,12 @@ describe("API E2E Tests", () => {
       // For this test, we need to add user2 as a member. Since there's no API for that yet,
       // let's test with user1 only but verify the structure.
 
-      const message = await sendMessage(client1, workspace.id, scratchpad.id, "Multi-user reactions")
+      const message = await sendMessage(
+        client1,
+        workspace.id,
+        scratchpad.id,
+        "Multi-user reactions"
+      )
       const updated = await addReaction(client1, workspace.id, message.id, "👍")
 
       expect(updated.reactions[":+1:"]).toContain(user1.id)
@@ -318,7 +335,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-invalid"), "Reaction Invalid Test")
       const workspace = await createWorkspace(client, `React Invalid WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(client, workspace.id, scratchpad.id, "Invalid reaction test")
+      const message = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "Invalid reaction test"
+      )
 
       const { status, data } = await client.post<{ error: string }>(
         `/api/workspaces/${workspace.id}/messages/${message.id}/reactions`,
@@ -334,7 +356,12 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-unknown"), "Reaction Unknown Test")
       const workspace = await createWorkspace(client, `React Unknown WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(client, workspace.id, scratchpad.id, "Unknown shortcode test")
+      const message = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "Unknown shortcode test"
+      )
 
       const { status, data } = await client.post<{ error: string }>(
         `/api/workspaces/${workspace.id}/messages/${message.id}/reactions`,
@@ -366,14 +393,20 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("channel-vis"), "Channel Visibility Test")
       const workspace = await createWorkspace(client, `Chan Vis WS ${testRunId}`)
 
-      const { status: pubStatus, data: pubData } = await client.post<{ stream: { visibility: string } }>(
-        `/api/workspaces/${workspace.id}/streams`,
-        { type: "channel", slug: `public-${testRunId}`, visibility: "public" }
-      )
-      const { status: privStatus, data: privData } = await client.post<{ stream: { visibility: string } }>(
-        `/api/workspaces/${workspace.id}/streams`,
-        { type: "channel", slug: `private-${testRunId}`, visibility: "private" }
-      )
+      const { status: pubStatus, data: pubData } = await client.post<{
+        stream: { visibility: string }
+      }>(`/api/workspaces/${workspace.id}/streams`, {
+        type: "channel",
+        slug: `public-${testRunId}`,
+        visibility: "public",
+      })
+      const { status: privStatus, data: privData } = await client.post<{
+        stream: { visibility: string }
+      }>(`/api/workspaces/${workspace.id}/streams`, {
+        type: "channel",
+        slug: `private-${testRunId}`,
+        visibility: "private",
+      })
 
       expect(pubStatus).toBe(201)
       expect(privStatus).toBe(201)
@@ -416,10 +449,13 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("channel-invalid"), "Channel Invalid Test")
       const workspace = await createWorkspace(client, `Chan Invalid WS ${testRunId}`)
 
-      const { status, data } = await client.post<{ error: string; details?: Record<string, string[]> }>(
-        `/api/workspaces/${workspace.id}/streams`,
-        { type: "channel", slug: "Invalid Slug With Spaces" }
-      )
+      const { status, data } = await client.post<{
+        error: string
+        details?: Record<string, string[]>
+      }>(`/api/workspaces/${workspace.id}/streams`, {
+        type: "channel",
+        slug: "Invalid Slug With Spaces",
+      })
 
       expect(status).toBe(400)
       expect(data.error).toBe("Validation failed")
@@ -541,10 +577,10 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("err-400"), "Error 400 Test")
 
-      const { status: wsStatus, data: wsData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
-        "/api/workspaces",
-        {}
-      )
+      const { status: wsStatus, data: wsData } = await client.post<{
+        error: string
+        details?: Record<string, string[]>
+      }>("/api/workspaces", {})
       expect(wsStatus).toBe(400)
       expect(wsData.error).toBe("Validation failed")
       expect(wsData.details?.name).toBeDefined()
@@ -552,10 +588,10 @@ describe("API E2E Tests", () => {
       const workspace = await createWorkspace(client, `Err 400 WS ${testRunId}`)
 
       // Channels require slug
-      const { status: chStatus, data: chData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
-        `/api/workspaces/${workspace.id}/streams`,
-        { type: "channel" }
-      )
+      const { status: chStatus, data: chData } = await client.post<{
+        error: string
+        details?: Record<string, string[]>
+      }>(`/api/workspaces/${workspace.id}/streams`, { type: "channel" })
       expect(chStatus).toBe(400)
       expect(chData.error).toBe("Validation failed")
       expect(chData.details?.slug).toBeDefined()
@@ -563,10 +599,10 @@ describe("API E2E Tests", () => {
       const scratchpad = await createScratchpad(client, workspace.id)
 
       // Messages require streamId and content
-      const { status: msgStatus, data: msgData } = await client.post<{ error: string; details?: Record<string, string[]> }>(
-        `/api/workspaces/${workspace.id}/messages`,
-        { streamId: scratchpad.id }
-      )
+      const { status: msgStatus, data: msgData } = await client.post<{
+        error: string
+        details?: Record<string, string[]>
+      }>(`/api/workspaces/${workspace.id}/messages`, { streamId: scratchpad.id })
       expect(msgStatus).toBe(400)
       expect(msgData.error).toBe("Validation failed")
       expect(msgData.details?.content).toBeDefined()
@@ -593,8 +629,18 @@ describe("API E2E Tests", () => {
 
       // 4. Send messages
       const m1 = await sendMessage(client, workspace.id, scratchpad.id, "I need to plan my startup")
-      const m2 = await sendMessage(client, workspace.id, scratchpad.id, "First step: validate the idea")
-      const m3 = await sendMessage(client, workspace.id, scratchpad.id, "Second step: find customers")
+      const m2 = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "First step: validate the idea"
+      )
+      const m3 = await sendMessage(
+        client,
+        workspace.id,
+        scratchpad.id,
+        "Second step: find customers"
+      )
 
       // 5. Verify all messages via events endpoint
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])

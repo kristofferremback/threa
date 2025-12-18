@@ -28,10 +28,11 @@ When a stream is renamed or archived, the change is reflected locally in the sam
    - `stream_archived` - emitted when stream is archived
 
 2. **Update StreamService.updateStream** to publish outbox event:
+
    ```typescript
    await publishOutboxEvent(client, workspaceId, {
-     type: 'stream_updated',
-     payload: { stream: updatedStream }
+     type: "stream_updated",
+     payload: { stream: updatedStream },
    })
    ```
 
@@ -42,24 +43,19 @@ When a stream is renamed or archived, the change is reflected locally in the sam
 ### Frontend
 
 1. **Handle `stream_updated` event** in Socket.io connection:
+
    ```typescript
-   socket.on('stream_updated', (data) => {
-     queryClient.setQueryData(
-       streamKeys.bootstrap(workspaceId, data.stream.id),
-       (old) => old ? { ...old, stream: data.stream } : old
+   socket.on("stream_updated", (data) => {
+     queryClient.setQueryData(streamKeys.bootstrap(workspaceId, data.stream.id), (old) =>
+       old ? { ...old, stream: data.stream } : old
      )
-     queryClient.setQueryData(
-       workspaceKeys.bootstrap(workspaceId),
-       (old) => {
-         if (!old?.streams) return old
-         return {
-           ...old,
-           streams: old.streams.map(s =>
-             s.id === data.stream.id ? data.stream : s
-           )
-         }
+     queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old) => {
+       if (!old?.streams) return old
+       return {
+         ...old,
+         streams: old.streams.map((s) => (s.id === data.stream.id ? data.stream : s)),
        }
-     )
+     })
      // Also update IndexedDB
      db.streams.put({ ...data.stream, _cachedAt: Date.now() })
    })
@@ -70,11 +66,13 @@ When a stream is renamed or archived, the change is reflected locally in the sam
 ## Files to Modify
 
 ### Backend
+
 - `apps/backend/src/lib/constants.ts` - Add event types
 - `apps/backend/src/services/stream-service.ts` - Publish outbox events
 - `apps/backend/src/services/outbox-listener.ts` - Handle new event types (if needed)
 
 ### Frontend
+
 - `apps/frontend/src/contexts/socket-context.tsx` (or wherever socket handlers are)
 - Need to verify where Socket.io event handlers are set up
 

@@ -22,7 +22,7 @@ export const workspacesApi = {
 
   async bootstrap(workspaceId: string): Promise<WorkspaceBootstrap> {
     const res = await api.get<{ data: WorkspaceBootstrap }>(
-      `/api/workspaces/${workspaceId}/bootstrap`,
+      `/api/workspaces/${workspaceId}/bootstrap`
     )
     return res.data
   },

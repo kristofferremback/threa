@@ -62,10 +62,7 @@ export const UserRepository = {
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findByWorkosUserId(
-    client: PoolClient,
-    workosUserId: string,
-  ): Promise<User | null> {
+  async findByWorkosUserId(client: PoolClient, workosUserId: string): Promise<User | null> {
     const result = await client.query<UserRow>(sql`
       SELECT id, email, name, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE workos_user_id = ${workosUserId}
@@ -82,10 +79,7 @@ export const UserRepository = {
     return mapRowToUser(result.rows[0])
   },
 
-  async upsertByEmail(
-    client: PoolClient,
-    params: InsertUserParams,
-  ): Promise<User> {
+  async upsertByEmail(client: PoolClient, params: InsertUserParams): Promise<User> {
     const result = await client.query<UserRow>(sql`
       INSERT INTO users (id, email, name, workos_user_id)
       VALUES (${params.id}, ${params.email}, ${params.name}, ${params.workosUserId ?? null})

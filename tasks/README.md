@@ -4,12 +4,12 @@ Work items broken into separate PRs for better checkpoints.
 
 ## Status
 
-| Task | Status | PR |
-|------|--------|-----|
-| [001: Multi-Listener Outbox](./001-outbox-multi-listener.md) | Complete | #6 |
-| [002: Agentic Companion](./002-agentic-companion.md) | In Progress | #10 |
-| [003: Stream Context Enrichment](./003-stream-context-enrichment.md) | Planning | - |
-| [004: Agent Message Tool](./004-agent-message-tool.md) | Planning | - |
+| Task                                                                 | Status      | PR  |
+| -------------------------------------------------------------------- | ----------- | --- |
+| [001: Multi-Listener Outbox](./001-outbox-multi-listener.md)         | Complete    | #6  |
+| [002: Agentic Companion](./002-agentic-companion.md)                 | In Progress | #10 |
+| [003: Stream Context Enrichment](./003-stream-context-enrichment.md) | Planning    | -   |
+| [004: Agent Message Tool](./004-agent-message-tool.md)               | Planning    | -   |
 
 ## Deferred Items (PR Review Feedback)
 

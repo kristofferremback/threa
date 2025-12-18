@@ -102,7 +102,7 @@ const SELECT_FIELDS = `
 export const StreamRepository = {
   async findById(client: PoolClient, id: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`,
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
@@ -113,7 +113,7 @@ export const StreamRepository = {
    */
   async findByIdForUpdate(client: PoolClient, id: string): Promise<Stream | null> {
     const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id} FOR UPDATE SKIP LOCKED`,
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id} FOR UPDATE SKIP LOCKED`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
@@ -125,7 +125,7 @@ export const StreamRepository = {
       types?: StreamType[]
       parentStreamId?: string
       userMembershipStreamIds?: string[]
-    },
+    }
   ): Promise<Stream[]> {
     const types = filters?.types
     const parentStreamId = filters?.parentStreamId
@@ -137,7 +137,7 @@ export const StreamRepository = {
             WHERE workspace_id = ${workspaceId}
               AND parent_stream_id = ${parentStreamId}
               AND archived_at IS NULL
-            ORDER BY created_at DESC`,
+            ORDER BY created_at DESC`
       )
       return result.rows.map(mapRowToStream)
     }
@@ -151,7 +151,7 @@ export const StreamRepository = {
                 AND type = ANY(${types})
                 AND archived_at IS NULL
                 AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
-              ORDER BY created_at DESC`,
+              ORDER BY created_at DESC`
         )
         return result.rows.map(mapRowToStream)
       }
@@ -161,7 +161,7 @@ export const StreamRepository = {
             WHERE workspace_id = ${workspaceId}
               AND archived_at IS NULL
               AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
-            ORDER BY created_at DESC`,
+            ORDER BY created_at DESC`
       )
       return result.rows.map(mapRowToStream)
     }
@@ -172,7 +172,7 @@ export const StreamRepository = {
             WHERE workspace_id = ${workspaceId}
               AND type = ANY(${types})
               AND archived_at IS NULL
-            ORDER BY created_at DESC`,
+            ORDER BY created_at DESC`
       )
       return result.rows.map(mapRowToStream)
     }
@@ -181,7 +181,7 @@ export const StreamRepository = {
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
           WHERE workspace_id = ${workspaceId}
             AND archived_at IS NULL
-          ORDER BY created_at DESC`,
+          ORDER BY created_at DESC`
     )
     return result.rows.map(mapRowToStream)
   },
@@ -212,11 +212,7 @@ export const StreamRepository = {
     return mapRowToStream(result.rows[0])
   },
 
-  async update(
-    client: PoolClient,
-    id: string,
-    params: UpdateStreamParams,
-  ): Promise<Stream | null> {
+  async update(client: PoolClient, id: string, params: UpdateStreamParams): Promise<Stream | null> {
     const sets: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -263,7 +259,7 @@ export const StreamRepository = {
   async slugExistsInWorkspace(
     client: PoolClient,
     workspaceId: string,
-    slug: string,
+    slug: string
   ): Promise<boolean> {
     const result = await client.query(sql`
       SELECT 1 FROM streams

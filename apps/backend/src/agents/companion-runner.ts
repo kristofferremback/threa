@@ -41,7 +41,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     private readonly deps: {
       modelRegistry: ProviderRegistry
       checkpointer: PostgresSaver
-    },
+    }
   ) {}
 
   async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
@@ -54,7 +54,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         modelId,
         messageCount: messages.length,
       },
-      "Running companion graph",
+      "Running companion graph"
     )
 
     // Get LangChain model from registry
@@ -76,7 +76,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
       {
         configurable: { thread_id: threadId },
-      },
+      }
     )
 
     const response = result.finalResponse ?? ""
@@ -86,7 +86,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         threadId,
         responseLength: response.length,
       },
-      "Companion graph completed",
+      "Companion graph completed"
     )
 
     return { response }
@@ -99,13 +99,13 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
  */
 export class StubResponseGenerator implements ResponseGenerator {
   constructor(
-    private readonly response: string = "This is a stub response from the companion. The real AI integration is disabled.",
+    private readonly response: string = "This is a stub response from the companion. The real AI integration is disabled."
   ) {}
 
   async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
     logger.debug(
       { threadId: params.threadId, messageCount: params.messages.length },
-      "Running stub response generator",
+      "Running stub response generator"
     )
     return { response: this.response }
   }

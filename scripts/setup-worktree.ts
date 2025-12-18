@@ -59,17 +59,17 @@ function deriveDatabaseName(dirPath: string): string {
 function updateDatabaseUrl(envContent: string, newDbName: string): string {
   // Replace database name in DATABASE_URL
   // Format: postgresql://user:pass@host:port/dbname
-  return envContent.replace(
-    /(DATABASE_URL=postgresql:\/\/[^/]+\/)([^?\n]+)/,
-    `$1${newDbName}`
-  )
+  return envContent.replace(/(DATABASE_URL=postgresql:\/\/[^/]+\/)([^?\n]+)/, `$1${newDbName}`)
 }
 
 async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   console.log(`Checking if database '${dbName}' exists...`)
 
   // Connect to postgres (not a specific database) to create the new database
-  const checkResult = await $`docker compose exec -T postgres psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`.quiet().nothrow()
+  const checkResult =
+    await $`docker compose exec -T postgres psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`
+      .quiet()
+      .nothrow()
 
   if (checkResult.stdout.toString().trim() === "1") {
     console.log(`Database '${dbName}' already exists`)
@@ -151,7 +151,9 @@ async function main() {
   } catch (err) {
     console.warn("Could not create database - ensure docker is running and postgres is started")
     console.warn("Run 'bun run db:start' and then manually create the database:")
-    console.warn(`  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`)
+    console.warn(
+      `  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
+    )
   }
 
   console.log("\nWorktree setup complete!")

@@ -62,6 +62,7 @@ rm /tmp/claude/commit-msg.txt
 ## Commit Message Format
 
 Follow conventional commits:
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `refactor:` - Code restructuring
@@ -84,6 +85,7 @@ This is expected in sandbox mode. Use printf approach instead.
 
 **Special characters in message:**
 Use single quotes to prevent shell expansion. For apostrophes, end the quote, add escaped apostrophe, restart quote:
+
 ```bash
 printf '%s\n' 'Don'\''t do this' > /tmp/claude/commit-msg.txt
 ```
@@ -91,12 +93,14 @@ printf '%s\n' 'Don'\''t do this' > /tmp/claude/commit-msg.txt
 ## Examples
 
 **Simple commit:**
+
 ```bash
 printf '%s\n' 'fix: correct typo in README' '' '🤖 Generated with [Claude Code](https://claude.com/claude-code)' '' 'Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>' > /tmp/claude/commit-msg.txt
 git add README.md && git commit -F /tmp/claude/commit-msg.txt
 ```
 
 **Multi-line commit:**
+
 ```bash
 printf '%s\n' \
   'refactor: extract helper function' \

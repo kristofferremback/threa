@@ -4,7 +4,13 @@ import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { useMessageService, useStreamService } from "@/contexts"
-import { streamKeys, useDraftScratchpads, workspaceKeys, useDraftMessage, getDraftMessageKey } from "@/hooks"
+import {
+  streamKeys,
+  useDraftScratchpads,
+  workspaceKeys,
+  useDraftMessage,
+  getDraftMessageKey,
+} from "@/hooks"
 import { db } from "@/db"
 import type { StreamEvent } from "@/types/domain"
 import { StreamTypes } from "@/types/domain"
@@ -25,7 +31,11 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
 
   // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
-  const { content: savedDraft, saveDraftDebounced, clearDraft } = useDraftMessage(workspaceId, draftKey)
+  const {
+    content: savedDraft,
+    saveDraftDebounced,
+    clearDraft,
+  } = useDraftMessage(workspaceId, draftKey)
 
   // Local state for immediate UI updates
   const [content, setContent] = useState("")
@@ -63,7 +73,7 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
       setContent(newContent)
       saveDraftDebounced(newContent)
     },
-    [saveDraftDebounced],
+    [saveDraftDebounced]
   )
 
   const sendMutation = useMutation({
@@ -134,17 +144,14 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
         _cachedAt: Date.now(),
       })
 
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, streamId),
-        (old: unknown) => {
-          if (!old || typeof old !== "object") return old
-          const bootstrap = old as { events: StreamEvent[] }
-          return {
-            ...bootstrap,
-            events: [...bootstrap.events, optimisticEvent],
-          }
-        },
-      )
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { events: StreamEvent[] }
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, optimisticEvent],
+        }
+      })
 
       try {
         const message = await messageService.create(workspaceId, streamId, {
@@ -193,7 +200,7 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
         handleSubmit()
       }
     },
-    [handleSubmit],
+    [handleSubmit]
   )
 
   return (

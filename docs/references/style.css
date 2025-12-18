@@ -1,13 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /*
  * Threa - Golden Thread Theme
  *
  * Design concept: Neutral, slightly warm canvas with amber/gold accents
  * inspired by Ariadne's thread. The gold appears sparingly as the
  * "guiding thread" through the interface.
+ *
+ * Usage: Replace the :root and .dark sections in your globals.css
  */
 
 @layer base {
@@ -58,7 +56,10 @@
     /* Radius - slightly rounded, not too playful */
     --radius: 0.5rem;
 
-    /* Sidebar - Slightly darker than main canvas for visual hierarchy */
+    /*
+     * Sidebar (if using Shadcn's sidebar component)
+     * Slightly darker than main canvas for visual hierarchy
+     */
     --sidebar-background: 35 15% 96%;
     --sidebar-foreground: 30 10% 25%;
     --sidebar-primary: 38 65% 50%;
@@ -68,12 +69,15 @@
     --sidebar-border: 35 12% 90%;
     --sidebar-ring: 38 65% 50%;
 
-    /* Chart colors - gold-adjacent palette */
-    --chart-1: 38 65% 50%;
-    --chart-2: 25 55% 45%;
-    --chart-3: 45 50% 55%;
-    --chart-4: 15 45% 50%;
-    --chart-5: 50 35% 60%;
+    /*
+     * Chart colors - gold-adjacent palette
+     * For any data visualization
+     */
+    --chart-1: 38 65% 50%; /* Primary gold */
+    --chart-2: 25 55% 45%; /* Burnt orange */
+    --chart-3: 45 50% 55%; /* Light gold */
+    --chart-4: 15 45% 50%; /* Terracotta */
+    --chart-5: 50 35% 60%; /* Olive gold */
   }
 
   .dark {
@@ -135,17 +139,8 @@
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
 /*
- * Custom utility classes for the golden thread
+ * Optional: Custom utility classes for the golden thread
  * Use sparingly for key UI moments
  */
 @layer utilities {
@@ -177,3 +172,26 @@
     box-shadow: 0 0 20px hsl(var(--primary) / 0.1);
   }
 }
+
+/*
+ * Application notes:
+ *
+ * WHERE TO USE GOLD (the thread):
+ * - Primary action buttons
+ * - Active/selected states in navigation
+ * - Focus rings (already handled by --ring)
+ * - Unread indicators / notification badges
+ * - @ariadne's avatar or responses (subtle gold tint)
+ * - "Save as knowledge" action
+ * - Links between related conversations (the literal thread)
+ *
+ * WHERE TO STAY NEUTRAL:
+ * - Message backgrounds
+ * - Most text
+ * - Borders and dividers
+ * - Input fields (until focused)
+ * - Scrollbars, secondary buttons
+ *
+ * The goal: gold should feel like a reward, not noise.
+ * If everything is gold, nothing is.
+ */

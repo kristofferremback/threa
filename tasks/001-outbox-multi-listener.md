@@ -11,6 +11,7 @@ Current outbox implementation has a single `processed_at` flag. Once an event is
 ## Current State
 
 ### Schema (`002_core_schema.sql`)
+
 ```sql
 CREATE TABLE outbox (
     id BIGSERIAL PRIMARY KEY,
@@ -22,6 +23,7 @@ CREATE TABLE outbox (
 ```
 
 ### Code (`outbox-listener.ts`)
+
 - Single `OutboxListener` class
 - NOTIFY/LISTEN + fallback polling
 - Processes events in transaction, locks unprocessed rows with `FOR UPDATE SKIP LOCKED`
@@ -31,6 +33,7 @@ CREATE TABLE outbox (
 ## Target State
 
 Multiple independent listeners, each with:
+
 - Own cursor (last processed event ID)
 - Own retry state
 - Independent failure/recovery
@@ -90,6 +93,7 @@ Add retention policy: events older than X days with all listeners past them get 
 ```
 
 Each listener:
+
 1. Claims exclusive lock on its cursor row
 2. Reads events from outbox (no lock needed, just a read)
 3. Processes events
@@ -147,11 +151,13 @@ abstract class BaseOutboxListener {
 ### Listener Implementations
 
 **BroadcastListener** (existing behavior)
+
 - Handles: all events
 - Action: Socket.io broadcast to appropriate rooms
 - Fast, rarely fails
 
 **CompanionListener** (new, for Task 002)
+
 - Handles: `message:created` where `authorType === 'user'`
 - Action: Dispatch durable job to pg-boss for agent processing
 - The actual AI work happens in the job, not the listener

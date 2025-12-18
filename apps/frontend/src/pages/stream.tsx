@@ -34,7 +34,7 @@ export function StreamPage() {
   // Direct subscription to the specific draft record for reactivity
   const draft = useLiveQuery(
     () => (isDraft && streamId ? db.draftScratchpads.get(streamId) : undefined),
-    [isDraft, streamId],
+    [isDraft, streamId]
   )
 
   const [isEditing, setIsEditing] = useState(false)
@@ -49,11 +49,11 @@ export function StreamPage() {
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
 
   const streamName = isDraft
-    ? (draft?.displayName || "New scratchpad")
-    : (stream?.displayName || stream?.slug || "Stream")
+    ? draft?.displayName || "New scratchpad"
+    : stream?.displayName || stream?.slug || "Stream"
 
   const handleStartRename = () => {
-    setEditValue(isDraft ? (draft?.displayName || "") : (stream?.displayName || ""))
+    setEditValue(isDraft ? draft?.displayName || "" : stream?.displayName || "")
     setIsEditing(true)
   }
 

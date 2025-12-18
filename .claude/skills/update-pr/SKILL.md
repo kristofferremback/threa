@@ -105,8 +105,8 @@ Follow this template for consistency:
 
 ## Files changed
 
-| File | Change |
-|------|--------|
+| File           | Change      |
+| -------------- | ----------- |
 | `path/file.ts` | Description |
 
 ## Test plan
@@ -114,18 +114,21 @@ Follow this template for consistency:
 - [ ] Test item
 
 ---
+
 🤖 _PR by [Claude Code](https://claude.com/claude-code)_
 ```
 
 ## Examples
 
 **Quick body update:**
+
 ```bash
 printf '%s\n' '## Problem' '' 'Users cannot login' '' '## Solution' '' 'Fixed auth token validation' '' '---' '🤖 _PR by [Claude Code](https://claude.com/claude-code)_' > /tmp/claude/pr-body.md
 gh pr edit 123 --body-file /tmp/claude/pr-body.md
 ```
 
 **Using API fallback:**
+
 ```bash
 gh api repos/myorg/myrepo/pulls/123 --method PATCH \
   -f body="$(cat /tmp/claude/pr-body.md)"

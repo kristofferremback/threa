@@ -156,7 +156,7 @@ export const AgentSessionRepository = {
           ${params.serverId ? new Date() : null}
         )
         RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
-      `,
+      `
     )
     return mapRowToSession(result.rows[0])
   },
@@ -167,14 +167,14 @@ export const AgentSessionRepository = {
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
         WHERE id = ${id}
-      `,
+      `
     )
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
   async findByTriggerMessage(
     client: PoolClient,
-    triggerMessageId: string,
+    triggerMessageId: string
   ): Promise<AgentSession | null> {
     const result = await client.query<SessionRow>(
       sql`
@@ -183,7 +183,7 @@ export const AgentSessionRepository = {
         WHERE trigger_message_id = ${triggerMessageId}
         ORDER BY created_at DESC
         LIMIT 1
-      `,
+      `
     )
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
@@ -196,12 +196,11 @@ export const AgentSessionRepository = {
       serverId?: string
       responseMessageId?: string
       error?: string
-    },
+    }
   ): Promise<AgentSession | null> {
     const now = new Date()
-    const completedAt = status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED
-      ? now
-      : null
+    const completedAt =
+      status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED ? now : null
 
     const result = await client.query<SessionRow>(
       sql`
@@ -215,7 +214,7 @@ export const AgentSessionRepository = {
           completed_at = ${completedAt}
         WHERE id = ${id}
         RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
-      `,
+      `
     )
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
@@ -226,7 +225,7 @@ export const AgentSessionRepository = {
         UPDATE agent_sessions
         SET heartbeat_at = NOW()
         WHERE id = ${id}
-      `,
+      `
     )
   },
 
@@ -236,7 +235,7 @@ export const AgentSessionRepository = {
         UPDATE agent_sessions
         SET current_step = ${stepNumber}, heartbeat_at = NOW()
         WHERE id = ${id}
-      `,
+      `
     )
   },
 
@@ -246,7 +245,7 @@ export const AgentSessionRepository = {
    */
   async findOrphaned(
     client: PoolClient,
-    staleThresholdSeconds: number = 60,
+    staleThresholdSeconds: number = 60
   ): Promise<AgentSession[]> {
     const result = await client.query<SessionRow>(
       sql`
@@ -254,7 +253,7 @@ export const AgentSessionRepository = {
         FROM agent_sessions
         WHERE status = ${SessionStatuses.RUNNING}
           AND heartbeat_at < NOW() - INTERVAL '1 second' * ${staleThresholdSeconds}
-      `,
+      `
     )
     return result.rows.map(mapRowToSession)
   },
@@ -275,7 +274,7 @@ export const AgentSessionRepository = {
           ${params.tokensUsed ?? null}
         )
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
-      `,
+      `
     )
     return mapRowToStep(result.rows[0])
   },
@@ -283,7 +282,7 @@ export const AgentSessionRepository = {
   async completeStep(
     client: PoolClient,
     stepId: string,
-    tokensUsed?: number,
+    tokensUsed?: number
   ): Promise<AgentSessionStep | null> {
     const result = await client.query<StepRow>(
       sql`
@@ -293,30 +292,24 @@ export const AgentSessionRepository = {
           tokens_used = COALESCE(${tokensUsed ?? null}, tokens_used)
         WHERE id = ${stepId}
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
-      `,
+      `
     )
     return result.rows[0] ? mapRowToStep(result.rows[0]) : null
   },
 
-  async findStepsBySession(
-    client: PoolClient,
-    sessionId: string,
-  ): Promise<AgentSessionStep[]> {
+  async findStepsBySession(client: PoolClient, sessionId: string): Promise<AgentSessionStep[]> {
     const result = await client.query<StepRow>(
       sql`
         SELECT ${sql.raw(STEP_SELECT_FIELDS)}
         FROM agent_session_steps
         WHERE session_id = ${sessionId}
         ORDER BY step_number ASC
-      `,
+      `
     )
     return result.rows.map(mapRowToStep)
   },
 
-  async findLatestStep(
-    client: PoolClient,
-    sessionId: string,
-  ): Promise<AgentSessionStep | null> {
+  async findLatestStep(client: PoolClient, sessionId: string): Promise<AgentSessionStep | null> {
     const result = await client.query<StepRow>(
       sql`
         SELECT ${sql.raw(STEP_SELECT_FIELDS)}
@@ -324,7 +317,7 @@ export const AgentSessionRepository = {
         WHERE session_id = ${sessionId}
         ORDER BY step_number DESC
         LIMIT 1
-      `,
+      `
     )
     return result.rows[0] ? mapRowToStep(result.rows[0]) : null
   },

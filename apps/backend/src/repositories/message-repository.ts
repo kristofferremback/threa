@@ -48,10 +48,7 @@ export interface InsertMessageParams {
   contentFormat?: "markdown" | "plaintext"
 }
 
-function mapRowToMessage(
-  row: MessageRow,
-  reactions: Record<string, string[]> = {},
-): Message {
+function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
   return {
     id: row.id,
     streamId: row.stream_id,
@@ -85,9 +82,7 @@ function aggregateReactions(rows: ReactionRow[]): Record<string, string[]> {
   return result
 }
 
-function aggregateReactionsByMessage(
-  rows: ReactionRow[],
-): Map<string, Record<string, string[]>> {
+function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<string, string[]>> {
   const byMessage = new Map<string, ReactionRow[]>()
   for (const row of rows) {
     const existing = byMessage.get(row.message_id) ?? []
@@ -111,12 +106,12 @@ const SELECT_FIELDS = `
 export const MessageRepository = {
   async findById(client: PoolClient, id: string): Promise<Message | null> {
     const result = await client.query<MessageRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`,
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`
     )
     if (!result.rows[0]) return null
 
     const reactionsResult = await client.query<ReactionRow>(
-      sql`SELECT message_id, user_id, emoji FROM reactions WHERE message_id = ${id}`,
+      sql`SELECT message_id, user_id, emoji FROM reactions WHERE message_id = ${id}`
     )
     const reactions = aggregateReactions(reactionsResult.rows)
 
@@ -126,7 +121,7 @@ export const MessageRepository = {
   async list(
     client: PoolClient,
     streamId: string,
-    filters?: { limit?: number; beforeSequence?: bigint },
+    filters?: { limit?: number; beforeSequence?: bigint }
   ): Promise<Message[]> {
     const limit = filters?.limit ?? 50
 
@@ -183,11 +178,7 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0])
   },
 
-  async updateContent(
-    client: PoolClient,
-    id: string,
-    content: string,
-  ): Promise<Message | null> {
+  async updateContent(client: PoolClient, id: string, content: string): Promise<Message | null> {
     const result = await client.query<MessageRow>(sql`
       UPDATE messages
       SET content = ${content}, edited_at = NOW()
@@ -213,7 +204,7 @@ export const MessageRepository = {
     client: PoolClient,
     messageId: string,
     emoji: string,
-    userId: string,
+    userId: string
   ): Promise<Message | null> {
     // Insert into reactions table (ON CONFLICT DO NOTHING handles duplicates)
     await client.query(sql`
@@ -228,7 +219,7 @@ export const MessageRepository = {
     client: PoolClient,
     messageId: string,
     emoji: string,
-    userId: string,
+    userId: string
   ): Promise<Message | null> {
     await client.query(sql`
       DELETE FROM reactions

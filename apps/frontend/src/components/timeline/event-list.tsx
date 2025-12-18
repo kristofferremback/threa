@@ -33,12 +33,7 @@ export function EventList({ events, isLoading, workspaceId, streamId }: EventLis
   return (
     <div className="flex flex-col gap-1 p-4">
       {events.map((event) => (
-        <EventItem
-          key={event.id}
-          event={event}
-          workspaceId={workspaceId}
-          streamId={streamId}
-        />
+        <EventItem key={event.id} event={event} workspaceId={workspaceId} streamId={streamId} />
       ))}
     </div>
   )

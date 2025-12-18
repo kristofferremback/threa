@@ -12,6 +12,7 @@ Fetch and respond to review comments on pull requests.
 ### 1. Determine PR number
 
 If not provided, detect from current branch:
+
 ```bash
 gh pr view --json number -q .number
 ```
@@ -50,6 +51,7 @@ query {
 ### 4. Present unresolved comments
 
 Summarize each comment showing:
+
 - File path and line number
 - The core issue (ignore HTML badges, buttons, metadata)
 - Severity if mentioned (High/Medium/Low)
@@ -95,6 +97,7 @@ mutation($body: String!) {
 ```
 
 3. Resolve the thread:
+
 ```bash
 gh api graphql -f query='
 mutation {
@@ -105,6 +108,7 @@ mutation {
 ```
 
 4. Clean up:
+
 ```bash
 rm /tmp/claude/pr-comment.md
 ```

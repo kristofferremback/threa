@@ -57,9 +57,7 @@ export class JobQueueManager {
     this.boss = new PgBoss({
       db: {
         executeSql: async (text: string, values?: unknown[]) => {
-          const result = await withClient(pool, (client) =>
-            client.query(text, values as unknown[]),
-          )
+          const result = await withClient(pool, (client) => client.query(text, values as unknown[]))
           return { rows: result.rows }
         },
       },
@@ -94,10 +92,7 @@ export class JobQueueManager {
   /**
    * Register a handler for a job queue. Must be called before start().
    */
-  registerHandler<T extends JobQueueName>(
-    queue: T,
-    handler: JobHandler<JobDataMap[T]>,
-  ): void {
+  registerHandler<T extends JobQueueName>(queue: T, handler: JobHandler<JobDataMap[T]>): void {
     this.handlers.set(queue, handler as JobHandler<unknown>)
   }
 
@@ -107,7 +102,7 @@ export class JobQueueManager {
   async send<T extends JobQueueName>(
     queue: T,
     data: JobDataMap[T],
-    options?: SendOptions,
+    options?: SendOptions
   ): Promise<string | null> {
     const mergedOptions = { ...COMPANION_JOB_OPTIONS, ...options }
     const jobId = await this.boss.send(queue, data, mergedOptions)
