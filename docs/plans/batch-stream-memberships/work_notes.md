@@ -56,6 +56,21 @@ WHERE stream_id = ANY($1) AND user_id = $2
 - [x] Updated workspace handler to use batch method
 - [x] Ran E2E tests - all 36 passing
 
+### 2025-12-18 - Bonus: Parallelize message handler queries
+
+While reviewing for N+1 patterns, found sequential queries in message handlers that could be parallelized.
+
+**Parallelized:**
+
+- `create` handler: `getStreamById` + `isMember` now run in parallel
+- `addReaction` handler: After getting message, `getStreamById` + `isMember` now run in parallel
+- `removeReaction` handler: Same as addReaction
+
+**Not parallelizable (data dependency):**
+
+- `update` handler: Needs `existing.streamId` from first query
+- `delete` handler: Same as update
+
 ---
 
 ## Key Decisions
@@ -77,3 +92,4 @@ WHERE stream_id = ANY($1) AND user_id = $2
 - `apps/backend/src/repositories/stream-member-repository.ts` - Add batch method
 - `apps/backend/src/services/stream-service.ts` - Add service wrapper
 - `apps/backend/src/handlers/workspace-handlers.ts` - Use batch method
+- `apps/backend/src/handlers/message-handlers.ts` - Parallelize sequential queries

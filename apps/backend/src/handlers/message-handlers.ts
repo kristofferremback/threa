@@ -48,12 +48,15 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
 
       const { streamId, content, contentFormat } = result.data
 
-      const stream = await streamService.getStreamById(streamId)
+      const [stream, isStreamMember] = await Promise.all([
+        streamService.getStreamById(streamId),
+        streamService.isMember(streamId, userId),
+      ])
+
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Stream not found" })
       }
 
-      const isStreamMember = await streamService.isMember(streamId, userId)
       if (!isStreamMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
@@ -164,12 +167,15 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const stream = await streamService.getStreamById(existing.streamId)
+      const [stream, isMember] = await Promise.all([
+        streamService.getStreamById(existing.streamId),
+        streamService.isMember(existing.streamId, userId),
+      ])
+
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
@@ -204,12 +210,15 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const stream = await streamService.getStreamById(existing.streamId)
+      const [stream, isMember] = await Promise.all([
+        streamService.getStreamById(existing.streamId),
+        streamService.isMember(existing.streamId, userId),
+      ])
+
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Message not found" })
       }
 
-      const isMember = await streamService.isMember(existing.streamId, userId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
