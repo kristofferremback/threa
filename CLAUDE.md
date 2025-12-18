@@ -166,6 +166,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies.                                                                                                                                          |
 | **INV-13** | Construct, Don't Assemble            | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies.                                                      |
 | **INV-14** | Shadcn UI Components                 | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components. |
+| **INV-15** | Dumb Components                      | React components handle UI rendering and local state only. No direct database access (`@/db`), no persistence logic, no business rules. Components receive capabilities via props/context (e.g., `sendMessage`) and call them without knowing implementation. Enforced by ESLint `no-restricted-imports`.   |
 
 When introducing a new invariant:
 

@@ -115,7 +115,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (e.eventType !== "message_created") return e
             const eventPayload = e.payload as { messageId: string; reactions?: Record<string, string[]> }
             if (eventPayload.messageId !== payload.messageId) return e
-            const reactions = { ...eventPayload.reactions } || {}
+            const reactions = { ...(eventPayload.reactions ?? {}) }
             reactions[payload.emoji] = [...(reactions[payload.emoji] || []), payload.userId]
             return { ...e, payload: { ...eventPayload, reactions } }
           }),
@@ -135,7 +135,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
             if (e.eventType !== "message_created") return e
             const eventPayload = e.payload as { messageId: string; reactions?: Record<string, string[]> }
             if (eventPayload.messageId !== payload.messageId) return e
-            const reactions = { ...eventPayload.reactions } || {}
+            const reactions = { ...(eventPayload.reactions ?? {}) }
             if (reactions[payload.emoji]) {
               reactions[payload.emoji] = reactions[payload.emoji].filter((id) => id !== payload.userId)
               if (reactions[payload.emoji].length === 0) {
