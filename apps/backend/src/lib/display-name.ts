@@ -110,11 +110,11 @@ export function formatParticipantNames(participants: { id: string; name: string 
  * Checks whether a stream needs auto-naming.
  * Returns true if:
  * - Stream is a scratchpad or thread
- * - Display name has not been generated yet
+ * - Display name is not set (neither manually nor generated)
  */
 export function needsAutoNaming(stream: Stream): boolean {
   if (stream.type !== "scratchpad" && stream.type !== "thread") {
     return false
   }
-  return stream.displayNameGeneratedAt === null
+  return stream.displayName === null
 }
