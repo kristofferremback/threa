@@ -4,6 +4,7 @@ import { StreamEventRepository, EventType, StreamEvent } from "../repositories/s
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
+import { serializeBigInt } from "../lib/serialization"
 
 // Event payloads
 export interface MessageCreatedPayload {
@@ -107,10 +108,11 @@ export class EventService {
       })
 
       // 3. Publish to outbox for real-time delivery
+      // Broadcast the StreamEvent (not Message) so frontend cache can use it directly
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
-        message,
+        event: serializeBigInt(event),
       })
 
       return message
@@ -120,7 +122,7 @@ export class EventService {
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
       // 1. Append event
-      await StreamEventRepository.insert(client, {
+      const event = await StreamEventRepository.insert(client, {
         id: eventId(),
         streamId: params.streamId,
         eventType: "message_edited",
@@ -140,7 +142,7 @@ export class EventService {
         await OutboxRepository.insert(client, "message:edited", {
           workspaceId: params.workspaceId,
           streamId: params.streamId,
-          message,
+          event: serializeBigInt(event),
         })
       }
 

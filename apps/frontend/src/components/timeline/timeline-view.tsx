@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from "react"
 import { useParams } from "react-router-dom"
-import { useEvents } from "@/hooks"
+import { useEvents, useStreamSocket } from "@/hooks"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 
@@ -12,6 +12,9 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScroll = useRef(true)
+
+  // Subscribe to stream room FIRST (subscribe-then-bootstrap pattern)
+  useStreamSocket(workspaceId!, streamId!, { enabled: !isDraft })
 
   const { events, isLoading, error, fetchOlderEvents, hasOlderEvents, isFetchingOlder } = useEvents(
     workspaceId!,

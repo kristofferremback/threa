@@ -7,6 +7,12 @@ import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/o
 import { AuthorTypes, CompanionModes } from "./constants"
 import { logger } from "./logger"
 
+interface MessageCreatedEventPayload {
+  messageId: string
+  content: string
+  contentFormat: string
+}
+
 /**
  * Creates a companion listener that dispatches agentic jobs for messages
  * in streams with companion mode enabled.
@@ -25,17 +31,18 @@ export function createCompanionListener(
   return new OutboxListener(pool, {
     ...config,
     listenerId: "companion",
-    handler: async (event: OutboxEvent) => {
+    handler: async (outboxEvent: OutboxEvent) => {
       // Only process message:created events
-      if (event.eventType !== "message:created") {
+      if (outboxEvent.eventType !== "message:created") {
         return
       }
 
-      const payload = event.payload as MessageCreatedOutboxPayload
-      const { message, streamId } = payload
+      const payload = outboxEvent.payload as MessageCreatedOutboxPayload
+      const { event, streamId } = payload
+      const eventPayload = event.payload as MessageCreatedEventPayload
 
       // Ignore persona messages (avoid infinite loops)
-      if (message.authorType !== AuthorTypes.USER) {
+      if (event.actorType !== AuthorTypes.USER) {
         return
       }
 
@@ -54,11 +61,11 @@ export function createCompanionListener(
         // Dispatch job to pg-boss for durable processing
         await jobQueue.send(JobQueues.COMPANION_RESPOND, {
           streamId,
-          messageId: message.id,
-          triggeredBy: message.authorId,
+          messageId: eventPayload.messageId,
+          triggeredBy: event.actorId,
         })
 
-        logger.info({ streamId, messageId: message.id }, "Companion job dispatched")
+        logger.info({ streamId, messageId: eventPayload.messageId }, "Companion job dispatched")
       })
     },
   })

@@ -163,12 +163,8 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
       if (result && "newStreamId" in result) {
         // Navigate to the new stream (draft was converted)
         navigate(`/w/${workspaceId}/s/${result.newStreamId}`)
-      } else {
-        // Invalidate to get fresh data with server-assigned IDs
-        queryClient.invalidateQueries({
-          queryKey: streamKeys.bootstrap(workspaceId, streamId),
-        })
       }
+      // No invalidation needed - WebSocket will deliver the confirmed event
     },
   })
 
