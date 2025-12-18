@@ -103,10 +103,7 @@ export class WorkosAuthService implements AuthService {
         session: { sealSession: true, cookiePassword: this.cookiePassword },
       })
 
-      logger.info(
-        { email: user.email, sealedSession: !!sealedSession },
-        "User authenticated with code"
-      )
+      logger.info({ email: user.email, sealedSession: !!sealedSession }, "User authenticated with code")
 
       return {
         success: true,

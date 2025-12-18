@@ -49,9 +49,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [fetchUser])
 
   const login = useCallback((redirectTo?: string) => {
-    const url = redirectTo
-      ? `/api/auth/login?redirect_to=${encodeURIComponent(redirectTo)}`
-      : "/api/auth/login"
+    const url = redirectTo ? `/api/auth/login?redirect_to=${encodeURIComponent(redirectTo)}` : "/api/auth/login"
     window.location.href = url
   }, [])
 

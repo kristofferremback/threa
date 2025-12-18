@@ -143,10 +143,10 @@ export async function createStream(
     visibility?: "public" | "private"
   }
 ): Promise<Stream> {
-  const { status, data } = await client.post<{ stream: Stream }>(
-    `/api/workspaces/${workspaceId}/streams`,
-    { type, ...options }
-  )
+  const { status, data } = await client.post<{ stream: Stream }>(`/api/workspaces/${workspaceId}/streams`, {
+    type,
+    ...options,
+  })
   if (status !== 201) {
     throw new Error(`Create stream failed: ${JSON.stringify(data)}`)
   }
@@ -170,20 +170,14 @@ export async function createChannel(
   return createStream(client, workspaceId, "channel", { slug, visibility })
 }
 
-export async function listStreams(
-  client: TestClient,
-  workspaceId: string,
-  types?: string[]
-): Promise<Stream[]> {
+export async function listStreams(client: TestClient, workspaceId: string, types?: string[]): Promise<Stream[]> {
   const params = new URLSearchParams()
   if (types) {
     types.forEach((t) => params.append("stream_type", t))
   }
   const query = params.toString() ? `?${params.toString()}` : ""
 
-  const { status, data } = await client.get<{ streams: Stream[] }>(
-    `/api/workspaces/${workspaceId}/streams${query}`
-  )
+  const { status, data } = await client.get<{ streams: Stream[] }>(`/api/workspaces/${workspaceId}/streams${query}`)
   if (status !== 200) {
     throw new Error(`List streams failed: ${JSON.stringify(data)}`)
   }
@@ -196,10 +190,10 @@ export async function sendMessage(
   streamId: string,
   content: string
 ): Promise<Message> {
-  const { status, data } = await client.post<{ message: Message }>(
-    `/api/workspaces/${workspaceId}/messages`,
-    { streamId, content }
-  )
+  const { status, data } = await client.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
+    streamId,
+    content,
+  })
   if (status !== 201) {
     throw new Error(`Send message failed: ${JSON.stringify(data)}`)
   }
@@ -258,14 +252,8 @@ export async function removeReaction(
   return data.message
 }
 
-export async function getStream(
-  client: TestClient,
-  workspaceId: string,
-  streamId: string
-): Promise<Stream> {
-  const { status, data } = await client.get<{ stream: Stream }>(
-    `/api/workspaces/${workspaceId}/streams/${streamId}`
-  )
+export async function getStream(client: TestClient, workspaceId: string, streamId: string): Promise<Stream> {
+  const { status, data } = await client.get<{ stream: Stream }>(`/api/workspaces/${workspaceId}/streams/${streamId}`)
   if (status !== 200) {
     throw new Error(`Get stream failed: ${JSON.stringify(data)}`)
   }
@@ -304,11 +292,7 @@ export async function updateMessage(
   return data.message
 }
 
-export async function deleteMessage(
-  client: TestClient,
-  workspaceId: string,
-  messageId: string
-): Promise<void> {
+export async function deleteMessage(client: TestClient, workspaceId: string, messageId: string): Promise<void> {
   const { status } = await client.delete(`/api/workspaces/${workspaceId}/messages/${messageId}`)
   if (status !== 204) {
     throw new Error(`Delete message failed with status ${status}`)

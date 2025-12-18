@@ -45,11 +45,7 @@ function mapRowToMember(row: StreamMemberRow): StreamMember {
 }
 
 export const StreamMemberRepository = {
-  async findByStreamAndUser(
-    client: PoolClient,
-    streamId: string,
-    userId: string
-  ): Promise<StreamMember | null> {
+  async findByStreamAndUser(client: PoolClient, streamId: string, userId: string): Promise<StreamMember | null> {
     const result = await client.query<StreamMemberRow>(sql`
       SELECT stream_id, user_id, pinned, pinned_at, muted,
              last_read_event_id, last_read_at, joined_at
@@ -59,10 +55,7 @@ export const StreamMemberRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
-  async list(
-    client: PoolClient,
-    filters: { userId?: string; streamId?: string }
-  ): Promise<StreamMember[]> {
+  async list(client: PoolClient, filters: { userId?: string; streamId?: string }): Promise<StreamMember[]> {
     if (filters.userId && !filters.streamId) {
       const result = await client.query<StreamMemberRow>(sql`
         SELECT stream_id, user_id, pinned, pinned_at, muted,

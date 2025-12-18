@@ -172,10 +172,7 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
-  async findByTriggerMessage(
-    client: PoolClient,
-    triggerMessageId: string
-  ): Promise<AgentSession | null> {
+  async findByTriggerMessage(client: PoolClient, triggerMessageId: string): Promise<AgentSession | null> {
     const result = await client.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
@@ -199,8 +196,7 @@ export const AgentSessionRepository = {
     }
   ): Promise<AgentSession | null> {
     const now = new Date()
-    const completedAt =
-      status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED ? now : null
+    const completedAt = status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED ? now : null
 
     const result = await client.query<SessionRow>(
       sql`
@@ -243,10 +239,7 @@ export const AgentSessionRepository = {
    * Find sessions that are running but have stale heartbeats.
    * These are candidates for recovery/retry.
    */
-  async findOrphaned(
-    client: PoolClient,
-    staleThresholdSeconds: number = 60
-  ): Promise<AgentSession[]> {
+  async findOrphaned(client: PoolClient, staleThresholdSeconds: number = 60): Promise<AgentSession[]> {
     const result = await client.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
@@ -279,11 +272,7 @@ export const AgentSessionRepository = {
     return mapRowToStep(result.rows[0])
   },
 
-  async completeStep(
-    client: PoolClient,
-    stepId: string,
-    tokensUsed?: number
-  ): Promise<AgentSessionStep | null> {
+  async completeStep(client: PoolClient, stepId: string, tokensUsed?: number): Promise<AgentSessionStep | null> {
     const result = await client.query<StepRow>(
       sql`
         UPDATE agent_session_steps

@@ -70,17 +70,10 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
         )}
         {isDraft ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              Start typing to begin this conversation...
-            </p>
+            <p className="text-sm text-muted-foreground">Start typing to begin this conversation...</p>
           </div>
         ) : (
-          <EventList
-            events={events}
-            isLoading={isLoading}
-            workspaceId={workspaceId}
-            streamId={streamId}
-          />
+          <EventList events={events} isLoading={isLoading} workspaceId={workspaceId} streamId={streamId} />
         )}
       </div>
       <MessageInput workspaceId={workspaceId} streamId={streamId} isDraft={isDraft} />

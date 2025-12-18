@@ -1,12 +1,5 @@
 import { api } from "./client"
-import type {
-  Stream,
-  StreamMember,
-  StreamEvent,
-  StreamType,
-  Visibility,
-  CompanionMode,
-} from "@/types/domain"
+import type { Stream, StreamMember, StreamEvent, StreamType, Visibility, CompanionMode } from "@/types/domain"
 
 // Bootstrap response - everything needed to render a stream
 export interface StreamBootstrap {
@@ -47,16 +40,12 @@ export const streamsApi = {
   },
 
   async get(workspaceId: string, streamId: string): Promise<Stream> {
-    const res = await api.get<{ stream: Stream }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}`
-    )
+    const res = await api.get<{ stream: Stream }>(`/api/workspaces/${workspaceId}/streams/${streamId}`)
     return res.stream
   },
 
   async bootstrap(workspaceId: string, streamId: string): Promise<StreamBootstrap> {
-    const res = await api.get<{ data: StreamBootstrap }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
-    )
+    const res = await api.get<{ data: StreamBootstrap }>(`/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`)
     return res.data
   },
 
@@ -66,10 +55,7 @@ export const streamsApi = {
   },
 
   async update(workspaceId: string, streamId: string, data: UpdateStreamInput): Promise<Stream> {
-    const res = await api.patch<{ stream: Stream }>(
-      `/api/workspaces/${workspaceId}/streams/${streamId}`,
-      data
-    )
+    const res = await api.patch<{ stream: Stream }>(`/api/workspaces/${workspaceId}/streams/${streamId}`, data)
     return res.stream
   },
 

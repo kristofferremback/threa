@@ -4,13 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { useMessageService, useStreamService } from "@/contexts"
-import {
-  streamKeys,
-  useDraftScratchpads,
-  workspaceKeys,
-  useDraftMessage,
-  getDraftMessageKey,
-} from "@/hooks"
+import { streamKeys, useDraftScratchpads, workspaceKeys, useDraftMessage, getDraftMessageKey } from "@/hooks"
 import { db } from "@/db"
 import type { StreamEvent } from "@/types/domain"
 import { StreamTypes } from "@/types/domain"
@@ -31,11 +25,7 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
 
   // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
-  const {
-    content: savedDraft,
-    saveDraftDebounced,
-    clearDraft,
-  } = useDraftMessage(workspaceId, draftKey)
+  const { content: savedDraft, saveDraftDebounced, clearDraft } = useDraftMessage(workspaceId, draftKey)
 
   // Local state for immediate UI updates
   const [content, setContent] = useState("")
@@ -215,18 +205,12 @@ export function MessageInput({ workspaceId, streamId, isDraft = false }: Message
           className="min-h-[80px] resize-none"
           disabled={sendMutation.isPending}
         />
-        <Button
-          onClick={handleSubmit}
-          disabled={!content.trim() || sendMutation.isPending}
-          className="self-end"
-        >
+        <Button onClick={handleSubmit} disabled={!content.trim() || sendMutation.isPending} className="self-end">
           {sendMutation.isPending ? "Sending..." : "Send"}
         </Button>
       </div>
       {sendMutation.isError && (
-        <p className="mt-2 text-sm text-destructive">
-          Failed to send message. It will be retried automatically.
-        </p>
+        <p className="mt-2 text-sm text-destructive">Failed to send message. It will be retried automatically.</p>
       )}
     </div>
   )

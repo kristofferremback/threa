@@ -189,15 +189,7 @@ interface ScratchpadItemProps {
   onArchive: () => void
 }
 
-function ScratchpadItem({
-  workspaceId,
-  id,
-  displayName,
-  isDraft,
-  isActive,
-  onRename,
-  onArchive,
-}: ScratchpadItemProps) {
+function ScratchpadItem({ workspaceId, id, displayName, isDraft, isActive, onRename, onArchive }: ScratchpadItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)

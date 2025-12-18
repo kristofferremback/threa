@@ -4,11 +4,7 @@ import { AuthorTypes, CompanionModes, type AuthorType } from "../lib/constants"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
-import {
-  AgentSessionRepository,
-  SessionStatuses,
-  type AgentSession,
-} from "../repositories/agent-session-repository"
+import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import type { ResponseGenerator } from "./companion-runner"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -68,12 +64,7 @@ export async function withSession(
         serverId,
       })
     } else {
-      session = await AgentSessionRepository.updateStatus(
-        client,
-        session.id,
-        SessionStatuses.RUNNING,
-        { serverId }
-      )
+      session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, { serverId })
     }
 
     if (!session) {

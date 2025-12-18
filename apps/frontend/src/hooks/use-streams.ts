@@ -12,12 +12,10 @@ export const streamKeys = {
   list: (workspaceId: string, filters?: { type?: StreamType }) =>
     [...streamKeys.lists(), workspaceId, filters] as const,
   details: () => [...streamKeys.all, "detail"] as const,
-  detail: (workspaceId: string, streamId: string) =>
-    [...streamKeys.details(), workspaceId, streamId] as const,
+  detail: (workspaceId: string, streamId: string) => [...streamKeys.details(), workspaceId, streamId] as const,
   bootstrap: (workspaceId: string, streamId: string) =>
     [...streamKeys.all, "bootstrap", workspaceId, streamId] as const,
-  events: (workspaceId: string, streamId: string) =>
-    [...streamKeys.all, "events", workspaceId, streamId] as const,
+  events: (workspaceId: string, streamId: string) => [...streamKeys.all, "events", workspaceId, streamId] as const,
 }
 
 export function useStreams(workspaceId: string, filters?: { type?: StreamType }) {
@@ -55,11 +53,7 @@ export function useStream(workspaceId: string, streamId: string) {
   })
 }
 
-export function useStreamBootstrap(
-  workspaceId: string,
-  streamId: string,
-  options?: { enabled?: boolean }
-) {
+export function useStreamBootstrap(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
   const streamService = useStreamService()
 
   return useQuery({

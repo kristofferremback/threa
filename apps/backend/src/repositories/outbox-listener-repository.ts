@@ -136,12 +136,7 @@ export const OutboxListenerRepository = {
    *
    * IMPORTANT: Must be called within a transaction where claimListener() was called first.
    */
-  async moveToDeadLetter(
-    client: PoolClient,
-    listenerId: string,
-    eventId: bigint,
-    error: string
-  ): Promise<void> {
+  async moveToDeadLetter(client: PoolClient, listenerId: string, eventId: bigint, error: string): Promise<void> {
     await client.query(sql`
       INSERT INTO outbox_dead_letters (listener_id, outbox_event_id, error)
       VALUES (${listenerId}, ${eventId.toString()}, ${error})
@@ -188,11 +183,7 @@ export const OutboxListenerRepository = {
    * WARNING: Default startFromId=0 will cause new listeners to process ALL historical events.
    * Use ensureListenerFromLatest() to start from the current position instead.
    */
-  async ensureListener(
-    client: PoolClient,
-    listenerId: string,
-    startFromId: bigint = 0n
-  ): Promise<void> {
+  async ensureListener(client: PoolClient, listenerId: string, startFromId: bigint = 0n): Promise<void> {
     await client.query(sql`
       INSERT INTO outbox_listeners (listener_id, last_processed_id)
       VALUES (${listenerId}, ${startFromId.toString()})
@@ -321,10 +312,7 @@ export async function withClaim(
         : { status: CLAIM_STATUS.NO_EVENTS }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
-      logger.error(
-        { err, listenerId, lastProcessedId: currentCursor.toString() },
-        "Error in withClaim callback"
-      )
+      logger.error({ err, listenerId, lastProcessedId: currentCursor.toString() }, "Error in withClaim callback")
 
       // Try to schedule retry
       const retryAfter = await OutboxListenerRepository.recordError(
@@ -349,12 +337,7 @@ export async function withClaim(
             },
             "Max retries exceeded, moving to dead letter"
           )
-          await OutboxListenerRepository.moveToDeadLetter(
-            client,
-            listenerId,
-            failedEvent.id,
-            errorMessage
-          )
+          await OutboxListenerRepository.moveToDeadLetter(client, listenerId, failedEvent.id, errorMessage)
           // Update cursor past this event so we continue with the next
           await OutboxListenerRepository.updateCursor(client, listenerId, failedEvent.id)
         }

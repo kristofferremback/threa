@@ -21,10 +21,7 @@ export const messagesApi = {
   },
 
   async update(workspaceId: string, messageId: string, data: UpdateMessageInput): Promise<Message> {
-    const res = await api.patch<{ message: Message }>(
-      `/api/workspaces/${workspaceId}/messages/${messageId}`,
-      data
-    )
+    const res = await api.patch<{ message: Message }>(`/api/workspaces/${workspaceId}/messages/${messageId}`, data)
     return res.message
   },
 

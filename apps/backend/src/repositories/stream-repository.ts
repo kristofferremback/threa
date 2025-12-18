@@ -101,9 +101,7 @@ const SELECT_FIELDS = `
 
 export const StreamRepository = {
   async findById(client: PoolClient, id: string): Promise<Stream | null> {
-    const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`
-    )
+    const result = await client.query<StreamRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`)
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
@@ -256,11 +254,7 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
-  async slugExistsInWorkspace(
-    client: PoolClient,
-    workspaceId: string,
-    slug: string
-  ): Promise<boolean> {
+  async slugExistsInWorkspace(client: PoolClient, workspaceId: string, slug: string): Promise<boolean> {
     const result = await client.query(sql`
       SELECT 1 FROM streams
       WHERE workspace_id = ${workspaceId} AND slug = ${slug}

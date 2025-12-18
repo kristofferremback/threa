@@ -99,11 +99,7 @@ export class JobQueueManager {
   /**
    * Send a job to the queue.
    */
-  async send<T extends JobQueueName>(
-    queue: T,
-    data: JobDataMap[T],
-    options?: SendOptions
-  ): Promise<string | null> {
+  async send<T extends JobQueueName>(queue: T, data: JobDataMap[T], options?: SendOptions): Promise<string | null> {
     const mergedOptions = { ...COMPANION_JOB_OPTIONS, ...options }
     const jobId = await this.boss.send(queue, data, mergedOptions)
     logger.debug({ queue, jobId, data }, "Job sent")

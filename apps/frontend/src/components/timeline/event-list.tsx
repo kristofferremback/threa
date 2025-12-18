@@ -22,9 +22,7 @@ export function EventList({ events, isLoading, workspaceId, streamId }: EventLis
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <p className="text-muted-foreground">No messages yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Start the conversation by sending a message below
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Start the conversation by sending a message below</p>
         </div>
       </div>
     )

@@ -78,9 +78,7 @@ export function WorkspaceSelectPage() {
           <Button type="submit" disabled={!newWorkspaceName.trim() || createWorkspace.isPending}>
             {createWorkspace.isPending ? "Creating..." : "Create Workspace"}
           </Button>
-          {createWorkspace.error && (
-            <p className="text-sm text-destructive">{createWorkspace.error.message}</p>
-          )}
+          {createWorkspace.error && <p className="text-sm text-destructive">{createWorkspace.error.message}</p>}
         </form>
       </div>
     </div>

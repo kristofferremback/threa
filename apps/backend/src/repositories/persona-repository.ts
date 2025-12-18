@@ -77,11 +77,7 @@ export const PersonaRepository = {
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
 
-  async findBySlug(
-    client: PoolClient,
-    slug: string,
-    workspaceId?: string | null
-  ): Promise<Persona | null> {
+  async findBySlug(client: PoolClient, slug: string, workspaceId?: string | null): Promise<Persona | null> {
     // System personas have null workspace_id
     if (workspaceId === null || workspaceId === undefined) {
       const result = await client.query<PersonaRow>(

@@ -7,8 +7,7 @@ import type { StreamEvent } from "@/types/domain"
 
 export const eventKeys = {
   all: ["events"] as const,
-  list: (workspaceId: string, streamId: string) =>
-    [...eventKeys.all, "list", workspaceId, streamId] as const,
+  list: (workspaceId: string, streamId: string) => [...eventKeys.all, "list", workspaceId, streamId] as const,
 }
 
 export function useEvents(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
@@ -78,17 +77,14 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   const addEvent = useCallback(
     async (event: StreamEvent) => {
       // Update cache
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, streamId),
-        (old: typeof bootstrap) => {
-          if (!old) return old
-          return {
-            ...old,
-            events: [...old.events, event],
-            latestSequence: event.sequence,
-          }
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
+        if (!old) return old
+        return {
+          ...old,
+          events: [...old.events, event],
+          latestSequence: event.sequence,
         }
-      )
+      })
       // Also cache to IndexedDB
       await db.events.put({ ...event, _cachedAt: Date.now() })
     },
@@ -98,16 +94,13 @@ export function useEvents(workspaceId: string, streamId: string, options?: { ena
   // Handler to update an existing event (edit/delete)
   const updateEvent = useCallback(
     async (eventId: string, updates: Partial<StreamEvent>) => {
-      queryClient.setQueryData(
-        streamKeys.bootstrap(workspaceId, streamId),
-        (old: typeof bootstrap) => {
-          if (!old) return old
-          return {
-            ...old,
-            events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)),
-          }
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: typeof bootstrap) => {
+        if (!old) return old
+        return {
+          ...old,
+          events: old.events.map((e) => (e.id === eventId ? { ...e, ...updates } : e)),
         }
-      )
+      })
       // Update IndexedDB
       await db.events.update(eventId, updates)
     },

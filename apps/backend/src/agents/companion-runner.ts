@@ -103,10 +103,7 @@ export class StubResponseGenerator implements ResponseGenerator {
   ) {}
 
   async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
-    logger.debug(
-      { threadId: params.threadId, messageCount: params.messages.length },
-      "Running stub response generator"
-    )
+    logger.debug({ threadId: params.threadId, messageCount: params.messages.length }, "Running stub response generator")
     return { response: this.response }
   }
 }

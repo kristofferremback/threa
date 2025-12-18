@@ -151,9 +151,7 @@ async function main() {
   } catch (err) {
     console.warn("Could not create database - ensure docker is running and postgres is started")
     console.warn("Run 'bun run db:start' and then manually create the database:")
-    console.warn(
-      `  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
-    )
+    console.warn(`  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`)
   }
 
   console.log("\nWorktree setup complete!")

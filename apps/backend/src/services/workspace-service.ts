@@ -27,9 +27,7 @@ export class WorkspaceService {
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
     return withTransaction(this.pool, async (client) => {
       const id = workspaceId()
-      const slug = await generateUniqueSlug(params.name, (slug) =>
-        WorkspaceRepository.slugExists(client, slug)
-      )
+      const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
       const workspace = await WorkspaceRepository.insert(client, {
         id,
@@ -50,9 +48,7 @@ export class WorkspaceService {
     userId: string,
     role: WorkspaceMember["role"] = "member"
   ): Promise<WorkspaceMember> {
-    return withTransaction(this.pool, (client) =>
-      WorkspaceRepository.addMember(client, workspaceId, userId, role)
-    )
+    return withTransaction(this.pool, (client) => WorkspaceRepository.addMember(client, workspaceId, userId, role))
   }
 
   async getMembers(workspaceId: string): Promise<WorkspaceMember[]> {
@@ -60,8 +56,6 @@ export class WorkspaceService {
   }
 
   async isMember(workspaceId: string, userId: string): Promise<boolean> {
-    return withClient(this.pool, (client) =>
-      WorkspaceRepository.isMember(client, workspaceId, userId)
-    )
+    return withClient(this.pool, (client) => WorkspaceRepository.isMember(client, workspaceId, userId))
   }
 }

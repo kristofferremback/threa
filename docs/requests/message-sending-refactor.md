@@ -21,12 +21,7 @@ Extract message sending logic into a dedicated service or hook.
 ```typescript
 // services/message-sender.ts
 export const messageSender = {
-  send: async (params: {
-    workspaceId: string
-    streamId: string
-    content: string
-    isDraft: boolean
-  }) => {
+  send: async (params: { workspaceId: string; streamId: string; content: string; isDraft: boolean }) => {
     // All the logic currently in the mutation
     // Returns { success: true, newStreamId?: string } or throws
   },

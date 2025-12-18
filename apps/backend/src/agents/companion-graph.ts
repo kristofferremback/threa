@@ -117,10 +117,6 @@ export function createCompanionGraph(model: ChatOpenAI) {
 /**
  * Convert our message format to LangChain messages.
  */
-export function toLangChainMessages(
-  messages: Array<{ role: "user" | "assistant"; content: string }>
-): BaseMessage[] {
-  return messages.map((m) =>
-    m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content)
-  )
+export function toLangChainMessages(messages: Array<{ role: "user" | "assistant"; content: string }>): BaseMessage[] {
+  return messages.map((m) => (m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content)))
 }

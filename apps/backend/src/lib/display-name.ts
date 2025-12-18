@@ -19,10 +19,7 @@ export interface EffectiveDisplayName {
  * - DM: format participant names
  * - Scratchpad/Thread: use generated name or placeholder
  */
-export function getEffectiveDisplayName(
-  stream: Stream,
-  context?: DisplayNameContext
-): EffectiveDisplayName {
+export function getEffectiveDisplayName(stream: Stream, context?: DisplayNameContext): EffectiveDisplayName {
   switch (stream.type) {
     case "channel":
       return {
@@ -51,8 +48,7 @@ export function getEffectiveDisplayName(
       }
       // Placeholder for threads without a generated name
       if (context?.parentStream) {
-        const parentName =
-          context.parentStream.slug ?? context.parentStream.displayName ?? "channel"
+        const parentName = context.parentStream.slug ?? context.parentStream.displayName ?? "channel"
         return {
           displayName: `Thread in #${parentName}`,
           source: "placeholder",
@@ -90,10 +86,7 @@ export function getEffectiveDisplayName(
  * - 2 others: "Max and Sam"
  * - 3+ others: "Max, Sam, and 2 others"
  */
-export function formatParticipantNames(
-  participants: { id: string; name: string }[],
-  viewingUserId: string
-): string {
+export function formatParticipantNames(participants: { id: string; name: string }[], viewingUserId: string): string {
   const others = participants.filter((p) => p.id !== viewingUserId)
 
   if (others.length === 0) {

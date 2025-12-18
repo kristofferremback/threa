@@ -15,9 +15,7 @@ export class UserService {
   }
 
   async getUserByWorkosUserId(workosUserId: string): Promise<User | null> {
-    return withClient(this.pool, (client) =>
-      UserRepository.findByWorkosUserId(client, workosUserId)
-    )
+    return withClient(this.pool, (client) => UserRepository.findByWorkosUserId(client, workosUserId))
   }
 
   async ensureUser(params: Omit<InsertUserParams, "id">): Promise<User> {

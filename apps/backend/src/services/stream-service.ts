@@ -67,11 +67,7 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamRepository.findById(client, id))
   }
 
-  async validateStreamAccess(
-    streamId: string,
-    workspaceId: string,
-    userId: string
-  ): Promise<Stream> {
+  async validateStreamAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
 
@@ -108,11 +104,7 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamRepository.list(client, workspaceId))
   }
 
-  async list(
-    workspaceId: string,
-    userId: string,
-    filters?: { types?: StreamType[] }
-  ): Promise<Stream[]> {
+  async list(workspaceId: string, userId: string, filters?: { types?: StreamType[] }): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
       const memberships = await StreamMemberRepository.list(client, { userId })
       const memberStreamIds = memberships.map((m) => m.streamId)
@@ -179,11 +171,7 @@ export class StreamService {
       const id = streamId()
 
       // Check if slug already exists
-      const slugExists = await StreamRepository.slugExistsInWorkspace(
-        client,
-        params.workspaceId,
-        params.slug
-      )
+      const slugExists = await StreamRepository.slugExistsInWorkspace(client, params.workspaceId, params.slug)
       if (slugExists) {
         throw new DuplicateSlugError(params.slug)
       }
@@ -251,15 +239,10 @@ export class StreamService {
   }
 
   async archiveStream(streamId: string): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamRepository.update(client, streamId, { archivedAt: new Date() })
-    )
+    return withTransaction(this.pool, (client) => StreamRepository.update(client, streamId, { archivedAt: new Date() }))
   }
 
-  async updateStream(
-    streamId: string,
-    data: { displayName?: string; description?: string }
-  ): Promise<Stream | null> {
+  async updateStream(streamId: string, data: { displayName?: string; description?: string }): Promise<Stream | null> {
     return withTransaction(this.pool, (client) => StreamRepository.update(client, streamId, data))
   }
 
@@ -278,15 +261,11 @@ export class StreamService {
 
   // Member operations
   async addMember(streamId: string, userId: string): Promise<StreamMember> {
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.insert(client, streamId, userId)
-    )
+    return withTransaction(this.pool, (client) => StreamMemberRepository.insert(client, streamId, userId))
   }
 
   async removeMember(streamId: string, userId: string): Promise<boolean> {
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.delete(client, streamId, userId)
-    )
+    return withTransaction(this.pool, (client) => StreamMemberRepository.delete(client, streamId, userId))
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {
@@ -294,34 +273,22 @@ export class StreamService {
   }
 
   async getMembership(streamId: string, userId: string): Promise<StreamMember | null> {
-    return withClient(this.pool, (client) =>
-      StreamMemberRepository.findByStreamAndUser(client, streamId, userId)
-    )
+    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamAndUser(client, streamId, userId))
   }
 
   async isMember(streamId: string, userId: string): Promise<boolean> {
-    return withClient(this.pool, (client) =>
-      StreamMemberRepository.isMember(client, streamId, userId)
-    )
+    return withClient(this.pool, (client) => StreamMemberRepository.isMember(client, streamId, userId))
   }
 
   async pinStream(streamId: string, userId: string, pinned: boolean): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.update(client, streamId, userId, { pinned })
-    )
+    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, userId, { pinned }))
   }
 
   async muteStream(streamId: string, userId: string, muted: boolean): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.update(client, streamId, userId, { muted })
-    )
+    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, userId, { muted }))
   }
 
-  async markAsRead(
-    streamId: string,
-    userId: string,
-    eventId: string
-  ): Promise<StreamMember | null> {
+  async markAsRead(streamId: string, userId: string, eventId: string): Promise<StreamMember | null> {
     return withTransaction(this.pool, (client) =>
       StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: eventId })
     )

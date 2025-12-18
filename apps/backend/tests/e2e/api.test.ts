@@ -82,9 +82,7 @@ describe("API E2E Tests", () => {
       expect(workspace.slug).toMatch(/^test-workspace-/)
 
       // Retrieve it
-      const { status, data } = await client.get<{ workspace: typeof workspace }>(
-        `/api/workspaces/${workspace.id}`
-      )
+      const { status, data } = await client.get<{ workspace: typeof workspace }>(`/api/workspaces/${workspace.id}`)
       expect(status).toBe(200)
       expect(data.workspace.id).toBe(workspace.id)
     })
@@ -199,9 +197,7 @@ describe("API E2E Tests", () => {
 
       // Verify message_deleted event exists
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_deleted"])
-      const deleteEvent = events.find(
-        (e) => (e.payload as { messageId: string }).messageId === message.id
-      )
+      const deleteEvent = events.find((e) => (e.payload as { messageId: string }).messageId === message.id)
       expect(deleteEvent).toBeDefined()
     })
   })
@@ -225,12 +221,7 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-shortcode"), "Reaction Shortcode Test")
       const workspace = await createWorkspace(client, `React SC WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "React with shortcode!"
-      )
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "React with shortcode!")
 
       // Send shortcode directly
       const updated = await addReaction(client, workspace.id, message.id, ":heart:")
@@ -257,12 +248,7 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-rm-sc"), "Reaction Remove SC Test")
       const workspace = await createWorkspace(client, `React RmSC WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "React then unreact with shortcode"
-      )
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "React then unreact with shortcode")
 
       await addReaction(client, workspace.id, message.id, ":fire:")
       // Remove with shortcode
@@ -291,12 +277,7 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-dup"), "Reaction Dup Test")
       const workspace = await createWorkspace(client, `React Dup WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "Duplicate reaction test"
-      )
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "Duplicate reaction test")
 
       await addReaction(client, workspace.id, message.id, "🎉")
       const updated = await addReaction(client, workspace.id, message.id, "🎉")
@@ -319,12 +300,7 @@ describe("API E2E Tests", () => {
       // For this test, we need to add user2 as a member. Since there's no API for that yet,
       // let's test with user1 only but verify the structure.
 
-      const message = await sendMessage(
-        client1,
-        workspace.id,
-        scratchpad.id,
-        "Multi-user reactions"
-      )
+      const message = await sendMessage(client1, workspace.id, scratchpad.id, "Multi-user reactions")
       const updated = await addReaction(client1, workspace.id, message.id, "👍")
 
       expect(updated.reactions[":+1:"]).toContain(user1.id)
@@ -335,12 +311,7 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-invalid"), "Reaction Invalid Test")
       const workspace = await createWorkspace(client, `React Invalid WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "Invalid reaction test"
-      )
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "Invalid reaction test")
 
       const { status, data } = await client.post<{ error: string }>(
         `/api/workspaces/${workspace.id}/messages/${message.id}/reactions`,
@@ -356,12 +327,7 @@ describe("API E2E Tests", () => {
       await loginAs(client, testEmail("reaction-unknown"), "Reaction Unknown Test")
       const workspace = await createWorkspace(client, `React Unknown WS ${testRunId}`)
       const scratchpad = await createScratchpad(client, workspace.id)
-      const message = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "Unknown shortcode test"
-      )
+      const message = await sendMessage(client, workspace.id, scratchpad.id, "Unknown shortcode test")
 
       const { status, data } = await client.post<{ error: string }>(
         `/api/workspaces/${workspace.id}/messages/${message.id}/reactions`,
@@ -435,10 +401,10 @@ describe("API E2E Tests", () => {
 
       await createChannel(client, workspace.id, `announcements-${testRunId}`)
 
-      const { status, data } = await client.post<{ error: string }>(
-        `/api/workspaces/${workspace.id}/streams`,
-        { type: "channel", slug: `announcements-${testRunId}` }
-      )
+      const { status, data } = await client.post<{ error: string }>(`/api/workspaces/${workspace.id}/streams`, {
+        type: "channel",
+        slug: `announcements-${testRunId}`,
+      })
 
       expect(status).toBe(409)
       expect(data.error).toContain("already exists")
@@ -498,9 +464,7 @@ describe("API E2E Tests", () => {
 
       const workspace = await createWorkspace(client1, `Private WS ${testRunId}`)
 
-      const { status, data } = await client2.get<{ error: string }>(
-        `/api/workspaces/${workspace.id}`
-      )
+      const { status, data } = await client2.get<{ error: string }>(`/api/workspaces/${workspace.id}`)
 
       expect(status).toBe(403)
       expect(data.error).toBe("Not a member of this workspace")
@@ -529,9 +493,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       await loginAs(client, testEmail("err-404-ws"), "Error 404 WS Test")
 
-      const { status, data } = await client.get<{ error: string }>(
-        "/api/workspaces/ws_nonexistent123"
-      )
+      const { status, data } = await client.get<{ error: string }>("/api/workspaces/ws_nonexistent123")
 
       expect(status).toBe(404)
       expect(data.error).toBe("Workspace not found")
@@ -629,18 +591,8 @@ describe("API E2E Tests", () => {
 
       // 4. Send messages
       const m1 = await sendMessage(client, workspace.id, scratchpad.id, "I need to plan my startup")
-      const m2 = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "First step: validate the idea"
-      )
-      const m3 = await sendMessage(
-        client,
-        workspace.id,
-        scratchpad.id,
-        "Second step: find customers"
-      )
+      const m2 = await sendMessage(client, workspace.id, scratchpad.id, "First step: validate the idea")
+      const m3 = await sendMessage(client, workspace.id, scratchpad.id, "Second step: find customers")
 
       // 5. Verify all messages via events endpoint
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])

@@ -34,9 +34,7 @@ export function createAuthHandlers({ authService, userService }: Dependencies) {
 
       await userService.ensureUser({
         email: result.user.email,
-        name:
-          [result.user.firstName, result.user.lastName].filter(Boolean).join(" ") ||
-          result.user.email,
+        name: [result.user.firstName, result.user.lastName].filter(Boolean).join(" ") || result.user.email,
         workosUserId: result.user.id,
       })
 

@@ -8,8 +8,7 @@ describe("Outbox Multi-Listener", () => {
   let pool: Pool
 
   beforeAll(async () => {
-    const databaseUrl =
-      process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/threa_test"
+    const databaseUrl = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/threa_test"
     pool = createDatabasePool(databaseUrl)
 
     const migrator = createMigrator(pool)
@@ -38,9 +37,7 @@ describe("Outbox Multi-Listener", () => {
           "SELECT listener_id, last_processed_id FROM outbox_listeners WHERE listener_id = $1",
           ["test_new_listener"]
         )
-        expect(result.rows).toMatchObject([
-          { listener_id: "test_new_listener", last_processed_id: "0" },
-        ])
+        expect(result.rows).toMatchObject([{ listener_id: "test_new_listener", last_processed_id: "0" }])
       })
     })
 
@@ -52,10 +49,9 @@ describe("Outbox Multi-Listener", () => {
         // Try to re-ensure with cursor at 0
         await OutboxListenerRepository.ensureListener(client, "test_existing", 0n)
 
-        const result = await client.query(
-          "SELECT last_processed_id FROM outbox_listeners WHERE listener_id = $1",
-          ["test_existing"]
-        )
+        const result = await client.query("SELECT last_processed_id FROM outbox_listeners WHERE listener_id = $1", [
+          "test_existing",
+        ])
         // Should still be at 100
         expect(result.rows[0].last_processed_id).toBe("100")
       })
@@ -104,13 +100,7 @@ describe("Outbox Multi-Listener", () => {
         await OutboxListenerRepository.ensureListener(client, "test_reset_retry")
 
         // Simulate a failure first
-        await OutboxListenerRepository.recordError(
-          client,
-          "test_reset_retry",
-          "test error",
-          5,
-          1000
-        )
+        await OutboxListenerRepository.recordError(client, "test_reset_retry", "test error", 5, 1000)
 
         // Now update cursor (success)
         await OutboxListenerRepository.updateCursor(client, "test_reset_retry", 10n)
@@ -155,23 +145,11 @@ describe("Outbox Multi-Listener", () => {
 
         // Record 5 errors (max retries)
         for (let i = 0; i < 5; i++) {
-          await OutboxListenerRepository.recordError(
-            client,
-            "test_max_retry",
-            `Error ${i + 1}`,
-            5,
-            1000
-          )
+          await OutboxListenerRepository.recordError(client, "test_max_retry", `Error ${i + 1}`, 5, 1000)
         }
 
         // 6th error should return null (exceeded)
-        const retryAfter = await OutboxListenerRepository.recordError(
-          client,
-          "test_max_retry",
-          "Error 6",
-          5,
-          1000
-        )
+        const retryAfter = await OutboxListenerRepository.recordError(client, "test_max_retry", "Error 6", 5, 1000)
 
         expect(retryAfter).toBeNull()
       })
@@ -183,12 +161,7 @@ describe("Outbox Multi-Listener", () => {
       await withTransaction(pool, async (client) => {
         await OutboxListenerRepository.ensureListener(client, "test_dead_letter")
 
-        await OutboxListenerRepository.moveToDeadLetter(
-          client,
-          "test_dead_letter",
-          123n,
-          "Max retries exceeded"
-        )
+        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_letter", 123n, "Max retries exceeded")
 
         const result = await client.query(
           "SELECT listener_id, outbox_event_id, error FROM outbox_dead_letters WHERE listener_id = $1",
@@ -212,12 +185,7 @@ describe("Outbox Multi-Listener", () => {
         await OutboxListenerRepository.recordError(client, "test_dead_reset", "Error", 5, 1000)
 
         // Move to dead letter
-        await OutboxListenerRepository.moveToDeadLetter(
-          client,
-          "test_dead_reset",
-          999n,
-          "Final error"
-        )
+        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_reset", 999n, "Final error")
 
         const state = await OutboxListenerRepository.claimListener(client, "test_dead_reset")
         expect(state).toMatchObject({
@@ -274,10 +242,7 @@ describe("Outbox Multi-Listener", () => {
 
     test("should return false for non-existent listener", async () => {
       await withTransaction(pool, async (client) => {
-        const isReady = await OutboxListenerRepository.isReadyToProcess(
-          client,
-          "test_nonexistent_ready"
-        )
+        const isReady = await OutboxListenerRepository.isReadyToProcess(client, "test_nonexistent_ready")
 
         expect(isReady).toBe(false)
       })
@@ -309,11 +274,7 @@ describe("Outbox Multi-Listener", () => {
       await withTransaction(pool, async (client) => {
         // Insert some test events
         await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
-        const second = await OutboxRepository.insert(
-          client,
-          "message:created",
-          testMessagePayload("stream_2")
-        )
+        const second = await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
         await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_3"))
 
         // Fetch events after the second one
@@ -332,11 +293,7 @@ describe("Outbox Multi-Listener", () => {
 
         // Insert many events
         for (let i = 0; i < 10; i++) {
-          await OutboxRepository.insert(
-            client,
-            "message:created",
-            testMessagePayload(`stream_${i}`)
-          )
+          await OutboxRepository.insert(client, "message:created", testMessagePayload(`stream_${i}`))
         }
 
         const events = await OutboxRepository.fetchAfterId(client, baselineId, 3)
@@ -385,11 +342,7 @@ describe("Outbox Multi-Listener", () => {
         await OutboxListenerRepository.ensureListener(client, "test_listener_b", baselineId)
 
         // Insert events
-        const e1 = await OutboxRepository.insert(
-          client,
-          "message:created",
-          testMessagePayload("stream_1")
-        )
+        const e1 = await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
         await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
         await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_3"))
 

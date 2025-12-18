@@ -77,8 +77,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
             // Merge membership data if available
             pinned: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.pinned,
             muted: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.muted,
-            lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)
-              ?.lastReadEventId,
+            lastReadEventId: bootstrap.streamMemberships.find((sm) => sm.streamId === s.id)?.lastReadEventId,
             _cachedAt: now,
           }))
         ),

@@ -28,9 +28,7 @@ export function MessageEvent({ event }: MessageEventProps) {
       </Avatar>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm">
-            {isPersona ? "AI Companion" : formatActorId(event.actorId)}
-          </span>
+          <span className="font-medium text-sm">{isPersona ? "AI Companion" : formatActorId(event.actorId)}</span>
           <RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />
         </div>
         <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">{payload.content}</div>

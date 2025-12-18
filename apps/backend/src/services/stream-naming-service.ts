@@ -73,10 +73,7 @@ export class StreamNamingService {
       }
 
       if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
-        logger.debug(
-          { streamId, messageCount: messages.length },
-          "Not enough context for auto-naming yet"
-        )
+        logger.debug({ streamId, messageCount: messages.length }, "Not enough context for auto-naming yet")
         return false
       }
 

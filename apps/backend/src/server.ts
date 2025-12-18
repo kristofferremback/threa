@@ -52,9 +52,7 @@ export async function startServer(): Promise<ServerInstance> {
   const workspaceService = new WorkspaceService(pool)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
-  const authService = config.useStubAuth
-    ? new StubAuthService()
-    : new WorkosAuthService(config.workos)
+  const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
 
   const providerRegistry = new ProviderRegistry({
     openrouter: { apiKey: config.ai.openRouterApiKey },
@@ -93,8 +91,7 @@ export async function startServer(): Promise<ServerInstance> {
   const serverId = `server_${ulid()}`
 
   // Create companion agent and register worker
-  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) =>
-    eventService.createMessage(params)
+  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
 
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()

@@ -117,11 +117,7 @@ export const OutboxRepository = {
    * Fetches events after a cursor ID for cursor-based processing.
    * No locking - the caller should hold a lock on their listener's cursor row.
    */
-  async fetchAfterId(
-    client: PoolClient,
-    afterId: bigint,
-    limit: number = 100
-  ): Promise<OutboxEvent[]> {
+  async fetchAfterId(client: PoolClient, afterId: bigint, limit: number = 100): Promise<OutboxEvent[]> {
     const result = await client.query<OutboxRow>(sql`
       SELECT id, event_type, payload, created_at
       FROM outbox

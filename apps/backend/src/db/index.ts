@@ -20,10 +20,7 @@ export function createDatabasePool(connectionString: string, config?: Partial<Po
   return pool
 }
 
-export async function withTransaction<T>(
-  pool: Pool,
-  callback: (client: PoolClient) => Promise<T>
-): Promise<T> {
+export async function withTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect()
   try {
     await client.query("BEGIN")
@@ -38,10 +35,7 @@ export async function withTransaction<T>(
   }
 }
 
-export async function withClient<T>(
-  pool: Pool,
-  callback: (client: PoolClient) => Promise<T>
-): Promise<T> {
+export async function withClient<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect()
   try {
     return await callback(client)

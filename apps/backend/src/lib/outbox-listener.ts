@@ -96,8 +96,7 @@ export class OutboxListener {
         () => this.processEvents(),
         this.debounceMs,
         this.maxWaitMs,
-        (err) =>
-          logger.error({ err, listenerId: this.listenerId }, "OutboxListener debouncer error")
+        (err) => logger.error({ err, listenerId: this.listenerId }, "OutboxListener debouncer error")
       )
 
       await this.setupListener()
@@ -240,10 +239,7 @@ export class OutboxListener {
           const lastEvent = events[events.length - 1]
           await ctx.updateCursor(lastEvent.id)
 
-          logger.debug(
-            { listenerId: this.listenerId, count: events.length },
-            "Processed outbox events"
-          )
+          logger.debug({ listenerId: this.listenerId, count: events.length }, "Processed outbox events")
         }
       },
       { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs }

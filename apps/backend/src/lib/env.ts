@@ -30,12 +30,7 @@ export function loadConfig(): Config {
   }
 
   if (!useStubAuth) {
-    const required = [
-      "WORKOS_API_KEY",
-      "WORKOS_CLIENT_ID",
-      "WORKOS_REDIRECT_URI",
-      "WORKOS_COOKIE_PASSWORD",
-    ]
+    const required = ["WORKOS_API_KEY", "WORKOS_CLIENT_ID", "WORKOS_REDIRECT_URI", "WORKOS_COOKIE_PASSWORD"]
     const missing = required.filter((key) => !process.env[key])
     if (missing.length > 0) {
       throw new Error(`Missing required environment variables: ${missing.join(", ")}`)

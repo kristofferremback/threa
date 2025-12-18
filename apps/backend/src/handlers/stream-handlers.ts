@@ -63,10 +63,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       const { stream_type } = req.query
 
       const types = stream_type
-        ? ((Array.isArray(stream_type) ? stream_type : [stream_type]) as (
-            | "scratchpad"
-            | "channel"
-          )[])
+        ? ((Array.isArray(stream_type) ? stream_type : [stream_type]) as ("scratchpad" | "channel")[])
         : undefined
 
       const streams = await streamService.list(workspaceId, userId, { types })
@@ -85,15 +82,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         })
       }
 
-      const {
-        type,
-        slug,
-        displayName,
-        description,
-        visibility,
-        companionMode,
-        companionPersonaId,
-      } = result.data
+      const { type, slug, displayName, description, visibility, companionMode, companionPersonaId } = result.data
 
       const stream = await streamService.create({
         workspaceId,
@@ -184,11 +173,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
-      const updated = await streamService.updateCompanionMode(
-        streamId,
-        companionMode,
-        companionPersonaId
-      )
+      const updated = await streamService.updateCompanionMode(streamId, companionMode, companionPersonaId)
 
       res.json({ stream: updated })
     },

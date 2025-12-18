@@ -11,13 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  useStreamBootstrap,
-  useDraftScratchpads,
-  useUpdateStream,
-  useDeleteStream,
-  isDraftId,
-} from "@/hooks"
+import { useStreamBootstrap, useDraftScratchpads, useUpdateStream, useDeleteStream, isDraftId } from "@/hooks"
 import { TimelineView } from "@/components/timeline"
 import { StreamTypes } from "@/types/domain"
 import { db } from "@/db"
@@ -48,9 +42,7 @@ export function StreamPage() {
   const stream = bootstrap?.stream
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
 
-  const streamName = isDraft
-    ? draft?.displayName || "New scratchpad"
-    : stream?.displayName || stream?.slug || "Stream"
+  const streamName = isDraft ? draft?.displayName || "New scratchpad" : stream?.displayName || stream?.slug || "Stream"
 
   const handleStartRename = () => {
     setEditValue(isDraft ? draft?.displayName || "" : stream?.displayName || "")
@@ -107,9 +99,7 @@ export function StreamPage() {
             <div className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors">
               <h1 className="font-semibold">
                 {streamName}
-                {isDraft && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>
-                )}
+                {isDraft && <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>}
               </h1>
               <Button
                 variant="ghost"

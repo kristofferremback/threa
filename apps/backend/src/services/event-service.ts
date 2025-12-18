@@ -1,10 +1,6 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
-import {
-  StreamEventRepository,
-  EventType,
-  StreamEvent,
-} from "../repositories/stream-event-repository"
+import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
@@ -154,11 +150,7 @@ export class EventService {
       })
 
       // 2. Update projection
-      const message = await MessageRepository.updateContent(
-        client,
-        params.messageId,
-        params.content
-      )
+      const message = await MessageRepository.updateContent(client, params.messageId, params.content)
 
       if (message) {
         // 3. Publish to outbox
@@ -220,12 +212,7 @@ export class EventService {
       })
 
       // 2. Update projection
-      const message = await MessageRepository.addReaction(
-        client,
-        params.messageId,
-        params.emoji,
-        params.userId
-      )
+      const message = await MessageRepository.addReaction(client, params.messageId, params.emoji, params.userId)
 
       if (message) {
         // 3. Publish to outbox
@@ -259,12 +246,7 @@ export class EventService {
       })
 
       // 2. Update projection
-      const message = await MessageRepository.removeReaction(
-        client,
-        params.messageId,
-        params.emoji,
-        params.userId
-      )
+      const message = await MessageRepository.removeReaction(client, params.messageId, params.emoji, params.userId)
 
       if (message) {
         // 3. Publish to outbox
@@ -281,10 +263,7 @@ export class EventService {
     })
   }
 
-  async getMessages(
-    streamId: string,
-    options?: { limit?: number; beforeSequence?: bigint }
-  ): Promise<Message[]> {
+  async getMessages(streamId: string, options?: { limit?: number; beforeSequence?: bigint }): Promise<Message[]> {
     return withClient(this.pool, (client) => MessageRepository.list(client, streamId, options))
   }
 

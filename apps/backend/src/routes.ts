@@ -67,11 +67,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
   app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
   app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
-  app.patch(
-    "/api/workspaces/:workspaceId/streams/:streamId/companion",
-    ...authed,
-    stream.updateCompanionMode
-  )
+  app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", ...authed, stream.mute)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
@@ -81,16 +77,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
-  app.post(
-    "/api/workspaces/:workspaceId/messages/:messageId/reactions",
-    ...authed,
-    message.addReaction
-  )
-  app.delete(
-    "/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji",
-    ...authed,
-    message.removeReaction
-  )
+  app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
 
   app.use(errorHandler)
 }

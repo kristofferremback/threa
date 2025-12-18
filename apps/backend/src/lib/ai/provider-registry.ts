@@ -45,9 +45,7 @@ export class ProviderRegistry {
   } {
     const colonIndex = providerModelString.indexOf(":")
     if (colonIndex === -1) {
-      throw new Error(
-        `Invalid provider:model format: "${providerModelString}". Expected format: "provider:model_id"`
-      )
+      throw new Error(`Invalid provider:model format: "${providerModelString}". Expected format: "provider:model_id"`)
     }
 
     const provider = providerModelString.slice(0, colonIndex)
@@ -80,9 +78,7 @@ export class ProviderRegistry {
       case "openrouter":
         return this.getOpenRouterModel(modelId)
       default:
-        throw new Error(
-          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
-        )
+        throw new Error(`Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`)
     }
   }
 
@@ -97,9 +93,7 @@ export class ProviderRegistry {
       case "openrouter":
         return this.getLangChainOpenRouterModel(modelId)
       default:
-        throw new Error(
-          `Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
-        )
+        throw new Error(`Unsupported provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`)
     }
   }
 

@@ -31,21 +31,15 @@ describe("ProviderRegistry", () => {
     })
 
     it("should throw for missing colon", () => {
-      expect(() => registry.parseProviderModel("invalid")).toThrow(
-        'Invalid provider:model format: "invalid"'
-      )
+      expect(() => registry.parseProviderModel("invalid")).toThrow('Invalid provider:model format: "invalid"')
     })
 
     it("should throw for empty provider", () => {
-      expect(() => registry.parseProviderModel(":model")).toThrow(
-        'Invalid provider:model format: ":model"'
-      )
+      expect(() => registry.parseProviderModel(":model")).toThrow('Invalid provider:model format: ":model"')
     })
 
     it("should throw for empty model", () => {
-      expect(() => registry.parseProviderModel("provider:")).toThrow(
-        'Invalid provider:model format: "provider:"'
-      )
+      expect(() => registry.parseProviderModel("provider:")).toThrow('Invalid provider:model format: "provider:"')
     })
   })
 
@@ -65,23 +59,17 @@ describe("ProviderRegistry", () => {
 
   describe("getModel", () => {
     it("should throw for unsupported provider", () => {
-      expect(() => registry.getModel("anthropic:claude-3")).toThrow(
-        'Unsupported provider: "anthropic"'
-      )
+      expect(() => registry.getModel("anthropic:claude-3")).toThrow('Unsupported provider: "anthropic"')
     })
 
     it("should throw when openrouter not configured", () => {
-      expect(() => registry.getModel("openrouter:anthropic/claude-3-haiku")).toThrow(
-        "OpenRouter is not configured"
-      )
+      expect(() => registry.getModel("openrouter:anthropic/claude-3-haiku")).toThrow("OpenRouter is not configured")
     })
   })
 
   describe("getLangChainModel", () => {
     it("should throw for unsupported provider", () => {
-      expect(() => registry.getLangChainModel("anthropic:claude-3")).toThrow(
-        'Unsupported provider: "anthropic"'
-      )
+      expect(() => registry.getLangChainModel("anthropic:claude-3")).toThrow('Unsupported provider: "anthropic"')
     })
 
     it("should throw when openrouter not configured", () => {

@@ -105,9 +105,7 @@ const SELECT_FIELDS = `
 
 export const MessageRepository = {
   async findById(client: PoolClient, id: string): Promise<Message | null> {
-    const result = await client.query<MessageRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`
-    )
+    const result = await client.query<MessageRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`)
     if (!result.rows[0]) return null
 
     const reactionsResult = await client.query<ReactionRow>(
@@ -156,9 +154,7 @@ export const MessageRepository = {
     `)
     const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
 
-    return messageRows
-      .map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
-      .reverse()
+    return messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {})).reverse()
   },
 
   async insert(client: PoolClient, params: InsertMessageParams): Promise<Message> {
@@ -200,12 +196,7 @@ export const MessageRepository = {
     return this.findById(client, id)
   },
 
-  async addReaction(
-    client: PoolClient,
-    messageId: string,
-    emoji: string,
-    userId: string
-  ): Promise<Message | null> {
+  async addReaction(client: PoolClient, messageId: string, emoji: string, userId: string): Promise<Message | null> {
     // Insert into reactions table (ON CONFLICT DO NOTHING handles duplicates)
     await client.query(sql`
       INSERT INTO reactions (message_id, user_id, emoji)
@@ -215,12 +206,7 @@ export const MessageRepository = {
     return this.findById(client, messageId)
   },
 
-  async removeReaction(
-    client: PoolClient,
-    messageId: string,
-    emoji: string,
-    userId: string
-  ): Promise<Message | null> {
+  async removeReaction(client: PoolClient, messageId: string, emoji: string, userId: string): Promise<Message | null> {
     await client.query(sql`
       DELETE FROM reactions
       WHERE message_id = ${messageId}

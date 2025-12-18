@@ -10,8 +10,7 @@ export function MembershipEvent({ event }: MembershipEventProps) {
   return (
     <div className="py-2 text-center">
       <p className="text-sm text-muted-foreground">
-        <span className="font-medium">{formatActorId(event.actorId)}</span> {action} the
-        conversation
+        <span className="font-medium">{formatActorId(event.actorId)}</span> {action} the conversation
       </p>
     </div>
   )
