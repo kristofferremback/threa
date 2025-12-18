@@ -1,18 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool, PoolClient } from "pg"
-import { createDatabasePool, withTransaction } from "../../src/db"
+import { withTransaction } from "../../src/db"
 import { OutboxRepository, OutboxListenerRepository } from "../../src/repositories"
-import { createMigrator } from "../../src/db/migrations"
+import { setupTestDatabase } from "./setup"
 
 describe("Outbox Multi-Listener", () => {
   let pool: Pool
 
   beforeAll(async () => {
-    const databaseUrl = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/threa_test"
-    pool = createDatabasePool(databaseUrl)
-
-    const migrator = createMigrator(pool)
-    await migrator.up()
+    pool = await setupTestDatabase()
   })
 
   afterAll(async () => {

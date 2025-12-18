@@ -1,0 +1,282 @@
+/**
+ * Companion Agent E2E tests.
+ *
+ * Tests verify that:
+ * 1. Companion responds to messages in scratchpads with companion mode "on"
+ * 2. Companion does not respond when companion mode is "off"
+ * 3. Companion responses appear as persona-authored messages
+ * 4. Real-time events are broadcast for companion responses
+ */
+
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, setDefaultTimeout } from "bun:test"
+
+// Companion jobs run asynchronously, need longer timeout
+setDefaultTimeout(30000)
+import { io, Socket } from "socket.io-client"
+import { TestClient, loginAs, createWorkspace, createScratchpad, sendMessage } from "../client"
+
+function getBaseUrl(): string {
+  return process.env.TEST_BASE_URL || "http://localhost:3001"
+}
+
+function createSocket(client: TestClient): Socket {
+  const socket = io(getBaseUrl(), {
+    extraHeaders: {
+      Cookie: (client as any).cookies
+        ? Array.from((client as any).cookies.entries())
+            .map(([k, v]: [string, string]) => `${k}=${v}`)
+            .join("; ")
+        : "",
+    },
+    transports: ["websocket"],
+    autoConnect: false,
+  })
+  return socket
+}
+
+async function connectSocket(socket: Socket, timeoutMs: number = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Socket connection timeout"))
+    }, timeoutMs)
+
+    socket.on("connect", () => {
+      clearTimeout(timeout)
+      resolve()
+    })
+
+    socket.on("connect_error", (err) => {
+      clearTimeout(timeout)
+      reject(err)
+    })
+
+    socket.connect()
+  })
+}
+
+function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs: number = 10000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off(eventName, handler)
+      reject(new Error(`Timeout waiting for event: ${eventName}`))
+    }, timeoutMs)
+
+    const handler = (data: T) => {
+      clearTimeout(timeout)
+      socket.off(eventName, handler)
+      resolve(data)
+    }
+
+    socket.on(eventName, handler)
+  })
+}
+
+/**
+ * Waits for a message:created event from a persona (not a user).
+ */
+function waitForCompanionResponse(
+  socket: Socket,
+  streamId: string,
+  timeoutMs: number = 20000
+): Promise<{ event: any }> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off("message:created", handler)
+      reject(new Error("Timeout waiting for companion response"))
+    }, timeoutMs)
+
+    const handler = (data: { streamId: string; event: any }) => {
+      // Only resolve for persona messages in the target stream
+      // actorType is at data.event.actorType (not payload.authorType)
+      if (data.streamId === streamId && data.event?.actorType === "persona") {
+        clearTimeout(timeout)
+        socket.off("message:created", handler)
+        resolve(data)
+      }
+    }
+
+    socket.on("message:created", handler)
+  })
+}
+
+describe("Companion Agent", () => {
+  let client: TestClient
+  let socket: Socket
+  let workspaceId: string
+  let userId: string
+
+  beforeAll(async () => {
+    client = new TestClient()
+    const user = await loginAs(client, "companion-test@example.com", "Companion Test User")
+    userId = user.id
+    const workspace = await createWorkspace(client, "Companion Test Workspace")
+    workspaceId = workspace.id
+
+    // Give the job queue time to fully initialize and start polling
+    await Bun.sleep(2000)
+  })
+
+  beforeEach(async () => {
+    socket = createSocket(client)
+    await connectSocket(socket)
+  })
+
+  afterEach(() => {
+    if (socket) {
+      socket.disconnect()
+    }
+  })
+
+  describe("Companion Mode On", () => {
+    test("should receive companion response when sending message to scratchpad", async () => {
+      // Scratchpads have companion mode "on" by default
+      const stream = await createScratchpad(client, workspaceId)
+
+      // Join the stream room to receive events
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100) // Wait for room join
+
+      // Start waiting for companion response BEFORE sending message
+      const responsePromise = waitForCompanionResponse(socket, stream.id)
+
+      // Send a user message - this triggers the companion
+      await sendMessage(client, workspaceId, stream.id, "Hello companion!")
+
+      // Wait for the companion response
+      const response = await responsePromise
+
+      expect(response.event.eventType).toBe("message_created")
+      expect(response.event.actorType).toBe("persona")
+      // Stub companion returns a canned response
+      expect(response.event.payload.content).toContain("stub response")
+    })
+
+    test("should respond with persona author, not user", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      const responsePromise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "Who are you?")
+
+      const response = await responsePromise
+
+      // The author should be a persona, not the user who sent the message
+      expect(response.event.actorType).toBe("persona")
+      expect(response.event.actorId).not.toBe(userId)
+    })
+
+    test("should create agent session for tracking", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      const responsePromise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "Track this session")
+
+      await responsePromise
+
+      // The response was received, so a session was created and completed
+      // We verify this implicitly by receiving the response
+      // Explicit session checking would require additional API endpoints
+    })
+  })
+
+  describe("Companion Mode Off", () => {
+    test("should not respond when companion mode is off", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      // Turn companion mode off
+      await client.patch(`/api/workspaces/${workspaceId}/streams/${stream.id}/companion`, {
+        companionMode: "off",
+      })
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      // Collect any message:created events
+      const messages: any[] = []
+      socket.on("message:created", (data) => {
+        messages.push(data)
+      })
+
+      // Send a user message
+      await sendMessage(client, workspaceId, stream.id, "No companion here")
+
+      // Wait a bit for any potential companion response (job queue polling is ~2 seconds)
+      await Bun.sleep(5000)
+
+      // Should only have the user message, no companion response
+      const personaMessages = messages.filter((m) => m.event?.actorType === "persona")
+      expect(personaMessages.length).toBe(0)
+    })
+  })
+
+  describe("Stream Events for Companion Messages", () => {
+    test("should broadcast message:created event for companion response", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      const responsePromise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "Broadcast test")
+
+      const response = await responsePromise
+
+      // Verify the event structure matches what frontend expects
+      expect(response).toMatchObject({
+        workspaceId,
+        streamId: stream.id,
+      })
+      expect(response.event).toMatchObject({
+        eventType: "message_created",
+        actorType: "persona",
+      })
+      expect(response.event.payload).toHaveProperty("content")
+    })
+
+    test("should have proper message structure in companion response", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      const responsePromise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "Structure test")
+
+      const response = await responsePromise
+
+      // Verify event has required fields (using StreamEvent structure)
+      expect(response.event).toHaveProperty("id")
+      expect(response.event).toHaveProperty("actorId")
+      expect(response.event).toHaveProperty("actorType")
+      expect(response.event).toHaveProperty("createdAt")
+      expect(response.event.payload).toHaveProperty("content")
+      expect(response.event.payload).toHaveProperty("messageId")
+    })
+  })
+
+  describe("Multiple Messages", () => {
+    test("should respond to each user message", async () => {
+      const stream = await createScratchpad(client, workspaceId)
+
+      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await Bun.sleep(100)
+
+      // Send first message and wait for response
+      const response1Promise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "First message")
+      await response1Promise
+
+      // Send second message and wait for response
+      const response2Promise = waitForCompanionResponse(socket, stream.id)
+      await sendMessage(client, workspaceId, stream.id, "Second message")
+      await response2Promise
+
+      // Both messages got responses (verified by promises resolving)
+    })
+  })
+})

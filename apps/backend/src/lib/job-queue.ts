@@ -98,17 +98,24 @@ export class JobQueueManager {
       await this.boss.createQueue(queue, { deadLetter: dlq })
 
       // pg-boss passes an array of jobs; we process them sequentially
-      await this.boss.work(queue, async (jobs: Job<unknown>[]) => {
-        for (const job of jobs) {
-          try {
-            await handler(job)
-          } catch (error) {
-            // Warn on failure - provides context when troubleshooting
-            logger.warn({ jobId: job.id, queue, err: error }, "Job failed, will retry if attempts remain")
-            throw error
+      await this.boss.work(
+        queue,
+        {
+          batchSize: 5, // Fetch up to 5 jobs per poll
+          pollingIntervalSeconds: 1, // Poll every 1 second instead of default 2
+        },
+        async (jobs: Job<unknown>[]) => {
+          for (const job of jobs) {
+            try {
+              await handler(job)
+            } catch (error) {
+              // Warn on failure - provides context when troubleshooting
+              logger.warn({ jobId: job.id, queue, err: error }, "Job failed, will retry if attempts remain")
+              throw error
+            }
           }
         }
-      })
+      )
 
       // Dead letter handler - alert level, these need attention
       await this.boss.work(dlq, async (jobs: Job<unknown>[]) => {

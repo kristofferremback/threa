@@ -244,12 +244,20 @@ export class StreamService {
     companionMode: CompanionMode,
     companionPersonaId?: string | null
   ): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamRepository.update(client, streamId, {
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.update(client, streamId, {
         companionMode,
         companionPersonaId,
       })
-    )
+      if (stream) {
+        await OutboxRepository.insert(client, "stream:updated", {
+          workspaceId: stream.workspaceId,
+          streamId: stream.id,
+          stream,
+        })
+      }
+      return stream
+    })
   }
 
   async archiveStream(streamId: string): Promise<Stream | null> {
