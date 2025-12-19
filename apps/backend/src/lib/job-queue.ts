@@ -40,8 +40,11 @@ export interface JobDataMap {
   [JobQueues.NAMING_GENERATE]: NamingJobData
 }
 
-// Default options for companion jobs
-const COMPANION_JOB_OPTIONS: SendOptions = {
+// Dead letter queue suffix - jobs that exhaust retries go here
+const DEAD_LETTER_SUFFIX = "__dlq"
+
+// Default options for jobs
+const DEFAULT_JOB_OPTIONS: SendOptions = {
   retryLimit: 3,
   retryDelay: 5,
   retryBackoff: true,
@@ -64,6 +67,10 @@ export class JobQueueManager {
       db: {
         executeSql: async (text: string, values?: unknown[]) => {
           const result = await withClient(pool, (client) => client.query(text, values as unknown[]))
+          // pg returns an array for multi-statement queries, pg-boss expects each element to have rows
+          if (Array.isArray(result)) {
+            return result.map((r) => ({ rows: r.rows }))
+          }
           return { rows: result.rows }
         },
       },
@@ -72,21 +79,48 @@ export class JobQueueManager {
   }
 
   async start(): Promise<void> {
+    // Register event listeners before starting
+    this.boss.on("error", (error) => {
+      logger.error({ err: error }, "pg-boss error")
+    })
+
     await this.boss.start()
     logger.info("Job queue started")
 
-    // Register all handlers after start
+    // Register handlers for each queue
     for (const [queue, handler] of this.handlers) {
-      // Ensure queue exists before polling
-      await this.boss.createQueue(queue)
+      const dlq = `${queue}${DEAD_LETTER_SUFFIX}`
+
+      // Create dead letter queue first (must exist before referencing in deadLetter option)
+      await this.boss.createQueue(dlq)
+
+      // Create main queue with dead letter configuration
+      await this.boss.createQueue(queue, { deadLetter: dlq })
 
       // pg-boss passes an array of jobs; we process them sequentially
       await this.boss.work(queue, async (jobs: Job<unknown>[]) => {
         for (const job of jobs) {
-          await handler(job)
+          try {
+            await handler(job)
+          } catch (error) {
+            // Warn on failure - provides context when troubleshooting
+            logger.warn({ jobId: job.id, queue, err: error }, "Job failed, will retry if attempts remain")
+            throw error
+          }
         }
       })
-      logger.info({ queue }, "Job handler registered")
+
+      // Dead letter handler - alert level, these need attention
+      await this.boss.work(dlq, async (jobs: Job<unknown>[]) => {
+        for (const job of jobs) {
+          logger.error(
+            { jobId: job.id, queue: dlq, data: job.data },
+            "Job moved to dead letter queue after exhausting retries"
+          )
+        }
+      })
+
+      logger.info({ queue, dlq }, "Job handler registered")
     }
   }
 
@@ -106,7 +140,7 @@ export class JobQueueManager {
    * Send a job to the queue.
    */
   async send<T extends JobQueueName>(queue: T, data: JobDataMap[T], options?: SendOptions): Promise<string | null> {
-    const mergedOptions = { ...COMPANION_JOB_OPTIONS, ...options }
+    const mergedOptions = { ...DEFAULT_JOB_OPTIONS, ...options }
     const jobId = await this.boss.send(queue, data, mergedOptions)
     logger.debug({ queue, jobId, data }, "Job sent")
     return jobId
