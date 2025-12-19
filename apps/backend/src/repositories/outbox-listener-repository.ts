@@ -282,9 +282,9 @@ export async function withClaim(
     }
 
     // Claim exclusive lock on our cursor row
+    // Returns null if already locked by another transaction (SKIP LOCKED) - this is expected
     const state = await OutboxListenerRepository.claimListener(client, listenerId)
     if (!state) {
-      logger.warn({ listenerId }, "Listener not found in database")
       return { status: CLAIM_STATUS.NOT_READY }
     }
 
