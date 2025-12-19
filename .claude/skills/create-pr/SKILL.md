@@ -27,7 +27,21 @@ git log main..HEAD --oneline
 git diff main...HEAD --stat
 ```
 
-### 2. Analyze the changes
+### 2. Extract Linear ticket ID
+
+Check the branch name for a Linear ticket ID (format: `thr-XX` or `THR-XX`):
+
+```bash
+# Extract ticket ID from branch name
+git branch --show-current | grep -oiE 'thr-[0-9]+' | tr '[:lower:]' '[:upper:]'
+```
+
+If found, this ticket ID **must** be included in:
+
+- The PR title (e.g., `feat(THR-19): implement agent loop`)
+- The PR description (link to Linear issue)
+
+### 3. Analyze the changes
 
 For each commit, understand:
 
@@ -41,11 +55,13 @@ Read relevant files if needed:
 - Work notes if they exist
 - The actual code changes
 
-### 3. Structure the PR description
+### 4. Structure the PR description
 
 The PR must include these sections:
 
 ```markdown
+**Linear:** [THR-XX](https://linear.app/threa/issue/THR-XX) _(if applicable)_
+
 ## Problem
 
 [What issue or limitation exists? Why does this change need to happen?]
@@ -93,14 +109,15 @@ The PR must include these sections:
 🤖 _PR by [Claude Code](https://claude.com/claude-code)_
 ```
 
-### 4. Create the PR
+### 5. Create the PR
 
 ```bash
 # Push branch if needed
 git push -u origin $(git branch --show-current)
 
 # Create PR (write body to temp file first to avoid heredoc issues)
-gh pr create --base main --title "[type]: [short description]" --body-file /tmp/claude/pr-body.md
+# If ticket ID exists, include it: "[type](THR-XX): [short description]"
+gh pr create --base main --title "[type](THR-XX): [short description]" --body-file /tmp/claude/pr-body.md
 ```
 
 If `gh pr create` fails with GraphQL errors, use the API directly:
@@ -113,20 +130,22 @@ gh api repos/{owner}/{repo}/pulls --method POST \
   -f body="$(cat /tmp/claude/pr-body.md)"
 ```
 
-### 5. Return the PR URL
+### 6. Return the PR URL
 
 Always provide the PR URL to the user when done.
 
 ## PR Title Conventions
 
-Use conventional commit format:
+Use conventional commit format with Linear ticket ID when available:
 
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `refactor:` - Code restructuring without behavior change
-- `docs:` - Documentation only
-- `test:` - Test additions/changes
-- `chore:` - Maintenance tasks
+- `feat(THR-XX):` - New feature
+- `fix(THR-XX):` - Bug fix
+- `refactor(THR-XX):` - Code restructuring without behavior change
+- `docs(THR-XX):` - Documentation only
+- `test(THR-XX):` - Test additions/changes
+- `chore(THR-XX):` - Maintenance tasks
+
+If no Linear ticket exists, omit the parenthetical: `feat: description`
 
 ## Examples
 
@@ -141,6 +160,7 @@ Use conventional commit format:
 
 ## Important Notes
 
+- **Always include Linear ticket ID** in title and description when working from a ticket
 - Never create a PR with an empty or minimal description
 - Always explain the "why" not just the "what"
 - Include divergences from original plans if applicable
