@@ -13,14 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import {
-  useWorkspaceBootstrap,
-  useCreateStream,
-  useUpdateStream,
-  useDeleteStream,
-  useDraftScratchpads,
-  workspaceKeys,
-} from "@/hooks"
+import { useWorkspaceBootstrap, useCreateStream, useDraftScratchpads, useStreamOrDraft, workspaceKeys } from "@/hooks"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -32,7 +25,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { streamId: activeStreamId } = useParams<{ streamId: string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
-  const { drafts, createDraft, updateDraft, deleteDraft } = useDraftScratchpads(workspaceId)
+  const { drafts, createDraft } = useDraftScratchpads(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -62,9 +55,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
   // Combine drafts and real scratchpads, drafts first (newest first)
   const sortedDrafts = [...drafts].sort((a, b) => b.createdAt - a.createdAt)
-  const allScratchpads: Array<{ id: string; displayName: string | null; isDraft: boolean }> = [
-    ...sortedDrafts.map((d) => ({ id: d.id, displayName: d.displayName, isDraft: true })),
-    ...realScratchpads.map((s) => ({ id: s.id, displayName: s.displayName, isDraft: false })),
+  const allScratchpadIds: Array<{ id: string; isDraft: boolean }> = [
+    ...sortedDrafts.map((d) => ({ id: d.id, isDraft: true })),
+    ...realScratchpads.map((s) => ({ id: s.id, isDraft: false })),
   ]
 
   return (
@@ -86,21 +79,15 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             <>
               {/* Scratchpads section - primary for solo users */}
               <SidebarSection title="Scratchpads">
-                {allScratchpads.length === 0 ? (
+                {allScratchpadIds.length === 0 ? (
                   <p className="px-2 py-1 text-xs text-muted-foreground">No scratchpads yet</p>
                 ) : (
-                  allScratchpads.map((item) => (
+                  allScratchpadIds.map((item) => (
                     <ScratchpadItem
                       key={item.id}
                       workspaceId={workspaceId}
-                      id={item.id}
-                      displayName={item.displayName}
-                      isDraft={item.isDraft}
+                      streamId={item.id}
                       isActive={item.id === activeStreamId}
-                      onRename={(newName) =>
-                        item.isDraft ? updateDraft(item.id, { displayName: newName }) : undefined
-                      }
-                      onArchive={() => (item.isDraft ? deleteDraft(item.id) : undefined)}
                     />
                   ))
                 )}
@@ -181,23 +168,17 @@ function StreamItem({ workspaceId, streamId, name, isActive }: StreamItemProps) 
 
 interface ScratchpadItemProps {
   workspaceId: string
-  id: string
-  displayName: string | null
-  isDraft: boolean
+  streamId: string
   isActive: boolean
-  onRename: (newName: string) => void
-  onArchive: () => void
 }
 
-function ScratchpadItem({ workspaceId, id, displayName, isDraft, isActive, onRename, onArchive }: ScratchpadItemProps) {
+function ScratchpadItem({ workspaceId, streamId, isActive }: ScratchpadItemProps) {
+  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamId)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
-  const navigate = useNavigate()
-  const updateStream = useUpdateStream(workspaceId, id)
-  const deleteStream = useDeleteStream(workspaceId)
 
-  const name = displayName || "New scratchpad"
+  const name = stream?.displayName || "New scratchpad"
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -207,31 +188,20 @@ function ScratchpadItem({ workspaceId, id, displayName, isDraft, isActive, onRen
   }, [isEditing])
 
   const handleStartRename = () => {
-    setEditValue(displayName || "")
+    setEditValue(stream?.displayName || "")
     setIsEditing(true)
   }
 
   const handleSaveRename = async () => {
     const trimmed = editValue.trim()
     setIsEditing(false)
-    if (!trimmed || trimmed === displayName) return
+    if (!trimmed || trimmed === stream?.displayName) return
 
-    if (isDraft) {
-      onRename(trimmed)
-    } else {
-      await updateStream.mutateAsync({ displayName: trimmed })
-    }
+    await rename(trimmed)
   }
 
   const handleArchive = async () => {
-    if (isDraft) {
-      onArchive()
-    } else {
-      await deleteStream.mutateAsync(id)
-    }
-    if (isActive) {
-      navigate(`/w/${workspaceId}`)
-    }
+    await archive()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -265,7 +235,7 @@ function ScratchpadItem({ workspaceId, id, displayName, isDraft, isActive, onRen
         isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
       )}
     >
-      <Link to={`/w/${workspaceId}/s/${id}`} className="flex-1 truncate">
+      <Link to={`/w/${workspaceId}/s/${streamId}`} className="flex-1 truncate">
         {name}
         {isDraft && <span className="ml-1 text-xs text-muted-foreground">(draft)</span>}
       </Link>

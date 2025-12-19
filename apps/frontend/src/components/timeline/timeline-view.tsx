@@ -1,6 +1,8 @@
 import { useRef, useEffect, useCallback } from "react"
 import { useParams } from "react-router-dom"
+import { MessageSquare } from "lucide-react"
 import { useEvents, useStreamSocket } from "@/hooks"
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 
@@ -72,14 +74,20 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
           </div>
         )}
         {isDraft ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">Start typing to begin this conversation...</p>
-          </div>
+          <Empty className="h-full border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquare />
+              </EmptyMedia>
+              <EmptyTitle>Start a conversation</EmptyTitle>
+              <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <EventList events={events} isLoading={isLoading} workspaceId={workspaceId} streamId={streamId} />
         )}
       </div>
-      <MessageInput workspaceId={workspaceId} streamId={streamId} isDraft={isDraft} />
+      <MessageInput workspaceId={workspaceId} streamId={streamId} />
     </div>
   )
 }

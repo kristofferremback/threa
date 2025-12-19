@@ -12,7 +12,9 @@ export {
 
 export { useEvents, eventKeys } from "./use-events"
 
-export { useDraftScratchpads, isDraftId } from "./use-draft-scratchpads"
+export { useDraftScratchpads } from "./use-draft-scratchpads"
+
+export { useStreamOrDraft, isDraftId, type VirtualStream, type UseStreamOrDraftReturn } from "./use-stream-or-draft"
 
 export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 

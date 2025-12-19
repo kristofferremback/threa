@@ -1,6 +1,5 @@
 import { useState, useRef } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { useLiveQuery } from "dexie-react-hooks"
+import { useParams } from "react-router-dom"
 import { MoreHorizontal, Pencil, Archive } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,25 +10,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useStreamBootstrap, useDraftScratchpads, useUpdateStream, useDeleteStream, isDraftId } from "@/hooks"
+import { useStreamOrDraft } from "@/hooks"
 import { TimelineView } from "@/components/timeline"
 import { StreamTypes } from "@threa/types"
-import { db } from "@/db"
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
-  const isDraft = streamId ? isDraftId(streamId) : false
-  const { data: bootstrap } = useStreamBootstrap(workspaceId!, streamId!, { enabled: !isDraft })
-  const { updateDraft, deleteDraft } = useDraftScratchpads(workspaceId!)
-  const updateStream = useUpdateStream(workspaceId!, streamId!)
-  const deleteStream = useDeleteStream(workspaceId!)
-  const navigate = useNavigate()
-
-  // Direct subscription to the specific draft record for reactivity
-  const draft = useLiveQuery(
-    () => (isDraft && streamId ? db.draftScratchpads.get(streamId) : undefined),
-    [isDraft, streamId]
-  )
+  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId!, streamId!)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
@@ -39,13 +26,11 @@ export function StreamPage() {
     return null
   }
 
-  const stream = bootstrap?.stream
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
-
-  const streamName = isDraft ? draft?.displayName || "New scratchpad" : stream?.displayName || stream?.slug || "Stream"
+  const streamName = stream?.displayName || (isDraft ? "New scratchpad" : "Stream")
 
   const handleStartRename = () => {
-    setEditValue(isDraft ? draft?.displayName || "" : stream?.displayName || "")
+    setEditValue(stream?.displayName || "")
     setIsEditing(true)
   }
 
@@ -53,23 +38,13 @@ export function StreamPage() {
     const trimmed = editValue.trim()
     setIsEditing(false)
 
-    const currentName = isDraft ? draft?.displayName : stream?.displayName
-    if (!trimmed || trimmed === currentName) return
+    if (!trimmed || trimmed === stream?.displayName) return
 
-    if (isDraft) {
-      await updateDraft(streamId, { displayName: trimmed })
-    } else {
-      await updateStream.mutateAsync({ displayName: trimmed })
-    }
+    await rename(trimmed)
   }
 
   const handleArchive = async () => {
-    if (isDraft) {
-      await deleteDraft(streamId)
-    } else {
-      await deleteStream.mutateAsync(streamId)
-    }
-    navigate(`/w/${workspaceId}`)
+    await archive()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
