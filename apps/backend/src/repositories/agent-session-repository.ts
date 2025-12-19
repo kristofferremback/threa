@@ -34,6 +34,7 @@ interface SessionRow {
   response_message_id: string | null
   error: string | null
   last_seen_sequence: string | null
+  sent_message_ids: string[] | null
   created_at: Date
   completed_at: Date | null
 }
@@ -62,6 +63,7 @@ export interface AgentSession {
   responseMessageId: string | null
   error: string | null
   lastSeenSequence: bigint | null
+  sentMessageIds: string[]
   createdAt: Date
   completedAt: Date | null
 }
@@ -110,6 +112,7 @@ function mapRowToSession(row: SessionRow): AgentSession {
     responseMessageId: row.response_message_id,
     error: row.error,
     lastSeenSequence: row.last_seen_sequence ? BigInt(row.last_seen_sequence) : null,
+    sentMessageIds: row.sent_message_ids ?? [],
     createdAt: row.created_at,
     completedAt: row.completed_at,
   }
@@ -132,7 +135,7 @@ const SESSION_SELECT_FIELDS = `
   id, stream_id, persona_id, trigger_message_id,
   status, current_step, server_id, heartbeat_at,
   response_message_id, error, last_seen_sequence,
-  created_at, completed_at
+  sent_message_ids, created_at, completed_at
 `
 
 const STEP_SELECT_FIELDS = `
@@ -196,6 +199,7 @@ export const AgentSessionRepository = {
     extras?: {
       serverId?: string
       responseMessageId?: string
+      sentMessageIds?: string[]
       error?: string
     }
   ): Promise<AgentSession | null> {
@@ -210,6 +214,7 @@ export const AgentSessionRepository = {
           server_id = COALESCE(${extras?.serverId ?? null}, server_id),
           heartbeat_at = ${status === SessionStatuses.RUNNING ? now : sql.raw("heartbeat_at")},
           response_message_id = COALESCE(${extras?.responseMessageId ?? null}, response_message_id),
+          sent_message_ids = COALESCE(${extras?.sentMessageIds ?? null}, sent_message_ids),
           error = COALESCE(${extras?.error ?? null}, error),
           completed_at = ${completedAt}
         WHERE id = ${id}

@@ -95,6 +95,7 @@ export async function withSession(
 
       await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.COMPLETED, {
         responseMessageId: sentMessageIds[0] ?? null,
+        sentMessageIds,
       })
 
       logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
