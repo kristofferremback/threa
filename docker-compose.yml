@@ -7,7 +7,13 @@ services:
       POSTGRES_USER: threa
       POSTGRES_PASSWORD: threa
       POSTGRES_DB: threa
-    command: postgres -c max_connections=300
+    command: >
+      postgres
+      -c max_connections=300
+      -c idle_session_timeout=60000
+      -c tcp_keepalives_idle=30
+      -c tcp_keepalives_interval=10
+      -c tcp_keepalives_count=3
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
