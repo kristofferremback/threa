@@ -23,6 +23,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasInitialized = useRef(false)
+  const wasJustSending = useRef(false)
 
   // Initialize content from saved draft (only once per stream)
   useEffect(() => {
@@ -51,6 +52,14 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     textareaRef.current?.focus()
   }, [streamId])
 
+  // Restore focus after sending completes (when textarea is re-enabled)
+  useEffect(() => {
+    if (wasJustSending.current && !isSending) {
+      textareaRef.current?.focus()
+    }
+    wasJustSending.current = isSending
+  }, [isSending])
+
   const handleContentChange = useCallback(
     (newContent: string) => {
       setContent(newContent)
@@ -69,7 +78,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     // Clear input immediately for responsiveness
     setContent("")
     clearDraft()
-    textareaRef.current?.focus()
 
     try {
       const result = await sendMessage({ content: trimmed, contentFormat: "markdown" })
