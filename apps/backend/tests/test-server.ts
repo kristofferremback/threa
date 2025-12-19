@@ -38,6 +38,26 @@ async function ensureTestDatabaseExists(): Promise<void> {
 }
 
 /**
+ * Cleans up stale jobs from previous test runs to prevent test pollution.
+ */
+async function cleanupStaleJobs(): Promise<void> {
+  const testPool = new Pool({
+    connectionString: process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test",
+  })
+
+  try {
+    // Delete old pg-boss jobs to prevent queue pollution
+    await testPool.query("DELETE FROM pgboss.job WHERE state IN ('created', 'retry', 'active')")
+    // Also clean up archived jobs to prevent bloat
+    await testPool.query("DELETE FROM pgboss.archive WHERE completedon < NOW() - INTERVAL '1 hour'")
+  } catch {
+    // Ignore errors if tables don't exist yet
+  } finally {
+    await testPool.end()
+  }
+}
+
+/**
  * Finds a random available port.
  */
 async function findAvailablePort(): Promise<number> {
@@ -61,6 +81,7 @@ async function findAvailablePort(): Promise<number> {
  */
 export async function startTestServer(): Promise<TestServer> {
   await ensureTestDatabaseExists()
+  await cleanupStaleJobs()
 
   const port = await findAvailablePort()
 
@@ -68,6 +89,7 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test"
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
+  process.env.USE_STUB_COMPANION = "true"
 
   // Import and start the server (must be after env vars are set)
   const { startServer } = await import("../src/server")

@@ -22,10 +22,15 @@ export class StubAuthService implements AuthService {
     const email = options.email || "test@example.com"
     const name = options.name || "Test User"
 
-    const user = await userService.ensureUser({ email, name })
+    // Generate a fake WorkOS user ID for testing - this mimics how real auth works
+    const fakeWorkosUserId = `workos_test_${email.replace(/[^a-z0-9]/gi, "_")}`
 
+    const user = await userService.ensureUser({ email, name, workosUserId: fakeWorkosUserId })
+
+    // Register with the fake WorkOS ID - this is what authenticateSession will return
+    // and what socket.ts will use to look up the user
     const session = this.registerTestUser({
-      id: user.id,
+      id: fakeWorkosUserId,
       email: user.email,
       firstName: name,
     })

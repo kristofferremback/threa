@@ -68,6 +68,25 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
+      // For threads, check access to root stream instead of direct membership
+      if (stream.rootStreamId) {
+        const rootStream = await StreamRepository.findById(client, stream.rootStreamId)
+        if (!rootStream) {
+          throw new StreamNotFoundError()
+        }
+
+        // Check root stream access: public streams are accessible to all, private require membership
+        if (rootStream.visibility !== Visibilities.PUBLIC) {
+          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+          if (!isRootMember) {
+            throw new StreamNotFoundError()
+          }
+        }
+
+        return stream
+      }
+
+      // Non-thread streams: check direct visibility/membership
       if (stream.visibility !== Visibilities.PUBLIC) {
         const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
         if (!isMember) {
@@ -243,13 +262,22 @@ export class StreamService {
     streamId: string,
     companionMode: CompanionMode,
     companionPersonaId?: string | null
-  ): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamRepository.update(client, streamId, {
+  ): Promise<Stream> {
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.update(client, streamId, {
         companionMode,
         companionPersonaId,
       })
-    )
+      if (!stream) {
+        throw new Error("Stream not found")
+      }
+      await OutboxRepository.insert(client, "stream:updated", {
+        workspaceId: stream.workspaceId,
+        streamId: stream.id,
+        stream,
+      })
+      return stream
+    })
   }
 
   async archiveStream(streamId: string): Promise<Stream | null> {
@@ -295,7 +323,23 @@ export class StreamService {
 
   // Member operations
   async addMember(streamId: string, userId: string): Promise<StreamMember> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.insert(client, streamId, userId))
+    return withTransaction(this.pool, async (client) => {
+      // Get the stream to check if it has a root (is a thread)
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream) {
+        throw new StreamNotFoundError()
+      }
+
+      // If this is a thread, also add the user to the root stream
+      if (stream.rootStreamId) {
+        const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+        if (!isRootMember) {
+          await StreamMemberRepository.insert(client, stream.rootStreamId, userId)
+        }
+      }
+
+      return StreamMemberRepository.insert(client, streamId, userId)
+    })
   }
 
   async removeMember(streamId: string, userId: string): Promise<boolean> {
