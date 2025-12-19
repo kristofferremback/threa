@@ -244,6 +244,23 @@ Each worktree gets its own database (e.g., `threa_feature_xyz`) while sharing th
 
 ## Agent Workflow
 
+### Task Tracking with Linear
+
+All tasks, features, and improvements are tracked in Linear (team: Threa). Use the Linear MCP tools to:
+
+- **View issues**: `list_issues` with filters (assignee, state, label, etc.)
+- **Create issues**: `create_issue` with title, description, team, labels, state
+- **Update issues**: `update_issue` to change state, add comments, etc.
+- **Add comments**: `create_comment` for session logs and progress updates
+
+**Labels**:
+
+- `Feature` - New functionality
+- `Improvement` - Enhancements to existing features
+- `Bug` - Defects to fix
+
+**States**: Backlog → Todo → In Progress → In Review → Done
+
 ### Divergence Protocol
 
 After significant implementation milestones, explicitly compare plan vs. reality:
@@ -259,25 +276,19 @@ If there was meaningful divergence:
 
 1. Stop and surface it before continuing
 2. Assess whether the divergence was correct (better approach discovered) or a mistake
-3. Update the plan if the divergence should be preserved
+3. Update the Linear issue if the divergence should be preserved
 4. Get confirmation before proceeding
 
 **Key prompt**: "Did you follow the plan so far, or did you diverge? If you diverged, how and why?"
 
 ### Work Notes for Multi-Session Tasks
 
-For features spanning multiple sessions, create `docs/plans/<feature>/work_notes.md`. **Include work notes in the PR** - they document context, decisions, and rationale that are valuable for future reference.
+For features spanning multiple sessions, add session logs as **comments on the Linear issue**. This keeps all context in one place and visible to anyone viewing the issue.
+
+**Session log format** (add as Linear comment):
 
 ```markdown
-# <Feature Name> - Work Notes
-
-**Started**: <date>
-**Branch**: <branch-name>
-**Status**: <In Progress | Blocked | Complete>
-
-## Session Log
-
-### <date> - <Focus Area>
+## Session: <date> - <Focus Area>
 
 **Context reviewed**:
 
@@ -296,38 +307,19 @@ For features spanning multiple sessions, create `docs/plans/<feature>/work_notes
 **Next steps**:
 
 1. <next task>
-
----
-
-## Key Decisions
-
-### <Decision Title>
-
-**Choice**: <what was decided>
-**Rationale**: <why>
-**Alternatives considered**: <what else was considered>
-
----
-
-## Blockers / Open Questions
-
-- [ ] <unresolved issue>
-
----
-
-## Files Modified
-
-- `path/to/file` - <what changed>
 ```
+
+**Key decisions** should be added to the issue description or as a dedicated comment.
 
 ### Request Protocol for Blockers
 
 When blocked by tech debt or a bug that's outside current scope:
 
-1. Document the blocker in `docs/requests/<issue-name>.md`
+1. Create a new Linear issue with label `Improvement` or `Bug`
 2. Include: problem statement, proposed solution, affected files, acceptance criteria
-3. Continue with workaround if possible, or stop and surface to Kris
-4. When the fix lands, merge and revisit the original plan
+3. Link it to the parent issue if relevant
+4. Continue with workaround if possible, or stop and surface to Kris
+5. When the fix lands, update the original issue and continue
 
 This enables parallel work: one agent continues on the feature, another fixes the blocker.
 
