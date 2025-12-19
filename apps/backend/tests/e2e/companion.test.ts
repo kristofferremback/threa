@@ -13,7 +13,15 @@ import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, set
 // Companion jobs run asynchronously, need longer timeout
 setDefaultTimeout(30000)
 import { io, Socket } from "socket.io-client"
-import { TestClient, loginAs, createWorkspace, createScratchpad, sendMessage } from "../client"
+import {
+  TestClient,
+  loginAs,
+  createWorkspace,
+  createScratchpad,
+  sendMessage,
+  listEvents,
+  type StreamEvent,
+} from "../client"
 
 function getBaseUrl(): string {
   return process.env.TEST_BASE_URL || "http://localhost:3001"
@@ -111,9 +119,6 @@ describe("Companion Agent", () => {
     userId = user.id
     const workspace = await createWorkspace(client, "Companion Test Workspace")
     workspaceId = workspace.id
-
-    // Give the job queue time to fully initialize and start polling
-    await Bun.sleep(2000)
   })
 
   beforeEach(async () => {
@@ -186,31 +191,23 @@ describe("Companion Agent", () => {
 
   describe("Companion Mode Off", () => {
     test("should not respond when companion mode is off", async () => {
-      const stream = await createScratchpad(client, workspaceId)
-
-      // Turn companion mode off
-      await client.patch(`/api/workspaces/${workspaceId}/streams/${stream.id}/companion`, {
-        companionMode: "off",
-      })
-
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
-
-      // Collect any message:created events
-      const messages: any[] = []
-      socket.on("message:created", (data) => {
-        messages.push(data)
-      })
+      // Create scratchpad with companion mode off from the start
+      const stream = await createScratchpad(client, workspaceId, "off")
 
       // Send a user message
       await sendMessage(client, workspaceId, stream.id, "No companion here")
 
-      // Wait a bit for any potential companion response (job queue polling is ~2 seconds)
-      await Bun.sleep(5000)
+      // Query the events via HTTP API - this gives the job queue time to process
+      // If a companion response was going to happen, it would be in the events
+      const events = await listEvents(client, workspaceId, stream.id, ["message_created"])
 
       // Should only have the user message, no companion response
-      const personaMessages = messages.filter((m) => m.event?.actorType === "persona")
-      expect(personaMessages.length).toBe(0)
+      const personaEvents = events.filter((e: StreamEvent) => e.actorType === "persona")
+      expect(personaEvents.length).toBe(0)
+
+      // Verify we have exactly one user message
+      const userEvents = events.filter((e: StreamEvent) => e.actorType === "user")
+      expect(userEvents.length).toBe(1)
     })
   })
 
@@ -249,13 +246,17 @@ describe("Companion Agent", () => {
 
       const response = await responsePromise
 
-      // Verify event has required fields (using StreamEvent structure)
-      expect(response.event).toHaveProperty("id")
-      expect(response.event).toHaveProperty("actorId")
-      expect(response.event).toHaveProperty("actorType")
-      expect(response.event).toHaveProperty("createdAt")
-      expect(response.event.payload).toHaveProperty("content")
-      expect(response.event.payload).toHaveProperty("messageId")
+      // Verify event has required fields using toMatchObject with expect.any()
+      expect(response.event).toMatchObject({
+        id: expect.any(String),
+        actorId: expect.any(String),
+        actorType: "persona",
+        createdAt: expect.any(String),
+        payload: {
+          content: expect.any(String),
+          messageId: expect.any(String),
+        },
+      })
     })
   })
 

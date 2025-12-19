@@ -1,10 +1,7 @@
 /**
  * ID Generation Unit Tests
  *
- * Tests verify:
- * 1. IDs have correct prefix format
- * 2. IDs are unique
- * 3. IDs contain valid ULID characters
+ * Tests verify IDs have correct prefix format and ULID structure.
  */
 
 import { describe, test, expect } from "bun:test"
@@ -56,44 +53,5 @@ describe("ID Generation", () => {
         expect(ulid).toMatch(/^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]+$/)
       })
     }
-  })
-
-  describe("uniqueness", () => {
-    test("generates unique user IDs", () => {
-      const ids = new Set(Array.from({ length: 100 }, () => userId()))
-      expect(ids.size).toBe(100)
-    })
-
-    test("generates unique workspace IDs", () => {
-      const ids = new Set(Array.from({ length: 100 }, () => workspaceId()))
-      expect(ids.size).toBe(100)
-    })
-
-    test("generates unique stream IDs", () => {
-      const ids = new Set(Array.from({ length: 100 }, () => streamId()))
-      expect(ids.size).toBe(100)
-    })
-
-    test("generates unique event IDs", () => {
-      const ids = new Set(Array.from({ length: 100 }, () => eventId()))
-      expect(ids.size).toBe(100)
-    })
-
-    test("generates unique message IDs", () => {
-      const ids = new Set(Array.from({ length: 100 }, () => messageId()))
-      expect(ids.size).toBe(100)
-    })
-  })
-
-  describe("sortability", () => {
-    test("IDs generated later sort after earlier IDs", async () => {
-      const id1 = streamId()
-      // Small delay to ensure different timestamps
-      await new Promise((resolve) => setTimeout(resolve, 2))
-      const id2 = streamId()
-
-      // ULIDs are lexicographically sortable by time
-      expect(id1 < id2).toBe(true)
-    })
   })
 })

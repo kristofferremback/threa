@@ -524,6 +524,241 @@ describe("Access Control", () => {
     })
   })
 
+  describe("Thread Visibility", () => {
+    test("thread inherits visibility from parent channel", async () => {
+      const ownerId = userId()
+      const memberId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `thread-vis-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: memberId,
+          email: `thread-vis-member-${memberId}@test.com`,
+          name: "Member",
+          workosUserId: `workos_${memberId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Thread Visibility Workspace",
+          slug: `thread-vis-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, memberId)
+      })
+
+      // Create a public channel
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `thread-vis-channel-${Date.now()}`,
+        displayName: "Thread Visibility Channel",
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      // Create a thread from the channel
+      const thread = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: "msg_test123",
+        createdBy: ownerId,
+      })
+
+      // Thread should be private (always), but accessible to channel members
+      expect(thread.visibility).toBe(Visibilities.PRIVATE)
+      expect(thread.rootStreamId).toBe(channel.id)
+
+      // Member of workspace (who can see public channel) should be able to access thread
+      // via root stream membership check
+      const access = await streamService.validateStreamAccess(thread.id, wsId, memberId)
+      expect(access.id).toBe(thread.id)
+    })
+
+    test("deeply nested threads are visible to root stream members", async () => {
+      const ownerId = userId()
+      const memberId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `deep-thread-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: memberId,
+          email: `deep-thread-member-${memberId}@test.com`,
+          name: "Member",
+          workosUserId: `workos_${memberId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Deep Thread Workspace",
+          slug: `deep-thread-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, memberId)
+      })
+
+      // Create channel -> thread1 -> thread2 -> thread3
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `deep-thread-channel-${Date.now()}`,
+        displayName: "Deep Thread Channel",
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      const thread1 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: "msg_deep1",
+        createdBy: ownerId,
+      })
+
+      const thread2 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: thread1.id,
+        parentMessageId: "msg_deep2",
+        createdBy: ownerId,
+      })
+
+      const thread3 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: thread2.id,
+        parentMessageId: "msg_deep3",
+        createdBy: ownerId,
+      })
+
+      // All threads should have channel as root
+      expect(thread1.rootStreamId).toBe(channel.id)
+      expect(thread2.rootStreamId).toBe(channel.id)
+      expect(thread3.rootStreamId).toBe(channel.id)
+
+      // Workspace member (with access to public channel) should be able to access deeply nested thread
+      const access = await streamService.validateStreamAccess(thread3.id, wsId, memberId)
+      expect(access.id).toBe(thread3.id)
+    })
+
+    test("private channel threads require channel membership", async () => {
+      const ownerId = userId()
+      const nonMemberId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `priv-thread-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: nonMemberId,
+          email: `priv-thread-nonmember-${nonMemberId}@test.com`,
+          name: "Non-Member",
+          workosUserId: `workos_${nonMemberId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Private Thread Workspace",
+          slug: `priv-thread-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, nonMemberId)
+      })
+
+      // Create a private channel
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `priv-thread-channel-${Date.now()}`,
+        displayName: "Private Thread Channel",
+        createdBy: ownerId,
+        visibility: Visibilities.PRIVATE,
+      })
+
+      // Create a thread
+      const thread = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: "msg_priv_thread",
+        createdBy: ownerId,
+      })
+
+      // Non-member of channel cannot access thread (even though in workspace)
+      await expect(streamService.validateStreamAccess(thread.id, wsId, nonMemberId)).rejects.toThrow(
+        StreamNotFoundError
+      )
+
+      // Add them to channel
+      await streamService.addMember(channel.id, nonMemberId)
+
+      // Now they can access thread
+      const access = await streamService.validateStreamAccess(thread.id, wsId, nonMemberId)
+      expect(access.id).toBe(thread.id)
+    })
+
+    test("adding member to thread adds them to root stream", async () => {
+      const ownerId = userId()
+      const newMemberId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `thread-add-member-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: newMemberId,
+          email: `thread-add-member-new-${newMemberId}@test.com`,
+          name: "New Member",
+          workosUserId: `workos_${newMemberId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Thread Add Member Workspace",
+          slug: `thread-add-member-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, newMemberId)
+      })
+
+      // Create a private channel and thread
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `thread-add-member-channel-${Date.now()}`,
+        displayName: "Thread Add Member Channel",
+        createdBy: ownerId,
+        visibility: Visibilities.PRIVATE,
+      })
+
+      const thread = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: "msg_add_member",
+        createdBy: ownerId,
+      })
+
+      // Initially not a member of either
+      expect(await streamService.isMember(channel.id, newMemberId)).toBe(false)
+      expect(await streamService.isMember(thread.id, newMemberId)).toBe(false)
+
+      // Add them to the thread
+      await streamService.addMember(thread.id, newMemberId)
+
+      // Should now be member of both thread AND root channel
+      expect(await streamService.isMember(thread.id, newMemberId)).toBe(true)
+      expect(await streamService.isMember(channel.id, newMemberId)).toBe(true)
+    })
+  })
+
   describe("Member-Only Operations", () => {
     test("isMember correctly identifies stream members", async () => {
       const ownerId = userId()
