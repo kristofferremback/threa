@@ -1,6 +1,20 @@
 import { $ } from "bun"
 import * as path from "path"
 import * as fs from "fs"
+import * as os from "os"
+
+interface ClaudeProjectConfig {
+  mcpServers?: Record<string, unknown>
+  enabledMcpjsonServers?: string[]
+  disabledMcpjsonServers?: string[]
+  hasTrustDialogAccepted?: boolean
+  [key: string]: unknown
+}
+
+interface ClaudeConfig {
+  projects?: Record<string, ClaudeProjectConfig>
+  [key: string]: unknown
+}
 
 interface WorktreeInfo {
   path: string
@@ -40,8 +54,20 @@ function getMainWorktree(worktrees: WorktreeInfo[]): WorktreeInfo | undefined {
   const bare = worktrees.find((w) => w.isMain)
   if (bare) return bare
 
-  // Otherwise find the one on main/master branch
-  return worktrees.find((w) => w.branch.endsWith("/main") || w.branch.endsWith("/master"))
+  // Try to find one on main/master branch
+  const mainBranch = worktrees.find((w) => w.branch.endsWith("/main") || w.branch.endsWith("/master"))
+  if (mainBranch) return mainBranch
+
+  // Heuristic: worktrees are typically named <project>.<branch> while the main is just <project>
+  // So the main worktree path doesn't contain a dot in the directory name
+  const mainByNaming = worktrees.find((w) => {
+    const dirName = path.basename(w.path)
+    return !dirName.includes(".")
+  })
+  if (mainByNaming) return mainByNaming
+
+  // Fallback: first worktree listed is usually the original
+  return worktrees[0]
 }
 
 function deriveDatabaseName(dirPath: string): string {
@@ -62,12 +88,36 @@ function updateDatabaseUrl(envContent: string, newDbName: string): string {
   return envContent.replace(/(DATABASE_URL=postgresql:\/\/[^/]+\/)([^?\n]+)/, `$1${newDbName}`)
 }
 
+function extractDatabaseName(envContent: string): string | null {
+  // Extract database name from DATABASE_URL
+  // Format: postgresql://user:pass@host:port/dbname
+  const match = envContent.match(/DATABASE_URL=postgresql:\/\/[^/]+\/([^?\n]+)/)
+  return match ? match[1] : null
+}
+
+async function findPostgresContainer(): Promise<string | null> {
+  // Find running postgres container by name pattern (works regardless of which worktree started it)
+  const result = await $`docker ps --format '{{.Names}}' --filter 'name=postgres'`.quiet().nothrow()
+  const containers = result.stdout.toString().trim().split("\n").filter(Boolean)
+
+  // Prefer threa-postgres container if multiple match
+  const threaContainer = containers.find((c) => c.includes("threa"))
+  return threaContainer || containers[0] || null
+}
+
 async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   console.log(`Checking if database '${dbName}' exists...`)
 
+  const container = await findPostgresContainer()
+  if (!container) {
+    throw new Error("No running postgres container found. Run 'bun run db:start' from the main worktree first.")
+  }
+
+  console.log(`Using postgres container: ${container}`)
+
   // Connect to postgres (not a specific database) to create the new database
   const checkResult =
-    await $`docker compose exec -T postgres psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`
+    await $`docker exec ${container} psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`
       .quiet()
       .nothrow()
 
@@ -77,18 +127,69 @@ async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   }
 
   console.log(`Creating database '${dbName}'...`)
-  await $`docker compose exec -T postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
+  await $`docker exec ${container} psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
   console.log(`Database '${dbName}' created`)
 }
 
-async function runMigrations(dbName: string): Promise<void> {
-  console.log("Running migrations...")
-  const dbUrl = `postgresql://threa:threa@localhost:5454/${dbName}`
-  await $`DATABASE_URL=${dbUrl} bun apps/backend/src/index.ts --migrate-only`.quiet().nothrow()
-  // Actually, let's use the backend's migration system directly
-  // We need to start the app briefly to run migrations, or we can call the migrator directly
-  // For now, let's use a simpler approach - run the backend with a flag or just let it migrate on startup
-  console.log("Migrations will run on first backend start")
+async function cloneDatabase(container: string, sourceDb: string, targetDb: string): Promise<void> {
+  console.log(`Cloning database '${sourceDb}' to '${targetDb}'...`)
+
+  // Use pg_dump piped to psql for the clone
+  // This preserves all data, schema, and sequences
+  const result = await $`docker exec ${container} sh -c "pg_dump -U threa ${sourceDb} | psql -U threa ${targetDb}"`
+    .quiet()
+    .nothrow()
+
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString()
+    // Ignore "already exists" errors for things like extensions
+    if (!stderr.includes("already exists")) {
+      console.warn("Clone had warnings:", stderr)
+    }
+  }
+
+  console.log(`Database '${targetDb}' cloned from '${sourceDb}'`)
+}
+
+function copyMcpServers(mainWorktreePath: string, targetWorktreePath: string): void {
+  const claudeConfigPath = path.join(os.homedir(), ".claude.json")
+
+  if (!fs.existsSync(claudeConfigPath)) {
+    console.log("No ~/.claude.json found, skipping MCP server setup")
+    return
+  }
+
+  console.log("Copying MCP server configuration...")
+
+  const config: ClaudeConfig = JSON.parse(fs.readFileSync(claudeConfigPath, "utf-8"))
+
+  if (!config.projects) {
+    console.log("No projects in ~/.claude.json, skipping MCP server setup")
+    return
+  }
+
+  const mainProjectConfig = config.projects[mainWorktreePath]
+  if (!mainProjectConfig?.mcpServers || Object.keys(mainProjectConfig.mcpServers).length === 0) {
+    console.log("No MCP servers configured in main worktree, skipping")
+    return
+  }
+
+  // Initialize target project config if it doesn't exist
+  if (!config.projects[targetWorktreePath]) {
+    config.projects[targetWorktreePath] = {}
+  }
+
+  // Copy MCP server configuration
+  config.projects[targetWorktreePath].mcpServers = { ...mainProjectConfig.mcpServers }
+  config.projects[targetWorktreePath].enabledMcpjsonServers = mainProjectConfig.enabledMcpjsonServers || []
+  config.projects[targetWorktreePath].disabledMcpjsonServers = mainProjectConfig.disabledMcpjsonServers || []
+  config.projects[targetWorktreePath].hasTrustDialogAccepted = mainProjectConfig.hasTrustDialogAccepted
+
+  fs.writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2))
+
+  const serverCount = Object.keys(mainProjectConfig.mcpServers).length
+  const serverNames = Object.keys(mainProjectConfig.mcpServers).join(", ")
+  console.log(`Copied ${serverCount} MCP server(s): ${serverNames}`)
 }
 
 async function main() {
@@ -131,27 +232,46 @@ async function main() {
   }
 
   console.log(`Copying .env from ${sourceEnvPath}...`)
-  let envContent = fs.readFileSync(sourceEnvPath, "utf-8")
+  const originalEnvContent = fs.readFileSync(sourceEnvPath, "utf-8")
+
+  // Extract source database name before modifying
+  const sourceDbName = extractDatabaseName(originalEnvContent)
+  if (!sourceDbName) {
+    console.error("Could not extract database name from main worktree's .env")
+    process.exit(1)
+  }
 
   // Step 4: Derive database name from directory
   const dbName = deriveDatabaseName(cwd)
   console.log(`Database name for this worktree: ${dbName}`)
+  console.log(`Source database to clone: ${sourceDbName}`)
 
   // Step 5: Update DATABASE_URL
-  envContent = updateDatabaseUrl(envContent, dbName)
+  const envContent = updateDatabaseUrl(originalEnvContent, dbName)
 
   // Write the modified .env
   fs.writeFileSync(targetEnvPath, envContent)
   console.log(`Created ${targetEnvPath}`)
 
-  // Step 6: Create database if needed (requires docker to be running)
+  // Step 6: Create database and clone data from main worktree
   try {
+    const container = await findPostgresContainer()
+    if (!container) {
+      throw new Error("No running postgres container found")
+    }
+
     await createDatabaseIfNotExists(dbName)
-    await runMigrations(dbName)
+    await cloneDatabase(container, sourceDbName, dbName)
   } catch (err) {
-    console.warn("Could not create database - ensure docker is running and postgres is started")
-    console.warn("Run 'bun run db:start' and then manually create the database:")
-    console.warn(`  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`)
+    console.warn("Could not create/clone database - ensure docker is running and postgres is started")
+    console.warn("Run 'bun run db:start' from the main worktree, then run this script again")
+  }
+
+  // Step 7: Copy MCP server configuration from main worktree
+  try {
+    copyMcpServers(mainWorktree.path, cwd)
+  } catch (err) {
+    console.warn("Could not copy MCP server configuration:", err)
   }
 
   console.log("\nWorktree setup complete!")
