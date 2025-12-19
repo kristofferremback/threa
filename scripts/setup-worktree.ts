@@ -1,6 +1,20 @@
 import { $ } from "bun"
 import * as path from "path"
 import * as fs from "fs"
+import * as os from "os"
+
+interface ClaudeProjectConfig {
+  mcpServers?: Record<string, unknown>
+  enabledMcpjsonServers?: string[]
+  disabledMcpjsonServers?: string[]
+  hasTrustDialogAccepted?: boolean
+  [key: string]: unknown
+}
+
+interface ClaudeConfig {
+  projects?: Record<string, ClaudeProjectConfig>
+  [key: string]: unknown
+}
 
 interface WorktreeInfo {
   path: string
@@ -40,8 +54,20 @@ function getMainWorktree(worktrees: WorktreeInfo[]): WorktreeInfo | undefined {
   const bare = worktrees.find((w) => w.isMain)
   if (bare) return bare
 
-  // Otherwise find the one on main/master branch
-  return worktrees.find((w) => w.branch.endsWith("/main") || w.branch.endsWith("/master"))
+  // Try to find one on main/master branch
+  const mainBranch = worktrees.find((w) => w.branch.endsWith("/main") || w.branch.endsWith("/master"))
+  if (mainBranch) return mainBranch
+
+  // Heuristic: worktrees are typically named <project>.<branch> while the main is just <project>
+  // So the main worktree path doesn't contain a dot in the directory name
+  const mainByNaming = worktrees.find((w) => {
+    const dirName = path.basename(w.path)
+    return !dirName.includes(".")
+  })
+  if (mainByNaming) return mainByNaming
+
+  // Fallback: first worktree listed is usually the original
+  return worktrees[0]
 }
 
 function deriveDatabaseName(dirPath: string): string {
@@ -89,6 +115,47 @@ async function runMigrations(dbName: string): Promise<void> {
   // We need to start the app briefly to run migrations, or we can call the migrator directly
   // For now, let's use a simpler approach - run the backend with a flag or just let it migrate on startup
   console.log("Migrations will run on first backend start")
+}
+
+function copyMcpServers(mainWorktreePath: string, targetWorktreePath: string): void {
+  const claudeConfigPath = path.join(os.homedir(), ".claude.json")
+
+  if (!fs.existsSync(claudeConfigPath)) {
+    console.log("No ~/.claude.json found, skipping MCP server setup")
+    return
+  }
+
+  console.log("Copying MCP server configuration...")
+
+  const config: ClaudeConfig = JSON.parse(fs.readFileSync(claudeConfigPath, "utf-8"))
+
+  if (!config.projects) {
+    console.log("No projects in ~/.claude.json, skipping MCP server setup")
+    return
+  }
+
+  const mainProjectConfig = config.projects[mainWorktreePath]
+  if (!mainProjectConfig?.mcpServers || Object.keys(mainProjectConfig.mcpServers).length === 0) {
+    console.log("No MCP servers configured in main worktree, skipping")
+    return
+  }
+
+  // Initialize target project config if it doesn't exist
+  if (!config.projects[targetWorktreePath]) {
+    config.projects[targetWorktreePath] = {}
+  }
+
+  // Copy MCP server configuration
+  config.projects[targetWorktreePath].mcpServers = { ...mainProjectConfig.mcpServers }
+  config.projects[targetWorktreePath].enabledMcpjsonServers = mainProjectConfig.enabledMcpjsonServers || []
+  config.projects[targetWorktreePath].disabledMcpjsonServers = mainProjectConfig.disabledMcpjsonServers || []
+  config.projects[targetWorktreePath].hasTrustDialogAccepted = mainProjectConfig.hasTrustDialogAccepted
+
+  fs.writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2))
+
+  const serverCount = Object.keys(mainProjectConfig.mcpServers).length
+  const serverNames = Object.keys(mainProjectConfig.mcpServers).join(", ")
+  console.log(`Copied ${serverCount} MCP server(s): ${serverNames}`)
 }
 
 async function main() {
@@ -152,6 +219,13 @@ async function main() {
     console.warn("Could not create database - ensure docker is running and postgres is started")
     console.warn("Run 'bun run db:start' and then manually create the database:")
     console.warn(`  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`)
+  }
+
+  // Step 7: Copy MCP server configuration from main worktree
+  try {
+    copyMcpServers(mainWorktree.path, cwd)
+  } catch (err) {
+    console.warn("Could not copy MCP server configuration:", err)
   }
 
   console.log("\nWorktree setup complete!")
