@@ -3,7 +3,8 @@ import { useLiveQuery } from "dexie-react-hooks"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { db } from "@/db"
-import { useStreamService, useMessageService } from "@/contexts"
+import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
+import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type { StreamType, CompanionMode, ContentFormat, StreamEvent } from "@threa/types"
@@ -122,6 +123,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const navigate = useNavigate()
   const streamService = useStreamService()
   const messageService = useMessageService()
+  const { markPending, markFailed, markSent } = usePendingMessages()
+  const user = useUser()
 
   const { data: bootstrap, isLoading } = useStreamBootstrap(workspaceId, streamId, { enabled })
 
@@ -184,22 +187,39 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
+      // Use timestamp as sequence to ensure optimistic events sort after real events
+      // Real events have low sequence numbers (1, 2, 3...), timestamps are ~13 digits
+      const optimisticSequence = Date.now().toString()
+
       const optimisticEvent: StreamEvent = {
         id: clientId,
         streamId,
-        sequence: "0",
+        sequence: optimisticSequence,
         eventType: "message_created",
         payload: {
           messageId: clientId,
           content: input.content,
           contentFormat: input.contentFormat,
         },
-        actorId: "current_user",
+        actorId: user?.id ?? null,
         actorType: "user",
         createdAt: now,
       }
 
-      // Add to pending and cache optimistically
+      // Track as pending in context (for UI status display)
+      markPending(clientId)
+
+      // Update React Query cache immediately for instant UI feedback
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { events: StreamEvent[] }
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, optimisticEvent],
+        }
+      })
+
+      // Persist to IndexedDB for recovery/retry capability
       await db.pendingMessages.add({
         clientId,
         workspaceId,
@@ -217,15 +237,6 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         _cachedAt: Date.now(),
       })
 
-      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
-        if (!old || typeof old !== "object") return old
-        const bootstrap = old as { events: StreamEvent[] }
-        return {
-          ...bootstrap,
-          events: [...bootstrap.events, optimisticEvent],
-        }
-      })
-
       try {
         await messageService.create(workspaceId, streamId, {
           streamId,
@@ -233,10 +244,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           contentFormat: input.contentFormat,
         })
 
-        await db.pendingMessages.delete(clientId)
-        await db.events.delete(clientId)
-
-        // Remove optimistic event from React Query cache.
+        // Remove optimistic event immediately to minimize duplication window.
         // The real event will arrive via WebSocket with a different ID.
         queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
           if (!old || typeof old !== "object") return old
@@ -246,14 +254,20 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
             events: bootstrap.events.filter((e) => e.id !== clientId),
           }
         })
-      } catch (err) {
+        markSent(clientId)
+
+        // Clean up IndexedDB (fire-and-forget since UI is already updated)
+        void db.pendingMessages.delete(clientId)
+        void db.events.delete(clientId)
+      } catch {
         await db.events.update(clientId, { _status: "failed" })
-        throw err
+        markFailed(clientId)
+        // Don't throw - failure is shown in timeline with retry option
       }
 
       return {}
     },
-    [streamId, workspaceId, messageService, queryClient]
+    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, user]
   )
 
   return {

@@ -11,3 +11,4 @@ export {
   type MessageService,
 } from "./services-context"
 export { SocketProvider, useSocket, useSocketConnected } from "./socket-context"
+export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"

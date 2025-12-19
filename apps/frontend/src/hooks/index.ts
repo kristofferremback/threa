@@ -21,3 +21,5 @@ export { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 export { useSocketEvents } from "./use-socket-events"
 
 export { useStreamSocket } from "./use-stream-socket"
+
+export { usePendingMessageRetry } from "./use-pending-message-retry"
