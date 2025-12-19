@@ -3,6 +3,7 @@ import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
+import { AgentSessionRepository, SessionStatuses } from "../repositories/agent-session-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
 import { AuthorTypes, CompanionModes } from "@threa/types"
 import { logger } from "./logger"
@@ -58,11 +59,31 @@ export function createCompanionListener(
           return
         }
 
+        // Check if this message was already seen by a previous session
+        // This prevents re-triggering for messages that an agent decided not to respond to
+        const lastSession = await AgentSessionRepository.findLatestByStream(client, streamId)
+        if (lastSession?.status === SessionStatuses.COMPLETED && lastSession.lastSeenSequence) {
+          const messageSequence = BigInt(event.sequence)
+          if (messageSequence <= lastSession.lastSeenSequence) {
+            logger.debug(
+              {
+                streamId,
+                messageId: eventPayload.messageId,
+                messageSequence: messageSequence.toString(),
+                lastSeenSequence: lastSession.lastSeenSequence.toString(),
+              },
+              "Message already seen by previous session, skipping"
+            )
+            return
+          }
+        }
+
         // Dispatch job to pg-boss for durable processing
+        // actorId is guaranteed to be set since we already checked actorType === USER
         await jobQueue.send(JobQueues.COMPANION_RESPOND, {
           streamId,
           messageId: eventPayload.messageId,
-          triggeredBy: event.actorId,
+          triggeredBy: event.actorId!,
         })
 
         logger.info({ streamId, messageId: eventPayload.messageId }, "Companion job dispatched")

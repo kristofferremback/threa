@@ -33,6 +33,7 @@ interface SessionRow {
   heartbeat_at: Date | null
   response_message_id: string | null
   error: string | null
+  last_seen_sequence: string | null
   created_at: Date
   completed_at: Date | null
 }
@@ -60,6 +61,7 @@ export interface AgentSession {
   heartbeatAt: Date | null
   responseMessageId: string | null
   error: string | null
+  lastSeenSequence: bigint | null
   createdAt: Date
   completedAt: Date | null
 }
@@ -107,6 +109,7 @@ function mapRowToSession(row: SessionRow): AgentSession {
     heartbeatAt: row.heartbeat_at,
     responseMessageId: row.response_message_id,
     error: row.error,
+    lastSeenSequence: row.last_seen_sequence ? BigInt(row.last_seen_sequence) : null,
     createdAt: row.created_at,
     completedAt: row.completed_at,
   }
@@ -128,7 +131,8 @@ function mapRowToStep(row: StepRow): AgentSessionStep {
 const SESSION_SELECT_FIELDS = `
   id, stream_id, persona_id, trigger_message_id,
   status, current_step, server_id, heartbeat_at,
-  response_message_id, error, created_at, completed_at
+  response_message_id, error, last_seen_sequence,
+  created_at, completed_at
 `
 
 const STEP_SELECT_FIELDS = `
@@ -249,6 +253,56 @@ export const AgentSessionRepository = {
       `
     )
     return result.rows.map(mapRowToSession)
+  },
+
+  /**
+   * Find a running session for a stream, locking it to prevent race conditions.
+   * Uses FOR UPDATE SKIP LOCKED so concurrent calls don't block.
+   * Returns null if no running session exists (or all are locked by other transactions).
+   */
+  async findRunningByStream(client: PoolClient, streamId: string): Promise<AgentSession | null> {
+    const result = await client.query<SessionRow>(
+      sql`
+        SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
+        FROM agent_sessions
+        WHERE stream_id = ${streamId}
+          AND status = ${SessionStatuses.RUNNING}
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      `
+    )
+    return result.rows[0] ? mapRowToSession(result.rows[0]) : null
+  },
+
+  /**
+   * Find the most recent session for a stream (regardless of status).
+   * Used to check lastSeenSequence when deciding whether to dispatch a new job.
+   */
+  async findLatestByStream(client: PoolClient, streamId: string): Promise<AgentSession | null> {
+    const result = await client.query<SessionRow>(
+      sql`
+        SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
+        FROM agent_sessions
+        WHERE stream_id = ${streamId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    )
+    return result.rows[0] ? mapRowToSession(result.rows[0]) : null
+  },
+
+  /**
+   * Update the last seen sequence for a session.
+   * Called during agent loop when new messages are processed.
+   */
+  async updateLastSeenSequence(client: PoolClient, id: string, sequence: bigint): Promise<void> {
+    await client.query(
+      sql`
+        UPDATE agent_sessions
+        SET last_seen_sequence = ${sequence.toString()}, heartbeat_at = NOW()
+        WHERE id = ${id}
+      `
+    )
   },
 
   // ----- Steps -----
