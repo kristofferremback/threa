@@ -129,9 +129,11 @@ export async function startServer(): Promise<ServerInstance> {
     await broadcastListener.stop()
     await jobQueue.stop()
     io.close()
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve()))
-    })
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+    }
     await pool.end()
     logger.info("Server stopped")
   }

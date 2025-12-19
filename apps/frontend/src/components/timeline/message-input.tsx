@@ -84,9 +84,10 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       if (result.navigateTo) {
         navigate(result.navigateTo)
       }
-    } catch (err) {
-      setError("Failed to send message. It will be retried automatically.")
-      setContent(trimmed)
+    } catch {
+      // This only happens for draft promotion failure (stream creation failed)
+      // Real stream message failures are handled in the timeline with retry
+      setError("Failed to create stream. Please try again.")
     } finally {
       setIsSending(false)
     }

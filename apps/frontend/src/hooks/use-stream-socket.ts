@@ -55,15 +55,37 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     const handleMessageCreated = async (payload: MessageEventPayload) => {
       if (payload.streamId !== streamId) return
 
+      const newEvent = payload.event
+      const newPayload = newEvent.payload as { content: string }
+
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as StreamBootstrap
+
         // Dedupe by event ID (might be our own optimistic event)
-        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        if (bootstrap.events.some((e) => e.id === newEvent.id)) return old
+
+        // Find matching optimistic event (temp_ prefix, same content and actor)
+        // Remove only the first match so sending identical messages quickly still works
+        const matchingOptimisticIdx = bootstrap.events.findIndex((e) => {
+          if (!e.id.startsWith("temp_")) return false
+          const existingPayload = e.payload as { content: string }
+          return e.actorId === newEvent.actorId && existingPayload.content === newPayload.content
+        })
+
+        let events = bootstrap.events
+        if (matchingOptimisticIdx !== -1) {
+          // Atomically remove optimistic event while adding real event
+          events = [
+            ...bootstrap.events.slice(0, matchingOptimisticIdx),
+            ...bootstrap.events.slice(matchingOptimisticIdx + 1),
+          ]
+        }
+
         return {
           ...bootstrap,
-          events: [...bootstrap.events, payload.event],
-          latestSequence: payload.event.sequence,
+          events: [...events, newEvent],
+          latestSequence: newEvent.sequence,
         }
       })
 
