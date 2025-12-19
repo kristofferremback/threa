@@ -88,12 +88,29 @@ function updateDatabaseUrl(envContent: string, newDbName: string): string {
   return envContent.replace(/(DATABASE_URL=postgresql:\/\/[^/]+\/)([^?\n]+)/, `$1${newDbName}`)
 }
 
+async function findPostgresContainer(): Promise<string | null> {
+  // Find running postgres container by name pattern (works regardless of which worktree started it)
+  const result = await $`docker ps --format '{{.Names}}' --filter 'name=postgres'`.quiet().nothrow()
+  const containers = result.stdout.toString().trim().split("\n").filter(Boolean)
+
+  // Prefer threa-postgres container if multiple match
+  const threaContainer = containers.find((c) => c.includes("threa"))
+  return threaContainer || containers[0] || null
+}
+
 async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   console.log(`Checking if database '${dbName}' exists...`)
 
+  const container = await findPostgresContainer()
+  if (!container) {
+    throw new Error("No running postgres container found. Run 'bun run db:start' from the main worktree first.")
+  }
+
+  console.log(`Using postgres container: ${container}`)
+
   // Connect to postgres (not a specific database) to create the new database
   const checkResult =
-    await $`docker compose exec -T postgres psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`
+    await $`docker exec ${container} psql -U threa -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`
       .quiet()
       .nothrow()
 
@@ -103,7 +120,7 @@ async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   }
 
   console.log(`Creating database '${dbName}'...`)
-  await $`docker compose exec -T postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
+  await $`docker exec ${container} psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
   console.log(`Database '${dbName}' created`)
 }
 
