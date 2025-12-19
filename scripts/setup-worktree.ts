@@ -88,6 +88,13 @@ function updateDatabaseUrl(envContent: string, newDbName: string): string {
   return envContent.replace(/(DATABASE_URL=postgresql:\/\/[^/]+\/)([^?\n]+)/, `$1${newDbName}`)
 }
 
+function extractDatabaseName(envContent: string): string | null {
+  // Extract database name from DATABASE_URL
+  // Format: postgresql://user:pass@host:port/dbname
+  const match = envContent.match(/DATABASE_URL=postgresql:\/\/[^/]+\/([^?\n]+)/)
+  return match ? match[1] : null
+}
+
 async function findPostgresContainer(): Promise<string | null> {
   // Find running postgres container by name pattern (works regardless of which worktree started it)
   const result = await $`docker ps --format '{{.Names}}' --filter 'name=postgres'`.quiet().nothrow()
@@ -124,14 +131,24 @@ async function createDatabaseIfNotExists(dbName: string): Promise<void> {
   console.log(`Database '${dbName}' created`)
 }
 
-async function runMigrations(dbName: string): Promise<void> {
-  console.log("Running migrations...")
-  const dbUrl = `postgresql://threa:threa@localhost:5454/${dbName}`
-  await $`DATABASE_URL=${dbUrl} bun apps/backend/src/index.ts --migrate-only`.quiet().nothrow()
-  // Actually, let's use the backend's migration system directly
-  // We need to start the app briefly to run migrations, or we can call the migrator directly
-  // For now, let's use a simpler approach - run the backend with a flag or just let it migrate on startup
-  console.log("Migrations will run on first backend start")
+async function cloneDatabase(container: string, sourceDb: string, targetDb: string): Promise<void> {
+  console.log(`Cloning database '${sourceDb}' to '${targetDb}'...`)
+
+  // Use pg_dump piped to psql for the clone
+  // This preserves all data, schema, and sequences
+  const result = await $`docker exec ${container} sh -c "pg_dump -U threa ${sourceDb} | psql -U threa ${targetDb}"`
+    .quiet()
+    .nothrow()
+
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString()
+    // Ignore "already exists" errors for things like extensions
+    if (!stderr.includes("already exists")) {
+      console.warn("Clone had warnings:", stderr)
+    }
+  }
+
+  console.log(`Database '${targetDb}' cloned from '${sourceDb}'`)
 }
 
 function copyMcpServers(mainWorktreePath: string, targetWorktreePath: string): void {
@@ -215,27 +232,39 @@ async function main() {
   }
 
   console.log(`Copying .env from ${sourceEnvPath}...`)
-  let envContent = fs.readFileSync(sourceEnvPath, "utf-8")
+  const originalEnvContent = fs.readFileSync(sourceEnvPath, "utf-8")
+
+  // Extract source database name before modifying
+  const sourceDbName = extractDatabaseName(originalEnvContent)
+  if (!sourceDbName) {
+    console.error("Could not extract database name from main worktree's .env")
+    process.exit(1)
+  }
 
   // Step 4: Derive database name from directory
   const dbName = deriveDatabaseName(cwd)
   console.log(`Database name for this worktree: ${dbName}`)
+  console.log(`Source database to clone: ${sourceDbName}`)
 
   // Step 5: Update DATABASE_URL
-  envContent = updateDatabaseUrl(envContent, dbName)
+  const envContent = updateDatabaseUrl(originalEnvContent, dbName)
 
   // Write the modified .env
   fs.writeFileSync(targetEnvPath, envContent)
   console.log(`Created ${targetEnvPath}`)
 
-  // Step 6: Create database if needed (requires docker to be running)
+  // Step 6: Create database and clone data from main worktree
   try {
+    const container = await findPostgresContainer()
+    if (!container) {
+      throw new Error("No running postgres container found")
+    }
+
     await createDatabaseIfNotExists(dbName)
-    await runMigrations(dbName)
+    await cloneDatabase(container, sourceDbName, dbName)
   } catch (err) {
-    console.warn("Could not create database - ensure docker is running and postgres is started")
-    console.warn("Run 'bun run db:start' and then manually create the database:")
-    console.warn(`  docker compose exec postgres psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`)
+    console.warn("Could not create/clone database - ensure docker is running and postgres is started")
+    console.warn("Run 'bun run db:start' from the main worktree, then run this script again")
   }
 
   // Step 7: Copy MCP server configuration from main worktree
