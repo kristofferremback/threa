@@ -139,7 +139,6 @@ describe("Companion Agent", () => {
 
       // Join the stream room to receive events
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100) // Wait for room join
 
       // Start waiting for companion response BEFORE sending message
       const responsePromise = waitForCompanionResponse(socket, stream.id)
@@ -160,7 +159,6 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Who are you?")
@@ -176,7 +174,6 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Track this session")
@@ -216,7 +213,6 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Broadcast test")
@@ -239,7 +235,6 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Structure test")
@@ -265,7 +260,6 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-      await Bun.sleep(100)
 
       // Send first message and wait for response
       const response1Promise = waitForCompanionResponse(socket, stream.id)
