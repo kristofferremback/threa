@@ -135,7 +135,6 @@ async function cloneDatabase(container: string, sourceDb: string, targetDb: stri
   console.log(`Cloning database '${sourceDb}' to '${targetDb}'...`)
 
   // Use pg_dump piped to psql for the clone
-  // This preserves all data, schema, and sequences
   const result = await $`docker exec ${container} sh -c "pg_dump -U threa ${sourceDb} | psql -U threa ${targetDb}"`
     .quiet()
     .nothrow()
@@ -147,6 +146,12 @@ async function cloneDatabase(container: string, sourceDb: string, targetDb: stri
       console.warn("Clone had warnings:", stderr)
     }
   }
+
+  // Sync sequences with actual data (pg_dump doesn't update sequence counters)
+  console.log("Syncing sequences...")
+  await $`docker exec ${container} psql -U threa ${targetDb} -c "SELECT setval('outbox_id_seq', COALESCE((SELECT MAX(id) FROM outbox), 0) + 1, false)"`
+    .quiet()
+    .nothrow()
 
   console.log(`Database '${targetDb}' cloned from '${sourceDb}'`)
 }
