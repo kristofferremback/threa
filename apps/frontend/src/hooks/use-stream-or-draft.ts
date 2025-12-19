@@ -235,6 +235,17 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
         await db.pendingMessages.delete(clientId)
         await db.events.delete(clientId)
+
+        // Remove optimistic event from React Query cache.
+        // The real event will arrive via WebSocket with a different ID.
+        queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+          if (!old || typeof old !== "object") return old
+          const bootstrap = old as { events: StreamEvent[] }
+          return {
+            ...bootstrap,
+            events: bootstrap.events.filter((e) => e.id !== clientId),
+          }
+        })
       } catch (err) {
         await db.events.update(clientId, { _status: "failed" })
         throw err
