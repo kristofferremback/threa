@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient, withTransaction } from "../db"
-import { AuthorTypes, CompanionModes, type AuthorType } from "@threa/types"
+import { AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
@@ -8,10 +8,9 @@ import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../r
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
 import type { SendMessageInput, SendMessageResult } from "./tools/send-message-tool"
+import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
-
-const MAX_CONTEXT_MESSAGES = 20
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
@@ -216,13 +215,14 @@ export class CompanionAgent {
         initialSequence,
       },
       async (client, session) => {
-        // Load conversation history
-        const recentMessages = await MessageRepository.list(client, streamId, {
-          limit: MAX_CONTEXT_MESSAGES,
-        })
+        // Build stream context (includes conversation history)
+        const context = await buildStreamContext(client, streamId, messageId)
+        if (!context) {
+          throw new Error(`Failed to build context for stream ${streamId}`)
+        }
 
-        // Build system prompt with send_message instructions
-        const systemPrompt = buildSystemPrompt(persona, stream)
+        // Build system prompt with stream context
+        const systemPrompt = buildSystemPrompt(persona, context)
 
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
@@ -259,7 +259,7 @@ export class CompanionAgent {
             threadId: session.id,
             modelId: persona.model,
             systemPrompt,
-            messages: recentMessages.map((m) => ({
+            messages: context.conversationHistory.map((m) => ({
               role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
               content: m.content,
             })),
@@ -320,29 +320,36 @@ async function getPersona(client: PoolClient, personaId: string | null): Promise
 
 /**
  * Build the system prompt for the companion agent.
+ * Produces stream-type-specific context for richer responses.
  */
-function buildSystemPrompt(
-  persona: Persona,
-  stream: {
-    type: string
-    displayName: string | null
-    description: string | null
-  }
-): string {
+function buildSystemPrompt(persona: Persona, context: StreamContext): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
   }
 
   let prompt = persona.systemPrompt
 
-  prompt += `\n\nYou are currently in a ${stream.type}`
-  if (stream.displayName) {
-    prompt += ` called "${stream.displayName}"`
+  // Add stream-type-specific context
+  switch (context.streamType) {
+    case StreamTypes.SCRATCHPAD:
+      prompt += buildScratchpadPrompt(context)
+      break
+
+    case StreamTypes.CHANNEL:
+      prompt += buildChannelPrompt(context)
+      break
+
+    case StreamTypes.THREAD:
+      prompt += buildThreadPrompt(context)
+      break
+
+    case StreamTypes.DM:
+      prompt += buildDmPrompt(context)
+      break
+
+    default:
+      prompt += buildScratchpadPrompt(context)
   }
-  if (stream.description) {
-    prompt += `: ${stream.description}`
-  }
-  prompt += "."
 
   // Add send_message tool instructions
   prompt += `
@@ -358,4 +365,119 @@ Key behaviors:
 - Be helpful, concise, and conversational.`
 
   return prompt
+}
+
+/**
+ * Build prompt section for scratchpads.
+ * Personal, solo-first context. Conversation history is primary.
+ */
+function buildScratchpadPrompt(context: StreamContext): string {
+  let section = "\n\n## Context\n\n"
+  section += "You are in a personal scratchpad"
+
+  if (context.streamInfo.name) {
+    section += ` called "${context.streamInfo.name}"`
+  }
+  section += ". This is a private, personal space for notes and thinking. "
+  section += "The conversation history is your primary context."
+
+  if (context.streamInfo.description) {
+    section += `\n\nDescription: ${context.streamInfo.description}`
+  }
+
+  return section
+}
+
+/**
+ * Build prompt section for channels.
+ * Collaborative context with member awareness.
+ */
+function buildChannelPrompt(context: StreamContext): string {
+  let section = "\n\n## Context\n\n"
+  section += "You are in a channel"
+
+  if (context.streamInfo.name) {
+    section += ` called "${context.streamInfo.name}"`
+  }
+  if (context.streamInfo.slug) {
+    section += ` (#${context.streamInfo.slug})`
+  }
+  section += ". This is a collaborative space where team members can discuss topics together."
+
+  if (context.streamInfo.description) {
+    section += `\n\nChannel description: ${context.streamInfo.description}`
+  }
+
+  if (context.participants && context.participants.length > 0) {
+    section += "\n\nChannel members:\n"
+    for (const p of context.participants) {
+      section += `- ${p.name}\n`
+    }
+  }
+
+  return section
+}
+
+/**
+ * Build prompt section for threads.
+ * Nested discussion with hierarchy awareness.
+ */
+function buildThreadPrompt(context: StreamContext): string {
+  let section = "\n\n## Context\n\n"
+  section += "You are in a thread"
+
+  if (context.streamInfo.name) {
+    section += ` called "${context.streamInfo.name}"`
+  }
+  section += ". This is a focused discussion branching from a parent conversation."
+
+  if (context.streamInfo.description) {
+    section += `\n\nThread description: ${context.streamInfo.description}`
+  }
+
+  // Add thread hierarchy context
+  if (context.threadContext && context.threadContext.path.length > 1) {
+    section += `\n\nThread hierarchy (${context.threadContext.depth} levels deep):\n`
+
+    for (let i = 0; i < context.threadContext.path.length; i++) {
+      const entry = context.threadContext.path[i]
+      const indent = "  ".repeat(i)
+      const name = entry.displayName ?? "Untitled"
+
+      if (i === 0) {
+        section += `${indent}[Root] ${name}\n`
+      } else if (i === context.threadContext.path.length - 1) {
+        section += `${indent}[Current] ${name}\n`
+      } else {
+        section += `${indent}└─ ${name}\n`
+      }
+
+      if (entry.anchorMessage) {
+        section += `${indent}   Spawned from: "${entry.anchorMessage.content}" (by ${entry.anchorMessage.authorName})\n`
+      }
+    }
+  }
+
+  return section
+}
+
+/**
+ * Build prompt section for DMs.
+ * Two-party context, more focused than channels.
+ */
+function buildDmPrompt(context: StreamContext): string {
+  let section = "\n\n## Context\n\n"
+  section += "You are in a direct message conversation"
+
+  if (context.participants && context.participants.length > 0) {
+    const names = context.participants.map((p) => p.name).join(" and ")
+    section += ` between ${names}`
+  }
+  section += ". This is a private, focused conversation between two people."
+
+  if (context.streamInfo.description) {
+    section += `\n\nDescription: ${context.streamInfo.description}`
+  }
+
+  return section
 }
