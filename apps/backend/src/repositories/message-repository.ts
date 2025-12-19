@@ -223,4 +223,53 @@ export const MessageRepository = {
       WHERE id = ${id}
     `)
   },
+
+  /**
+   * List messages since a given sequence number.
+   * Used by agents to check for new messages during their loop.
+   */
+  async listSince(
+    client: PoolClient,
+    streamId: string,
+    sinceSequence: bigint,
+    options?: { excludeAuthorId?: string; limit?: number }
+  ): Promise<Message[]> {
+    const limit = options?.limit ?? 50
+    const excludeAuthorId = options?.excludeAuthorId
+
+    let messageRows: MessageRow[]
+    if (excludeAuthorId) {
+      const result = await client.query<MessageRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND sequence > ${sinceSequence.toString()}
+          AND author_id != ${excludeAuthorId}
+          AND deleted_at IS NULL
+        ORDER BY sequence ASC
+        LIMIT ${limit}
+      `)
+      messageRows = result.rows
+    } else {
+      const result = await client.query<MessageRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND sequence > ${sinceSequence.toString()}
+          AND deleted_at IS NULL
+        ORDER BY sequence ASC
+        LIMIT ${limit}
+      `)
+      messageRows = result.rows
+    }
+
+    if (messageRows.length === 0) return []
+
+    const messageIds = messageRows.map((r) => r.id)
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+  },
 }

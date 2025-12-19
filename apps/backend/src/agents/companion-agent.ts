@@ -1,11 +1,13 @@
 import type { Pool, PoolClient } from "pg"
-import { withClient } from "../db"
+import { withClient, withTransaction } from "../db"
 import { AuthorTypes, CompanionModes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
-import type { ResponseGenerator } from "./companion-runner"
+import { StreamEventRepository } from "../repositories/stream-event-repository"
+import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
+import type { SendMessageInput, SendMessageResult } from "./tools/send-message-tool"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 
@@ -13,21 +15,11 @@ const MAX_CONTEXT_MESSAGES = 20
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
-  | { status: "completed"; sessionId: string; responseMessageId: string }
+  | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[] }
   | { status: "failed"; sessionId: string }
 
 /**
  * Manages the complete lifecycle of an agent session.
- *
- * Handles:
- * - Finding existing or creating new session
- * - Checking if session is already completed (skip)
- * - Running the work callback with a DB client
- * - Marking session as completed or failed based on callback result
- *
- * This encapsulates all session state management so callers only need to
- * provide the work logic. The callback receives a client for any DB operations
- * it needs to perform.
  */
 export async function withSession(
   params: {
@@ -36,12 +28,27 @@ export async function withSession(
     streamId: string
     personaId: string
     serverId: string
+    initialSequence: bigint
   },
-  work: (client: PoolClient, session: AgentSession) => Promise<{ responseMessageId: string }>
+  work: (
+    client: PoolClient,
+    session: AgentSession
+  ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
 ): Promise<WithSessionResult> {
-  const { pool, triggerMessageId, streamId, personaId, serverId } = params
+  const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
 
   return withClient(pool, async (client) => {
+    // Check for already running session on this stream (concurrency control)
+    const runningSession = await AgentSessionRepository.findRunningByStream(client, streamId)
+    if (runningSession) {
+      logger.info({ streamId, existingSessionId: runningSession.id }, "Agent already running for stream, skipping")
+      return {
+        status: "skipped" as const,
+        sessionId: null,
+        reason: "agent already running for stream",
+      }
+    }
+
     // Find or create session
     let session = await AgentSessionRepository.findByTriggerMessage(client, triggerMessageId)
 
@@ -63,8 +70,12 @@ export async function withSession(
         status: SessionStatuses.RUNNING,
         serverId,
       })
+      // Set initial last seen sequence
+      await AgentSessionRepository.updateLastSeenSequence(client, session.id, initialSequence)
     } else {
-      session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, { serverId })
+      session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, {
+        serverId,
+      })
     }
 
     if (!session) {
@@ -77,18 +88,23 @@ export async function withSession(
 
     // Run work and track status
     try {
-      const { responseMessageId } = await work(client, session)
+      const { messagesSent, sentMessageIds, lastSeenSequence } = await work(client, session)
+
+      // Update last seen sequence before completing
+      await AgentSessionRepository.updateLastSeenSequence(client, session.id, lastSeenSequence)
 
       await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.COMPLETED, {
-        responseMessageId,
+        responseMessageId: sentMessageIds[0] ?? null,
+        sentMessageIds,
       })
 
-      logger.info({ sessionId: session.id, responseMessageId }, "Session completed")
+      logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
 
       return {
         status: "completed" as const,
         sessionId: session.id,
-        responseMessageId,
+        messagesSent,
+        sentMessageIds,
       }
     } catch (err) {
       logger.error({ err, sessionId: session.id }, "Session failed")
@@ -131,32 +147,20 @@ export interface CompanionAgentInput {
  */
 export interface CompanionAgentResult {
   sessionId: string | null
-  responseMessageId: string | null
+  messagesSent: number
+  sentMessageIds: string[]
   status: "completed" | "failed" | "skipped"
   skipReason?: string
 }
 
 /**
  * Companion agent that responds to messages in streams.
- *
- * Encapsulates all dependencies so callers only need to call run(input).
- * This enables reuse across different invocation contexts (job workers,
- * API endpoints, evals) without exposing internal dependencies.
  */
 export class CompanionAgent {
   constructor(private readonly deps: CompanionAgentDeps) {}
 
   /**
    * Run the companion agent for a given message in a stream.
-   *
-   * This is the main orchestration method that:
-   * 1. Loads stream context and validates companion mode
-   * 2. Resolves the persona to use
-   * 3. Creates or resumes an agent session
-   * 4. Loads conversation history
-   * 5. Generates a response via the response generator
-   * 6. Posts the response message
-   * 7. Updates session status
    */
   async run(input: CompanionAgentInput): Promise<CompanionAgentResult> {
     const { pool, responseGenerator, createMessage } = this.deps
@@ -178,19 +182,28 @@ export class CompanionAgent {
         return { skip: true as const, reason: "no persona found" }
       }
 
-      return { skip: false as const, stream, persona }
+      // Get the current max sequence to use as initial lastProcessedSequence
+      const latestSequence = await StreamEventRepository.getLatestSequence(client, streamId)
+
+      return {
+        skip: false as const,
+        stream,
+        persona,
+        initialSequence: latestSequence ?? BigInt(0),
+      }
     })
 
     if (precheck.skip) {
       return {
         sessionId: null,
-        responseMessageId: null,
+        messagesSent: 0,
+        sentMessageIds: [],
         status: "skipped",
         skipReason: precheck.reason,
       }
     }
 
-    const { stream, persona } = precheck
+    const { stream, persona, initialSequence } = precheck
 
     // Step 2: Run with session lifecycle management
     const result = await withSession(
@@ -200,6 +213,7 @@ export class CompanionAgent {
         streamId,
         personaId: persona.id,
         serverId,
+        initialSequence,
       },
       async (client, session) => {
         // Load conversation history
@@ -207,28 +221,61 @@ export class CompanionAgent {
           limit: MAX_CONTEXT_MESSAGES,
         })
 
-        // Generate response
+        // Build system prompt with send_message instructions
         const systemPrompt = buildSystemPrompt(persona, stream)
-        const aiResult = await responseGenerator.run({
-          threadId: session.id,
-          modelId: persona.model,
-          systemPrompt,
-          messages: recentMessages.map((m) => ({
-            role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-            content: m.content,
-          })),
-        })
 
-        // Post response
-        const responseMessage = await createMessage({
-          workspaceId: stream.workspaceId,
-          streamId,
-          authorId: persona.id,
-          authorType: AuthorTypes.PERSONA,
-          content: aiResult.response,
-        })
+        // Create callbacks for the response generator
+        const callbacks: ResponseGeneratorCallbacks = {
+          sendMessage: async (input: SendMessageInput): Promise<SendMessageResult> => {
+            const message = await createMessage({
+              workspaceId: stream.workspaceId,
+              streamId,
+              authorId: persona.id,
+              authorType: AuthorTypes.PERSONA,
+              content: input.content,
+            })
+            return { messageId: message.id, content: input.content }
+          },
 
-        return { responseMessageId: responseMessage.id }
+          checkNewMessages: async (checkStreamId: string, sinceSequence: bigint, excludeAuthorId: string) => {
+            const messages = await MessageRepository.listSince(client, checkStreamId, sinceSequence, {
+              excludeAuthorId,
+            })
+            return messages.map((m) => ({
+              sequence: m.sequence,
+              content: m.content,
+              authorId: m.authorId,
+            }))
+          },
+
+          updateLastSeenSequence: async (updateSessionId: string, sequence: bigint) => {
+            await AgentSessionRepository.updateLastSeenSequence(client, updateSessionId, sequence)
+          },
+        }
+
+        // Generate response
+        const aiResult = await responseGenerator.run(
+          {
+            threadId: session.id,
+            modelId: persona.model,
+            systemPrompt,
+            messages: recentMessages.map((m) => ({
+              role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
+              content: m.content,
+            })),
+            streamId,
+            sessionId: session.id,
+            personaId: persona.id,
+            lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
+          },
+          callbacks
+        )
+
+        return {
+          messagesSent: aiResult.messagesSent,
+          sentMessageIds: aiResult.sentMessageIds,
+          lastSeenSequence: aiResult.lastProcessedSequence,
+        }
       }
     )
 
@@ -236,7 +283,8 @@ export class CompanionAgent {
       case "skipped":
         return {
           sessionId: null,
-          responseMessageId: null,
+          messagesSent: 0,
+          sentMessageIds: [],
           status: "skipped",
           skipReason: result.reason,
         }
@@ -244,14 +292,16 @@ export class CompanionAgent {
       case "failed":
         return {
           sessionId: result.sessionId,
-          responseMessageId: null,
+          messagesSent: 0,
+          sentMessageIds: [],
           status: "failed",
         }
 
       case "completed":
         return {
           sessionId: result.sessionId,
-          responseMessageId: result.responseMessageId,
+          messagesSent: result.messagesSent,
+          sentMessageIds: result.sentMessageIds,
           status: "completed",
         }
     }
@@ -270,7 +320,6 @@ async function getPersona(client: PoolClient, personaId: string | null): Promise
 
 /**
  * Build the system prompt for the companion agent.
- * Requires persona to have a system prompt configured.
  */
 function buildSystemPrompt(
   persona: Persona,
@@ -295,7 +344,18 @@ function buildSystemPrompt(
   }
   prompt += "."
 
-  prompt += `\n\nBe helpful, concise, and conversational.`
+  // Add send_message tool instructions
+  prompt += `
+
+## Responding to Messages
+
+You have a \`send_message\` tool to send messages to the conversation. Use this tool when you want to respond.
+
+Key behaviors:
+- Call send_message to send a response. You can call it multiple times for multi-part responses.
+- If you have nothing to add (e.g., the question was already answered), simply don't call send_message.
+- If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
+- Be helpful, concise, and conversational.`
 
   return prompt
 }

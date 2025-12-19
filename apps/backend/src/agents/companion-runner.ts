@@ -1,7 +1,11 @@
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
-import { createCompanionGraph, toLangChainMessages } from "./companion-graph"
+import type { StructuredToolInterface } from "@langchain/core/tools"
+import { createCompanionGraph, toLangChainMessages, type CompanionGraphCallbacks } from "./companion-graph"
+import { createSendMessageTool, type SendMessageInput, type SendMessageResult } from "./tools/send-message-tool"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
+
+const MAX_MESSAGES = 5
 
 /**
  * Parameters for generating a response.
@@ -15,13 +19,44 @@ export interface GenerateResponseParams {
   systemPrompt: string
   /** Conversation history */
   messages: Array<{ role: "user" | "assistant"; content: string }>
+  /** Stream ID for context */
+  streamId: string
+  /** Session ID for tracking */
+  sessionId: string
+  /** Persona ID for excluding own messages from new message checks */
+  personaId: string
+  /** Last processed sequence for new message detection */
+  lastProcessedSequence: bigint
 }
 
 /**
  * Result from generating a response.
  */
 export interface GenerateResponseResult {
+  /** Text response (may be empty if agent used send_message tool) */
   response: string
+  /** Number of messages sent via send_message tool */
+  messagesSent: number
+  /** IDs of messages sent */
+  sentMessageIds: string[]
+  /** Updated last processed sequence */
+  lastProcessedSequence: bigint
+}
+
+/**
+ * Callbacks required by the response generator.
+ */
+export interface ResponseGeneratorCallbacks {
+  /** Send a message to the stream */
+  sendMessage: (input: SendMessageInput) => Promise<SendMessageResult>
+  /** Check for new messages since a sequence */
+  checkNewMessages: (
+    streamId: string,
+    sinceSequence: bigint,
+    excludeAuthorId: string
+  ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
+  /** Update the last seen sequence on the session */
+  updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
 }
 
 /**
@@ -29,7 +64,7 @@ export interface GenerateResponseResult {
  * Allows swapping LangGraph for a stub in tests.
  */
 export interface ResponseGenerator {
-  run(params: GenerateResponseParams): Promise<GenerateResponseResult>
+  run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult>
 }
 
 /**
@@ -44,40 +79,79 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     }
   ) {}
 
-  async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
+  async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
     const { modelRegistry, checkpointer } = this.deps
-    const { threadId, modelId, systemPrompt, messages } = params
+    const { threadId, modelId, systemPrompt, messages, streamId, sessionId, personaId, lastProcessedSequence } = params
 
     logger.debug(
       {
         threadId,
         modelId,
         messageCount: messages.length,
+        streamId,
+        sessionId,
       },
       "Running companion graph"
     )
 
+    // Track messages sent for the tool
+    const sentMessageIds: string[] = []
+    let messagesSentCount = 0
+
+    // Create send_message tool
+    const sendMessageTool = createSendMessageTool({
+      onSendMessage: async (input) => {
+        const result = await callbacks.sendMessage(input)
+        sentMessageIds.push(result.messageId)
+        return result
+      },
+      maxMessages: MAX_MESSAGES,
+      getMessagesSent: () => messagesSentCount,
+    })
+
     // Get LangChain model from registry
     const model = modelRegistry.getLangChainModel(modelId)
 
+    // Create tools array
+    const tools: StructuredToolInterface[] = [sendMessageTool]
+
     // Create and compile graph with checkpointer
-    const graph = createCompanionGraph(model)
+    const graph = createCompanionGraph(model, tools)
     const compiledGraph = graph.compile({ checkpointer })
 
     // Convert messages to LangChain format
     const langchainMessages = toLangChainMessages(messages)
+
+    // Create graph callbacks
+    const graphCallbacks: CompanionGraphCallbacks = {
+      checkNewMessages: callbacks.checkNewMessages,
+      updateLastSeenSequence: callbacks.updateLastSeenSequence,
+    }
 
     // Invoke the graph
     const result = await compiledGraph.invoke(
       {
         messages: langchainMessages,
         systemPrompt,
+        streamId,
+        sessionId,
+        personaId,
+        lastProcessedSequence,
         finalResponse: null,
+        iteration: 0,
+        messagesSent: 0,
+        hasNewMessages: false,
       },
       {
-        configurable: { thread_id: threadId },
+        configurable: {
+          thread_id: threadId,
+          callbacks: graphCallbacks,
+        },
       }
     )
+
+    // Update tracked count from result
+    messagesSentCount = result.messagesSent ?? 0
 
     const response = result.finalResponse ?? ""
 
@@ -85,11 +159,19 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       {
         threadId,
         responseLength: response.length,
+        messagesSent: messagesSentCount,
+        sentMessageIds,
+        lastProcessedSequence: result.lastProcessedSequence?.toString(),
       },
       "Companion graph completed"
     )
 
-    return { response }
+    return {
+      response,
+      messagesSent: messagesSentCount,
+      sentMessageIds,
+      lastProcessedSequence: result.lastProcessedSequence ?? lastProcessedSequence,
+    }
   }
 }
 
@@ -102,8 +184,17 @@ export class StubResponseGenerator implements ResponseGenerator {
     private readonly response: string = "This is a stub response from the companion. The real AI integration is disabled."
   ) {}
 
-  async run(params: GenerateResponseParams): Promise<GenerateResponseResult> {
+  async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
     logger.debug({ threadId: params.threadId, messageCount: params.messages.length }, "Running stub response generator")
-    return { response: this.response }
+
+    // Simulate sending a message via the tool
+    const result = await callbacks.sendMessage({ content: this.response })
+
+    return {
+      response: this.response,
+      messagesSent: 1,
+      sentMessageIds: [result.messageId],
+      lastProcessedSequence: params.lastProcessedSequence,
+    }
   }
 }

@@ -20,6 +20,9 @@ git diff --cached --stat
 
 # See recent commits for style reference
 git log --oneline -5
+
+# Extract Linear ticket ID from branch name (if present)
+git branch --show-current | grep -oiE 'thr-[0-9]+' | tr '[:lower:]' '[:upper:]'
 ```
 
 ### 2. Write the commit message to a temp file
@@ -61,14 +64,16 @@ rm /tmp/claude/commit-msg.txt
 
 ## Commit Message Format
 
-Follow conventional commits:
+Follow conventional commits with Linear ticket ID when available:
 
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `refactor:` - Code restructuring
-- `docs:` - Documentation
-- `test:` - Tests
-- `chore:` - Maintenance
+- `feat(THR-XX):` - New feature
+- `fix(THR-XX):` - Bug fix
+- `refactor(THR-XX):` - Code restructuring
+- `docs(THR-XX):` - Documentation
+- `test(THR-XX):` - Tests
+- `chore(THR-XX):` - Maintenance
+
+If no Linear ticket exists, omit the parenthetical: `feat: description`
 
 Always include the Claude Code attribution at the end:
 
