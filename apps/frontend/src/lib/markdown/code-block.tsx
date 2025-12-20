@@ -47,6 +47,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   return (
     <div
       className="my-2 rounded-md overflow-hidden [&>pre]:p-4 [&>pre]:text-sm [&>pre]:overflow-x-auto"
+      // Safe: Shiki generates this HTML internally from the code string - no user HTML passthrough
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

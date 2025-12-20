@@ -1,10 +1,31 @@
 import type { Components } from "react-markdown"
-import { Suspense, lazy } from "react"
+import { Suspense, lazy, Component, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 const CodeBlock = lazy(() => import("./code-block"))
+
+/**
+ * Error boundary for lazy-loaded CodeBlock - falls back to plain code on load failure
+ */
+class CodeBlockErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; fallback: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback
+    }
+    return this.props.children
+  }
+}
 
 export const markdownComponents: Components = {
   // Headers - scaled for message context
@@ -36,16 +57,17 @@ export const markdownComponents: Components = {
 
     if (isCodeBlock) {
       const language = className?.replace("language-", "") || "text"
+      const fallback = (
+        <pre className="bg-muted rounded-md p-4 overflow-x-auto my-2">
+          <code className="text-sm font-mono">{children}</code>
+        </pre>
+      )
       return (
-        <Suspense
-          fallback={
-            <pre className="bg-muted rounded-md p-4 overflow-x-auto my-2">
-              <code className="text-sm font-mono">{children}</code>
-            </pre>
-          }
-        >
-          <CodeBlock language={language}>{String(children)}</CodeBlock>
-        </Suspense>
+        <CodeBlockErrorBoundary fallback={fallback}>
+          <Suspense fallback={fallback}>
+            <CodeBlock language={language}>{String(children)}</CodeBlock>
+          </Suspense>
+        </CodeBlockErrorBoundary>
       )
     }
 

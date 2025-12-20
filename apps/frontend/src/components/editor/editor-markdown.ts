@@ -55,12 +55,7 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
       const marker = typeof listIndex === "number" ? `${listIndex}. ` : "- "
       const content =
         node.content
-          ?.map((n) => {
-            if (n.type === "bulletList" || n.type === "orderedList") {
-              return serializeNode(n, listDepth + 1)
-            }
-            return serializeNode(n, listDepth + 1)
-          })
+          ?.map((n) => serializeNode(n, listDepth + 1))
           .filter(Boolean)
           .join("\n") ?? ""
       return indent + marker + content
@@ -245,12 +240,13 @@ function parseInlineMarkdown(text: string): JSONContent[] {
 
   const result: JSONContent[] = []
 
-  // Regex patterns for inline markdown (order matters - more specific first)
-  // Link: [text](url)
-  // Bold: **text**
-  // Italic: *text* (but not **)
-  // Strike: ~~text~~
-  // Code: `text`
+  // Inline markdown pattern - captures each format type in separate groups
+  // Group layout (order matters for matching priority):
+  //   1-3:  Link     [text](url)     → groups: full, text, url
+  //   4-5:  Bold     **text**        → groups: full, text
+  //   6-7:  Italic   *text*          → groups: full, text (with negative lookahead/behind for **)
+  //   8-9:  Strike   ~~text~~        → groups: full, text
+  //   10-11: Code    `text`          → groups: full, text
   const inlinePattern =
     /(\[([^\]]+)\]\(([^)]+)\))|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)/g
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useLayoutEffect } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import { Bold, Italic, Strikethrough, Link2, Quote, Code, List, ListOrdered, ChevronDown, Check, X } from "lucide-react"
@@ -33,9 +33,12 @@ export function EditorToolbar({
     whileElementsMounted: autoUpdate,
   })
 
-  if (referenceElement && refs.reference.current !== referenceElement) {
-    refs.setReference(referenceElement)
-  }
+  // Sync reference element to floating UI (must be in effect, not render)
+  useLayoutEffect(() => {
+    if (referenceElement) {
+      refs.setReference(referenceElement)
+    }
+  }, [referenceElement, refs])
 
   if (!editor || !isVisible) return null
 

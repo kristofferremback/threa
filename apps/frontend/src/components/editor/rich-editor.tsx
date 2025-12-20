@@ -93,9 +93,14 @@ export function RichEditor({
         // Shift+Cmd/Ctrl+V to paste as plain text
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()
-          navigator.clipboard.readText().then((text) => {
-            editor?.commands.insertContent(text)
-          })
+          navigator.clipboard
+            .readText()
+            .then((text) => {
+              editor?.commands.insertContent(text)
+            })
+            .catch(() => {
+              // Clipboard access denied or unavailable - silently fail
+            })
           return true
         }
         return false
