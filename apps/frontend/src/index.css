@@ -177,3 +177,83 @@
     box-shadow: 0 0 20px hsl(var(--primary) / 0.1);
   }
 }
+
+/*
+ * Tiptap Editor Styles
+ */
+.ProseMirror {
+  @apply outline-none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  @apply text-muted-foreground pointer-events-none float-left h-0;
+  content: attr(data-placeholder);
+}
+
+.ProseMirror > * + * {
+  @apply mt-2;
+}
+
+.ProseMirror p {
+  @apply my-0;
+}
+
+.ProseMirror h1 {
+  @apply text-xl font-bold mt-4 mb-2 first:mt-0;
+}
+
+.ProseMirror h2 {
+  @apply text-lg font-bold mt-3 mb-2 first:mt-0;
+}
+
+.ProseMirror h3 {
+  @apply text-base font-semibold mt-3 mb-1 first:mt-0;
+}
+
+.ProseMirror strong {
+  @apply font-semibold;
+}
+
+.ProseMirror em {
+  @apply italic;
+}
+
+.ProseMirror s {
+  @apply line-through text-muted-foreground;
+}
+
+.ProseMirror code {
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.ProseMirror pre {
+  @apply bg-muted rounded-md p-4 my-2 font-mono text-sm overflow-x-auto;
+}
+
+.ProseMirror pre code {
+  @apply bg-transparent p-0 rounded-none;
+}
+
+.ProseMirror ul {
+  @apply list-disc pl-6 my-2;
+}
+
+.ProseMirror ol {
+  @apply list-decimal pl-6 my-2;
+}
+
+.ProseMirror li {
+  @apply mb-1;
+}
+
+.ProseMirror li p {
+  @apply my-0;
+}
+
+.ProseMirror blockquote {
+  @apply border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic;
+}
+
+.ProseMirror hr {
+  @apply my-4 border-border;
+}
