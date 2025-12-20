@@ -243,7 +243,104 @@ export function parseMarkdown(markdown: string): JSONContent {
 function parseInlineMarkdown(text: string): JSONContent[] {
   if (!text) return []
 
-  // For simplicity, just return plain text for now
-  // Tiptap will handle the display correctly when the user types
-  return [{ type: "text", text }]
+  const result: JSONContent[] = []
+
+  // Regex patterns for inline markdown (order matters - more specific first)
+  // Link: [text](url)
+  // Bold: **text**
+  // Italic: *text* (but not **)
+  // Strike: ~~text~~
+  // Code: `text`
+  const inlinePattern =
+    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)/g
+
+  let lastIndex = 0
+  let match
+
+  while ((match = inlinePattern.exec(text)) !== null) {
+    // Add plain text before this match
+    if (match.index > lastIndex) {
+      result.push({ type: "text", text: text.slice(lastIndex, match.index) })
+    }
+
+    if (match[1]) {
+      // Link: [text](url)
+      const linkText = match[2]
+      const linkUrl = match[3]
+      // Recursively parse the link text for nested formatting
+      const innerContent = parseInlineMarkdown(linkText)
+      for (const node of innerContent) {
+        if (node.type === "text") {
+          result.push({
+            type: "text",
+            text: node.text,
+            marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
+          })
+        } else {
+          result.push(node)
+        }
+      }
+    } else if (match[4]) {
+      // Bold: **text**
+      const boldText = match[5]
+      const innerContent = parseInlineMarkdown(boldText)
+      for (const node of innerContent) {
+        if (node.type === "text") {
+          result.push({
+            type: "text",
+            text: node.text,
+            marks: [...(node.marks || []), { type: "bold" }],
+          })
+        } else {
+          result.push(node)
+        }
+      }
+    } else if (match[6]) {
+      // Italic: *text*
+      const italicText = match[7]
+      const innerContent = parseInlineMarkdown(italicText)
+      for (const node of innerContent) {
+        if (node.type === "text") {
+          result.push({
+            type: "text",
+            text: node.text,
+            marks: [...(node.marks || []), { type: "italic" }],
+          })
+        } else {
+          result.push(node)
+        }
+      }
+    } else if (match[8]) {
+      // Strike: ~~text~~
+      const strikeText = match[9]
+      const innerContent = parseInlineMarkdown(strikeText)
+      for (const node of innerContent) {
+        if (node.type === "text") {
+          result.push({
+            type: "text",
+            text: node.text,
+            marks: [...(node.marks || []), { type: "strike" }],
+          })
+        } else {
+          result.push(node)
+        }
+      }
+    } else if (match[10]) {
+      // Code: `text` (no nesting for code)
+      result.push({
+        type: "text",
+        text: match[11],
+        marks: [{ type: "code" }],
+      })
+    }
+
+    lastIndex = match.index + match[0].length
+  }
+
+  // Add remaining plain text
+  if (lastIndex < text.length) {
+    result.push({ type: "text", text: text.slice(lastIndex) })
+  }
+
+  return result.length ? result : [{ type: "text", text }]
 }

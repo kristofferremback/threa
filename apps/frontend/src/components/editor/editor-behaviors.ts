@@ -32,35 +32,13 @@ export const EditorBehaviors = Extension.create({
         return false
       },
 
-      // Shift+Enter: soft line break, but double shift+enter creates new block
+      // Shift+Enter: always insert soft line break within the block
       "Shift-Enter": () => {
-        const { $from } = this.editor.state.selection
-        const nodeBefore = $from.nodeBefore
-
-        // Check if we just inserted a hardBreak (node before cursor is hardBreak)
-        if (nodeBefore?.type.name === "hardBreak") {
-          // Double shift+enter: remove the hardBreak and create a new paragraph
-          return this.editor
-            .chain()
-            .focus()
-            .command(
-              ({
-                tr,
-                state,
-              }: {
-                tr: { delete: (from: number, to: number) => void }
-                state: { selection: { $from: { pos: number } } }
-              }) => {
-                const pos = state.selection.$from.pos
-                tr.delete(pos - 1, pos)
-                return true
-              }
-            )
-            .splitBlock()
-            .run()
+        // In code blocks, insert actual newline character (not hardBreak)
+        if (this.editor.isActive("codeBlock")) {
+          return this.editor.chain().focus().insertContent("\n").run()
         }
-
-        // First shift+enter: insert hardBreak (soft newline)
+        // Elsewhere, insert hardBreak node
         return this.editor.chain().focus().setHardBreak().run()
       },
 
