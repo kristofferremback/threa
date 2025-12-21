@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Textarea } from "@/components/ui/textarea"
+import { RichEditor } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { useDraftMessage, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 
@@ -10,7 +10,6 @@ interface MessageInputProps {
 }
 
 export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
 
@@ -23,7 +22,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasInitialized = useRef(false)
-  const wasJustSending = useRef(false)
 
   // Initialize content from saved draft (only once per stream)
   useEffect(() => {
@@ -38,27 +36,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     hasInitialized.current = false
     setContent("")
   }, [streamId])
-
-  // Re-initialize after stream change if there's a saved draft
-  useEffect(() => {
-    if (!hasInitialized.current && savedDraft) {
-      setContent(savedDraft)
-      hasInitialized.current = true
-    }
-  }, [savedDraft, streamId])
-
-  // Auto-focus on mount and when streamId changes
-  useEffect(() => {
-    textareaRef.current?.focus()
-  }, [streamId])
-
-  // Restore focus after sending completes (when textarea is re-enabled)
-  useEffect(() => {
-    if (wasJustSending.current && !isSending) {
-      textareaRef.current?.focus()
-    }
-    wasJustSending.current = isSending
-  }, [isSending])
 
   const handleContentChange = useCallback(
     (newContent: string) => {
@@ -93,27 +70,14 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     }
   }, [content, isSending, sendMessage, navigate, clearDraft])
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      // Enter to send, Shift+Enter for newline
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault()
-        handleSubmit()
-      }
-    },
-    [handleSubmit]
-  )
-
   return (
     <div className="border-t p-4">
       <div className="flex gap-2">
-        <Textarea
-          ref={textareaRef}
+        <RichEditor
           value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
-          className="min-h-[80px] resize-none"
+          onChange={handleContentChange}
+          onSubmit={handleSubmit}
+          placeholder="Type a message... (Cmd+Enter to send)"
           disabled={isSending}
         />
         <Button onClick={handleSubmit} disabled={!content.trim() || isSending} className="self-end">

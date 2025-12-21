@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import type { StreamEvent } from "@threa/types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { usePendingMessages } from "@/contexts"
 import { cn } from "@/lib/utils"
@@ -41,7 +42,7 @@ function MessageLayout({ event, payload, statusIndicator, actions, containerClas
           <span className="font-medium text-sm">{isPersona ? "AI Companion" : formatActorId(event.actorId)}</span>
           {statusIndicator}
         </div>
-        <div className="mt-0.5 text-sm whitespace-pre-wrap break-words">{payload.content}</div>
+        <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
         {actions}
       </div>
     </div>

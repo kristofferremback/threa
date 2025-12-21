@@ -67,7 +67,7 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto mb-4" onScroll={handleScroll}>
         {!isDraft && isFetchingOlder && (
           <div className="flex justify-center py-2">
             <p className="text-sm text-muted-foreground">Loading older messages...</p>
