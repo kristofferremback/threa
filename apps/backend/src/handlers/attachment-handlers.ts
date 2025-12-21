@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import type { AttachmentService } from "../services/attachment-service"
 import type { StreamService } from "../services/stream-service"
+import { StreamTypes } from "@threa/types"
 
 interface Dependencies {
   attachmentService: AttachmentService
@@ -15,11 +16,19 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       const { streamId } = req.params
 
       // Validate stream exists and user can access it
-      // Note: Stream membership check is sufficient - threads auto-add members on interaction,
-      // and workspace membership is already validated by middleware
       const stream = await streamService.getStreamById(streamId)
       if (!stream || stream.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Stream not found" })
+      }
+
+      // Attachments can only be uploaded to top-level streams (channels, scratchpads, DMs).
+      // Thread membership is implicit via root stream access, and threads may not exist yet at
+      // upload time (created on first message). Files uploaded to a channel can be attached to
+      // thread messages within that channel.
+      if (stream.type === StreamTypes.THREAD) {
+        return res.status(400).json({
+          error: "Attachments must be uploaded to channels, DMs, or scratchpads, not threads",
+        })
       }
 
       const isMember = await streamService.isMember(streamId, userId)

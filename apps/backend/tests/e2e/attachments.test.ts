@@ -13,11 +13,14 @@ import {
   loginAs,
   createWorkspace,
   createScratchpad,
+  createChannel,
   uploadAttachment,
   getAttachmentDownloadUrl,
   deleteAttachment,
   sendMessageWithAttachments,
   sendMessage,
+  joinWorkspace,
+  joinStream,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -304,6 +307,99 @@ describe("File Attachments E2E", () => {
       const response = await fetch(url)
       const downloaded = await response.text()
 
+      expect(downloaded).toBe(content)
+    })
+  })
+
+  describe("Top-Level Stream Upload", () => {
+    /**
+     * Attachments must be uploaded to top-level streams (channels, DMs, scratchpads), not threads.
+     *
+     * Why: Thread membership is implicit via root stream access, and threads may not exist at
+     * upload time (created on first message). Files uploaded to a channel can be attached to
+     * thread messages within that channel.
+     *
+     * The flow is:
+     * 1. User is member of channel
+     * 2. User uploads file to channel (not thread)
+     * 3. User can attach file to any message in channel or its threads
+     */
+    test("channel member can upload file before any thread exists", async () => {
+      // Setup: Create workspace and channel with owner
+      const ownerClient = new TestClient()
+      await loginAs(ownerClient, testEmail("tl-owner"), "TL Owner")
+      const workspace = await createWorkspace(ownerClient, `TopLevel WS ${testRunId}`)
+      const channel = await createChannel(ownerClient, workspace.id, `tl-channel-${testRunId}`, "private")
+
+      // Owner sends a message (future thread root)
+      await sendMessage(ownerClient, workspace.id, channel.id, "Discussion starter")
+
+      // Add two more users to workspace and channel
+      const member1Client = new TestClient()
+      const member2Client = new TestClient()
+      await loginAs(member1Client, testEmail("tl-member1"), "TL Member 1")
+      await loginAs(member2Client, testEmail("tl-member2"), "TL Member 2")
+
+      await joinWorkspace(member1Client, workspace.id)
+      await joinWorkspace(member2Client, workspace.id)
+      await joinStream(member1Client, workspace.id, channel.id)
+      await joinStream(member2Client, workspace.id, channel.id)
+
+      // Member1 uploads file to channel (not to any thread - no thread exists yet)
+      // This should succeed because they're a channel member
+      const attachment = await uploadAttachment(member1Client, workspace.id, channel.id, {
+        content: "File from member1",
+        filename: "member1-file.txt",
+        mimeType: "text/plain",
+      })
+
+      expect(attachment).toMatchObject({
+        workspaceId: workspace.id,
+        streamId: channel.id,
+        filename: "member1-file.txt",
+      })
+
+      // Member1 can attach the file to a message
+      const message = await sendMessageWithAttachments(member1Client, workspace.id, channel.id, "Here is my file", [
+        attachment.id,
+      ])
+
+      expect(message.id).toMatch(/^msg_/)
+    })
+
+    test("member2 can access file uploaded by member1 in shared channel", async () => {
+      // Setup: Create workspace and channel
+      const ownerClient = new TestClient()
+      await loginAs(ownerClient, testEmail("share-owner"), "Share Owner")
+      const workspace = await createWorkspace(ownerClient, `Share WS ${testRunId}`)
+      const channel = await createChannel(ownerClient, workspace.id, `share-channel-${testRunId}`, "private")
+
+      // Add member1 and member2
+      const member1Client = new TestClient()
+      const member2Client = new TestClient()
+      await loginAs(member1Client, testEmail("share-member1"), "Share Member 1")
+      await loginAs(member2Client, testEmail("share-member2"), "Share Member 2")
+
+      await joinWorkspace(member1Client, workspace.id)
+      await joinWorkspace(member2Client, workspace.id)
+      await joinStream(member1Client, workspace.id, channel.id)
+      await joinStream(member2Client, workspace.id, channel.id)
+
+      // Member1 uploads and attaches file
+      const content = `Shared content ${testRunId}`
+      const attachment = await uploadAttachment(member1Client, workspace.id, channel.id, {
+        content,
+        filename: "shared-file.txt",
+        mimeType: "text/plain",
+      })
+      await sendMessageWithAttachments(member1Client, workspace.id, channel.id, "Sharing this", [attachment.id])
+
+      // Member2 can get download URL and access the file
+      const url = await getAttachmentDownloadUrl(member2Client, workspace.id, attachment.id)
+      const response = await fetch(url)
+      expect(response.ok).toBe(true)
+
+      const downloaded = await response.text()
       expect(downloaded).toBe(content)
     })
   })

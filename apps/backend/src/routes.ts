@@ -61,6 +61,25 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
       res.json({ user })
     })
+
+    // Dev endpoint for joining workspaces (for testing multi-user scenarios)
+    app.post("/api/dev/workspaces/:workspaceId/join", auth, async (req, res) => {
+      const userId = req.userId!
+      const { workspaceId } = req.params
+      const { role } = req.body as { role?: "member" | "admin" }
+
+      const member = await workspaceService.addMember(workspaceId, userId, role || "member")
+      res.json({ member })
+    })
+
+    // Dev endpoint for joining streams (for testing membership)
+    app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceMember, async (req, res) => {
+      const userId = req.userId!
+      const { streamId } = req.params
+
+      const member = await streamService.addMember(streamId, userId)
+      res.json({ member })
+    })
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)

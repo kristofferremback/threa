@@ -408,3 +408,38 @@ export async function sendMessageWithAttachments(
   }
   return data.message
 }
+
+export interface WorkspaceMember {
+  workspaceId: string
+  userId: string
+  role: string
+}
+
+export interface StreamMember {
+  streamId: string
+  userId: string
+}
+
+export async function joinWorkspace(
+  client: TestClient,
+  workspaceId: string,
+  role: "member" | "admin" = "member"
+): Promise<WorkspaceMember> {
+  const { status, data } = await client.post<{ member: WorkspaceMember }>(`/api/dev/workspaces/${workspaceId}/join`, {
+    role,
+  })
+  if (status !== 200) {
+    throw new Error(`Join workspace failed: ${JSON.stringify(data)}`)
+  }
+  return data.member
+}
+
+export async function joinStream(client: TestClient, workspaceId: string, streamId: string): Promise<StreamMember> {
+  const { status, data } = await client.post<{ member: StreamMember }>(
+    `/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`
+  )
+  if (status !== 200) {
+    throw new Error(`Join stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.member
+}
