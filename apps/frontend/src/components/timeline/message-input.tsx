@@ -37,14 +37,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     setContent("")
   }, [streamId])
 
-  // Re-initialize after stream change if there's a saved draft
-  useEffect(() => {
-    if (!hasInitialized.current && savedDraft) {
-      setContent(savedDraft)
-      hasInitialized.current = true
-    }
-  }, [savedDraft, streamId])
-
   const handleContentChange = useCallback(
     (newContent: string) => {
       setContent(newContent)

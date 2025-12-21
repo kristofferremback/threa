@@ -6,7 +6,14 @@ import { common, createLowlight } from "lowlight"
 import { ReactNodeViewRenderer } from "@tiptap/react"
 import { CodeBlockComponent } from "./code-block"
 
-const lowlight = createLowlight(common)
+// Lazy singleton - created on first editor mount, not at module load
+let lowlightInstance: ReturnType<typeof createLowlight> | null = null
+function getLowlight() {
+  if (!lowlightInstance) {
+    lowlightInstance = createLowlight(common)
+  }
+  return lowlightInstance
+}
 
 export function createEditorExtensions(placeholder: string) {
   return [
@@ -58,7 +65,7 @@ export function createEditorExtensions(placeholder: string) {
         return ReactNodeViewRenderer(CodeBlockComponent)
       },
     }).configure({
-      lowlight,
+      lowlight: getLowlight(),
       defaultLanguage: "plaintext",
       HTMLAttributes: {
         class: "bg-muted rounded-md p-4 font-mono text-sm overflow-x-auto",

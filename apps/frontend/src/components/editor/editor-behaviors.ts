@@ -354,19 +354,11 @@ export const EditorBehaviors = Extension.create({
             return this.editor
               .chain()
               .focus()
-              .command(
-                ({
-                  tr,
-                  state,
-                }: {
-                  tr: { delete: (from: number, to: number) => void }
-                  state: { selection: { $from: { pos: number } } }
-                }) => {
-                  const pos = state.selection.$from.pos
-                  tr.delete(pos - 2, pos)
-                  return true
-                }
-              )
+              .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
+                const pos = state.selection.$from.pos
+                tr.delete(pos - 2, pos)
+                return true
+              })
               .exitCode()
               .run()
           }

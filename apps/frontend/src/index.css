@@ -260,7 +260,13 @@
 
 /*
  * Shiki syntax highlighting - dual theme support
- * Shiki outputs CSS custom properties for light/dark themes
+ *
+ * Shiki's dual-theme mode (used in code-block.tsx with `themes: { light, dark }`)
+ * outputs inline styles using CSS custom properties: --shiki-light, --shiki-dark, etc.
+ * These selectors switch between the light/dark values based on the current theme.
+ *
+ * The theme names in code-block.tsx ("github-light", "github-dark") determine the
+ * color values, while these CSS rules determine which set of values to apply.
  */
 .shiki,
 .shiki span {
