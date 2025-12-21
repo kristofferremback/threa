@@ -214,7 +214,13 @@ function ListDropdown({ editor, onOpenChange }: { editor: Editor; onOpenChange?:
   )
 
   const isActive = editor.isActive("bulletList") || editor.isActive("orderedList")
-  const currentList = editor.isActive("bulletList") ? "bullet" : editor.isActive("orderedList") ? "ordered" : null
+
+  function getCurrentList(): "bullet" | "ordered" | null {
+    if (editor.isActive("bulletList")) return "bullet"
+    if (editor.isActive("orderedList")) return "ordered"
+    return null
+  }
+  const currentList = getCurrentList()
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
