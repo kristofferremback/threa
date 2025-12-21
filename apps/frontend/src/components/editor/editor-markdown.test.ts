@@ -1,0 +1,600 @@
+import { describe, it, expect } from "vitest"
+import type { JSONContent } from "@tiptap/react"
+import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
+
+describe("editor-markdown", () => {
+  describe("serializeToMarkdown", () => {
+    describe("block elements", () => {
+      it("should serialize paragraph", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Hello world")
+      })
+
+      it("should serialize multiple paragraphs with blank line between", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "First" }] },
+            { type: "paragraph", content: [{ type: "text", text: "Second" }] },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("First\n\nSecond")
+      })
+
+      it("should serialize headings with correct level", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Title" }] },
+            { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Subtitle" }] },
+            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Section" }] },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("# Title\n\n## Subtitle\n\n### Section")
+      })
+
+      it("should serialize code block with language", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "codeBlock",
+              attrs: { language: "typescript" },
+              content: [{ type: "text", text: "const x = 1" }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("```typescript\nconst x = 1\n```")
+      })
+
+      it("should serialize code block without language", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "codeBlock",
+              content: [{ type: "text", text: "plain code" }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("```\nplain code\n```")
+      })
+
+      it("should serialize empty code block", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [{ type: "codeBlock", attrs: { language: "js" } }],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("```js\n\n```")
+      })
+
+      it("should serialize blockquote", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "blockquote",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "Quoted text" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("> Quoted text")
+      })
+
+      it("should serialize multi-line blockquote", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "blockquote",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "Line one" }] },
+                { type: "paragraph", content: [{ type: "text", text: "Line two" }] },
+              ],
+            },
+          ],
+        }
+
+        // Each paragraph in blockquote gets "> " prefix, joined by newlines
+        expect(serializeToMarkdown(doc)).toBe("> Line one\n> Line two")
+      })
+
+      it("should serialize bullet list", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item one" }] }] },
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item two" }] }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("- Item one\n- Item two")
+      })
+
+      it("should serialize ordered list", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "orderedList",
+              content: [
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "First" }] }] },
+                { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Second" }] }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("1. First\n2. Second")
+      })
+
+      it("should serialize horizontal rule", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "Above" }] },
+            { type: "horizontalRule" },
+            { type: "paragraph", content: [{ type: "text", text: "Below" }] },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Above\n\n---\n\nBelow")
+      })
+
+      it("should serialize hard break as newline", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Line one" }, { type: "hardBreak" }, { type: "text", text: "Line two" }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Line one\nLine two")
+      })
+    })
+
+    describe("inline formatting", () => {
+      it("should serialize bold text", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "bold", marks: [{ type: "bold" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("**bold**")
+      })
+
+      it("should serialize italic text", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "italic", marks: [{ type: "italic" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("*italic*")
+      })
+
+      it("should serialize strikethrough text", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "deleted", marks: [{ type: "strike" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("~~deleted~~")
+      })
+
+      it("should serialize inline code", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "code", marks: [{ type: "code" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("`code`")
+      })
+
+      it("should serialize link", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "click here", marks: [{ type: "link", attrs: { href: "https://example.com" } }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("[click here](https://example.com)")
+      })
+
+      it("should serialize mixed inline content", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Normal " },
+                { type: "text", text: "bold", marks: [{ type: "bold" }] },
+                { type: "text", text: " and " },
+                { type: "text", text: "italic", marks: [{ type: "italic" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Normal **bold** and *italic*")
+      })
+
+      it("should serialize nested marks (bold + italic)", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "emphasis", marks: [{ type: "bold" }, { type: "italic" }] }],
+            },
+          ],
+        }
+
+        // Marks applied in order: bold then italic wraps it
+        expect(serializeToMarkdown(doc)).toBe("***emphasis***")
+      })
+    })
+
+    describe("empty content", () => {
+      it("should return empty string for doc without content", () => {
+        const doc: JSONContent = { type: "doc" }
+        expect(serializeToMarkdown(doc)).toBe("")
+      })
+
+      it("should return empty string for doc with empty content array", () => {
+        const doc: JSONContent = { type: "doc", content: [] }
+        expect(serializeToMarkdown(doc)).toBe("")
+      })
+
+      it("should serialize empty paragraph", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("")
+      })
+    })
+  })
+
+  describe("parseMarkdown", () => {
+    describe("block elements", () => {
+      it("should parse paragraph", () => {
+        const result = parseMarkdown("Hello world")
+
+        expect(result).toEqual({
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Hello world" }],
+            },
+          ],
+        })
+      })
+
+      it("should parse heading levels", () => {
+        const result = parseMarkdown("# H1\n\n## H2\n\n### H3")
+
+        expect(result.content).toHaveLength(3)
+        expect(result.content?.[0]).toMatchObject({ type: "heading", attrs: { level: 1 } })
+        expect(result.content?.[1]).toMatchObject({ type: "heading", attrs: { level: 2 } })
+        expect(result.content?.[2]).toMatchObject({ type: "heading", attrs: { level: 3 } })
+      })
+
+      it("should parse code block with language", () => {
+        const result = parseMarkdown("```typescript\nconst x = 1\n```")
+
+        expect(result.content?.[0]).toEqual({
+          type: "codeBlock",
+          attrs: { language: "typescript" },
+          content: [{ type: "text", text: "const x = 1" }],
+        })
+      })
+
+      it("should parse code block without language", () => {
+        const result = parseMarkdown("```\nplain code\n```")
+
+        expect(result.content?.[0]).toMatchObject({
+          type: "codeBlock",
+          attrs: { language: null },
+        })
+      })
+
+      it("should parse multi-line code block", () => {
+        const result = parseMarkdown("```js\nline1\nline2\nline3\n```")
+
+        expect(result.content?.[0]).toEqual({
+          type: "codeBlock",
+          attrs: { language: "js" },
+          content: [{ type: "text", text: "line1\nline2\nline3" }],
+        })
+      })
+
+      it("should parse blockquote", () => {
+        const result = parseMarkdown("> Quoted text")
+
+        expect(result.content?.[0]).toMatchObject({
+          type: "blockquote",
+          content: [{ type: "paragraph" }],
+        })
+      })
+
+      it("should parse bullet list with dash", () => {
+        const result = parseMarkdown("- Item one\n- Item two")
+
+        expect(result.content?.[0]).toMatchObject({
+          type: "bulletList",
+          content: [{ type: "listItem" }, { type: "listItem" }],
+        })
+      })
+
+      it("should parse bullet list with asterisk", () => {
+        const result = parseMarkdown("* Item one\n* Item two")
+
+        expect(result.content?.[0]).toMatchObject({
+          type: "bulletList",
+          content: [{ type: "listItem" }, { type: "listItem" }],
+        })
+      })
+
+      it("should parse ordered list", () => {
+        const result = parseMarkdown("1. First\n2. Second")
+
+        expect(result.content?.[0]).toMatchObject({
+          type: "orderedList",
+          content: [{ type: "listItem" }, { type: "listItem" }],
+        })
+      })
+
+      it("should parse horizontal rule with dashes", () => {
+        const result = parseMarkdown("---")
+        expect(result.content?.[0]).toEqual({ type: "horizontalRule" })
+      })
+
+      it("should parse horizontal rule with asterisks", () => {
+        const result = parseMarkdown("***")
+        expect(result.content?.[0]).toEqual({ type: "horizontalRule" })
+      })
+    })
+
+    describe("inline formatting", () => {
+      it("should parse bold text", () => {
+        const result = parseMarkdown("**bold**")
+
+        expect(result.content?.[0]?.content?.[0]).toEqual({
+          type: "text",
+          text: "bold",
+          marks: [{ type: "bold" }],
+        })
+      })
+
+      it("should parse italic text", () => {
+        const result = parseMarkdown("*italic*")
+
+        expect(result.content?.[0]?.content?.[0]).toEqual({
+          type: "text",
+          text: "italic",
+          marks: [{ type: "italic" }],
+        })
+      })
+
+      it("should parse strikethrough", () => {
+        const result = parseMarkdown("~~deleted~~")
+
+        expect(result.content?.[0]?.content?.[0]).toEqual({
+          type: "text",
+          text: "deleted",
+          marks: [{ type: "strike" }],
+        })
+      })
+
+      it("should parse inline code", () => {
+        const result = parseMarkdown("`code`")
+
+        expect(result.content?.[0]?.content?.[0]).toEqual({
+          type: "text",
+          text: "code",
+          marks: [{ type: "code" }],
+        })
+      })
+
+      it("should parse link", () => {
+        const result = parseMarkdown("[click](https://example.com)")
+
+        expect(result.content?.[0]?.content?.[0]).toEqual({
+          type: "text",
+          text: "click",
+          marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+        })
+      })
+
+      it("should parse mixed inline content", () => {
+        const result = parseMarkdown("Normal **bold** text")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(3)
+        expect(content?.[0]).toEqual({ type: "text", text: "Normal " })
+        expect(content?.[1]).toEqual({ type: "text", text: "bold", marks: [{ type: "bold" }] })
+        expect(content?.[2]).toEqual({ type: "text", text: " text" })
+      })
+
+      it("should distinguish between bold and italic asterisks", () => {
+        const boldResult = parseMarkdown("**bold**")
+        const italicResult = parseMarkdown("*italic*")
+
+        expect(boldResult.content?.[0]?.content?.[0]?.marks?.[0]?.type).toBe("bold")
+        expect(italicResult.content?.[0]?.content?.[0]?.marks?.[0]?.type).toBe("italic")
+      })
+    })
+
+    describe("empty and edge cases", () => {
+      it("should return empty doc for empty string", () => {
+        const result = parseMarkdown("")
+        expect(result).toEqual({ type: "doc", content: [{ type: "paragraph" }] })
+      })
+
+      it("should return empty doc for whitespace-only string", () => {
+        const result = parseMarkdown("   \n\n   ")
+        expect(result).toEqual({ type: "doc", content: [{ type: "paragraph" }] })
+      })
+
+      it("should skip empty lines between blocks", () => {
+        const result = parseMarkdown("First\n\n\n\nSecond")
+        expect(result.content).toHaveLength(2)
+      })
+    })
+  })
+
+  describe("round-trip integrity", () => {
+    const roundTrip = (markdown: string): string => {
+      const parsed = parseMarkdown(markdown)
+      return serializeToMarkdown(parsed)
+    }
+
+    it("should preserve simple paragraph", () => {
+      expect(roundTrip("Hello world")).toBe("Hello world")
+    })
+
+    it("should preserve heading", () => {
+      expect(roundTrip("# Title")).toBe("# Title")
+      expect(roundTrip("## Subtitle")).toBe("## Subtitle")
+    })
+
+    it("should preserve code block with language", () => {
+      const md = "```typescript\nconst x = 1\n```"
+      expect(roundTrip(md)).toBe(md)
+    })
+
+    it("should preserve bullet list", () => {
+      expect(roundTrip("- Item one\n- Item two")).toBe("- Item one\n- Item two")
+    })
+
+    it("should preserve ordered list", () => {
+      expect(roundTrip("1. First\n2. Second")).toBe("1. First\n2. Second")
+    })
+
+    it("should preserve bold text", () => {
+      expect(roundTrip("**bold**")).toBe("**bold**")
+    })
+
+    it("should preserve italic text", () => {
+      expect(roundTrip("*italic*")).toBe("*italic*")
+    })
+
+    it("should preserve inline code", () => {
+      expect(roundTrip("`code`")).toBe("`code`")
+    })
+
+    it("should preserve link", () => {
+      expect(roundTrip("[text](https://example.com)")).toBe("[text](https://example.com)")
+    })
+
+    it("should preserve horizontal rule", () => {
+      expect(roundTrip("---")).toBe("---")
+    })
+
+    it("should preserve mixed document", () => {
+      const md = `# Heading
+
+This is a paragraph with **bold** and *italic* text.
+
+\`\`\`js
+const x = 1
+\`\`\`
+
+- List item one
+- List item two`
+
+      const result = roundTrip(md)
+      expect(result).toContain("# Heading")
+      expect(result).toContain("**bold**")
+      expect(result).toContain("*italic*")
+      expect(result).toContain("```js")
+      expect(result).toContain("- List item")
+    })
+  })
+
+  describe("edge cases", () => {
+    it("should handle asterisk in middle of word (not italic)", () => {
+      // This tests a common edge case where * appears mid-word
+      const result = parseMarkdown("file*name")
+      // Should remain as plain text, not parsed as italic
+      const content = result.content?.[0]?.content
+      expect(content?.some((n) => n.marks?.some((m) => m.type === "italic"))).toBeFalsy()
+    })
+
+    it("should handle code block with backticks inside", () => {
+      const md = "```\nconst s = `template`\n```"
+      const result = parseMarkdown(md)
+      expect(result.content?.[0]?.type).toBe("codeBlock")
+      expect(result.content?.[0]?.content?.[0]?.text).toContain("`template`")
+    })
+
+    it("should handle consecutive formatting", () => {
+      const result = parseMarkdown("**bold****more bold**")
+      const content = result.content?.[0]?.content
+      // Both segments should have bold marks
+      expect(content?.every((n) => n.marks?.some((m) => m.type === "bold"))).toBe(true)
+    })
+
+    it("should handle link with special characters in URL", () => {
+      const md = "[search](https://example.com/search?q=test&page=1)"
+      const result = parseMarkdown(md)
+      expect(result.content?.[0]?.content?.[0]?.marks?.[0]?.attrs?.href).toBe(
+        "https://example.com/search?q=test&page=1"
+      )
+    })
+
+    it("should handle heading with inline formatting", () => {
+      const result = parseMarkdown("# Title with **bold**")
+      const heading = result.content?.[0]
+      expect(heading?.type).toBe("heading")
+      expect(heading?.content?.some((n) => n.marks?.some((m) => m.type === "bold"))).toBe(true)
+    })
+  })
+})
