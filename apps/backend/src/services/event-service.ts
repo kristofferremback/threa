@@ -2,6 +2,7 @@ import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
 import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
+import { AttachmentRepository } from "../repositories/attachment-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, messageId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
@@ -41,6 +42,7 @@ export interface CreateMessageParams {
   authorType: "user" | "persona"
   content: string
   contentFormat?: "markdown" | "plaintext"
+  attachmentIds?: string[]
 }
 
 export interface EditMessageParams {
@@ -107,7 +109,12 @@ export class EventService {
         contentFormat: params.contentFormat,
       })
 
-      // 3. Publish to outbox for real-time delivery
+      // 3. Attach any uploaded files to this message
+      if (params.attachmentIds && params.attachmentIds.length > 0) {
+        await AttachmentRepository.attachToMessage(client, params.attachmentIds, msgId)
+      }
+
+      // 4. Publish to outbox for real-time delivery
       // Broadcast the StreamEvent (not Message) so frontend cache can use it directly
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,

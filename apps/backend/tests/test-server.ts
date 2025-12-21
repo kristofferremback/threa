@@ -5,12 +5,14 @@
  * - Separate test database (threa_test)
  * - Random available port
  * - Stub auth enabled
+ * - S3/MinIO configuration
  *
  * Then starts the normal server with those settings.
  */
 
 import { createServer } from "http"
 import { Pool } from "pg"
+import { S3Client, HeadBucketCommand, CreateBucketCommand } from "@aws-sdk/client-s3"
 
 export interface TestServer {
   url: string
@@ -34,6 +36,38 @@ async function ensureTestDatabaseExists(): Promise<void> {
     }
   } finally {
     await adminPool.end()
+  }
+}
+
+/**
+ * Ensures the MinIO bucket exists for file upload tests.
+ */
+async function ensureMinioBucketExists(): Promise<void> {
+  const bucket = process.env.S3_BUCKET || "threa-uploads"
+  const endpoint = process.env.S3_ENDPOINT || "http://localhost:9000"
+
+  const client = new S3Client({
+    region: "us-east-1",
+    endpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: process.env.S3_ACCESS_KEY_ID || "minioadmin",
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "minioadmin",
+    },
+  })
+
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }))
+  } catch (err: unknown) {
+    const error = err as { name?: string }
+    if (error.name === "NotFound" || error.name === "NoSuchBucket") {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }))
+      console.log(`Created MinIO bucket: ${bucket}`)
+    } else {
+      throw err
+    }
+  } finally {
+    client.destroy()
   }
 }
 
@@ -90,6 +124,16 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
   process.env.USE_STUB_COMPANION = "true"
+
+  // S3/MinIO configuration for file upload tests
+  process.env.S3_BUCKET = process.env.S3_BUCKET || "threa-uploads"
+  process.env.S3_REGION = process.env.S3_REGION || "us-east-1"
+  process.env.S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "minioadmin"
+  process.env.S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "minioadmin"
+  process.env.S3_ENDPOINT = process.env.S3_ENDPOINT || "http://localhost:9000"
+
+  // Ensure MinIO bucket exists
+  await ensureMinioBucketExists()
 
   // Import and start the server (must be after env vars are set)
   const { startServer } = await import("../src/server")

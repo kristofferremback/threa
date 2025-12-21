@@ -11,6 +11,7 @@ const createMessageSchema = z.object({
   streamId: z.string().min(1, "streamId is required"),
   content: z.string().min(1, "content is required"),
   contentFormat: contentFormatSchema.optional(),
+  attachmentIds: z.array(z.string()).optional(),
 })
 
 const updateMessageSchema = z.object({
@@ -46,7 +47,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         })
       }
 
-      const { streamId, content, contentFormat } = result.data
+      const { streamId, content, contentFormat, attachmentIds } = result.data
 
       const [stream, isStreamMember] = await Promise.all([
         streamService.getStreamById(streamId),
@@ -68,6 +69,7 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         authorType: "user",
         content,
         contentFormat,
+        attachmentIds,
       })
 
       res.status(201).json({ message: serializeMessage(message) })

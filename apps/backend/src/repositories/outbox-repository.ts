@@ -18,6 +18,7 @@ export type OutboxEventType =
   | "stream:updated"
   | "stream:archived"
   | "stream:display_name_updated"
+  | "attachment:uploaded"
 
 /**
  * Base fields present on all outbox event payloads.
@@ -62,6 +63,14 @@ export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
   displayName: string
 }
 
+export interface AttachmentUploadedOutboxPayload extends BaseOutboxPayload {
+  attachmentId: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  storagePath: string
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -75,6 +84,7 @@ export interface OutboxEventPayloadMap {
   "stream:updated": StreamUpdatedOutboxPayload
   "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+  "attachment:uploaded": AttachmentUploadedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

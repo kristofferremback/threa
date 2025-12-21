@@ -1,10 +1,12 @@
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./middleware/auth"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
+import { uploadMiddleware } from "./middleware/upload"
 import { createAuthHandlers } from "./handlers/auth"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
+import { createAttachmentHandlers } from "./handlers/attachment-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -12,6 +14,7 @@ import type { UserService } from "./services/user-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { StreamService } from "./services/stream-service"
 import type { EventService } from "./services/event-service"
+import type { AttachmentService } from "./services/attachment-service"
 
 interface Dependencies {
   authService: AuthService
@@ -19,10 +22,11 @@ interface Dependencies {
   workspaceService: WorkspaceService
   streamService: StreamService
   eventService: EventService
+  attachmentService: AttachmentService
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, userService, workspaceService, streamService, eventService } = deps
+  const { authService, userService, workspaceService, streamService, eventService, attachmentService } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
   const workspaceMember = createWorkspaceMemberMiddleware({ workspaceService })
@@ -33,6 +37,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const workspace = createWorkspaceHandlers({ workspaceService, streamService })
   const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
+  const attachment = createAttachmentHandlers({ attachmentService, streamService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -79,6 +84,16 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
+
+  // Attachments
+  app.post(
+    "/api/workspaces/:workspaceId/streams/:streamId/attachments",
+    ...authed,
+    uploadMiddleware.single("file"),
+    attachment.upload
+  )
+  app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
+  app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 
   app.use(errorHandler)
 }

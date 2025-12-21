@@ -50,6 +50,7 @@ export interface CreateMessageInput {
   streamId: string
   content: string
   contentFormat?: ContentFormat
+  attachmentIds?: string[]
 }
 
 export interface UpdateMessageInput {
