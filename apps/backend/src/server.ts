@@ -135,12 +135,26 @@ export async function startServer(): Promise<ServerInstance> {
     await companionListener.stop()
     await broadcastListener.stop()
     await jobQueue.stop()
-    io.close()
+    logger.info("Closing socket.io...")
+
+    // Close socket.io with callback - add timeout since it can hang with postgres adapter
+    await Promise.race([
+      new Promise<void>((resolve) => io.close(() => resolve())),
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          logger.warn("Socket.io close timed out, continuing...")
+          resolve()
+        }, 5000)
+      ),
+    ])
+
+    logger.info("Closing HTTP server...")
     if (server.listening) {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
+    logger.info("Closing database pool...")
     await pool.end()
     logger.info("Server stopped")
   }
