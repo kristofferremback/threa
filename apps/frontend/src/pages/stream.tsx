@@ -71,19 +71,15 @@ export function StreamPage() {
               autoFocus
             />
           ) : isScratchpad ? (
-            <div className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors">
+            <div
+              className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors"
+              onClick={handleStartRename}
+            >
               <h1 className="font-semibold">
                 {streamName}
                 {isDraft && <span className="ml-2 text-xs font-normal text-muted-foreground">(draft)</span>}
               </h1>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={handleStartRename}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+              <Pencil className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           ) : (
             <h1 className="font-semibold">{streamName}</h1>
