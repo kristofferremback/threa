@@ -71,7 +71,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   }, [content, isSending, sendMessage, navigate, clearDraft])
 
   return (
-    <div className="mt-12 border-t p-4">
+    <div className="border-t p-4">
       <div className="flex gap-2">
         <RichEditor
           value={content}
