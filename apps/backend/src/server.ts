@@ -76,6 +76,7 @@ export async function startServer(): Promise<ServerInstance> {
     streamService,
     eventService,
     attachmentService,
+    s3Config: config.s3,
   })
 
   app.use(errorHandler)

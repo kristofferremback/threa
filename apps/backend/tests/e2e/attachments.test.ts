@@ -37,15 +37,17 @@ describe("File Attachments E2E", () => {
         mimeType: "text/plain",
       })
 
+      expect(attachment).toMatchObject({
+        workspaceId: workspace.id,
+        streamId: stream.id,
+        filename: "hello.txt",
+        mimeType: "text/plain",
+        messageId: null,
+        storageProvider: "s3",
+        processingStatus: "pending",
+      })
       expect(attachment.id).toMatch(/^attach_/)
-      expect(attachment.workspaceId).toBe(workspace.id)
-      expect(attachment.streamId).toBe(stream.id)
-      expect(attachment.filename).toBe("hello.txt")
-      expect(attachment.mimeType).toBe("text/plain")
       expect(attachment.sizeBytes).toBeGreaterThan(0)
-      expect(attachment.messageId).toBeNull()
-      expect(attachment.storageProvider).toBe("s3")
-      expect(attachment.processingStatus).toBe("pending")
     })
 
     test("should upload an image file", async () => {

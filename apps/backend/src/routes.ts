@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./middleware/auth"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
-import { uploadMiddleware } from "./middleware/upload"
+import { createUploadMiddleware } from "./middleware/upload"
 import { createAuthHandlers } from "./handlers/auth"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
@@ -15,6 +15,7 @@ import type { WorkspaceService } from "./services/workspace-service"
 import type { StreamService } from "./services/stream-service"
 import type { EventService } from "./services/event-service"
 import type { AttachmentService } from "./services/attachment-service"
+import type { S3Config } from "./lib/env"
 
 interface Dependencies {
   authService: AuthService
@@ -23,13 +24,15 @@ interface Dependencies {
   streamService: StreamService
   eventService: EventService
   attachmentService: AttachmentService
+  s3Config: S3Config
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, userService, workspaceService, streamService, eventService, attachmentService } = deps
+  const { authService, userService, workspaceService, streamService, eventService, attachmentService, s3Config } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
   const workspaceMember = createWorkspaceMemberMiddleware({ workspaceService })
+  const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
 
@@ -86,12 +89,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
 
   // Attachments
-  app.post(
-    "/api/workspaces/:workspaceId/streams/:streamId/attachments",
-    ...authed,
-    uploadMiddleware.single("file"),
-    attachment.upload
-  )
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/attachments", ...authed, upload, attachment.upload)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 

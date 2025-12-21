@@ -67,7 +67,7 @@ export const PERSONA_STATUSES = ["pending", "active", "disabled", "archived"] as
 export type PersonaStatus = (typeof PERSONA_STATUSES)[number]
 
 // Attachment storage providers
-export const STORAGE_PROVIDERS = ["s3", "local"] as const
+export const STORAGE_PROVIDERS = ["s3"] as const
 export type StorageProvider = (typeof STORAGE_PROVIDERS)[number]
 
 // Attachment processing status

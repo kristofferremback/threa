@@ -1,17 +1,16 @@
 import { Pool } from "pg"
-import * as fs from "fs/promises"
 import { withTransaction, withClient } from "../db"
 import { AttachmentRepository, Attachment, OutboxRepository } from "../repositories"
-import { attachmentId } from "../lib/id"
 import type { StorageProvider } from "../lib/storage/s3-client"
 
-export interface UploadParams {
+export interface CreateAttachmentParams {
+  id: string
   workspaceId: string
   streamId: string
   filename: string
   mimeType: string
-  filePath: string
   sizeBytes: number
+  storagePath: string
 }
 
 export class AttachmentService {
@@ -20,47 +19,35 @@ export class AttachmentService {
     private storage: StorageProvider
   ) {}
 
-  async upload(params: UploadParams): Promise<Attachment> {
-    const id = attachmentId()
-    const storagePath = `${params.workspaceId}/${params.streamId}/${id}/${params.filename}`
+  /**
+   * Records attachment metadata after file has been uploaded to S3.
+   * The upload itself is handled by multer-s3 middleware (streaming, no temp files).
+   */
+  async create(params: CreateAttachmentParams): Promise<Attachment> {
+    return withTransaction(this.pool, async (client) => {
+      const attachment = await AttachmentRepository.insert(client, {
+        id: params.id,
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        filename: params.filename,
+        mimeType: params.mimeType,
+        sizeBytes: params.sizeBytes,
+        storagePath: params.storagePath,
+      })
 
-    try {
-      // 1. Stream upload to S3 from temp file
-      await this.storage.uploadFromPath(storagePath, params.filePath, params.mimeType)
-
-      // 2. Insert metadata and emit outbox event in transaction
-      const attachment = await withTransaction(this.pool, async (client) => {
-        const attachment = await AttachmentRepository.insert(client, {
-          id,
-          workspaceId: params.workspaceId,
-          streamId: params.streamId,
-          filename: params.filename,
-          mimeType: params.mimeType,
-          sizeBytes: params.sizeBytes,
-          storagePath,
-        })
-
-        // Emit outbox event for future workers (text extraction, embeddings, etc.)
-        await OutboxRepository.insert(client, "attachment:uploaded", {
-          workspaceId: params.workspaceId,
-          streamId: params.streamId,
-          attachmentId: id,
-          filename: params.filename,
-          mimeType: params.mimeType,
-          sizeBytes: params.sizeBytes,
-          storagePath,
-        })
-
-        return attachment
+      // Emit outbox event for future workers (text extraction, embeddings, etc.)
+      await OutboxRepository.insert(client, "attachment:uploaded", {
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        attachmentId: params.id,
+        filename: params.filename,
+        mimeType: params.mimeType,
+        sizeBytes: params.sizeBytes,
+        storagePath: params.storagePath,
       })
 
       return attachment
-    } finally {
-      // 3. Always clean up temp file
-      await fs.unlink(params.filePath).catch(() => {
-        // Ignore errors - file may already be deleted
-      })
-    }
+    })
   }
 
   async getById(id: string): Promise<Attachment | null> {

@@ -43,7 +43,7 @@ async function ensureTestDatabaseExists(): Promise<void> {
  * Ensures the MinIO bucket exists for file upload tests.
  */
 async function ensureMinioBucketExists(): Promise<void> {
-  const bucket = process.env.S3_BUCKET || "threa-uploads"
+  const bucket = process.env.S3_BUCKET || "threa-test-uploads"
   const endpoint = process.env.S3_ENDPOINT || "http://localhost:9000"
 
   const client = new S3Client({
@@ -126,7 +126,8 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.USE_STUB_COMPANION = "true"
 
   // S3/MinIO configuration for file upload tests
-  process.env.S3_BUCKET = process.env.S3_BUCKET || "threa-uploads"
+  // Use a test-specific bucket name to avoid conflicts with local development
+  process.env.S3_BUCKET = process.env.S3_BUCKET || "threa-test-uploads"
   process.env.S3_REGION = process.env.S3_REGION || "us-east-1"
   process.env.S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "minioadmin"
   process.env.S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "minioadmin"
