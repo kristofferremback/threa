@@ -1,15 +1,14 @@
 import { useState, useMemo } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { X, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import { RichEditor } from "@/components/editor"
 import { useStreamService, useMessageService } from "@/contexts"
-import { useAttachments, streamKeys } from "@/hooks"
+import { useAttachments, useStreamBootstrap } from "@/hooks"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { EventItem } from "@/components/timeline"
-import { StreamTypes, type StreamEvent } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 
 interface ThreadDraftPanelProps {
   workspaceId: string
@@ -18,10 +17,6 @@ interface ThreadDraftPanelProps {
   initialContent?: string
   onClose: () => void
   onThreadCreated: (threadId: string) => void
-}
-
-interface ParentBootstrap {
-  events: StreamEvent[]
 }
 
 export function ThreadDraftPanel({
@@ -36,17 +31,17 @@ export function ThreadDraftPanel({
   const [isCreating, setIsCreating] = useState(false)
   const streamService = useStreamService()
   const messageService = useMessageService()
-  const queryClient = useQueryClient()
 
-  // Get parent message from parent stream's cached bootstrap
+  // Fetch parent stream's bootstrap to get the parent message
+  const { data: parentBootstrap } = useStreamBootstrap(workspaceId, parentStreamId)
+
   const parentMessage = useMemo(() => {
-    const parentBootstrap = queryClient.getQueryData<ParentBootstrap>(streamKeys.bootstrap(workspaceId, parentStreamId))
     if (!parentBootstrap?.events) return null
 
     return parentBootstrap.events.find(
       (e) => e.eventType === "message_created" && (e.payload as { messageId?: string })?.messageId === parentMessageId
     )
-  }, [workspaceId, parentStreamId, parentMessageId, queryClient])
+  }, [parentBootstrap, parentMessageId])
 
   const { pendingAttachments, fileInputRef, handleFileSelect, removeAttachment, uploadedIds, isUploading, hasFailed } =
     useAttachments(workspaceId)
