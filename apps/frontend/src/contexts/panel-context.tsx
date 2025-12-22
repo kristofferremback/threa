@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react"
-import { useSearchParams, useNavigate, useLocation } from "react-router-dom"
+import { useSearchParams, useLocation } from "react-router-dom"
 
 interface PanelInfo {
   streamId: string
@@ -36,10 +36,9 @@ interface PanelProviderProps {
 }
 
 export function PanelProvider({ children }: PanelProviderProps) {
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
-  const [draftReply, setDraftReply] = useState<DraftReply | null>(null)
+  const [draftContent, setDraftContentState] = useState("")
 
   // Parse open panels from URL (deduplicated)
   const openPanels = useMemo(() => {
@@ -54,6 +53,15 @@ export function PanelProvider({ children }: PanelProviderProps) {
     }
     return panels
   }, [searchParams])
+
+  // Parse draft from URL (format: parentStreamId:parentMessageId)
+  const draftReply = useMemo(() => {
+    const draftParam = searchParams.get("draft")
+    if (!draftParam) return null
+    const [parentStreamId, parentMessageId] = draftParam.split(":")
+    if (!parentStreamId || !parentMessageId) return null
+    return { parentStreamId, parentMessageId, content: draftContent }
+  }, [searchParams, draftContent])
 
   // Check if a panel is already open
   const isPanelOpen = useCallback((streamId: string) => openPanels.some((p) => p.streamId === streamId), [openPanels])
@@ -74,26 +82,42 @@ export function PanelProvider({ children }: PanelProviderProps) {
 
   const openPanel = useCallback(
     (streamId: string, parentInfo?: { parentStreamId: string; parentMessageId: string }) => {
-      // Don't navigate if panel is already open
+      // Don't update if panel is already open
       if (isPanelOpen(streamId)) return
 
-      navigate(getPanelUrl(streamId), { replace: false })
-
-      // Clear draft if we're opening the thread for our draft
-      if (draftReply && parentInfo?.parentMessageId === draftReply.parentMessageId) {
-        setDraftReply(null)
-      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.append("panel", streamId)
+          // Clear draft if we're opening the thread for our draft
+          if (parentInfo?.parentMessageId) {
+            const draftParam = next.get("draft")
+            if (draftParam?.includes(parentInfo.parentMessageId)) {
+              next.delete("draft")
+              setDraftContentState("")
+            }
+          }
+          return next
+        },
+        { replace: true }
+      )
     },
-    [getPanelUrl, navigate, draftReply, isPanelOpen]
+    [isPanelOpen, setSearchParams]
   )
 
-  const openThreadDraft = useCallback((parentStreamId: string, parentMessageId: string) => {
-    setDraftReply({
-      parentStreamId,
-      parentMessageId,
-      content: "",
-    })
-  }, [])
+  const openThreadDraft = useCallback(
+    (parentStreamId: string, parentMessageId: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set("draft", `${parentStreamId}:${parentMessageId}`)
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
 
   const closePanel = useCallback(
     (streamId: string) => {
@@ -104,43 +128,53 @@ export function PanelProvider({ children }: PanelProviderProps) {
       // Close this panel and all nested ones (those after it in the array)
       const newPanels = currentPanels.slice(0, index)
 
-      const newParams = new URLSearchParams(searchParams)
-      newParams.delete("panel")
-      for (const panel of newPanels) {
-        newParams.append("panel", panel)
-      }
-
-      const query = newParams.toString()
-      navigate(`${location.pathname}${query ? `?${query}` : ""}`, { replace: false })
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete("panel")
+          for (const panel of newPanels) {
+            next.append("panel", panel)
+          }
+          return next
+        },
+        { replace: true }
+      )
     },
-    [searchParams, navigate, location.pathname]
+    [searchParams, setSearchParams]
   )
 
   const closeAllPanels = useCallback(() => {
-    const newParams = new URLSearchParams(searchParams)
-    newParams.delete("panel")
-    const query = newParams.toString()
-    navigate(`${location.pathname}${query ? `?${query}` : ""}`, { replace: false })
-    setDraftReply(null)
-  }, [searchParams, navigate, location.pathname])
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("panel")
+        next.delete("draft")
+        return next
+      },
+      { replace: true }
+    )
+    setDraftContentState("")
+  }, [setSearchParams])
 
   const setDraftContent = useCallback((content: string) => {
-    setDraftReply((prev) => (prev ? { ...prev, content } : null))
+    setDraftContentState(content)
   }, [])
 
   const transitionDraftToPanel = useCallback(
     (streamId: string) => {
-      if (!draftReply) return
-
-      // Open the panel for the newly created thread
-      const newParams = new URLSearchParams(searchParams)
-      newParams.append("panel", streamId)
-      navigate(`${location.pathname}?${newParams.toString()}`, { replace: false })
-
-      // Clear the draft
-      setDraftReply(null)
+      // Atomically remove draft and add panel
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete("draft")
+          next.append("panel", streamId)
+          return next
+        },
+        { replace: true }
+      )
+      setDraftContentState("")
     },
-    [draftReply, searchParams, navigate, location.pathname]
+    [setSearchParams]
   )
 
   const value = useMemo<PanelContextValue>(
