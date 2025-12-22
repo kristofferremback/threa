@@ -6,6 +6,7 @@ import type { StorageProvider } from "../lib/storage/s3-client"
 export interface CreateAttachmentParams {
   id: string
   workspaceId: string
+  uploadedBy: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -28,7 +29,7 @@ export class AttachmentService {
       const attachment = await AttachmentRepository.insert(client, {
         id: params.id,
         workspaceId: params.workspaceId,
-        // streamId not set - will be set when attached to a message
+        uploadedBy: params.uploadedBy,
         filename: params.filename,
         mimeType: params.mimeType,
         sizeBytes: params.sizeBytes,

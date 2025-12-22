@@ -15,6 +15,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
      * Workspace membership is checked by middleware.
      */
     async upload(req: Request, res: Response) {
+      const userId = req.userId!
       const workspaceId = req.workspaceId!
 
       // File was uploaded to S3 by multer-s3 middleware
@@ -29,6 +30,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       const attachment = await attachmentService.create({
         id: attachmentId,
         workspaceId,
+        uploadedBy: userId,
         filename: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -68,10 +70,11 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
 
     /**
      * Delete an unattached file.
-     * Only workspace member who owns the pending file can delete it.
+     * Only the user who uploaded the file can delete it.
      * Attached files cannot be deleted.
      */
     async delete(req: Request, res: Response) {
+      const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 
@@ -85,7 +88,11 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         return res.status(403).json({ error: "Cannot delete attached files" })
       }
 
-      // Workspace membership already verified by middleware
+      // Only the uploader can delete their own pending files
+      if (attachment.uploadedBy && attachment.uploadedBy !== userId) {
+        return res.status(403).json({ error: "Cannot delete files uploaded by other users" })
+      }
+
       await attachmentService.delete(attachmentId)
       res.status(204).send()
     },

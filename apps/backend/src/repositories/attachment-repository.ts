@@ -8,6 +8,7 @@ interface AttachmentRow {
   workspace_id: string
   stream_id: string | null
   message_id: string | null
+  uploaded_by: string | null
   filename: string
   mime_type: string
   size_bytes: string
@@ -23,6 +24,7 @@ export interface Attachment {
   workspaceId: string
   streamId: string | null
   messageId: string | null
+  uploadedBy: string | null
   filename: string
   mimeType: string
   sizeBytes: number
@@ -36,6 +38,7 @@ export interface InsertAttachmentParams {
   id: string
   workspaceId: string
   streamId?: string
+  uploadedBy: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -49,6 +52,7 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     workspaceId: row.workspace_id,
     streamId: row.stream_id,
     messageId: row.message_id,
+    uploadedBy: row.uploaded_by,
     filename: row.filename,
     mimeType: row.mime_type,
     sizeBytes: Number(row.size_bytes),
@@ -60,7 +64,7 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
 }
 
 const SELECT_FIELDS = `
-  id, workspace_id, stream_id, message_id,
+  id, workspace_id, stream_id, message_id, uploaded_by,
   filename, mime_type, size_bytes,
   storage_provider, storage_path, processing_status,
   created_at
@@ -108,7 +112,7 @@ export const AttachmentRepository = {
   async insert(client: PoolClient, params: InsertAttachmentParams): Promise<Attachment> {
     const result = await client.query<AttachmentRow>(sql`
       INSERT INTO attachments (
-        id, workspace_id, stream_id,
+        id, workspace_id, stream_id, uploaded_by,
         filename, mime_type, size_bytes,
         storage_provider, storage_path
       )
@@ -116,6 +120,7 @@ export const AttachmentRepository = {
         ${params.id},
         ${params.workspaceId},
         ${params.streamId ?? null},
+        ${params.uploadedBy},
         ${params.filename},
         ${params.mimeType},
         ${params.sizeBytes},

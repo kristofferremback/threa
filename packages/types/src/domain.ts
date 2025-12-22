@@ -129,6 +129,7 @@ export interface Attachment {
   workspaceId: string
   streamId: string | null
   messageId: string | null
+  uploadedBy: string | null
   filename: string
   mimeType: string
   sizeBytes: number

@@ -149,8 +149,9 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       if (attachment.status === "uploaded" && !attachmentId.startsWith("temp_")) {
         try {
           await attachmentsApi.delete(workspaceId, attachmentId)
-        } catch {
-          // Ignore - file will be cleaned up by server eventually
+        } catch (err) {
+          // Log but don't fail - file will be cleaned up by server eventually
+          console.warn("Failed to delete attachment from server:", err)
         }
       }
     },
