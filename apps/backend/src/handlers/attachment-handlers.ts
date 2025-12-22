@@ -25,9 +25,10 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       // Thread membership is implicit via root stream access, and threads may not exist yet at
       // upload time (created on first message). Files uploaded to a channel can be attached to
       // thread messages within that channel.
-      if (stream.type === StreamTypes.THREAD) {
+      const allowedStreamTypes = [StreamTypes.CHANNEL, StreamTypes.DM, StreamTypes.SCRATCHPAD]
+      if (!allowedStreamTypes.includes(stream.type)) {
         return res.status(400).json({
-          error: "Attachments must be uploaded to channels, DMs, or scratchpads, not threads",
+          error: "Attachments must be uploaded to channels, DMs, or scratchpads",
         })
       }
 
