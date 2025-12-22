@@ -45,10 +45,17 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasInitialized = useRef(false)
+  const isFirstRender = useRef(true)
 
   // Initialize content and attachments from saved draft (only once per stream)
   useEffect(() => {
-    if (!hasInitialized.current && (savedDraft || savedAttachments.length > 0)) {
+    // Skip first render - Dexie/useLiveQuery is still loading
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+
+    if (!hasInitialized.current) {
       if (savedDraft) {
         setContent(savedDraft)
       }
@@ -62,6 +69,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   // Reset initialization flag when stream changes
   useEffect(() => {
     hasInitialized.current = false
+    isFirstRender.current = true
     setContent("")
     clearAttachments()
   }, [streamId, clearAttachments])
