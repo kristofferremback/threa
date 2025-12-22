@@ -1,12 +1,15 @@
-import { useState } from "react"
-import { X, MessageSquare, Paperclip } from "lucide-react"
+import { useState, useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { X, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
 import { RichEditor } from "@/components/editor"
 import { useStreamService, useMessageService } from "@/contexts"
-import { useAttachments } from "@/hooks"
+import { useAttachments, streamKeys } from "@/hooks"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
-import { StreamTypes } from "@threa/types"
+import { EventItem } from "@/components/timeline"
+import { StreamTypes, type StreamEvent } from "@threa/types"
 
 interface ThreadDraftPanelProps {
   workspaceId: string
@@ -15,6 +18,10 @@ interface ThreadDraftPanelProps {
   initialContent?: string
   onClose: () => void
   onThreadCreated: (threadId: string) => void
+}
+
+interface ParentBootstrap {
+  events: StreamEvent[]
 }
 
 export function ThreadDraftPanel({
@@ -29,6 +36,17 @@ export function ThreadDraftPanel({
   const [isCreating, setIsCreating] = useState(false)
   const streamService = useStreamService()
   const messageService = useMessageService()
+  const queryClient = useQueryClient()
+
+  // Get parent message from parent stream's cached bootstrap
+  const parentMessage = useMemo(() => {
+    const parentBootstrap = queryClient.getQueryData<ParentBootstrap>(streamKeys.bootstrap(workspaceId, parentStreamId))
+    if (!parentBootstrap?.events) return null
+
+    return parentBootstrap.events.find(
+      (e) => e.eventType === "message_created" && (e.payload as { messageId?: string })?.messageId === parentMessageId
+    )
+  }, [workspaceId, parentStreamId, parentMessageId, queryClient])
 
   const { pendingAttachments, fileInputRef, handleFileSelect, removeAttachment, uploadedIds, isUploading, hasFailed } =
     useAttachments(workspaceId)
@@ -74,12 +92,18 @@ export function ThreadDraftPanel({
             <X className="h-4 w-4" />
           </Button>
         </header>
-        <main className="flex flex-1 flex-col">
-          <div className="flex-1 flex items-center justify-center p-4">
-            <div className="text-center text-muted-foreground">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Start a new thread</p>
-            </div>
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            {/* Parent message at the top */}
+            {parentMessage && (
+              <div className="border-b">
+                <div className="p-4">
+                  <EventItem event={parentMessage} workspaceId={workspaceId} streamId={parentStreamId} hideActions />
+                </div>
+                <Separator />
+                <div className="py-2 px-4 text-xs text-muted-foreground bg-muted/30">0 replies</div>
+              </div>
+            )}
           </div>
           <div className="p-4 border-t">
             <PendingAttachments attachments={pendingAttachments} onRemove={removeAttachment} />
