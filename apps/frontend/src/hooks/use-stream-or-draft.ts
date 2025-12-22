@@ -42,7 +42,7 @@ export interface UseStreamOrDraftReturn {
 
   rename: (newName: string) => Promise<void>
   archive: () => Promise<void>
-  sendMessage: (input: SendMessageInput) => Promise<{ navigateTo?: string }>
+  sendMessage: (input: SendMessageInput) => Promise<{ navigateTo?: string; replace?: boolean }>
 }
 
 /**
@@ -80,7 +80,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
   }, [streamId, workspaceId, navigate])
 
   const sendMessage = useCallback(
-    async (input: SendMessageInput): Promise<{ navigateTo?: string }> => {
+    async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
       // Promote draft to real stream
       const draftData = await db.draftScratchpads.get(streamId)
       const companionMode = draftData?.companionMode ?? "on"
@@ -91,7 +91,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         companionMode,
       })
 
-      await messageService.create(workspaceId, newStream.id, {
+      const message = await messageService.create(workspaceId, newStream.id, {
         streamId: newStream.id,
         content: input.content,
         contentFormat: input.contentFormat,
@@ -100,9 +100,33 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
 
       await db.draftScratchpads.delete(streamId)
 
+      // Pre-populate the new stream's cache so navigation is instant
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, newStream.id), {
+        stream: newStream,
+        events: [
+          {
+            id: message.id,
+            streamId: newStream.id,
+            sequence: "1",
+            eventType: "message_created",
+            payload: {
+              messageId: message.id,
+              content: input.content,
+              contentFormat: input.contentFormat,
+            },
+            actorId: newStream.createdBy,
+            actorType: "user",
+            createdAt: message.createdAt,
+          },
+        ],
+        members: [],
+        membership: null,
+        latestSequence: "1",
+      })
+
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
 
-      return { navigateTo: `/w/${workspaceId}/s/${newStream.id}` }
+      return { navigateTo: `/w/${workspaceId}/s/${newStream.id}`, replace: true }
     },
     [streamId, workspaceId, streamService, messageService, queryClient]
   )

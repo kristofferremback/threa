@@ -141,4 +141,26 @@ export const StreamEventRepository = {
     `)
     return result.rows[0] ? BigInt(result.rows[0].sequence) : null
   },
+
+  /**
+   * Count message_created events for multiple streams.
+   * Returns a map of streamId -> message count
+   */
+  async countMessagesByStreamBatch(client: PoolClient, streamIds: string[]): Promise<Map<string, number>> {
+    if (streamIds.length === 0) return new Map()
+
+    const result = await client.query<{ stream_id: string; count: string }>(sql`
+      SELECT stream_id, COUNT(*)::text AS count
+      FROM stream_events
+      WHERE stream_id = ANY(${streamIds})
+        AND event_type = 'message_created'
+      GROUP BY stream_id
+    `)
+
+    const map = new Map<string, number>()
+    for (const row of result.rows) {
+      map.set(row.stream_id, parseInt(row.count, 10))
+    }
+    return map
+  },
 }

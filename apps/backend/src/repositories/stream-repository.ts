@@ -261,4 +261,34 @@ export const StreamRepository = {
     `)
     return result.rows.length > 0
   },
+
+  async findByParentMessage(
+    client: PoolClient,
+    parentStreamId: string,
+    parentMessageId: string
+  ): Promise<Stream | null> {
+    const result = await client.query<StreamRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+      WHERE parent_stream_id = ${parentStreamId}
+        AND parent_message_id = ${parentMessageId}
+    `)
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
+  /**
+   * Find all threads for messages in a given parent stream.
+   * Returns a map of parentMessageId -> threadStreamId
+   */
+  async findThreadsForMessages(client: PoolClient, parentStreamId: string): Promise<Map<string, string>> {
+    const result = await client.query<{ parent_message_id: string; id: string }>(sql`
+      SELECT parent_message_id, id FROM streams
+      WHERE parent_stream_id = ${parentStreamId}
+        AND parent_message_id IS NOT NULL
+    `)
+    const map = new Map<string, string>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, row.id)
+    }
+    return map
+  },
 }

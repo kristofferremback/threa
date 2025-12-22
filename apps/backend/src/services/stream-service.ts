@@ -48,6 +48,8 @@ const createStreamParamsSchema = z.object({
   visibility: visibilitySchema.optional(),
   companionMode: companionModeSchema.optional(),
   companionPersonaId: z.string().optional(),
+  parentStreamId: z.string().optional(),
+  parentMessageId: z.string().optional(),
   createdBy: z.string(),
 })
 
@@ -150,6 +152,16 @@ export class StreamService {
           visibility: params.visibility,
           createdBy: params.createdBy,
         })
+      case StreamTypes.THREAD:
+        if (!params.parentStreamId || !params.parentMessageId) {
+          throw new Error("parentStreamId and parentMessageId are required for threads")
+        }
+        return this.createThread({
+          workspaceId: params.workspaceId,
+          parentStreamId: params.parentStreamId,
+          parentMessageId: params.parentMessageId,
+          createdBy: params.createdBy,
+        })
       default:
         throw new Error(`Unsupported stream type for create: ${params.type}`)
     }
@@ -222,6 +234,17 @@ export class StreamService {
 
   async createThread(params: CreateThreadParams): Promise<Stream> {
     return withTransaction(this.pool, async (client) => {
+      // Check if thread already exists for this parent message (find-or-create)
+      const existing = await StreamRepository.findByParentMessage(client, params.parentStreamId, params.parentMessageId)
+      if (existing) {
+        // Just add user as member if not already
+        const isMember = await StreamMemberRepository.isMember(client, existing.id, params.createdBy)
+        if (!isMember) {
+          await StreamMemberRepository.insert(client, existing.id, params.createdBy)
+        }
+        return existing
+      }
+
       // Get parent stream to determine root
       const parentStream = await StreamRepository.findById(client, params.parentStreamId)
       if (!parentStream) {
@@ -247,10 +270,11 @@ export class StreamService {
       // Add creator as member
       await StreamMemberRepository.insert(client, id, params.createdBy)
 
-      // Publish to outbox for real-time delivery
+      // Broadcast stream:created to PARENT stream's room (not the new thread's room)
+      // This lets watchers of the parent see the thread indicator appear
       await OutboxRepository.insert(client, "stream:created", {
         workspaceId: params.workspaceId,
-        streamId: stream.id,
+        streamId: params.parentStreamId,
         stream,
       })
 
@@ -374,5 +398,12 @@ export class StreamService {
     return withTransaction(this.pool, (client) =>
       StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: eventId })
     )
+  }
+
+  /**
+   * Get a map of messageId -> threadStreamId for all messages in a stream that have threads
+   */
+  async getThreadsForMessages(streamId: string): Promise<Map<string, string>> {
+    return withClient(this.pool, (client) => StreamRepository.findThreadsForMessages(client, streamId))
   }
 }

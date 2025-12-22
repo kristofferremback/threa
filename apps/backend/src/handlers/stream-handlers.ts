@@ -8,7 +8,7 @@ import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/
 
 const createStreamSchema = z
   .object({
-    type: streamTypeSchema.extract(["scratchpad", "channel"]),
+    type: streamTypeSchema.extract(["scratchpad", "channel", "thread"]),
     slug: z
       .string()
       .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
@@ -20,10 +20,16 @@ const createStreamSchema = z
     visibility: visibilitySchema.optional(),
     companionMode: companionModeSchema.optional(),
     companionPersonaId: z.string().optional(),
+    parentStreamId: z.string().optional(),
+    parentMessageId: z.string().optional(),
   })
   .refine((data) => data.type !== "channel" || data.slug, {
     message: "Slug is required for channels",
     path: ["slug"],
+  })
+  .refine((data) => data.type !== "thread" || (data.parentStreamId && data.parentMessageId), {
+    message: "parentStreamId and parentMessageId are required for threads",
+    path: ["parentStreamId"],
   })
 
 const updateStreamSchema = z.object({
@@ -82,7 +88,17 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         })
       }
 
-      const { type, slug, displayName, description, visibility, companionMode, companionPersonaId } = result.data
+      const {
+        type,
+        slug,
+        displayName,
+        description,
+        visibility,
+        companionMode,
+        companionPersonaId,
+        parentStreamId,
+        parentMessageId,
+      } = result.data
 
       const stream = await streamService.create({
         workspaceId,
@@ -93,6 +109,8 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         visibility,
         companionMode,
         companionPersonaId,
+        parentStreamId,
+        parentMessageId,
         createdBy: userId,
       })
 
@@ -246,11 +264,46 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const [events, members, membership] = await Promise.all([
+      const [events, members, membership, threadMap] = await Promise.all([
         eventService.listEvents(streamId, { limit: 50 }),
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
+        streamService.getThreadsForMessages(streamId),
       ])
+
+      // Get thread stream IDs and count messages in each thread
+      // This computes reply counts dynamically rather than relying on the messages table projection
+      const threadStreamIds = Array.from(threadMap.values())
+      const threadMessageCountMap = await eventService.countMessagesByStreams(threadStreamIds)
+
+      // Create inverse map: threadId -> messageId (for mapping counts back to parent messages)
+      const threadToMessageMap = new Map<string, string>()
+      for (const [messageId, threadId] of threadMap) {
+        threadToMessageMap.set(threadId, messageId)
+      }
+
+      // Create replyCount map: messageId -> count
+      const replyCountMap = new Map<string, number>()
+      for (const [threadId, count] of threadMessageCountMap) {
+        const messageId = threadToMessageMap.get(threadId)
+        if (messageId) {
+          replyCountMap.set(messageId, count)
+        }
+      }
+
+      // Enrich message events with threadId and replyCount (if the message has a thread)
+      const enrichedEvents = events.map((event) => {
+        if (event.eventType !== "message_created") return event
+        const payload = event.payload as Record<string, unknown>
+        const messageId = payload.messageId as string
+        const threadId = threadMap.get(messageId)
+        if (!threadId) return event
+        const replyCount = replyCountMap.get(messageId) ?? 0
+        return {
+          ...event,
+          payload: { ...payload, threadId, replyCount },
+        }
+      })
 
       // Get the latest sequence number from the most recent event
       const latestSequence = events.length > 0 ? events[events.length - 1].sequence : "0"
@@ -258,7 +311,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       res.json({
         data: {
           stream,
-          events: events.map(serializeEvent),
+          events: enrichedEvents.map(serializeEvent),
           members,
           membership,
           latestSequence: latestSequence.toString(),

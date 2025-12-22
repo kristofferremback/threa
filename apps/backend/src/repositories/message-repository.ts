@@ -224,6 +224,33 @@ export const MessageRepository = {
     `)
   },
 
+  async decrementReplyCount(client: PoolClient, id: string): Promise<void> {
+    await client.query(sql`
+      UPDATE messages
+      SET reply_count = GREATEST(reply_count - 1, 0)
+      WHERE id = ${id}
+    `)
+  },
+
+  /**
+   * Get reply counts for multiple messages.
+   * Returns a map of messageId -> replyCount
+   */
+  async getReplyCountsBatch(client: PoolClient, messageIds: string[]): Promise<Map<string, number>> {
+    if (messageIds.length === 0) return new Map()
+
+    const result = await client.query<{ id: string; reply_count: number }>(sql`
+      SELECT id, reply_count FROM messages
+      WHERE id = ANY(${messageIds})
+    `)
+
+    const map = new Map<string, number>()
+    for (const row of result.rows) {
+      map.set(row.id, row.reply_count)
+    }
+    return map
+  },
+
   /**
    * List messages since a given sequence number.
    * Used by agents to check for new messages during their loop.

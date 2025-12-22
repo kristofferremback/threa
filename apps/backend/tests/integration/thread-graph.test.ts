@@ -14,6 +14,7 @@ import { withTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
+import { EventService } from "../../src/services/event-service"
 import { setupTestDatabase } from "./setup"
 import { userId, workspaceId, messageId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
@@ -21,10 +22,12 @@ import { StreamTypes, Visibilities } from "@threa/types"
 describe("Thread Graph", () => {
   let pool: Pool
   let streamService: StreamService
+  let eventService: EventService
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
+    eventService = new EventService(pool)
   })
 
   afterAll(async () => {
@@ -291,6 +294,283 @@ describe("Thread Graph", () => {
           createdBy: ownerId,
         })
       ).rejects.toThrow("Parent stream not found")
+    })
+  })
+
+  describe("Thread Idempotency", () => {
+    test("creating thread for same parent message returns existing thread", async () => {
+      const ownerId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `idem-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Idempotency Test Workspace",
+          slug: `idem-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, ownerId)
+      })
+
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `idem-channel-${Date.now()}`,
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      const parentMsgId = messageId()
+
+      // Create thread first time
+      const thread1 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMsgId,
+        createdBy: ownerId,
+      })
+
+      // Create thread second time with same parent message
+      const thread2 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMsgId,
+        createdBy: ownerId,
+      })
+
+      // Should return the same thread
+      expect(thread2.id).toBe(thread1.id)
+      expect(thread2.createdBy).toBe(thread1.createdBy)
+    })
+
+    test("different user creating thread for same message becomes member of existing thread", async () => {
+      const ownerId = userId()
+      const user2Id = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `idem-owner2-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: user2Id,
+          email: `idem-user2-${user2Id}@test.com`,
+          name: "User 2",
+          workosUserId: `workos_${user2Id}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Multi-user Idempotency Workspace",
+          slug: `idem-multi-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, ownerId)
+        await WorkspaceRepository.addMember(client, wsId, user2Id)
+      })
+
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `idem-multi-channel-${Date.now()}`,
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      const parentMsgId = messageId()
+
+      // First user creates thread
+      const thread1 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMsgId,
+        createdBy: ownerId,
+      })
+
+      // Second user tries to create thread for same message
+      const thread2 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMsgId,
+        createdBy: user2Id,
+      })
+
+      // Should return same thread
+      expect(thread2.id).toBe(thread1.id)
+      // createdBy should NOT change - first creator owns it
+      expect(thread2.createdBy).toBe(ownerId)
+
+      // Both users should be members
+      const isMember1 = await streamService.isMember(thread1.id, ownerId)
+      const isMember2 = await streamService.isMember(thread1.id, user2Id)
+      expect(isMember1).toBe(true)
+      expect(isMember2).toBe(true)
+    })
+  })
+
+  describe("Reply Count", () => {
+    test("creating message in thread increments parent message reply count", async () => {
+      const ownerId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `reply-count-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Reply Count Test Workspace",
+          slug: `reply-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, ownerId)
+      })
+
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `reply-channel-${Date.now()}`,
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message",
+      })
+
+      // Verify initial reply count is 0
+      const initialMessage = await eventService.getMessageById(parentMessage.id)
+      expect(initialMessage?.replyCount).toBe(0)
+
+      // Create a thread from the parent message
+      const thread = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMessage.id,
+        createdBy: ownerId,
+      })
+
+      // Send a message in the thread
+      await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Reply 1",
+      })
+
+      // Verify reply count is now 1
+      const updatedMessage1 = await eventService.getMessageById(parentMessage.id)
+      expect(updatedMessage1?.replyCount).toBe(1)
+
+      // Send another message in the thread
+      await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Reply 2",
+      })
+
+      // Verify reply count is now 2
+      const updatedMessage2 = await eventService.getMessageById(parentMessage.id)
+      expect(updatedMessage2?.replyCount).toBe(2)
+    })
+
+    test("reply count only tracks direct thread, not nested threads", async () => {
+      const ownerId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: ownerId,
+          email: `nested-reply-owner-${ownerId}@test.com`,
+          name: "Owner",
+          workosUserId: `workos_${ownerId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Nested Reply Count Workspace",
+          slug: `nested-reply-ws-${wsId}`,
+          createdBy: ownerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, ownerId)
+      })
+
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `nested-reply-channel-${Date.now()}`,
+        createdBy: ownerId,
+        visibility: Visibilities.PUBLIC,
+      })
+
+      // Create message in channel
+      const channelMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Channel message",
+      })
+
+      // Create thread from channel message
+      const thread1 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: channelMessage.id,
+        createdBy: ownerId,
+      })
+
+      // Create message in thread1
+      const thread1Message = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread1.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Thread 1 message",
+      })
+
+      // Channel message should have 1 reply
+      const afterThread1Msg = await eventService.getMessageById(channelMessage.id)
+      expect(afterThread1Msg?.replyCount).toBe(1)
+
+      // Create nested thread from thread1 message
+      const thread2 = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: thread1.id,
+        parentMessageId: thread1Message.id,
+        createdBy: ownerId,
+      })
+
+      // Create message in nested thread
+      await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread2.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Thread 2 message",
+      })
+
+      // Channel message should STILL have 1 reply (not 2)
+      const afterThread2Msg = await eventService.getMessageById(channelMessage.id)
+      expect(afterThread2Msg?.replyCount).toBe(1)
+
+      // Thread 1 message should have 1 reply
+      const thread1MsgUpdated = await eventService.getMessageById(thread1Message.id)
+      expect(thread1MsgUpdated?.replyCount).toBe(1)
     })
   })
 })

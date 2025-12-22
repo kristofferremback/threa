@@ -7,14 +7,16 @@ interface EventItemProps {
   event: StreamEvent
   workspaceId: string
   streamId: string
+  /** Hide action buttons (e.g., reply) - used when showing parent message in thread view */
+  hideActions?: boolean
 }
 
-export function EventItem({ event, workspaceId, streamId }: EventItemProps) {
+export function EventItem({ event, workspaceId, streamId, hideActions }: EventItemProps) {
   switch (event.eventType) {
     case "message_created":
     case "message_edited":
     case "companion_response":
-      return <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />
+      return <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} hideActions={hideActions} />
 
     case "message_deleted":
       return <DeletedMessageEvent event={event} />

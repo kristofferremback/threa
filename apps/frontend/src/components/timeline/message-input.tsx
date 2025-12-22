@@ -219,7 +219,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
       if (result.navigateTo) {
-        navigate(result.navigateTo)
+        navigate(result.navigateTo, { replace: result.replace ?? false })
       }
     } catch {
       // This only happens for draft promotion failure (stream creation failed)

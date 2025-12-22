@@ -12,6 +12,7 @@ export type OutboxEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "message:updated"
   | "reaction:added"
   | "reaction:removed"
   | "stream:created"
@@ -25,6 +26,7 @@ export type StreamScopedEventType =
   | "message:created"
   | "message:edited"
   | "message:deleted"
+  | "message:updated"
   | "reaction:added"
   | "reaction:removed"
   | "stream:display_name_updated"
@@ -60,6 +62,13 @@ export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
 }
 
+export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
+  messageId: string
+  updateType: "reply_count" | "content"
+  replyCount?: number
+  content?: string
+}
+
 export interface ReactionOutboxPayload extends StreamScopedPayload {
   messageId: string
   emoji: string
@@ -71,15 +80,21 @@ export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
 }
 
 // Workspace-scoped event payloads (no streamId)
+// Note: StreamCreatedOutboxPayload includes streamId for routing:
+// - For threads: streamId = parentStreamId (broadcast to parent stream room)
+// - For non-threads: streamId = stream.id (broadcast to workspace room)
 export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
   stream: Stream
 }
 
 export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
   stream: Stream
 }
 
 export interface StreamArchivedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
   stream: Stream
 }
 
@@ -98,6 +113,7 @@ export interface OutboxEventPayloadMap {
   "message:created": MessageCreatedOutboxPayload
   "message:edited": MessageEditedOutboxPayload
   "message:deleted": MessageDeletedOutboxPayload
+  "message:updated": MessageUpdatedOutboxPayload
   "reaction:added": ReactionOutboxPayload
   "reaction:removed": ReactionOutboxPayload
   "stream:created": StreamCreatedOutboxPayload
@@ -130,6 +146,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
   "message:deleted",
+  "message:updated",
   "reaction:added",
   "reaction:removed",
   "stream:display_name_updated",

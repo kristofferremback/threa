@@ -391,6 +391,46 @@ export async function deleteAttachment(client: TestClient, workspaceId: string, 
   }
 }
 
+export interface Thread extends Stream {
+  parentStreamId: string
+  parentMessageId: string
+}
+
+export async function createThread(
+  client: TestClient,
+  workspaceId: string,
+  parentStreamId: string,
+  parentMessageId: string
+): Promise<Thread> {
+  const { status, data } = await client.post<{ stream: Thread }>(`/api/workspaces/${workspaceId}/streams`, {
+    type: "thread",
+    parentStreamId,
+    parentMessageId,
+  })
+  if (status !== 201) {
+    throw new Error(`Create thread failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
+export interface BootstrapData {
+  stream: Stream
+  events: StreamEvent[]
+  members: StreamMember[]
+  membership: { streamId: string; userId: string; pinned: boolean; muted: boolean } | null
+  latestSequence: string
+}
+
+export async function getBootstrap(client: TestClient, workspaceId: string, streamId: string): Promise<BootstrapData> {
+  const { status, data } = await client.get<{ data: BootstrapData }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/bootstrap`
+  )
+  if (status !== 200) {
+    throw new Error(`Get bootstrap failed: ${JSON.stringify(data)}`)
+  }
+  return data.data
+}
+
 export async function sendMessageWithAttachments(
   client: TestClient,
   workspaceId: string,

@@ -12,3 +12,4 @@ export {
 } from "./services-context"
 export { SocketProvider, useSocket, useSocketConnected } from "./socket-context"
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
+export { PanelProvider, usePanel } from "./panel-context"

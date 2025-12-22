@@ -19,6 +19,8 @@ export interface CreateStreamInput {
   visibility?: Visibility
   companionMode?: CompanionMode
   companionPersonaId?: string
+  parentStreamId?: string
+  parentMessageId?: string
 }
 
 export interface UpdateStreamInput {
