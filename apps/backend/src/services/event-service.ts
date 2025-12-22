@@ -8,10 +8,18 @@ import { eventId, messageId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
 
 // Event payloads
+export interface AttachmentSummary {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export interface MessageCreatedPayload {
   messageId: string
   content: string
   contentFormat: "markdown" | "plaintext"
+  attachments?: AttachmentSummary[]
 }
 
 export interface MessageEditedPayload {
@@ -84,7 +92,27 @@ export class EventService {
       const msgId = messageId()
       const evtId = eventId()
 
-      // 1. Append event (source of truth)
+      // 1. Validate and prepare attachments FIRST (before creating event)
+      let attachmentSummaries: AttachmentSummary[] | undefined
+      if (params.attachmentIds && params.attachmentIds.length > 0) {
+        const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
+        const allValid =
+          attachments.length === params.attachmentIds.length &&
+          attachments.every((a) => a.workspaceId === params.workspaceId && a.messageId === null)
+
+        if (!allValid) {
+          throw new Error("Invalid attachment IDs: must be unattached and belong to this workspace")
+        }
+
+        attachmentSummaries = attachments.map((a) => ({
+          id: a.id,
+          filename: a.filename,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        }))
+      }
+
+      // 2. Append event (source of truth) - includes attachments in payload
       const event = await StreamEventRepository.insert(client, {
         id: evtId,
         streamId: params.streamId,
@@ -93,12 +121,13 @@ export class EventService {
           messageId: msgId,
           content: params.content,
           contentFormat: params.contentFormat ?? "markdown",
+          ...(attachmentSummaries && { attachments: attachmentSummaries }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,
       })
 
-      // 2. Update projection
+      // 3. Update projection
       const message = await MessageRepository.insert(client, {
         id: msgId,
         streamId: params.streamId,
@@ -109,26 +138,15 @@ export class EventService {
         contentFormat: params.contentFormat,
       })
 
-      // 3. Attach any uploaded files to this message
+      // 4. Link attachments to message
       if (params.attachmentIds && params.attachmentIds.length > 0) {
-        // Validate attachments: must belong to same workspace, must be unattached
-        const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
-        const allValid =
-          attachments.length === params.attachmentIds.length &&
-          attachments.every((a) => a.workspaceId === params.workspaceId && a.messageId === null)
-
-        if (!allValid) {
-          throw new Error("Invalid attachment IDs: must be unattached and belong to this workspace")
-        }
-
         const attached = await AttachmentRepository.attachToMessage(client, params.attachmentIds, msgId)
         if (attached !== params.attachmentIds.length) {
           throw new Error("Failed to attach all files")
         }
       }
 
-      // 4. Publish to outbox for real-time delivery
-      // Broadcast the StreamEvent (not Message) so frontend cache can use it directly
+      // 5. Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,

@@ -136,3 +136,14 @@ export interface Attachment {
   processingStatus: ProcessingStatus
   createdAt: string
 }
+
+/**
+ * Lightweight attachment info included in message events.
+ * Contains only what's needed for display; download URLs fetched on-demand.
+ */
+export interface AttachmentSummary {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+}
