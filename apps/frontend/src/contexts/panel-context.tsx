@@ -121,26 +121,22 @@ export function PanelProvider({ children }: PanelProviderProps) {
 
   const closePanel = useCallback(
     (streamId: string) => {
-      const currentPanels = searchParams.getAll("panel")
-      const index = currentPanels.indexOf(streamId)
-      if (index === -1) return
-
-      // Close this panel and all nested ones (those after it in the array)
-      const newPanels = currentPanels.slice(0, index)
-
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev)
+          const currentPanels = prev.getAll("panel")
           next.delete("panel")
-          for (const panel of newPanels) {
-            next.append("panel", panel)
+          for (const panel of currentPanels) {
+            if (panel !== streamId) {
+              next.append("panel", panel)
+            }
           }
           return next
         },
         { replace: true }
       )
     },
-    [searchParams, setSearchParams]
+    [setSearchParams]
   )
 
   const closeAllPanels = useCallback(() => {
