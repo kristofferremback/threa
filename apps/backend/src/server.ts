@@ -14,7 +14,9 @@ import { UserService } from "./services/user-service"
 import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
+import { AttachmentService } from "./services/attachment-service"
 import { StreamNamingService } from "./services/stream-naming-service"
+import { createS3Storage } from "./lib/storage/s3-client"
 import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createNamingListener } from "./lib/naming-listener"
@@ -56,6 +58,10 @@ export async function startServer(): Promise<ServerInstance> {
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
 
+  // Storage and attachment service
+  const storage = createS3Storage(config.s3)
+  const attachmentService = new AttachmentService(pool, storage)
+
   const providerRegistry = new ProviderRegistry({
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
@@ -69,6 +75,8 @@ export async function startServer(): Promise<ServerInstance> {
     workspaceService,
     streamService,
     eventService,
+    attachmentService,
+    s3Config: config.s3,
   })
 
   app.use(errorHandler)
@@ -128,12 +136,26 @@ export async function startServer(): Promise<ServerInstance> {
     await companionListener.stop()
     await broadcastListener.stop()
     await jobQueue.stop()
-    io.close()
+    logger.info("Closing socket.io...")
+
+    // Close socket.io with callback - add timeout since it can hang with postgres adapter
+    await Promise.race([
+      new Promise<void>((resolve) => io.close(() => resolve())),
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          logger.warn("Socket.io close timed out, continuing...")
+          resolve()
+        }, 5000)
+      ),
+    ])
+
+    logger.info("Closing HTTP server...")
     if (server.listening) {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
+    logger.info("Closing database pool...")
     await pool.end()
     logger.info("Server stopped")
   }

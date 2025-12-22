@@ -13,6 +13,15 @@ export interface AIConfig {
   namingModel: string
 }
 
+export interface S3Config {
+  bucket: string
+  region: string
+  accessKeyId: string
+  secretAccessKey: string
+  /** Optional endpoint for S3-compatible services (MinIO, R2, etc.) */
+  endpoint?: string
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -20,6 +29,7 @@ export interface Config {
   useStubCompanion: boolean
   workos: WorkosConfig
   ai: AIConfig
+  s3: S3Config
 }
 
 export function loadConfig(): Config {
@@ -53,6 +63,13 @@ export function loadConfig(): Config {
     ai: {
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
       namingModel: process.env.AI_NAMING_MODEL || "openrouter:anthropic/claude-3-haiku",
+    },
+    s3: {
+      bucket: process.env.S3_BUCKET || "threa-uploads",
+      region: process.env.S3_REGION || "us-east-1",
+      accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+      endpoint: process.env.S3_ENDPOINT,
     },
   }
 

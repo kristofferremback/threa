@@ -19,6 +19,8 @@ import type {
   WorkspaceMemberRole,
   PersonaManagedBy,
   PersonaStatus,
+  StorageProvider,
+  ProcessingStatus,
 } from "./constants"
 
 export interface User {
@@ -120,4 +122,17 @@ export interface Persona {
   status: PersonaStatus
   createdAt: string
   updatedAt: string
+}
+
+export interface Attachment {
+  id: string
+  workspaceId: string
+  streamId: string
+  messageId: string | null
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  storageProvider: StorageProvider
+  processingStatus: ProcessingStatus
+  createdAt: string
 }

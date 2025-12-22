@@ -67,6 +67,47 @@ export class TestClient {
     return this.request<T>("DELETE", path)
   }
 
+  /**
+   * Upload a file using multipart/form-data.
+   */
+  async uploadFile<T = unknown>(
+    path: string,
+    file: { content: string | Buffer; filename: string; mimeType: string }
+  ): Promise<{ status: number; data: T; headers: Headers }> {
+    const formData = new FormData()
+    const blob = new Blob([file.content], { type: file.mimeType })
+    formData.append("file", blob, file.filename)
+
+    const headers: Record<string, string> = {}
+    if (this.cookies.size > 0) {
+      headers["Cookie"] = Array.from(this.cookies.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join("; ")
+    }
+
+    const response = await fetch(`${getBaseUrl()}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    })
+
+    // Parse Set-Cookie headers
+    const setCookies = response.headers.getSetCookie?.() || []
+    for (const cookie of setCookies) {
+      const [pair] = cookie.split(";")
+      const [name, value] = pair.split("=")
+      if (name && value) {
+        this.cookies.set(name.trim(), value.trim())
+      }
+    }
+
+    const data = response.headers.get("content-type")?.includes("application/json")
+      ? await response.json()
+      : await response.text()
+
+    return { status: response.status, data: data as T, headers: response.headers }
+  }
+
   clearCookies() {
     this.cookies.clear()
   }
@@ -111,6 +152,20 @@ export interface StreamEvent {
   payload: unknown
   actorId: string | null
   actorType: string | null
+  createdAt: string
+}
+
+export interface Attachment {
+  id: string
+  workspaceId: string
+  streamId: string
+  messageId: string | null
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  storagePath: string
+  storageProvider: string
+  processingStatus: string
   createdAt: string
 }
 
@@ -297,4 +352,94 @@ export async function deleteMessage(client: TestClient, workspaceId: string, mes
   if (status !== 204) {
     throw new Error(`Delete message failed with status ${status}`)
   }
+}
+
+export async function uploadAttachment(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  file: { content: string | Buffer; filename: string; mimeType: string }
+): Promise<Attachment> {
+  const { status, data } = await client.uploadFile<{ attachment: Attachment }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/attachments`,
+    file
+  )
+  if (status !== 201) {
+    throw new Error(`Upload attachment failed: ${JSON.stringify(data)}`)
+  }
+  return data.attachment
+}
+
+export async function getAttachmentDownloadUrl(
+  client: TestClient,
+  workspaceId: string,
+  attachmentId: string
+): Promise<string> {
+  const { status, data } = await client.get<{ url: string; expiresIn: number }>(
+    `/api/workspaces/${workspaceId}/attachments/${attachmentId}/url`
+  )
+  if (status !== 200) {
+    throw new Error(`Get attachment URL failed: ${JSON.stringify(data)}`)
+  }
+  return data.url
+}
+
+export async function deleteAttachment(client: TestClient, workspaceId: string, attachmentId: string): Promise<void> {
+  const { status } = await client.delete(`/api/workspaces/${workspaceId}/attachments/${attachmentId}`)
+  if (status !== 204) {
+    throw new Error(`Delete attachment failed with status ${status}`)
+  }
+}
+
+export async function sendMessageWithAttachments(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  content: string,
+  attachmentIds: string[]
+): Promise<Message> {
+  const { status, data } = await client.post<{ message: Message }>(`/api/workspaces/${workspaceId}/messages`, {
+    streamId,
+    content,
+    attachmentIds,
+  })
+  if (status !== 201) {
+    throw new Error(`Send message failed: ${JSON.stringify(data)}`)
+  }
+  return data.message
+}
+
+export interface WorkspaceMember {
+  workspaceId: string
+  userId: string
+  role: string
+}
+
+export interface StreamMember {
+  streamId: string
+  userId: string
+}
+
+export async function joinWorkspace(
+  client: TestClient,
+  workspaceId: string,
+  role: "member" | "admin" = "member"
+): Promise<WorkspaceMember> {
+  const { status, data } = await client.post<{ member: WorkspaceMember }>(`/api/dev/workspaces/${workspaceId}/join`, {
+    role,
+  })
+  if (status !== 200) {
+    throw new Error(`Join workspace failed: ${JSON.stringify(data)}`)
+  }
+  return data.member
+}
+
+export async function joinStream(client: TestClient, workspaceId: string, streamId: string): Promise<StreamMember> {
+  const { status, data } = await client.post<{ member: StreamMember }>(
+    `/api/dev/workspaces/${workspaceId}/streams/${streamId}/join`
+  )
+  if (status !== 200) {
+    throw new Error(`Join stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.member
 }

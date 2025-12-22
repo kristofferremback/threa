@@ -29,10 +29,11 @@ beforeAll(async () => {
 })
 
 // Global teardown - runs once after all test files
+// Timeout increased because pg-boss shutdown can take up to 30s for graceful cleanup
 afterAll(async () => {
   if (testServer) {
     console.log("Stopping test server...")
     await testServer.stop()
     testServer = null
   }
-})
+}, 35000)

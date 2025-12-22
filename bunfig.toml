@@ -1,0 +1,7 @@
+# Bun configuration
+# https://bun.sh/docs/runtime/bunfig
+
+[test]
+# Only run unit tests by default - E2E tests need server setup (use `bun run test:e2e`)
+# Frontend uses Vitest (run via `bun run --cwd apps/frontend test`)
+root = "apps/backend/src"

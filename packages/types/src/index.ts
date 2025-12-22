@@ -30,10 +30,25 @@ export {
   type PersonaManagedBy,
   PERSONA_STATUSES,
   type PersonaStatus,
+  // Attachments
+  STORAGE_PROVIDERS,
+  type StorageProvider,
+  PROCESSING_STATUSES,
+  type ProcessingStatus,
 } from "./constants"
 
 // Domain entities (wire format)
-export type { User, Workspace, WorkspaceMember, Stream, StreamMember, Message, StreamEvent, Persona } from "./domain"
+export type {
+  User,
+  Workspace,
+  WorkspaceMember,
+  Stream,
+  StreamMember,
+  Message,
+  StreamEvent,
+  Persona,
+  Attachment,
+} from "./domain"
 
 // API types
 export type {

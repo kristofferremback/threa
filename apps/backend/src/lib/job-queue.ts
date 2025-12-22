@@ -65,13 +65,11 @@ export class JobQueueManager {
   constructor(pool: Pool) {
     this.boss = new PgBoss({
       db: {
-        executeSql: async (text: string, values?: unknown[]) => {
+        executeSql: async (text: string, values?: unknown[]): Promise<{ rows: unknown[] }> => {
           const result = await withClient(pool, (client) => client.query(text, values as unknown[]))
-          // pg returns an array for multi-statement queries, pg-boss expects each element to have rows
-          if (Array.isArray(result)) {
-            return result.map((r) => ({ rows: r.rows }))
-          }
-          return { rows: result.rows }
+          // pg-boss only uses single-statement queries; handle multi-statement defensively
+          const rows = Array.isArray(result) ? (result[0]?.rows ?? []) : result.rows
+          return { rows }
         },
       },
       schema: "pgboss",

@@ -4,6 +4,9 @@ import * as path from "path"
 
 const POSTGRES_HOST = "localhost"
 const POSTGRES_PORT = 5454
+const MINIO_HOST = "localhost"
+const MINIO_PORT = 9000
+const MINIO_BUCKET = "threa-uploads"
 
 function loadEnvFile(filePath: string): Record<string, string> {
   const env: Record<string, string> = {}
@@ -170,32 +173,98 @@ async function waitForPostgres(maxAttempts = 30): Promise<boolean> {
   return false
 }
 
+async function isMinioReachable(): Promise<boolean> {
+  try {
+    const response = await fetch(`http://${MINIO_HOST}:${MINIO_PORT}/minio/health/live`)
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function waitForMinio(maxAttempts = 30): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (await isMinioReachable()) {
+      return true
+    }
+    await Bun.sleep(1000)
+  }
+  return false
+}
+
+async function ensureMinioBucket(): Promise<void> {
+  // Create bucket via mc CLI in container
+  const aliasResult = await $`docker exec threa-minio-1 mc alias set local http://localhost:9000 minioadmin minioadmin`
+    .quiet()
+    .nothrow()
+
+  if (aliasResult.exitCode !== 0) {
+    console.warn("Could not set up MinIO alias - bucket creation may fail")
+    return
+  }
+
+  // Check if bucket exists
+  const lsResult = await $`docker exec threa-minio-1 mc ls local/${MINIO_BUCKET}`.quiet().nothrow()
+
+  if (lsResult.exitCode !== 0) {
+    // Bucket doesn't exist, create it
+    const mbResult = await $`docker exec threa-minio-1 mc mb local/${MINIO_BUCKET}`.quiet().nothrow()
+    if (mbResult.exitCode === 0) {
+      console.log(`Created MinIO bucket: ${MINIO_BUCKET}`)
+    } else {
+      console.warn(`Could not create MinIO bucket: ${MINIO_BUCKET}`)
+    }
+  }
+}
+
 async function main() {
   // Check if postgres is already running (e.g., started from main worktree)
-  if (await isPostgresReachable()) {
-    console.log("PostgreSQL is already running")
-    // Auto-setup worktree .env if needed (requires postgres for db creation)
+  const postgresRunning = await isPostgresReachable()
+  const minioRunning = await isMinioReachable()
+
+  if (postgresRunning && minioRunning) {
+    console.log("PostgreSQL and MinIO are already running")
     await ensureWorktreeEnv()
+    await ensureMinioBucket()
   } else {
-    console.log("Starting PostgreSQL...")
-    const result = await $`docker compose up -d postgres`.nothrow()
+    if (!postgresRunning) {
+      console.log("Starting PostgreSQL...")
+    }
+    if (!minioRunning) {
+      console.log("Starting MinIO...")
+    }
+
+    const result = await $`docker compose up -d postgres minio`.nothrow()
 
     if (result.exitCode !== 0) {
-      console.error("Failed to start PostgreSQL via docker compose.")
-      console.error("If you're in a git worktree, start postgres from the main threa folder:")
+      console.error("Failed to start services via docker compose.")
+      console.error("If you're in a git worktree, start services from the main threa folder:")
       console.error("  cd /path/to/threa && bun run db:start")
       process.exit(1)
     }
 
-    console.log("Waiting for PostgreSQL to be ready...")
-    const ready = await waitForPostgres()
-    if (!ready) {
-      console.error("PostgreSQL failed to become ready")
-      process.exit(1)
+    if (!postgresRunning) {
+      console.log("Waiting for PostgreSQL to be ready...")
+      const ready = await waitForPostgres()
+      if (!ready) {
+        console.error("PostgreSQL failed to become ready")
+        process.exit(1)
+      }
+      console.log("PostgreSQL is ready")
     }
-    console.log("PostgreSQL is ready")
-    // Auto-setup worktree .env if needed
+
+    if (!minioRunning) {
+      console.log("Waiting for MinIO to be ready...")
+      const ready = await waitForMinio()
+      if (!ready) {
+        console.error("MinIO failed to become ready")
+        process.exit(1)
+      }
+      console.log("MinIO is ready")
+    }
+
     await ensureWorktreeEnv()
+    await ensureMinioBucket()
   }
 
   console.log("Starting backend and frontend...")
