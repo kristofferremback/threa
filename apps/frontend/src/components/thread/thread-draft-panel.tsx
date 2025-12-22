@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { X, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
 import { RichEditor } from "@/components/editor"
 import { useStreamService, useMessageService } from "@/contexts"
-import { useAttachments, useStreamBootstrap } from "@/hooks"
+import { useAttachments, useStreamBootstrap, useDraftMessage, getDraftMessageKey } from "@/hooks"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import { EventItem } from "@/components/timeline"
 import { StreamTypes } from "@threa/types"
@@ -27,10 +27,39 @@ export function ThreadDraftPanel({
   onClose,
   onThreadCreated,
 }: ThreadDraftPanelProps) {
-  const [content, setContent] = useState(initialContent)
-  const [isCreating, setIsCreating] = useState(false)
   const streamService = useStreamService()
   const messageService = useMessageService()
+
+  // Draft message persistence
+  const draftKey = getDraftMessageKey({ type: "thread", parentMessageId })
+  const {
+    isLoaded: isDraftLoaded,
+    content: savedDraft,
+    attachments: savedAttachments,
+    saveDraftDebounced,
+    addAttachment: addDraftAttachment,
+    removeAttachment: removeDraftAttachment,
+    clearDraft,
+  } = useDraftMessage(workspaceId, draftKey)
+
+  // Attachment handling
+  const {
+    pendingAttachments,
+    fileInputRef,
+    handleFileSelect,
+    removeAttachment,
+    uploadedIds,
+    isUploading,
+    hasFailed,
+    clear: clearAttachments,
+    restore: restoreAttachments,
+  } = useAttachments(workspaceId)
+
+  // Local state for immediate UI updates
+  const [content, setContent] = useState(initialContent)
+  const [isCreating, setIsCreating] = useState(false)
+  const hasInitialized = useRef(false)
+  const prevParentMessageIdRef = useRef<string | null>(null)
 
   // Fetch parent stream's bootstrap to get the parent message
   const { data: parentBootstrap } = useStreamBootstrap(workspaceId, parentStreamId)
@@ -43,16 +72,87 @@ export function ThreadDraftPanel({
     )
   }, [parentBootstrap, parentMessageId])
 
-  const { pendingAttachments, fileInputRef, handleFileSelect, removeAttachment, uploadedIds, isUploading, hasFailed } =
-    useAttachments(workspaceId)
+  // Initialize content and attachments from saved draft, reset on parent message change
+  useEffect(() => {
+    const isParentChange = prevParentMessageIdRef.current !== null && prevParentMessageIdRef.current !== parentMessageId
+
+    // On parent message change, reset state
+    if (isParentChange) {
+      hasInitialized.current = false
+      setContent("")
+      clearAttachments()
+    }
+
+    // Track parent message changes
+    if (prevParentMessageIdRef.current !== parentMessageId) {
+      prevParentMessageIdRef.current = parentMessageId
+    }
+
+    // Wait for Dexie to finish loading before initializing
+    if (!isDraftLoaded) {
+      return
+    }
+
+    // Restore saved draft content and attachments
+    if (!hasInitialized.current) {
+      if (savedDraft) {
+        setContent(savedDraft)
+      }
+      if (savedAttachments.length > 0) {
+        restoreAttachments(savedAttachments)
+      }
+      hasInitialized.current = true
+    }
+  }, [parentMessageId, isDraftLoaded, savedDraft, savedAttachments, restoreAttachments, clearAttachments])
+
+  // When attachments change, persist to draft
+  useEffect(() => {
+    const uploaded = pendingAttachments.filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+    // Only update draft if we have uploaded attachments and we're past initialization
+    if (hasInitialized.current && uploaded.length > 0) {
+      // Sync each attachment to draft storage
+      for (const a of uploaded) {
+        addDraftAttachment({
+          id: a.id,
+          filename: a.filename,
+          mimeType: a.mimeType,
+          sizeBytes: a.sizeBytes,
+        })
+      }
+    }
+  }, [pendingAttachments, addDraftAttachment])
+
+  // Handle attachment removal from both UI and draft storage
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      removeAttachment(id)
+      removeDraftAttachment(id)
+    },
+    [removeAttachment, removeDraftAttachment]
+  )
+
+  // Handle content change with draft persistence
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setContent(newContent)
+      saveDraftDebounced(newContent)
+    },
+    [saveDraftDebounced]
+  )
 
   const canSend = (content.trim() || uploadedIds.length > 0) && !isCreating && !isUploading && !hasFailed
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!canSend) return
 
     const trimmed = content.trim()
     setIsCreating(true)
+
+    // Clear input immediately for responsiveness
+    setContent("")
+    clearDraft()
+    const attachmentIds = uploadedIds
+    clearAttachments()
 
     try {
       // Create the thread
@@ -67,7 +167,7 @@ export function ThreadDraftPanel({
         streamId: thread.id,
         content: trimmed || " ", // Backend requires content
         contentFormat: "markdown",
-        attachmentIds: uploadedIds.length > 0 ? uploadedIds : undefined,
+        attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
 
       // Transition to the real thread panel
@@ -76,7 +176,19 @@ export function ThreadDraftPanel({
       console.error("Failed to create thread:", error)
       setIsCreating(false)
     }
-  }
+  }, [
+    canSend,
+    content,
+    clearDraft,
+    uploadedIds,
+    clearAttachments,
+    streamService,
+    workspaceId,
+    parentStreamId,
+    parentMessageId,
+    messageService,
+    onThreadCreated,
+  ])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -101,7 +213,7 @@ export function ThreadDraftPanel({
             )}
           </div>
           <div className="p-4 border-t">
-            <PendingAttachments attachments={pendingAttachments} onRemove={removeAttachment} />
+            <PendingAttachments attachments={pendingAttachments} onRemove={handleRemoveAttachment} />
 
             <div className="flex items-end gap-2">
               {/* Hidden file input */}
@@ -129,7 +241,7 @@ export function ThreadDraftPanel({
 
               <RichEditor
                 value={content}
-                onChange={setContent}
+                onChange={handleContentChange}
                 onSubmit={handleSubmit}
                 placeholder="Write your reply..."
                 disabled={isCreating}
