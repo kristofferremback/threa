@@ -111,7 +111,20 @@ export class EventService {
 
       // 3. Attach any uploaded files to this message
       if (params.attachmentIds && params.attachmentIds.length > 0) {
-        await AttachmentRepository.attachToMessage(client, params.attachmentIds, msgId)
+        // Validate attachments: must belong to same workspace, must be unattached
+        const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
+        const allValid =
+          attachments.length === params.attachmentIds.length &&
+          attachments.every((a) => a.workspaceId === params.workspaceId && a.messageId === null)
+
+        if (!allValid) {
+          throw new Error("Invalid attachment IDs: must be unattached and belong to this workspace")
+        }
+
+        const attached = await AttachmentRepository.attachToMessage(client, params.attachmentIds, msgId)
+        if (attached !== params.attachmentIds.length) {
+          throw new Error("Failed to attach all files")
+        }
       }
 
       // 4. Publish to outbox for real-time delivery

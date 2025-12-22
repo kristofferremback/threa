@@ -1,5 +1,6 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
+import type { StorageProvider, ProcessingStatus } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface AttachmentRow {
@@ -25,9 +26,9 @@ export interface Attachment {
   filename: string
   mimeType: string
   sizeBytes: number
-  storageProvider: "s3" | "local"
+  storageProvider: StorageProvider
   storagePath: string
-  processingStatus: "pending" | "processing" | "completed" | "failed"
+  processingStatus: ProcessingStatus
   createdAt: Date
 }
 
@@ -39,7 +40,7 @@ export interface InsertAttachmentParams {
   mimeType: string
   sizeBytes: number
   storagePath: string
-  storageProvider?: "s3" | "local"
+  storageProvider?: StorageProvider
 }
 
 function mapRowToAttachment(row: AttachmentRow): Attachment {
@@ -51,9 +52,9 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     filename: row.filename,
     mimeType: row.mime_type,
     sizeBytes: Number(row.size_bytes),
-    storageProvider: row.storage_provider as "s3" | "local",
+    storageProvider: row.storage_provider as StorageProvider,
     storagePath: row.storage_path,
-    processingStatus: row.processing_status as Attachment["processingStatus"],
+    processingStatus: row.processing_status as ProcessingStatus,
     createdAt: row.created_at,
   }
 }
