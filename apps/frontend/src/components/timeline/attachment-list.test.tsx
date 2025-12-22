@@ -1,17 +1,23 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { AttachmentList } from "./attachment-list"
 import type { AttachmentSummary } from "@threa/types"
 
 // Mock the attachments API
+const mockGetDownloadUrl = vi.fn()
 vi.mock("@/api", () => ({
   attachmentsApi: {
-    getDownloadUrl: vi.fn().mockResolvedValue("https://example.com/download"),
+    getDownloadUrl: (...args: unknown[]) => mockGetDownloadUrl(...args),
   },
 }))
 
 describe("AttachmentList", () => {
   const workspaceId = "ws_123"
+
+  beforeEach(() => {
+    mockGetDownloadUrl.mockReset()
+    mockGetDownloadUrl.mockResolvedValue("https://example.com/download")
+  })
 
   const createAttachment = (overrides: Partial<AttachmentSummary> = {}): AttachmentSummary => ({
     id: "attach_abc123",
@@ -34,24 +40,53 @@ describe("AttachmentList", () => {
       expect(container.firstChild).toBeNull()
     })
 
-    it("should render attachment with filename", () => {
+    it("should render file attachment with filename", () => {
       const attachment = createAttachment({ filename: "report.pdf" })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
       expect(screen.getByText("report.pdf")).toBeInTheDocument()
     })
 
-    it("should render multiple attachments", () => {
+    it("should render multiple file attachments", () => {
       const attachments = [
         createAttachment({ id: "1", filename: "file1.pdf" }),
-        createAttachment({ id: "2", filename: "file2.txt" }),
-        createAttachment({ id: "3", filename: "image.png" }),
+        createAttachment({ id: "2", filename: "file2.txt", mimeType: "text/plain" }),
       ]
       render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />)
 
       expect(screen.getByText("file1.pdf")).toBeInTheDocument()
       expect(screen.getByText("file2.txt")).toBeInTheDocument()
-      expect(screen.getByText("image.png")).toBeInTheDocument()
+    })
+
+    it("should render image attachments as thumbnails", async () => {
+      const attachment = createAttachment({
+        id: "img_1",
+        filename: "photo.png",
+        mimeType: "image/png",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      // Image thumbnail should load
+      await waitFor(() => {
+        expect(mockGetDownloadUrl).toHaveBeenCalledWith(workspaceId, "img_1")
+      })
+
+      // Should show filename in overlay
+      expect(screen.getByText("photo.png")).toBeInTheDocument()
+    })
+
+    it("should separate images and files into different groups", async () => {
+      const attachments = [
+        createAttachment({ id: "1", filename: "photo.jpg", mimeType: "image/jpeg" }),
+        createAttachment({ id: "2", filename: "doc.pdf", mimeType: "application/pdf" }),
+      ]
+      render(<AttachmentList attachments={attachments} workspaceId={workspaceId} />)
+
+      // Both should be rendered
+      await waitFor(() => {
+        expect(screen.getByText("photo.jpg")).toBeInTheDocument()
+      })
+      expect(screen.getByText("doc.pdf")).toBeInTheDocument()
     })
   })
 
@@ -85,24 +120,109 @@ describe("AttachmentList", () => {
     })
   })
 
-  describe("download", () => {
-    it("should trigger download when clicked", async () => {
-      const attachment = createAttachment()
-
-      // Mock window.open for preview files
-      const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null)
-
+  describe("file download", () => {
+    it("should trigger download when file attachment clicked", async () => {
+      const attachment = createAttachment({ mimeType: "text/plain", filename: "notes.txt" })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      // Set up download mocks after render to avoid interfering with React
+      const originalCreateElement = document.createElement.bind(document)
+      const clickSpy = vi.fn()
+      vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+        const element = originalCreateElement(tagName)
+        if (tagName === "a") {
+          element.click = clickSpy
+        }
+        return element
+      })
 
       const button = screen.getByRole("button")
       fireEvent.click(button)
 
-      // PDF files should open in new tab
+      await waitFor(() => {
+        expect(clickSpy).toHaveBeenCalled()
+      })
+
+      vi.restoreAllMocks()
+    })
+
+    it("should open PDF in new tab", async () => {
+      const attachment = createAttachment({ mimeType: "application/pdf" })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null)
+
+      const button = screen.getByRole("button")
+      fireEvent.click(button)
+
       await waitFor(() => {
         expect(windowOpen).toHaveBeenCalledWith("https://example.com/download", "_blank")
       })
 
       windowOpen.mockRestore()
+    })
+  })
+
+  describe("image lightbox", () => {
+    it("should open lightbox when image is clicked", async () => {
+      const attachment = createAttachment({
+        id: "img_1",
+        filename: "photo.png",
+        mimeType: "image/png",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      // Wait for image button to appear (after URL loads)
+      const imageButton = await screen.findByRole("button")
+      fireEvent.click(imageButton)
+
+      // Lightbox should open with dialog
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+    })
+
+    it("should close lightbox when close button is clicked", async () => {
+      const attachment = createAttachment({
+        id: "img_1",
+        filename: "photo.png",
+        mimeType: "image/png",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      // Wait for image button and click it
+      const imageButton = await screen.findByRole("button")
+      fireEvent.click(imageButton)
+
+      // Wait for dialog to open
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+
+      // Click close button (DialogContent has its own, use first one)
+      const closeButtons = screen.getAllByRole("button", { name: /close/i })
+      fireEvent.click(closeButtons[0])
+
+      // Dialog should close
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe("error handling", () => {
+    it("should show error state when image fails to load", async () => {
+      mockGetDownloadUrl.mockRejectedValue(new Error("Failed to load"))
+
+      const attachment = createAttachment({
+        id: "img_1",
+        filename: "broken.png",
+        mimeType: "image/png",
+      })
+      render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
+
+      // Wait for error state to appear
+      expect(await screen.findByText("Failed to load image")).toBeInTheDocument()
     })
   })
 })

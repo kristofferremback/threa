@@ -19,15 +19,14 @@ export const attachmentsApi = {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
-      throw new ApiError(
-        response.status,
-        body.error?.code || "UPLOAD_ERROR",
-        body.error?.message || body.error || "Upload failed",
-        body.error?.details
-      )
+      const errorMessage = typeof body.error === "string" ? body.error : body.error?.message || "Upload failed"
+      throw new ApiError(response.status, body.error?.code || "UPLOAD_ERROR", errorMessage, body.error?.details)
     }
 
     const body = await response.json()
+    if (!body.attachment) {
+      throw new ApiError(500, "INVALID_RESPONSE", "Server returned invalid response")
+    }
     return body.attachment
   },
 
