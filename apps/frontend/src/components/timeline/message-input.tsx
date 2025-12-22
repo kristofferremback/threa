@@ -45,16 +45,27 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasInitialized = useRef(false)
-  const isFirstRender = useRef(true)
+  const prevStreamIdRef = useRef<string | null>(null)
 
-  // Initialize content and attachments from saved draft (only once per stream)
+  // Initialize content and attachments from saved draft, reset on stream change
   useEffect(() => {
-    // Skip first render - Dexie/useLiveQuery is still loading
-    if (isFirstRender.current) {
-      isFirstRender.current = false
+    const isStreamChange = prevStreamIdRef.current !== null && prevStreamIdRef.current !== streamId
+    const isFirstRenderForStream = prevStreamIdRef.current !== streamId
+
+    // On stream change, reset state
+    if (isStreamChange) {
+      hasInitialized.current = false
+      setContent("")
+      clearAttachments()
+    }
+
+    // Skip first render for this stream - Dexie needs time to load
+    if (isFirstRenderForStream) {
+      prevStreamIdRef.current = streamId
       return
     }
 
+    // Restore saved draft content and attachments
     if (!hasInitialized.current) {
       if (savedDraft) {
         setContent(savedDraft)
@@ -64,15 +75,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       }
       hasInitialized.current = true
     }
-  }, [savedDraft, savedAttachments, restoreAttachments])
-
-  // Reset initialization flag when stream changes
-  useEffect(() => {
-    hasInitialized.current = false
-    isFirstRender.current = true
-    setContent("")
-    clearAttachments()
-  }, [streamId, clearAttachments])
+  }, [streamId, savedDraft, savedAttachments, restoreAttachments, clearAttachments])
 
   // Sync attachment changes to draft storage
   const handleFileSelectWithDraft = useCallback(
