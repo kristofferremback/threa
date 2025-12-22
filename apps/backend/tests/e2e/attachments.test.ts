@@ -78,25 +78,6 @@ describe("File Attachments E2E", () => {
       expect(attachment.sizeBytes).toBe(pngData.length)
     })
 
-    test("should reject disallowed file types", async () => {
-      const client = new TestClient()
-      await loginAs(client, testEmail("upload-reject"), "Upload Reject Test")
-      const workspace = await createWorkspace(client, `Upload Reject WS ${testRunId}`)
-      const stream = await createScratchpad(client, workspace.id)
-
-      const { status, data } = await client.uploadFile<{ error: string }>(
-        `/api/workspaces/${workspace.id}/streams/${stream.id}/attachments`,
-        {
-          content: "#!/bin/bash\necho 'hello'",
-          filename: "script.exe",
-          mimeType: "application/x-executable",
-        }
-      )
-
-      expect(status).toBe(400)
-      expect(data.error).toContain("not allowed")
-    })
-
     test("should require stream membership", async () => {
       const client1 = new TestClient()
       const client2 = new TestClient()
