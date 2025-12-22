@@ -34,6 +34,7 @@ const mockRestoreAttachments = vi.fn()
 vi.mock("@/hooks", () => ({
   useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
   useDraftMessage: () => ({
+    isLoaded: true,
     content: "",
     attachments: [],
     saveDraftDebounced: mockSaveDraftDebounced,

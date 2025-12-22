@@ -19,6 +19,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
   const {
+    isLoaded: isDraftLoaded,
     content: savedDraft,
     attachments: savedAttachments,
     saveDraftDebounced,
@@ -50,7 +51,6 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   // Initialize content and attachments from saved draft, reset on stream change
   useEffect(() => {
     const isStreamChange = prevStreamIdRef.current !== null && prevStreamIdRef.current !== streamId
-    const isFirstRenderForStream = prevStreamIdRef.current !== streamId
 
     // On stream change, reset state
     if (isStreamChange) {
@@ -59,9 +59,13 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       clearAttachments()
     }
 
-    // Skip first render for this stream - Dexie needs time to load
-    if (isFirstRenderForStream) {
+    // Track stream changes
+    if (prevStreamIdRef.current !== streamId) {
       prevStreamIdRef.current = streamId
+    }
+
+    // Wait for Dexie to finish loading before initializing
+    if (!isDraftLoaded) {
       return
     }
 
@@ -75,7 +79,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       }
       hasInitialized.current = true
     }
-  }, [streamId, savedDraft, savedAttachments, restoreAttachments, clearAttachments])
+  }, [streamId, isDraftLoaded, savedDraft, savedAttachments, restoreAttachments, clearAttachments])
 
   // Sync attachment changes to draft storage
   const handleFileSelectWithDraft = useCallback(
