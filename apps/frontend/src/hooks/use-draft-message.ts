@@ -1,6 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useEffect, useRef } from "react"
-import { db } from "@/db"
+import { db, type DraftAttachment } from "@/db"
 
 // Key formats:
 // - "stream:{streamId}" for messages in existing streams
@@ -22,15 +22,19 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
   const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], undefined)
 
   const saveDraft = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: DraftAttachment[]) => {
       // Clear any pending debounced save
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
         debounceRef.current = null
       }
 
-      if (!content.trim()) {
-        // If empty, delete the draft
+      // Get current attachments if not provided
+      const currentDraft = await db.draftMessages.get(draftKey)
+      const finalAttachments = attachments ?? currentDraft?.attachments ?? []
+
+      // Delete draft only if both content and attachments are empty
+      if (!content.trim() && finalAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
         return
       }
@@ -39,6 +43,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         id: draftKey,
         workspaceId,
         content,
+        attachments: finalAttachments,
         updatedAt: Date.now(),
       })
     },
@@ -58,6 +63,56 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       }, DEBOUNCE_MS)
     },
     [saveDraft]
+  )
+
+  /**
+   * Add an attachment to the draft. Creates the draft if it doesn't exist.
+   */
+  const addAttachment = useCallback(
+    async (attachment: DraftAttachment) => {
+      const currentDraft = await db.draftMessages.get(draftKey)
+      const currentAttachments = currentDraft?.attachments ?? []
+
+      // Don't add duplicates
+      if (currentAttachments.some((a) => a.id === attachment.id)) {
+        return
+      }
+
+      await db.draftMessages.put({
+        id: draftKey,
+        workspaceId,
+        content: currentDraft?.content ?? "",
+        attachments: [...currentAttachments, attachment],
+        updatedAt: Date.now(),
+      })
+    },
+    [draftKey, workspaceId]
+  )
+
+  /**
+   * Remove an attachment from the draft.
+   * If this leaves the draft empty (no content, no attachments), the draft is deleted.
+   */
+  const removeAttachment = useCallback(
+    async (attachmentId: string) => {
+      const currentDraft = await db.draftMessages.get(draftKey)
+      if (!currentDraft) return
+
+      const remainingAttachments = (currentDraft.attachments ?? []).filter((a) => a.id !== attachmentId)
+
+      // Delete draft if both content and attachments are empty
+      if (!currentDraft.content.trim() && remainingAttachments.length === 0) {
+        await db.draftMessages.delete(draftKey)
+        return
+      }
+
+      await db.draftMessages.put({
+        ...currentDraft,
+        attachments: remainingAttachments,
+        updatedAt: Date.now(),
+      })
+    },
+    [draftKey]
   )
 
   const clearDraft = useCallback(async () => {
@@ -81,8 +136,11 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
 
   return {
     content: draft?.content ?? "",
+    attachments: draft?.attachments ?? [],
     saveDraft,
     saveDraftDebounced,
+    addAttachment,
+    removeAttachment,
     clearDraft,
   }
 }

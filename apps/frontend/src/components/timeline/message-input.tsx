@@ -40,7 +40,14 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
 
   // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
-  const { content: savedDraft, saveDraftDebounced, clearDraft } = useDraftMessage(workspaceId, draftKey)
+  const {
+    content: savedDraft,
+    attachments: savedAttachments,
+    saveDraftDebounced,
+    addAttachment: addDraftAttachment,
+    removeAttachment: removeDraftAttachment,
+    clearDraft,
+  } = useDraftMessage(workspaceId, draftKey)
 
   // Local state for immediate UI updates
   const [content, setContent] = useState("")
@@ -50,13 +57,27 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const hasInitialized = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Initialize content from saved draft (only once per stream)
+  // Initialize content and attachments from saved draft (only once per stream)
   useEffect(() => {
-    if (!hasInitialized.current && savedDraft) {
-      setContent(savedDraft)
+    if (!hasInitialized.current && (savedDraft || savedAttachments.length > 0)) {
+      if (savedDraft) {
+        setContent(savedDraft)
+      }
+      if (savedAttachments.length > 0) {
+        // Restore attachments from draft as already-uploaded
+        setPendingAttachments(
+          savedAttachments.map((a) => ({
+            id: a.id,
+            filename: a.filename,
+            mimeType: a.mimeType,
+            sizeBytes: a.sizeBytes,
+            status: "uploaded" as const,
+          }))
+        )
+      }
       hasInitialized.current = true
     }
-  }, [savedDraft])
+  }, [savedDraft, savedAttachments])
 
   // Reset initialization flag when stream changes
   useEffect(() => {
@@ -118,6 +139,14 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
                 : a
             )
           )
+
+          // Persist to draft so it survives page refresh
+          addDraftAttachment({
+            id: attachment.id,
+            filename: attachment.filename,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+          })
         } catch (err) {
           // Mark as error
           setPendingAttachments((prev) =>
@@ -134,7 +163,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         }
       }
     },
-    [workspaceId]
+    [workspaceId, addDraftAttachment]
   )
 
   const removeAttachment = useCallback(
@@ -144,6 +173,9 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
 
       // Remove from UI immediately
       setPendingAttachments((prev) => prev.filter((a) => a.id !== attachmentId))
+
+      // Remove from draft storage
+      removeDraftAttachment(attachmentId)
 
       // If it was successfully uploaded, delete from server
       if (attachment.status === "uploaded" && !attachmentId.startsWith("temp_")) {
@@ -155,7 +187,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         }
       }
     },
-    [pendingAttachments, workspaceId]
+    [pendingAttachments, workspaceId, removeDraftAttachment]
   )
 
   const uploadedAttachmentIds = pendingAttachments

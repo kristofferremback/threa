@@ -97,11 +97,23 @@ export interface DraftScratchpad {
   createdAt: number
 }
 
+/**
+ * Attachment info stored in drafts. Subset of full Attachment - just display fields.
+ */
+export interface DraftAttachment {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export interface DraftMessage {
   // Key format: "stream:{streamId}" or "thread:{parentMessageId}" for new threads
   id: string
   workspaceId: string
   content: string
+  /** Attachments that have been uploaded and are ready to attach to the message */
+  attachments?: DraftAttachment[]
   updatedAt: number
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageInput } from "./message-input"
 
@@ -13,12 +13,17 @@ vi.mock("react-router-dom", () => ({
 const mockSendMessage = vi.fn()
 const mockSaveDraftDebounced = vi.fn()
 const mockClearDraft = vi.fn()
+const mockAddAttachment = vi.fn()
+const mockRemoveAttachment = vi.fn()
 
 vi.mock("@/hooks", () => ({
   useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
   useDraftMessage: () => ({
     content: "",
+    attachments: [],
     saveDraftDebounced: mockSaveDraftDebounced,
+    addAttachment: mockAddAttachment,
+    removeAttachment: mockRemoveAttachment,
     clearDraft: mockClearDraft,
   }),
   getDraftMessageKey: () => "test-draft-key",
