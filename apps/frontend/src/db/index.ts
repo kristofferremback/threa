@@ -10,4 +10,5 @@ export type {
   EventType,
   DraftScratchpad,
   DraftMessage,
+  DraftAttachment,
 } from "./database"

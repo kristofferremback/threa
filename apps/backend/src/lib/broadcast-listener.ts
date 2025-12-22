@@ -1,17 +1,13 @@
 import { Pool } from "pg"
 import { Server } from "socket.io"
 import { OutboxListener, OutboxListenerConfig } from "./outbox-listener"
-import type { OutboxEventType } from "../repositories/outbox-repository"
-
-// Events that are broadcast to the workspace room (all clients in workspace)
-// These are stream metadata events that affect the sidebar in all tabs
-const WORKSPACE_LEVEL_EVENTS: OutboxEventType[] = ["stream:created", "stream:updated", "stream:archived"]
+import { isStreamScopedEvent } from "../repositories/outbox-repository"
 
 /**
  * Creates a broadcast listener that emits outbox events to Socket.io rooms.
  *
- * Stream metadata events (create/update/archive) are broadcast to workspace rooms: `ws:${workspaceId}`
- * Message/reaction events are broadcast to stream rooms: `ws:${workspaceId}:stream:${streamId}`
+ * Stream-scoped events (messages, reactions) are broadcast to stream rooms: `ws:${workspaceId}:stream:${streamId}`
+ * Workspace-scoped events (stream metadata, attachments) are broadcast to workspace rooms: `ws:${workspaceId}`
  */
 export function createBroadcastListener(
   pool: Pool,
@@ -22,14 +18,15 @@ export function createBroadcastListener(
     ...config,
     listenerId: "broadcast",
     handler: async (event) => {
-      const { workspaceId, streamId } = event.payload
+      const { workspaceId } = event.payload
 
-      if (WORKSPACE_LEVEL_EVENTS.includes(event.eventType)) {
-        // Stream metadata events go to workspace room (all clients in workspace)
-        io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
-      } else {
-        // Message/reaction events go to stream room (only clients in that stream)
+      if (isStreamScopedEvent(event)) {
+        // Stream-scoped events go to stream room (only clients in that stream)
+        const { streamId } = event.payload
         io.to(`ws:${workspaceId}:stream:${streamId}`).emit(event.eventType, event.payload)
+      } else {
+        // Workspace-scoped events go to workspace room (all clients in workspace)
+        io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
       }
     },
   })

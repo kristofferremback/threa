@@ -32,6 +32,7 @@ export interface VirtualStream {
 export interface SendMessageInput {
   content: string
   contentFormat: ContentFormat
+  attachmentIds?: string[]
 }
 
 export interface UseStreamOrDraftReturn {
@@ -94,6 +95,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         streamId: newStream.id,
         content: input.content,
         contentFormat: input.contentFormat,
+        attachmentIds: input.attachmentIds,
       })
 
       await db.draftScratchpads.delete(streamId)
@@ -242,6 +244,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           streamId,
           content: input.content,
           contentFormat: input.contentFormat,
+          attachmentIds: input.attachmentIds,
         })
 
         // Remove optimistic event immediately to minimize duplication window.

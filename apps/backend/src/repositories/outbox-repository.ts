@@ -20,50 +20,70 @@ export type OutboxEventType =
   | "stream:display_name_updated"
   | "attachment:uploaded"
 
+/** Events that are scoped to a stream (have streamId) */
+export type StreamScopedEventType =
+  | "message:created"
+  | "message:edited"
+  | "message:deleted"
+  | "reaction:added"
+  | "reaction:removed"
+  | "stream:display_name_updated"
+
+/** Events that are scoped to a workspace (no streamId) */
+export type WorkspaceScopedEventType = "stream:created" | "stream:updated" | "stream:archived" | "attachment:uploaded"
+
 /**
- * Base fields present on all outbox event payloads.
- * workspaceId is required for room scoping in broadcast.
+ * Base fields for stream-scoped events.
  */
-interface BaseOutboxPayload {
+interface StreamScopedPayload {
   workspaceId: string
   streamId: string
 }
 
-export interface MessageCreatedOutboxPayload extends BaseOutboxPayload {
+/**
+ * Base fields for workspace-scoped events.
+ */
+interface WorkspaceScopedPayload {
+  workspaceId: string
+}
+
+// Stream-scoped event payloads
+export interface MessageCreatedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
-export interface MessageEditedOutboxPayload extends BaseOutboxPayload {
+export interface MessageEditedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
-export interface MessageDeletedOutboxPayload extends BaseOutboxPayload {
+export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
   messageId: string
 }
 
-export interface ReactionOutboxPayload extends BaseOutboxPayload {
+export interface ReactionOutboxPayload extends StreamScopedPayload {
   messageId: string
   emoji: string
   userId: string
 }
 
-export interface StreamCreatedOutboxPayload extends BaseOutboxPayload {
-  stream: Stream
-}
-
-export interface StreamUpdatedOutboxPayload extends BaseOutboxPayload {
-  stream: Stream
-}
-
-export interface StreamArchivedOutboxPayload extends BaseOutboxPayload {
-  stream: Stream
-}
-
-export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
+export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
   displayName: string
 }
 
-export interface AttachmentUploadedOutboxPayload extends BaseOutboxPayload {
+// Workspace-scoped event payloads (no streamId)
+export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
+  stream: Stream
+}
+
+export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  stream: Stream
+}
+
+export interface StreamArchivedOutboxPayload extends WorkspaceScopedPayload {
+  stream: Stream
+}
+
+export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload {
   attachmentId: string
   filename: string
   mimeType: string
@@ -104,6 +124,22 @@ export function isOutboxEventType<T extends OutboxEventType>(
   eventType: T
 ): event is OutboxEvent<T> {
   return event.eventType === eventType
+}
+
+const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
+  "message:created",
+  "message:edited",
+  "message:deleted",
+  "reaction:added",
+  "reaction:removed",
+  "stream:display_name_updated",
+]
+
+/**
+ * Type guard to check if an event is stream-scoped (has streamId in payload).
+ */
+export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<StreamScopedEventType> {
+  return STREAM_SCOPED_EVENTS.includes(event.eventType as StreamScopedEventType)
 }
 
 interface OutboxRow {

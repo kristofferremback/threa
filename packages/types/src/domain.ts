@@ -127,12 +127,24 @@ export interface Persona {
 export interface Attachment {
   id: string
   workspaceId: string
-  streamId: string
+  streamId: string | null
   messageId: string | null
+  uploadedBy: string | null
   filename: string
   mimeType: string
   sizeBytes: number
   storageProvider: StorageProvider
   processingStatus: ProcessingStatus
   createdAt: string
+}
+
+/**
+ * Lightweight attachment info included in message events.
+ * Contains only what's needed for display; download URLs fetched on-demand.
+ */
+export interface AttachmentSummary {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
 }

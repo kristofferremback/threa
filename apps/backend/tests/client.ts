@@ -158,8 +158,9 @@ export interface StreamEvent {
 export interface Attachment {
   id: string
   workspaceId: string
-  streamId: string
+  streamId: string | null
   messageId: string | null
+  uploadedBy: string | null
   filename: string
   mimeType: string
   sizeBytes: number
@@ -357,11 +358,10 @@ export async function deleteMessage(client: TestClient, workspaceId: string, mes
 export async function uploadAttachment(
   client: TestClient,
   workspaceId: string,
-  streamId: string,
   file: { content: string | Buffer; filename: string; mimeType: string }
 ): Promise<Attachment> {
   const { status, data } = await client.uploadFile<{ attachment: Attachment }>(
-    `/api/workspaces/${workspaceId}/streams/${streamId}/attachments`,
+    `/api/workspaces/${workspaceId}/attachments`,
     file
   )
   if (status !== 201) {

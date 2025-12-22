@@ -1,16 +1,18 @@
 import type { ReactNode } from "react"
-import type { StreamEvent } from "@threa/types"
+import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { usePendingMessages } from "@/contexts"
 import { cn } from "@/lib/utils"
+import { AttachmentList } from "./attachment-list"
 
 interface MessagePayload {
   messageId: string
   content: string
   contentFormat?: "markdown" | "plaintext"
+  attachments?: AttachmentSummary[]
 }
 
 interface MessageEventProps {
@@ -22,12 +24,20 @@ interface MessageEventProps {
 interface MessageLayoutProps {
   event: StreamEvent
   payload: MessagePayload
+  workspaceId: string
   statusIndicator: ReactNode
   actions?: ReactNode
   containerClassName?: string
 }
 
-function MessageLayout({ event, payload, statusIndicator, actions, containerClassName }: MessageLayoutProps) {
+function MessageLayout({
+  event,
+  payload,
+  workspaceId,
+  statusIndicator,
+  actions,
+  containerClassName,
+}: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
 
   return (
@@ -43,27 +53,38 @@ function MessageLayout({ event, payload, statusIndicator, actions, containerClas
           {statusIndicator}
         </div>
         <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
+        {payload.attachments && payload.attachments.length > 0 && (
+          <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+        )}
         {actions}
       </div>
     </div>
   )
 }
 
-function SentMessageEvent({ event, payload }: { event: StreamEvent; payload: MessagePayload }) {
+interface MessageEventInnerProps {
+  event: StreamEvent
+  payload: MessagePayload
+  workspaceId: string
+}
+
+function SentMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
   return (
     <MessageLayout
       event={event}
       payload={payload}
+      workspaceId={workspaceId}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
     />
   )
 }
 
-function PendingMessageEvent({ event, payload }: { event: StreamEvent; payload: MessagePayload }) {
+function PendingMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
   return (
     <MessageLayout
       event={event}
       payload={payload}
+      workspaceId={workspaceId}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -72,13 +93,14 @@ function PendingMessageEvent({ event, payload }: { event: StreamEvent; payload: 
   )
 }
 
-function FailedMessageEvent({ event, payload }: { event: StreamEvent; payload: MessagePayload }) {
+function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
   const { retryMessage } = usePendingMessages()
 
   return (
     <MessageLayout
       event={event}
       payload={payload}
+      workspaceId={workspaceId}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
@@ -90,18 +112,18 @@ function FailedMessageEvent({ event, payload }: { event: StreamEvent; payload: M
   )
 }
 
-export function MessageEvent({ event }: MessageEventProps) {
+export function MessageEvent({ event, workspaceId }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
   const status = getStatus(event.id)
 
   switch (status) {
     case "pending":
-      return <PendingMessageEvent event={event} payload={payload} />
+      return <PendingMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
     case "failed":
-      return <FailedMessageEvent event={event} payload={payload} />
+      return <FailedMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
     default:
-      return <SentMessageEvent event={event} payload={payload} />
+      return <SentMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
   }
 }
 

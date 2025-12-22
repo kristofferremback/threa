@@ -48,6 +48,7 @@ export type {
   StreamEvent,
   Persona,
   Attachment,
+  AttachmentSummary,
 } from "./domain"
 
 // API types

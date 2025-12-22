@@ -34,7 +34,7 @@ describe("File Attachments E2E", () => {
       const workspace = await createWorkspace(client, `Upload WS ${testRunId}`)
       const stream = await createScratchpad(client, workspace.id)
 
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: "Hello, world! This is a test file.",
         filename: "hello.txt",
         mimeType: "text/plain",
@@ -42,7 +42,7 @@ describe("File Attachments E2E", () => {
 
       expect(attachment).toMatchObject({
         workspaceId: workspace.id,
-        streamId: stream.id,
+        streamId: null,
         filename: "hello.txt",
         mimeType: "text/plain",
         messageId: null,
@@ -67,7 +67,7 @@ describe("File Attachments E2E", () => {
         0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
       ])
 
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: pngData,
         filename: "pixel.png",
         mimeType: "image/png",
@@ -78,26 +78,7 @@ describe("File Attachments E2E", () => {
       expect(attachment.sizeBytes).toBe(pngData.length)
     })
 
-    test("should reject disallowed file types", async () => {
-      const client = new TestClient()
-      await loginAs(client, testEmail("upload-reject"), "Upload Reject Test")
-      const workspace = await createWorkspace(client, `Upload Reject WS ${testRunId}`)
-      const stream = await createScratchpad(client, workspace.id)
-
-      const { status, data } = await client.uploadFile<{ error: string }>(
-        `/api/workspaces/${workspace.id}/streams/${stream.id}/attachments`,
-        {
-          content: "#!/bin/bash\necho 'hello'",
-          filename: "script.exe",
-          mimeType: "application/x-executable",
-        }
-      )
-
-      expect(status).toBe(400)
-      expect(data.error).toContain("not allowed")
-    })
-
-    test("should require stream membership", async () => {
+    test("should require workspace membership", async () => {
       const client1 = new TestClient()
       const client2 = new TestClient()
 
@@ -105,11 +86,10 @@ describe("File Attachments E2E", () => {
       await loginAs(client2, testEmail("upload-member-2"), "Upload Member 2")
 
       const workspace = await createWorkspace(client1, `Upload Member WS ${testRunId}`)
-      const stream = await createScratchpad(client1, workspace.id)
 
       // client2 is not a member of the workspace
       const { status, data } = await client2.uploadFile<{ error: string }>(
-        `/api/workspaces/${workspace.id}/streams/${stream.id}/attachments`,
+        `/api/workspaces/${workspace.id}/attachments`,
         {
           content: "Should not upload",
           filename: "forbidden.txt",
@@ -129,7 +109,7 @@ describe("File Attachments E2E", () => {
       const workspace = await createWorkspace(client, `Download WS ${testRunId}`)
       const stream = await createScratchpad(client, workspace.id)
 
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: "Content to download",
         filename: "download-me.txt",
         mimeType: "text/plain",
@@ -150,7 +130,7 @@ describe("File Attachments E2E", () => {
       const stream = await createScratchpad(client, workspace.id)
 
       const content = `Test content ${testRunId}`
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content,
         filename: "real-download.txt",
         mimeType: "text/plain",
@@ -175,7 +155,7 @@ describe("File Attachments E2E", () => {
       const stream = await createScratchpad(client, workspace.id)
 
       // Upload first
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: "File attached to message",
         filename: "attached.txt",
         mimeType: "text/plain",
@@ -198,13 +178,13 @@ describe("File Attachments E2E", () => {
       const workspace = await createWorkspace(client, `Attach Multi WS ${testRunId}`)
       const stream = await createScratchpad(client, workspace.id)
 
-      const attach1 = await uploadAttachment(client, workspace.id, stream.id, {
+      const attach1 = await uploadAttachment(client, workspace.id, {
         content: "File 1",
         filename: "file1.txt",
         mimeType: "text/plain",
       })
 
-      const attach2 = await uploadAttachment(client, workspace.id, stream.id, {
+      const attach2 = await uploadAttachment(client, workspace.id, {
         content: "File 2",
         filename: "file2.txt",
         mimeType: "text/plain",
@@ -239,7 +219,7 @@ describe("File Attachments E2E", () => {
       const workspace = await createWorkspace(client, `Delete WS ${testRunId}`)
       const stream = await createScratchpad(client, workspace.id)
 
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: "To be deleted",
         filename: "delete-me.txt",
         mimeType: "text/plain",
@@ -258,7 +238,7 @@ describe("File Attachments E2E", () => {
       const workspace = await createWorkspace(client, `Delete Attached WS ${testRunId}`)
       const stream = await createScratchpad(client, workspace.id)
 
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content: "Attached, cannot delete",
         filename: "keep-me.txt",
         mimeType: "text/plain",
@@ -286,13 +266,14 @@ describe("File Attachments E2E", () => {
 
       // 1. Upload file
       const content = `Full flow test content ${testRunId}`
-      const attachment = await uploadAttachment(client, workspace.id, stream.id, {
+      const attachment = await uploadAttachment(client, workspace.id, {
         content,
         filename: "full-flow.txt",
         mimeType: "text/plain",
       })
 
       expect(attachment.id).toMatch(/^attach_/)
+      expect(attachment.streamId).toBeNull()
       expect(attachment.messageId).toBeNull()
 
       // 2. Attach to message
@@ -311,20 +292,17 @@ describe("File Attachments E2E", () => {
     })
   })
 
-  describe("Top-Level Stream Upload", () => {
+  describe("Workspace-Scoped Upload", () => {
     /**
-     * Attachments must be uploaded to top-level streams (channels, DMs, scratchpads), not threads.
+     * Attachments are uploaded to workspace-level, not to specific streams.
+     * The stream is assigned when the attachment is linked to a message.
      *
-     * Why: Thread membership is implicit via root stream access, and threads may not exist at
-     * upload time (created on first message). Files uploaded to a channel can be attached to
-     * thread messages within that channel.
-     *
-     * The flow is:
-     * 1. User is member of channel
-     * 2. User uploads file to channel (not thread)
-     * 3. User can attach file to any message in channel or its threads
+     * This enables:
+     * 1. Uploads in draft mode (before stream exists)
+     * 2. Unified upload flow for all stream types
+     * 3. Simpler authorization model (workspace membership for upload)
      */
-    test("channel member can upload file before any thread exists", async () => {
+    test("workspace member can upload file without specifying stream", async () => {
       // Setup: Create workspace and channel with owner
       const ownerClient = new TestClient()
       await loginAs(ownerClient, testEmail("tl-owner"), "TL Owner")
@@ -345,9 +323,8 @@ describe("File Attachments E2E", () => {
       await joinStream(member1Client, workspace.id, channel.id)
       await joinStream(member2Client, workspace.id, channel.id)
 
-      // Member1 uploads file to channel (not to any thread - no thread exists yet)
-      // This should succeed because they're a channel member
-      const attachment = await uploadAttachment(member1Client, workspace.id, channel.id, {
+      // Member1 uploads file to workspace (no stream specified)
+      const attachment = await uploadAttachment(member1Client, workspace.id, {
         content: "File from member1",
         filename: "member1-file.txt",
         mimeType: "text/plain",
@@ -355,11 +332,11 @@ describe("File Attachments E2E", () => {
 
       expect(attachment).toMatchObject({
         workspaceId: workspace.id,
-        streamId: channel.id,
+        streamId: null,
         filename: "member1-file.txt",
       })
 
-      // Member1 can attach the file to a message
+      // Member1 can attach the file to a message in the channel
       const message = await sendMessageWithAttachments(member1Client, workspace.id, channel.id, "Here is my file", [
         attachment.id,
       ])
@@ -367,7 +344,7 @@ describe("File Attachments E2E", () => {
       expect(message.id).toMatch(/^msg_/)
     })
 
-    test("member2 can access file uploaded by member1 in shared channel", async () => {
+    test("member2 can access file uploaded by member1 after it is attached to shared channel", async () => {
       // Setup: Create workspace and channel
       const ownerClient = new TestClient()
       await loginAs(ownerClient, testEmail("share-owner"), "Share Owner")
@@ -385,16 +362,16 @@ describe("File Attachments E2E", () => {
       await joinStream(member1Client, workspace.id, channel.id)
       await joinStream(member2Client, workspace.id, channel.id)
 
-      // Member1 uploads and attaches file
+      // Member1 uploads to workspace and attaches to channel message
       const content = `Shared content ${testRunId}`
-      const attachment = await uploadAttachment(member1Client, workspace.id, channel.id, {
+      const attachment = await uploadAttachment(member1Client, workspace.id, {
         content,
         filename: "shared-file.txt",
         mimeType: "text/plain",
       })
       await sendMessageWithAttachments(member1Client, workspace.id, channel.id, "Sharing this", [attachment.id])
 
-      // Member2 can get download URL and access the file
+      // Member2 can get download URL and access the file (now attached to channel they're a member of)
       const url = await getAttachmentDownloadUrl(member2Client, workspace.id, attachment.id)
       const response = await fetch(url)
       expect(response.ok).toBe(true)

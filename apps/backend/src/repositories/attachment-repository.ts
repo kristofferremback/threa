@@ -6,8 +6,9 @@ import type { StorageProvider, ProcessingStatus } from "@threa/types"
 interface AttachmentRow {
   id: string
   workspace_id: string
-  stream_id: string
+  stream_id: string | null
   message_id: string | null
+  uploaded_by: string | null
   filename: string
   mime_type: string
   size_bytes: string
@@ -21,8 +22,9 @@ interface AttachmentRow {
 export interface Attachment {
   id: string
   workspaceId: string
-  streamId: string
+  streamId: string | null
   messageId: string | null
+  uploadedBy: string | null
   filename: string
   mimeType: string
   sizeBytes: number
@@ -35,7 +37,8 @@ export interface Attachment {
 export interface InsertAttachmentParams {
   id: string
   workspaceId: string
-  streamId: string
+  streamId?: string
+  uploadedBy: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -49,6 +52,7 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     workspaceId: row.workspace_id,
     streamId: row.stream_id,
     messageId: row.message_id,
+    uploadedBy: row.uploaded_by,
     filename: row.filename,
     mimeType: row.mime_type,
     sizeBytes: Number(row.size_bytes),
@@ -60,7 +64,7 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
 }
 
 const SELECT_FIELDS = `
-  id, workspace_id, stream_id, message_id,
+  id, workspace_id, stream_id, message_id, uploaded_by,
   filename, mime_type, size_bytes,
   storage_provider, storage_path, processing_status,
   created_at
@@ -108,14 +112,15 @@ export const AttachmentRepository = {
   async insert(client: PoolClient, params: InsertAttachmentParams): Promise<Attachment> {
     const result = await client.query<AttachmentRow>(sql`
       INSERT INTO attachments (
-        id, workspace_id, stream_id,
+        id, workspace_id, stream_id, uploaded_by,
         filename, mime_type, size_bytes,
         storage_provider, storage_path
       )
       VALUES (
         ${params.id},
         ${params.workspaceId},
-        ${params.streamId},
+        ${params.streamId ?? null},
+        ${params.uploadedBy},
         ${params.filename},
         ${params.mimeType},
         ${params.sizeBytes},
@@ -127,11 +132,16 @@ export const AttachmentRepository = {
     return mapRowToAttachment(result.rows[0])
   },
 
-  async attachToMessage(client: PoolClient, attachmentIds: string[], messageId: string): Promise<number> {
+  async attachToMessage(
+    client: PoolClient,
+    attachmentIds: string[],
+    messageId: string,
+    streamId: string
+  ): Promise<number> {
     if (attachmentIds.length === 0) return 0
     const result = await client.query(sql`
       UPDATE attachments
-      SET message_id = ${messageId}
+      SET message_id = ${messageId}, stream_id = ${streamId}
       WHERE id = ANY(${attachmentIds}) AND message_id IS NULL
     `)
     return result.rowCount ?? 0

@@ -7,37 +7,8 @@ import { attachmentId } from "../lib/id"
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-const ALLOWED_MIME_TYPES = [
-  // Images
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-  // Documents
-  "application/pdf",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  // Code files
-  "text/javascript",
-  "application/javascript",
-  "text/typescript",
-  "application/json",
-  "text/html",
-  "text/css",
-  // Archives
-  "application/zip",
-  "application/gzip",
-]
-
-function fileFilter(_req: Request, file: Express.Multer.File, callback: multer.FileFilterCallback): void {
-  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    callback(null, true)
-  } else {
-    callback(new Error(`File type ${file.mimetype} not allowed`))
-  }
-}
+// No file type restrictions for in-workspace uploads.
+// File type filtering may be added for cross-workspace sharing (like Slack Connect).
 
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {
@@ -88,11 +59,12 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
     bucket: s3Config.bucket,
     contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req: Request, file: Express.Multer.File, cb) => {
-      const { workspaceId, streamId } = req.params
+      const { workspaceId } = req.params
       const id = attachmentId()
       // Store the generated ID on the request for the handler to use
       req.attachmentId = id
-      const key = `${workspaceId}/${streamId}/${id}/${file.originalname}`
+      // Workspace-scoped path (no streamId - set when attached to message)
+      const key = `${workspaceId}/${id}/${file.originalname}`
       cb(null, key)
     },
   })
@@ -103,10 +75,9 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
       fileSize: MAX_FILE_SIZE,
       files: 1,
     },
-    fileFilter,
   })
 
   return upload.single("file")
 }
 
-export { MAX_FILE_SIZE, ALLOWED_MIME_TYPES }
+export { MAX_FILE_SIZE }
