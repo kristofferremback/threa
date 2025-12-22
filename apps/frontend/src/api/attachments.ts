@@ -3,14 +3,15 @@ import type { Attachment } from "@threa/types"
 
 export const attachmentsApi = {
   /**
-   * Upload a file to a stream.
+   * Upload a file to the workspace.
+   * File is uploaded to workspace-level; streamId is set when attached to a message.
    * Uses multipart form data instead of JSON.
    */
-  async upload(workspaceId: string, streamId: string, file: File): Promise<Attachment> {
+  async upload(workspaceId: string, file: File): Promise<Attachment> {
     const formData = new FormData()
     formData.append("file", file)
 
-    const response = await fetch(`/api/workspaces/${workspaceId}/streams/${streamId}/attachments`, {
+    const response = await fetch(`/api/workspaces/${workspaceId}/attachments`, {
       method: "POST",
       body: formData,
       credentials: "include",

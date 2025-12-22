@@ -138,9 +138,14 @@ export class EventService {
         contentFormat: params.contentFormat,
       })
 
-      // 4. Link attachments to message
+      // 4. Link attachments to message (also sets streamId)
       if (params.attachmentIds && params.attachmentIds.length > 0) {
-        const attached = await AttachmentRepository.attachToMessage(client, params.attachmentIds, msgId)
+        const attached = await AttachmentRepository.attachToMessage(
+          client,
+          params.attachmentIds,
+          msgId,
+          params.streamId
+        )
         if (attached !== params.attachmentIds.length) {
           throw new Error("Failed to attach all files")
         }

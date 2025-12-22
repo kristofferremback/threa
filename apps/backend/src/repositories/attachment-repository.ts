@@ -6,7 +6,7 @@ import type { StorageProvider, ProcessingStatus } from "@threa/types"
 interface AttachmentRow {
   id: string
   workspace_id: string
-  stream_id: string
+  stream_id: string | null
   message_id: string | null
   filename: string
   mime_type: string
@@ -21,7 +21,7 @@ interface AttachmentRow {
 export interface Attachment {
   id: string
   workspaceId: string
-  streamId: string
+  streamId: string | null
   messageId: string | null
   filename: string
   mimeType: string
@@ -35,7 +35,7 @@ export interface Attachment {
 export interface InsertAttachmentParams {
   id: string
   workspaceId: string
-  streamId: string
+  streamId?: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -115,7 +115,7 @@ export const AttachmentRepository = {
       VALUES (
         ${params.id},
         ${params.workspaceId},
-        ${params.streamId},
+        ${params.streamId ?? null},
         ${params.filename},
         ${params.mimeType},
         ${params.sizeBytes},
@@ -127,11 +127,16 @@ export const AttachmentRepository = {
     return mapRowToAttachment(result.rows[0])
   },
 
-  async attachToMessage(client: PoolClient, attachmentIds: string[], messageId: string): Promise<number> {
+  async attachToMessage(
+    client: PoolClient,
+    attachmentIds: string[],
+    messageId: string,
+    streamId: string
+  ): Promise<number> {
     if (attachmentIds.length === 0) return 0
     const result = await client.query(sql`
       UPDATE attachments
-      SET message_id = ${messageId}
+      SET message_id = ${messageId}, stream_id = ${streamId}
       WHERE id = ANY(${attachmentIds}) AND message_id IS NULL
     `)
     return result.rowCount ?? 0

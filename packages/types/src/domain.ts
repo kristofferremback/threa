@@ -127,7 +127,7 @@ export interface Persona {
 export interface Attachment {
   id: string
   workspaceId: string
-  streamId: string
+  streamId: string | null
   messageId: string | null
   filename: string
   mimeType: string

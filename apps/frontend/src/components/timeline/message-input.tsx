@@ -4,7 +4,7 @@ import { Paperclip, X, Loader2, FileText, Image, File, AlertCircle } from "lucid
 import { RichEditor } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { useDraftMessage, getDraftMessageKey, useStreamOrDraft, isDraftId } from "@/hooks"
+import { useDraftMessage, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
 
@@ -37,7 +37,6 @@ function formatFileSize(bytes: number): string {
 export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const navigate = useNavigate()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
-  const isDraft = isDraftId(streamId)
 
   // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
@@ -98,7 +97,8 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         ])
 
         try {
-          const attachment = await attachmentsApi.upload(workspaceId, streamId, file)
+          // Upload to workspace-level (streamId assigned on message creation)
+          const attachment = await attachmentsApi.upload(workspaceId, file)
 
           if (!attachment || !attachment.id) {
             throw new Error("Invalid response: missing attachment data")
@@ -134,7 +134,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         }
       }
     },
-    [workspaceId, streamId]
+    [workspaceId]
   )
 
   const removeAttachment = useCallback(
@@ -279,18 +279,18 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
             multiple
             className="hidden"
             onChange={handleFileSelect}
-            disabled={isDraft || isSending}
+            disabled={isSending}
           />
 
-          {/* Upload button - disabled for drafts since we need a real streamId */}
+          {/* Upload button - works for both drafts and regular streams */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="self-end shrink-0"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isDraft || isSending}
-            title={isDraft ? "Send a message first to enable file uploads" : "Attach files"}
+            disabled={isSending}
+            title="Attach files"
           >
             <Paperclip className="h-4 w-4" />
           </Button>

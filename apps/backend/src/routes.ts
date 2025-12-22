@@ -107,8 +107,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
 
-  // Attachments
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/attachments", ...authed, upload, attachment.upload)
+  // Attachments (workspace-scoped upload, stream assigned on message creation)
+  app.post("/api/workspaces/:workspaceId/attachments", ...authed, upload, attachment.upload)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 

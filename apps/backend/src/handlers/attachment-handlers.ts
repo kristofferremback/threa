@@ -1,8 +1,6 @@
 import type { Request, Response } from "express"
 import type { AttachmentService } from "../services/attachment-service"
 import type { StreamService } from "../services/stream-service"
-import type { StreamType } from "@threa/types"
-import { StreamTypes } from "@threa/types"
 
 interface Dependencies {
   attachmentService: AttachmentService
@@ -11,32 +9,13 @@ interface Dependencies {
 
 export function createAttachmentHandlers({ attachmentService, streamService }: Dependencies) {
   return {
+    /**
+     * Upload a file to the workspace.
+     * Files are uploaded to workspace-level (no stream) and attached to a stream when linked to a message.
+     * Workspace membership is checked by middleware.
+     */
     async upload(req: Request, res: Response) {
-      const userId = req.userId!
       const workspaceId = req.workspaceId!
-      const { streamId } = req.params
-
-      // Validate stream exists and user can access it
-      const stream = await streamService.getStreamById(streamId)
-      if (!stream || stream.workspaceId !== workspaceId) {
-        return res.status(404).json({ error: "Stream not found" })
-      }
-
-      // Attachments can only be uploaded to top-level streams (channels, scratchpads, DMs).
-      // Thread membership is implicit via root stream access, and threads may not exist yet at
-      // upload time (created on first message). Files uploaded to a channel can be attached to
-      // thread messages within that channel.
-      const allowedStreamTypes: readonly StreamType[] = [StreamTypes.CHANNEL, StreamTypes.DM, StreamTypes.SCRATCHPAD]
-      if (!allowedStreamTypes.includes(stream.type)) {
-        return res.status(400).json({
-          error: "Attachments must be uploaded to channels, DMs, or scratchpads",
-        })
-      }
-
-      const isMember = await streamService.isMember(streamId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Not a member of this stream" })
-      }
 
       // File was uploaded to S3 by multer-s3 middleware
       const file = req.file
@@ -50,7 +29,6 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       const attachment = await attachmentService.create({
         id: attachmentId,
         workspaceId,
-        streamId,
         filename: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -60,6 +38,11 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       res.status(201).json({ attachment })
     },
 
+    /**
+     * Get a presigned download URL for an attachment.
+     * For attached files, checks stream membership.
+     * For pending files (not yet attached), workspace membership is sufficient.
+     */
     async getDownloadUrl(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
@@ -70,18 +53,25 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         return res.status(404).json({ error: "Attachment not found" })
       }
 
-      // Validate user has access to the stream
-      const isMember = await streamService.isMember(attachment.streamId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Access denied" })
+      // For attached files, verify stream membership
+      // Pending files (no stream) are accessible to any workspace member
+      if (attachment.streamId) {
+        const isMember = await streamService.isMember(attachment.streamId, userId)
+        if (!isMember) {
+          return res.status(403).json({ error: "Access denied" })
+        }
       }
 
       const url = await attachmentService.getDownloadUrl(attachment)
       res.json({ url, expiresIn: 900 })
     },
 
+    /**
+     * Delete an unattached file.
+     * Only workspace member who owns the pending file can delete it.
+     * Attached files cannot be deleted.
+     */
     async delete(req: Request, res: Response) {
-      const userId = req.userId!
       const workspaceId = req.workspaceId!
       const { attachmentId } = req.params
 
@@ -95,12 +85,7 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         return res.status(403).json({ error: "Cannot delete attached files" })
       }
 
-      // Validate user has access to the stream
-      const isMember = await streamService.isMember(attachment.streamId, userId)
-      if (!isMember) {
-        return res.status(403).json({ error: "Access denied" })
-      }
-
+      // Workspace membership already verified by middleware
       await attachmentService.delete(attachmentId)
       res.status(204).send()
     },

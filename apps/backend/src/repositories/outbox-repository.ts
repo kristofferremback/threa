@@ -63,7 +63,9 @@ export interface StreamDisplayNameUpdatedPayload extends BaseOutboxPayload {
   displayName: string
 }
 
-export interface AttachmentUploadedOutboxPayload extends BaseOutboxPayload {
+// Attachment events are workspace-scoped (no stream at upload time)
+export interface AttachmentUploadedOutboxPayload {
+  workspaceId: string
   attachmentId: string
   filename: string
   mimeType: string

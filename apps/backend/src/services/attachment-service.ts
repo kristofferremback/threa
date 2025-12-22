@@ -6,7 +6,6 @@ import type { StorageProvider } from "../lib/storage/s3-client"
 export interface CreateAttachmentParams {
   id: string
   workspaceId: string
-  streamId: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -22,13 +21,14 @@ export class AttachmentService {
   /**
    * Records attachment metadata after file has been uploaded to S3.
    * The upload itself is handled by multer-s3 middleware (streaming, no temp files).
+   * File is uploaded to workspace-level; streamId is set when attached to a message.
    */
   async create(params: CreateAttachmentParams): Promise<Attachment> {
     return withTransaction(this.pool, async (client) => {
       const attachment = await AttachmentRepository.insert(client, {
         id: params.id,
         workspaceId: params.workspaceId,
-        streamId: params.streamId,
+        // streamId not set - will be set when attached to a message
         filename: params.filename,
         mimeType: params.mimeType,
         sizeBytes: params.sizeBytes,
@@ -38,7 +38,6 @@ export class AttachmentService {
       // Emit outbox event for future workers (text extraction, embeddings, etc.)
       await OutboxRepository.insert(client, "attachment:uploaded", {
         workspaceId: params.workspaceId,
-        streamId: params.streamId,
         attachmentId: params.id,
         filename: params.filename,
         mimeType: params.mimeType,
