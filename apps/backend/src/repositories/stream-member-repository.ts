@@ -168,4 +168,25 @@ export const StreamMemberRepository = {
     `)
     return result.rows.length > 0
   },
+
+  /**
+   * Check which streams have ALL of the specified users as members.
+   * Returns the set of stream IDs where every user is a member.
+   */
+  async filterStreamsWithAllUsers(client: PoolClient, streamIds: string[], userIds: string[]): Promise<Set<string>> {
+    if (streamIds.length === 0 || userIds.length === 0) {
+      return new Set(streamIds)
+    }
+
+    const result = await client.query<{ stream_id: string }>(sql`
+      SELECT stream_id
+      FROM stream_members
+      WHERE stream_id = ANY(${streamIds})
+        AND user_id = ANY(${userIds})
+      GROUP BY stream_id
+      HAVING COUNT(DISTINCT user_id) = ${userIds.length}
+    `)
+
+    return new Set(result.rows.map((r) => r.stream_id))
+  },
 }
