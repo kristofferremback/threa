@@ -140,7 +140,9 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
 
   // Check if we're still loading (draft is the LOADING sentinel)
   const isLoading = draft === LOADING
-  const resolvedDraft = isLoading ? undefined : draft
+  const resolvedDraft = isLoading
+    ? undefined
+    : (draft as { content?: string; attachments?: DraftAttachment[] } | undefined)
 
   return {
     /** Whether Dexie has finished loading the draft (true even if no draft exists) */

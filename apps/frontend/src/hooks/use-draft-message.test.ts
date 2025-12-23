@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { renderHook, act, waitFor } from "@testing-library/react"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { renderHook, act } from "@testing-library/react"
 import { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
 
 // Mock Dexie database
@@ -18,13 +18,11 @@ vi.mock("@/db", () => ({
 }))
 
 // Mock useLiveQuery to simulate Dexie's async loading behavior
-let liveQueryCallback: (() => Promise<unknown>) | null = null
 let liveQueryResult: unknown = undefined
 let liveQueryLoading = true
 
 vi.mock("dexie-react-hooks", () => ({
-  useLiveQuery: (queryFn: () => Promise<unknown>, deps: unknown[], initialValue: unknown) => {
-    liveQueryCallback = queryFn
+  useLiveQuery: (_queryFn: () => Promise<unknown>, _deps: unknown[], initialValue: unknown) => {
     // Return initial value while "loading", then the result
     if (liveQueryLoading) {
       return initialValue
@@ -54,7 +52,6 @@ describe("useDraftMessage", () => {
     vi.useFakeTimers()
     liveQueryLoading = true
     liveQueryResult = undefined
-    liveQueryCallback = null
     mockGet.mockResolvedValue(undefined)
     mockPut.mockResolvedValue(undefined)
     mockDelete.mockResolvedValue(undefined)

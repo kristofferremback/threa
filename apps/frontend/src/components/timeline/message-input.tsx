@@ -1,11 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Paperclip } from "lucide-react"
-import { RichEditor } from "@/components/editor"
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { useDraftMessage, getDraftMessageKey, useStreamOrDraft, useAttachments } from "@/hooks"
-import { PendingAttachments } from "./pending-attachments"
+import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { MessageComposer } from "@/components/composer"
 
 interface MessageInputProps {
   workspaceId: string
@@ -15,127 +11,24 @@ interface MessageInputProps {
 export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
   const navigate = useNavigate()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
-
-  // Draft message persistence
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
-  const {
-    isLoaded: isDraftLoaded,
-    content: savedDraft,
-    attachments: savedAttachments,
-    saveDraftDebounced,
-    addAttachment: addDraftAttachment,
-    removeAttachment: removeDraftAttachment,
-    clearDraft,
-  } = useDraftMessage(workspaceId, draftKey)
 
-  // Attachment handling
-  const {
-    pendingAttachments,
-    fileInputRef,
-    handleFileSelect,
-    removeAttachment,
-    uploadedIds,
-    isUploading,
-    hasFailed,
-    clear: clearAttachments,
-    restore: restoreAttachments,
-  } = useAttachments(workspaceId)
-
-  // Local state for immediate UI updates
-  const [content, setContent] = useState("")
-  const [isSending, setIsSending] = useState(false)
+  const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
-  const hasInitialized = useRef(false)
-  const prevStreamIdRef = useRef<string | null>(null)
-
-  // Initialize content and attachments from saved draft, reset on stream change
-  useEffect(() => {
-    const isStreamChange = prevStreamIdRef.current !== null && prevStreamIdRef.current !== streamId
-
-    // On stream change, reset state
-    if (isStreamChange) {
-      hasInitialized.current = false
-      setContent("")
-      clearAttachments()
-    }
-
-    // Track stream changes
-    if (prevStreamIdRef.current !== streamId) {
-      prevStreamIdRef.current = streamId
-    }
-
-    // Wait for Dexie to finish loading before initializing
-    if (!isDraftLoaded) {
-      return
-    }
-
-    // Restore saved draft content and attachments
-    if (!hasInitialized.current) {
-      if (savedDraft) {
-        setContent(savedDraft)
-      }
-      if (savedAttachments.length > 0) {
-        restoreAttachments(savedAttachments)
-      }
-      hasInitialized.current = true
-    }
-  }, [streamId, isDraftLoaded, savedDraft, savedAttachments, restoreAttachments, clearAttachments])
-
-  // Sync attachment changes to draft storage
-  const handleFileSelectWithDraft = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      await handleFileSelect(e)
-    },
-    [handleFileSelect]
-  )
-
-  // When attachments change, persist to draft
-  useEffect(() => {
-    const uploaded = pendingAttachments.filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
-    // Only update draft if we have uploaded attachments and we're past initialization
-    if (hasInitialized.current && uploaded.length > 0) {
-      // Sync each attachment to draft storage
-      for (const a of uploaded) {
-        addDraftAttachment({
-          id: a.id,
-          filename: a.filename,
-          mimeType: a.mimeType,
-          sizeBytes: a.sizeBytes,
-        })
-      }
-    }
-  }, [pendingAttachments, addDraftAttachment])
-
-  const handleRemoveAttachment = useCallback(
-    (id: string) => {
-      removeAttachment(id)
-      removeDraftAttachment(id)
-    },
-    [removeAttachment, removeDraftAttachment]
-  )
-
-  const handleContentChange = useCallback(
-    (newContent: string) => {
-      setContent(newContent)
-      saveDraftDebounced(newContent)
-    },
-    [saveDraftDebounced]
-  )
-
-  const canSend = (content.trim() || uploadedIds.length > 0) && !isSending && !isUploading && !hasFailed
 
   const handleSubmit = useCallback(async () => {
-    const trimmed = content.trim()
-    if (!canSend) return
+    if (!composer.canSend) return
 
-    setIsSending(true)
+    composer.setIsSending(true)
     setError(null)
 
+    const trimmed = composer.content.trim()
+    const attachmentIds = composer.uploadedIds
+
     // Clear input immediately for responsiveness
-    setContent("")
-    clearDraft()
-    const attachmentIds = uploadedIds
-    clearAttachments()
+    composer.setContent("")
+    composer.clearDraft()
+    composer.clearAttachments()
 
     try {
       const result = await sendMessage({
@@ -151,68 +44,26 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       // Real stream message failures are handled in the timeline with retry
       setError("Failed to create stream. Please try again.")
     } finally {
-      setIsSending(false)
+      composer.setIsSending(false)
     }
-  }, [content, canSend, sendMessage, navigate, clearDraft, uploadedIds, clearAttachments])
+  }, [composer, sendMessage, navigate])
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="border-t p-4">
-        <PendingAttachments attachments={pendingAttachments} onRemove={handleRemoveAttachment} />
-
-        <div className="flex gap-2">
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelectWithDraft}
-            disabled={isSending}
-          />
-
-          {/* Upload button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="self-end shrink-0"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isSending}
-            title="Attach files"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-
-          <RichEditor
-            value={content}
-            onChange={handleContentChange}
-            onSubmit={handleSubmit}
-            placeholder="Type a message... (Cmd+Enter to send)"
-            disabled={isSending}
-          />
-
-          {hasFailed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="self-end">
-                  <Button disabled className="pointer-events-none">
-                    Send
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p>Remove failed uploads before sending</p>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button onClick={handleSubmit} disabled={!canSend} className="self-end">
-              {isSending ? "Sending..." : "Send"}
-            </Button>
-          )}
-        </div>
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-      </div>
-    </TooltipProvider>
+    <div className="border-t p-4">
+      <MessageComposer
+        content={composer.content}
+        onContentChange={composer.handleContentChange}
+        pendingAttachments={composer.pendingAttachments}
+        onRemoveAttachment={composer.handleRemoveAttachment}
+        fileInputRef={composer.fileInputRef}
+        onFileSelect={composer.handleFileSelect}
+        onSubmit={handleSubmit}
+        canSubmit={composer.canSend}
+        isSubmitting={composer.isSending}
+        hasFailed={composer.hasFailed}
+        placeholder="Type a message... (Cmd+Enter to send)"
+      />
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+    </div>
   )
 }

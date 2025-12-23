@@ -18,30 +18,32 @@ vi.mock("@/contexts", () => ({
 }))
 
 // Mock hooks
-const mockSaveDraftDebounced = vi.fn()
 const mockClearDraft = vi.fn()
-const mockAddDraftAttachment = vi.fn()
-const mockRemoveDraftAttachment = vi.fn()
-
-// Control draft loading state for tests
-let mockDraftIsLoaded = true
-let mockDraftContent = ""
-let mockDraftAttachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> = []
-
-// Track pending attachments for useAttachments mock
-let mockPendingAttachments: Array<{
-  id: string
-  filename: string
-  mimeType: string
-  sizeBytes: number
-  status: "uploading" | "uploaded" | "error"
-  error?: string
-}> = []
-
-const mockHandleFileSelect = vi.fn()
-const mockRemoveAttachment = vi.fn()
 const mockClearAttachments = vi.fn()
-const mockRestoreAttachments = vi.fn()
+const mockSetContent = vi.fn()
+const mockSetIsSending = vi.fn()
+const mockHandleContentChange = vi.fn()
+const mockHandleRemoveAttachment = vi.fn()
+const mockHandleFileSelect = vi.fn()
+
+// Composer state that tests can modify
+let mockComposerState = {
+  content: "",
+  pendingAttachments: [] as Array<{
+    id: string
+    filename: string
+    mimeType: string
+    sizeBytes: number
+    status: "uploading" | "uploaded" | "error"
+    error?: string
+  }>,
+  uploadedIds: [] as string[],
+  isUploading: false,
+  hasFailed: false,
+  canSend: false,
+  isSending: false,
+  isLoaded: true,
+}
 
 vi.mock("@/hooks", () => ({
   useStreamBootstrap: () => ({
@@ -54,55 +56,58 @@ vi.mock("@/hooks", () => ({
       ],
     },
   }),
-  useDraftMessage: () => ({
-    isLoaded: mockDraftIsLoaded,
-    content: mockDraftContent,
-    attachments: mockDraftAttachments,
-    saveDraftDebounced: mockSaveDraftDebounced,
-    addAttachment: mockAddDraftAttachment,
-    removeAttachment: mockRemoveDraftAttachment,
-    clearDraft: mockClearDraft,
-  }),
   getDraftMessageKey: ({ type, parentMessageId }: { type: string; parentMessageId: string }) =>
     `${type}:${parentMessageId}`,
-  useAttachments: () => ({
-    pendingAttachments: mockPendingAttachments,
+  useDraftComposer: () => ({
+    content: mockComposerState.content,
+    setContent: mockSetContent,
+    handleContentChange: mockHandleContentChange,
+    pendingAttachments: mockComposerState.pendingAttachments,
+    uploadedIds: mockComposerState.uploadedIds,
+    isUploading: mockComposerState.isUploading,
+    hasFailed: mockComposerState.hasFailed,
     fileInputRef: { current: null },
     handleFileSelect: mockHandleFileSelect,
-    removeAttachment: mockRemoveAttachment,
-    uploadedIds: mockPendingAttachments.filter((a) => a.status === "uploaded").map((a) => a.id),
-    isUploading: mockPendingAttachments.some((a) => a.status === "uploading"),
-    hasFailed: mockPendingAttachments.some((a) => a.status === "error"),
-    clear: mockClearAttachments,
-    restore: mockRestoreAttachments,
+    handleRemoveAttachment: mockHandleRemoveAttachment,
+    canSend: mockComposerState.canSend,
+    isSending: mockComposerState.isSending,
+    setIsSending: mockSetIsSending,
+    clearDraft: mockClearDraft,
+    clearAttachments: mockClearAttachments,
+    isLoaded: mockComposerState.isLoaded,
   }),
 }))
 
-// Mock RichEditor to simplify testing
-vi.mock("@/components/editor", () => ({
-  RichEditor: ({
-    value,
-    onChange,
+// Mock MessageComposer
+vi.mock("@/components/composer", () => ({
+  MessageComposer: ({
+    content,
+    onContentChange,
     onSubmit,
-    placeholder,
-    disabled,
+    canSubmit,
+    isSubmitting,
+    hasFailed,
+    pendingAttachments,
   }: {
-    value: string
-    onChange: (v: string) => void
+    content: string
+    onContentChange: (v: string) => void
     onSubmit: () => void
-    placeholder: string
-    disabled: boolean
+    canSubmit: boolean
+    isSubmitting: boolean
+    hasFailed: boolean
+    pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
   }) => (
-    <textarea
-      data-testid="rich-editor"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.metaKey) onSubmit()
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+    <div data-testid="message-composer">
+      <textarea data-testid="rich-editor" value={content} onChange={(e) => onContentChange(e.target.value)} />
+      {pendingAttachments.map((a) => (
+        <div key={a.id}>
+          <span>{a.filename}</span>
+        </div>
+      ))}
+      <button onClick={onSubmit} disabled={!canSubmit || hasFailed}>
+        {isSubmitting ? "Creating..." : "Reply"}
+      </button>
+    </div>
   ),
 }))
 
@@ -122,12 +127,18 @@ describe("ThreadDraftPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockDraftIsLoaded = true
-    mockDraftContent = ""
-    mockDraftAttachments = []
-    mockPendingAttachments = []
     mockStreamCreate.mockResolvedValue({ id: "stream_new_thread" })
     mockMessageCreate.mockResolvedValue({})
+    mockComposerState = {
+      content: "",
+      pendingAttachments: [],
+      uploadedIds: [],
+      isUploading: false,
+      hasFailed: false,
+      canSend: false,
+      isSending: false,
+      isLoaded: true,
+    }
   })
 
   describe("rendering", () => {
@@ -163,63 +174,9 @@ describe("ThreadDraftPanel", () => {
     })
   })
 
-  describe("draft persistence", () => {
-    it("should save content changes to draft", async () => {
-      render(
-        <ThreadDraftPanel
-          workspaceId={workspaceId}
-          parentStreamId={parentStreamId}
-          parentMessageId={parentMessageId}
-          onClose={onClose}
-          onThreadCreated={onThreadCreated}
-        />
-      )
-
-      const editor = screen.getByTestId("rich-editor")
-      await userEvent.type(editor, "Hello thread")
-
-      expect(mockSaveDraftDebounced).toHaveBeenCalledWith("Hello thread")
-    })
-
-    it("should restore attachments from saved draft on mount", () => {
-      mockDraftAttachments = [{ id: "attach_1", filename: "saved.txt", mimeType: "text/plain", sizeBytes: 100 }]
-
-      render(
-        <ThreadDraftPanel
-          workspaceId={workspaceId}
-          parentStreamId={parentStreamId}
-          parentMessageId={parentMessageId}
-          onClose={onClose}
-          onThreadCreated={onThreadCreated}
-        />
-      )
-
-      expect(mockRestoreAttachments).toHaveBeenCalledWith(mockDraftAttachments)
-    })
-
-    it("should not restore draft while still loading", () => {
-      mockDraftIsLoaded = false
-      mockDraftContent = "Should not appear"
-      mockDraftAttachments = [{ id: "attach_1", filename: "saved.txt", mimeType: "text/plain", sizeBytes: 100 }]
-
-      render(
-        <ThreadDraftPanel
-          workspaceId={workspaceId}
-          parentStreamId={parentStreamId}
-          parentMessageId={parentMessageId}
-          onClose={onClose}
-          onThreadCreated={onThreadCreated}
-        />
-      )
-
-      // Should not restore while loading
-      expect(mockRestoreAttachments).not.toHaveBeenCalled()
-    })
-  })
-
   describe("attachment handling", () => {
     it("should show pending attachments", () => {
-      mockPendingAttachments = [
+      mockComposerState.pendingAttachments = [
         {
           id: "attach_123",
           filename: "test.txt",
@@ -243,7 +200,8 @@ describe("ThreadDraftPanel", () => {
     })
 
     it("should enable reply button with only uploaded attachments and no text", () => {
-      mockPendingAttachments = [
+      mockComposerState.canSend = true
+      mockComposerState.pendingAttachments = [
         {
           id: "attach_123",
           filename: "test.txt",
@@ -268,7 +226,8 @@ describe("ThreadDraftPanel", () => {
     })
 
     it("should disable reply button when uploads have failed", () => {
-      mockPendingAttachments = [
+      mockComposerState.hasFailed = true
+      mockComposerState.pendingAttachments = [
         {
           id: "temp_123",
           filename: "failed.txt",
@@ -295,6 +254,9 @@ describe("ThreadDraftPanel", () => {
 
   describe("thread creation", () => {
     it("should create thread and send message when reply is clicked", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello thread"
+
       render(
         <ThreadDraftPanel
           workspaceId={workspaceId}
@@ -304,9 +266,6 @@ describe("ThreadDraftPanel", () => {
           onThreadCreated={onThreadCreated}
         />
       )
-
-      const editor = screen.getByTestId("rich-editor")
-      await userEvent.type(editor, "Hello thread")
 
       const replyButton = screen.getByRole("button", { name: /reply/i })
       await userEvent.click(replyButton)
@@ -328,6 +287,9 @@ describe("ThreadDraftPanel", () => {
     })
 
     it("should clear draft and attachments when thread is created", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello thread"
+
       render(
         <ThreadDraftPanel
           workspaceId={workspaceId}
@@ -338,9 +300,6 @@ describe("ThreadDraftPanel", () => {
         />
       )
 
-      const editor = screen.getByTestId("rich-editor")
-      await userEvent.type(editor, "Hello thread")
-
       const replyButton = screen.getByRole("button", { name: /reply/i })
       await userEvent.click(replyButton)
 
@@ -349,7 +308,10 @@ describe("ThreadDraftPanel", () => {
     })
 
     it("should include attachment IDs when creating thread with attachments", async () => {
-      mockPendingAttachments = [
+      mockComposerState.canSend = true
+      mockComposerState.content = ""
+      mockComposerState.uploadedIds = ["attach_123"]
+      mockComposerState.pendingAttachments = [
         {
           id: "attach_123",
           filename: "test.txt",

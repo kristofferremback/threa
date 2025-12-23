@@ -25,3 +25,5 @@ export { useStreamSocket } from "./use-stream-socket"
 export { usePendingMessageRetry } from "./use-pending-message-retry"
 
 export { useAttachments, type PendingAttachment, type UseAttachmentsReturn } from "./use-attachments"
+
+export { useDraftComposer, type UseDraftComposerOptions, type DraftComposerState } from "./use-draft-composer"
