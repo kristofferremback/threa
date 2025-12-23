@@ -64,4 +64,18 @@ describe("ProviderRegistry", () => {
       )
     })
   })
+
+  describe("getEmbeddingModel", () => {
+    it("should throw for unsupported provider", () => {
+      expect(() => registry.getEmbeddingModel("anthropic:text-embedding")).toThrow(
+        'Unsupported embedding provider: "anthropic"'
+      )
+    })
+
+    it("should throw when openrouter not configured", () => {
+      expect(() => registry.getEmbeddingModel("openrouter:openai/text-embedding-3-small")).toThrow(
+        "OpenRouter is not configured"
+      )
+    })
+  })
 })

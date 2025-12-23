@@ -1,10 +1,9 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
-import type { LanguageModel } from "ai"
+import type { EmbeddingModel, LanguageModel } from "ai"
 import { logger } from "../logger"
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 
 const SUPPORTED_PROVIDERS = ["openrouter"] as const
 
@@ -16,21 +15,9 @@ export interface ProviderRegistryConfig {
   }
 }
 
-interface EmbeddingResponse {
-  data: Array<{
-    embedding: number[]
-    index: number
-  }>
-  model: string
-  usage: {
-    prompt_tokens: number
-    total_tokens: number
-  }
-}
-
 /**
  * Registry for AI providers. Parses provider:model strings and returns
- * model instances for both AI SDK (stream naming) and LangChain (companion agent).
+ * model instances for AI SDK (chat, embedding) and LangChain (companion agent).
  */
 export class ProviderRegistry {
   private openRouterClient: ReturnType<typeof createOpenRouter> | null = null
@@ -128,26 +115,15 @@ export class ProviderRegistry {
   }
 
   /**
-   * Generate embedding for a single text using the specified provider:model.
+   * Get an AI SDK embedding model from a provider:model string.
+   * Used with embed() and embedMany() from the AI SDK.
    */
-  async embed(providerModelString: string, text: string): Promise<number[]> {
-    const embeddings = await this.embedBatch(providerModelString, [text])
-    return embeddings[0]
-  }
-
-  /**
-   * Generate embeddings for multiple texts in a single request.
-   */
-  async embedBatch(providerModelString: string, texts: string[]): Promise<number[][]> {
-    if (texts.length === 0) {
-      return []
-    }
-
+  getEmbeddingModel(providerModelString: string): EmbeddingModel<string> {
     const { provider, modelId } = this.parseProviderModel(providerModelString)
 
     switch (provider) {
       case "openrouter":
-        return this.getOpenRouterEmbeddings(modelId, texts)
+        return this.getOpenRouterEmbeddingModel(modelId)
       default:
         throw new Error(
           `Unsupported embedding provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
@@ -155,37 +131,12 @@ export class ProviderRegistry {
     }
   }
 
-  private async getOpenRouterEmbeddings(modelId: string, texts: string[]): Promise<number[][]> {
-    if (!this.openRouterApiKey) {
+  private getOpenRouterEmbeddingModel(modelId: string): EmbeddingModel<string> {
+    if (!this.openRouterClient) {
       throw new Error("OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.")
     }
 
-    logger.debug({ provider: "openrouter", modelId, count: texts.length }, "Generating embeddings")
-
-    const response = await fetch(OPENROUTER_EMBEDDINGS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.openRouterApiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://threa.app",
-        "X-Title": "Threa",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        input: texts,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error({ status: response.status, error: errorText, modelId }, "OpenRouter embedding request failed")
-      throw new Error(`OpenRouter embedding request failed: ${response.status} - ${errorText}`)
-    }
-
-    const data = (await response.json()) as EmbeddingResponse
-
-    // Sort by index to ensure correct order
-    const sorted = data.data.sort((a, b) => a.index - b.index)
-    return sorted.map((item) => item.embedding)
+    logger.debug({ provider: "openrouter", modelId }, "Creating embedding model instance")
+    return this.openRouterClient.textEmbeddingModel(modelId)
   }
 }
