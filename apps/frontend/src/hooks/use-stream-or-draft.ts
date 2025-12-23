@@ -7,6 +7,7 @@ import { useStreamService, useMessageService, usePendingMessages } from "@/conte
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
+import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import type { StreamType, CompanionMode, ContentFormat, StreamEvent } from "@threa/types"
 import { StreamTypes } from "@threa/types"
 
@@ -33,6 +34,8 @@ export interface SendMessageInput {
   content: string
   contentFormat: ContentFormat
   attachmentIds?: string[]
+  /** Full attachment info for optimistic UI - required when attachmentIds is provided */
+  attachments?: AttachmentSummary[]
 }
 
 export interface UseStreamOrDraftReturn {
@@ -101,28 +104,16 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
       await db.draftScratchpads.delete(streamId)
 
       // Pre-populate the new stream's cache so navigation is instant
-      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, newStream.id), {
-        stream: newStream,
-        events: [
-          {
-            id: message.id,
-            streamId: newStream.id,
-            sequence: "1",
-            eventType: "message_created",
-            payload: {
-              messageId: message.id,
-              content: input.content,
-              contentFormat: input.contentFormat,
-            },
-            actorId: newStream.createdBy,
-            actorType: "user",
-            createdAt: message.createdAt,
-          },
-        ],
-        members: [],
-        membership: null,
-        latestSequence: "1",
-      })
+      queryClient.setQueryData(
+        streamKeys.bootstrap(workspaceId, newStream.id),
+        createOptimisticBootstrap({
+          stream: newStream,
+          message,
+          content: input.content,
+          contentFormat: input.contentFormat,
+          attachments: input.attachments,
+        })
+      )
 
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
 

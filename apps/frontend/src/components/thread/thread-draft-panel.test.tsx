@@ -8,6 +8,12 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
 }))
 
+// Mock tanstack query
+const mockSetQueryData = vi.fn()
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ setQueryData: mockSetQueryData }),
+}))
+
 // Mock contexts
 const mockStreamCreate = vi.fn()
 const mockMessageCreate = vi.fn()
@@ -76,6 +82,10 @@ vi.mock("@/hooks", () => ({
     clearAttachments: mockClearAttachments,
     isLoaded: mockComposerState.isLoaded,
   }),
+  streamKeys: {
+    bootstrap: (workspaceId: string, streamId: string) => ["streams", "bootstrap", workspaceId, streamId],
+  },
+  createOptimisticBootstrap: vi.fn((params: unknown) => ({ mockBootstrap: true, params })),
 }))
 
 // Mock MessageComposer
@@ -127,8 +137,8 @@ describe("ThreadDraftPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockStreamCreate.mockResolvedValue({ id: "stream_new_thread" })
-    mockMessageCreate.mockResolvedValue({})
+    mockStreamCreate.mockResolvedValue({ id: "stream_new_thread", createdBy: "user_123" })
+    mockMessageCreate.mockResolvedValue({ id: "msg_123", createdAt: "2024-01-01T00:00:00Z" })
     mockComposerState = {
       content: "",
       pendingAttachments: [],
@@ -339,6 +349,66 @@ describe("ThreadDraftPanel", () => {
         "stream_new_thread",
         expect.objectContaining({
           attachmentIds: ["attach_123"],
+        })
+      )
+    })
+
+    it("should set optimistic cache before transitioning to thread panel", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello thread"
+
+      render(
+        <ThreadDraftPanel
+          workspaceId={workspaceId}
+          parentStreamId={parentStreamId}
+          parentMessageId={parentMessageId}
+          onClose={onClose}
+          onThreadCreated={onThreadCreated}
+        />
+      )
+
+      const replyButton = screen.getByRole("button", { name: /reply/i })
+      await userEvent.click(replyButton)
+
+      expect(mockSetQueryData).toHaveBeenCalledWith(
+        ["streams", "bootstrap", workspaceId, "stream_new_thread"],
+        expect.objectContaining({ mockBootstrap: true })
+      )
+    })
+
+    it("should include attachments in optimistic cache", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = ""
+      mockComposerState.uploadedIds = ["attach_123"]
+      mockComposerState.pendingAttachments = [
+        {
+          id: "attach_123",
+          filename: "test.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1024,
+          status: "uploaded",
+        },
+      ]
+
+      render(
+        <ThreadDraftPanel
+          workspaceId={workspaceId}
+          parentStreamId={parentStreamId}
+          parentMessageId={parentMessageId}
+          onClose={onClose}
+          onThreadCreated={onThreadCreated}
+        />
+      )
+
+      const replyButton = screen.getByRole("button", { name: /reply/i })
+      await userEvent.click(replyButton)
+
+      expect(mockSetQueryData).toHaveBeenCalledWith(
+        ["streams", "bootstrap", workspaceId, "stream_new_thread"],
+        expect.objectContaining({
+          params: expect.objectContaining({
+            attachments: [{ id: "attach_123", filename: "test.txt", mimeType: "text/plain", sizeBytes: 1024 }],
+          }),
         })
       )
     })

@@ -1,6 +1,13 @@
 import { useMemo, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useStreamService, useMessageService } from "@/contexts"
-import { useDraftComposer, useStreamBootstrap, getDraftMessageKey } from "@/hooks"
+import {
+  useDraftComposer,
+  useStreamBootstrap,
+  getDraftMessageKey,
+  createOptimisticBootstrap,
+  streamKeys,
+} from "@/hooks"
 import { MessageComposer } from "@/components/composer"
 import { ThreadPanelView } from "./thread-panel-view"
 import { StreamTypes } from "@threa/types"
@@ -22,6 +29,7 @@ export function DraftThreadPanel({
   onClose,
   onThreadCreated,
 }: DraftThreadPanelProps) {
+  const queryClient = useQueryClient()
   const streamService = useStreamService()
   const messageService = useMessageService()
 
@@ -51,10 +59,15 @@ export function DraftThreadPanel({
     const trimmed = composer.content.trim()
     composer.setIsSending(true)
 
+    // Capture full attachment info BEFORE clearing for optimistic UI
+    const attachmentIds = composer.uploadedIds
+    const attachments = composer.pendingAttachments
+      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+      .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
+
     // Clear input immediately for responsiveness
     composer.setContent("")
     composer.clearDraft()
-    const attachmentIds = composer.uploadedIds
     composer.clearAttachments()
 
     try {
@@ -66,12 +79,24 @@ export function DraftThreadPanel({
       })
 
       // Send the first message with attachments
-      await messageService.create(workspaceId, thread.id, {
+      const message = await messageService.create(workspaceId, thread.id, {
         streamId: thread.id,
         content: trimmed || " ", // Backend requires content
         contentFormat: "markdown",
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
+
+      // Pre-populate the thread's cache so transition is instant
+      queryClient.setQueryData(
+        streamKeys.bootstrap(workspaceId, thread.id),
+        createOptimisticBootstrap({
+          stream: thread,
+          message,
+          content: trimmed || " ",
+          contentFormat: "markdown",
+          attachments: attachments.length > 0 ? attachments : undefined,
+        })
+      )
 
       // Transition to the real thread panel
       onThreadCreated(thread.id)
@@ -79,7 +104,16 @@ export function DraftThreadPanel({
       console.error("Failed to create thread:", error)
       composer.setIsSending(false)
     }
-  }, [composer, streamService, workspaceId, parentStreamId, parentMessageId, messageService, onThreadCreated])
+  }, [
+    composer,
+    streamService,
+    workspaceId,
+    parentStreamId,
+    parentMessageId,
+    messageService,
+    queryClient,
+    onThreadCreated,
+  ])
 
   return (
     <ThreadPanelView

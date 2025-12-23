@@ -24,6 +24,10 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
 
     const trimmed = composer.content.trim()
     const attachmentIds = composer.uploadedIds
+    // Capture full attachment info BEFORE clearing for optimistic UI
+    const attachments = composer.pendingAttachments
+      .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
+      .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
 
     // Clear input immediately for responsiveness
     composer.setContent("")
@@ -35,6 +39,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
         content: trimmed || " ", // Backend requires content, use space for attachment-only messages
         contentFormat: "markdown",
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       if (result.navigateTo) {
         navigate(result.navigateTo, { replace: result.replace ?? false })

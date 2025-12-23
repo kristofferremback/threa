@@ -29,3 +29,10 @@ export { useAttachments, type PendingAttachment, type UseAttachmentsReturn } fro
 export { useDraftComposer, type UseDraftComposerOptions, type DraftComposerState } from "./use-draft-composer"
 
 export { useScrollBehavior } from "./use-scroll-behavior"
+
+export {
+  createOptimisticBootstrap,
+  type AttachmentSummary,
+  type CreateOptimisticBootstrapParams,
+  type OptimisticBootstrap,
+} from "./create-optimistic-bootstrap"

@@ -271,6 +271,7 @@ describe("MessageInput", () => {
         content: " ", // Space for attachment-only messages
         contentFormat: "markdown",
         attachmentIds: ["attach_123"],
+        attachments: [{ id: "attach_123", filename: "test.txt", mimeType: "text/plain", sizeBytes: 1024 }],
       })
     })
   })
