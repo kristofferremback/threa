@@ -6,9 +6,10 @@ interface EventListProps {
   isLoading: boolean
   workspaceId: string
   streamId: string
+  highlightMessageId?: string | null
 }
 
-export function EventList({ events, isLoading, workspaceId, streamId }: EventListProps) {
+export function EventList({ events, isLoading, workspaceId, streamId, highlightMessageId }: EventListProps) {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -31,7 +32,13 @@ export function EventList({ events, isLoading, workspaceId, streamId }: EventLis
   return (
     <div className="flex flex-col gap-1 p-4">
       {events.map((event) => (
-        <EventItem key={event.id} event={event} workspaceId={workspaceId} streamId={streamId} />
+        <EventItem
+          key={event.id}
+          event={event}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          highlightMessageId={highlightMessageId}
+        />
       ))}
     </div>
   )

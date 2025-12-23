@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { type ReactNode, useRef, useEffect } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Link } from "react-router-dom"
 import { MessageSquareReply } from "lucide-react"
@@ -26,6 +26,8 @@ interface MessageEventProps {
   streamId: string
   /** Hide action buttons and thread footer - used when showing parent message in thread view */
   hideActions?: boolean
+  /** Whether to highlight this message (scroll into view and flash) */
+  isHighlighted?: boolean
 }
 
 interface MessageLayoutProps {
@@ -36,6 +38,8 @@ interface MessageLayoutProps {
   actions?: ReactNode
   footer?: ReactNode
   containerClassName?: string
+  isHighlighted?: boolean
+  containerRef?: React.RefObject<HTMLDivElement | null>
 }
 
 function MessageLayout({
@@ -46,11 +50,21 @@ function MessageLayout({
   actions,
   footer,
   containerClassName,
+  isHighlighted,
+  containerRef,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
 
   return (
-    <div className={cn("group flex gap-3 py-2", isPersona && "bg-muted/30 -mx-4 px-4 rounded-lg", containerClassName)}>
+    <div
+      ref={containerRef}
+      className={cn(
+        "group flex gap-3 py-2",
+        isPersona && "bg-muted/30 -mx-4 px-4 rounded-lg",
+        isHighlighted && "animate-highlight-flash",
+        containerClassName
+      )}
+    >
       <Avatar className="h-8 w-8 shrink-0">
         <AvatarFallback className={cn(isPersona && "bg-primary text-primary-foreground")}>
           {isPersona ? "AI" : getInitials(event.actorId)}
@@ -78,12 +92,28 @@ interface MessageEventInnerProps {
   workspaceId: string
   streamId: string
   hideActions?: boolean
+  isHighlighted?: boolean
 }
 
-function SentMessageEvent({ event, payload, workspaceId, streamId, hideActions }: MessageEventInnerProps) {
+function SentMessageEvent({
+  event,
+  payload,
+  workspaceId,
+  streamId,
+  hideActions,
+  isHighlighted,
+}: MessageEventInnerProps) {
   const { openPanels, getPanelUrl, openThreadDraft } = usePanel()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to this message when highlighted
+  useEffect(() => {
+    if (isHighlighted && containerRef.current) {
+      containerRef.current.scrollIntoView({ behavior: "smooth", block: "center" })
+    }
+  }, [isHighlighted])
 
   // Don't show reply button if we're viewing this message as the thread parent
   const isParentOfCurrentThread = openPanels.some((p) => p.streamId === threadId)
@@ -134,6 +164,8 @@ function SentMessageEvent({ event, payload, workspaceId, streamId, hideActions }
         )
       }
       footer={threadFooter}
+      containerRef={containerRef}
+      isHighlighted={isHighlighted}
     />
   )
 }
@@ -171,7 +203,7 @@ function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerPr
   )
 }
 
-export function MessageEvent({ event, workspaceId, streamId, hideActions }: MessageEventProps) {
+export function MessageEvent({ event, workspaceId, streamId, hideActions, isHighlighted }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
   const status = getStatus(event.id)
@@ -189,6 +221,7 @@ export function MessageEvent({ event, workspaceId, streamId, hideActions }: Mess
           workspaceId={workspaceId}
           streamId={streamId}
           hideActions={hideActions}
+          isHighlighted={isHighlighted}
         />
       )
   }

@@ -9,14 +9,28 @@ interface EventItemProps {
   streamId: string
   /** Hide action buttons (e.g., reply) - used when showing parent message in thread view */
   hideActions?: boolean
+  /** ID of message to highlight and scroll to */
+  highlightMessageId?: string | null
 }
 
-export function EventItem({ event, workspaceId, streamId, hideActions }: EventItemProps) {
+export function EventItem({ event, workspaceId, streamId, hideActions, highlightMessageId }: EventItemProps) {
+  // Check if this event's message should be highlighted
+  const messageId = (event.payload as { messageId?: string })?.messageId
+  const isHighlighted = highlightMessageId != null && messageId === highlightMessageId
+
   switch (event.eventType) {
     case "message_created":
     case "message_edited":
     case "companion_response":
-      return <MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} hideActions={hideActions} />
+      return (
+        <MessageEvent
+          event={event}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          hideActions={hideActions}
+          isHighlighted={isHighlighted}
+        />
+      )
 
     case "message_deleted":
       return <DeletedMessageEvent event={event} />

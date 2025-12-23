@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { Search, X, Plus, User, Calendar, Hash, MessageSquare } from "lucide-react"
-import { CommandDialog, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
+import { CommandDialog, CommandList, CommandEmpty, CommandGroup } from "@/components/ui/command"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -40,7 +40,6 @@ const STREAM_TYPE_OPTIONS: { value: StreamType; label: string }[] = [
 ]
 
 export function SearchDialog({ workspaceId, open, onOpenChange }: SearchDialogProps) {
-  const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
 
@@ -124,9 +123,8 @@ export function SearchDialog({ workspaceId, open, onOpenChange }: SearchDialogPr
     setActiveFilters((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleResultClick = (streamId: string) => {
-    navigate(`/w/${workspaceId}/s/${streamId}`)
-    onOpenChange(false)
+  const getMessageUrl = (streamId: string, messageId: string) => {
+    return `/w/${workspaceId}/s/${streamId}?m=${messageId}`
   }
 
   const getFilterIcon = (type: FilterType) => {
@@ -207,17 +205,17 @@ export function SearchDialog({ workspaceId, open, onOpenChange }: SearchDialogPr
           {!isLoading && results.length > 0 && (
             <CommandGroup heading="Messages">
               {results.map((result) => (
-                <CommandItem
+                <Link
                   key={result.id}
-                  value={result.id}
-                  onSelect={() => handleResultClick(result.streamId)}
-                  className="flex flex-col items-start gap-1 py-3"
+                  to={getMessageUrl(result.streamId, result.id)}
+                  onClick={() => onOpenChange(false)}
+                  className="flex flex-col items-start gap-1 py-3 px-2 rounded-sm cursor-default select-none outline-none hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
                 >
                   <div className="line-clamp-2 text-sm">{result.content}</div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{new Date(result.createdAt).toLocaleDateString()}</span>
                   </div>
-                </CommandItem>
+                </Link>
               ))}
             </CommandGroup>
           )}
