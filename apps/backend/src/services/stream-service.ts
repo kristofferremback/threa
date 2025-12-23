@@ -3,9 +3,10 @@ import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
+import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { streamId } from "../lib/id"
-import { DuplicateSlugError, StreamNotFoundError } from "../lib/errors"
+import { DuplicateSlugError, StreamNotFoundError, MessageNotFoundError } from "../lib/errors"
 import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/schemas"
 
@@ -247,8 +248,14 @@ export class StreamService {
 
       // Get parent stream to determine root
       const parentStream = await StreamRepository.findById(client, params.parentStreamId)
-      if (!parentStream) {
-        throw new Error("Parent stream not found")
+      if (!parentStream || parentStream.workspaceId !== params.workspaceId) {
+        throw new StreamNotFoundError()
+      }
+
+      // Validate that parentMessageId exists in the parent stream
+      const parentMessage = await MessageRepository.findById(client, params.parentMessageId)
+      if (!parentMessage || parentMessage.streamId !== params.parentStreamId) {
+        throw new MessageNotFoundError()
       }
 
       // Root is either the parent's root (if parent is a thread) or the parent itself
@@ -405,5 +412,13 @@ export class StreamService {
    */
   async getThreadsForMessages(streamId: string): Promise<Map<string, string>> {
     return withClient(this.pool, (client) => StreamRepository.findThreadsForMessages(client, streamId))
+  }
+
+  /**
+   * Get a map of messageId -> { threadId, replyCount } for all messages in a stream that have threads.
+   * This is an optimized version that fetches threads and counts in a single query.
+   */
+  async getThreadsWithReplyCounts(streamId: string): Promise<Map<string, { threadId: string; replyCount: number }>> {
+    return withClient(this.pool, (client) => StreamRepository.findThreadsWithReplyCounts(client, streamId))
   }
 }

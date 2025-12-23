@@ -237,6 +237,25 @@ export class EventService {
           streamId: params.streamId,
           messageId: params.messageId,
         })
+
+        // 4. If this is a thread, update parent message's reply count
+        const stream = await StreamRepository.findById(client, params.streamId)
+        if (stream?.parentMessageId && stream?.parentStreamId) {
+          await MessageRepository.decrementReplyCount(client, stream.parentMessageId)
+
+          // Get updated count for the event
+          const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
+          if (parentMessage) {
+            // Emit to PARENT stream's room (not this thread's room)
+            await OutboxRepository.insert(client, "message:updated", {
+              workspaceId: params.workspaceId,
+              streamId: stream.parentStreamId,
+              messageId: stream.parentMessageId,
+              updateType: "reply_count",
+              replyCount: parentMessage.replyCount,
+            })
+          }
+        }
       }
 
       return message

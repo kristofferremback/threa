@@ -1,7 +1,7 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
 import type { StreamService } from "../services/stream-service"
-import type { EventService } from "../services/event-service"
+import type { EventService, MessageCreatedPayload } from "../services/event-service"
 import type { EventType, StreamEvent } from "../repositories"
 import { serializeBigInt } from "../lib/serialization"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/schemas"
@@ -264,44 +264,23 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
-      const [events, members, membership, threadMap] = await Promise.all([
+      // Fetch all data in parallel - threads with counts is a single optimized query
+      const [events, members, membership, threadDataMap] = await Promise.all([
         eventService.listEvents(streamId, { limit: 50 }),
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
-        streamService.getThreadsForMessages(streamId),
+        streamService.getThreadsWithReplyCounts(streamId),
       ])
-
-      // Get thread stream IDs and count messages in each thread
-      // This computes reply counts dynamically rather than relying on the messages table projection
-      const threadStreamIds = Array.from(threadMap.values())
-      const threadMessageCountMap = await eventService.countMessagesByStreams(threadStreamIds)
-
-      // Create inverse map: threadId -> messageId (for mapping counts back to parent messages)
-      const threadToMessageMap = new Map<string, string>()
-      for (const [messageId, threadId] of threadMap) {
-        threadToMessageMap.set(threadId, messageId)
-      }
-
-      // Create replyCount map: messageId -> count
-      const replyCountMap = new Map<string, number>()
-      for (const [threadId, count] of threadMessageCountMap) {
-        const messageId = threadToMessageMap.get(threadId)
-        if (messageId) {
-          replyCountMap.set(messageId, count)
-        }
-      }
 
       // Enrich message events with threadId and replyCount (if the message has a thread)
       const enrichedEvents = events.map((event) => {
         if (event.eventType !== "message_created") return event
-        const payload = event.payload as Record<string, unknown>
-        const messageId = payload.messageId as string
-        const threadId = threadMap.get(messageId)
-        if (!threadId) return event
-        const replyCount = replyCountMap.get(messageId) ?? 0
+        const payload = event.payload as MessageCreatedPayload
+        const threadData = threadDataMap.get(payload.messageId)
+        if (!threadData) return event
         return {
           ...event,
-          payload: { ...payload, threadId, replyCount },
+          payload: { ...payload, threadId: threadData.threadId, replyCount: threadData.replyCount },
         }
       })
 
