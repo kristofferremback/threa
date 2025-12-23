@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { AttachmentList } from "./attachment-list"
 import type { AttachmentSummary } from "@threa/types"
 
@@ -165,6 +166,7 @@ describe("AttachmentList", () => {
 
   describe("image lightbox", () => {
     it("should open lightbox when image is clicked", async () => {
+      const user = userEvent.setup()
       const attachment = createAttachment({
         id: "img_1",
         filename: "photo.png",
@@ -172,9 +174,13 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
-      // Wait for image button to appear (after URL loads)
+      // Wait for image to load (button becomes enabled)
       const imageButton = await screen.findByRole("button")
-      fireEvent.click(imageButton)
+      await waitFor(() => {
+        expect(imageButton).not.toBeDisabled()
+      })
+
+      await user.click(imageButton)
 
       // Lightbox should open with dialog
       await waitFor(() => {
@@ -183,6 +189,7 @@ describe("AttachmentList", () => {
     })
 
     it("should close lightbox when close button is clicked", async () => {
+      const user = userEvent.setup()
       const attachment = createAttachment({
         id: "img_1",
         filename: "photo.png",
@@ -190,9 +197,13 @@ describe("AttachmentList", () => {
       })
       render(<AttachmentList attachments={[attachment]} workspaceId={workspaceId} />)
 
-      // Wait for image button and click it
+      // Wait for image to load (button becomes enabled)
       const imageButton = await screen.findByRole("button")
-      fireEvent.click(imageButton)
+      await waitFor(() => {
+        expect(imageButton).not.toBeDisabled()
+      })
+
+      await user.click(imageButton)
 
       // Wait for dialog to open
       await waitFor(() => {
@@ -201,7 +212,7 @@ describe("AttachmentList", () => {
 
       // Click close button (DialogContent has its own, use first one)
       const closeButtons = screen.getAllByRole("button", { name: /close/i })
-      fireEvent.click(closeButtons[0])
+      await user.click(closeButtons[0])
 
       // Dialog should close
       await waitFor(() => {
