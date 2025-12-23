@@ -33,13 +33,22 @@ When reviewing code or presenting comments, use this severity scale:
    - If `$ARGUMENTS` is provided and is a number, use that as the PR number
    - Otherwise, detect the PR from the current branch using `gh pr view --json number -q .number`
 
-2. **Fetch all review comments**:
+2. **Fetch ALL comments from all sources** (run in parallel):
 
    ```bash
+   # PR reviews (main review body - often contains the bulk of feedback)
+   gh api repos/{owner}/{repo}/pulls/{pr}/reviews
+
+   # Line-level review comments (comments on specific code lines)
    gh api repos/{owner}/{repo}/pulls/{pr}/comments
+
+   # Issue comments (general PR discussion, not on specific lines)
+   gh api repos/{owner}/{repo}/issues/{pr}/comments
    ```
 
-3. **Fetch review threads to check resolution status**:
+   **Important**: PR reviews (`/reviews`) contain the main review body which often has the most detailed feedback. Don't skip this endpoint!
+
+3. **Fetch review threads to check resolution status** (for line comments):
 
    ```bash
    gh api graphql -f query='
@@ -50,7 +59,7 @@ When reviewing code or presenting comments, use this severity scale:
            nodes {
              id
              isResolved
-             comments(first: 1) {
+             comments(first: 10) {
                nodes {
                  body
                  path
@@ -64,14 +73,20 @@ When reviewing code or presenting comments, use this severity scale:
    }'
    ```
 
-4. **Present the unresolved comments** to the user, grouped by file, showing:
+4. **Consolidate and deduplicate** comments from all sources:
+   - Extract issues from review bodies (often in markdown lists or sections)
+   - Combine with line-level comments
+   - Add any issue comments
+   - Remove duplicates (same issue mentioned in multiple places)
+
+5. **Present the unresolved comments** to the user, grouped by file, showing:
    - File path and line number
    - The comment body (extract the main issue, ignore HTML/markdown badges)
    - Severity if mentioned (High/Medium/Low)
 
-5. **Ask the user** which comments to address (or if they want to address all)
+6. **Ask the user** which comments to address (or if they want to address all)
 
-6. **For each comment to address**:
+7. **For each comment to address**:
    - Read the relevant file
    - Understand the issue
    - Fix the code if it's a valid bug/improvement
@@ -97,9 +112,9 @@ When reviewing code or presenting comments, use this severity scale:
      }'
      ```
 
-7. **After all fixes**, commit the changes with a descriptive message referencing the PR.
+8. **After all fixes**, commit the changes with a descriptive message referencing the PR.
 
-8. **Push the changes** to update the PR.
+9. **Push the changes** to update the PR.
 
 ## Response Format
 
