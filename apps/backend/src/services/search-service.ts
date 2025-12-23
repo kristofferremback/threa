@@ -3,7 +3,6 @@ import { withClient } from "../db"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "../repositories/search-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
-import { combineWithRRF } from "../lib/search/rrf"
 import { EmbeddingService } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
@@ -35,7 +34,6 @@ export interface SearchServiceDependencies {
 }
 
 const DEFAULT_LIMIT = 20
-const INTERNAL_LIMIT = 50
 
 export class SearchService {
   private pool: Pool
@@ -48,11 +46,22 @@ export class SearchService {
 
   /**
    * Perform hybrid search combining full-text and semantic search.
+   * Uses a single SQL query with RRF ranking.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
     const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT } = params
 
     logger.debug({ query, filters, workspaceId, userId }, "Search request")
+
+    // Generate embedding for search query (do this before DB connection)
+    let embedding: number[] = []
+    if (query.trim()) {
+      try {
+        embedding = await this.embeddingService.embed(query)
+      } catch (error) {
+        logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
+      }
+    }
 
     return withClient(this.pool, async (client) => {
       // 1. Get accessible stream IDs for this user
@@ -73,37 +82,34 @@ export class SearchService {
         after: filters.after,
       }
 
-      // 3. Run searches
-      const searchParams = {
+      // 3. If no search terms, return recent messages
+      if (!query.trim()) {
+        return SearchRepository.fullTextSearch(client, {
+          query: "",
+          streamIds,
+          filters: repoFilters,
+          limit,
+        })
+      }
+
+      // 4. If no embedding (generation failed), fall back to keyword-only
+      if (embedding.length === 0) {
+        return SearchRepository.fullTextSearch(client, {
+          query,
+          streamIds,
+          filters: repoFilters,
+          limit,
+        })
+      }
+
+      // 5. Full hybrid search with RRF ranking in a single query
+      return SearchRepository.hybridSearch(client, {
+        query,
+        embedding,
         streamIds,
         filters: repoFilters,
-        limit: INTERNAL_LIMIT,
-      }
-
-      // If no search terms, skip keyword/semantic search and just return recent messages
-      if (!query.trim()) {
-        return this.getRecentMessages(client, streamIds, repoFilters, limit)
-      }
-
-      // Run both searches in parallel
-      const [keywordResults, semanticResults] = await Promise.all([
-        this.fullTextSearch(client, query, searchParams),
-        this.semanticSearch(query, searchParams),
-      ])
-
-      logger.debug(
-        { keywordResults: keywordResults.length, semanticResults: semanticResults.length },
-        "Search results before RRF"
-      )
-
-      // 4. Combine with RRF
-      const combined = combineWithRRF(keywordResults, semanticResults, {
-        keywordWeight: 0.6,
-        semanticWeight: 0.4,
-        k: 60,
+        limit,
       })
-
-      return combined.slice(0, limit)
     })
   }
 
@@ -191,69 +197,5 @@ export class SearchService {
     const validStreamIds = await StreamMemberRepository.filterStreamsWithAllUsers(client, streamIds, userIds)
 
     return streams.filter((s) => validStreamIds.has(s.id))
-  }
-
-  /**
-   * Full-text search using PostgreSQL tsvector.
-   */
-  private async fullTextSearch(
-    client: PoolClient,
-    terms: string,
-    params: { streamIds: string[]; filters: ResolvedFilters; limit: number }
-  ): Promise<SearchResult[]> {
-    return SearchRepository.fullTextSearch(client, {
-      query: terms,
-      streamIds: params.streamIds,
-      filters: params.filters,
-      limit: params.limit,
-    })
-  }
-
-  /**
-   * Semantic search using pgvector.
-   */
-  private async semanticSearch(
-    terms: string,
-    params: { streamIds: string[]; filters: ResolvedFilters; limit: number }
-  ): Promise<SearchResult[]> {
-    try {
-      // Generate embedding for search query
-      const embedding = await this.embeddingService.embed(terms)
-
-      return withClient(this.pool, (client) =>
-        SearchRepository.vectorSearch(client, {
-          embedding,
-          streamIds: params.streamIds,
-          filters: params.filters,
-          limit: params.limit,
-        })
-      )
-    } catch (error) {
-      // Log but don't fail - semantic search is enhancement, not critical
-      logger.warn({ error }, "Semantic search failed, falling back to keyword-only")
-      return []
-    }
-  }
-
-  /**
-   * Get recent messages when no search terms are provided.
-   * Used for filter-only queries like "is:thread from:@jane"
-   */
-  private async getRecentMessages(
-    client: PoolClient,
-    streamIds: string[],
-    filters: ResolvedFilters,
-    limit: number
-  ): Promise<SearchResult[]> {
-    if (streamIds.length === 0) {
-      return []
-    }
-
-    return SearchRepository.fullTextSearch(client, {
-      query: "",
-      streamIds,
-      filters,
-      limit,
-    })
   }
 }

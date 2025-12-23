@@ -52,11 +52,15 @@ export interface FullTextSearchParams {
   limit: number
 }
 
-export interface VectorSearchParams {
+export interface HybridSearchParams {
+  query: string
   embedding: number[]
   streamIds: string[]
   filters: ResolvedFilters
   limit: number
+  keywordWeight?: number
+  semanticWeight?: number
+  k?: number
 }
 
 export const SearchRepository = {
@@ -123,38 +127,80 @@ export const SearchRepository = {
   },
 
   /**
-   * Vector/semantic search using pgvector.
-   * Results are ranked by cosine similarity.
+   * Hybrid search combining full-text and semantic search with RRF ranking.
+   * All done in a single query using CTEs.
+   *
+   * RRF formula: score(d) = Σ(weight / (k + rank(d)))
    */
-  async vectorSearch(client: PoolClient, params: VectorSearchParams): Promise<SearchResult[]> {
-    const { embedding, streamIds, filters, limit } = params
+  async hybridSearch(client: PoolClient, params: HybridSearchParams): Promise<SearchResult[]> {
+    const { query, embedding, streamIds, filters, limit, keywordWeight = 0.6, semanticWeight = 0.4, k = 60 } = params
 
-    if (streamIds.length === 0 || embedding.length === 0) {
+    if (streamIds.length === 0) {
       return []
     }
 
     // Format embedding as PostgreSQL vector literal
     const embeddingLiteral = `[${embedding.join(",")}]`
 
+    // Internal limit for each search type before RRF combination
+    const internalLimit = 50
+
     const result = await client.query<SearchResultRow>(sql`
-      SELECT
-        m.id,
-        m.stream_id,
-        m.content,
-        m.author_id,
-        m.author_type,
-        m.created_at,
-        1 - (m.embedding <=> ${embeddingLiteral}::vector) as rank
-      FROM messages m
-      JOIN streams s ON m.stream_id = s.id
-      WHERE m.stream_id = ANY(${streamIds})
-        AND m.deleted_at IS NULL
-        AND m.embedding IS NOT NULL
-        AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
-        AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
-        AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
-        AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
-      ORDER BY m.embedding <=> ${embeddingLiteral}::vector
+      WITH keyword_ranked AS (
+        SELECT
+          m.id,
+          m.stream_id,
+          m.content,
+          m.author_id,
+          m.author_type,
+          m.created_at,
+          ROW_NUMBER() OVER (ORDER BY ts_rank(m.search_vector, plainto_tsquery('english', ${query})) DESC) as rank
+        FROM messages m
+        JOIN streams s ON m.stream_id = s.id
+        WHERE m.stream_id = ANY(${streamIds})
+          AND m.deleted_at IS NULL
+          AND m.search_vector @@ plainto_tsquery('english', ${query})
+          AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
+          AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
+          AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
+          AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
+        LIMIT ${internalLimit}
+      ),
+      semantic_ranked AS (
+        SELECT
+          m.id,
+          m.stream_id,
+          m.content,
+          m.author_id,
+          m.author_type,
+          m.created_at,
+          ROW_NUMBER() OVER (ORDER BY m.embedding <=> ${embeddingLiteral}::vector) as rank
+        FROM messages m
+        JOIN streams s ON m.stream_id = s.id
+        WHERE m.stream_id = ANY(${streamIds})
+          AND m.deleted_at IS NULL
+          AND m.embedding IS NOT NULL
+          AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
+          AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
+          AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
+          AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
+        LIMIT ${internalLimit}
+      ),
+      rrf_combined AS (
+        SELECT
+          COALESCE(k.id, s.id) as id,
+          COALESCE(k.stream_id, s.stream_id) as stream_id,
+          COALESCE(k.content, s.content) as content,
+          COALESCE(k.author_id, s.author_id) as author_id,
+          COALESCE(k.author_type, s.author_type) as author_type,
+          COALESCE(k.created_at, s.created_at) as created_at,
+          COALESCE(${keywordWeight}::float / (${k}::float + k.rank), 0) +
+          COALESCE(${semanticWeight}::float / (${k}::float + s.rank), 0) as rank
+        FROM keyword_ranked k
+        FULL OUTER JOIN semantic_ranked s ON k.id = s.id
+      )
+      SELECT * FROM rrf_combined
+      ORDER BY rank DESC
       LIMIT ${limit}
     `)
 
