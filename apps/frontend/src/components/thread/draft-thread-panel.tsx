@@ -1,18 +1,11 @@
 import { useMemo, useCallback } from "react"
-import {
-  SidePanel,
-  SidePanelHeader,
-  SidePanelTitle,
-  SidePanelClose,
-  SidePanelContent,
-} from "@/components/ui/side-panel"
 import { useStreamService, useMessageService } from "@/contexts"
 import { useDraftComposer, useStreamBootstrap, getDraftMessageKey } from "@/hooks"
 import { MessageComposer } from "@/components/composer"
-import { ThreadParentMessage } from "./thread-parent-message"
+import { ThreadPanelView } from "./thread-panel-view"
 import { StreamTypes } from "@threa/types"
 
-interface ThreadDraftPanelProps {
+interface DraftThreadPanelProps {
   workspaceId: string
   parentStreamId: string
   parentMessageId: string
@@ -21,14 +14,14 @@ interface ThreadDraftPanelProps {
   onThreadCreated: (threadId: string) => void
 }
 
-export function ThreadDraftPanel({
+export function DraftThreadPanel({
   workspaceId,
   parentStreamId,
   parentMessageId,
   initialContent = "",
   onClose,
   onThreadCreated,
-}: ThreadDraftPanelProps) {
+}: DraftThreadPanelProps) {
   const streamService = useStreamService()
   const messageService = useMessageService()
 
@@ -89,22 +82,21 @@ export function ThreadDraftPanel({
   }, [composer, streamService, workspaceId, parentStreamId, parentMessageId, messageService, onThreadCreated])
 
   return (
-    <SidePanel>
-      <SidePanelHeader>
-        <SidePanelTitle>New thread</SidePanelTitle>
-        <SidePanelClose onClose={onClose} />
-      </SidePanelHeader>
-      <SidePanelContent className="flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          {parentMessage && (
-            <ThreadParentMessage
-              event={parentMessage}
-              workspaceId={workspaceId}
-              streamId={parentStreamId}
-              replyCount={0}
-            />
-          )}
-        </div>
+    <ThreadPanelView
+      workspaceId={workspaceId}
+      streamId={parentStreamId} // Use parent stream ID for context
+      title="New thread"
+      onClose={onClose}
+      parentMessage={parentMessage ?? undefined}
+      parentStreamId={parentStreamId}
+      events={[]}
+      replyCount={0}
+      isLoading={false}
+      emptyState={{
+        title: "Start a new thread",
+        description: "Write your reply below to create this thread.",
+      }}
+      inputSlot={
         <div className="p-4 border-t">
           <MessageComposer
             content={composer.content}
@@ -122,7 +114,7 @@ export function ThreadDraftPanel({
             placeholder="Write your reply..."
           />
         </div>
-      </SidePanelContent>
-    </SidePanel>
+      }
+    />
   )
 }
