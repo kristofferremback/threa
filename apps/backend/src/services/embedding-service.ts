@@ -11,20 +11,32 @@ export interface EmbeddingServiceConfig {
 /**
  * Service for generating embeddings using the configured provider.
  * Wraps ProviderRegistry with a configured default model.
+ *
+ * Uses lazy initialization to avoid failing at startup when API keys
+ * aren't configured (e.g., in test environments).
  */
 export class EmbeddingService {
-  private embeddingModel: EmbeddingModel<string>
+  private providerRegistry: ProviderRegistry
+  private modelId: string
+  private embeddingModel: EmbeddingModel<string> | null = null
 
   constructor(config: EmbeddingServiceConfig) {
-    const model = config.model ?? DEFAULT_MODEL
-    this.embeddingModel = config.providerRegistry.getEmbeddingModel(model)
+    this.providerRegistry = config.providerRegistry
+    this.modelId = config.model ?? DEFAULT_MODEL
+  }
+
+  private getModel(): EmbeddingModel<string> {
+    if (!this.embeddingModel) {
+      this.embeddingModel = this.providerRegistry.getEmbeddingModel(this.modelId)
+    }
+    return this.embeddingModel
   }
 
   /**
    * Generate embedding for a single text.
    */
   async embed(text: string): Promise<number[]> {
-    const result = await embed({ model: this.embeddingModel, value: text })
+    const result = await embed({ model: this.getModel(), value: text })
     return result.embedding
   }
 
@@ -35,7 +47,7 @@ export class EmbeddingService {
     if (texts.length === 0) {
       return []
     }
-    const result = await embedMany({ model: this.embeddingModel, values: texts })
+    const result = await embedMany({ model: this.getModel(), values: texts })
     return result.embeddings
   }
 }
