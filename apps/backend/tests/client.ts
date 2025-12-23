@@ -142,6 +142,7 @@ export interface Message {
   authorId: string
   reactions: Record<string, string[]>
   streamId: string
+  createdAt: string
 }
 
 export interface StreamEvent {
@@ -482,4 +483,36 @@ export async function joinStream(client: TestClient, workspaceId: string, stream
     throw new Error(`Join stream failed: ${JSON.stringify(data)}`)
   }
   return data.member
+}
+
+export interface SearchResult {
+  id: string
+  streamId: string
+  content: string
+  authorId: string
+  authorType: string
+  createdAt: string
+  rank: number
+}
+
+export interface SearchParams {
+  query?: string
+  from?: string // Single author ID
+  with?: string[] // User IDs (AND logic)
+  in?: string[] // Stream IDs
+  is?: ("scratchpad" | "channel" | "dm" | "thread")[] // Stream types (OR logic)
+  before?: string // Exclusive (<)
+  after?: string // Inclusive (>=)
+  limit?: number
+}
+
+export async function search(client: TestClient, workspaceId: string, params: SearchParams): Promise<SearchResult[]> {
+  const { status, data } = await client.post<{ results: SearchResult[]; total: number }>(
+    `/api/workspaces/${workspaceId}/search`,
+    params
+  )
+  if (status !== 200) {
+    throw new Error(`Search failed: ${JSON.stringify(data)}`)
+  }
+  return data.results
 }

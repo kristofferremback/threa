@@ -1,6 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
-import type { LanguageModel } from "ai"
+import type { EmbeddingModel, LanguageModel } from "ai"
 import { logger } from "../logger"
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -17,7 +17,7 @@ export interface ProviderRegistryConfig {
 
 /**
  * Registry for AI providers. Parses provider:model strings and returns
- * model instances for both AI SDK (stream naming) and LangChain (companion agent).
+ * model instances for AI SDK (chat, embedding) and LangChain (companion agent).
  */
 export class ProviderRegistry {
   private openRouterClient: ReturnType<typeof createOpenRouter> | null = null
@@ -112,5 +112,31 @@ export class ProviderRegistry {
         baseURL: OPENROUTER_BASE_URL,
       },
     })
+  }
+
+  /**
+   * Get an AI SDK embedding model from a provider:model string.
+   * Used with embed() and embedMany() from the AI SDK.
+   */
+  getEmbeddingModel(providerModelString: string): EmbeddingModel<string> {
+    const { provider, modelId } = this.parseProviderModel(providerModelString)
+
+    switch (provider) {
+      case "openrouter":
+        return this.getOpenRouterEmbeddingModel(modelId)
+      default:
+        throw new Error(
+          `Unsupported embedding provider: "${provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`
+        )
+    }
+  }
+
+  private getOpenRouterEmbeddingModel(modelId: string): EmbeddingModel<string> {
+    if (!this.openRouterClient) {
+      throw new Error("OpenRouter is not configured. Set OPENROUTER_API_KEY environment variable.")
+    }
+
+    logger.debug({ provider: "openrouter", modelId }, "Creating embedding model instance")
+    return this.openRouterClient.textEmbeddingModel(modelId)
   }
 }

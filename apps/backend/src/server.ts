@@ -16,12 +16,16 @@ import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { AttachmentService } from "./services/attachment-service"
 import { StreamNamingService } from "./services/stream-naming-service"
+import { SearchService } from "./services/search-service"
+import { EmbeddingService } from "./services/embedding-service"
 import { createS3Storage } from "./lib/storage/s3-client"
 import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createNamingListener } from "./lib/naming-listener"
+import { createEmbeddingListener } from "./lib/embedding-listener"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createNamingWorker } from "./workers/naming-worker"
+import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { CompanionAgent } from "./agents/companion-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -67,6 +71,10 @@ export async function startServer(): Promise<ServerInstance> {
   })
   const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
 
+  // Search and embedding services
+  const embeddingService = new EmbeddingService({ providerRegistry })
+  const searchService = new SearchService({ pool, embeddingService })
+
   const app = createApp()
 
   registerRoutes(app, {
@@ -76,6 +84,7 @@ export async function startServer(): Promise<ServerInstance> {
     streamService,
     eventService,
     attachmentService,
+    searchService,
     s3Config: config.s3,
   })
 
@@ -113,15 +122,20 @@ export async function startServer(): Promise<ServerInstance> {
   const namingWorker = createNamingWorker({ streamNamingService })
   jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker)
 
+  const embeddingWorker = createEmbeddingWorker({ pool, embeddingService })
+  jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
+
   await jobQueue.start()
 
   // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)
   const companionListener = createCompanionListener(pool, jobQueue)
   const namingListener = createNamingListener(pool, jobQueue)
+  const embeddingListener = createEmbeddingListener(pool, jobQueue)
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
+  await embeddingListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -132,6 +146,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
+    await embeddingListener.stop()
     await namingListener.stop()
     await companionListener.stop()
     await broadcastListener.stop()
