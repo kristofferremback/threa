@@ -21,6 +21,7 @@ export const JobQueues = {
   COMPANION_RESPOND: "companion.respond",
   NAMING_GENERATE: "naming.generate",
   EMBEDDING_GENERATE: "embedding.generate",
+  BOUNDARY_EXTRACT: "boundary.extract",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -39,11 +40,18 @@ export interface EmbeddingJobData {
   messageId: string
 }
 
+export interface BoundaryExtractionJobData {
+  messageId: string
+  streamId: string
+  workspaceId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.COMPANION_RESPOND]: CompanionJobData
   [JobQueues.NAMING_GENERATE]: NamingJobData
   [JobQueues.EMBEDDING_GENERATE]: EmbeddingJobData
+  [JobQueues.BOUNDARY_EXTRACT]: BoundaryExtractionJobData
 }
 
 // Dead letter queue suffix - jobs that exhaust retries go here

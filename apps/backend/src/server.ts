@@ -18,14 +18,19 @@ import { AttachmentService } from "./services/attachment-service"
 import { StreamNamingService } from "./services/stream-naming-service"
 import { SearchService } from "./services/search-service"
 import { EmbeddingService } from "./services/embedding-service"
+import { ConversationService } from "./services/conversation-service"
+import { BoundaryExtractionService } from "./services/boundary-extraction-service"
 import { createS3Storage } from "./lib/storage/s3-client"
 import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createNamingListener } from "./lib/naming-listener"
 import { createEmbeddingListener } from "./lib/embedding-listener"
+import { createBoundaryExtractionListener } from "./lib/boundary-extraction-listener"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
+import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
+import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { CompanionAgent } from "./agents/companion-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -70,6 +75,7 @@ export async function startServer(): Promise<ServerInstance> {
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
   const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
+  const conversationService = new ConversationService(pool)
 
   // Search and embedding services
   const embeddingService = new EmbeddingService({ providerRegistry })
@@ -85,6 +91,7 @@ export async function startServer(): Promise<ServerInstance> {
     eventService,
     attachmentService,
     searchService,
+    conversationService,
     s3Config: config.s3,
   })
 
@@ -125,6 +132,12 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingWorker = createEmbeddingWorker({ pool, embeddingService })
   jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
 
+  // Boundary extraction
+  const boundaryExtractor = new LLMBoundaryExtractor(providerRegistry, config.ai.namingModel)
+  const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
+  const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
+  jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
+
   await jobQueue.start()
 
   // Outbox listeners
@@ -132,10 +145,12 @@ export async function startServer(): Promise<ServerInstance> {
   const companionListener = createCompanionListener(pool, jobQueue)
   const namingListener = createNamingListener(pool, jobQueue)
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
+  const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
   await embeddingListener.start()
+  await boundaryExtractionListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -147,6 +162,7 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     await embeddingListener.stop()
+    await boundaryExtractionListener.stop()
     await namingListener.stop()
     await companionListener.stop()
     await broadcastListener.stop()

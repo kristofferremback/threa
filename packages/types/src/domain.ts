@@ -21,6 +21,7 @@ import type {
   PersonaStatus,
   StorageProvider,
   ProcessingStatus,
+  ConversationStatus,
 } from "./constants"
 
 export interface User {
@@ -147,4 +148,28 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
+}
+
+export interface Conversation {
+  id: string
+  streamId: string
+  workspaceId: string
+  messageIds: string[]
+  participantIds: string[]
+  topicSummary: string | null
+  completenessScore: number
+  status: ConversationStatus
+  parentConversationId: string | null
+  lastActivityAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Conversation with computed temporal staleness.
+ * Staleness is computed on read based on lastActivityAt.
+ */
+export interface ConversationWithStaleness extends Conversation {
+  temporalStaleness: number
+  effectiveCompleteness: number
 }

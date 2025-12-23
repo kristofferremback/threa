@@ -1,6 +1,6 @@
 import { useState, useRef, Fragment } from "react"
 import { useParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,10 +11,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { useStreamOrDraft } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
+import { ConversationList } from "@/components/conversations"
 import { StreamTypes } from "@threa/types"
 
 export function StreamPage() {
@@ -101,26 +103,43 @@ export function StreamPage() {
             <h1 className="font-semibold">{streamName}</h1>
           )}
         </div>
-        {isScratchpad && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={handleStartRename}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                <Archive className="mr-2 h-4 w-4" />
-                {isDraft ? "Delete" : "Archive"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <div className="flex items-center gap-1">
+          {!isDraft && (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" title="Conversations">
+                  <MessageCircle className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-80 sm:w-96">
+                <SheetHeader>
+                  <SheetTitle>Conversations</SheetTitle>
+                </SheetHeader>
+                <ConversationList workspaceId={workspaceId!} streamId={streamId!} />
+              </SheetContent>
+            </Sheet>
+          )}
+          {isScratchpad && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleStartRename}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                  <Archive className="mr-2 h-4 w-4" />
+                  {isDraft ? "Delete" : "Archive"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </header>
       <main className="flex-1 overflow-hidden">
         <TimelineView isDraft={isDraft} />

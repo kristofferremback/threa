@@ -9,6 +9,7 @@ import { createMessageHandlers } from "./handlers/message-handlers"
 import { createAttachmentHandlers } from "./handlers/attachment-handlers"
 import { createSearchHandlers } from "./handlers/search-handlers"
 import { createEmojiHandlers } from "./handlers/emoji-handlers"
+import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -18,6 +19,7 @@ import type { StreamService } from "./services/stream-service"
 import type { EventService } from "./services/event-service"
 import type { AttachmentService } from "./services/attachment-service"
 import type { SearchService } from "./services/search-service"
+import type { ConversationService } from "./services/conversation-service"
 import type { S3Config } from "./lib/env"
 
 interface Dependencies {
@@ -28,6 +30,7 @@ interface Dependencies {
   eventService: EventService
   attachmentService: AttachmentService
   searchService: SearchService
+  conversationService: ConversationService
   s3Config: S3Config
 }
 
@@ -40,6 +43,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     eventService,
     attachmentService,
     searchService,
+    conversationService,
     s3Config,
   } = deps
 
@@ -56,6 +60,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ searchService })
   const emoji = createEmojiHandlers()
+  const conversation = createConversationHandlers({ conversationService, streamService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -130,6 +135,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/attachments", ...authed, upload, attachment.upload)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
+
+  // Conversations
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/conversations", ...authed, conversation.listByStream)
+  app.get("/api/workspaces/:workspaceId/conversations/:conversationId", ...authed, conversation.getById)
 
   app.use(errorHandler)
 }

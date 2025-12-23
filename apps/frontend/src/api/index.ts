@@ -10,3 +10,4 @@ export {
   type SearchResultItem,
   type SearchResponse,
 } from "./search"
+export { conversationsApi, type ListConversationsParams } from "./conversations"

@@ -73,3 +73,13 @@ export type StorageProvider = (typeof STORAGE_PROVIDERS)[number]
 // Attachment processing status
 export const PROCESSING_STATUSES = ["pending", "processing", "completed", "failed"] as const
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number]
+
+// Conversation status
+export const CONVERSATION_STATUSES = ["active", "stalled", "resolved"] as const
+export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number]
+
+export const ConversationStatuses = {
+  ACTIVE: "active",
+  STALLED: "stalled",
+  RESOLVED: "resolved",
+} as const satisfies Record<string, ConversationStatus>

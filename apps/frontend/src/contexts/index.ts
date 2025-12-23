@@ -5,10 +5,12 @@ export {
   useWorkspaceService,
   useStreamService,
   useMessageService,
+  useConversationService,
   type Services,
   type WorkspaceService,
   type StreamService,
   type MessageService,
+  type ConversationService,
 } from "./services-context"
 export { SocketProvider, useSocket, useSocketConnected } from "./socket-context"
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
