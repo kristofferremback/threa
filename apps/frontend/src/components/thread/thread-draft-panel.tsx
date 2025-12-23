@@ -1,11 +1,15 @@
 import { useMemo, useCallback } from "react"
-import { X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
+import {
+  SidePanel,
+  SidePanelHeader,
+  SidePanelTitle,
+  SidePanelClose,
+  SidePanelContent,
+} from "@/components/ui/side-panel"
 import { useStreamService, useMessageService } from "@/contexts"
 import { useDraftComposer, useStreamBootstrap, getDraftMessageKey } from "@/hooks"
 import { MessageComposer } from "@/components/composer"
-import { EventItem } from "@/components/timeline"
+import { ThreadParentMessage } from "./thread-parent-message"
 import { StreamTypes } from "@threa/types"
 
 interface ThreadDraftPanelProps {
@@ -85,24 +89,20 @@ export function ThreadDraftPanel({
   }, [composer, streamService, workspaceId, parentStreamId, parentMessageId, messageService, onThreadCreated])
 
   return (
-    <div className="flex h-full flex-col border-l bg-background">
-      <header className="flex h-14 items-center justify-between border-b px-4">
-        <h2 className="font-semibold">New thread</h2>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </header>
-      <main className="flex flex-1 flex-col overflow-hidden">
+    <SidePanel>
+      <SidePanelHeader>
+        <SidePanelTitle>New thread</SidePanelTitle>
+        <SidePanelClose onClose={onClose} />
+      </SidePanelHeader>
+      <SidePanelContent className="flex flex-col">
         <div className="flex-1 overflow-y-auto">
-          {/* Parent message at the top */}
           {parentMessage && (
-            <div className="border-b">
-              <div className="p-4">
-                <EventItem event={parentMessage} workspaceId={workspaceId} streamId={parentStreamId} hideActions />
-              </div>
-              <Separator />
-              <div className="py-2 px-4 text-xs text-muted-foreground bg-muted/30">0 replies</div>
-            </div>
+            <ThreadParentMessage
+              event={parentMessage}
+              workspaceId={workspaceId}
+              streamId={parentStreamId}
+              replyCount={0}
+            />
           )}
         </div>
         <div className="p-4 border-t">
@@ -122,7 +122,7 @@ export function ThreadDraftPanel({
             placeholder="Write your reply..."
           />
         </div>
-      </main>
-    </div>
+      </SidePanelContent>
+    </SidePanel>
   )
 }
