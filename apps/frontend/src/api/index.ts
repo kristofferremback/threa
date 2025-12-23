@@ -3,3 +3,10 @@ export { workspacesApi, type WorkspaceBootstrap } from "./workspaces"
 export { streamsApi, type StreamBootstrap, type CreateStreamInput, type UpdateStreamInput } from "./streams"
 export { messagesApi, type CreateMessageInput, type UpdateMessageInput } from "./messages"
 export { attachmentsApi } from "./attachments"
+export {
+  searchMessages,
+  type SearchFilters,
+  type SearchRequest,
+  type SearchResultItem,
+  type SearchResponse,
+} from "./search"
