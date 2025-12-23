@@ -72,7 +72,7 @@ export async function startServer(): Promise<ServerInstance> {
   const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
 
   // Search and embedding services
-  const embeddingService = new EmbeddingService({ apiKey: config.ai.openRouterApiKey })
+  const embeddingService = new EmbeddingService({ openRouterApiKey: config.ai.openRouterApiKey })
   const searchService = new SearchService({ pool, embeddingService })
 
   const app = createApp()

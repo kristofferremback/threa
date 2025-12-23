@@ -16,16 +16,16 @@ interface EmbeddingResponse {
 }
 
 export interface EmbeddingServiceConfig {
-  apiKey: string
+  openRouterApiKey: string
   model?: string
 }
 
 export class EmbeddingService {
-  private apiKey: string
+  private openRouterApiKey: string
   private model: string
 
   constructor(config: EmbeddingServiceConfig) {
-    this.apiKey = config.apiKey
+    this.openRouterApiKey = config.openRouterApiKey
     this.model = config.model ?? DEFAULT_MODEL
   }
 
@@ -49,7 +49,7 @@ export class EmbeddingService {
       const response = await fetch(OPENROUTER_EMBEDDINGS_URL, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.openRouterApiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "https://threa.app",
           "X-Title": "Threa",
