@@ -13,10 +13,10 @@ export function WorkspaceLayout() {
   // Subscribe to workspace-level socket events (stream create/update/archive)
   useSocketEvents(workspaceId ?? "")
 
-  // Keyboard shortcut to open search (Cmd+K or Ctrl+K)
+  // Keyboard shortcut to open search (Cmd+P or Ctrl+P)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault()
         setSearchOpen(true)
       }

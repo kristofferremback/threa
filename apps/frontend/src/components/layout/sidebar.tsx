@@ -73,9 +73,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           className="h-8 w-8"
           onClick={() => {
             // Dispatch keyboard event to trigger search
-            document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
           }}
-          title="Search (⌘K)"
+          title="Search (⌘P)"
         >
           <Search className="h-4 w-4" />
         </Button>
