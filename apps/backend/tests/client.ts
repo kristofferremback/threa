@@ -483,3 +483,33 @@ export async function joinStream(client: TestClient, workspaceId: string, stream
   }
   return data.member
 }
+
+export interface SearchResult {
+  id: string
+  streamId: string
+  content: string
+  authorId: string
+  authorType: string
+  createdAt: string
+  rank: number
+}
+
+export async function search(
+  client: TestClient,
+  workspaceId: string,
+  query: string,
+  limit?: number
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query })
+  if (limit !== undefined) {
+    params.set("limit", String(limit))
+  }
+
+  const { status, data } = await client.get<{ results: SearchResult[]; total: number }>(
+    `/api/workspaces/${workspaceId}/search?${params.toString()}`
+  )
+  if (status !== 200) {
+    throw new Error(`Search failed: ${JSON.stringify(data)}`)
+  }
+  return data.results
+}

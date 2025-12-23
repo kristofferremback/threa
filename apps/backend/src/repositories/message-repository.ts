@@ -252,6 +252,19 @@ export const MessageRepository = {
   },
 
   /**
+   * Update the embedding for a message.
+   * Used by the embedding worker after generating embeddings.
+   */
+  async updateEmbedding(client: PoolClient, id: string, embedding: number[]): Promise<void> {
+    const embeddingLiteral = `[${embedding.join(",")}]`
+    await client.query(sql`
+      UPDATE messages
+      SET embedding = ${embeddingLiteral}::vector
+      WHERE id = ${id}
+    `)
+  },
+
+  /**
    * List messages since a given sequence number.
    * Used by agents to check for new messages during their loop.
    */

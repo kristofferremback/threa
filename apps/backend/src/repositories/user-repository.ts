@@ -91,4 +91,19 @@ export const UserRepository = {
     `)
     return mapRowToUser(result.rows[0])
   },
+
+  /**
+   * Find a user by partial match on email or name.
+   * Used for search filters like from:@jane which might match "jane@example.com" or "Jane Doe"
+   */
+  async findByEmailOrDisplayName(client: PoolClient, query: string): Promise<User | null> {
+    const pattern = `%${query.toLowerCase()}%`
+    const result = await client.query<UserRow>(sql`
+      SELECT id, email, name, workos_user_id, timezone, locale, created_at, updated_at
+      FROM users
+      WHERE LOWER(email) LIKE ${pattern} OR LOWER(name) LIKE ${pattern}
+      LIMIT 1
+    `)
+    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
+  },
 }

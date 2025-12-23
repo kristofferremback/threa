@@ -7,6 +7,7 @@ import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
 import { createAttachmentHandlers } from "./handlers/attachment-handlers"
+import { createSearchHandlers } from "./handlers/search-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -15,6 +16,7 @@ import type { WorkspaceService } from "./services/workspace-service"
 import type { StreamService } from "./services/stream-service"
 import type { EventService } from "./services/event-service"
 import type { AttachmentService } from "./services/attachment-service"
+import type { SearchService } from "./services/search-service"
 import type { S3Config } from "./lib/env"
 
 interface Dependencies {
@@ -24,11 +26,21 @@ interface Dependencies {
   streamService: StreamService
   eventService: EventService
   attachmentService: AttachmentService
+  searchService: SearchService
   s3Config: S3Config
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
-  const { authService, userService, workspaceService, streamService, eventService, attachmentService, s3Config } = deps
+  const {
+    authService,
+    userService,
+    workspaceService,
+    streamService,
+    eventService,
+    attachmentService,
+    searchService,
+    s3Config,
+  } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
   const workspaceMember = createWorkspaceMemberMiddleware({ workspaceService })
@@ -41,6 +53,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
+  const search = createSearchHandlers({ searchService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -100,6 +113,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
 
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
+
+  // Search
+  app.get("/api/workspaces/:workspaceId/search", ...authed, search.search)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)

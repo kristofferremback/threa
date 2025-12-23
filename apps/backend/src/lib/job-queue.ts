@@ -20,6 +20,7 @@ import { logger } from "./logger"
 export const JobQueues = {
   COMPANION_RESPOND: "companion.respond",
   NAMING_GENERATE: "naming.generate",
+  EMBEDDING_GENERATE: "embedding.generate",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -34,10 +35,15 @@ export interface NamingJobData {
   streamId: string
 }
 
+export interface EmbeddingJobData {
+  messageId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.COMPANION_RESPOND]: CompanionJobData
   [JobQueues.NAMING_GENERATE]: NamingJobData
+  [JobQueues.EMBEDDING_GENERATE]: EmbeddingJobData
 }
 
 // Dead letter queue suffix - jobs that exhaust retries go here
