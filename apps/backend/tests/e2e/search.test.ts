@@ -186,7 +186,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(clientB, workspace.id, channel.id, `User B says ${keyword}`)
 
       // Search for messages from User A only - pass user ID directly
-      const results = await search(clientA, workspace.id, { query: keyword, from: [userA.id] })
+      const results = await search(clientA, workspace.id, { query: keyword, from: userA.id })
 
       expect(results.length).toBe(1)
       expect(results[0].authorId).toBe(userA.id)
@@ -283,6 +283,45 @@ describe("Search E2E Tests", () => {
       expect(results.length).toBe(2)
       // Results should have rank property
       expect(results[0]).toHaveProperty("rank")
+    })
+
+    test("should treat after filter as inclusive (>=)", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("afterinc"), "After Inclusive Test")
+      const workspace = await createWorkspace(client, `AfterInc WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      // Send a message and capture its creation time
+      const keyword = `chimera${testRunId}`
+      const msgResult = await sendMessage(client, workspace.id, scratchpad.id, `Test ${keyword} message`)
+
+      // Search with after set to exactly the message's creation time - should include it (inclusive)
+      const results = await search(client, workspace.id, {
+        query: keyword,
+        after: msgResult.createdAt,
+      })
+
+      expect(results.length).toBe(1)
+      expect(results[0].id).toBe(msgResult.id)
+    })
+
+    test("should treat before filter as exclusive (<)", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("beforeexc"), "Before Exclusive Test")
+      const workspace = await createWorkspace(client, `BeforeExc WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      // Send a message and capture its creation time
+      const keyword = `manticore${testRunId}`
+      const msgResult = await sendMessage(client, workspace.id, scratchpad.id, `Test ${keyword} message`)
+
+      // Search with before set to exactly the message's creation time - should NOT include it (exclusive)
+      const results = await search(client, workspace.id, {
+        query: keyword,
+        before: msgResult.createdAt,
+      })
+
+      expect(results.length).toBe(0)
     })
   })
 })

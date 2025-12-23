@@ -13,12 +13,12 @@ import type { StreamType } from "@threa/types"
  * All lookups (username to ID, etc.) happen client-side.
  */
 export interface SearchFilters {
-  authorIds?: string[]
-  withUserIds?: string[]
-  streamIds?: string[]
-  streamTypes?: StreamType[]
-  before?: Date
-  after?: Date
+  authorId?: string // Single author (from:@user)
+  withUserIds?: string[] // Multiple users, AND logic (with:@user)
+  streamIds?: string[] // Stream IDs (in:#channel)
+  streamTypes?: StreamType[] // Stream types, OR logic (is:type)
+  before?: Date // Exclusive (<)
+  after?: Date // Inclusive (>=)
 }
 
 export interface SearchParams {
@@ -67,7 +67,7 @@ export class SearchService {
 
       // 2. Map client filters to repository filters
       const repoFilters: ResolvedFilters = {
-        authorIds: filters.authorIds,
+        authorId: filters.authorId,
         streamTypes: filters.streamTypes,
         before: filters.before,
         after: filters.after,

@@ -39,10 +39,10 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
  * All user-provided strings have been resolved to safe IDs or validated values.
  */
 export interface ResolvedFilters {
-  authorIds?: string[] // Resolved from from:@user
-  streamTypes?: StreamType[] // Validated against STREAM_TYPES
-  before?: Date
-  after?: Date
+  authorId?: string // Single author (from:@user)
+  streamTypes?: StreamType[] // Stream types, OR logic (is:type)
+  before?: Date // Exclusive (<)
+  after?: Date // Inclusive (>=)
 }
 
 export interface FullTextSearchParams {
@@ -87,10 +87,10 @@ export const SearchRepository = {
         JOIN streams s ON m.stream_id = s.id
         WHERE m.stream_id = ANY(${streamIds})
           AND m.deleted_at IS NULL
-          AND (${filters.authorIds === undefined || filters.authorIds.length === 0} OR m.author_id = ANY(${filters.authorIds ?? []}))
+          AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
           AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
           AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
-          AND (${filters.after === undefined} OR m.created_at > ${filters.after ?? new Date(0)})
+          AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
         ORDER BY m.created_at DESC
         LIMIT ${limit}
       `)
@@ -111,10 +111,10 @@ export const SearchRepository = {
       WHERE m.stream_id = ANY(${streamIds})
         AND m.deleted_at IS NULL
         AND m.search_vector @@ plainto_tsquery('english', ${query})
-        AND (${filters.authorIds === undefined || filters.authorIds.length === 0} OR m.author_id = ANY(${filters.authorIds ?? []}))
+        AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
         AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
         AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
-        AND (${filters.after === undefined} OR m.created_at > ${filters.after ?? new Date(0)})
+        AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
       ORDER BY rank DESC
       LIMIT ${limit}
     `)
@@ -150,10 +150,10 @@ export const SearchRepository = {
       WHERE m.stream_id = ANY(${streamIds})
         AND m.deleted_at IS NULL
         AND m.embedding IS NOT NULL
-        AND (${filters.authorIds === undefined || filters.authorIds.length === 0} OR m.author_id = ANY(${filters.authorIds ?? []}))
+        AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
         AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
         AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
-        AND (${filters.after === undefined} OR m.created_at > ${filters.after ?? new Date(0)})
+        AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
       ORDER BY m.embedding <=> ${embeddingLiteral}::vector
       LIMIT ${limit}
     `)

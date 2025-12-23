@@ -142,6 +142,7 @@ export interface Message {
   authorId: string
   reactions: Record<string, string[]>
   streamId: string
+  createdAt: string
 }
 
 export interface StreamEvent {
@@ -496,12 +497,12 @@ export interface SearchResult {
 
 export interface SearchParams {
   query?: string
-  from?: string[]
-  with?: string[]
-  in?: string[]
-  is?: ("scratchpad" | "channel" | "dm" | "thread")[]
-  before?: string
-  after?: string
+  from?: string // Single author ID
+  with?: string[] // User IDs (AND logic)
+  in?: string[] // Stream IDs
+  is?: ("scratchpad" | "channel" | "dm" | "thread")[] // Stream types (OR logic)
+  before?: string // Exclusive (<)
+  after?: string // Inclusive (>=)
   limit?: number
 }
 

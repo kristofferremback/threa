@@ -6,12 +6,12 @@ import { STREAM_TYPES } from "@threa/types"
 
 const searchQuerySchema = z.object({
   query: z.string().optional().default(""),
-  from: z.array(z.string()).optional(),
-  with: z.array(z.string()).optional(),
-  in: z.array(z.string()).optional(),
-  is: z.array(z.enum(STREAM_TYPES)).optional(),
-  before: z.string().datetime().optional(),
-  after: z.string().datetime().optional(),
+  from: z.string().optional(), // Single author ID
+  with: z.array(z.string()).optional(), // User IDs (AND logic)
+  in: z.array(z.string()).optional(), // Stream IDs
+  is: z.array(z.enum(STREAM_TYPES)).optional(), // Stream types (OR logic)
+  before: z.string().datetime().optional(), // Exclusive (<)
+  after: z.string().datetime().optional(), // Inclusive (>=)
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
@@ -67,7 +67,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         userId,
         query,
         filters: {
-          authorIds: from,
+          authorId: from,
           withUserIds: withUsers,
           streamIds: inStreams,
           streamTypes: is,
