@@ -135,13 +135,19 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
 }
 
 // Conversation event payloads
+// Include staleness fields for real-time updates (frontend expects ConversationWithStaleness)
+export interface ConversationWithStaleness extends Conversation {
+  temporalStaleness: number
+  effectiveCompleteness: number
+}
+
 export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
-  conversation: Conversation
+  conversation: ConversationWithStaleness
 }
 
 export interface ConversationUpdatedOutboxPayload extends StreamScopedPayload {
   conversationId: string
-  messageId: string
+  conversation: ConversationWithStaleness
 }
 
 /**

@@ -20,7 +20,7 @@ interface ConversationUpdatedPayload {
   workspaceId: string
   streamId: string
   conversationId: string
-  changes: Partial<ConversationWithStaleness>
+  conversation: ConversationWithStaleness
 }
 
 interface UseConversationsOptions {
@@ -70,7 +70,7 @@ export function useConversations(workspaceId: string, streamId: string, options?
         conversationKeys.list(workspaceId, streamId),
         (old: ConversationWithStaleness[] | undefined) => {
           if (!old) return old
-          return old.map((c) => (c.id === payload.conversationId ? { ...c, ...payload.changes } : c))
+          return old.map((c) => (c.id === payload.conversationId ? payload.conversation : c))
         }
       )
     }

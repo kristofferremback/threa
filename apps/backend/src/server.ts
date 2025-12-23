@@ -133,7 +133,7 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
 
   // Boundary extraction
-  const boundaryExtractor = new LLMBoundaryExtractor(providerRegistry, config.ai.namingModel)
+  const boundaryExtractor = new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)

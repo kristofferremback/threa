@@ -24,6 +24,10 @@ CREATE TABLE conversations (
     -- 1 = just started, 7 = fully resolved
     completeness_score INTEGER NOT NULL DEFAULT 1 CHECK (completeness_score BETWEEN 1 AND 7),
 
+    -- LLM confidence in the boundary extraction (0.0-1.0)
+    -- Useful for debugging and potentially for UI (e.g., showing uncertain boundaries differently)
+    confidence REAL NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0.0 AND 1.0),
+
     -- Conversation status
     status TEXT NOT NULL DEFAULT 'active',        -- 'active' | 'stalled' | 'resolved'
 

@@ -158,6 +158,7 @@ export interface Conversation {
   participantIds: string[]
   topicSummary: string | null
   completenessScore: number
+  confidence: number
   status: ConversationStatus
   parentConversationId: string | null
   lastActivityAt: string

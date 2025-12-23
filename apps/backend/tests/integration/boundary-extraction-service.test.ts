@@ -1,0 +1,440 @@
+/**
+ * Boundary Extraction Service Integration Tests
+ *
+ * Tests verify:
+ * 1. New message creates new conversation when extractor returns null conversationId
+ * 2. New message joins existing conversation when extractor returns existing ID
+ * 3. Completeness updates are applied to affected conversations
+ * 4. Outbox events are emitted for new and updated conversations
+ * 5. Participant is added to conversation
+ */
+
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
+import { Pool } from "pg"
+import { withTransaction } from "../../src/db"
+import { UserRepository } from "../../src/repositories/user-repository"
+import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
+import { StreamRepository } from "../../src/repositories/stream-repository"
+import { MessageRepository } from "../../src/repositories/message-repository"
+import { ConversationRepository } from "../../src/repositories/conversation-repository"
+import { OutboxRepository } from "../../src/repositories/outbox-repository"
+import { BoundaryExtractionService } from "../../src/services/boundary-extraction-service"
+import { setupTestDatabase } from "./setup"
+import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
+import { ConversationStatuses } from "@threa/types"
+import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "../../src/lib/boundary-extraction/types"
+
+/**
+ * Stub extractor that returns configurable results.
+ */
+class StubBoundaryExtractor implements BoundaryExtractor {
+  private nextResult: ExtractionResult = {
+    conversationId: null,
+    newConversationTopic: "Default topic",
+    confidence: 0.8,
+  }
+
+  setNextResult(result: ExtractionResult): void {
+    this.nextResult = result
+  }
+
+  async extract(_context: ExtractionContext): Promise<ExtractionResult> {
+    return this.nextResult
+  }
+}
+
+describe("BoundaryExtractionService", () => {
+  let pool: Pool
+  let service: BoundaryExtractionService
+  let stubExtractor: StubBoundaryExtractor
+  let testUserId: string
+  let testWorkspaceId: string
+  let testStreamId: string
+
+  beforeAll(async () => {
+    pool = await setupTestDatabase()
+
+    // Create shared test data
+    testUserId = userId()
+    testWorkspaceId = workspaceId()
+    testStreamId = streamId()
+
+    await withTransaction(pool, async (client) => {
+      await UserRepository.insert(client, {
+        id: testUserId,
+        email: `boundary-test-${testUserId}@test.com`,
+        name: "Test User",
+        workosUserId: `workos_${testUserId}`,
+      })
+      await WorkspaceRepository.insert(client, {
+        id: testWorkspaceId,
+        name: "Test Workspace",
+        slug: `test-ws-${testWorkspaceId}`,
+        createdBy: testUserId,
+      })
+      await WorkspaceRepository.addMember(client, testWorkspaceId, testUserId)
+      await StreamRepository.insert(client, {
+        id: testStreamId,
+        workspaceId: testWorkspaceId,
+        type: "scratchpad",
+        visibility: "private",
+        companionMode: "off",
+        createdBy: testUserId,
+      })
+    })
+
+    stubExtractor = new StubBoundaryExtractor()
+    service = new BoundaryExtractionService(pool, stubExtractor)
+  })
+
+  afterAll(async () => {
+    await pool.end()
+  })
+
+  beforeEach(() => {
+    // Reset extractor to default behavior
+    stubExtractor.setNextResult({
+      conversationId: null,
+      newConversationTopic: "Default topic",
+      confidence: 0.8,
+    })
+  })
+
+  describe("processMessage", () => {
+    test("creates new conversation when extractor returns null conversationId", async () => {
+      const msgId = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: testStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Starting a new topic",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: null,
+        newConversationTopic: "Starting a new topic",
+        confidence: 0.85,
+      })
+
+      const result = await service.processMessage(msgId, testStreamId, testWorkspaceId)
+
+      expect(result).not.toBeNull()
+      expect(result?.messageIds).toContain(msgId)
+      expect(result?.participantIds).toContain(testUserId)
+      expect(result?.topicSummary).toBe("Starting a new topic")
+      expect(result?.confidence).toBe(0.85)
+      expect(result?.status).toBe(ConversationStatuses.ACTIVE)
+    })
+
+    test("adds message to existing conversation when extractor returns conversationId", async () => {
+      const existingConvId = conversationId()
+      const msg1Id = messageId()
+      const msg2Id = messageId()
+
+      // Create existing conversation
+      await withTransaction(pool, async (client) => {
+        await MessageRepository.insert(client, {
+          id: msg1Id,
+          streamId: testStreamId,
+          sequence: BigInt(10),
+          authorId: testUserId,
+          authorType: "user",
+          content: "First message",
+        })
+
+        await ConversationRepository.insert(client, {
+          id: existingConvId,
+          streamId: testStreamId,
+          workspaceId: testWorkspaceId,
+          messageIds: [msg1Id],
+          participantIds: [testUserId],
+          topicSummary: "Existing conversation",
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg2Id,
+          streamId: testStreamId,
+          sequence: BigInt(11),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Continuation of topic",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: existingConvId,
+        confidence: 0.9,
+      })
+
+      const result = await service.processMessage(msg2Id, testStreamId, testWorkspaceId)
+
+      expect(result).not.toBeNull()
+      expect(result?.id).toBe(existingConvId)
+      expect(result?.messageIds).toContain(msg1Id)
+      expect(result?.messageIds).toContain(msg2Id)
+    })
+
+    test("applies completeness updates to other conversations", async () => {
+      const conv1Id = conversationId()
+      const conv2Id = conversationId()
+      const msg1Id = messageId()
+      const msg2Id = messageId()
+      const msg3Id = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await MessageRepository.insert(client, {
+          id: msg1Id,
+          streamId: testStreamId,
+          sequence: BigInt(20),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Question about X",
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg2Id,
+          streamId: testStreamId,
+          sequence: BigInt(21),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Working on Y",
+        })
+
+        await ConversationRepository.insert(client, {
+          id: conv1Id,
+          streamId: testStreamId,
+          workspaceId: testWorkspaceId,
+          messageIds: [msg1Id],
+          completenessScore: 2,
+          status: ConversationStatuses.ACTIVE,
+        })
+
+        await ConversationRepository.insert(client, {
+          id: conv2Id,
+          streamId: testStreamId,
+          workspaceId: testWorkspaceId,
+          messageIds: [msg2Id],
+          completenessScore: 3,
+          status: ConversationStatuses.ACTIVE,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg3Id,
+          streamId: testStreamId,
+          sequence: BigInt(22),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Answer to X",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: conv1Id,
+        confidence: 0.95,
+        completenessUpdates: [{ conversationId: conv1Id, score: 6, status: ConversationStatuses.RESOLVED }],
+      })
+
+      await service.processMessage(msg3Id, testStreamId, testWorkspaceId)
+
+      // Check that conv1 was updated
+      const updatedConv = await withTransaction(pool, async (client) => {
+        return ConversationRepository.findById(client, conv1Id)
+      })
+
+      expect(updatedConv?.completenessScore).toBe(6)
+      expect(updatedConv?.status).toBe(ConversationStatuses.RESOLVED)
+    })
+
+    test("emits conversation:created outbox event for new conversation", async () => {
+      const msgId = messageId()
+      const localStreamId = streamId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "New conversation starter",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: null,
+        newConversationTopic: "New conversation starter",
+        confidence: 0.75,
+      })
+
+      const result = await service.processMessage(msgId, localStreamId, testWorkspaceId)
+
+      // Check outbox for the event
+      const outboxEvents = await withTransaction(pool, async (client) => {
+        const res = await client.query(
+          `SELECT * FROM outbox WHERE event_type = 'conversation:created' ORDER BY created_at DESC LIMIT 1`
+        )
+        return res.rows
+      })
+
+      expect(outboxEvents.length).toBeGreaterThan(0)
+      const payload = outboxEvents[0].payload
+      expect(payload.streamId).toBe(localStreamId)
+      expect(payload.conversation.id).toBe(result?.id)
+      // Staleness fields should be present
+      expect(typeof payload.conversation.temporalStaleness).toBe("number")
+      expect(typeof payload.conversation.effectiveCompleteness).toBe("number")
+    })
+
+    test("emits conversation:updated outbox event for existing conversation", async () => {
+      const existingConvId = conversationId()
+      const localStreamId = streamId()
+      const msg1Id = messageId()
+      const msg2Id = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg1Id,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "First message",
+        })
+
+        await ConversationRepository.insert(client, {
+          id: existingConvId,
+          streamId: localStreamId,
+          workspaceId: testWorkspaceId,
+          messageIds: [msg1Id],
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg2Id,
+          streamId: localStreamId,
+          sequence: BigInt(2),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Second message",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: existingConvId,
+        confidence: 0.9,
+      })
+
+      await service.processMessage(msg2Id, localStreamId, testWorkspaceId)
+
+      // Check outbox for the event
+      const outboxEvents = await withTransaction(pool, async (client) => {
+        const res = await client.query(
+          `SELECT * FROM outbox WHERE event_type = 'conversation:updated' ORDER BY created_at DESC LIMIT 1`
+        )
+        return res.rows
+      })
+
+      expect(outboxEvents.length).toBeGreaterThan(0)
+      const payload = outboxEvents[0].payload
+      expect(payload.conversationId).toBe(existingConvId)
+      expect(payload.conversation.messageIds).toContain(msg2Id)
+    })
+
+    test("returns null for non-existent message", async () => {
+      const result = await service.processMessage("msg_nonexistent", testStreamId, testWorkspaceId)
+      expect(result).toBeNull()
+    })
+
+    test("returns null for non-existent stream", async () => {
+      const msgId = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: testStreamId,
+          sequence: BigInt(100),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Test message",
+        })
+      })
+
+      const result = await service.processMessage(msgId, "stream_nonexistent", testWorkspaceId)
+      expect(result).toBeNull()
+    })
+
+    test("adds new participant when different user messages", async () => {
+      const existingConvId = conversationId()
+      const user2Id = userId()
+      const msg1Id = messageId()
+      const msg2Id = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: user2Id,
+          email: `boundary-test-user2-${user2Id}@test.com`,
+          name: "Second User",
+          workosUserId: `workos_${user2Id}`,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg1Id,
+          streamId: testStreamId,
+          sequence: BigInt(50),
+          authorId: testUserId,
+          authorType: "user",
+          content: "User 1 message",
+        })
+
+        await ConversationRepository.insert(client, {
+          id: existingConvId,
+          streamId: testStreamId,
+          workspaceId: testWorkspaceId,
+          messageIds: [msg1Id],
+          participantIds: [testUserId],
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg2Id,
+          streamId: testStreamId,
+          sequence: BigInt(51),
+          authorId: user2Id,
+          authorType: "user",
+          content: "User 2 reply",
+        })
+      })
+
+      stubExtractor.setNextResult({
+        conversationId: existingConvId,
+        confidence: 0.9,
+      })
+
+      const result = await service.processMessage(msg2Id, testStreamId, testWorkspaceId)
+
+      expect(result?.participantIds).toContain(testUserId)
+      expect(result?.participantIds).toContain(user2Id)
+    })
+  })
+})

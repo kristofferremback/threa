@@ -33,6 +33,13 @@ export function createBoundaryExtractionListener(
 
       const payload = outboxEvent.payload as MessageCreatedOutboxPayload
       const { event, streamId, workspaceId } = payload
+
+      // Skip events with missing or malformed payload (e.g., old events from before this feature)
+      if (!event || !event.payload) {
+        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing payload")
+        return
+      }
+
       const eventPayload = event.payload as MessageCreatedEventPayload
 
       if (event.actorType !== AuthorTypes.USER) {
