@@ -1,7 +1,6 @@
-import { useRef, useEffect, useCallback } from "react"
 import { useParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { useEvents, useStreamSocket } from "@/hooks"
+import { useEvents, useStreamSocket, useScrollBehavior } from "@/hooks"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
@@ -12,8 +11,6 @@ interface TimelineViewProps {
 
 export function TimelineView({ isDraft = false }: TimelineViewProps) {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const shouldAutoScroll = useRef(true)
 
   // Subscribe to stream room FIRST (subscribe-then-bootstrap pattern)
   useStreamSocket(workspaceId!, streamId!, { enabled: !isDraft })
@@ -24,34 +21,12 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
     { enabled: !isDraft }
   )
 
-  // Auto-scroll to bottom when new events arrive
-  const scrollToBottom = useCallback(() => {
-    if (scrollContainerRef.current && shouldAutoScroll.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
-    }
-  }, [])
-
-  // Initial scroll to bottom
-  useEffect(() => {
-    if (!isLoading && events.length > 0) {
-      scrollToBottom()
-    }
-  }, [isLoading, events.length, scrollToBottom])
-
-  // Track if user has scrolled away from bottom
-  const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current) return
-
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
-
-    shouldAutoScroll.current = isNearBottom
-
-    // Load older events when scrolling near top
-    if (scrollTop < 100 && hasOlderEvents && !isFetchingOlder) {
-      fetchOlderEvents()
-    }
-  }, [hasOlderEvents, isFetchingOlder, fetchOlderEvents])
+  const { scrollContainerRef, handleScroll } = useScrollBehavior({
+    isLoading,
+    itemCount: events.length,
+    onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
+    isFetchingMore: isFetchingOlder,
+  })
 
   if (!workspaceId || !streamId) {
     return null

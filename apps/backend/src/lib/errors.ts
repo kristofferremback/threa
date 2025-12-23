@@ -35,3 +35,13 @@ export class StreamNotFoundError extends HttpError {
     this.name = "StreamNotFoundError"
   }
 }
+
+export class MessageNotFoundError extends HttpError {
+  constructor() {
+    super("Message not found", {
+      status: 404,
+      code: "MESSAGE_NOT_FOUND",
+    })
+    this.name = "MessageNotFoundError"
+  }
+}

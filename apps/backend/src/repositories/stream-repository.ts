@@ -261,4 +261,64 @@ export const StreamRepository = {
     `)
     return result.rows.length > 0
   },
+
+  async findByParentMessage(
+    client: PoolClient,
+    parentStreamId: string,
+    parentMessageId: string
+  ): Promise<Stream | null> {
+    const result = await client.query<StreamRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+      WHERE parent_stream_id = ${parentStreamId}
+        AND parent_message_id = ${parentMessageId}
+    `)
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
+  /**
+   * Find all threads for messages in a given parent stream.
+   * Returns a map of parentMessageId -> threadStreamId
+   */
+  async findThreadsForMessages(client: PoolClient, parentStreamId: string): Promise<Map<string, string>> {
+    const result = await client.query<{ parent_message_id: string; id: string }>(sql`
+      SELECT parent_message_id, id FROM streams
+      WHERE parent_stream_id = ${parentStreamId}
+        AND parent_message_id IS NOT NULL
+    `)
+    const map = new Map<string, string>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, row.id)
+    }
+    return map
+  },
+
+  /**
+   * Find all threads for messages in a given parent stream, including reply counts.
+   * Returns a map of parentMessageId -> { threadId, replyCount }
+   * This combines findThreadsForMessages + countMessagesByStreams in a single query.
+   */
+  async findThreadsWithReplyCounts(
+    client: PoolClient,
+    parentStreamId: string
+  ): Promise<Map<string, { threadId: string; replyCount: number }>> {
+    const result = await client.query<{ parent_message_id: string; id: string; reply_count: string }>(sql`
+      SELECT
+        s.parent_message_id,
+        s.id,
+        COUNT(e.id)::text AS reply_count
+      FROM streams s
+      LEFT JOIN stream_events e ON e.stream_id = s.id AND e.event_type = 'message_created'
+      WHERE s.parent_stream_id = ${parentStreamId}
+        AND s.parent_message_id IS NOT NULL
+      GROUP BY s.id, s.parent_message_id
+    `)
+    const map = new Map<string, { threadId: string; replyCount: number }>()
+    for (const row of result.rows) {
+      map.set(row.parent_message_id, {
+        threadId: row.id,
+        replyCount: parseInt(row.reply_count, 10),
+      })
+    }
+    return map
+  },
 }

@@ -7,6 +7,7 @@ import { useStreamService, useMessageService, usePendingMessages } from "@/conte
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
+import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import type { StreamType, CompanionMode, ContentFormat, StreamEvent } from "@threa/types"
 import { StreamTypes } from "@threa/types"
 
@@ -33,6 +34,8 @@ export interface SendMessageInput {
   content: string
   contentFormat: ContentFormat
   attachmentIds?: string[]
+  /** Full attachment info for optimistic UI - required when attachmentIds is provided */
+  attachments?: AttachmentSummary[]
 }
 
 export interface UseStreamOrDraftReturn {
@@ -42,7 +45,7 @@ export interface UseStreamOrDraftReturn {
 
   rename: (newName: string) => Promise<void>
   archive: () => Promise<void>
-  sendMessage: (input: SendMessageInput) => Promise<{ navigateTo?: string }>
+  sendMessage: (input: SendMessageInput) => Promise<{ navigateTo?: string; replace?: boolean }>
 }
 
 /**
@@ -80,7 +83,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
   }, [streamId, workspaceId, navigate])
 
   const sendMessage = useCallback(
-    async (input: SendMessageInput): Promise<{ navigateTo?: string }> => {
+    async (input: SendMessageInput): Promise<{ navigateTo?: string; replace?: boolean }> => {
       // Promote draft to real stream
       const draftData = await db.draftScratchpads.get(streamId)
       const companionMode = draftData?.companionMode ?? "on"
@@ -91,7 +94,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         companionMode,
       })
 
-      await messageService.create(workspaceId, newStream.id, {
+      const message = await messageService.create(workspaceId, newStream.id, {
         streamId: newStream.id,
         content: input.content,
         contentFormat: input.contentFormat,
@@ -100,9 +103,21 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
 
       await db.draftScratchpads.delete(streamId)
 
+      // Pre-populate the new stream's cache so navigation is instant
+      queryClient.setQueryData(
+        streamKeys.bootstrap(workspaceId, newStream.id),
+        createOptimisticBootstrap({
+          stream: newStream,
+          message,
+          content: input.content,
+          contentFormat: input.contentFormat,
+          attachments: input.attachments,
+        })
+      )
+
       queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
 
-      return { navigateTo: `/w/${workspaceId}/s/${newStream.id}` }
+      return { navigateTo: `/w/${workspaceId}/s/${newStream.id}`, replace: true }
     },
     [streamId, workspaceId, streamService, messageService, queryClient]
   )

@@ -1,6 +1,7 @@
 import { Outlet, useParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
+import { PanelProvider } from "@/contexts"
 import { useSocketEvents } from "@/hooks"
 
 export function WorkspaceLayout() {
@@ -14,8 +15,10 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-      <Outlet />
-    </AppShell>
+    <PanelProvider>
+      <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+        <Outlet />
+      </AppShell>
+    </PanelProvider>
   )
 }

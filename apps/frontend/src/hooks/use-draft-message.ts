@@ -16,10 +16,14 @@ export function getDraftMessageKey(
 
 const DEBOUNCE_MS = 500
 
+// Sentinel value to distinguish "loading" from "loaded but not found"
+const LOADING = Symbol("loading")
+
 export function useDraftMessage(workspaceId: string, draftKey: string) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], undefined)
+  // Use LOADING sentinel as initial value so we can tell when Dexie has finished loading
+  const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], LOADING as unknown)
 
   const saveDraft = useCallback(
     async (content: string, attachments?: DraftAttachment[]) => {
@@ -134,9 +138,17 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
     }
   }, [])
 
+  // Check if we're still loading (draft is the LOADING sentinel)
+  const isLoading = draft === LOADING
+  const resolvedDraft = isLoading
+    ? undefined
+    : (draft as { content?: string; attachments?: DraftAttachment[] } | undefined)
+
   return {
-    content: draft?.content ?? "",
-    attachments: draft?.attachments ?? [],
+    /** Whether Dexie has finished loading the draft (true even if no draft exists) */
+    isLoaded: !isLoading,
+    content: resolvedDraft?.content ?? "",
+    attachments: resolvedDraft?.attachments ?? [],
     saveDraft,
     saveDraftDebounced,
     addAttachment,

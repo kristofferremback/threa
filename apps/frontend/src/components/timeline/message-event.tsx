@@ -1,24 +1,31 @@
 import type { ReactNode } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
+import { Link } from "react-router-dom"
+import { MessageSquareReply } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { usePendingMessages } from "@/contexts"
+import { usePendingMessages, usePanel } from "@/contexts"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
+import { ThreadIndicator } from "./thread-indicator"
 
 interface MessagePayload {
   messageId: string
   content: string
   contentFormat?: "markdown" | "plaintext"
   attachments?: AttachmentSummary[]
+  replyCount?: number
+  threadId?: string
 }
 
 interface MessageEventProps {
   event: StreamEvent
   workspaceId: string
   streamId: string
+  /** Hide action buttons and thread footer - used when showing parent message in thread view */
+  hideActions?: boolean
 }
 
 interface MessageLayoutProps {
@@ -27,6 +34,7 @@ interface MessageLayoutProps {
   workspaceId: string
   statusIndicator: ReactNode
   actions?: ReactNode
+  footer?: ReactNode
   containerClassName?: string
 }
 
@@ -36,6 +44,7 @@ function MessageLayout({
   workspaceId,
   statusIndicator,
   actions,
+  footer,
   containerClassName,
 }: MessageLayoutProps) {
   const isPersona = event.actorType === "persona"
@@ -51,12 +60,13 @@ function MessageLayout({
         <div className="flex items-baseline gap-2">
           <span className="font-medium text-sm">{isPersona ? "AI Companion" : formatActorId(event.actorId)}</span>
           {statusIndicator}
+          {actions}
         </div>
         <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
         {payload.attachments && payload.attachments.length > 0 && (
           <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
         )}
-        {actions}
+        {footer}
       </div>
     </div>
   )
@@ -66,15 +76,64 @@ interface MessageEventInnerProps {
   event: StreamEvent
   payload: MessagePayload
   workspaceId: string
+  streamId: string
+  hideActions?: boolean
 }
 
-function SentMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
+function SentMessageEvent({ event, payload, workspaceId, streamId, hideActions }: MessageEventInnerProps) {
+  const { openPanels, getPanelUrl, openThreadDraft } = usePanel()
+  const replyCount = payload.replyCount ?? 0
+  const threadId = payload.threadId
+
+  // Don't show reply button if we're viewing this message as the thread parent
+  const isParentOfCurrentThread = openPanels.some((p) => p.streamId === threadId)
+
+  const handleReplyClick = () => {
+    // Only used when no thread exists yet - opens draft UI
+    openThreadDraft(streamId, payload.messageId)
+  }
+
+  // Thread link or "Reply in thread" text (hidden when hideActions is true)
+  const threadFooter =
+    !hideActions && threadId ? (
+      replyCount > 0 ? (
+        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} className="mt-1" />
+      ) : (
+        <Link
+          to={getPanelUrl(threadId)}
+          className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          Reply in thread
+        </Link>
+      )
+    ) : null
+
   return (
     <MessageLayout
       event={event}
       payload={payload}
       workspaceId={workspaceId}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
+      actions={
+        !hideActions &&
+        !isParentOfCurrentThread && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
+            {threadId ? (
+              <Link
+                to={getPanelUrl(threadId)}
+                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
+              >
+                <MessageSquareReply className="h-4 w-4" />
+              </Link>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={handleReplyClick}>
+                <MessageSquareReply className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )
+      }
+      footer={threadFooter}
     />
   )
 }
@@ -112,18 +171,26 @@ function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerPr
   )
 }
 
-export function MessageEvent({ event, workspaceId }: MessageEventProps) {
+export function MessageEvent({ event, workspaceId, streamId, hideActions }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
   const status = getStatus(event.id)
 
   switch (status) {
     case "pending":
-      return <PendingMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
+      return <PendingMessageEvent event={event} payload={payload} workspaceId={workspaceId} streamId={streamId} />
     case "failed":
-      return <FailedMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
+      return <FailedMessageEvent event={event} payload={payload} workspaceId={workspaceId} streamId={streamId} />
     default:
-      return <SentMessageEvent event={event} payload={payload} workspaceId={workspaceId} />
+      return (
+        <SentMessageEvent
+          event={event}
+          payload={payload}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          hideActions={hideActions}
+        />
+      )
   }
 }
 

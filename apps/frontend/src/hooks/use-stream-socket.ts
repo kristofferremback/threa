@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
-import type { StreamEvent } from "@threa/types"
+import type { StreamEvent, Stream } from "@threa/types"
 
 interface MessageEventPayload {
   workspaceId: string
@@ -23,6 +23,21 @@ interface ReactionPayload {
   messageId: string
   emoji: string
   userId: string
+}
+
+interface StreamCreatedPayload {
+  workspaceId: string
+  streamId: string
+  stream: Stream
+}
+
+interface MessageUpdatedPayload {
+  workspaceId: string
+  streamId: string
+  messageId: string
+  updateType: "reply_count" | "content"
+  replyCount?: number
+  content?: string
 }
 
 interface StreamBootstrap {
@@ -170,11 +185,63 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       })
     }
 
+    // Handle thread creation - update parent message with threadId reference
+    const handleStreamCreated = (payload: StreamCreatedPayload) => {
+      // Only handle if it's a thread in THIS stream
+      if (payload.streamId !== streamId) return
+      const stream = payload.stream
+      if (!stream.parentMessageId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        return {
+          ...bootstrap,
+          events: bootstrap.events.map((e) => {
+            if (e.eventType !== "message_created") return e
+            const eventPayload = e.payload as { messageId: string; threadId?: string }
+            if (eventPayload.messageId !== stream.parentMessageId) return e
+            // Add threadId to the message payload
+            return { ...e, payload: { ...eventPayload, threadId: stream.id } }
+          }),
+        }
+      })
+    }
+
+    // Handle message updates (reply count changes, content edits)
+    const handleMessageUpdated = (payload: MessageUpdatedPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        return {
+          ...bootstrap,
+          events: bootstrap.events.map((e) => {
+            if (e.eventType !== "message_created") return e
+            const eventPayload = e.payload as { messageId: string; replyCount?: number; content?: string }
+            if (eventPayload.messageId !== payload.messageId) return e
+
+            // Only update the field specified by updateType
+            if (payload.updateType === "reply_count" && payload.replyCount !== undefined) {
+              return { ...e, payload: { ...eventPayload, replyCount: payload.replyCount } }
+            }
+            if (payload.updateType === "content" && payload.content !== undefined) {
+              return { ...e, payload: { ...eventPayload, content: payload.content } }
+            }
+            return e
+          }),
+        }
+      })
+    }
+
     socket.on("message:created", handleMessageCreated)
     socket.on("message:edited", handleMessageEdited)
     socket.on("message:deleted", handleMessageDeleted)
     socket.on("reaction:added", handleReactionAdded)
     socket.on("reaction:removed", handleReactionRemoved)
+    socket.on("stream:created", handleStreamCreated)
+    socket.on("message:updated", handleMessageUpdated)
 
     return () => {
       socket.emit("leave", room)
@@ -183,6 +250,8 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("message:deleted", handleMessageDeleted)
       socket.off("reaction:added", handleReactionAdded)
       socket.off("reaction:removed", handleReactionRemoved)
+      socket.off("stream:created", handleStreamCreated)
+      socket.off("message:updated", handleMessageUpdated)
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient])
 }

@@ -1,6 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
 import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
+import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
@@ -158,6 +159,25 @@ export class EventService {
         event: serializeBigInt(event),
       })
 
+      // 6. If this is a thread, update parent message's reply count
+      const stream = await StreamRepository.findById(client, params.streamId)
+      if (stream?.parentMessageId && stream?.parentStreamId) {
+        await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
+
+        // Get updated count for the event
+        const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
+        if (parentMessage) {
+          // Emit to PARENT stream's room (not this thread's room)
+          await OutboxRepository.insert(client, "message:updated", {
+            workspaceId: params.workspaceId,
+            streamId: stream.parentStreamId,
+            messageId: stream.parentMessageId,
+            updateType: "reply_count",
+            replyCount: parentMessage.replyCount,
+          })
+        }
+      }
+
       return message
     })
   }
@@ -217,6 +237,25 @@ export class EventService {
           streamId: params.streamId,
           messageId: params.messageId,
         })
+
+        // 4. If this is a thread, update parent message's reply count
+        const stream = await StreamRepository.findById(client, params.streamId)
+        if (stream?.parentMessageId && stream?.parentStreamId) {
+          await MessageRepository.decrementReplyCount(client, stream.parentMessageId)
+
+          // Get updated count for the event
+          const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
+          if (parentMessage) {
+            // Emit to PARENT stream's room (not this thread's room)
+            await OutboxRepository.insert(client, "message:updated", {
+              workspaceId: params.workspaceId,
+              streamId: stream.parentStreamId,
+              messageId: stream.parentMessageId,
+              updateType: "reply_count",
+              replyCount: parentMessage.replyCount,
+            })
+          }
+        }
       }
 
       return message
@@ -304,5 +343,22 @@ export class EventService {
     filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint }
   ): Promise<StreamEvent[]> {
     return withClient(this.pool, (client) => StreamEventRepository.list(client, streamId, filters))
+  }
+
+  /**
+   * Get reply counts for multiple messages.
+   * Returns a map of messageId -> replyCount
+   */
+  async getReplyCountsBatch(messageIds: string[]): Promise<Map<string, number>> {
+    return withClient(this.pool, (client) => MessageRepository.getReplyCountsBatch(client, messageIds))
+  }
+
+  /**
+   * Count message_created events for multiple streams.
+   * Used to compute reply counts by counting messages in thread streams.
+   * Returns a map of streamId -> message count
+   */
+  async countMessagesByStreams(streamIds: string[]): Promise<Map<string, number>> {
+    return withClient(this.pool, (client) => StreamEventRepository.countMessagesByStreamBatch(client, streamIds))
   }
 }

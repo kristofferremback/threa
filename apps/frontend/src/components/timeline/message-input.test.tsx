@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageInput } from "./message-input"
 
@@ -11,59 +11,88 @@ vi.mock("react-router-dom", () => ({
 
 // Mock hooks
 const mockSendMessage = vi.fn()
-const mockSaveDraftDebounced = vi.fn()
 const mockClearDraft = vi.fn()
-const mockAddAttachment = vi.fn()
-const mockRemoveAttachment = vi.fn()
+const mockClearAttachments = vi.fn()
+const mockSetContent = vi.fn()
+const mockSetIsSending = vi.fn()
+const mockHandleContentChange = vi.fn()
+const mockHandleRemoveAttachment = vi.fn()
+const mockHandleFileSelect = vi.fn()
+
+// Composer state that tests can modify
+let mockComposerState = {
+  content: "",
+  pendingAttachments: [] as Array<{
+    id: string
+    filename: string
+    mimeType: string
+    sizeBytes: number
+    status: "uploading" | "uploaded" | "error"
+    error?: string
+  }>,
+  uploadedIds: [] as string[],
+  isUploading: false,
+  hasFailed: false,
+  canSend: false,
+  isSending: false,
+  isLoaded: true,
+}
 
 vi.mock("@/hooks", () => ({
   useStreamOrDraft: () => ({ sendMessage: mockSendMessage }),
-  useDraftMessage: () => ({
-    content: "",
-    attachments: [],
-    saveDraftDebounced: mockSaveDraftDebounced,
-    addAttachment: mockAddAttachment,
-    removeAttachment: mockRemoveAttachment,
-    clearDraft: mockClearDraft,
-  }),
   getDraftMessageKey: () => "test-draft-key",
+  useDraftComposer: () => ({
+    content: mockComposerState.content,
+    setContent: mockSetContent,
+    handleContentChange: mockHandleContentChange,
+    pendingAttachments: mockComposerState.pendingAttachments,
+    uploadedIds: mockComposerState.uploadedIds,
+    isUploading: mockComposerState.isUploading,
+    hasFailed: mockComposerState.hasFailed,
+    fileInputRef: { current: null },
+    handleFileSelect: mockHandleFileSelect,
+    handleRemoveAttachment: mockHandleRemoveAttachment,
+    canSend: mockComposerState.canSend,
+    isSending: mockComposerState.isSending,
+    setIsSending: mockSetIsSending,
+    clearDraft: mockClearDraft,
+    clearAttachments: mockClearAttachments,
+    isLoaded: mockComposerState.isLoaded,
+  }),
 }))
 
-// Mock attachments API
-const mockUpload = vi.fn()
-const mockDelete = vi.fn()
-vi.mock("@/api", () => ({
-  attachmentsApi: {
-    upload: (...args: unknown[]) => mockUpload(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
-  },
-}))
-
-// Mock RichEditor to simplify testing
-vi.mock("@/components/editor", () => ({
-  RichEditor: ({
-    value,
-    onChange,
+// Mock MessageComposer
+vi.mock("@/components/composer", () => ({
+  MessageComposer: ({
+    content,
+    onContentChange,
     onSubmit,
-    placeholder,
-    disabled,
+    canSubmit,
+    isSubmitting,
+    hasFailed,
+    pendingAttachments,
   }: {
-    value: string
-    onChange: (v: string) => void
+    content: string
+    onContentChange: (v: string) => void
     onSubmit: () => void
-    placeholder: string
-    disabled: boolean
+    canSubmit: boolean
+    isSubmitting: boolean
+    hasFailed: boolean
+    pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
   }) => (
-    <textarea
-      data-testid="rich-editor"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.metaKey) onSubmit()
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+    <div data-testid="message-composer">
+      <textarea data-testid="rich-editor" value={content} onChange={(e) => onContentChange(e.target.value)} />
+      {pendingAttachments.map((a) => (
+        <div key={a.id}>
+          <span>{a.filename}</span>
+          <span>{a.sizeBytes >= 1024 ? `${(a.sizeBytes / 1024).toFixed(1)} KB` : `${a.sizeBytes} B`}</span>
+          {a.status === "error" && <span>Failed</span>}
+        </div>
+      ))}
+      <button onClick={onSubmit} disabled={!canSubmit || hasFailed}>
+        {isSubmitting ? "Sending..." : "Send"}
+      </button>
+    </div>
   ),
 }))
 
@@ -74,258 +103,191 @@ describe("MessageInput", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSendMessage.mockResolvedValue({})
+    mockComposerState = {
+      content: "",
+      pendingAttachments: [],
+      uploadedIds: [],
+      isUploading: false,
+      hasFailed: false,
+      canSend: false,
+      isSending: false,
+      isLoaded: true,
+    }
   })
 
-  function createFile(name: string, type: string, size: number = 1024): File {
-    const content = new Array(size).fill("a").join("")
-    return new File([content], name, { type })
-  }
-
-  describe("file upload error handling", () => {
-    it("should show error state when upload fails with 4xx error", async () => {
-      mockUpload.mockRejectedValue(new Error("File type not allowed"))
-
+  describe("rendering", () => {
+    it("should render the message composer", () => {
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
-      const file = createFile("document.exe", "application/x-msdownload")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-
-      await userEvent.upload(fileInput, file)
-
-      // Wait for error state
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // Error message should be shown in tooltip (attachment chip shows "Failed")
-      expect(screen.getByText("document.exe")).toBeInTheDocument()
+      expect(screen.getByTestId("message-composer")).toBeInTheDocument()
+      expect(screen.getByTestId("rich-editor")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /send/i })).toBeInTheDocument()
     })
 
-    it("should show error state when upload fails with 5xx error", async () => {
-      mockUpload.mockRejectedValue(new Error("Internal server error"))
+    it("should disable send button when canSend is false", () => {
+      mockComposerState.canSend = false
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
-      const file = createFile("report.pdf", "application/pdf")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-    })
-
-    it("should disable send button when there are failed uploads", async () => {
-      mockUpload.mockRejectedValue(new Error("Upload failed"))
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      // Type a message first
-      const editor = screen.getByTestId("rich-editor")
-      await userEvent.type(editor, "Hello world")
-
-      // Upload a file that will fail
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      // Wait for error state
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // Send button should be disabled
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).toBeDisabled()
     })
 
-    it("should wrap disabled send button in tooltip trigger when uploads failed", async () => {
-      mockUpload.mockRejectedValue(new Error("Upload failed"))
+    it("should enable send button when canSend is true", () => {
+      mockComposerState.canSend = true
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // The send button should be disabled and wrapped in a tooltip trigger
-      const sendButton = screen.getByRole("button", { name: /send/i })
-      expect(sendButton).toBeDisabled()
-      // The button's parent span has data-state="closed" indicating it's a tooltip trigger
-      expect(sendButton.parentElement).toHaveAttribute("data-state", "closed")
-    })
-
-    it("should allow removing failed uploads", async () => {
-      mockUpload.mockRejectedValue(new Error("Upload failed"))
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // Click remove button
-      const removeButton = screen.getByRole("button", { name: /remove test\.txt/i })
-      await userEvent.click(removeButton)
-
-      // Failed attachment should be removed
-      await waitFor(() => {
-        expect(screen.queryByText("Failed")).not.toBeInTheDocument()
-      })
-    })
-
-    it("should re-enable send button after removing failed uploads", async () => {
-      mockUpload.mockRejectedValue(new Error("Upload failed"))
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      // Type a message
-      const editor = screen.getByTestId("rich-editor")
-      await userEvent.type(editor, "Hello world")
-
-      // Upload a file that will fail
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // Send button should be disabled
-      expect(screen.getByRole("button", { name: /send/i })).toBeDisabled()
-
-      // Remove the failed upload
-      const removeButton = screen.getByRole("button", { name: /remove test\.txt/i })
-      await userEvent.click(removeButton)
-
-      // Send button should be enabled again
-      await waitFor(() => {
-        const sendButton = screen.getByRole("button", { name: /send/i })
-        expect(sendButton).not.toBeDisabled()
-      })
-    })
-
-    it("should handle mixed successful and failed uploads", async () => {
-      // First upload succeeds, second fails
-      mockUpload
-        .mockResolvedValueOnce({
-          id: "attach_success",
-          filename: "success.txt",
-          mimeType: "text/plain",
-          sizeBytes: 100,
-        })
-        .mockRejectedValueOnce(new Error("Upload failed"))
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      const successFile = createFile("success.txt", "text/plain", 100)
-      const failFile = createFile("fail.txt", "text/plain", 100)
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-
-      // Upload both files
-      await userEvent.upload(fileInput, [successFile, failFile])
-
-      // Wait for both to complete
-      await waitFor(() => {
-        expect(screen.getByText("success.txt")).toBeInTheDocument()
-        expect(screen.getByText("fail.txt")).toBeInTheDocument()
-      })
-
-      // One should show as failed
-      expect(screen.getByText("Failed")).toBeInTheDocument()
-
-      // Send button should be disabled due to the failed upload
-      const sendButton = screen.getByRole("button", { name: /send/i })
-      expect(sendButton).toBeDisabled()
-    })
-
-    it("should capture specific error messages from 4xx errors", async () => {
-      const specificError = "File size exceeds 10MB limit"
-      mockUpload.mockRejectedValue(new Error(specificError))
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      const file = createFile("large.zip", "application/zip", 15 * 1024 * 1024)
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("Failed")).toBeInTheDocument()
-      })
-
-      // The failed attachment chip should be wrapped in a tooltip trigger (for showing the specific error)
-      const failedChip = screen.getByText("Failed").closest("[data-state]")
-      expect(failedChip).toHaveAttribute("data-state", "closed")
-    })
-  })
-
-  describe("successful upload flow", () => {
-    it("should show uploading state while file is being uploaded", async () => {
-      // Create a promise we can control
-      let resolveUpload: (value: unknown) => void
-      mockUpload.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            resolveUpload = resolve
-          })
-      )
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      // Should show uploading state (spinner icon via opacity class)
-      await waitFor(() => {
-        expect(screen.getByText("test.txt")).toBeInTheDocument()
-      })
-
-      // Resolve the upload
-      resolveUpload!({
-        id: "attach_123",
-        filename: "test.txt",
-        mimeType: "text/plain",
-        sizeBytes: 1024,
-      })
-
-      // Should show file size after upload completes
-      await waitFor(() => {
-        expect(screen.getByText("1.0 KB")).toBeInTheDocument()
-      })
-    })
-
-    it("should enable send button with successfully uploaded file", async () => {
-      mockUpload.mockResolvedValue({
-        id: "attach_123",
-        filename: "test.txt",
-        mimeType: "text/plain",
-        sizeBytes: 1024,
-      })
-
-      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
-
-      const file = createFile("test.txt", "text/plain")
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      await userEvent.upload(fileInput, file)
-
-      await waitFor(() => {
-        expect(screen.getByText("1.0 KB")).toBeInTheDocument()
-      })
-
-      // Send button should be enabled
       const sendButton = screen.getByRole("button", { name: /send/i })
       expect(sendButton).not.toBeDisabled()
+    })
+  })
+
+  describe("sending messages", () => {
+    it("should call sendMessage when send button is clicked", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello world"
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(mockSendMessage).toHaveBeenCalledWith({
+        content: "Hello world",
+        contentFormat: "markdown",
+        attachmentIds: undefined,
+      })
+    })
+
+    it("should clear draft and attachments after sending", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello world"
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(mockClearDraft).toHaveBeenCalled()
+      expect(mockClearAttachments).toHaveBeenCalled()
+    })
+
+    it("should set isSending state during send", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello world"
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      // setIsSending(true) called at start
+      expect(mockSetIsSending).toHaveBeenCalledWith(true)
+      // setIsSending(false) called in finally
+      expect(mockSetIsSending).toHaveBeenCalledWith(false)
+    })
+
+    it("should navigate when sendMessage returns navigateTo", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello world"
+      mockSendMessage.mockResolvedValue({ navigateTo: "/w/ws_123/s/new_stream", replace: true })
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(mockNavigate).toHaveBeenCalledWith("/w/ws_123/s/new_stream", { replace: true })
+    })
+  })
+
+  describe("attachment display", () => {
+    it("should show pending attachments", () => {
+      mockComposerState.pendingAttachments = [
+        {
+          id: "attach_123",
+          filename: "test.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1024,
+          status: "uploaded",
+        },
+      ]
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      expect(screen.getByText("test.txt")).toBeInTheDocument()
+      expect(screen.getByText("1.0 KB")).toBeInTheDocument()
+    })
+
+    it("should show failed attachment with error state", () => {
+      mockComposerState.pendingAttachments = [
+        {
+          id: "temp_123",
+          filename: "failed.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1024,
+          status: "error",
+          error: "Upload failed",
+        },
+      ]
+      mockComposerState.hasFailed = true
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      expect(screen.getByText("failed.txt")).toBeInTheDocument()
+      expect(screen.getByText("Failed")).toBeInTheDocument()
+    })
+
+    it("should disable send button when uploads have failed", () => {
+      mockComposerState.hasFailed = true
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      expect(sendButton).toBeDisabled()
+    })
+
+    it("should include attachment IDs when sending", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = ""
+      mockComposerState.uploadedIds = ["attach_123"]
+      mockComposerState.pendingAttachments = [
+        {
+          id: "attach_123",
+          filename: "test.txt",
+          mimeType: "text/plain",
+          sizeBytes: 1024,
+          status: "uploaded",
+        },
+      ]
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(mockSendMessage).toHaveBeenCalledWith({
+        content: " ", // Space for attachment-only messages
+        contentFormat: "markdown",
+        attachmentIds: ["attach_123"],
+        attachments: [{ id: "attach_123", filename: "test.txt", mimeType: "text/plain", sizeBytes: 1024 }],
+      })
+    })
+  })
+
+  describe("error handling", () => {
+    it("should show error message when sendMessage fails", async () => {
+      mockComposerState.canSend = true
+      mockComposerState.content = "Hello world"
+      mockSendMessage.mockRejectedValue(new Error("Network error"))
+
+      render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
+
+      const sendButton = screen.getByRole("button", { name: /send/i })
+      await userEvent.click(sendButton)
+
+      expect(screen.getByText("Failed to create stream. Please try again.")).toBeInTheDocument()
     })
   })
 })
