@@ -3,16 +3,29 @@ import { withClient } from "../db"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "../repositories/search-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
-import { UserRepository } from "../repositories/user-repository"
-import { parseQuery, type ParsedQuery } from "../lib/search/filter-parser"
 import { combineWithRRF } from "../lib/search/rrf"
 import { EmbeddingService } from "./embedding-service"
 import { logger } from "../lib/logger"
+import type { StreamType } from "@threa/types"
+
+/**
+ * Client-provided filters with pre-resolved IDs.
+ * All lookups (username to ID, etc.) happen client-side.
+ */
+export interface SearchFilters {
+  authorIds?: string[]
+  withUserIds?: string[]
+  streamIds?: string[]
+  streamTypes?: StreamType[]
+  before?: Date
+  after?: Date
+}
 
 export interface SearchParams {
   workspaceId: string
   userId: string
   query: string
+  filters?: SearchFilters
   limit?: number
 }
 
@@ -37,19 +50,13 @@ export class SearchService {
    * Perform hybrid search combining full-text and semantic search.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, userId, query, limit = DEFAULT_LIMIT } = params
+    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT } = params
 
-    // 1. Parse query into terms and filters
-    const parsed = parseQuery(query)
-
-    logger.debug({ parsed, workspaceId, userId }, "Search query parsed")
+    logger.debug({ query, filters, workspaceId, userId }, "Search request")
 
     return withClient(this.pool, async (client) => {
-      // 2. Resolve filters to safe values (user IDs, validated types)
-      const resolvedFilters = await this.resolveFilters(client, parsed.filters)
-
-      // 3. Get accessible stream IDs for this user
-      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, parsed)
+      // 1. Get accessible stream IDs for this user
+      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
 
       if (streamIds.length === 0) {
         logger.debug({ workspaceId, userId }, "No accessible streams for user")
@@ -58,22 +65,30 @@ export class SearchService {
 
       logger.debug({ streamIds: streamIds.length }, "Found accessible streams")
 
-      // 4. Run searches
+      // 2. Map client filters to repository filters
+      const repoFilters: ResolvedFilters = {
+        authorIds: filters.authorIds,
+        streamTypes: filters.streamTypes,
+        before: filters.before,
+        after: filters.after,
+      }
+
+      // 3. Run searches
       const searchParams = {
         streamIds,
-        filters: resolvedFilters,
+        filters: repoFilters,
         limit: INTERNAL_LIMIT,
       }
 
       // If no search terms, skip keyword/semantic search and just return recent messages
-      if (!parsed.terms.trim()) {
-        return this.getRecentMessages(client, streamIds, resolvedFilters, limit)
+      if (!query.trim()) {
+        return this.getRecentMessages(client, streamIds, repoFilters, limit)
       }
 
       // Run both searches in parallel
       const [keywordResults, semanticResults] = await Promise.all([
-        this.fullTextSearch(client, parsed.terms, searchParams),
-        this.semanticSearch(parsed.terms, searchParams),
+        this.fullTextSearch(client, query, searchParams),
+        this.semanticSearch(query, searchParams),
       ])
 
       logger.debug(
@@ -81,7 +96,7 @@ export class SearchService {
         "Search results before RRF"
       )
 
-      // 5. Combine with RRF
+      // 4. Combine with RRF
       const combined = combineWithRRF(keywordResults, semanticResults, {
         keywordWeight: 0.6,
         semanticWeight: 0.4,
@@ -93,65 +108,69 @@ export class SearchService {
   }
 
   /**
-   * Resolve filter values to safe IDs/validated values.
-   * This moves all user-input validation to the service layer.
-   */
-  private async resolveFilters(client: PoolClient, filters: ParsedQuery["filters"]): Promise<ResolvedFilters> {
-    const resolved: ResolvedFilters = {}
-
-    // Resolve from:@user to author IDs
-    if (filters.from && filters.from.length > 0) {
-      const users = await Promise.all(
-        filters.from.map((username) => UserRepository.findByEmailOrDisplayName(client, username))
-      )
-      const authorIds = users.filter((u): u is NonNullable<typeof u> => u !== null).map((u) => u.id)
-      if (authorIds.length > 0) {
-        resolved.authorIds = authorIds
-      }
-    }
-
-    // is:type is already validated by the filter parser (isValidStreamType)
-    if (filters.is && filters.is.length > 0) {
-      resolved.streamTypes = filters.is
-    }
-
-    // Date filters are already parsed as Date objects
-    if (filters.before) {
-      resolved.before = filters.before
-    }
-    if (filters.after) {
-      resolved.after = filters.after
-    }
-
-    return resolved
-  }
-
-  /**
    * Get stream IDs the user can access, optionally filtered by search filters.
    */
   private async getAccessibleStreamIds(
     client: PoolClient,
     workspaceId: string,
     userId: string,
-    parsed: ParsedQuery
+    filters: SearchFilters
   ): Promise<string[]> {
+    // If specific stream IDs provided, verify user has access
+    if (filters.streamIds && filters.streamIds.length > 0) {
+      return this.filterAccessibleStreams(client, workspaceId, userId, filters.streamIds, filters)
+    }
+
     // Get all streams user is a member of
     const memberships = await StreamMemberRepository.list(client, { userId })
     const memberStreamIds = new Set(memberships.map((m) => m.streamId))
 
     // Get public streams in workspace
     const allStreams = await StreamRepository.list(client, workspaceId, {
-      types: parsed.filters.is,
+      types: filters.streamTypes,
       userMembershipStreamIds: [...memberStreamIds],
     })
 
-    // Apply with:@user filter - only streams where the specified user is also a member
+    // Apply with:user filter - only streams where the specified users are also members
     let accessibleStreams = allStreams
-    if (parsed.filters.with && parsed.filters.with.length > 0) {
-      accessibleStreams = await this.filterStreamsByUserMembership(client, allStreams, parsed.filters.with)
+    if (filters.withUserIds && filters.withUserIds.length > 0) {
+      accessibleStreams = await this.filterStreamsByUserMembership(client, allStreams, filters.withUserIds)
     }
 
     return accessibleStreams.map((s) => s.id)
+  }
+
+  /**
+   * Filter requested stream IDs to only those the user can access.
+   */
+  private async filterAccessibleStreams(
+    client: PoolClient,
+    workspaceId: string,
+    userId: string,
+    requestedStreamIds: string[],
+    filters: SearchFilters
+  ): Promise<string[]> {
+    // Get user memberships
+    const memberships = await StreamMemberRepository.list(client, { userId })
+    const memberStreamIds = new Set(memberships.map((m) => m.streamId))
+
+    // Get public streams in workspace
+    const allStreams = await StreamRepository.list(client, workspaceId, {
+      types: filters.streamTypes,
+      userMembershipStreamIds: [...memberStreamIds],
+    })
+    const accessibleIds = new Set(allStreams.map((s) => s.id))
+
+    // Filter to requested streams that user can access
+    let result = requestedStreamIds.filter((id) => accessibleIds.has(id))
+
+    // Apply with:user filter if present
+    if (filters.withUserIds && filters.withUserIds.length > 0 && result.length > 0) {
+      const validStreamIds = await StreamMemberRepository.filterStreamsWithAllUsers(client, result, filters.withUserIds)
+      result = result.filter((id) => validStreamIds.has(id))
+    }
+
+    return result
   }
 
   /**
@@ -161,19 +180,9 @@ export class SearchService {
   private async filterStreamsByUserMembership<T extends { id: string }>(
     client: PoolClient,
     streams: T[],
-    usernames: string[]
+    userIds: string[]
   ): Promise<T[]> {
-    if (streams.length === 0) {
-      return streams
-    }
-
-    // Look up user IDs from usernames/emails
-    const users = await Promise.all(
-      usernames.map((username) => UserRepository.findByEmailOrDisplayName(client, username))
-    )
-    const userIds = users.filter((u): u is NonNullable<typeof u> => u !== null).map((u) => u.id)
-
-    if (userIds.length === 0) {
+    if (streams.length === 0 || userIds.length === 0) {
       return streams
     }
 

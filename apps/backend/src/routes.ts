@@ -115,7 +115,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
 
   // Search
-  app.get("/api/workspaces/:workspaceId/search", ...authed, search.search)
+  app.post("/api/workspaces/:workspaceId/search", ...authed, search.search)
 
   app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)

@@ -33,7 +33,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, `I saw a ${uniqueWord} yesterday`)
       await sendMessage(client, workspace.id, scratchpad.id, "Regular message without the word")
 
-      const results = await search(client, workspace.id, uniqueWord)
+      const results = await search(client, workspace.id, { query: uniqueWord })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain(uniqueWord)
@@ -47,7 +47,7 @@ describe("Search E2E Tests", () => {
 
       await sendMessage(client, workspace.id, scratchpad.id, "Hello world")
 
-      const results = await search(client, workspace.id, "xyznonexistent123")
+      const results = await search(client, workspace.id, { query: "xyznonexistent123" })
 
       expect(results).toEqual([])
     })
@@ -64,7 +64,7 @@ describe("Search E2E Tests", () => {
         await sendMessage(client, workspace.id, scratchpad.id, `Message ${i} about ${keyword}`)
       }
 
-      const results = await search(client, workspace.id, keyword, 2)
+      const results = await search(client, workspace.id, { query: keyword, limit: 2 })
 
       expect(results.length).toBe(2)
     })
@@ -80,7 +80,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad1.id, `First ${keyword} message`)
       await sendMessage(client, workspace.id, scratchpad2.id, `Second ${keyword} message`)
 
-      const results = await search(client, workspace.id, keyword)
+      const results = await search(client, workspace.id, { query: keyword })
 
       expect(results.length).toBe(2)
     })
@@ -103,11 +103,11 @@ describe("Search E2E Tests", () => {
       await joinWorkspace(clientB, workspace.id)
 
       // User B searches - should not find User A's message in private channel
-      const resultsB = await search(clientB, workspace.id, keyword)
+      const resultsB = await search(clientB, workspace.id, { query: keyword })
       expect(resultsB.length).toBe(0)
 
       // User A searches - should find their own message
-      const resultsA = await search(clientA, workspace.id, keyword)
+      const resultsA = await search(clientA, workspace.id, { query: keyword })
       expect(resultsA.length).toBe(1)
     })
 
@@ -127,7 +127,7 @@ describe("Search E2E Tests", () => {
       await joinWorkspace(clientB, workspace.id)
 
       // User B should find the message since channel is public
-      const resultsB = await search(clientB, workspace.id, keyword)
+      const resultsB = await search(clientB, workspace.id, { query: keyword })
       expect(resultsB.length).toBe(1)
     })
   })
@@ -145,7 +145,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
       // Search with is:scratchpad filter
-      const results = await search(client, workspace.id, `${keyword} is:scratchpad`)
+      const results = await search(client, workspace.id, { query: keyword, is: ["scratchpad"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Scratchpad")
@@ -162,17 +162,16 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, `Scratchpad ${keyword}`)
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
-      const results = await search(client, workspace.id, `${keyword} is:channel`)
+      const results = await search(client, workspace.id, { query: keyword, is: ["channel"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Channel")
     })
 
-    test("should filter by author with from:@user", async () => {
+    test("should filter by author with from filter", async () => {
       // User A creates workspace and channel
       const clientA = new TestClient()
-      const userAEmail = testEmail("fromA")
-      const userA = await loginAs(clientA, userAEmail, "From User A")
+      const userA = await loginAs(clientA, testEmail("fromA"), "From User A")
       const workspace = await createWorkspace(clientA, `From WS ${testRunId}`)
       const channel = await createChannel(clientA, workspace.id, `from-${testRunId}`, "public")
 
@@ -186,14 +185,14 @@ describe("Search E2E Tests", () => {
       await joinStream(clientB, workspace.id, channel.id)
       await sendMessage(clientB, workspace.id, channel.id, `User B says ${keyword}`)
 
-      // Search for messages from User A only - use email since names have spaces
-      const results = await search(clientA, workspace.id, `${keyword} from:@${userAEmail}`)
+      // Search for messages from User A only - pass user ID directly
+      const results = await search(clientA, workspace.id, { query: keyword, from: [userA.id] })
 
       expect(results.length).toBe(1)
       expect(results[0].authorId).toBe(userA.id)
     })
 
-    test("should filter by co-member with with:@user", async () => {
+    test("should filter by co-member with with filter", async () => {
       // User A creates workspace with two channels
       const clientA = new TestClient()
       await loginAs(clientA, testEmail("withA"), "With User A")
@@ -207,13 +206,12 @@ describe("Search E2E Tests", () => {
 
       // User B joins workspace and only the shared channel
       const clientB = new TestClient()
-      const userBEmail = testEmail("withB")
-      await loginAs(clientB, userBEmail, "With User B")
+      const userB = await loginAs(clientB, testEmail("withB"), "With User B")
       await joinWorkspace(clientB, workspace.id)
       await joinStream(clientB, workspace.id, channelShared.id)
 
-      // User A searches with:@userB - should only find messages in shared channel (use email)
-      const results = await search(clientA, workspace.id, `${keyword} with:@${userBEmail}`)
+      // User A searches with userB's ID - should only find messages in shared channel
+      const results = await search(clientA, workspace.id, { query: keyword, with: [userB.id] })
 
       expect(results.length).toBe(1)
       expect(results[0].streamId).toBe(channelShared.id)
@@ -231,7 +229,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
       // Search with is:scratchpad filter - should only find the scratchpad message
-      const results = await search(client, workspace.id, `${keyword} is:scratchpad`)
+      const results = await search(client, workspace.id, { query: keyword, is: ["scratchpad"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Scratchpad")
@@ -247,8 +245,8 @@ describe("Search E2E Tests", () => {
 
       await sendMessage(client, workspace.id, scratchpad.id, "Some message content")
 
-      // Search with only filter, no keywords
-      const results = await search(client, workspace.id, "is:scratchpad")
+      // Search with only filter, no query
+      const results = await search(client, workspace.id, { is: ["scratchpad"] })
 
       expect(results.length).toBeGreaterThan(0)
     })
@@ -262,7 +260,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, "Test message with normal content")
 
       // Search with special characters - should not crash
-      const results = await search(client, workspace.id, "test & query | special")
+      const results = await search(client, workspace.id, { query: "test & query | special" })
 
       // Should either return results or empty array, not error
       expect(Array.isArray(results)).toBe(true)
@@ -280,7 +278,7 @@ describe("Search E2E Tests", () => {
       // Second message has keyword multiple times
       await sendMessage(client, workspace.id, scratchpad.id, `Many ${keyword} ${keyword} ${keyword} mentions`)
 
-      const results = await search(client, workspace.id, keyword)
+      const results = await search(client, workspace.id, { query: keyword })
 
       expect(results.length).toBe(2)
       // Results should have rank property

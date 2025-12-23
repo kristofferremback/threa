@@ -2,9 +2,16 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { SearchService } from "../services/search-service"
 import type { SearchResult } from "../repositories/search-repository"
+import { STREAM_TYPES } from "@threa/types"
 
 const searchQuerySchema = z.object({
-  q: z.string().min(1, "Search query is required"),
+  query: z.string().optional().default(""),
+  from: z.array(z.string()).optional(),
+  with: z.array(z.string()).optional(),
+  in: z.array(z.string()).optional(),
+  is: z.array(z.enum(STREAM_TYPES)).optional(),
+  before: z.string().datetime().optional(),
+  after: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
@@ -29,23 +36,23 @@ export function createSearchHandlers({ searchService }: Dependencies) {
     /**
      * Search messages across accessible streams.
      *
-     * GET /api/workspaces/:workspaceId/search?q=<query>&limit=<n>
+     * POST /api/workspaces/:workspaceId/search
      *
-     * Query supports filter operators:
-     * - from:@user - messages by user
-     * - with:@user - in streams where user is member
-     * - in:#channel - messages in specific channel
-     * - is:thread|dm|scratchpad|channel - filter by stream type
-     * - before:YYYY-MM-DD - messages before date
-     * - after:YYYY-MM-DD - messages after date
-     *
-     * Example: "redis caching from:@jane is:thread"
+     * Body:
+     * - query: string (optional) - text search terms
+     * - from: string[] (optional) - filter by author user IDs
+     * - with: string[] (optional) - filter to streams where these users are members
+     * - in: string[] (optional) - filter to specific stream IDs
+     * - is: StreamType[] (optional) - filter by stream type
+     * - before: ISO datetime (optional) - messages before date
+     * - after: ISO datetime (optional) - messages after date
+     * - limit: number (optional) - max results (1-100)
      */
     async search(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
-      const result = searchQuerySchema.safeParse(req.query)
+      const result = searchQuerySchema.safeParse(req.body)
       if (!result.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -53,12 +60,20 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         })
       }
 
-      const { q, limit } = result.data
+      const { query, from, with: withUsers, in: inStreams, is, before, after, limit } = result.data
 
       const results = await searchService.search({
         workspaceId,
         userId,
-        query: q,
+        query,
+        filters: {
+          authorIds: from,
+          withUserIds: withUsers,
+          streamIds: inStreams,
+          streamTypes: is,
+          before: before ? new Date(before) : undefined,
+          after: after ? new Date(after) : undefined,
+        },
         limit,
       })
 

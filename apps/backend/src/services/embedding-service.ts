@@ -1,31 +1,22 @@
-import { logger } from "../lib/logger"
+import type { ProviderRegistry } from "../lib/ai"
 
-const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
-const DEFAULT_MODEL = "openai/text-embedding-3-small"
-
-interface EmbeddingResponse {
-  data: Array<{
-    embedding: number[]
-    index: number
-  }>
-  model: string
-  usage: {
-    prompt_tokens: number
-    total_tokens: number
-  }
-}
+const DEFAULT_MODEL = "openrouter:openai/text-embedding-3-small"
 
 export interface EmbeddingServiceConfig {
-  openRouterApiKey: string
+  providerRegistry: ProviderRegistry
   model?: string
 }
 
+/**
+ * Service for generating embeddings using the configured provider.
+ * Wraps ProviderRegistry with a configured default model.
+ */
 export class EmbeddingService {
-  private openRouterApiKey: string
+  private providerRegistry: ProviderRegistry
   private model: string
 
   constructor(config: EmbeddingServiceConfig) {
-    this.openRouterApiKey = config.openRouterApiKey
+    this.providerRegistry = config.providerRegistry
     this.model = config.model ?? DEFAULT_MODEL
   }
 
@@ -33,47 +24,13 @@ export class EmbeddingService {
    * Generate embedding for a single text.
    */
   async embed(text: string): Promise<number[]> {
-    const embeddings = await this.embedBatch([text])
-    return embeddings[0]
+    return this.providerRegistry.embed(this.model, text)
   }
 
   /**
    * Generate embeddings for multiple texts in a single request.
    */
   async embedBatch(texts: string[]): Promise<number[][]> {
-    if (texts.length === 0) {
-      return []
-    }
-
-    try {
-      const response = await fetch(OPENROUTER_EMBEDDINGS_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.openRouterApiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://threa.app",
-          "X-Title": "Threa",
-        },
-        body: JSON.stringify({
-          model: this.model,
-          input: texts,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        logger.error({ status: response.status, error: errorText }, "OpenRouter embedding request failed")
-        throw new Error(`OpenRouter embedding request failed: ${response.status} - ${errorText}`)
-      }
-
-      const data = (await response.json()) as EmbeddingResponse
-
-      // Sort by index to ensure correct order
-      const sorted = data.data.sort((a, b) => a.index - b.index)
-      return sorted.map((item) => item.embedding)
-    } catch (error) {
-      logger.error({ error, model: this.model }, "Failed to generate embeddings")
-      throw error
-    }
+    return this.providerRegistry.embedBatch(this.model, texts)
   }
 }

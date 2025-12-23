@@ -494,19 +494,21 @@ export interface SearchResult {
   rank: number
 }
 
-export async function search(
-  client: TestClient,
-  workspaceId: string,
-  query: string,
+export interface SearchParams {
+  query?: string
+  from?: string[]
+  with?: string[]
+  in?: string[]
+  is?: ("scratchpad" | "channel" | "dm" | "thread")[]
+  before?: string
+  after?: string
   limit?: number
-): Promise<SearchResult[]> {
-  const params = new URLSearchParams({ q: query })
-  if (limit !== undefined) {
-    params.set("limit", String(limit))
-  }
+}
 
-  const { status, data } = await client.get<{ results: SearchResult[]; total: number }>(
-    `/api/workspaces/${workspaceId}/search?${params.toString()}`
+export async function search(client: TestClient, workspaceId: string, params: SearchParams): Promise<SearchResult[]> {
+  const { status, data } = await client.post<{ results: SearchResult[]; total: number }>(
+    `/api/workspaces/${workspaceId}/search`,
+    params
   )
   if (status !== 200) {
     throw new Error(`Search failed: ${JSON.stringify(data)}`)
