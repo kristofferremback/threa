@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react"
+import { useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useConversationService, useSocket } from "@/contexts"
 import type { ConversationWithStaleness, ConversationStatus } from "@threa/types"
@@ -84,39 +84,10 @@ export function useConversations(workspaceId: string, streamId: string, options?
     }
   }, [socket, workspaceId, streamId, enabled, queryClient])
 
-  const addConversation = useCallback(
-    (conversation: ConversationWithStaleness) => {
-      queryClient.setQueryData(
-        conversationKeys.list(workspaceId, streamId),
-        (old: ConversationWithStaleness[] | undefined) => {
-          if (!old) return [conversation]
-          if (old.some((c) => c.id === conversation.id)) return old
-          return [...old, conversation]
-        }
-      )
-    },
-    [queryClient, workspaceId, streamId]
-  )
-
-  const updateConversation = useCallback(
-    (conversationId: string, changes: Partial<ConversationWithStaleness>) => {
-      queryClient.setQueryData(
-        conversationKeys.list(workspaceId, streamId),
-        (old: ConversationWithStaleness[] | undefined) => {
-          if (!old) return old
-          return old.map((c) => (c.id === conversationId ? { ...c, ...changes } : c))
-        }
-      )
-    },
-    [queryClient, workspaceId, streamId]
-  )
-
   return {
     conversations,
     isLoading,
     error,
     refetch,
-    addConversation,
-    updateConversation,
   }
 }

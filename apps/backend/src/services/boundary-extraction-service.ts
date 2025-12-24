@@ -1,44 +1,16 @@
-import { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 import { withTransaction } from "../db"
 import { ConversationRepository, type Conversation } from "../repositories/conversation-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { StreamRepository } from "../repositories/stream-repository"
-import { OutboxRepository, type ConversationWithStaleness } from "../repositories/outbox-repository"
+import { OutboxRepository } from "../repositories/outbox-repository"
 import type { BoundaryExtractor, ExtractionContext, ConversationSummary } from "../lib/boundary-extraction/types"
+import { addStalenessFields } from "../lib/conversation-staleness"
 import { conversationId } from "../lib/id"
 import { ConversationStatuses, StreamTypes } from "@threa/types"
 import { logger } from "../lib/logger"
 
 const WINDOW_SIZE = 5
-
-/**
- * Compute temporal staleness based on time since last activity.
- * Returns 0-4 scale where 0 = fresh, 4 = very stale.
- *
- * Thresholds:
- * - < 1 hour: 0 (fresh)
- * - < 4 hours: 1 (recent)
- * - < 12 hours: 2 (getting stale)
- * - < 24 hours: 3 (stale)
- * - >= 24 hours: 4 (very stale)
- */
-function computeTemporalStaleness(lastActivityAt: Date): number {
-  const hours = (Date.now() - lastActivityAt.getTime()) / (1000 * 60 * 60)
-  if (hours < 1) return 0
-  if (hours < 4) return 1
-  if (hours < 12) return 2
-  if (hours < 24) return 3
-  return 4
-}
-
-function addStalenessFields(conversation: Conversation): ConversationWithStaleness {
-  const temporalStaleness = computeTemporalStaleness(conversation.lastActivityAt)
-  return {
-    ...conversation,
-    temporalStaleness,
-    effectiveCompleteness: Math.min(7, conversation.completenessScore + temporalStaleness),
-  }
-}
 
 export class BoundaryExtractionService {
   constructor(
@@ -66,7 +38,7 @@ export class BoundaryExtractionService {
       const context: ExtractionContext = {
         newMessage: message,
         recentMessages,
-        activeConversations: this.buildConversationSummaries(activeConversations, recentMessages),
+        activeConversations: await this.buildConversationSummaries(client, activeConversations, recentMessages),
         streamType: stream.type,
         isThread: stream.type === StreamTypes.THREAD,
       }
@@ -140,19 +112,32 @@ export class BoundaryExtractionService {
     })
   }
 
-  private buildConversationSummaries(conversations: Conversation[], recentMessages: Message[]): ConversationSummary[] {
-    return conversations.map((c) => {
-      const lastMessageId = c.messageIds[c.messageIds.length - 1]
-      const lastMessage = recentMessages.find((m) => m.id === lastMessageId)
+  private async buildConversationSummaries(
+    client: PoolClient,
+    conversations: Conversation[],
+    recentMessages: Message[]
+  ): Promise<ConversationSummary[]> {
+    const recentMessageMap = new Map(recentMessages.map((m) => [m.id, m]))
 
-      return {
-        id: c.id,
-        topicSummary: c.topicSummary,
-        messageCount: c.messageIds.length,
-        lastMessagePreview: lastMessage?.content.slice(0, 100) ?? "",
-        participantIds: c.participantIds,
-        completenessScore: c.completenessScore,
-      }
-    })
+    return Promise.all(
+      conversations.map(async (c) => {
+        const lastMessageId = c.messageIds[c.messageIds.length - 1]
+        let lastMessage = recentMessageMap.get(lastMessageId)
+
+        // Fetch the last message if not in the recent window
+        if (!lastMessage && lastMessageId) {
+          lastMessage = (await MessageRepository.findById(client, lastMessageId)) ?? undefined
+        }
+
+        return {
+          id: c.id,
+          topicSummary: c.topicSummary,
+          messageCount: c.messageIds.length,
+          lastMessagePreview: lastMessage?.content.slice(0, 100) ?? "",
+          participantIds: c.participantIds,
+          completenessScore: c.completenessScore,
+        }
+      })
+    )
   }
 }

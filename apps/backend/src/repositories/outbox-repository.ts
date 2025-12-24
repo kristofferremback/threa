@@ -4,7 +4,7 @@ import { bigIntReplacer } from "../lib/serialization"
 import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
 import type { User } from "./user-repository"
-import type { Conversation } from "./conversation-repository"
+import type { ConversationWithStaleness } from "../lib/conversation-staleness"
 
 /**
  * Outbox event types and their payloads.
@@ -135,12 +135,6 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
 }
 
 // Conversation event payloads
-// Include staleness fields for real-time updates (frontend expects ConversationWithStaleness)
-export interface ConversationWithStaleness extends Conversation {
-  temporalStaleness: number
-  effectiveCompleteness: number
-}
-
 export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
   conversation: ConversationWithStaleness
 }
