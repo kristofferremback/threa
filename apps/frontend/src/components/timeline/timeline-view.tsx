@@ -1,10 +1,12 @@
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { useEvents, useStreamSocket, useScrollBehavior } from "@/hooks"
+import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap } from "@/hooks"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
+import { StreamTypes } from "@threa/types"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
+import { ThreadParentMessage } from "../thread/thread-parent-message"
 
 interface TimelineViewProps {
   isDraft?: boolean
@@ -14,6 +16,27 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
+
+  // Get current stream info (for thread detection)
+  const { data: bootstrap } = useStreamBootstrap(workspaceId!, streamId!, { enabled: !isDraft })
+  const isThread = bootstrap?.stream?.type === StreamTypes.THREAD
+  const parentStreamId = bootstrap?.stream?.parentStreamId
+  const parentMessageId = bootstrap?.stream?.parentMessageId
+
+  // Fetch parent stream bootstrap (for threads to get parent message)
+  const { data: parentBootstrap } = useStreamBootstrap(workspaceId!, parentStreamId ?? "", {
+    enabled: !isDraft && isThread && !!parentStreamId,
+  })
+
+  // Find parent message from parent stream's events
+  const parentMessage = useMemo(() => {
+    if (!isThread || !parentStreamId || !parentMessageId) return null
+    if (!parentBootstrap?.events) return null
+
+    return parentBootstrap.events.find(
+      (e) => e.eventType === "message_created" && (e.payload as { messageId?: string })?.messageId === parentMessageId
+    )
+  }, [isThread, parentStreamId, parentMessageId, parentBootstrap?.events])
 
   // Clear the message param after a delay to allow highlighting
   useEffect(() => {
@@ -62,6 +85,15 @@ export function TimelineView({ isDraft = false }: TimelineViewProps) {
   return (
     <div className="flex h-full flex-col">
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto mb-4" onScroll={handleScroll}>
+        {/* Show parent message for threads */}
+        {isThread && parentMessage && parentStreamId && (
+          <ThreadParentMessage
+            event={parentMessage}
+            workspaceId={workspaceId}
+            streamId={parentStreamId}
+            replyCount={events.length}
+          />
+        )}
         {!isDraft && isFetchingOlder && (
           <div className="flex justify-center py-2">
             <p className="text-sm text-muted-foreground">Loading older messages...</p>

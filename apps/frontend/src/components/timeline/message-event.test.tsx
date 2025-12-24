@@ -83,8 +83,8 @@ vi.mock("./thread-indicator", () => ({
 const createMessageEvent = (messageId: string, content: string): StreamEvent => ({
   id: `event_${messageId}`,
   streamId: "stream_123",
+  sequence: "1",
   eventType: "message_created",
-  version: 1,
   actorType: "user",
   actorId: "user_123",
   createdAt: new Date().toISOString(),

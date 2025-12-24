@@ -28,6 +28,8 @@ export interface VirtualStream {
   displayName: string | null
   companionMode: CompanionMode
   isDraft: boolean
+  parentStreamId: string | null
+  parentMessageId: string | null
 }
 
 export interface SendMessageInput {
@@ -67,6 +69,8 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         displayName: draft.displayName,
         companionMode: draft.companionMode,
         isDraft: true,
+        parentStreamId: null,
+        parentMessageId: null,
       }
     : undefined
 
@@ -153,6 +157,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         displayName: bootstrap.stream.displayName,
         companionMode: bootstrap.stream.companionMode,
         isDraft: false,
+        parentStreamId: bootstrap.stream.parentStreamId,
+        parentMessageId: bootstrap.stream.parentMessageId,
       }
     : undefined
 

@@ -1,6 +1,6 @@
 import { useState, useRef, Fragment } from "react"
-import { useParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive } from "lucide-react"
+import { useParams, Link } from "react-router-dom"
+import { MoreHorizontal, Pencil, Archive, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -39,7 +39,8 @@ export function StreamPage() {
   }
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
-  const streamName = stream?.displayName || (isDraft ? "New scratchpad" : "Stream")
+  const isThread = stream?.type === StreamTypes.THREAD
+  const streamName = stream?.displayName || (isDraft ? "New scratchpad" : isThread ? "Thread" : "Stream")
 
   const handleStartRename = () => {
     setEditValue(stream?.displayName || "")
@@ -70,7 +71,14 @@ export function StreamPage() {
   const mainStreamContent = (
     <div className="flex h-full flex-col">
       <header className="flex h-14 items-center justify-between border-b px-4">
-        <div className="flex-1">
+        <div className="flex items-center gap-2 flex-1">
+          {isThread && stream?.parentStreamId && (
+            <Link to={`/w/${workspaceId}/s/${stream.parentStreamId}`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </Link>
+          )}
           {isEditing ? (
             <Input
               ref={inputRef}
