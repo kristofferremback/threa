@@ -1,8 +1,31 @@
-import { generateText } from "ai"
+import { generateObject } from "ai"
+import { z } from "zod"
 import type { ProviderRegistry } from "../ai/provider-registry"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
+import { CONVERSATION_STATUSES } from "@threa/types"
+
+/**
+ * Schema for LLM extraction response using structured outputs.
+ * The model outputs directly conform to this schema, eliminating JSON parsing errors.
+ */
+const extractionResponseSchema = z.object({
+  conversationId: z.string().nullable().describe("ID of existing conversation to join, or null for new conversation"),
+  newConversationTopic: z.string().optional().describe("Topic summary if starting a new conversation"),
+  completenessUpdates: z
+    .array(
+      z.object({
+        conversationId: z.string(),
+        score: z.number().min(1).max(7).describe("Completeness score: 1 = just started, 7 = fully resolved"),
+        status: z.enum(CONVERSATION_STATUSES),
+      })
+    )
+    .optional()
+    .describe("Updates to completeness scores for affected conversations"),
+  confidence: z.number().min(0).max(1).describe("Confidence in this classification (0.0 to 1.0)"),
+  reasoning: z.string().optional().describe("Brief explanation of the classification decision"),
+})
 
 const EXTRACTION_PROMPT = `You are analyzing a message stream to identify conversation boundaries. Your task is to determine which conversation a new message belongs to.
 
@@ -22,17 +45,6 @@ Determine which conversation this message belongs to. Consider:
 2. Participant overlap - is the author part of an existing conversation?
 3. Explicit references - does the message reference something from a conversation?
 4. Context - does this feel like a continuation or a new topic?
-
-Respond with JSON only, no markdown:
-{
-  "conversationId": "conv_xxx" or null,
-  "newConversationTopic": "short topic description",
-  "completenessUpdates": [
-    {"conversationId": "conv_xxx", "score": 1-7, "status": "active" or "stalled" or "resolved"}
-  ],
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}
 
 Notes:
 - Set conversationId to null if this starts a new conversation
@@ -56,14 +68,15 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
 
     try {
       const model = this.providerRegistry.getModel(this.modelId)
-      const result = await generateText({
+      const result = await generateObject({
         model,
         prompt,
+        schema: extractionResponseSchema,
         maxOutputTokens: 500,
         temperature: 0.2,
       })
 
-      return this.parseResult(result.text, context)
+      return this.validateResult(result.object, context)
     } catch (err) {
       logger.error({ err }, "Boundary extraction LLM call failed")
       return {
@@ -107,37 +120,25 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       .replace("{{CONTENT}}", context.newMessage.content)
   }
 
-  private parseResult(text: string, context: ExtractionContext): ExtractionResult {
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) {
-        throw new Error("No JSON found in response")
-      }
-
-      const parsed = JSON.parse(jsonMatch[0])
-
-      if (parsed.conversationId && !this.isValidConversationId(parsed.conversationId, context)) {
-        logger.warn({ parsedId: parsed.conversationId }, "LLM returned invalid conversation ID, treating as new")
-        return {
-          conversationId: null,
-          newConversationTopic: parsed.newConversationTopic || this.extractTopicFromMessage(context.newMessage),
-          confidence: parsed.confidence ?? 0.5,
-        }
-      }
-
-      return {
-        conversationId: parsed.conversationId ?? null,
-        newConversationTopic: parsed.newConversationTopic,
-        completenessUpdates: parsed.completenessUpdates,
-        confidence: parsed.confidence ?? 0.5,
-      }
-    } catch (err) {
-      logger.warn({ err, text: text.slice(0, 200) }, "Failed to parse LLM response")
+  private validateResult(
+    parsed: z.infer<typeof extractionResponseSchema>,
+    context: ExtractionContext
+  ): ExtractionResult {
+    // Validate that the returned conversation ID actually exists
+    if (parsed.conversationId && !this.isValidConversationId(parsed.conversationId, context)) {
+      logger.warn({ parsedId: parsed.conversationId }, "LLM returned invalid conversation ID, treating as new")
       return {
         conversationId: null,
-        newConversationTopic: this.extractTopicFromMessage(context.newMessage),
-        confidence: 0.3,
+        newConversationTopic: parsed.newConversationTopic || this.extractTopicFromMessage(context.newMessage),
+        confidence: parsed.confidence,
       }
+    }
+
+    return {
+      conversationId: parsed.conversationId,
+      newConversationTopic: parsed.newConversationTopic,
+      completenessUpdates: parsed.completenessUpdates,
+      confidence: parsed.confidence,
     }
   }
 

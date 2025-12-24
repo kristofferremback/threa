@@ -3,8 +3,8 @@
  *
  * Tests verify:
  * 1. Thread messages get 100% confidence and assigned to existing conversation
- * 2. Valid JSON parsing extracts correct fields
- * 3. Invalid JSON falls back to safe defaults
+ * 2. Structured output parsing extracts correct fields
+ * 3. LLM errors fall back to safe defaults
  * 4. Invalid conversation IDs are treated as new conversations
  * 5. Topic extraction from message content
  */
@@ -14,10 +14,15 @@ import { LLMBoundaryExtractor } from "./llm-extractor"
 import type { ExtractionContext, ConversationSummary } from "./types"
 import type { Message } from "../../repositories/message-repository"
 
-// Mock the ai module's generateText function
-const mockGenerateText = mock(async () => ({ text: "{}" }))
+// Mock the ai module's generateObject function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGenerateObject = mock(
+  async (): Promise<{ object: any }> => ({
+    object: { conversationId: null, confidence: 0.5 },
+  })
+)
 mock.module("ai", () => ({
-  generateText: mockGenerateText,
+  generateObject: mockGenerateObject,
 }))
 
 // Mock provider registry
@@ -70,7 +75,7 @@ describe("LLMBoundaryExtractor", () => {
   let extractor: LLMBoundaryExtractor
 
   beforeEach(() => {
-    mockGenerateText.mockReset()
+    mockGenerateObject.mockReset()
     extractor = new LLMBoundaryExtractor(mockProviderRegistry, "openrouter:anthropic/claude-3-haiku")
   })
 
@@ -122,23 +127,23 @@ describe("LLMBoundaryExtractor", () => {
 
       await extractor.extract(context)
 
-      expect(mockGenerateText).not.toHaveBeenCalled()
+      expect(mockGenerateObject).not.toHaveBeenCalled()
     })
   })
 
-  describe("LLM response parsing", () => {
-    test("parses valid JSON response with existing conversation", async () => {
+  describe("structured output handling", () => {
+    test("handles response with existing conversation", async () => {
       const existingConv = createMockConversation({ id: "conv_match123" })
       const context = createMockContext({
         activeConversations: [existingConv],
       })
 
-      mockGenerateText.mockResolvedValueOnce({
-        text: JSON.stringify({
+      mockGenerateObject.mockResolvedValueOnce({
+        object: {
           conversationId: "conv_match123",
           confidence: 0.92,
           reasoning: "Topic matches existing conversation",
-        }),
+        },
       })
 
       const result = await extractor.extract(context)
@@ -147,15 +152,15 @@ describe("LLMBoundaryExtractor", () => {
       expect(result.confidence).toBe(0.92)
     })
 
-    test("parses valid JSON response for new conversation", async () => {
+    test("handles response for new conversation", async () => {
       const context = createMockContext()
 
-      mockGenerateText.mockResolvedValueOnce({
-        text: JSON.stringify({
+      mockGenerateObject.mockResolvedValueOnce({
+        object: {
           conversationId: null,
           newConversationTopic: "New topic from LLM",
           confidence: 0.88,
-        }),
+        },
       })
 
       const result = await extractor.extract(context)
@@ -165,31 +170,18 @@ describe("LLMBoundaryExtractor", () => {
       expect(result.confidence).toBe(0.88)
     })
 
-    test("extracts JSON from markdown code blocks", async () => {
-      const context = createMockContext()
-
-      mockGenerateText.mockResolvedValueOnce({
-        text: 'Here is the result:\n```json\n{"conversationId": null, "confidence": 0.75}\n```',
-      })
-
-      const result = await extractor.extract(context)
-
-      expect(result.conversationId).toBeNull()
-      expect(result.confidence).toBe(0.75)
-    })
-
-    test("parses completeness updates", async () => {
+    test("handles completeness updates", async () => {
       const existingConv = createMockConversation({ id: "conv_update123" })
       const context = createMockContext({
         activeConversations: [existingConv],
       })
 
-      mockGenerateText.mockResolvedValueOnce({
-        text: JSON.stringify({
+      mockGenerateObject.mockResolvedValueOnce({
+        object: {
           conversationId: "conv_update123",
           confidence: 0.95,
           completenessUpdates: [{ conversationId: "conv_update123", score: 6, status: "resolved" }],
-        }),
+        },
       })
 
       const result = await extractor.extract(context)
@@ -202,28 +194,12 @@ describe("LLMBoundaryExtractor", () => {
   })
 
   describe("fallback behavior", () => {
-    test("falls back to safe defaults on invalid JSON", async () => {
-      const context = createMockContext({
-        newMessage: createMockMessage({ content: "Fallback topic here" }),
-      })
-
-      mockGenerateText.mockResolvedValueOnce({
-        text: "This is not valid JSON at all",
-      })
-
-      const result = await extractor.extract(context)
-
-      expect(result.conversationId).toBeNull()
-      expect(result.newConversationTopic).toBe("Fallback topic here")
-      expect(result.confidence).toBe(0.3)
-    })
-
     test("falls back on LLM error", async () => {
       const context = createMockContext({
         newMessage: createMockMessage({ content: "Error fallback topic" }),
       })
 
-      mockGenerateText.mockRejectedValueOnce(new Error("API error"))
+      mockGenerateObject.mockRejectedValueOnce(new Error("API error"))
 
       const result = await extractor.extract(context)
 
@@ -240,11 +216,11 @@ describe("LLMBoundaryExtractor", () => {
       })
 
       // LLM returns an ID that doesn't exist in active conversations
-      mockGenerateText.mockResolvedValueOnce({
-        text: JSON.stringify({
+      mockGenerateObject.mockResolvedValueOnce({
+        object: {
           conversationId: "conv_hallucinated_id",
           confidence: 0.8,
-        }),
+        },
       })
 
       const result = await extractor.extract(context)
@@ -252,20 +228,6 @@ describe("LLMBoundaryExtractor", () => {
       // Should be treated as new conversation since ID doesn't exist
       expect(result.conversationId).toBeNull()
       expect(result.newConversationTopic).toBe("New topic content")
-    })
-
-    test("uses default confidence when not provided", async () => {
-      const context = createMockContext()
-
-      mockGenerateText.mockResolvedValueOnce({
-        text: JSON.stringify({
-          conversationId: null,
-        }),
-      })
-
-      const result = await extractor.extract(context)
-
-      expect(result.confidence).toBe(0.5)
     })
   })
 
