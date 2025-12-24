@@ -38,3 +38,5 @@ export {
 } from "./create-optimistic-bootstrap"
 
 export { useSearch } from "./use-search"
+
+export { useActors } from "./use-actors"

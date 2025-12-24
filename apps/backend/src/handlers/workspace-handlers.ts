@@ -62,20 +62,24 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
-      const [workspace, members, streams] = await Promise.all([
+      const [workspace, members, streams, personas] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
         streamService.list(workspaceId, userId),
+        workspaceService.getPersonasForWorkspace(workspaceId),
       ])
 
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" })
       }
 
-      const streamMemberships = await streamService.getMembershipsBatch(
-        streams.map((s) => s.id),
-        userId
-      )
+      const [streamMemberships, users] = await Promise.all([
+        streamService.getMembershipsBatch(
+          streams.map((s) => s.id),
+          userId
+        ),
+        workspaceService.getUsersForMembers(members),
+      ])
 
       res.json({
         data: {
@@ -83,6 +87,8 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
           members,
           streams,
           streamMemberships,
+          users,
+          personas,
         },
       })
     },

@@ -5,7 +5,7 @@
  */
 
 import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
-import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember } from "./domain"
+import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember, User, Persona } from "./domain"
 
 // ============================================================================
 // Streams API
@@ -73,4 +73,6 @@ export interface WorkspaceBootstrap {
   members: WorkspaceMember[]
   streams: Stream[]
   streamMemberships: StreamMember[]
+  users: User[]
+  personas: Persona[]
 }

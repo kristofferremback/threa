@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import type { StreamType, WorkspaceMember, Stream } from "@threa/types"
+import type { StreamType, WorkspaceMember, Stream, User } from "@threa/types"
 
 interface StreamTypeOption {
   value: StreamType
@@ -12,13 +12,14 @@ interface StreamTypeOption {
 interface FilterSelectProps {
   type: "from" | "is" | "in" | "after" | "before"
   members: WorkspaceMember[]
+  users: User[]
   streams: Stream[]
   streamTypes: StreamTypeOption[]
   onSelect: (value: string, label: string) => void
   onCancel: () => void
 }
 
-export function FilterSelect({ type, members, streams, streamTypes, onSelect, onCancel }: FilterSelectProps) {
+export function FilterSelect({ type, members, users, streams, streamTypes, onSelect, onCancel }: FilterSelectProps) {
   // Handle escape key to cancel
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -32,7 +33,7 @@ export function FilterSelect({ type, members, streams, streamTypes, onSelect, on
   }, [onCancel])
 
   if (type === "from") {
-    return <UserSelect members={members} onSelect={onSelect} />
+    return <UserSelect members={members} users={users} onSelect={onSelect} />
   }
 
   if (type === "is") {
@@ -52,13 +53,35 @@ export function FilterSelect({ type, members, streams, streamTypes, onSelect, on
 
 interface UserSelectProps {
   members: WorkspaceMember[]
+  users: User[]
   onSelect: (value: string, label: string) => void
 }
 
-function UserSelect({ members, onSelect }: UserSelectProps) {
+function UserSelect({ members, users, onSelect }: UserSelectProps) {
   const [search, setSearch] = useState("")
 
-  const filtered = members.filter((m) => m.userId.toLowerCase().includes(search.toLowerCase()))
+  // Create a lookup map for user names
+  const userMap = useMemo(() => {
+    const map = new Map<string, User>()
+    for (const user of users) {
+      map.set(user.id, user)
+    }
+    return map
+  }, [users])
+
+  const getUserName = (userId: string): string => {
+    return userMap.get(userId)?.name ?? userId.substring(0, 8)
+  }
+
+  // Filter members by user name or ID
+  const filtered = useMemo(() => {
+    const searchLower = search.toLowerCase()
+    return members.filter((m) => {
+      const user = userMap.get(m.userId)
+      const name = user?.name ?? ""
+      return name.toLowerCase().includes(searchLower) || m.userId.toLowerCase().includes(searchLower)
+    })
+  }, [members, userMap, search])
 
   return (
     <div className="w-48">
@@ -67,15 +90,14 @@ function UserSelect({ members, onSelect }: UserSelectProps) {
         <CommandList className="max-h-32">
           <CommandEmpty>No users found.</CommandEmpty>
           <CommandGroup>
-            {filtered.slice(0, 10).map((member) => (
-              <CommandItem
-                key={member.userId}
-                value={member.userId}
-                onSelect={() => onSelect(member.userId, member.userId)}
-              >
-                {member.userId}
-              </CommandItem>
-            ))}
+            {filtered.slice(0, 10).map((member) => {
+              const name = getUserName(member.userId)
+              return (
+                <CommandItem key={member.userId} value={member.userId} onSelect={() => onSelect(member.userId, name)}>
+                  {name}
+                </CommandItem>
+              )
+            })}
           </CommandGroup>
         </CommandList>
       </Command>

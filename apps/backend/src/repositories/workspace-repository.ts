@@ -113,6 +113,13 @@ export const WorkspaceRepository = {
     return mapRowToMember(result.rows[0])
   },
 
+  async removeMember(client: PoolClient, workspaceId: string, userId: string): Promise<void> {
+    await client.query(sql`
+      DELETE FROM workspace_members
+      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+    `)
+  },
+
   async listMembers(client: PoolClient, workspaceId: string): Promise<WorkspaceMember[]> {
     const result = await client.query<WorkspaceMemberRow>(sql`
       SELECT workspace_id, user_id, role, joined_at

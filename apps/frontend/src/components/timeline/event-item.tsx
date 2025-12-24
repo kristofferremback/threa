@@ -37,7 +37,7 @@ export function EventItem({ event, workspaceId, streamId, hideActions, highlight
 
     case "member_joined":
     case "member_left":
-      return <MembershipEvent event={event} />
+      return <MembershipEvent event={event} workspaceId={workspaceId} />
 
     case "thread_created":
       return <SystemEvent event={event} />
