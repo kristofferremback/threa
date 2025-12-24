@@ -1,6 +1,6 @@
 import { useState, useRef, Fragment } from "react"
 import { useParams, Link } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -91,12 +91,21 @@ export function StreamPage() {
               autoFocus
             />
           ) : isThread && rootStreamId ? (
-            <h1 className="font-semibold">
-              Thread in{" "}
-              <Link to={`/w/${workspaceId}/s/${rootStreamId}`} className="text-primary hover:underline">
-                {rootStreamName || "..."}
-              </Link>
-            </h1>
+            <div className="flex items-center gap-1">
+              {stream?.parentStreamId && (
+                <Link to={`/w/${workspaceId}/s/${stream.parentStreamId}`}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </Link>
+              )}
+              <h1 className="font-semibold">
+                Thread in{" "}
+                <Link to={`/w/${workspaceId}/s/${rootStreamId}`} className="text-primary hover:underline">
+                  {rootStreamName || "..."}
+                </Link>
+              </h1>
+            </div>
           ) : isScratchpad ? (
             <div
               className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors"
