@@ -84,6 +84,27 @@ describe("Search E2E Tests", () => {
 
       expect(results.length).toBe(2)
     })
+
+    test("should find exact phrase when quoted", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("phrase"), "Phrase Test")
+      const workspace = await createWorkspace(client, `Phrase WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      // Send messages - one with exact phrase, one with words in different order
+      const phrase = `${testRunId} chicken wings`
+      await sendMessage(client, workspace.id, scratchpad.id, `I love ${phrase} for dinner`)
+      await sendMessage(client, workspace.id, scratchpad.id, `Wings are better than chicken ${testRunId}`)
+
+      // Search for exact phrase with quotes - should only match first message
+      const phraseResults = await search(client, workspace.id, { query: `"${phrase}"` })
+      expect(phraseResults.length).toBe(1)
+      expect(phraseResults[0].content).toContain(phrase)
+
+      // Search without quotes - should match both (individual words)
+      const wordResults = await search(client, workspace.id, { query: `${testRunId} chicken wings` })
+      expect(wordResults.length).toBe(2)
+    })
   })
 
   describe("Permission Filtering", () => {

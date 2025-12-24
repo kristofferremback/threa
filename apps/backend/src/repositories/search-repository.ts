@@ -65,7 +65,8 @@ export interface HybridSearchParams {
 
 export const SearchRepository = {
   /**
-   * Full-text search using PostgreSQL tsvector.
+   * Full-text search using PostgreSQL tsvector with websearch syntax.
+   * Supports quoted phrases for exact matching: "chicken wingz"
    * Results are ranked by ts_rank.
    * If query is empty, returns recent messages matching filters.
    */
@@ -109,12 +110,12 @@ export const SearchRepository = {
         m.author_id,
         m.author_type,
         m.created_at,
-        ts_rank(m.search_vector, plainto_tsquery('english', ${query})) as rank
+        ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) as rank
       FROM messages m
       JOIN streams s ON m.stream_id = s.id
       WHERE m.stream_id = ANY(${streamIds})
         AND m.deleted_at IS NULL
-        AND m.search_vector @@ plainto_tsquery('english', ${query})
+        AND m.search_vector @@ websearch_to_tsquery('english', ${query})
         AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
         AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
         AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
@@ -128,6 +129,7 @@ export const SearchRepository = {
 
   /**
    * Hybrid search combining full-text and semantic search with RRF ranking.
+   * Supports quoted phrases for exact matching: "chicken wingz"
    * All done in a single query using CTEs.
    *
    * RRF formula: score(d) = Σ(weight / (k + rank(d)))
@@ -154,12 +156,12 @@ export const SearchRepository = {
           m.author_id,
           m.author_type,
           m.created_at,
-          ROW_NUMBER() OVER (ORDER BY ts_rank(m.search_vector, plainto_tsquery('english', ${query})) DESC) as rank
+          ROW_NUMBER() OVER (ORDER BY ts_rank(m.search_vector, websearch_to_tsquery('english', ${query})) DESC) as rank
         FROM messages m
         JOIN streams s ON m.stream_id = s.id
         WHERE m.stream_id = ANY(${streamIds})
           AND m.deleted_at IS NULL
-          AND m.search_vector @@ plainto_tsquery('english', ${query})
+          AND m.search_vector @@ websearch_to_tsquery('english', ${query})
           AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
           AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
           AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})

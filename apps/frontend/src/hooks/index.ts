@@ -36,3 +36,5 @@ export {
   type CreateOptimisticBootstrapParams,
   type OptimisticBootstrap,
 } from "./create-optimistic-bootstrap"
+
+export { useSearch } from "./use-search"

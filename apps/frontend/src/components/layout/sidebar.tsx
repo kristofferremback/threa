@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, Search } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -63,10 +63,22 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Workspace header */}
-      <div className="flex h-14 items-center border-b px-4">
+      <div className="flex h-14 items-center justify-between border-b px-4">
         <Link to="/workspaces" className="font-semibold hover:underline truncate">
           {bootstrap?.workspace.name ?? "Loading..."}
         </Link>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => {
+            // Dispatch keyboard event to trigger search
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
+          }}
+          title="Search (⌘P)"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
       </div>
 
       <ScrollArea className="flex-1">
