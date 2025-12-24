@@ -1,4 +1,5 @@
 export { TimelineView } from "./timeline-view"
+export { StreamContent } from "./stream-content"
 export { EventList } from "./event-list"
 export { EventItem } from "./event-item"
 export { MessageEvent } from "./message-event"

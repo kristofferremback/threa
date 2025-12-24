@@ -1,6 +1,6 @@
 import { useState, useRef, Fragment } from "react"
-import { useParams, Link } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, ChevronLeft } from "lucide-react"
+import { useParams } from "react-router-dom"
+import { MoreHorizontal, Pencil, Archive } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,10 +11,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
-import { useStreamOrDraft, useStreamBootstrap } from "@/hooks"
+import { useStreamOrDraft } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
-import { ThreadPanel, ThreadDraftPanel } from "@/components/thread"
+import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
 import { StreamTypes } from "@threa/types"
 
 export function StreamPage() {
@@ -22,13 +22,7 @@ export function StreamPage() {
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId!, streamId!)
   const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
 
-  // For threads, fetch the root stream to show its name in the header
   const isThread = stream?.type === StreamTypes.THREAD
-  const rootStreamId = stream?.rootStreamId
-  const { data: rootBootstrap } = useStreamBootstrap(workspaceId!, rootStreamId ?? "", {
-    enabled: isThread && !!rootStreamId,
-  })
-  const rootStreamName = rootBootstrap?.stream?.displayName
 
   const handleCloseDraft = () => {
     closeAllPanels() // This also clears draftReply
@@ -90,22 +84,8 @@ export function StreamPage() {
               placeholder="Scratchpad name"
               autoFocus
             />
-          ) : isThread && rootStreamId ? (
-            <div className="flex items-center gap-1">
-              {stream?.parentStreamId && (
-                <Link to={`/w/${workspaceId}/s/${stream.parentStreamId}`}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                </Link>
-              )}
-              <h1 className="font-semibold">
-                Thread in{" "}
-                <Link to={`/w/${workspaceId}/s/${rootStreamId}`} className="text-primary hover:underline">
-                  {rootStreamName || "..."}
-                </Link>
-              </h1>
-            </div>
+          ) : isThread && stream ? (
+            <ThreadHeader workspaceId={workspaceId} stream={stream} />
           ) : isScratchpad ? (
             <div
               className="group inline-flex items-center gap-1 rounded-md px-2 py-1 -ml-2 hover:bg-accent/50 hover:outline hover:outline-1 hover:outline-border cursor-pointer transition-colors"
@@ -166,12 +146,12 @@ export function StreamPage() {
         {mainStreamContent}
       </ResizablePanel>
 
-      {/* Existing thread panels */}
+      {/* Stream panels */}
       {openPanels.map((panel) => (
         <Fragment key={panel.streamId}>
           <ResizableHandle withHandle />
           <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
-            <ThreadPanel
+            <StreamPanel
               workspaceId={workspaceId}
               streamId={panel.streamId}
               onClose={() => closePanel(panel.streamId)}

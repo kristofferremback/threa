@@ -1,6 +1,4 @@
-// Container components (use these)
-export { StreamThreadPanel as ThreadPanel } from "./stream-thread-panel"
+export { StreamPanel } from "./stream-panel"
 export { DraftThreadPanel as ThreadDraftPanel } from "./draft-thread-panel"
-
-// View component (for custom containers)
-export { ThreadPanelView } from "./thread-panel-view"
+export { ThreadHeader } from "./thread-header"
+export { ThreadParentMessage } from "./thread-parent-message"
