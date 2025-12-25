@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { workspaceKeys } from "./use-workspaces"
-import { toEmoji } from "@/lib/emoji"
+import { useWorkspaceEmoji } from "./use-workspace-emoji"
 import type { User, Persona, WorkspaceBootstrap, AuthorType } from "@threa/types"
 
 interface ActorLookup {
@@ -17,6 +17,7 @@ interface ActorLookup {
  */
 export function useActors(workspaceId: string): ActorLookup {
   const queryClient = useQueryClient()
+  const { toEmoji } = useWorkspaceEmoji(workspaceId)
 
   const getBootstrapData = useCallback(() => {
     return queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
@@ -87,7 +88,7 @@ export function useActors(workspaceId: string): ActorLookup {
 
       return actorId.substring(0, 2).toUpperCase()
     },
-    [getUser, getPersona]
+    [getUser, getPersona, toEmoji]
   )
 
   return useMemo(

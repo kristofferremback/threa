@@ -68,6 +68,12 @@ export interface CreateWorkspaceInput {
   slug?: string
 }
 
+export interface EmojiEntry {
+  shortcode: string
+  emoji: string
+  type: "native" | "custom"
+}
+
 export interface WorkspaceBootstrap {
   workspace: Workspace
   members: WorkspaceMember[]
@@ -75,4 +81,5 @@ export interface WorkspaceBootstrap {
   streamMemberships: StreamMember[]
   users: User[]
   personas: Persona[]
+  emojis: EmojiEntry[]
 }

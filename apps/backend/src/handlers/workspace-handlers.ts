@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
+import { getEmojiList } from "../lib/emoji"
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "name is required"),
@@ -89,6 +90,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
           streamMemberships,
           users,
           personas,
+          emojis: getEmojiList(),
         },
       })
     },

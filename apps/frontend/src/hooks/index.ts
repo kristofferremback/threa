@@ -40,3 +40,5 @@ export {
 export { useSearch } from "./use-search"
 
 export { useActors } from "./use-actors"
+
+export { useWorkspaceEmoji } from "./use-workspace-emoji"
