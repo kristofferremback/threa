@@ -44,6 +44,12 @@ export function createCommandListener(
       }
 
       const payload = outboxEvent.payload as MessageCreatedOutboxPayload
+
+      // Guard against malformed events (e.g., old events before migration)
+      if (!payload.event?.payload) {
+        return
+      }
+
       const { event, streamId, workspaceId } = payload
       const eventPayload = event.payload as MessageCreatedEventPayload
 
@@ -77,17 +83,20 @@ export function createCommandListener(
       })
 
       if (result.success) {
-        // Delete the command message to keep chat clean
-        await eventService.deleteMessage({
-          workspaceId,
-          streamId,
-          messageId: eventPayload.messageId,
-          actorId: event.actorId!,
-        })
+        // Delete the command message unless command opted to keep it (e.g., for threading)
+        const shouldDelete = result.deleteMessage !== false
+        if (shouldDelete) {
+          await eventService.deleteMessage({
+            workspaceId,
+            streamId,
+            messageId: eventPayload.messageId,
+            actorId: event.actorId!,
+          })
+        }
 
         logger.info(
-          { command: parsed.name, streamId, messageId: eventPayload.messageId },
-          "Command executed and message deleted"
+          { command: parsed.name, streamId, messageId: eventPayload.messageId, deleted: shouldDelete },
+          shouldDelete ? "Command executed and message deleted" : "Command executed, message kept"
         )
       } else {
         // Leave the message visible for debugging

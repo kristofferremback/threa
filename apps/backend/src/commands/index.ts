@@ -25,6 +25,8 @@ export interface CommandResult {
   success: boolean
   /** Error message if success is false */
   error?: string
+  /** If false, keep the command message instead of deleting it (default: true) */
+  deleteMessage?: boolean
 }
 
 export interface Command {

@@ -30,6 +30,9 @@ import { createMemoAccumulator } from "./lib/memo-accumulator"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
+import { createCommandListener } from "./lib/command-listener"
+import { CommandRegistry } from "./commands"
+import { SimulateCommand } from "./commands/simulate-command"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
@@ -39,9 +42,11 @@ import {
   createMemoBatchProcessWorker,
   scheduleMemoBatchCheck,
 } from "./workers/memo-batch-worker"
+import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { CompanionAgent } from "./agents/companion-agent"
+import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
@@ -164,10 +169,32 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
 
+  // Simulation agent and worker for /simulate command
+  const simulationAgent = new SimulationAgent({
+    pool,
+    providerRegistry,
+    streamService,
+    createMessage,
+    orchestratorModel: config.ai.namingModel, // reuse the cheap model for orchestration
+  })
+  const simulationWorker = createSimulationWorker({ agent: simulationAgent })
+  jobQueue.registerHandler(JobQueues.SIMULATE_RUN, simulationWorker)
+
   await jobQueue.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
   await scheduleMemoBatchCheck(jobQueue)
+
+  // Command infrastructure
+  const commandRegistry = new CommandRegistry()
+  const simulateCommand = new SimulateCommand({
+    pool,
+    jobQueue,
+    providerRegistry,
+    streamService,
+    parsingModel: config.ai.namingModel, // reuse the cheap naming model for parsing
+  })
+  commandRegistry.register(simulateCommand)
 
   // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)
@@ -176,12 +203,14 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
+  const commandListener = createCommandListener({ pool, commandRegistry, eventService })
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
   await memoAccumulator.start()
+  await commandListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -193,6 +222,7 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     await memoAccumulator.stop()
+    await commandListener.stop()
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
     await namingListener.stop()

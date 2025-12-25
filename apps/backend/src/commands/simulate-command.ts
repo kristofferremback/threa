@@ -1,0 +1,207 @@
+import { generateObject } from "ai"
+import { z } from "zod"
+import type { Pool } from "pg"
+import type { Command, CommandContext, CommandResult } from "./index"
+import type { ProviderRegistry } from "../lib/ai/provider-registry"
+import type { JobQueueManager } from "../lib/job-queue"
+import type { StreamService } from "../services/stream-service"
+import { JobQueues } from "../lib/job-queue"
+import { PersonaRepository } from "../repositories/persona-repository"
+import { withClient } from "../db"
+import { logger } from "../lib/logger"
+
+const SimulationParamsSchema = z.object({
+  personas: z.array(z.string()).min(1).max(5).describe("List of persona names/slugs mentioned in the command"),
+  topic: z.string().describe("The topic or theme of the conversation, inferred from context"),
+  turns: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(5)
+    .describe("Number of conversation turns (each turn = one message from one persona)"),
+  thread: z.boolean().default(false).describe("Whether to run the simulation in a thread"),
+})
+
+type SimulationParams = z.infer<typeof SimulationParamsSchema>
+
+/**
+ * Strip markdown code fences from LLM output.
+ * Models sometimes wrap JSON in ```json ... ``` even when asked not to.
+ */
+async function stripMarkdownFences({ text }: { text: string }): Promise<string> {
+  return text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")
+}
+
+/**
+ * Build the parsing prompt with available personas as context.
+ */
+function buildParsingPrompt(availablePersonas: string[]): string {
+  const personaList = availablePersonas.length > 0 ? availablePersonas.join(", ") : "(none available)"
+
+  return `Parse the command and extract: personas (array), topic (string), turns (number, default 5), thread (boolean, default false).
+
+AVAILABLE PERSONAS: ${personaList}
+Match persona names from the command to the available personas above. Use exact slugs from the list.
+
+IMPORTANT: Personas are simple identifiers (one or two words like "ariadne", "bob", "the_critic").
+Role descriptions like "as a reporter" or "pretending to be X" are part of the TOPIC, not the persona name.
+
+THREAD: Set thread=true if the user says "in a thread", "as a thread", or similar.
+
+Output raw JSON only. No markdown, no code blocks, no explanation.
+
+Examples:
+Input: "ariadne and bob discussing API design for 10 turns"
+Output: {"personas":["ariadne","bob"],"topic":"API design","turns":10,"thread":false}
+
+Input: "just ariadne thinking out loud, 3 turns"
+Output: {"personas":["ariadne"],"topic":"thinking out loud","turns":3,"thread":false}
+
+Input: "ariadne should interview herself as if she's a reporter, 4 turns"
+Output: {"personas":["ariadne"],"topic":"interview herself as if she's a reporter","turns":4,"thread":false}
+
+Input: "bob and alice discuss the weather in a thread"
+Output: {"personas":["bob","alice"],"topic":"the weather","turns":5,"thread":true}
+
+Input: "ariadne explores ideas, 6 turns, in a thread"
+Output: {"personas":["ariadne"],"topic":"explores ideas","turns":6,"thread":true}
+
+Input:`
+}
+
+interface SimulateCommandDeps {
+  pool: Pool
+  jobQueue: JobQueueManager
+  providerRegistry: ProviderRegistry
+  streamService: StreamService
+  parsingModel: string
+}
+
+/**
+ * /simulate command - starts a simulated conversation between personas.
+ *
+ * Usage: /simulate ariadne and bob discussing API design for 10 turns
+ */
+export class SimulateCommand implements Command {
+  name = "simulate"
+  description = "Simulate a conversation between AI personas"
+
+  constructor(private deps: SimulateCommandDeps) {}
+
+  async execute(ctx: CommandContext): Promise<CommandResult> {
+    const { args, streamId, workspaceId, userId, messageId } = ctx
+
+    if (!args.trim()) {
+      return {
+        success: false,
+        error: "Usage: /simulate <personas> discussing <topic> [for N turns] [in a thread]",
+      }
+    }
+
+    // Get available personas for context
+    const availablePersonas = await this.getAvailablePersonaSlugs(workspaceId)
+
+    // Parse natural language args
+    let params: SimulationParams
+    try {
+      params = await this.parseArgs(args, availablePersonas)
+    } catch (err) {
+      logger.warn({ err, args }, "Failed to parse simulation args")
+      return {
+        success: false,
+        error: `Could not understand command. Try: /simulate ariadne and bob discussing API design for 10 turns`,
+      }
+    }
+
+    // Validate personas exist
+    const validation = await this.validatePersonas(params.personas, workspaceId)
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: validation.error!,
+      }
+    }
+
+    // Determine target stream - either a new thread or the current stream
+    let targetStreamId = streamId
+    if (params.thread) {
+      const thread = await this.deps.streamService.createThread({
+        workspaceId,
+        parentStreamId: streamId,
+        parentMessageId: messageId,
+        createdBy: userId,
+      })
+      targetStreamId = thread.id
+      logger.info({ threadId: thread.id, parentMessageId: messageId }, "Created thread for simulation")
+    }
+
+    // Dispatch simulation job
+    await this.deps.jobQueue.send(JobQueues.SIMULATE_RUN, {
+      streamId: targetStreamId,
+      workspaceId,
+      userId,
+      personas: params.personas,
+      topic: params.topic,
+      turns: params.turns,
+    })
+
+    logger.info(
+      {
+        streamId: targetStreamId,
+        personas: params.personas,
+        topic: params.topic,
+        turns: params.turns,
+        thread: params.thread,
+      },
+      "Simulation job dispatched"
+    )
+
+    // Keep the command message if threading (it's the thread anchor)
+    return { success: true, deleteMessage: !params.thread }
+  }
+
+  private async parseArgs(args: string, availablePersonas: string[]): Promise<SimulationParams> {
+    const model = this.deps.providerRegistry.getModel(this.deps.parsingModel)
+    const prompt = buildParsingPrompt(availablePersonas)
+
+    const result = await generateObject({
+      model,
+      schema: SimulationParamsSchema,
+      prompt: `${prompt} ${args}`,
+      temperature: 0,
+      experimental_repairText: stripMarkdownFences,
+    })
+
+    return result.object
+  }
+
+  private async getAvailablePersonaSlugs(workspaceId: string): Promise<string[]> {
+    return withClient(this.deps.pool, async (client) => {
+      const personas = await PersonaRepository.listForWorkspace(client, workspaceId)
+      return personas.map((p) => p.slug)
+    })
+  }
+
+  private async validatePersonas(slugs: string[], workspaceId: string): Promise<{ valid: boolean; error?: string }> {
+    const missing: string[] = []
+
+    await withClient(this.deps.pool, async (client) => {
+      for (const slug of slugs) {
+        const persona = await PersonaRepository.findBySlug(client, slug.toLowerCase(), workspaceId)
+        if (!persona) {
+          missing.push(slug)
+        }
+      }
+    })
+
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        error: `Unknown persona${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+      }
+    }
+
+    return { valid: true }
+  }
+}

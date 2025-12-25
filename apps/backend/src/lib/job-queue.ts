@@ -61,6 +61,7 @@ export interface MemoBatchProcessJobData {
 export interface SimulationJobData {
   streamId: string
   workspaceId: string
+  userId: string
   personas: string[]
   topic: string
   turns: number
