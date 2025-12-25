@@ -96,31 +96,59 @@ export const StreamEventRepository = {
     filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number }
   ): Promise<StreamEvent[]> {
     const limit = filters?.limit ?? 50
-    const afterSequence = filters?.afterSequence ?? BigInt(-1)
     const types = filters?.types
 
-    if (types && types.length > 0) {
+    // If afterSequence is provided, we're paginating forward from a point
+    // Otherwise, we want the most recent N events
+    if (filters?.afterSequence !== undefined) {
+      const afterSequence = filters.afterSequence
+
+      if (types && types.length > 0) {
+        const result = await client.query<StreamEventRow>(sql`
+          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+          FROM stream_events
+          WHERE stream_id = ${streamId}
+            AND sequence > ${afterSequence.toString()}
+            AND event_type = ANY(${types})
+          ORDER BY sequence ASC
+          LIMIT ${limit}
+        `)
+        return result.rows.map(mapRowToEvent)
+      }
+
       const result = await client.query<StreamEventRow>(sql`
         SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
         FROM stream_events
         WHERE stream_id = ${streamId}
           AND sequence > ${afterSequence.toString()}
-          AND event_type = ANY(${types})
         ORDER BY sequence ASC
         LIMIT ${limit}
       `)
       return result.rows.map(mapRowToEvent)
     }
 
+    // No afterSequence: get the most recent N events
+    // Query DESC to get latest, then reverse to return in ASC order
+    if (types && types.length > 0) {
+      const result = await client.query<StreamEventRow>(sql`
+        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+        FROM stream_events
+        WHERE stream_id = ${streamId}
+          AND event_type = ANY(${types})
+        ORDER BY sequence DESC
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToEvent).reverse()
+    }
+
     const result = await client.query<StreamEventRow>(sql`
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
       WHERE stream_id = ${streamId}
-        AND sequence > ${afterSequence.toString()}
-      ORDER BY sequence ASC
+      ORDER BY sequence DESC
       LIMIT ${limit}
     `)
-    return result.rows.map(mapRowToEvent)
+    return result.rows.map(mapRowToEvent).reverse()
   },
 
   async findById(client: PoolClient, id: string): Promise<StreamEvent | null> {
