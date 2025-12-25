@@ -30,6 +30,7 @@ export interface MessageService {
 export interface ConversationService {
   listByStream: typeof conversationsApi.listByStream
   getById: typeof conversationsApi.getById
+  getMessages: typeof conversationsApi.getMessages
 }
 
 export interface Services {

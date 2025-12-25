@@ -139,6 +139,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Conversations
   app.get("/api/workspaces/:workspaceId/streams/:streamId/conversations", ...authed, conversation.listByStream)
   app.get("/api/workspaces/:workspaceId/conversations/:conversationId", ...authed, conversation.getById)
+  app.get("/api/workspaces/:workspaceId/conversations/:conversationId/messages", ...authed, conversation.getMessages)
 
   app.use(errorHandler)
 }

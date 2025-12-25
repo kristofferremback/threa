@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useConversations } from "@/hooks"
 import { ConversationItem } from "./conversation-item"
@@ -7,12 +8,27 @@ import type { ConversationWithStaleness } from "@threa/types"
 interface ConversationListProps {
   workspaceId: string
   streamId: string
-  onConversationClick?: (conversation: ConversationWithStaleness) => void
   className?: string
+  onMessageClick?: () => void
 }
 
-export function ConversationList({ workspaceId, streamId, onConversationClick, className }: ConversationListProps) {
+export function ConversationList({ workspaceId, streamId, className, onMessageClick }: ConversationListProps) {
   const { conversations, isLoading, error } = useConversations(workspaceId, streamId)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const expandedConversationId = searchParams.get("conv")
+
+  const handleToggle = (conversationId: string) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      if (expandedConversationId === conversationId) {
+        newParams.delete("conv")
+      } else {
+        newParams.set("conv", conversationId)
+      }
+      return newParams
+    })
+  }
 
   if (error) {
     return <div className={cn("p-4 text-sm text-destructive", className)}>Failed to load conversations</div>
@@ -41,22 +57,31 @@ export function ConversationList({ workspaceId, streamId, onConversationClick, c
       {activeConversations.length > 0 && (
         <ConversationSection
           title="Active"
+          workspaceId={workspaceId}
           conversations={activeConversations}
-          onConversationClick={onConversationClick}
+          expandedConversationId={expandedConversationId}
+          onToggle={handleToggle}
+          onMessageClick={onMessageClick}
         />
       )}
       {stalledConversations.length > 0 && (
         <ConversationSection
           title="Stalled"
+          workspaceId={workspaceId}
           conversations={stalledConversations}
-          onConversationClick={onConversationClick}
+          expandedConversationId={expandedConversationId}
+          onToggle={handleToggle}
+          onMessageClick={onMessageClick}
         />
       )}
       {resolvedConversations.length > 0 && (
         <ConversationSection
           title="Resolved"
+          workspaceId={workspaceId}
           conversations={resolvedConversations}
-          onConversationClick={onConversationClick}
+          expandedConversationId={expandedConversationId}
+          onToggle={handleToggle}
+          onMessageClick={onMessageClick}
         />
       )}
     </div>
@@ -65,11 +90,21 @@ export function ConversationList({ workspaceId, streamId, onConversationClick, c
 
 interface ConversationSectionProps {
   title: string
+  workspaceId: string
   conversations: ConversationWithStaleness[]
-  onConversationClick?: (conversation: ConversationWithStaleness) => void
+  expandedConversationId: string | null
+  onToggle: (conversationId: string) => void
+  onMessageClick?: () => void
 }
 
-function ConversationSection({ title, conversations, onConversationClick }: ConversationSectionProps) {
+function ConversationSection({
+  title,
+  workspaceId,
+  conversations,
+  expandedConversationId,
+  onToggle,
+  onMessageClick,
+}: ConversationSectionProps) {
   return (
     <div>
       <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1 mb-2">
@@ -79,8 +114,11 @@ function ConversationSection({ title, conversations, onConversationClick }: Conv
         {conversations.map((conversation) => (
           <ConversationItem
             key={conversation.id}
+            workspaceId={workspaceId}
             conversation={conversation}
-            onClick={() => onConversationClick?.(conversation)}
+            isExpanded={expandedConversationId === conversation.id}
+            onToggle={() => onToggle(conversation.id)}
+            onMessageClick={onMessageClick}
           />
         ))}
       </div>

@@ -1,5 +1,5 @@
 import { api } from "./client"
-import type { ConversationWithStaleness, ConversationStatus } from "@threa/types"
+import type { ConversationWithStaleness, ConversationStatus, Message } from "@threa/types"
 
 export interface ListConversationsParams {
   status?: ConversationStatus
@@ -27,5 +27,12 @@ export const conversationsApi = {
       `/api/workspaces/${workspaceId}/conversations/${conversationId}`
     )
     return res.conversation
+  },
+
+  async getMessages(workspaceId: string, conversationId: string): Promise<Message[]> {
+    const res = await api.get<{ messages: Message[] }>(
+      `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`
+    )
+    return res.messages
   },
 }

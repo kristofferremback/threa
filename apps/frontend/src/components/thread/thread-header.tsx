@@ -23,7 +23,8 @@ export function ThreadHeader({ workspaceId, stream, onBack }: ThreadHeaderProps)
   const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
     enabled: !!rootStreamId,
   })
-  const rootStreamName = rootBootstrap?.stream?.displayName
+  const rootStream = rootBootstrap?.stream
+  const rootStreamName = rootStream?.slug ? `#${rootStream.slug}` : rootStream?.displayName
 
   const backButton = onBack ? (
     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onBack}>

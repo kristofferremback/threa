@@ -1,41 +1,161 @@
+import { useQuery } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { RelativeTime } from "@/components/relative-time"
-import type { ConversationWithStaleness } from "@threa/types"
+import { useConversationService } from "@/contexts"
+import { useActors } from "@/hooks"
+import type { ConversationWithStaleness, Message } from "@threa/types"
 
 interface ConversationItemProps {
+  workspaceId: string
   conversation: ConversationWithStaleness
-  onClick?: () => void
+  isExpanded: boolean
+  onToggle: () => void
+  onMessageClick?: () => void
   className?: string
 }
 
-export function ConversationItem({ conversation, onClick, className }: ConversationItemProps) {
+export function ConversationItem({
+  workspaceId,
+  conversation,
+  isExpanded,
+  onToggle,
+  onMessageClick,
+  className,
+}: ConversationItemProps) {
   const { topicSummary, messageIds, status, lastActivityAt, effectiveCompleteness, temporalStaleness } = conversation
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full text-left p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors",
-        temporalStaleness >= 3 && "opacity-60",
-        className
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{topicSummary || "Untitled conversation"}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-muted-foreground">{messageIds.length} messages</span>
-            <StatusBadge status={status} />
+    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <div
+        className={cn("rounded-lg border bg-card transition-colors", temporalStaleness >= 3 && "opacity-60", className)}
+      >
+        <CollapsibleTrigger asChild>
+          <button type="button" className="w-full text-left p-3 hover:bg-accent/50 transition-colors rounded-lg">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{topicSummary || "Untitled conversation"}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-muted-foreground">{messageIds.length} messages</span>
+                    <StatusBadge status={status} />
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                <CompletenessIndicator score={effectiveCompleteness} />
+                <RelativeTime date={lastActivityAt} className="text-xs text-muted-foreground" />
+              </div>
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t px-3 py-2">
+            <ConversationMessages
+              workspaceId={workspaceId}
+              conversationId={conversation.id}
+              streamId={conversation.streamId}
+              onMessageClick={onMessageClick}
+            />
           </div>
-        </div>
-        <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <CompletenessIndicator score={effectiveCompleteness} />
-          <RelativeTime date={lastActivityAt} className="text-xs text-muted-foreground" />
-        </div>
+        </CollapsibleContent>
       </div>
-    </button>
+    </Collapsible>
+  )
+}
+
+interface ConversationMessagesProps {
+  workspaceId: string
+  conversationId: string
+  streamId: string
+  onMessageClick?: () => void
+}
+
+function ConversationMessages({ workspaceId, conversationId, streamId, onMessageClick }: ConversationMessagesProps) {
+  const conversationService = useConversationService()
+  const { getActorName } = useActors(workspaceId)
+
+  const {
+    data: messages,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["conversations", conversationId, "messages"],
+    queryFn: () => conversationService.getMessages(workspaceId, conversationId),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2 py-1">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return <p className="text-sm text-destructive py-1">Failed to load messages</p>
+  }
+
+  if (!messages || messages.length === 0) {
+    return <p className="text-sm text-muted-foreground py-1">No messages</p>
+  }
+
+  return (
+    <div className="space-y-2 py-1 max-h-64 overflow-y-auto">
+      {messages.map((message) => (
+        <MessagePreview
+          key={message.id}
+          message={message}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          getActorName={getActorName}
+          onMessageClick={onMessageClick}
+        />
+      ))}
+    </div>
+  )
+}
+
+interface MessagePreviewProps {
+  message: Message
+  workspaceId: string
+  streamId: string
+  getActorName: (actorId: string | null, actorType: "user" | "persona" | null) => string
+  onMessageClick?: () => void
+}
+
+function MessagePreview({ message, workspaceId, streamId, getActorName, onMessageClick }: MessagePreviewProps) {
+  const maxLength = 200
+  const truncatedContent =
+    message.content.length > maxLength ? message.content.slice(0, maxLength) + "..." : message.content
+
+  const messageUrl = `/w/${workspaceId}/s/${streamId}?m=${message.id}`
+  const authorName = getActorName(message.authorId, message.authorType)
+
+  return (
+    <Link
+      to={messageUrl}
+      onClick={onMessageClick}
+      className="block text-sm border-l-2 border-muted pl-2 py-1 hover:bg-accent/50 hover:border-primary rounded-r transition-colors"
+    >
+      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-0.5">
+        <span className="font-medium">{authorName}</span>
+        <span>·</span>
+        <RelativeTime date={message.createdAt} />
+      </div>
+      <p className="text-foreground/80 whitespace-pre-wrap break-words">{truncatedContent}</p>
+    </Link>
   )
 }
 
@@ -71,11 +191,28 @@ function CompletenessIndicator({ score }: { score: number }) {
   const clampedScore = Math.max(1, Math.min(7, score))
   const segments = 7
 
+  const getDescription = (s: number): string => {
+    if (s <= 2) return "Just started - conversation has recently begun"
+    if (s <= 4) return "In progress - ongoing discussion"
+    if (s <= 6) return "Mostly complete - wrapping up"
+    return "Complete - conversation appears resolved"
+  }
+
   return (
-    <div className="flex gap-0.5" title={`Completeness: ${clampedScore}/7`}>
-      {Array.from({ length: segments }).map((_, i) => (
-        <div key={i} className={cn("w-1.5 h-3 rounded-sm", i < clampedScore ? "bg-primary" : "bg-muted")} />
-      ))}
-    </div>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex gap-0.5 cursor-help">
+            {Array.from({ length: segments }).map((_, i) => (
+              <div key={i} className={cn("w-1.5 h-3 rounded-sm", i < clampedScore ? "bg-primary" : "bg-muted")} />
+            ))}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <p className="font-medium">Completeness: {clampedScore}/7</p>
+          <p className="text-xs text-muted-foreground">{getDescription(clampedScore)}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

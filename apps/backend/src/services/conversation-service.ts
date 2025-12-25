@@ -1,6 +1,7 @@
 import { Pool } from "pg"
 import { withClient } from "../db"
 import { ConversationRepository } from "../repositories/conversation-repository"
+import { MessageRepository, type Message } from "../repositories/message-repository"
 import { addStalenessFields, type ConversationWithStaleness } from "../lib/conversation-staleness"
 import type { ConversationStatus } from "@threa/types"
 
@@ -38,6 +39,18 @@ export class ConversationService {
     return withClient(this.pool, async (client) => {
       const conversations = await ConversationRepository.findByMessageId(client, messageId)
       return conversations.map(addStalenessFields)
+    })
+  }
+
+  async getMessages(conversationId: string): Promise<Message[]> {
+    return withClient(this.pool, async (client) => {
+      const conversation = await ConversationRepository.findById(client, conversationId)
+      if (!conversation || conversation.messageIds.length === 0) return []
+
+      const messagesMap = await MessageRepository.findByIds(client, conversation.messageIds)
+
+      // Return messages in the order they appear in the conversation
+      return conversation.messageIds.map((id) => messagesMap.get(id)).filter((m): m is Message => m !== undefined)
     })
   }
 }

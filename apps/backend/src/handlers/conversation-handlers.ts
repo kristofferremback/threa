@@ -65,5 +65,25 @@ export function createConversationHandlers({ conversationService, streamService 
 
       res.json({ conversation })
     },
+
+    async getMessages(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { conversationId } = req.params
+
+      const conversation = await conversationService.getById(conversationId)
+      if (!conversation || conversation.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: "Conversation not found" })
+      }
+
+      // Validate user has access to the conversation's stream
+      const isMember = await streamService.isMember(conversation.streamId, userId)
+      if (!isMember) {
+        return res.status(403).json({ error: "Not a member of this stream" })
+      }
+
+      const messages = await conversationService.getMessages(conversationId)
+      res.json({ messages })
+    },
   }
 }
