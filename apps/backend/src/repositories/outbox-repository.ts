@@ -189,6 +189,16 @@ export function isOutboxEventType<T extends OutboxEventType>(
   return event.eventType === eventType
 }
 
+/**
+ * Type guard to narrow an OutboxEvent to one of several event types.
+ */
+export function isOneOfOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventTypes: T[]
+): event is OutboxEvent<T> {
+  return eventTypes.includes(event.eventType as T)
+}
+
 const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
