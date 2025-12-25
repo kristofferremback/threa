@@ -154,13 +154,14 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       return text
     }
 
-    // Find last space before the 100 char limit to avoid cutting mid-word
-    const lastSpace = text.lastIndexOf(" ", 100)
+    // Find last space before the limit to avoid cutting mid-word
+    // Reserve 1 char for ellipsis, so look for space before position 99
+    const lastSpace = text.lastIndexOf(" ", 99)
     if (lastSpace > 20) {
       return text.slice(0, lastSpace) + "…"
     }
 
-    // No good word boundary found, just truncate
-    return text.slice(0, 100) + "…"
+    // No good word boundary found, just truncate at 99 + ellipsis = 100 total
+    return text.slice(0, 99) + "…"
   }
 }
