@@ -1,5 +1,11 @@
 import type { Stream, StreamEvent } from "@threa/types"
 
+function generateOptimisticEventId(): string {
+  const timestamp = Date.now().toString(36)
+  const random = Math.random().toString(36).substring(2, 10)
+  return `temp_${timestamp}${random}`
+}
+
 export interface AttachmentSummary {
   id: string
   filename: string
@@ -38,8 +44,10 @@ export function createOptimisticBootstrap({
   contentFormat,
   attachments,
 }: CreateOptimisticBootstrapParams): OptimisticBootstrap {
+  // Use temp_ prefix so WebSocket handler can dedupe by content matching
+  // (real events have different IDs like evt_xxx vs the message's msg_xxx)
   const event: StreamEvent = {
-    id: message.id,
+    id: generateOptimisticEventId(),
     streamId: stream.id,
     sequence: "1",
     eventType: "message_created",

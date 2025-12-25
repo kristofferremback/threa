@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { MessageSquare } from "lucide-react"
 import { useStreamService, useMessageService } from "@/contexts"
 import {
   useDraftComposer,
@@ -8,8 +9,16 @@ import {
   createOptimisticBootstrap,
   streamKeys,
 } from "@/hooks"
+import {
+  SidePanel,
+  SidePanelHeader,
+  SidePanelTitle,
+  SidePanelClose,
+  SidePanelContent,
+} from "@/components/ui/side-panel"
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { MessageComposer } from "@/components/composer"
-import { ThreadPanelView } from "./thread-panel-view"
+import { ThreadParentMessage } from "./thread-parent-message"
 import { StreamTypes } from "@threa/types"
 
 interface DraftThreadPanelProps {
@@ -116,21 +125,31 @@ export function DraftThreadPanel({
   ])
 
   return (
-    <ThreadPanelView
-      workspaceId={workspaceId}
-      streamId={parentStreamId} // Use parent stream ID for context
-      title="New thread"
-      onClose={onClose}
-      parentMessage={parentMessage ?? undefined}
-      parentStreamId={parentStreamId}
-      events={[]}
-      replyCount={0}
-      isLoading={false}
-      emptyState={{
-        title: "Start a new thread",
-        description: "Write your reply below to create this thread.",
-      }}
-      inputSlot={
+    <SidePanel>
+      <SidePanelHeader>
+        <SidePanelTitle>New thread</SidePanelTitle>
+        <SidePanelClose onClose={onClose} />
+      </SidePanelHeader>
+      <SidePanelContent className="flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          {parentMessage && (
+            <ThreadParentMessage
+              event={parentMessage}
+              workspaceId={workspaceId}
+              streamId={parentStreamId}
+              replyCount={0}
+            />
+          )}
+          <Empty className="h-full border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquare />
+              </EmptyMedia>
+              <EmptyTitle>Start a new thread</EmptyTitle>
+              <EmptyDescription>Write your reply below to create this thread.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </div>
         <div className="p-4 border-t">
           <MessageComposer
             content={composer.content}
@@ -148,7 +167,7 @@ export function DraftThreadPanel({
             placeholder="Write your reply..."
           />
         </div>
-      }
-    />
+      </SidePanelContent>
+    </SidePanel>
   )
 }
