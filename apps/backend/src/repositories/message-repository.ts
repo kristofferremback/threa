@@ -116,6 +116,29 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0], reactions)
   },
 
+  async findByIds(client: PoolClient, ids: string[]): Promise<Map<string, Message>> {
+    if (ids.length === 0) return new Map()
+
+    const result = await client.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE id = ANY(${ids})
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${ids})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    const map = new Map<string, Message>()
+    for (const row of result.rows) {
+      map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    }
+    return map
+  },
+
   async list(
     client: PoolClient,
     streamId: string,

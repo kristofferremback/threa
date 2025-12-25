@@ -18,6 +18,10 @@ interface ConversationRow {
   updated_at: Date
 }
 
+/**
+ * Internal backend type with native Date objects.
+ * The wire type in @threa/types uses ISO 8601 strings for JSON serialization.
+ */
 export interface Conversation {
   id: string
   streamId: string
@@ -116,11 +120,12 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
-  async findActiveByStream(client: PoolClient, streamId: string): Promise<Conversation[]> {
+  async findActiveByStream(client: PoolClient, streamId: string, limit = 50): Promise<Conversation[]> {
     const result = await client.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE stream_id = ${streamId} AND status = 'active'
       ORDER BY last_activity_at DESC
+      LIMIT ${limit}
     `)
     return result.rows.map(mapRowToConversation)
   },

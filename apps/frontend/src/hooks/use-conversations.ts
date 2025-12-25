@@ -5,7 +5,8 @@ import type { ConversationWithStaleness, ConversationStatus } from "@threa/types
 
 export const conversationKeys = {
   all: ["conversations"] as const,
-  list: (workspaceId: string, streamId: string) => [...conversationKeys.all, "list", workspaceId, streamId] as const,
+  list: (workspaceId: string, streamId: string, options?: { status?: string; limit?: number }) =>
+    [...conversationKeys.all, "list", workspaceId, streamId, options ?? {}] as const,
   byId: (workspaceId: string, conversationId: string) =>
     [...conversationKeys.all, "detail", workspaceId, conversationId] as const,
 }
@@ -41,7 +42,7 @@ export function useConversations(workspaceId: string, streamId: string, options?
     error,
     refetch,
   } = useQuery({
-    queryKey: conversationKeys.list(workspaceId, streamId),
+    queryKey: conversationKeys.list(workspaceId, streamId, { status, limit }),
     queryFn: () => conversationService.listByStream(workspaceId, streamId, { status, limit }),
     enabled: enabled && !!workspaceId && !!streamId,
   })
@@ -54,7 +55,7 @@ export function useConversations(workspaceId: string, streamId: string, options?
       if (payload.streamId !== streamId) return
 
       queryClient.setQueryData(
-        conversationKeys.list(workspaceId, streamId),
+        conversationKeys.list(workspaceId, streamId, { status, limit }),
         (old: ConversationWithStaleness[] | undefined) => {
           if (!old) return [payload.conversation]
           if (old.some((c) => c.id === payload.conversation.id)) return old
@@ -67,7 +68,7 @@ export function useConversations(workspaceId: string, streamId: string, options?
       if (payload.streamId !== streamId) return
 
       queryClient.setQueryData(
-        conversationKeys.list(workspaceId, streamId),
+        conversationKeys.list(workspaceId, streamId, { status, limit }),
         (old: ConversationWithStaleness[] | undefined) => {
           if (!old) return old
           return old.map((c) => (c.id === payload.conversationId ? payload.conversation : c))
@@ -82,7 +83,7 @@ export function useConversations(workspaceId: string, streamId: string, options?
       socket.off("conversation:created", handleCreated)
       socket.off("conversation:updated", handleUpdated)
     }
-  }, [socket, workspaceId, streamId, enabled, queryClient])
+  }, [socket, workspaceId, streamId, status, limit, enabled, queryClient])
 
   return {
     conversations,

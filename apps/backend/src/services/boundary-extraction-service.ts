@@ -75,7 +75,19 @@ export class BoundaryExtractionService {
       }
 
       if (result.completenessUpdates) {
+        // Security: Only allow updates to conversations in the current stream
+        // LLM output could potentially contain IDs from other streams/workspaces
+        const validConvIds = new Set(activeConversations.map((c) => c.id))
+
         for (const update of result.completenessUpdates) {
+          if (!validConvIds.has(update.conversationId)) {
+            logger.warn(
+              { conversationId: update.conversationId, streamId },
+              "LLM attempted to update conversation not in active set - skipping"
+            )
+            continue
+          }
+
           await ConversationRepository.update(client, update.conversationId, {
             completenessScore: update.score,
             status: update.status,
@@ -119,25 +131,30 @@ export class BoundaryExtractionService {
   ): Promise<ConversationSummary[]> {
     const recentMessageMap = new Map(recentMessages.map((m) => [m.id, m]))
 
-    return Promise.all(
-      conversations.map(async (c) => {
-        const lastMessageId = c.messageIds[c.messageIds.length - 1]
-        let lastMessage = recentMessageMap.get(lastMessageId)
+    // Collect message IDs that need fetching (not in recent window)
+    const missingIds: string[] = []
+    for (const c of conversations) {
+      const lastMessageId = c.messageIds[c.messageIds.length - 1]
+      if (lastMessageId && !recentMessageMap.has(lastMessageId)) {
+        missingIds.push(lastMessageId)
+      }
+    }
 
-        // Fetch the last message if not in the recent window
-        if (!lastMessage && lastMessageId) {
-          lastMessage = (await MessageRepository.findById(client, lastMessageId)) ?? undefined
-        }
+    // Batch fetch missing messages
+    const fetchedMessages = missingIds.length > 0 ? await MessageRepository.findByIds(client, missingIds) : new Map()
 
-        return {
-          id: c.id,
-          topicSummary: c.topicSummary,
-          messageCount: c.messageIds.length,
-          lastMessagePreview: lastMessage?.content.slice(0, 100) ?? "",
-          participantIds: c.participantIds,
-          completenessScore: c.completenessScore,
-        }
-      })
-    )
+    return conversations.map((c) => {
+      const lastMessageId = c.messageIds[c.messageIds.length - 1]
+      const lastMessage = recentMessageMap.get(lastMessageId) ?? fetchedMessages.get(lastMessageId)
+
+      return {
+        id: c.id,
+        topicSummary: c.topicSummary,
+        messageCount: c.messageIds.length,
+        lastMessagePreview: lastMessage?.content.slice(0, 100) ?? "",
+        participantIds: c.participantIds,
+        completenessScore: c.completenessScore,
+      }
+    })
   }
 }

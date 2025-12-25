@@ -148,9 +148,19 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
 
   private truncateAsTopic(message: Message): string {
     const firstSentence = message.content.split(/[.!?\n]/)[0]?.trim()
-    if (firstSentence && firstSentence.length > 0) {
-      return firstSentence.slice(0, 100)
+    const text = firstSentence && firstSentence.length > 0 ? firstSentence : message.content.trim()
+
+    if (text.length <= 100) {
+      return text
     }
-    return message.content.slice(0, 100)
+
+    // Find last space before the 100 char limit to avoid cutting mid-word
+    const lastSpace = text.lastIndexOf(" ", 100)
+    if (lastSpace > 20) {
+      return text.slice(0, lastSpace) + "…"
+    }
+
+    // No good word boundary found, just truncate
+    return text.slice(0, 100) + "…"
   }
 }

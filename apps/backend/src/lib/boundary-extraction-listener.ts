@@ -5,10 +5,6 @@ import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/o
 import { AuthorTypes } from "@threa/types"
 import { logger } from "./logger"
 
-interface MessageCreatedEventPayload {
-  messageId: string
-}
-
 /**
  * Creates a boundary extraction listener that dispatches jobs for messages
  * to detect conversational boundaries.
@@ -31,16 +27,26 @@ export function createBoundaryExtractionListener(
         return
       }
 
-      const payload = outboxEvent.payload as MessageCreatedOutboxPayload
-      const { event, streamId, workspaceId } = payload
+      const payload = outboxEvent.payload as unknown as Record<string, unknown>
 
-      // Skip events with missing or malformed payload (e.g., old events from before this feature)
-      if (!event || !event.payload) {
-        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing payload")
+      // Validate required payload fields
+      if (
+        typeof payload.streamId !== "string" ||
+        typeof payload.workspaceId !== "string" ||
+        !payload.event ||
+        typeof payload.event !== "object"
+      ) {
+        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing or invalid payload fields")
         return
       }
 
-      const eventPayload = event.payload as MessageCreatedEventPayload
+      const { event, streamId, workspaceId } = payload as unknown as MessageCreatedOutboxPayload
+      const eventPayload = event.payload as Record<string, unknown>
+
+      if (typeof eventPayload?.messageId !== "string") {
+        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing messageId")
+        return
+      }
 
       if (event.actorType !== AuthorTypes.USER) {
         return
