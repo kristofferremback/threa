@@ -36,7 +36,12 @@ export function StreamPanel({ workspaceId, streamId, onClose }: StreamPanelProps
         <SidePanelClose onClose={onClose} />
       </SidePanelHeader>
       <SidePanelContent className="flex flex-col">
-        <StreamContent workspaceId={workspaceId} streamId={streamId} highlightMessageId={highlightMessageId} />
+        <StreamContent
+          workspaceId={workspaceId}
+          streamId={streamId}
+          highlightMessageId={highlightMessageId}
+          stream={stream}
+        />
       </SidePanelContent>
     </SidePanel>
   )

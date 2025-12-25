@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
 import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap } from "@/hooks"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, type Stream } from "@threa/types"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
 import { ThreadParentMessage } from "../thread/thread-parent-message"
@@ -12,17 +13,47 @@ interface StreamContentProps {
   streamId: string
   highlightMessageId?: string | null
   isDraft?: boolean
+  /** Pre-fetched stream data from parent - avoids duplicate bootstrap call */
+  stream?: Stream
 }
 
-export function StreamContent({ workspaceId, streamId, highlightMessageId, isDraft = false }: StreamContentProps) {
-  // Get current stream info (for thread detection)
-  const { data: bootstrap } = useStreamBootstrap(workspaceId, streamId, { enabled: !isDraft })
-  const isThread = bootstrap?.stream?.type === StreamTypes.THREAD
-  const parentStreamId = bootstrap?.stream?.parentStreamId
-  const parentMessageId = bootstrap?.stream?.parentMessageId
+export function StreamContent({
+  workspaceId,
+  streamId,
+  highlightMessageId,
+  isDraft = false,
+  stream: streamFromProps,
+}: StreamContentProps) {
+  const [, setSearchParams] = useSearchParams()
+
+  // Clear highlight param after delay (works for both main view and panels)
+  useEffect(() => {
+    if (highlightMessageId) {
+      const timer = setTimeout(() => {
+        setSearchParams(
+          (prev) => {
+            prev.delete("m")
+            return prev
+          },
+          { replace: true }
+        )
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightMessageId, setSearchParams])
+
+  // Get stream info - skip fetch if parent already provided it
+  const { data: bootstrap } = useStreamBootstrap(workspaceId, streamId, {
+    enabled: !isDraft && !streamFromProps,
+  })
+  const stream = streamFromProps ?? bootstrap?.stream
+  const isThread = stream?.type === StreamTypes.THREAD
+  const parentStreamId = stream?.parentStreamId
+  const parentMessageId = stream?.parentMessageId
 
   // Fetch parent stream bootstrap (for threads to get parent message)
-  const { data: parentBootstrap } = useStreamBootstrap(workspaceId, parentStreamId ?? "", {
+  // Only fetch when we have a valid parentStreamId
+  const { data: parentBootstrap } = useStreamBootstrap(workspaceId, parentStreamId!, {
     enabled: !isDraft && isThread && !!parentStreamId,
   })
 
