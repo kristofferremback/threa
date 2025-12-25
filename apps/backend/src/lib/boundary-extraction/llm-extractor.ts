@@ -27,7 +27,9 @@ const extractionResponseSchema = z.object({
   reasoning: z.string().optional().describe("Brief explanation of the classification decision"),
 })
 
-const EXTRACTION_PROMPT = `You are analyzing a message stream to identify conversation boundaries. Your task is to determine which conversation a new message belongs to.
+const SYSTEM_PROMPT = `You are a conversation boundary classifier. You analyze messages and output ONLY valid JSON matching the required schema. No explanations, no markdown, no prose - just the JSON object.`
+
+const EXTRACTION_PROMPT = `Analyze this message and determine which conversation it belongs to.
 
 ## Active Conversations
 {{CONVERSATIONS}}
@@ -39,19 +41,19 @@ const EXTRACTION_PROMPT = `You are analyzing a message stream to identify conver
 From: {{AUTHOR}}
 Content: {{CONTENT}}
 
-## Task
-Determine which conversation this message belongs to. Consider:
+## Classification Rules
 1. Topic continuity - does it continue an existing topic?
 2. Participant overlap - is the author part of an existing conversation?
 3. Explicit references - does the message reference something from a conversation?
 4. Context - does this feel like a continuation or a new topic?
 
-Notes:
-- Set conversationId to null if this starts a new conversation
-- newConversationTopic is only needed if conversationId is null
-- completenessUpdates is optional, include only if a conversation's status changed
-- Score 1 = just started, 7 = fully resolved
-- Status should be "resolved" if a question was answered or decision was made`
+## Output Requirements
+- conversationId: ID of existing conversation to join, or null for new conversation
+- newConversationTopic: Topic summary if starting new conversation (required when conversationId is null)
+- completenessUpdates: Array of {conversationId, score (1-7), status} for any conversations that changed
+- confidence: 0.0 to 1.0 confidence in this classification
+
+Respond with ONLY the JSON object. No explanation, no markdown code blocks.`
 
 export class LLMBoundaryExtractor implements BoundaryExtractor {
   constructor(
@@ -70,6 +72,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       const model = this.providerRegistry.getModel(this.modelId)
       const result = await generateObject({
         model,
+        system: SYSTEM_PROMPT,
         prompt,
         schema: extractionResponseSchema,
         maxOutputTokens: 500,
