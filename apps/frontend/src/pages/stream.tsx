@@ -164,13 +164,18 @@ export function StreamPage() {
   const conversationPanel = !isDraft && (
     <>
       {/* Backdrop */}
-      {isConversationViewOpen && (
-        <div className="fixed inset-0 z-40 bg-black/80" onClick={() => setConversationViewOpen(false)} />
-      )}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-black/80 transition-opacity duration-300",
+          isConversationViewOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setConversationViewOpen(false)}
+      />
       {/* Panel */}
       <div
         className={cn(
           "fixed inset-y-0 right-0 z-50 w-80 sm:w-96 bg-background border-l shadow-lg flex flex-col",
+          "transition-transform duration-300 ease-out",
           isConversationViewOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
