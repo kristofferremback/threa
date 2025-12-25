@@ -5,6 +5,8 @@ import {
   isStreamScopedEvent,
   isOutboxEventType,
   type StreamCreatedOutboxPayload,
+  type ConversationCreatedOutboxPayload,
+  type ConversationUpdatedOutboxPayload,
 } from "../repositories/outbox-repository"
 
 /**
@@ -36,6 +38,27 @@ export function createBroadcastListener(
         } else {
           // Non-thread - broadcast to workspace room
           io.to(`ws:${workspaceId}`).emit(event.eventType, event.payload)
+        }
+        return
+      }
+
+      // Special handling for conversation events - also broadcast to parent channel for discoverability
+      if (isOutboxEventType(event, "conversation:created")) {
+        const payload = event.payload as ConversationCreatedOutboxPayload
+        io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
+        if (payload.parentStreamId) {
+          // Thread conversation - also broadcast to parent channel so it appears there too
+          io.to(`ws:${workspaceId}:stream:${payload.parentStreamId}`).emit(event.eventType, event.payload)
+        }
+        return
+      }
+
+      if (isOutboxEventType(event, "conversation:updated")) {
+        const payload = event.payload as ConversationUpdatedOutboxPayload
+        io.to(`ws:${workspaceId}:stream:${payload.streamId}`).emit(event.eventType, event.payload)
+        if (payload.parentStreamId) {
+          // Thread conversation - also broadcast to parent channel so it updates there too
+          io.to(`ws:${workspaceId}:stream:${payload.parentStreamId}`).emit(event.eventType, event.payload)
         }
         return
       }

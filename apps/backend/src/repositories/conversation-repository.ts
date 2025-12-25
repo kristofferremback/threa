@@ -120,6 +120,53 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
+  /**
+   * Find conversations in a stream AND in any child threads of that stream.
+   * Child threads are streams where parent_message_id belongs to a message in the given stream.
+   */
+  async findByStreamIncludingThreads(
+    client: PoolClient,
+    streamId: string,
+    options?: { status?: ConversationStatus; limit?: number }
+  ): Promise<Conversation[]> {
+    const limit = options?.limit ?? 50
+
+    if (options?.status) {
+      const result = await client.query<ConversationRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
+        WHERE (
+          stream_id = ${streamId}
+          OR stream_id IN (
+            SELECT s.id FROM streams s
+            WHERE s.type = 'thread'
+              AND s.parent_message_id IN (
+                SELECT m.id FROM messages m WHERE m.stream_id = ${streamId}
+              )
+          )
+        )
+        AND status = ${options.status}
+        ORDER BY last_activity_at DESC
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToConversation)
+    }
+
+    const result = await client.query<ConversationRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
+      WHERE stream_id = ${streamId}
+         OR stream_id IN (
+           SELECT s.id FROM streams s
+           WHERE s.type = 'thread'
+             AND s.parent_message_id IN (
+               SELECT m.id FROM messages m WHERE m.stream_id = ${streamId}
+             )
+         )
+      ORDER BY last_activity_at DESC
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToConversation)
+  },
+
   async findActiveByStream(client: PoolClient, streamId: string, limit = 50): Promise<Conversation[]> {
     const result = await client.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations

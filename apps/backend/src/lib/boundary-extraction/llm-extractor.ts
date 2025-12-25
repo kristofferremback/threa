@@ -91,10 +91,28 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
   }
 
   private handleThreadMessage(context: ExtractionContext): ExtractionResult {
-    const existingConv = context.activeConversations[0]
+    // First priority: join existing thread conversation (if there are already messages in this thread)
+    const existingThreadConv = context.activeConversations[0]
+    if (existingThreadConv) {
+      return {
+        conversationId: existingThreadConv.id,
+        confidence: 1.0,
+      }
+    }
+
+    // Second priority: join the parent message's conversation (thread continues parent's conversation)
+    const parentConv = context.parentMessageConversations?.[0]
+    if (parentConv) {
+      return {
+        conversationId: parentConv.id,
+        confidence: 1.0,
+      }
+    }
+
+    // Fallback: create new conversation (parent message wasn't in a conversation yet)
     return {
-      conversationId: existingConv?.id ?? null,
-      newConversationTopic: existingConv ? undefined : this.truncateAsTopic(context.newMessage),
+      conversationId: null,
+      newConversationTopic: this.truncateAsTopic(context.newMessage),
       confidence: 1.0,
     }
   }

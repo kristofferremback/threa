@@ -28,7 +28,8 @@ export class ConversationService {
 
   async listByStream(streamId: string, options?: ListConversationsOptions): Promise<ConversationWithStaleness[]> {
     return withClient(this.pool, async (client) => {
-      const conversations = await ConversationRepository.findByStream(client, streamId, options)
+      // Include conversations from child threads - for discoverability
+      const conversations = await ConversationRepository.findByStreamIncludingThreads(client, streamId, options)
       return conversations.map(addStalenessFields)
     })
   }

@@ -35,12 +35,22 @@ export class BoundaryExtractionService {
       const recentMessages = await MessageRepository.list(client, streamId, { limit: WINDOW_SIZE })
       const activeConversations = await ConversationRepository.findActiveByStream(client, streamId)
 
+      // For threads, look up conversations containing the parent message
+      let parentMessageConversations: Conversation[] = []
+      if (stream.type === StreamTypes.THREAD && stream.parentMessageId) {
+        parentMessageConversations = await ConversationRepository.findByMessageId(client, stream.parentMessageId)
+      }
+
       const context: ExtractionContext = {
         newMessage: message,
         recentMessages,
         activeConversations: await this.buildConversationSummaries(client, activeConversations, recentMessages),
         streamType: stream.type,
         isThread: stream.type === StreamTypes.THREAD,
+        parentMessageConversations:
+          parentMessageConversations.length > 0
+            ? await this.buildConversationSummaries(client, parentMessageConversations, [])
+            : undefined,
       }
 
       const result = await this.extractor.extract(context)
@@ -95,11 +105,19 @@ export class BoundaryExtractionService {
         }
       }
 
+      // For thread conversations, include parent channel's stream ID for discoverability
+      let parentStreamId: string | undefined
+      if (stream.type === StreamTypes.THREAD && stream.parentMessageId) {
+        const parentMessage = await MessageRepository.findById(client, stream.parentMessageId)
+        parentStreamId = parentMessage?.streamId
+      }
+
       if (isNew) {
         await OutboxRepository.insert(client, "conversation:created", {
           workspaceId,
           streamId,
           conversation: addStalenessFields(conversation),
+          parentStreamId,
         })
       } else {
         await OutboxRepository.insert(client, "conversation:updated", {
@@ -107,6 +125,7 @@ export class BoundaryExtractionService {
           streamId,
           conversationId: conversation.id,
           conversation: addStalenessFields(conversation),
+          parentStreamId,
         })
       }
 

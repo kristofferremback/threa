@@ -16,6 +16,8 @@ export interface ExtractionContext {
   activeConversations: ConversationSummary[]
   streamType: string
   isThread: boolean
+  /** For threads: conversations containing the parent message (in the parent channel) */
+  parentMessageConversations?: ConversationSummary[]
 }
 
 export interface CompletenessUpdate {

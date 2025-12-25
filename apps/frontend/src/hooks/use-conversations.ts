@@ -15,6 +15,8 @@ interface ConversationCreatedPayload {
   workspaceId: string
   streamId: string
   conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID */
+  parentStreamId?: string
 }
 
 interface ConversationUpdatedPayload {
@@ -22,6 +24,8 @@ interface ConversationUpdatedPayload {
   streamId: string
   conversationId: string
   conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID */
+  parentStreamId?: string
 }
 
 interface UseConversationsOptions {
@@ -52,7 +56,8 @@ export function useConversations(workspaceId: string, streamId: string, options?
     if (!socket || !workspaceId || !streamId || !enabled) return
 
     const handleCreated = (payload: ConversationCreatedPayload) => {
-      if (payload.streamId !== streamId) return
+      // Accept events for this stream OR thread conversations whose parent is this stream
+      if (payload.streamId !== streamId && payload.parentStreamId !== streamId) return
 
       queryClient.setQueryData(
         conversationKeys.list(workspaceId, streamId, { status, limit }),
@@ -65,12 +70,18 @@ export function useConversations(workspaceId: string, streamId: string, options?
     }
 
     const handleUpdated = (payload: ConversationUpdatedPayload) => {
-      if (payload.streamId !== streamId) return
+      // Accept events for this stream OR thread conversations whose parent is this stream
+      if (payload.streamId !== streamId && payload.parentStreamId !== streamId) return
 
       queryClient.setQueryData(
         conversationKeys.list(workspaceId, streamId, { status, limit }),
         (old: ConversationWithStaleness[] | undefined) => {
           if (!old) return old
+          // For thread conversations viewed from parent channel, add if not present
+          const exists = old.some((c) => c.id === payload.conversationId)
+          if (!exists) {
+            return [...old, payload.conversation]
+          }
           return old.map((c) => (c.id === payload.conversationId ? payload.conversation : c))
         }
       )
