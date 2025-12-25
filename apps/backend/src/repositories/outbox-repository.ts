@@ -3,6 +3,7 @@ import { sql } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
 import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
+import type { User } from "./user-repository"
 
 /**
  * Outbox event types and their payloads.
@@ -20,6 +21,9 @@ export type OutboxEventType =
   | "stream:archived"
   | "stream:display_name_updated"
   | "attachment:uploaded"
+  | "workspace_member:added"
+  | "workspace_member:removed"
+  | "user:updated"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -32,7 +36,14 @@ export type StreamScopedEventType =
   | "stream:display_name_updated"
 
 /** Events that are scoped to a workspace (no streamId) */
-export type WorkspaceScopedEventType = "stream:created" | "stream:updated" | "stream:archived" | "attachment:uploaded"
+export type WorkspaceScopedEventType =
+  | "stream:created"
+  | "stream:updated"
+  | "stream:archived"
+  | "attachment:uploaded"
+  | "workspace_member:added"
+  | "workspace_member:removed"
+  | "user:updated"
 
 /**
  * Base fields for stream-scoped events.
@@ -106,6 +117,18 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
   storagePath: string
 }
 
+export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayload {
+  user: User
+}
+
+export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
+  userId: string
+}
+
+export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  user: User
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -121,6 +144,9 @@ export interface OutboxEventPayloadMap {
   "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
+  "workspace_member:added": WorkspaceMemberAddedOutboxPayload
+  "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
+  "user:updated": UserUpdatedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

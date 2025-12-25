@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { usePendingMessages, usePanel } from "@/contexts"
+import { useActors } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
 import { ThreadIndicator } from "./thread-indicator"
@@ -34,6 +35,8 @@ interface MessageLayoutProps {
   event: StreamEvent
   payload: MessagePayload
   workspaceId: string
+  actorName: string
+  actorInitials: string
   statusIndicator: ReactNode
   actions?: ReactNode
   footer?: ReactNode
@@ -46,6 +49,8 @@ function MessageLayout({
   event,
   payload,
   workspaceId,
+  actorName,
+  actorInitials,
   statusIndicator,
   actions,
   footer,
@@ -67,12 +72,12 @@ function MessageLayout({
     >
       <Avatar className="h-8 w-8 shrink-0">
         <AvatarFallback className={cn(isPersona && "bg-primary text-primary-foreground")}>
-          {isPersona ? "AI" : getInitials(event.actorId)}
+          {actorInitials}
         </AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm">{isPersona ? "AI Companion" : formatActorId(event.actorId)}</span>
+          <span className="font-medium text-sm">{actorName}</span>
           {statusIndicator}
           {actions}
         </div>
@@ -91,6 +96,8 @@ interface MessageEventInnerProps {
   payload: MessagePayload
   workspaceId: string
   streamId: string
+  actorName: string
+  actorInitials: string
   hideActions?: boolean
   isHighlighted?: boolean
 }
@@ -100,6 +107,8 @@ function SentMessageEvent({
   payload,
   workspaceId,
   streamId,
+  actorName,
+  actorInitials,
   hideActions,
   isHighlighted,
 }: MessageEventInnerProps) {
@@ -143,6 +152,8 @@ function SentMessageEvent({
       event={event}
       payload={payload}
       workspaceId={workspaceId}
+      actorName={actorName}
+      actorInitials={actorInitials}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
         !hideActions &&
@@ -170,12 +181,14 @@ function SentMessageEvent({
   )
 }
 
-function PendingMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
+function PendingMessageEvent({ event, payload, workspaceId, actorName, actorInitials }: MessageEventInnerProps) {
   return (
     <MessageLayout
       event={event}
       payload={payload}
       workspaceId={workspaceId}
+      actorName={actorName}
+      actorInitials={actorInitials}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -184,7 +197,7 @@ function PendingMessageEvent({ event, payload, workspaceId }: MessageEventInnerP
   )
 }
 
-function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerProps) {
+function FailedMessageEvent({ event, payload, workspaceId, actorName, actorInitials }: MessageEventInnerProps) {
   const { retryMessage } = usePendingMessages()
 
   return (
@@ -192,6 +205,8 @@ function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerPr
       event={event}
       payload={payload}
       workspaceId={workspaceId}
+      actorName={actorName}
+      actorInitials={actorInitials}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
@@ -206,13 +221,35 @@ function FailedMessageEvent({ event, payload, workspaceId }: MessageEventInnerPr
 export function MessageEvent({ event, workspaceId, streamId, hideActions, isHighlighted }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
+  const { getActorName, getActorInitials } = useActors(workspaceId)
   const status = getStatus(event.id)
+
+  const actorName = getActorName(event.actorId, event.actorType)
+  const actorInitials = getActorInitials(event.actorId, event.actorType)
 
   switch (status) {
     case "pending":
-      return <PendingMessageEvent event={event} payload={payload} workspaceId={workspaceId} streamId={streamId} />
+      return (
+        <PendingMessageEvent
+          event={event}
+          payload={payload}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          actorName={actorName}
+          actorInitials={actorInitials}
+        />
+      )
     case "failed":
-      return <FailedMessageEvent event={event} payload={payload} workspaceId={workspaceId} streamId={streamId} />
+      return (
+        <FailedMessageEvent
+          event={event}
+          payload={payload}
+          workspaceId={workspaceId}
+          streamId={streamId}
+          actorName={actorName}
+          actorInitials={actorInitials}
+        />
+      )
     default:
       return (
         <SentMessageEvent
@@ -220,21 +257,11 @@ export function MessageEvent({ event, workspaceId, streamId, hideActions, isHigh
           payload={payload}
           workspaceId={workspaceId}
           streamId={streamId}
+          actorName={actorName}
+          actorInitials={actorInitials}
           hideActions={hideActions}
           isHighlighted={isHighlighted}
         />
       )
   }
-}
-
-function getInitials(actorId: string | null): string {
-  if (!actorId) return "?"
-  // For now, just use first two chars of the ID
-  return actorId.substring(0, 2).toUpperCase()
-}
-
-function formatActorId(actorId: string | null): string {
-  if (!actorId) return "Unknown"
-  // For now, show truncated ID - will be replaced with user lookup
-  return actorId.substring(0, 8)
 }

@@ -118,4 +118,20 @@ export const PersonaRepository = {
     )
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
+
+  /**
+   * List all personas available to a workspace (system + workspace-specific).
+   */
+  async listForWorkspace(client: PoolClient, workspaceId: string): Promise<Persona[]> {
+    const result = await client.query<PersonaRow>(
+      sql`
+        SELECT ${sql.raw(SELECT_FIELDS)}
+        FROM personas
+        WHERE (workspace_id = ${workspaceId} OR workspace_id IS NULL)
+          AND status = 'active'
+        ORDER BY managed_by ASC, name ASC
+      `
+    )
+    return result.rows.map(mapRowToPersona)
+  },
 }

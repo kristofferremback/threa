@@ -64,4 +64,6 @@ export type {
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,
+  // Emojis
+  EmojiEntry,
 } from "./api"

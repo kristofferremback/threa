@@ -73,6 +73,25 @@ export interface CachedUser {
   _cachedAt: number
 }
 
+export interface CachedPersona {
+  id: string
+  workspaceId: string | null
+  slug: string
+  name: string
+  description: string | null
+  avatarEmoji: string | null
+  systemPrompt: string | null
+  model: string
+  temperature: number | null
+  maxTokens: number | null
+  enabledTools: string[] | null
+  managedBy: "system" | "workspace"
+  status: "pending" | "active" | "disabled" | "archived"
+  createdAt: string
+  updatedAt: string
+  _cachedAt: number
+}
+
 export interface PendingMessage {
   clientId: string // ULID generated client-side
   workspaceId: string
@@ -124,6 +143,7 @@ class ThreaDatabase extends Dexie {
   streams!: EntityTable<CachedStream, "id">
   events!: EntityTable<CachedEvent, "id">
   users!: EntityTable<CachedUser, "id">
+  personas!: EntityTable<CachedPersona, "id">
   pendingMessages!: EntityTable<PendingMessage, "clientId">
   syncCursors!: EntityTable<SyncCursor, "key">
   draftScratchpads!: EntityTable<DraftScratchpad, "id">
@@ -149,6 +169,10 @@ class ThreaDatabase extends Dexie {
     this.version(3).stores({
       draftMessages: "id, workspaceId, updatedAt",
     })
+
+    this.version(4).stores({
+      personas: "id, workspaceId, slug, _cachedAt",
+    })
   }
 }
 
@@ -163,6 +187,7 @@ export async function clearAllCachedData(): Promise<void> {
     db.streams.clear(),
     db.events.clear(),
     db.users.clear(),
+    db.personas.clear(),
     db.syncCursors.clear(),
     // Note: we keep pendingMessages to retry sending after re-login
   ])

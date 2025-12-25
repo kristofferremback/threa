@@ -117,3 +117,22 @@ export function normalizeMessage(message: string): string {
     return match
   })
 }
+
+export interface EmojiEntry {
+  shortcode: string
+  emoji: string
+  type: "native"
+}
+
+/**
+ * Get all emojis in API response format.
+ * Returns a list with primary shortcode for each emoji.
+ * Type is "native" for built-in emojis (vs future "custom" for workspace emojis).
+ */
+export function getEmojiList(): EmojiEntry[] {
+  return emojiData.emojis.map(({ emoji, shortcodes }) => ({
+    shortcode: shortcodes[0],
+    emoji,
+    type: "native" as const,
+  }))
+}

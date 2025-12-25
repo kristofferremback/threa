@@ -8,6 +8,7 @@ import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
 import { createAttachmentHandlers } from "./handlers/attachment-handlers"
 import { createSearchHandlers } from "./handlers/search-handlers"
+import { createEmojiHandlers } from "./handlers/emoji-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -54,6 +55,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const message = createMessageHandlers({ eventService, streamService })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ searchService })
+  const emoji = createEmojiHandlers()
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -102,6 +104,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
   app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
   app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
+  app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
 
   app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)

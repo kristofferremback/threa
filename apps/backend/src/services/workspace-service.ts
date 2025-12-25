@@ -1,8 +1,11 @@
 import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
-import { WorkspaceRepository, Workspace, WorkspaceMember } from "../repositories"
+import { WorkspaceRepository, Workspace, WorkspaceMember, OutboxRepository } from "../repositories"
+import { UserRepository, User } from "../repositories/user-repository"
+import { PersonaRepository, Persona } from "../repositories/persona-repository"
 import { workspaceId } from "../lib/id"
 import { generateUniqueSlug } from "../lib/slug"
+import { serializeBigInt } from "../lib/serialization"
 
 export interface CreateWorkspaceParams {
   name: string
@@ -48,7 +51,30 @@ export class WorkspaceService {
     userId: string,
     role: WorkspaceMember["role"] = "member"
   ): Promise<WorkspaceMember> {
-    return withTransaction(this.pool, (client) => WorkspaceRepository.addMember(client, workspaceId, userId, role))
+    return withTransaction(this.pool, async (client) => {
+      const member = await WorkspaceRepository.addMember(client, workspaceId, userId, role)
+
+      const user = await UserRepository.findById(client, userId)
+      if (user) {
+        await OutboxRepository.insert(client, "workspace_member:added", {
+          workspaceId,
+          user: serializeBigInt(user),
+        })
+      }
+
+      return member
+    })
+  }
+
+  async removeMember(workspaceId: string, userId: string): Promise<void> {
+    return withTransaction(this.pool, async (client) => {
+      await WorkspaceRepository.removeMember(client, workspaceId, userId)
+
+      await OutboxRepository.insert(client, "workspace_member:removed", {
+        workspaceId,
+        userId,
+      })
+    })
   }
 
   async getMembers(workspaceId: string): Promise<WorkspaceMember[]> {
@@ -57,5 +83,15 @@ export class WorkspaceService {
 
   async isMember(workspaceId: string, userId: string): Promise<boolean> {
     return withClient(this.pool, (client) => WorkspaceRepository.isMember(client, workspaceId, userId))
+  }
+
+  async getUsersForMembers(members: WorkspaceMember[]): Promise<User[]> {
+    if (members.length === 0) return []
+    const userIds = members.map((m) => m.userId)
+    return withClient(this.pool, (client) => UserRepository.findByIds(client, userIds))
+  }
+
+  async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
+    return withClient(this.pool, (client) => PersonaRepository.listForWorkspace(client, workspaceId))
   }
 }

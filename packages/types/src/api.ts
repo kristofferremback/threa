@@ -5,7 +5,7 @@
  */
 
 import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
-import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember } from "./domain"
+import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember, User, Persona } from "./domain"
 
 // ============================================================================
 // Streams API
@@ -68,9 +68,18 @@ export interface CreateWorkspaceInput {
   slug?: string
 }
 
+export interface EmojiEntry {
+  shortcode: string
+  emoji: string
+  type: "native" | "custom"
+}
+
 export interface WorkspaceBootstrap {
   workspace: Workspace
   members: WorkspaceMember[]
   streams: Stream[]
   streamMemberships: StreamMember[]
+  users: User[]
+  personas: Persona[]
+  emojis: EmojiEntry[]
 }

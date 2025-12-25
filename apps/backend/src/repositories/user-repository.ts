@@ -70,6 +70,16 @@ export const UserRepository = {
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
+  async findByIds(client: PoolClient, ids: string[]): Promise<User[]> {
+    if (ids.length === 0) return []
+
+    const result = await client.query<UserRow>(sql`
+      SELECT id, email, name, workos_user_id, timezone, locale, created_at, updated_at
+      FROM users WHERE id = ANY(${ids})
+    `)
+    return result.rows.map(mapRowToUser)
+  },
+
   async insert(client: PoolClient, params: InsertUserParams): Promise<User> {
     const result = await client.query<UserRow>(sql`
       INSERT INTO users (id, email, name, workos_user_id)

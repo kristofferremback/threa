@@ -4,12 +4,27 @@ import { useSocket } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { Stream } from "@threa/types"
+import type { Stream, User, WorkspaceMember } from "@threa/types"
 
 interface StreamPayload {
   workspaceId: string
   streamId: string
   stream: Stream
+}
+
+interface WorkspaceMemberAddedPayload {
+  workspaceId: string
+  user: User
+}
+
+interface WorkspaceMemberRemovedPayload {
+  workspaceId: string
+  userId: string
+}
+
+interface UserUpdatedPayload {
+  workspaceId: string
+  user: User
 }
 
 /**
@@ -93,11 +108,69 @@ export function useSocketEvents(workspaceId: string) {
       db.streams.delete(payload.stream.id)
     })
 
+    // Handle workspace member added
+    socket.on("workspace_member:added", (payload: WorkspaceMemberAddedPayload) => {
+      const now = Date.now()
+
+      // Update workspace bootstrap cache - add user if not present
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { users?: User[] }
+
+        const users = bootstrap.users || []
+        const updatedUsers = users.some((u) => u.id === payload.user.id) ? users : [...users, payload.user]
+
+        return { ...bootstrap, users: updatedUsers }
+      })
+
+      // Cache user to IndexedDB
+      db.users.put({ ...payload.user, _cachedAt: now })
+    })
+
+    // Handle workspace member removed
+    socket.on("workspace_member:removed", (payload: WorkspaceMemberRemovedPayload) => {
+      // Update workspace bootstrap cache
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { members?: WorkspaceMember[] }
+        if (!bootstrap.members) return old
+        return {
+          ...bootstrap,
+          members: bootstrap.members.filter((m) => m.userId !== payload.userId),
+        }
+      })
+
+      // Remove from IndexedDB workspace members
+      db.workspaceMembers.delete(`${workspaceId}:${payload.userId}`)
+    })
+
+    // Handle user updated
+    socket.on("user:updated", (payload: UserUpdatedPayload) => {
+      const now = Date.now()
+
+      // Update workspace bootstrap cache
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { users?: User[] }
+        if (!bootstrap.users) return old
+        return {
+          ...bootstrap,
+          users: bootstrap.users.map((u) => (u.id === payload.user.id ? payload.user : u)),
+        }
+      })
+
+      // Update user in IndexedDB
+      db.users.put({ ...payload.user, _cachedAt: now })
+    })
+
     return () => {
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
       socket.off("stream:updated")
       socket.off("stream:archived")
+      socket.off("workspace_member:added")
+      socket.off("workspace_member:removed")
+      socket.off("user:updated")
     }
   }, [socket, workspaceId, queryClient])
 }

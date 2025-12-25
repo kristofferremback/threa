@@ -47,10 +47,14 @@ export function SearchDialog({ workspaceId, open, onOpenChange }: SearchDialogPr
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
-  // Build members and streams lists for typeahead
+  // Build members, users, and streams lists for typeahead
   const members = useMemo(() => {
     return bootstrap?.members ?? []
   }, [bootstrap?.members])
+
+  const users = useMemo(() => {
+    return bootstrap?.users ?? []
+  }, [bootstrap?.users])
 
   const streams = useMemo(() => {
     return bootstrap?.streams ?? []
@@ -167,6 +171,7 @@ export function SearchDialog({ workspaceId, open, onOpenChange }: SearchDialogPr
               <FilterSelect
                 type={addingFilter}
                 members={members}
+                users={users}
                 streams={streams}
                 streamTypes={STREAM_TYPE_OPTIONS}
                 onSelect={handleFilterSelect}
