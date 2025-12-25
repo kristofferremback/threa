@@ -12,13 +12,19 @@ import { CONVERSATION_STATUSES, StreamTypes } from "@threa/types"
  */
 const extractionResponseSchema = z.object({
   conversationId: z.string().nullable().describe("ID of existing conversation to join, or null for new conversation"),
-  newConversationTopic: z.string().optional().describe("Topic summary if starting a new conversation"),
+  newConversationTopic: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Topic summary if starting a new conversation (required when conversationId is null)"),
   completenessUpdates: z
     .array(
       z.object({
         conversationId: z.string(),
         score: z.number().min(1).max(7).describe("Completeness score: 1 = just started, 7 = fully resolved"),
-        status: z.enum(CONVERSATION_STATUSES),
+        status: z
+          .enum(CONVERSATION_STATUSES)
+          .describe(`Conversation status: ${CONVERSATION_STATUSES.map((s) => `"${s}"`).join(" | ")}`),
       })
     )
     .optional()
@@ -50,7 +56,8 @@ Content: {{CONTENT}}
 ## Output Requirements
 - conversationId: ID of existing conversation to join, or null for new conversation
 - newConversationTopic: Topic summary if starting new conversation (required when conversationId is null)
-- completenessUpdates: Array of {conversationId, score (1-7), status} for any conversations that changed
+- completenessUpdates: Array of {conversationId, score (1-7), status} for conversations whose completeness changed
+  - status must be one of: "active", "stalled", "resolved"
 - confidence: 0.0 to 1.0 confidence in this classification
 
 Respond with ONLY the JSON object. No explanation, no markdown code blocks.`
@@ -157,7 +164,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
 
     return {
       conversationId: parsed.conversationId,
-      newConversationTopic: parsed.newConversationTopic,
+      newConversationTopic: parsed.newConversationTopic ?? undefined,
       completenessUpdates: parsed.completenessUpdates,
       confidence: parsed.confidence,
     }
