@@ -186,6 +186,21 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
+  /**
+   * Find conversations that contain any of the given message IDs.
+   * Returns unique conversations, deduplicated by ID.
+   */
+  async findByMessageIds(client: PoolClient, messageIds: string[]): Promise<Conversation[]> {
+    if (messageIds.length === 0) return []
+
+    const result = await client.query<ConversationRow>(sql`
+      SELECT DISTINCT ON (id) ${sql.raw(SELECT_FIELDS)} FROM conversations
+      WHERE message_ids && ${messageIds}
+      ORDER BY id, last_activity_at DESC
+    `)
+    return result.rows.map(mapRowToConversation)
+  },
+
   async findByWorkspace(
     client: PoolClient,
     workspaceId: string,

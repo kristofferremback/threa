@@ -10,7 +10,8 @@ import { conversationId } from "../lib/id"
 import { ConversationStatuses, StreamTypes } from "@threa/types"
 import { logger } from "../lib/logger"
 
-const WINDOW_SIZE = 5
+const MESSAGES_BEFORE = 5
+const MESSAGES_AFTER = 2
 
 export class BoundaryExtractionService {
   constructor(
@@ -32,8 +33,29 @@ export class BoundaryExtractionService {
         return null
       }
 
-      const recentMessages = await MessageRepository.list(client, streamId, { limit: WINDOW_SIZE })
-      const activeConversations = await ConversationRepository.findActiveByStream(client, streamId)
+      // Get messages surrounding the target message (not just recent)
+      // This ensures correct behavior for queue catch-up, replays, and historic processing
+      const surroundingMessages = await MessageRepository.findSurrounding(
+        client,
+        messageId,
+        streamId,
+        MESSAGES_BEFORE,
+        MESSAGES_AFTER
+      )
+
+      // For surrounding messages that are thread roots, also fetch their thread messages
+      // This handles cases where someone replies flat in channel when others are in a thread
+      const threadRootIds = surroundingMessages.filter((m) => m.replyCount > 0).map((m) => m.id)
+      const threadMessagesByParent = await MessageRepository.findThreadMessages(client, threadRootIds)
+      const allThreadMessages = Array.from(threadMessagesByParent.values()).flat()
+
+      // Combine surrounding + thread messages for conversation lookup
+      const allContextMessages = [...surroundingMessages, ...allThreadMessages]
+      const allContextMessageIds = allContextMessages.map((m) => m.id)
+
+      // Find conversations based on all context messages (not all active in stream)
+      // This scopes context to temporally relevant conversations
+      const relevantConversations = await ConversationRepository.findByMessageIds(client, allContextMessageIds)
 
       // For threads, look up conversations containing the parent message
       let parentMessageConversations: Conversation[] = []
@@ -43,8 +65,8 @@ export class BoundaryExtractionService {
 
       const context: ExtractionContext = {
         newMessage: message,
-        recentMessages,
-        activeConversations: await this.buildConversationSummaries(client, activeConversations, recentMessages),
+        recentMessages: allContextMessages,
+        activeConversations: await this.buildConversationSummaries(client, relevantConversations, allContextMessages),
         streamType: stream.type,
         parentMessageConversations:
           parentMessageConversations.length > 0
@@ -84,9 +106,9 @@ export class BoundaryExtractionService {
       }
 
       if (result.completenessUpdates) {
-        // Security: Only allow updates to conversations in the current stream
+        // Security: Only allow updates to conversations found via surrounding messages
         // LLM output could potentially contain IDs from other streams/workspaces
-        const validConvIds = new Set(activeConversations.map((c) => c.id))
+        const validConvIds = new Set(relevantConversations.map((c) => c.id))
 
         for (const update of result.completenessUpdates) {
           if (!validConvIds.has(update.conversationId)) {
