@@ -174,6 +174,7 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     providerRegistry,
     streamService,
+    checkpointer,
     createMessage,
     orchestratorModel: config.ai.namingModel, // reuse the cheap model for orchestration
   })
