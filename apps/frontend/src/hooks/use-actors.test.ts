@@ -151,7 +151,8 @@ describe("useActors", () => {
     it("should return avatar emoji for persona", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
         users: [],
-        personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: "🧵" })],
+        // avatarEmoji is stored as shortcode format in the database
+        personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: ":thread:" })],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { workspaceKeys } from "./use-workspaces"
+import { toEmoji } from "@/lib/emoji"
 import type { User, Persona, WorkspaceBootstrap, AuthorType } from "@threa/types"
 
 interface ActorLookup {
@@ -58,7 +59,11 @@ export function useActors(workspaceId: string): ActorLookup {
 
       if (actorType === "persona") {
         const persona = getPersona(actorId)
-        if (persona?.avatarEmoji) return persona.avatarEmoji
+        if (persona?.avatarEmoji) {
+          // Convert shortcode to emoji (e.g., ":thread:" -> "🧵")
+          const emoji = toEmoji(persona.avatarEmoji)
+          if (emoji) return emoji
+        }
         if (persona?.name) {
           const words = persona.name.split(" ")
           return words
