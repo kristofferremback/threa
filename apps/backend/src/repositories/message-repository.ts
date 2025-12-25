@@ -116,6 +116,29 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0], reactions)
   },
 
+  async findByIds(client: PoolClient, ids: string[]): Promise<Map<string, Message>> {
+    if (ids.length === 0) return new Map()
+
+    const result = await client.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE id = ANY(${ids})
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${ids})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    const map = new Map<string, Message>()
+    for (const row of result.rows) {
+      map.set(row.id, mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+    }
+    return map
+  },
+
   async list(
     client: PoolClient,
     streamId: string,
@@ -262,6 +285,104 @@ export const MessageRepository = {
       SET embedding = ${embeddingLiteral}::vector
       WHERE id = ${id}
     `)
+  },
+
+  /**
+   * Find messages from threads rooted at the given parent messages.
+   * Returns a map of parentMessageId -> thread messages (in chronological order).
+   */
+  async findThreadMessages(client: PoolClient, parentMessageIds: string[]): Promise<Map<string, Message[]>> {
+    if (parentMessageIds.length === 0) return new Map()
+
+    // Find thread streams for these parent messages and get their messages
+    const result = await client.query<MessageRow & { parent_message_id: string }>(sql`
+      SELECT
+        m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
+        m.content, m.content_format, m.reply_count,
+        m.edited_at, m.deleted_at, m.created_at,
+        s.parent_message_id
+      FROM messages m
+      JOIN streams s ON m.stream_id = s.id
+      WHERE s.parent_message_id = ANY(${parentMessageIds})
+        AND s.type = 'thread'
+        AND m.deleted_at IS NULL
+      ORDER BY m.sequence ASC
+    `)
+
+    if (result.rows.length === 0) return new Map()
+
+    // Fetch reactions for all messages
+    const messageIds = result.rows.map((r) => r.id)
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    // Group by parent message ID
+    const byParent = new Map<string, Message[]>()
+    for (const row of result.rows) {
+      const parentId = row.parent_message_id
+      const messages = byParent.get(parentId) ?? []
+      messages.push(mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+      byParent.set(parentId, messages)
+    }
+
+    return byParent
+  },
+
+  /**
+   * Find messages surrounding a target message in the same stream.
+   * Returns up to `messagesBefore` messages before and `messagesAfter` messages after the target.
+   * The target message itself is always included.
+   * Messages are returned in chronological order (ascending sequence).
+   */
+  async findSurrounding(
+    client: PoolClient,
+    messageId: string,
+    streamId: string,
+    messagesBefore: number,
+    messagesAfter: number
+  ): Promise<Message[]> {
+    // Get the target message's sequence number
+    const targetResult = await client.query<{ sequence: string }>(
+      sql`SELECT sequence FROM messages WHERE id = ${messageId} AND stream_id = ${streamId}`
+    )
+    if (!targetResult.rows[0]) return []
+    const targetSequence = targetResult.rows[0].sequence
+
+    // Get messages before and after (including the target)
+    const result = await client.query<MessageRow>(sql`
+      (
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND sequence < ${targetSequence}
+          AND deleted_at IS NULL
+        ORDER BY sequence DESC
+        LIMIT ${messagesBefore}
+      )
+      UNION ALL
+      (
+        SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+        WHERE stream_id = ${streamId}
+          AND sequence >= ${targetSequence}
+          AND deleted_at IS NULL
+        ORDER BY sequence ASC
+        LIMIT ${messagesAfter + 1}
+      )
+      ORDER BY sequence ASC
+    `)
+
+    if (result.rows.length === 0) return []
+
+    const messageIds = result.rows.map((r) => r.id)
+    const reactionsResult = await client.query<ReactionRow>(sql`
+      SELECT message_id, user_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return result.rows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
   },
 
   /**

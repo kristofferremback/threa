@@ -4,6 +4,7 @@ import { bigIntReplacer } from "../lib/serialization"
 import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
 import type { User } from "./user-repository"
+import type { ConversationWithStaleness } from "../lib/conversation-staleness"
 
 /**
  * Outbox event types and their payloads.
@@ -24,6 +25,8 @@ export type OutboxEventType =
   | "workspace_member:added"
   | "workspace_member:removed"
   | "user:updated"
+  | "conversation:created"
+  | "conversation:updated"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -34,6 +37,8 @@ export type StreamScopedEventType =
   | "reaction:added"
   | "reaction:removed"
   | "stream:display_name_updated"
+  | "conversation:created"
+  | "conversation:updated"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -129,6 +134,21 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
   user: User
 }
 
+// Conversation event payloads
+export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
+  conversationId: string
+  conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID (for discoverability) */
+  parentStreamId?: string
+}
+
+export interface ConversationUpdatedOutboxPayload extends StreamScopedPayload {
+  conversationId: string
+  conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID (for discoverability) */
+  parentStreamId?: string
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -147,6 +167,8 @@ export interface OutboxEventPayloadMap {
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
   "user:updated": UserUpdatedOutboxPayload
+  "conversation:created": ConversationCreatedOutboxPayload
+  "conversation:updated": ConversationUpdatedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -168,6 +190,16 @@ export function isOutboxEventType<T extends OutboxEventType>(
   return event.eventType === eventType
 }
 
+/**
+ * Type guard to narrow an OutboxEvent to one of several event types.
+ */
+export function isOneOfOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventTypes: T[]
+): event is OutboxEvent<T> {
+  return eventTypes.includes(event.eventType as T)
+}
+
 const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "message:created",
   "message:edited",
@@ -176,6 +208,8 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "reaction:added",
   "reaction:removed",
   "stream:display_name_updated",
+  "conversation:created",
+  "conversation:updated",
 ]
 
 /**

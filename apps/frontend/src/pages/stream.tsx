@@ -1,6 +1,6 @@
 import { useState, useRef, Fragment } from "react"
-import { useParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive } from "lucide-react"
+import { useParams, useSearchParams } from "react-router-dom"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,16 +11,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
+import { cn } from "@/lib/utils"
 import { useStreamOrDraft } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
+import { ConversationList } from "@/components/conversations"
 import { StreamTypes } from "@threa/types"
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId!, streamId!)
   const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
+
+  const isConversationViewOpen = searchParams.get("convView") === "open"
+
+  const setConversationViewOpen = (open: boolean) => {
+    setSearchParams((prev) => {
+      const newParams = new URLSearchParams(prev)
+      if (open) {
+        newParams.set("convView", "open")
+      } else {
+        newParams.delete("convView")
+      }
+      return newParams
+    })
+  }
 
   const isThread = stream?.type === StreamTypes.THREAD
 
@@ -101,26 +118,39 @@ export function StreamPage() {
             <h1 className="font-semibold">{streamName}</h1>
           )}
         </div>
-        {isScratchpad && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={handleStartRename}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                <Archive className="mr-2 h-4 w-4" />
-                {isDraft ? "Delete" : "Archive"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <div className="flex items-center gap-1">
+          {!isDraft && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              title="Conversations"
+              onClick={() => setConversationViewOpen(!isConversationViewOpen)}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </Button>
+          )}
+          {isScratchpad && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleStartRename}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                  <Archive className="mr-2 h-4 w-4" />
+                  {isDraft ? "Delete" : "Archive"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </header>
       <main className="flex-1 overflow-hidden">
         <TimelineView isDraft={isDraft} />
@@ -130,9 +160,50 @@ export function StreamPage() {
 
   const hasSidePanel = openPanels.length > 0 || draftReply !== null
 
+  // Conversation side panel (fixed position, no Radix animations)
+  const conversationPanel = !isDraft && (
+    <>
+      {/* Backdrop */}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-black/80 transition-opacity duration-300",
+          isConversationViewOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setConversationViewOpen(false)}
+      />
+      {/* Panel */}
+      <div
+        className={cn(
+          "fixed inset-y-0 right-0 z-50 w-80 sm:w-96 bg-background border-l shadow-lg flex flex-col",
+          "transition-transform duration-300 ease-out",
+          isConversationViewOpen ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold">Conversations</h2>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setConversationViewOpen(false)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ConversationList
+            workspaceId={workspaceId!}
+            streamId={streamId!}
+            onMessageClick={() => setConversationViewOpen(false)}
+          />
+        </div>
+      </div>
+    </>
+  )
+
   // When no panels open, render just the main stream
   if (!hasSidePanel) {
-    return mainStreamContent
+    return (
+      <>
+        {mainStreamContent}
+        {conversationPanel}
+      </>
+    )
   }
 
   // Calculate panel count for sizing
@@ -141,41 +212,44 @@ export function StreamPage() {
 
   // When panels are open, use resizable layout
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full">
-      <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
-        {mainStreamContent}
-      </ResizablePanel>
+    <>
+      <ResizablePanelGroup orientation="horizontal" className="h-full">
+        <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
+          {mainStreamContent}
+        </ResizablePanel>
 
-      {/* Stream panels */}
-      {openPanels.map((panel) => (
-        <Fragment key={panel.streamId}>
-          <ResizableHandle withHandle />
-          <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
-            <StreamPanel
-              workspaceId={workspaceId}
-              streamId={panel.streamId}
-              onClose={() => closePanel(panel.streamId)}
-            />
-          </ResizablePanel>
-        </Fragment>
-      ))}
+        {/* Stream panels */}
+        {openPanels.map((panel) => (
+          <Fragment key={panel.streamId}>
+            <ResizableHandle withHandle />
+            <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
+              <StreamPanel
+                workspaceId={workspaceId}
+                streamId={panel.streamId}
+                onClose={() => closePanel(panel.streamId)}
+              />
+            </ResizablePanel>
+          </Fragment>
+        ))}
 
-      {/* Draft panel for creating new threads (appears rightmost) */}
-      {draftReply && (
-        <>
-          <ResizableHandle withHandle />
-          <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
-            <ThreadDraftPanel
-              workspaceId={workspaceId}
-              parentStreamId={draftReply.parentStreamId}
-              parentMessageId={draftReply.parentMessageId}
-              initialContent={draftReply.content}
-              onClose={handleCloseDraft}
-              onThreadCreated={handleThreadCreated}
-            />
-          </ResizablePanel>
-        </>
-      )}
-    </ResizablePanelGroup>
+        {/* Draft panel for creating new threads (appears rightmost) */}
+        {draftReply && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
+              <ThreadDraftPanel
+                workspaceId={workspaceId}
+                parentStreamId={draftReply.parentStreamId}
+                parentMessageId={draftReply.parentMessageId}
+                initialContent={draftReply.content}
+                onClose={handleCloseDraft}
+                onThreadCreated={handleThreadCreated}
+              />
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
+      {conversationPanel}
+    </>
   )
 }

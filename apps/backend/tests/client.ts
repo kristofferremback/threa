@@ -546,3 +546,55 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
   }
   return data.data
 }
+
+export interface Conversation {
+  id: string
+  streamId: string
+  workspaceId: string
+  messageIds: string[]
+  participantIds: string[]
+  topicSummary: string | null
+  completenessScore: number
+  confidence: number
+  status: string
+  parentConversationId: string | null
+  lastActivityAt: string
+  createdAt: string
+  updatedAt: string
+  temporalStaleness: number
+  effectiveCompleteness: number
+}
+
+export async function listConversations(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  options?: { status?: string; limit?: number }
+): Promise<Conversation[]> {
+  const params = new URLSearchParams()
+  if (options?.status) params.set("status", options.status)
+  if (options?.limit) params.set("limit", String(options.limit))
+  const query = params.toString() ? `?${params.toString()}` : ""
+
+  const { status, data } = await client.get<{ conversations: Conversation[] }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/conversations${query}`
+  )
+  if (status !== 200) {
+    throw new Error(`List conversations failed: ${JSON.stringify(data)}`)
+  }
+  return data.conversations
+}
+
+export async function getConversation(
+  client: TestClient,
+  workspaceId: string,
+  conversationId: string
+): Promise<Conversation> {
+  const { status, data } = await client.get<{ conversation: Conversation }>(
+    `/api/workspaces/${workspaceId}/conversations/${conversationId}`
+  )
+  if (status !== 200) {
+    throw new Error(`Get conversation failed: ${JSON.stringify(data)}`)
+  }
+  return data.conversation
+}

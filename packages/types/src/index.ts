@@ -35,6 +35,10 @@ export {
   type StorageProvider,
   PROCESSING_STATUSES,
   type ProcessingStatus,
+  // Conversations
+  CONVERSATION_STATUSES,
+  type ConversationStatus,
+  ConversationStatuses,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -49,6 +53,8 @@ export type {
   Persona,
   Attachment,
   AttachmentSummary,
+  Conversation,
+  ConversationWithStaleness,
 } from "./domain"
 
 // API types

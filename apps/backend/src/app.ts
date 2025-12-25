@@ -4,9 +4,13 @@ import cookieParser from "cookie-parser"
 import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
+import { bigIntReplacer } from "./lib/serialization"
 
 export function createApp(): Express {
   const app = express()
+
+  // Configure JSON serialization to handle BigInt values
+  app.set("json replacer", bigIntReplacer)
 
   app.use(cors({ origin: true, credentials: true }))
   app.use(cookieParser())
