@@ -64,7 +64,6 @@ export function ConversationItem({
             <ConversationMessages
               workspaceId={workspaceId}
               conversationId={conversation.id}
-              streamId={conversation.streamId}
               onMessageClick={onMessageClick}
             />
           </div>
@@ -77,11 +76,10 @@ export function ConversationItem({
 interface ConversationMessagesProps {
   workspaceId: string
   conversationId: string
-  streamId: string
   onMessageClick?: () => void
 }
 
-function ConversationMessages({ workspaceId, conversationId, streamId, onMessageClick }: ConversationMessagesProps) {
+function ConversationMessages({ workspaceId, conversationId, onMessageClick }: ConversationMessagesProps) {
   const conversationService = useConversationService()
   const { getActorName } = useActors(workspaceId)
 
@@ -118,7 +116,6 @@ function ConversationMessages({ workspaceId, conversationId, streamId, onMessage
           key={message.id}
           message={message}
           workspaceId={workspaceId}
-          streamId={streamId}
           getActorName={getActorName}
           onMessageClick={onMessageClick}
         />
@@ -130,17 +127,17 @@ function ConversationMessages({ workspaceId, conversationId, streamId, onMessage
 interface MessagePreviewProps {
   message: Message
   workspaceId: string
-  streamId: string
   getActorName: (actorId: string | null, actorType: "user" | "persona" | null) => string
   onMessageClick?: () => void
 }
 
-function MessagePreview({ message, workspaceId, streamId, getActorName, onMessageClick }: MessagePreviewProps) {
+function MessagePreview({ message, workspaceId, getActorName, onMessageClick }: MessagePreviewProps) {
   const maxLength = 200
   const truncatedContent =
     message.content.length > maxLength ? message.content.slice(0, maxLength) + "..." : message.content
 
-  const messageUrl = `/w/${workspaceId}/s/${streamId}?m=${message.id}`
+  // Use message's own streamId - thread messages belong to thread streams, not the parent channel
+  const messageUrl = `/w/${workspaceId}/s/${message.streamId}?m=${message.id}`
   const authorName = getActorName(message.authorId, message.authorType)
 
   return (
