@@ -21,6 +21,7 @@ import {
   updateCompanionMode,
   updateMessage,
   deleteMessage,
+  getWorkspaceBootstrap,
 } from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
@@ -96,6 +97,28 @@ describe("API E2E Tests", () => {
       const { status, data } = await client.get<{ workspaces: unknown[] }>("/api/workspaces")
       expect(status).toBe(200)
       expect(data.workspaces.length).toBeGreaterThan(0)
+    })
+
+    test("should return users and personas in workspace bootstrap", async () => {
+      const client = new TestClient()
+      const user = await loginAs(client, testEmail("wsboot"), "WS Bootstrap Test")
+      const workspace = await createWorkspace(client, `Boot Test WS ${testRunId}`)
+
+      const bootstrap = await getWorkspaceBootstrap(client, workspace.id)
+
+      // Should include the logged-in user in users array
+      expect(bootstrap.users).toBeInstanceOf(Array)
+      expect(bootstrap.users.length).toBeGreaterThan(0)
+      const foundUser = bootstrap.users.find((u) => u.id === user.id)
+      expect(foundUser).toBeDefined()
+      expect(foundUser?.name).toBe("WS Bootstrap Test")
+
+      // Should include system personas (Ariadne at minimum)
+      expect(bootstrap.personas).toBeInstanceOf(Array)
+      expect(bootstrap.personas.length).toBeGreaterThan(0)
+      const ariadne = bootstrap.personas.find((p) => p.slug === "ariadne")
+      expect(ariadne).toBeDefined()
+      expect(ariadne?.managedBy).toBe("system")
     })
   })
 

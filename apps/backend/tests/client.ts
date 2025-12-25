@@ -516,3 +516,33 @@ export async function search(client: TestClient, workspaceId: string, params: Se
   }
   return data.results
 }
+
+export interface Persona {
+  id: string
+  workspaceId: string | null
+  slug: string
+  name: string
+  description: string | null
+  avatarEmoji: string | null
+  managedBy: "system" | "workspace"
+  status: string
+}
+
+export interface WorkspaceBootstrapData {
+  workspace: Workspace
+  members: WorkspaceMember[]
+  streams: Stream[]
+  streamMemberships: StreamMember[]
+  users: User[]
+  personas: Persona[]
+}
+
+export async function getWorkspaceBootstrap(client: TestClient, workspaceId: string): Promise<WorkspaceBootstrapData> {
+  const { status, data } = await client.get<{ data: WorkspaceBootstrapData }>(
+    `/api/workspaces/${workspaceId}/bootstrap`
+  )
+  if (status !== 200) {
+    throw new Error(`Get workspace bootstrap failed: ${JSON.stringify(data)}`)
+  }
+  return data.data
+}
