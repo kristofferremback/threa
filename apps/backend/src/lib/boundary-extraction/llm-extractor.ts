@@ -4,7 +4,7 @@ import type { ProviderRegistry } from "../ai/provider-registry"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
-import { CONVERSATION_STATUSES } from "@threa/types"
+import { CONVERSATION_STATUSES, StreamTypes } from "@threa/types"
 
 /**
  * Schema for LLM extraction response using structured outputs.
@@ -62,7 +62,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
   ) {}
 
   async extract(context: ExtractionContext): Promise<ExtractionResult> {
-    if (context.isThread) {
+    if (context.streamType === StreamTypes.THREAD) {
       return this.handleThreadMessage(context)
     }
 

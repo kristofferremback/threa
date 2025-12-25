@@ -136,6 +136,7 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
 
 // Conversation event payloads
 export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
+  conversationId: string
   conversation: ConversationWithStaleness
   /** For thread conversations, the parent channel's stream ID (for discoverability) */
   parentStreamId?: string

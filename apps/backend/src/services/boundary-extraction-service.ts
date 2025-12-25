@@ -46,7 +46,6 @@ export class BoundaryExtractionService {
         recentMessages,
         activeConversations: await this.buildConversationSummaries(client, activeConversations, recentMessages),
         streamType: stream.type,
-        isThread: stream.type === StreamTypes.THREAD,
         parentMessageConversations:
           parentMessageConversations.length > 0
             ? await this.buildConversationSummaries(client, parentMessageConversations, [])
@@ -116,6 +115,7 @@ export class BoundaryExtractionService {
         await OutboxRepository.insert(client, "conversation:created", {
           workspaceId,
           streamId,
+          conversationId: conversation.id,
           conversation: addStalenessFields(conversation),
           parentStreamId,
         })

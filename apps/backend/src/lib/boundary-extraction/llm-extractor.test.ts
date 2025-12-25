@@ -66,7 +66,6 @@ function createMockContext(overrides: Partial<ExtractionContext> = {}): Extracti
     recentMessages: [createMockMessage()],
     activeConversations: [],
     streamType: "scratchpad",
-    isThread: false,
     ...overrides,
   }
 }
@@ -82,7 +81,7 @@ describe("LLMBoundaryExtractor", () => {
   describe("thread handling", () => {
     test("returns 100% confidence for thread messages", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [createMockConversation({ id: "conv_thread123" })],
       })
 
@@ -95,7 +94,7 @@ describe("LLMBoundaryExtractor", () => {
     test("returns existing conversation ID for thread with active conversation", async () => {
       const existingConv = createMockConversation({ id: "conv_existing456" })
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [existingConv],
       })
 
@@ -107,7 +106,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("creates new conversation for thread without existing conversation", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({ content: "Starting a thread discussion" }),
       })
@@ -121,7 +120,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("does not call LLM for thread messages", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [createMockConversation()],
       })
 
@@ -234,7 +233,7 @@ describe("LLMBoundaryExtractor", () => {
   describe("topic extraction", () => {
     test("extracts first sentence as topic", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
           content: "This is the first sentence. This is the second sentence.",
@@ -248,7 +247,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("handles messages ending with question mark", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
           content: "How do we handle this? I'm not sure about it.",
@@ -262,7 +261,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("handles messages ending with exclamation", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
           content: "This is exciting news! Can't wait to share more.",
@@ -276,7 +275,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("handles newline-separated content", async () => {
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
           content: "First line here\nSecond line here\nThird line",
@@ -291,7 +290,7 @@ describe("LLMBoundaryExtractor", () => {
     test("truncates very long topics to 100 characters", async () => {
       const longContent = "A".repeat(200)
       const context = createMockContext({
-        isThread: true,
+        streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({ content: longContent }),
       })
