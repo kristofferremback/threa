@@ -81,7 +81,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       logger.error({ err }, "Boundary extraction LLM call failed")
       return {
         conversationId: null,
-        newConversationTopic: this.extractTopicFromMessage(context.newMessage),
+        newConversationTopic: this.truncateAsTopic(context.newMessage),
         confidence: 0.3,
       }
     }
@@ -91,7 +91,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
     const existingConv = context.activeConversations[0]
     return {
       conversationId: existingConv?.id ?? null,
-      newConversationTopic: existingConv ? undefined : this.extractTopicFromMessage(context.newMessage),
+      newConversationTopic: existingConv ? undefined : this.truncateAsTopic(context.newMessage),
       confidence: 1.0,
     }
   }
@@ -129,7 +129,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       logger.warn({ parsedId: parsed.conversationId }, "LLM returned invalid conversation ID, treating as new")
       return {
         conversationId: null,
-        newConversationTopic: parsed.newConversationTopic || this.extractTopicFromMessage(context.newMessage),
+        newConversationTopic: parsed.newConversationTopic || this.truncateAsTopic(context.newMessage),
         confidence: parsed.confidence,
       }
     }
@@ -146,7 +146,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
     return context.activeConversations.some((c) => c.id === id)
   }
 
-  private extractTopicFromMessage(message: Message): string {
+  private truncateAsTopic(message: Message): string {
     const firstSentence = message.content.split(/[.!?\n]/)[0]?.trim()
     if (firstSentence && firstSentence.length > 0) {
       return firstSentence.slice(0, 100)
