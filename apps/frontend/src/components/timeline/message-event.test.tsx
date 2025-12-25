@@ -80,6 +80,23 @@ vi.mock("./thread-indicator", () => ({
   ThreadIndicator: () => <div data-testid="thread-indicator" />,
 }))
 
+vi.mock("@/hooks", () => ({
+  useActors: () => ({
+    getActorName: (actorId: string | null, actorType: string | null) => {
+      if (!actorId) return "Unknown"
+      if (actorType === "persona") return "AI Companion"
+      return "User Name"
+    },
+    getActorInitials: (actorId: string | null, actorType: string | null) => {
+      if (!actorId) return "?"
+      if (actorType === "persona") return "AI"
+      return "US"
+    },
+    getUser: () => undefined,
+    getPersona: () => undefined,
+  }),
+}))
+
 const createMessageEvent = (messageId: string, content: string): StreamEvent => ({
   id: `event_${messageId}`,
   streamId: "stream_123",
