@@ -1,0 +1,169 @@
+import { describe, it, expect, mock, afterEach } from "bun:test"
+import { createReadUrlTool } from "./read-url-tool"
+
+describe("read-url-tool", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it("should extract text content from HTML", async () => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Test Page</title></head>
+        <body>
+          <h1>Hello World</h1>
+          <p>This is a test paragraph.</p>
+          <script>console.log('should be removed')</script>
+          <style>.hidden { display: none; }</style>
+        </body>
+      </html>
+    `
+
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: () => Promise.resolve(html),
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.url).toBe("https://example.com")
+    expect(parsed.title).toBe("Test Page")
+    expect(parsed.content).toContain("Hello World")
+    expect(parsed.content).toContain("This is a test paragraph")
+    expect(parsed.content).not.toContain("should be removed")
+    expect(parsed.content).not.toContain("display: none")
+  })
+
+  it("should send correct User-Agent header", async () => {
+    let capturedHeaders: Record<string, string> | null = null
+
+    globalThis.fetch = mock((_url: string, options: RequestInit) => {
+      capturedHeaders = options.headers as Record<string, string>
+      return Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: () => Promise.resolve("<html><head><title>Test</title></head><body></body></html>"),
+      } as Response)
+    })
+
+    const tool = createReadUrlTool()
+    await tool.invoke({ url: "https://example.com" })
+
+    expect(capturedHeaders).not.toBeNull()
+    expect(capturedHeaders!["User-Agent"]).toContain("Threa-Agent")
+  })
+
+  it("should return error for non-HTML content types", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "application/pdf" }),
+        text: () => Promise.resolve("binary content"),
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com/file.pdf" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.error).toContain("Unsupported content type")
+    expect(parsed.error).toContain("application/pdf")
+  })
+
+  it("should return error on HTTP failure", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com/missing" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.error).toContain("Failed to fetch URL: 404 Not Found")
+  })
+
+  it("should return error on network failure", async () => {
+    globalThis.fetch = mock(() => Promise.reject(new Error("Connection refused")))
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.error).toContain("Connection refused")
+  })
+
+  it("should decode HTML entities", async () => {
+    const html = `
+      <html>
+        <head><title>Test</title></head>
+        <body>
+          <p>This &amp; that &lt;and&gt; more &quot;quoted&quot;</p>
+          <p>Non-breaking&nbsp;space</p>
+        </body>
+      </html>
+    `
+
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: () => Promise.resolve(html),
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.content).toContain("This & that <and> more")
+    expect(parsed.content).toContain("Non-breaking space")
+  })
+
+  it("should truncate very long content", async () => {
+    const longContent = "A".repeat(60000)
+    const html = `<html><head><title>Test</title></head><body>${longContent}</body></html>`
+
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: () => Promise.resolve(html),
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.content.length).toBeLessThan(60000)
+    expect(parsed.content).toContain("[Content truncated...]")
+  })
+
+  it("should handle plain text content", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "content-type": "text/plain" }),
+        text: () => Promise.resolve("This is plain text content."),
+      } as Response)
+    )
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com/file.txt" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.content).toBe("This is plain text content.")
+  })
+})

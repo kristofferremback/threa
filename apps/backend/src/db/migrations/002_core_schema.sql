@@ -277,7 +277,7 @@ CREATE TABLE stream_sequences (
 -- -----------------------------------------------------------------------------
 -- Seed Data: Default system persona (Ariadne)
 -- -----------------------------------------------------------------------------
-INSERT INTO personas (id, workspace_id, slug, name, description, avatar_emoji, system_prompt, model, managed_by, status)
+INSERT INTO personas (id, workspace_id, slug, name, description, avatar_emoji, system_prompt, model, enabled_tools, managed_by, status)
 VALUES (
     'persona_system_ariadne',
     NULL,
@@ -289,6 +289,7 @@ VALUES (
 
 Be concise but thoughtful. Ask clarifying questions when needed. When referencing previous knowledge, cite your sources.',
     'anthropic:claude-sonnet-4-20250514',
+    ARRAY['send_message', 'web_search', 'read_url'],
     'system',
     'active'
 );

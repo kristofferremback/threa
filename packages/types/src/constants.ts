@@ -126,3 +126,13 @@ export const MemoStatuses = {
 // Pending memo item types
 export const PENDING_ITEM_TYPES = ["message", "conversation"] as const
 export type PendingItemType = (typeof PENDING_ITEM_TYPES)[number]
+
+// Agent tool names
+export const AGENT_TOOL_NAMES = ["send_message", "web_search", "read_url"] as const
+export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
+
+export const AgentToolNames = {
+  SEND_MESSAGE: "send_message",
+  WEB_SEARCH: "web_search",
+  READ_URL: "read_url",
+} as const satisfies Record<string, AgentToolName>

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient, withTransaction } from "../db"
-import { AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
+import { AgentToolNames, AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
@@ -267,6 +267,7 @@ export class CompanionAgent {
             sessionId: session.id,
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
+            enabledTools: persona.enabledTools,
           },
           callbacks
         )
@@ -364,7 +365,45 @@ Key behaviors:
 - If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
 - Be helpful, concise, and conversational.`
 
+  // Add web search tool instructions if enabled
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.WEB_SEARCH)) {
+    prompt += `
+
+## Web Search
+
+You have a \`web_search\` tool to search the web for current information.
+
+When using web search:
+- Search when you need up-to-date information not in your training data
+- Search for facts, current events, or specific details you're uncertain about
+- Cite sources in your responses using markdown links: [Title](URL)
+- Use the snippets to answer accurately`
+  }
+
+  // Add read_url tool instructions if enabled
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.READ_URL)) {
+    prompt += `
+
+## Reading URLs
+
+You have a \`read_url\` tool to fetch and read the full content of a web page.
+
+When to use read_url:
+- After web_search when you need more detail than the snippet provides
+- When the user shares a specific URL they want you to analyze
+- To verify information or get complete context from a source`
+  }
+
   return prompt
+}
+
+/**
+ * Check if a tool is enabled for a persona.
+ * If enabledTools is null, all tools are enabled.
+ */
+function isToolEnabled(enabledTools: string[] | null, toolName: string): boolean {
+  if (enabledTools === null) return true
+  return enabledTools.includes(toolName)
 }
 
 /**

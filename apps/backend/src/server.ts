@@ -162,7 +162,11 @@ export async function startServer(): Promise<ServerInstance> {
   // Create companion agent and register worker
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()
-    : new LangGraphResponseGenerator({ modelRegistry: providerRegistry, checkpointer })
+    : new LangGraphResponseGenerator({
+        modelRegistry: providerRegistry,
+        checkpointer,
+        tavilyApiKey: config.ai.tavilyApiKey || undefined,
+      })
 
   const companionAgent = new CompanionAgent({ pool, responseGenerator, createMessage })
   const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })

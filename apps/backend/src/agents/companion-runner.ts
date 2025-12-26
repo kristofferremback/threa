@@ -2,6 +2,9 @@ import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import { createCompanionGraph, toLangChainMessages, type CompanionGraphCallbacks } from "./companion-graph"
 import { createSendMessageTool, type SendMessageInput, type SendMessageResult } from "./tools/send-message-tool"
+import { createWebSearchTool } from "./tools/web-search-tool"
+import { createReadUrlTool } from "./tools/read-url-tool"
+import { AgentToolNames } from "@threa/types"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
 
@@ -27,6 +30,8 @@ export interface GenerateResponseParams {
   personaId: string
   /** Last processed sequence for new message detection */
   lastProcessedSequence: bigint
+  /** Enabled tools for this persona (null means all tools enabled) */
+  enabledTools: string[] | null
 }
 
 /**
@@ -76,12 +81,23 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     private readonly deps: {
       modelRegistry: ProviderRegistry
       checkpointer: PostgresSaver
+      tavilyApiKey?: string
     }
   ) {}
 
   async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
-    const { modelRegistry, checkpointer } = this.deps
-    const { threadId, modelId, systemPrompt, messages, streamId, sessionId, personaId, lastProcessedSequence } = params
+    const { modelRegistry, checkpointer, tavilyApiKey } = this.deps
+    const {
+      threadId,
+      modelId,
+      systemPrompt,
+      messages,
+      streamId,
+      sessionId,
+      personaId,
+      lastProcessedSequence,
+      enabledTools,
+    } = params
 
     logger.debug(
       {
@@ -112,8 +128,21 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     // Get LangChain model from registry
     const model = modelRegistry.getLangChainModel(modelId)
 
-    // Create tools array
+    // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]
+
+    if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {
+      tools.push(createWebSearchTool({ tavilyApiKey }))
+    }
+
+    if (isToolEnabled(enabledTools, AgentToolNames.READ_URL)) {
+      tools.push(createReadUrlTool())
+    }
+
+    logger.debug(
+      { enabledToolCount: tools.length, toolNames: tools.map((t) => t.name) },
+      "Tools configured for session"
+    )
 
     // Create and compile graph with checkpointer
     const graph = createCompanionGraph(model, tools)
@@ -197,4 +226,13 @@ export class StubResponseGenerator implements ResponseGenerator {
       lastProcessedSequence: params.lastProcessedSequence,
     }
   }
+}
+
+/**
+ * Check if a tool is enabled for a persona.
+ * If enabledTools is null, all tools are enabled.
+ */
+function isToolEnabled(enabledTools: string[] | null, toolName: string): boolean {
+  if (enabledTools === null) return true
+  return enabledTools.includes(toolName)
 }
