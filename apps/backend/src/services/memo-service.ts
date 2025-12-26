@@ -18,7 +18,7 @@ import { logger } from "../lib/logger"
 import { MemoTypes, MemoStatuses } from "@threa/types"
 
 const MEMORY_CONTEXT_LIMIT = 20
-const MIN_CONVERSATION_MESSAGES = 3
+const MIN_CONVERSATION_MESSAGES = 2
 
 export interface ProcessResult {
   processed: number
