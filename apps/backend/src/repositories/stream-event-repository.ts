@@ -96,10 +96,16 @@ export const StreamEventRepository = {
   async list(
     client: PoolClient,
     streamId: string,
-    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number }
+    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number; viewerId?: string }
   ): Promise<StreamEvent[]> {
     const limit = filters?.limit ?? 50
     const types = filters?.types
+    const viewerId = filters?.viewerId
+
+    // Command events are author-only: only visible to the actor who created them.
+    // If viewerId is provided, filter out command events from other users.
+    // If viewerId is not provided, return all events (backwards compatibility for internal use).
+    const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"]
 
     // If afterSequence is provided, we're paginating forward from a point
     // Otherwise, we want the most recent N events
@@ -107,12 +113,38 @@ export const StreamEventRepository = {
       const afterSequence = filters.afterSequence
 
       if (types && types.length > 0) {
+        if (viewerId) {
+          const result = await client.query<StreamEventRow>(sql`
+            SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+            FROM stream_events
+            WHERE stream_id = ${streamId}
+              AND sequence > ${afterSequence.toString()}
+              AND event_type = ANY(${types})
+              AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
+            ORDER BY sequence ASC
+            LIMIT ${limit}
+          `)
+          return result.rows.map(mapRowToEvent)
+        }
         const result = await client.query<StreamEventRow>(sql`
           SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
           FROM stream_events
           WHERE stream_id = ${streamId}
             AND sequence > ${afterSequence.toString()}
             AND event_type = ANY(${types})
+          ORDER BY sequence ASC
+          LIMIT ${limit}
+        `)
+        return result.rows.map(mapRowToEvent)
+      }
+
+      if (viewerId) {
+        const result = await client.query<StreamEventRow>(sql`
+          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+          FROM stream_events
+          WHERE stream_id = ${streamId}
+            AND sequence > ${afterSequence.toString()}
+            AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
           ORDER BY sequence ASC
           LIMIT ${limit}
         `)
@@ -133,11 +165,35 @@ export const StreamEventRepository = {
     // No afterSequence: get the most recent N events
     // Query DESC to get latest, then reverse to return in ASC order
     if (types && types.length > 0) {
+      if (viewerId) {
+        const result = await client.query<StreamEventRow>(sql`
+          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+          FROM stream_events
+          WHERE stream_id = ${streamId}
+            AND event_type = ANY(${types})
+            AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
+          ORDER BY sequence DESC
+          LIMIT ${limit}
+        `)
+        return result.rows.map(mapRowToEvent).reverse()
+      }
       const result = await client.query<StreamEventRow>(sql`
         SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
         FROM stream_events
         WHERE stream_id = ${streamId}
           AND event_type = ANY(${types})
+        ORDER BY sequence DESC
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToEvent).reverse()
+    }
+
+    if (viewerId) {
+      const result = await client.query<StreamEventRow>(sql`
+        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
+        FROM stream_events
+        WHERE stream_id = ${streamId}
+          AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
         ORDER BY sequence DESC
         LIMIT ${limit}
       `)
