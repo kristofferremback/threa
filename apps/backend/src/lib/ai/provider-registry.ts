@@ -36,8 +36,8 @@ export class ProviderRegistry {
    * Parse a provider:model string into its components.
    * Format: "provider:model_id"
    * Examples:
-   *   "openrouter:anthropic/claude-sonnet-4.5" -> { provider: "openrouter", modelId: "anthropic/claude-sonnet-4.5" }
-   *   "openrouter:anthropic/claude-3-haiku" -> { provider: "openrouter", modelId: "anthropic/claude-3-haiku" }
+   *   "openrouter:anthropic/claude-sonnet-4" -> { provider: "openrouter", modelId: "anthropic/claude-sonnet-4" }
+   *   "openrouter:anthropic/claude-haiku-4.5" -> { provider: "openrouter", modelId: "anthropic/claude-haiku-4.5" }
    */
   parseProviderModel(providerModelString: string): {
     provider: string

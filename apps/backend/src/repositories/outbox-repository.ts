@@ -5,6 +5,7 @@ import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
 import type { User } from "./user-repository"
 import type { ConversationWithStaleness } from "../lib/conversation-staleness"
+import type { Memo as WireMemo } from "@threa/types"
 
 /**
  * Outbox event types and their payloads.
@@ -27,6 +28,8 @@ export type OutboxEventType =
   | "user:updated"
   | "conversation:created"
   | "conversation:updated"
+  | "memo:created"
+  | "memo:revised"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -149,6 +152,19 @@ export interface ConversationUpdatedOutboxPayload extends StreamScopedPayload {
   parentStreamId?: string
 }
 
+// Memo event payloads
+export interface MemoCreatedOutboxPayload extends WorkspaceScopedPayload {
+  memoId: string
+  memo: WireMemo
+}
+
+export interface MemoRevisedOutboxPayload extends WorkspaceScopedPayload {
+  memoId: string
+  previousMemoId: string
+  memo: WireMemo
+  revisionReason: string
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -169,6 +185,8 @@ export interface OutboxEventPayloadMap {
   "user:updated": UserUpdatedOutboxPayload
   "conversation:created": ConversationCreatedOutboxPayload
   "conversation:updated": ConversationUpdatedOutboxPayload
+  "memo:created": MemoCreatedOutboxPayload
+  "memo:revised": MemoRevisedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

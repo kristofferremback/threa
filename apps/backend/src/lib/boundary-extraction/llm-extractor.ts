@@ -75,26 +75,17 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
 
     const prompt = this.buildPrompt(context)
 
-    try {
-      const model = this.providerRegistry.getModel(this.modelId)
-      const result = await generateObject({
-        model,
-        system: SYSTEM_PROMPT,
-        prompt,
-        schema: extractionResponseSchema,
-        maxOutputTokens: 500,
-        temperature: 0.2,
-      })
+    const model = this.providerRegistry.getModel(this.modelId)
+    const result = await generateObject({
+      model,
+      system: SYSTEM_PROMPT,
+      prompt,
+      schema: extractionResponseSchema,
+      maxOutputTokens: 500,
+      temperature: 0.2,
+    })
 
-      return this.validateResult(result.object, context)
-    } catch (err) {
-      logger.error({ err }, "Boundary extraction LLM call failed")
-      return {
-        conversationId: null,
-        newConversationTopic: this.truncateAsTopic(context.newMessage),
-        confidence: 0.3,
-      }
-    }
+    return this.validateResult(result.object, context)
   }
 
   private handleThreadMessage(context: ExtractionContext): ExtractionResult {

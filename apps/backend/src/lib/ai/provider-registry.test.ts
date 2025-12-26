@@ -7,10 +7,10 @@ describe("ProviderRegistry", () => {
 
   describe("parseProviderModel", () => {
     it("should parse openrouter:model format", () => {
-      const result = registry.parseProviderModel("openrouter:anthropic/claude-3-haiku")
+      const result = registry.parseProviderModel("openrouter:anthropic/claude-haiku-4.5")
       expect(result).toEqual({
         provider: "openrouter",
-        modelId: "anthropic/claude-3-haiku",
+        modelId: "anthropic/claude-haiku-4.5",
       })
     })
 
@@ -49,7 +49,7 @@ describe("ProviderRegistry", () => {
     })
 
     it("should throw when openrouter not configured", () => {
-      expect(() => registry.getModel("openrouter:anthropic/claude-3-haiku")).toThrow("OpenRouter is not configured")
+      expect(() => registry.getModel("openrouter:anthropic/claude-haiku-4.5")).toThrow("OpenRouter is not configured")
     })
   })
 
@@ -59,7 +59,7 @@ describe("ProviderRegistry", () => {
     })
 
     it("should throw when openrouter not configured", () => {
-      expect(() => registry.getLangChainModel("openrouter:anthropic/claude-3-haiku")).toThrow(
+      expect(() => registry.getLangChainModel("openrouter:anthropic/claude-haiku-4.5")).toThrow(
         "OpenRouter is not configured"
       )
     })

@@ -75,7 +75,7 @@ describe("LLMBoundaryExtractor", () => {
 
   beforeEach(() => {
     mockGenerateObject.mockReset()
-    extractor = new LLMBoundaryExtractor(mockProviderRegistry, "openrouter:anthropic/claude-3-haiku")
+    extractor = new LLMBoundaryExtractor(mockProviderRegistry, "openrouter:anthropic/claude-haiku-4.5")
   })
 
   describe("thread handling", () => {
@@ -192,19 +192,15 @@ describe("LLMBoundaryExtractor", () => {
     })
   })
 
-  describe("fallback behavior", () => {
-    test("falls back on LLM error", async () => {
+  describe("error handling", () => {
+    test("propagates LLM errors for retry handling", async () => {
       const context = createMockContext({
         newMessage: createMockMessage({ content: "Error fallback topic" }),
       })
 
       mockGenerateObject.mockRejectedValueOnce(new Error("API error"))
 
-      const result = await extractor.extract(context)
-
-      expect(result.conversationId).toBeNull()
-      expect(result.newConversationTopic).toBe("Error fallback topic")
-      expect(result.confidence).toBe(0.3)
+      await expect(extractor.extract(context)).rejects.toThrow("API error")
     })
 
     test("treats invalid conversation ID as new conversation", async () => {
