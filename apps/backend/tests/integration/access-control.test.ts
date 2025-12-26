@@ -16,6 +16,7 @@ import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
 import { WorkspaceService } from "../../src/services/workspace-service"
+import { EventService } from "../../src/services/event-service"
 import { StreamNotFoundError } from "../../src/lib/errors"
 import { setupTestDatabase } from "./setup"
 import { userId, workspaceId } from "../../src/lib/id"
@@ -25,11 +26,13 @@ describe("Access Control", () => {
   let pool: Pool
   let streamService: StreamService
   let workspaceService: WorkspaceService
+  let eventService: EventService
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
     workspaceService = new WorkspaceService(pool)
+    eventService = new EventService(pool)
   })
 
   afterAll(async () => {
@@ -561,11 +564,20 @@ describe("Access Control", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message for thread visibility test",
+      })
+
       // Create a thread from the channel
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_test123",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -615,24 +627,49 @@ describe("Access Control", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      // Create messages for each level
+      const msg1 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 1",
+      })
+
       const thread1 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_deep1",
+        parentMessageId: msg1.id,
         createdBy: ownerId,
+      })
+
+      const msg2 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread1.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 2",
       })
 
       const thread2 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: thread1.id,
-        parentMessageId: "msg_deep2",
+        parentMessageId: msg2.id,
         createdBy: ownerId,
+      })
+
+      const msg3 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread2.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 3",
       })
 
       const thread3 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: thread2.id,
-        parentMessageId: "msg_deep3",
+        parentMessageId: msg3.id,
         createdBy: ownerId,
       })
 
@@ -682,11 +719,20 @@ describe("Access Control", () => {
         visibility: Visibilities.PRIVATE,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Private channel message for thread",
+      })
+
       // Create a thread
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_priv_thread",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -739,10 +785,19 @@ describe("Access Control", () => {
         visibility: Visibilities.PRIVATE,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Message for add member to thread test",
+      })
+
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_add_member",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
