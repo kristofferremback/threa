@@ -35,9 +35,16 @@ const messageClassificationSchema = z.object({
   knowledgeType: z
     .enum(KNOWLEDGE_TYPES)
     .nullable()
+    .optional()
     .describe(`Type of knowledge if isGem is true: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
-  confidence: z.number().min(0).max(1).describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().describe("Brief explanation of the classification decision"),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(0.5)
+    .describe("Confidence in this classification (0.0 to 1.0)"),
+  reasoning: z.string().optional().default("").describe("Brief explanation of the classification decision"),
 })
 
 const conversationClassificationSchema = z.object({
@@ -45,13 +52,25 @@ const conversationClassificationSchema = z.object({
   knowledgeType: z
     .enum(KNOWLEDGE_TYPES)
     .nullable()
+    .optional()
     .describe(`Primary type of knowledge if worthy: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
-  shouldReviseExisting: z.boolean().describe("If a memo exists, whether it should be revised"),
+  shouldReviseExisting: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If a memo exists, whether it should be revised"),
   revisionReason: z
     .string()
     .nullable()
+    .optional()
     .describe("Why the existing memo should be revised (if shouldReviseExisting is true)"),
-  confidence: z.number().min(0).max(1).describe("Confidence in this classification (0.0 to 1.0)"),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(0.5)
+    .describe("Confidence in this classification (0.0 to 1.0)"),
 })
 
 const MESSAGE_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify standalone messages that contain valuable knowledge worth preserving ("gems").
