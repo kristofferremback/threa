@@ -1,6 +1,7 @@
 import { generateObject } from "ai"
 import { z } from "zod"
 import type { ProviderRegistry } from "../ai/provider-registry"
+import { stripMarkdownFences } from "../ai/text-utils"
 import type { Message } from "../../repositories/message-repository"
 import type { Memo } from "../../repositories/memo-repository"
 
@@ -129,6 +130,7 @@ export class Memorizer {
       schema: memoContentSchema,
       maxOutputTokens: 500,
       temperature: 0.3,
+      experimental_repairText: stripMarkdownFences,
     })
 
     return {
@@ -168,6 +170,7 @@ export class Memorizer {
       schema: memoContentSchema,
       maxOutputTokens: 700,
       temperature: 0.3,
+      experimental_repairText: stripMarkdownFences,
     })
 
     const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
@@ -215,6 +218,7 @@ export class Memorizer {
       schema: memoContentSchema,
       maxOutputTokens: 700,
       temperature: 0.3,
+      experimental_repairText: stripMarkdownFences,
     })
 
     const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))

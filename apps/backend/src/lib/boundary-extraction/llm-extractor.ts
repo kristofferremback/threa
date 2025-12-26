@@ -1,6 +1,7 @@
 import { generateObject, NoObjectGeneratedError } from "ai"
 import { z } from "zod"
 import type { ProviderRegistry } from "../ai/provider-registry"
+import { stripMarkdownFences } from "../ai/text-utils"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
@@ -85,6 +86,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
         schema: extractionResponseSchema,
         maxOutputTokens: 500,
         temperature: 0.2,
+        experimental_repairText: stripMarkdownFences,
       })
 
       return this.validateResult(result.object, context)
