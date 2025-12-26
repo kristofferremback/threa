@@ -4,6 +4,7 @@ import type { AuthService } from "./services/auth-service"
 import type { UserService } from "./services/user-service"
 import type { StreamService } from "./services/stream-service"
 import type { WorkspaceService } from "./services/workspace-service"
+import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { logger } from "./lib/logger"
 
 const SESSION_COOKIE_NAME = "wos_session"
@@ -13,10 +14,11 @@ interface Dependencies {
   userService: UserService
   streamService: StreamService
   workspaceService: WorkspaceService
+  userSocketRegistry: UserSocketRegistry
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { authService, userService, streamService, workspaceService } = deps
+  const { authService, userService, streamService, workspaceService, userSocketRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -48,6 +50,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
   // ===========================================================================
   io.on("connection", (socket) => {
     const userId = socket.data.userId
+    userSocketRegistry.register(userId, socket)
     logger.debug({ userId, socketId: socket.id }, "Socket connected")
 
     // =========================================================================
@@ -110,6 +113,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
 
     socket.on("disconnect", () => {
+      userSocketRegistry.unregister(userId, socket)
       logger.debug({ userId, socketId: socket.id }, "Socket disconnected")
     })
   })

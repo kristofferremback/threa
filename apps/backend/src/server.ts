@@ -55,6 +55,7 @@ import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 import { ProviderRegistry, createPostgresCheckpointer } from "./lib/ai"
 import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
+import { UserSocketRegistry } from "./lib/user-socket-registry"
 
 export interface ServerInstance {
   server: Server
@@ -153,7 +154,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   io.adapter(createAdapter(pool))
 
-  registerSocketHandlers(io, { authService, userService, streamService, workspaceService })
+  const userSocketRegistry = new UserSocketRegistry()
+  registerSocketHandlers(io, { authService, userService, streamService, workspaceService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -209,7 +211,7 @@ export async function startServer(): Promise<ServerInstance> {
   await scheduleMemoBatchCheck(jobQueue)
 
   // Outbox listeners
-  const broadcastListener = createBroadcastListener(pool, io)
+  const broadcastListener = createBroadcastListener(pool, io, userSocketRegistry)
   const companionListener = createCompanionListener(pool, jobQueue)
   const namingListener = createNamingListener(pool, jobQueue)
   const embeddingListener = createEmbeddingListener(pool, jobQueue)

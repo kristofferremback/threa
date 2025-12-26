@@ -11,6 +11,7 @@ import {
   type CommandCompletedOutboxPayload,
   type CommandFailedOutboxPayload,
 } from "../repositories/outbox-repository"
+import type { UserSocketRegistry } from "./user-socket-registry"
 import { logger } from "./logger"
 
 /**
@@ -26,6 +27,7 @@ import { logger } from "./logger"
 export function createBroadcastListener(
   pool: Pool,
   io: Server,
+  userSocketRegistry: UserSocketRegistry,
   config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
 ): OutboxListener {
   return new OutboxListener(pool, {
@@ -35,32 +37,19 @@ export function createBroadcastListener(
       const { workspaceId } = event.payload
 
       // Author-scoped events: only emit to the author's sockets
-      //
-      // PERFORMANCE NOTE: This iterates all sockets in the stream room (O(n) where n = connected users).
-      // Acceptable for streams with <100 concurrent users. For larger streams, consider adding user-specific
-      // rooms (e.g., `ws:${workspaceId}:user:${userId}`) and emitting directly to those instead of filtering.
-      // Threshold to consider: ~50-100 concurrent users per stream with frequent author-scoped events.
       if (isAuthorScopedEvent(event)) {
         const payload = event.payload as
           | CommandDispatchedOutboxPayload
           | CommandCompletedOutboxPayload
           | CommandFailedOutboxPayload
-        const { streamId, authorId } = payload
-        const room = `ws:${workspaceId}:stream:${streamId}`
+        const { authorId } = payload
 
-        // Find all sockets in the stream room and filter by author
-        const sockets = await io.in(room).fetchSockets()
-        let emitted = 0
+        // O(1) lookup via in-memory registry instead of filtering all sockets in room
+        const sockets = userSocketRegistry.getSockets(authorId)
         for (const socket of sockets) {
-          if (socket.data.userId === authorId) {
-            socket.emit(event.eventType, event.payload)
-            emitted++
-          }
+          socket.emit(event.eventType, event.payload)
         }
-        logger.debug(
-          { eventType: event.eventType, authorId, room, socketsInRoom: sockets.length, emitted },
-          "Broadcast author-scoped event"
-        )
+        logger.debug({ eventType: event.eventType, authorId, emitted: sockets.length }, "Broadcast author-scoped event")
         return
       }
 
