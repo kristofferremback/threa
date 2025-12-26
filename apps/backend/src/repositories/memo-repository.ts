@@ -166,20 +166,33 @@ export const MemoRepository = {
     // Use UNION to fetch both:
     // 1. Conversation memos (via source_conversation_id -> conversations.stream_id)
     // 2. Message memos (via source_message_id -> messages.stream_id)
-    // Status filter is optional - when provided, filter both branches
-    const statusClause = options?.status ? `AND m.status = '${options.status}'` : ""
+    // Status filter is optional - when provided, filter both branches with parameterized values
+    const values: unknown[] = [streamId]
+    let paramIndex = 2
+    let statusClause = ""
 
-    const result = await client.query<MemoRow>(sql`
-      SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
+    if (options?.status) {
+      // Use parameterized query to prevent SQL injection
+      statusClause = `AND m.status = $${paramIndex}`
+      values.push(options.status)
+      paramIndex++
+    }
+
+    values.push(limit)
+
+    const query = `
+      SELECT ${SELECT_FIELDS_PREFIXED} FROM memos m
       JOIN conversations c ON m.source_conversation_id = c.id
-      WHERE c.stream_id = ${streamId} ${sql.raw(statusClause)}
+      WHERE c.stream_id = $1 ${statusClause}
       UNION
-      SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
+      SELECT ${SELECT_FIELDS_PREFIXED} FROM memos m
       JOIN messages msg ON m.source_message_id = msg.id
-      WHERE msg.stream_id = ${streamId} ${sql.raw(statusClause)}
-      ORDER BY ${sql.raw(orderBy)} DESC
-      LIMIT ${limit}
-    `)
+      WHERE msg.stream_id = $1 ${statusClause}
+      ORDER BY ${orderBy} DESC
+      LIMIT $${paramIndex}
+    `
+
+    const result = await client.query<MemoRow>(query, values)
     return result.rows.map(mapRowToMemo)
   },
 
