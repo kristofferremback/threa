@@ -1,6 +1,7 @@
 import { generateObject } from "ai"
 import { z } from "zod"
 import type { ProviderRegistry } from "../ai/provider-registry"
+import { stripMarkdownFences } from "../ai/text-utils"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -140,6 +141,7 @@ export class MemoClassifier {
       schema: messageClassificationSchema,
       maxOutputTokens: 200,
       temperature: 0.1,
+      experimental_repairText: stripMarkdownFences,
     })
 
     return {
@@ -178,6 +180,7 @@ export class MemoClassifier {
       schema: conversationClassificationSchema,
       maxOutputTokens: 200,
       temperature: 0.1,
+      experimental_repairText: stripMarkdownFences,
     })
 
     return {
