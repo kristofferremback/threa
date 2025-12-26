@@ -35,7 +35,8 @@ async function waitForConversations(
   streamId: string,
   options?: { timeoutMs?: number; minCount?: number }
 ): Promise<void> {
-  const timeout = options?.timeoutMs ?? 5000
+  // Boundary extraction uses LLM which can be slow in CI - use 15s like companion tests
+  const timeout = options?.timeoutMs ?? 15000
   const minCount = options?.minCount ?? 1
   const start = Date.now()
 
