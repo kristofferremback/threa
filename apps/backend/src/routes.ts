@@ -23,7 +23,6 @@ import type { SearchService } from "./services/search-service"
 import type { ConversationService } from "./services/conversation-service"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./commands"
-import type { JobQueueManager } from "./lib/job-queue"
 import type { Pool } from "pg"
 
 interface Dependencies {
@@ -38,7 +37,6 @@ interface Dependencies {
   conversationService: ConversationService
   s3Config: S3Config
   commandRegistry: CommandRegistry
-  jobQueue: JobQueueManager
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -54,7 +52,6 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     conversationService,
     s3Config,
     commandRegistry,
-    jobQueue,
   } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
@@ -71,7 +68,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const search = createSearchHandlers({ searchService })
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
-  const command = createCommandHandlers({ pool, commandRegistry, streamService, jobQueue })
+  const command = createCommandHandlers({ pool, commandRegistry, streamService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)

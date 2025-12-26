@@ -4,12 +4,10 @@ import type { Pool } from "pg"
 import { withTransaction } from "../db"
 import { CommandRegistry, parseCommand } from "../commands"
 import type { StreamService } from "../services/stream-service"
-import type { JobQueueManager } from "../lib/job-queue"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { eventId, commandId as generateCommandId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
-import { JobQueues } from "../lib/job-queue"
 
 const dispatchCommandSchema = z.object({
   command: z.string().min(1, "command is required"),
@@ -27,10 +25,9 @@ interface Dependencies {
   pool: Pool
   commandRegistry: CommandRegistry
   streamService: StreamService
-  jobQueue: JobQueueManager
 }
 
-export function createCommandHandlers({ pool, commandRegistry, streamService, jobQueue }: Dependencies) {
+export function createCommandHandlers({ pool, commandRegistry, streamService }: Dependencies) {
   return {
     /**
      * Dispatch a slash command.
@@ -96,6 +93,9 @@ export function createCommandHandlers({ pool, commandRegistry, streamService, jo
       const cmdId = generateCommandId()
       const evtId = eventId()
 
+      // Create event and publish to outbox in a single transaction.
+      // The command listener will pick up the outbox event and dispatch the job,
+      // ensuring durability (job is only dispatched after event is committed).
       const event = await withTransaction(pool, async (client) => {
         const evt = await StreamEventRepository.insert(client, {
           id: evtId,
@@ -111,7 +111,9 @@ export function createCommandHandlers({ pool, commandRegistry, streamService, jo
           actorType: "user",
         })
 
-        // Publish to outbox for author-only broadcast
+        // Publish to outbox for:
+        // 1. Author-only broadcast (real-time)
+        // 2. Command listener to dispatch job (durability)
         await OutboxRepository.insert(client, "command:dispatched", {
           workspaceId,
           streamId,
@@ -120,16 +122,6 @@ export function createCommandHandlers({ pool, commandRegistry, streamService, jo
         })
 
         return evt
-      })
-
-      // Queue the command for execution
-      await jobQueue.send(JobQueues.COMMAND_EXECUTE, {
-        commandId: cmdId,
-        commandName: parsed.name,
-        args: parsed.args,
-        workspaceId,
-        streamId,
-        userId,
       })
 
       // Return ack with command details

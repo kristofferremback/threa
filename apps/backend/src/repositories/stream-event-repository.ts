@@ -101,113 +101,55 @@ export const StreamEventRepository = {
     const limit = filters?.limit ?? 50
     const types = filters?.types
     const viewerId = filters?.viewerId
+    const afterSequence = filters?.afterSequence
 
     // Command events are author-only: only visible to the actor who created them.
     // If viewerId is provided, filter out command events from other users.
     // If viewerId is not provided, return all events (backwards compatibility for internal use).
     const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"]
 
-    // If afterSequence is provided, we're paginating forward from a point
-    // Otherwise, we want the most recent N events
-    if (filters?.afterSequence !== undefined) {
-      const afterSequence = filters.afterSequence
+    // Build query dynamically to avoid 8 permutations of the same query
+    const conditions: string[] = ["stream_id = $1"]
+    const params: unknown[] = [streamId]
+    let paramIndex = 2
 
-      if (types && types.length > 0) {
-        if (viewerId) {
-          const result = await client.query<StreamEventRow>(sql`
-            SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-            FROM stream_events
-            WHERE stream_id = ${streamId}
-              AND sequence > ${afterSequence.toString()}
-              AND event_type = ANY(${types})
-              AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
-            ORDER BY sequence ASC
-            LIMIT ${limit}
-          `)
-          return result.rows.map(mapRowToEvent)
-        }
-        const result = await client.query<StreamEventRow>(sql`
-          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-          FROM stream_events
-          WHERE stream_id = ${streamId}
-            AND sequence > ${afterSequence.toString()}
-            AND event_type = ANY(${types})
-          ORDER BY sequence ASC
-          LIMIT ${limit}
-        `)
-        return result.rows.map(mapRowToEvent)
-      }
-
-      if (viewerId) {
-        const result = await client.query<StreamEventRow>(sql`
-          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-          FROM stream_events
-          WHERE stream_id = ${streamId}
-            AND sequence > ${afterSequence.toString()}
-            AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
-          ORDER BY sequence ASC
-          LIMIT ${limit}
-        `)
-        return result.rows.map(mapRowToEvent)
-      }
-
-      const result = await client.query<StreamEventRow>(sql`
-        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-        FROM stream_events
-        WHERE stream_id = ${streamId}
-          AND sequence > ${afterSequence.toString()}
-        ORDER BY sequence ASC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToEvent)
+    if (afterSequence !== undefined) {
+      conditions.push(`sequence > $${paramIndex}`)
+      params.push(afterSequence.toString())
+      paramIndex++
     }
 
-    // No afterSequence: get the most recent N events
-    // Query DESC to get latest, then reverse to return in ASC order
     if (types && types.length > 0) {
-      if (viewerId) {
-        const result = await client.query<StreamEventRow>(sql`
-          SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-          FROM stream_events
-          WHERE stream_id = ${streamId}
-            AND event_type = ANY(${types})
-            AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
-          ORDER BY sequence DESC
-          LIMIT ${limit}
-        `)
-        return result.rows.map(mapRowToEvent).reverse()
-      }
-      const result = await client.query<StreamEventRow>(sql`
-        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-        FROM stream_events
-        WHERE stream_id = ${streamId}
-          AND event_type = ANY(${types})
-        ORDER BY sequence DESC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToEvent).reverse()
+      conditions.push(`event_type = ANY($${paramIndex})`)
+      params.push(types)
+      paramIndex++
     }
 
     if (viewerId) {
-      const result = await client.query<StreamEventRow>(sql`
-        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-        FROM stream_events
-        WHERE stream_id = ${streamId}
-          AND (event_type != ALL(${COMMAND_EVENT_TYPES}) OR actor_id = ${viewerId})
-        ORDER BY sequence DESC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToEvent).reverse()
+      conditions.push(`(event_type != ALL($${paramIndex}) OR actor_id = $${paramIndex + 1})`)
+      params.push(COMMAND_EVENT_TYPES)
+      params.push(viewerId)
+      paramIndex += 2
     }
 
-    const result = await client.query<StreamEventRow>(sql`
+    // If afterSequence is provided, paginate forward (ASC order)
+    // Otherwise, get the most recent N events (DESC, then reverse)
+    const orderDirection = afterSequence !== undefined ? "ASC" : "DESC"
+
+    const query = `
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
-      WHERE stream_id = ${streamId}
-      ORDER BY sequence DESC
-      LIMIT ${limit}
-    `)
-    return result.rows.map(mapRowToEvent).reverse()
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY sequence ${orderDirection}
+      LIMIT $${paramIndex}
+    `
+    params.push(limit)
+
+    const result = await client.query<StreamEventRow>(query, params)
+    const events = result.rows.map(mapRowToEvent)
+
+    // When fetching most recent (DESC), reverse to return in chronological order
+    return afterSequence !== undefined ? events : events.reverse()
   },
 
   async findById(client: PoolClient, id: string): Promise<StreamEvent | null> {
