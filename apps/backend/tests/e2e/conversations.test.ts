@@ -11,7 +11,11 @@
  * worker when messages are sent. Tests wait for conversations to appear.
  */
 
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, setDefaultTimeout } from "bun:test"
+
+// Boundary extraction uses LLM which can be slow in CI - use 30s like companion tests
+setDefaultTimeout(30000)
+
 import {
   TestClient,
   loginAs,
