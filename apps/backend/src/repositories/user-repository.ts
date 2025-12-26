@@ -66,15 +66,16 @@ function generateBaseSlug(name: string): string {
 }
 
 /**
- * Generate a unique slug, appending a number suffix if needed.
+ * Generate a candidate slug, appending a number suffix if needed based on existing slugs.
+ * This is best-effort - the insert may still fail due to race conditions, which is handled by retry logic.
  */
-async function generateUniqueSlug(client: PoolClient, name: string): Promise<string> {
+async function generateCandidateSlug(client: PoolClient, name: string): Promise<string> {
   const baseSlug = generateBaseSlug(name)
   if (!baseSlug) {
     return `user-${Date.now()}`
   }
 
-  // Check if base slug is available
+  // Check existing slugs with this prefix
   const existing = await client.query<{ slug: string }>(sql`
     SELECT slug FROM users WHERE slug LIKE ${baseSlug + "%"}
   `)
@@ -97,6 +98,49 @@ async function generateUniqueSlug(client: PoolClient, name: string): Promise<str
   }
 
   return `${baseSlug}-${suffix}`
+}
+
+/**
+ * Insert a user with a unique slug, retrying with incremented suffix on conflict.
+ * Handles race conditions where concurrent inserts claim the same slug.
+ */
+async function insertUserWithUniqueSlug(
+  client: PoolClient,
+  params: InsertUserParams,
+  candidateSlug: string,
+  maxRetries = 3
+): Promise<User> {
+  let slug = candidateSlug
+  let attempts = 0
+
+  while (attempts < maxRetries) {
+    try {
+      const result = await client.query<UserRow>(sql`
+        INSERT INTO users (id, email, name, slug, workos_user_id)
+        VALUES (${params.id}, ${params.email}, ${params.name}, ${slug}, ${params.workosUserId ?? null})
+        RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
+      `)
+      return mapRowToUser(result.rows[0])
+    } catch (error) {
+      // Check if it's a unique constraint violation on slug
+      if (error instanceof Error && "code" in error && (error as { code: string }).code === "23505") {
+        attempts++
+        // Append or increment suffix
+        const baseSlug = generateBaseSlug(params.name) || "user"
+        slug = `${baseSlug}-${Date.now()}-${attempts}`
+      } else {
+        throw error
+      }
+    }
+  }
+
+  // Final attempt with guaranteed unique suffix
+  const result = await client.query<UserRow>(sql`
+    INSERT INTO users (id, email, name, slug, workos_user_id)
+    VALUES (${params.id}, ${params.email}, ${params.name}, ${`user-${params.id}`}, ${params.workosUserId ?? null})
+    RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
+  `)
+  return mapRowToUser(result.rows[0])
 }
 
 export const UserRepository = {
@@ -143,13 +187,8 @@ export const UserRepository = {
   },
 
   async insert(client: PoolClient, params: InsertUserParams): Promise<User> {
-    const slug = await generateUniqueSlug(client, params.name)
-    const result = await client.query<UserRow>(sql`
-      INSERT INTO users (id, email, name, slug, workos_user_id)
-      VALUES (${params.id}, ${params.email}, ${params.name}, ${slug}, ${params.workosUserId ?? null})
-      RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
-    `)
-    return mapRowToUser(result.rows[0])
+    const candidateSlug = await generateCandidateSlug(client, params.name)
+    return insertUserWithUniqueSlug(client, params, candidateSlug)
   },
 
   async upsertByEmail(client: PoolClient, params: InsertUserParams): Promise<User> {
@@ -171,13 +210,8 @@ export const UserRepository = {
       return mapRowToUser(result.rows[0])
     }
 
-    // New user, generate slug
-    const slug = await generateUniqueSlug(client, params.name)
-    const result = await client.query<UserRow>(sql`
-      INSERT INTO users (id, email, name, slug, workos_user_id)
-      VALUES (${params.id}, ${params.email}, ${params.name}, ${slug}, ${params.workosUserId ?? null})
-      RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
-    `)
-    return mapRowToUser(result.rows[0])
+    // New user, generate slug with retry logic for race conditions
+    const candidateSlug = await generateCandidateSlug(client, params.name)
+    return insertUserWithUniqueSlug(client, params, candidateSlug)
   },
 }
