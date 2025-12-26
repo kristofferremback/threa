@@ -83,3 +83,39 @@ export const ConversationStatuses = {
   STALLED: "stalled",
   RESOLVED: "resolved",
 } as const satisfies Record<string, ConversationStatus>
+
+// Memo types (GAM)
+export const MEMO_TYPES = ["message", "conversation"] as const
+export type MemoType = (typeof MEMO_TYPES)[number]
+
+export const MemoTypes = {
+  MESSAGE: "message",
+  CONVERSATION: "conversation",
+} as const satisfies Record<string, MemoType>
+
+// Knowledge types (classification categories)
+export const KNOWLEDGE_TYPES = ["decision", "learning", "procedure", "context", "reference"] as const
+export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number]
+
+export const KnowledgeTypes = {
+  DECISION: "decision",
+  LEARNING: "learning",
+  PROCEDURE: "procedure",
+  CONTEXT: "context",
+  REFERENCE: "reference",
+} as const satisfies Record<string, KnowledgeType>
+
+// Memo statuses (lifecycle)
+export const MEMO_STATUSES = ["draft", "active", "archived", "superseded"] as const
+export type MemoStatus = (typeof MEMO_STATUSES)[number]
+
+export const MemoStatuses = {
+  DRAFT: "draft",
+  ACTIVE: "active",
+  ARCHIVED: "archived",
+  SUPERSEDED: "superseded",
+} as const satisfies Record<string, MemoStatus>
+
+// Pending memo item types
+export const PENDING_ITEM_TYPES = ["message", "conversation"] as const
+export type PendingItemType = (typeof PENDING_ITEM_TYPES)[number]

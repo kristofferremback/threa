@@ -26,11 +26,21 @@ import { createCompanionListener } from "./lib/companion-listener"
 import { createNamingListener } from "./lib/naming-listener"
 import { createEmbeddingListener } from "./lib/embedding-listener"
 import { createBoundaryExtractionListener } from "./lib/boundary-extraction-listener"
+import { createMemoAccumulator } from "./lib/memo-accumulator"
+import { MemoClassifier } from "./lib/memo/classifier"
+import { Memorizer } from "./lib/memo/memorizer"
+import { MemoService } from "./services/memo-service"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
+import {
+  createMemoBatchCheckWorker,
+  createMemoBatchProcessWorker,
+  scheduleMemoBatchCheck,
+} from "./workers/memo-batch-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
+import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { CompanionAgent } from "./agents/companion-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -133,12 +143,31 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
 
   // Boundary extraction
-  const boundaryExtractor = new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
+  const boundaryExtractor = config.useStubBoundaryExtraction
+    ? new StubBoundaryExtractor()
+    : new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
 
+  // Memo (GAM) processing
+  const memoClassifier = new MemoClassifier(providerRegistry, config.ai.memoModel)
+  const memorizer = new Memorizer(providerRegistry, config.ai.memoModel)
+  const memoService = new MemoService({
+    pool,
+    classifier: memoClassifier,
+    memorizer,
+    embeddingService,
+  })
+  const memoBatchCheckWorker = createMemoBatchCheckWorker({ pool, memoService, jobQueue })
+  const memoBatchProcessWorker = createMemoBatchProcessWorker({ pool, memoService, jobQueue })
+  jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
+  jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
+
   await jobQueue.start()
+
+  // Schedule memo batch check cron job (every 30 seconds)
+  await scheduleMemoBatchCheck(jobQueue)
 
   // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)
@@ -146,11 +175,13 @@ export async function startServer(): Promise<ServerInstance> {
   const namingListener = createNamingListener(pool, jobQueue)
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
+  const memoAccumulator = createMemoAccumulator(pool)
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
+  await memoAccumulator.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -161,6 +192,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
+    await memoAccumulator.stop()
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
     await namingListener.stop()

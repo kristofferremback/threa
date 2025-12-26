@@ -22,6 +22,10 @@ import type {
   StorageProvider,
   ProcessingStatus,
   ConversationStatus,
+  MemoType,
+  KnowledgeType,
+  MemoStatus,
+  PendingItemType,
 } from "./constants"
 
 export interface User {
@@ -173,4 +177,55 @@ export interface Conversation {
 export interface ConversationWithStaleness extends Conversation {
   temporalStaleness: number
   effectiveCompleteness: number
+}
+
+/**
+ * Memo: Semantic pointer to valuable knowledge.
+ * Following GAM paper: lightweight abstracts that guide retrieval at runtime.
+ */
+export interface Memo {
+  id: string
+  workspaceId: string
+  memoType: MemoType
+  sourceMessageId: string | null
+  sourceConversationId: string | null
+  title: string
+  abstract: string
+  keyPoints: string[]
+  sourceMessageIds: string[]
+  participantIds: string[]
+  knowledgeType: KnowledgeType
+  tags: string[]
+  parentMemoId: string | null
+  status: MemoStatus
+  version: number
+  revisionReason: string | null
+  createdAt: string
+  updatedAt: string
+  archivedAt: string | null
+}
+
+/**
+ * Pending item in the memo processing queue.
+ * Per-stream grouping for debounced batch processing.
+ */
+export interface PendingMemoItem {
+  id: string
+  workspaceId: string
+  streamId: string
+  itemType: PendingItemType
+  itemId: string
+  queuedAt: string
+  processedAt: string | null
+}
+
+/**
+ * Stream state for memo debounce logic.
+ * Tracks last activity and processing times per stream.
+ */
+export interface MemoStreamState {
+  workspaceId: string
+  streamId: string
+  lastProcessedAt: string | null
+  lastActivityAt: string
 }

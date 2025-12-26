@@ -9,10 +9,12 @@ export interface WorkosConfig {
 
 export interface AIConfig {
   openRouterApiKey: string
-  /** Model for stream auto-naming, in provider:model format (e.g., "openrouter:anthropic/claude-3-haiku") */
+  /** Model for stream auto-naming, in provider:model format (e.g., "openrouter:anthropic/claude-haiku-4.5") */
   namingModel: string
   /** Model for conversational boundary extraction, in provider:model format */
   extractionModel: string
+  /** Model for memo classification and generation, in provider:model format */
+  memoModel: string
 }
 
 export interface S3Config {
@@ -29,6 +31,7 @@ export interface Config {
   databaseUrl: string
   useStubAuth: boolean
   useStubCompanion: boolean
+  useStubBoundaryExtraction: boolean
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
@@ -50,12 +53,14 @@ export function loadConfig(): Config {
   }
 
   const useStubCompanion = process.env.USE_STUB_COMPANION === "true"
+  const useStubBoundaryExtraction = process.env.USE_STUB_BOUNDARY_EXTRACTION === "true"
 
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
     useStubAuth,
     useStubCompanion,
+    useStubBoundaryExtraction,
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",
@@ -64,8 +69,9 @@ export function loadConfig(): Config {
     },
     ai: {
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-      namingModel: process.env.AI_NAMING_MODEL || "openrouter:anthropic/claude-3-haiku",
-      extractionModel: process.env.AI_EXTRACTION_MODEL || "openrouter:anthropic/claude-3-haiku",
+      namingModel: process.env.AI_NAMING_MODEL || "openrouter:anthropic/claude-haiku-4.5",
+      extractionModel: process.env.AI_EXTRACTION_MODEL || "openrouter:anthropic/claude-haiku-4.5",
+      memoModel: process.env.AI_MEMO_MODEL || "openrouter:anthropic/claude-haiku-4.5",
     },
     s3: {
       bucket: process.env.S3_BUCKET || "threa-uploads",
@@ -82,6 +88,10 @@ export function loadConfig(): Config {
 
   if (useStubCompanion) {
     logger.warn("Using stub companion service - NOT FOR PRODUCTION")
+  }
+
+  if (useStubBoundaryExtraction) {
+    logger.warn("Using stub boundary extraction - NOT FOR PRODUCTION")
   }
 
   return config

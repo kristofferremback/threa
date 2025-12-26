@@ -167,6 +167,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-13** | Construct, Don't Assemble            | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies.                                                      |
 | **INV-14** | Shadcn UI Components                 | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components. |
 | **INV-15** | Dumb Components                      | React components handle UI rendering and local state only. No direct database access (`@/db`), no persistence logic, no business rules. Components receive capabilities via props/context (e.g., `sendMessage`) and call them without knowing implementation. Enforced by ESLint `no-restricted-imports`.   |
+| **INV-16** | No Claude 3 Models                   | Never use Claude 3 models (claude-3-haiku, claude-3-sonnet, claude-3-opus). Always use Claude 4+ models. For OpenRouter: `openrouter:anthropic/claude-haiku-4.5`, `openrouter:anthropic/claude-sonnet-4`. The model ID format is `provider:modelPath`.                                                      |
 
 When introducing a new invariant:
 

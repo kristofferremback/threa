@@ -39,6 +39,18 @@ export {
   CONVERSATION_STATUSES,
   type ConversationStatus,
   ConversationStatuses,
+  // Memos (GAM)
+  MEMO_TYPES,
+  type MemoType,
+  MemoTypes,
+  KNOWLEDGE_TYPES,
+  type KnowledgeType,
+  KnowledgeTypes,
+  MEMO_STATUSES,
+  type MemoStatus,
+  MemoStatuses,
+  PENDING_ITEM_TYPES,
+  type PendingItemType,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -55,6 +67,9 @@ export type {
   AttachmentSummary,
   Conversation,
   ConversationWithStaleness,
+  Memo,
+  PendingMemoItem,
+  MemoStreamState,
 } from "./domain"
 
 // API types

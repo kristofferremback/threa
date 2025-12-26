@@ -22,6 +22,8 @@ export const JobQueues = {
   NAMING_GENERATE: "naming.generate",
   EMBEDDING_GENERATE: "embedding.generate",
   BOUNDARY_EXTRACT: "boundary.extract",
+  MEMO_BATCH_CHECK: "memo.batch-check",
+  MEMO_BATCH_PROCESS: "memo.batch-process",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -46,12 +48,23 @@ export interface BoundaryExtractionJobData {
   workspaceId: string
 }
 
+export interface MemoBatchCheckJobData {
+  // Empty - cron job just triggers the check
+}
+
+export interface MemoBatchProcessJobData {
+  workspaceId: string
+  streamId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.COMPANION_RESPOND]: CompanionJobData
   [JobQueues.NAMING_GENERATE]: NamingJobData
   [JobQueues.EMBEDDING_GENERATE]: EmbeddingJobData
   [JobQueues.BOUNDARY_EXTRACT]: BoundaryExtractionJobData
+  [JobQueues.MEMO_BATCH_CHECK]: MemoBatchCheckJobData
+  [JobQueues.MEMO_BATCH_PROCESS]: MemoBatchProcessJobData
 }
 
 // Dead letter queue suffix - jobs that exhaust retries go here
