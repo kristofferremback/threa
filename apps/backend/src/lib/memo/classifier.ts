@@ -89,7 +89,7 @@ NOT gems:
 - Status updates without context ("done", "working on it")
 - Incomplete thoughts that need conversation context
 
-Output ONLY valid JSON matching the schema.`
+Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
 
 const CONVERSATION_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify conversations that contain valuable knowledge worth preserving in organizational memory.
 
@@ -112,7 +112,7 @@ When comparing to an existing memo, recommend revision if:
 - New participants brought important perspectives
 - The topic evolved substantially
 
-Output ONLY valid JSON matching the schema.`
+Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
 
 const MESSAGE_PROMPT = `Classify this message. Is it a standalone gem worth preserving?
 
@@ -197,7 +197,7 @@ export class MemoClassifier {
       system: CONVERSATION_SYSTEM_PROMPT,
       prompt,
       schema: conversationClassificationSchema,
-      maxOutputTokens: 200,
+      maxOutputTokens: 300,
       temperature: 0.1,
       experimental_repairText: stripMarkdownFences,
     })
