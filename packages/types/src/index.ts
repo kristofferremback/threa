@@ -22,6 +22,8 @@ export {
   // Event types
   EVENT_TYPES,
   type EventType,
+  COMMAND_EVENT_TYPES,
+  type CommandEventType,
   // Workspace roles
   WORKSPACE_MEMBER_ROLES,
   type WorkspaceMemberRole,

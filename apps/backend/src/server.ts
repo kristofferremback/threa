@@ -30,7 +30,6 @@ import { createMemoAccumulator } from "./lib/memo-accumulator"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
-import { createCommandListener } from "./lib/command-listener"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
 import { createCompanionWorker } from "./workers/companion-worker"
@@ -216,14 +215,12 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
-  const commandListener = createCommandListener({ pool, commandRegistry, eventService })
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
   await memoAccumulator.start()
-  await commandListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -235,7 +232,6 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     await memoAccumulator.stop()
-    await commandListener.stop()
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
     await namingListener.stop()

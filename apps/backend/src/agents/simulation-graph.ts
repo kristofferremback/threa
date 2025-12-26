@@ -4,6 +4,7 @@ import { generateObject, generateText } from "ai"
 import { z } from "zod"
 import type { LanguageModel } from "ai"
 import type { Persona } from "../repositories/persona-repository"
+import { stripMarkdownFences } from "../lib/ai"
 
 /**
  * Tracks a message sent during simulation for context and threading.
@@ -138,17 +139,6 @@ function getCallbacks(config: RunnableConfig): SimulationGraphCallbacks {
     throw new Error("SimulationGraphCallbacks must be provided in config.configurable.callbacks")
   }
   return callbacks
-}
-
-/**
- * Strip markdown code fences from LLM output.
- * Handles: leading whitespace, ```json or ```, missing closing fence.
- */
-async function stripMarkdownFences({ text }: { text: string }): Promise<string> {
-  return text
-    .replace(/^\s*```(?:json)?\s*\n?/i, "") // Opening fence with any leading whitespace
-    .replace(/\n?```\s*$/i, "") // Closing fence if present
-    .trim()
 }
 
 /**

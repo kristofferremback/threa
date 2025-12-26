@@ -50,19 +50,15 @@ interface CommandDispatchedPayload {
 interface CommandCompletedPayload {
   workspaceId: string
   streamId: string
-  commandId: string
   authorId: string
   event: StreamEvent
-  result?: unknown
 }
 
 interface CommandFailedPayload {
   workspaceId: string
   streamId: string
-  commandId: string
   authorId: string
   event: StreamEvent
-  error: string
 }
 
 interface StreamBootstrap {

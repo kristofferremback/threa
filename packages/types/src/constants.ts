@@ -57,6 +57,10 @@ export const EVENT_TYPES = [
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
+// Command event types (subset of EVENT_TYPES for command lifecycle)
+export const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"] as const
+export type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
+
 // Workspace member roles
 export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "member"] as const
 export type WorkspaceMemberRole = (typeof WORKSPACE_MEMBER_ROLES)[number]

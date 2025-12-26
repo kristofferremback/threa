@@ -175,17 +175,13 @@ export interface CommandDispatchedOutboxPayload extends StreamScopedPayload {
 }
 
 export interface CommandCompletedOutboxPayload extends StreamScopedPayload {
-  commandId: string
   authorId: string
   event: StreamEvent
-  result?: unknown
 }
 
 export interface CommandFailedOutboxPayload extends StreamScopedPayload {
-  commandId: string
   authorId: string
   event: StreamEvent
-  error: string
 }
 
 /**

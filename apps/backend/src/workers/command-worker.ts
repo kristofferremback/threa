@@ -123,7 +123,6 @@ async function createCompletedEvent(pool: Pool, params: CompletedEventParams): P
     await OutboxRepository.insert(client, "command:completed", {
       workspaceId,
       streamId,
-      commandId,
       authorId: userId,
       event: serializeBigInt(evt),
     })
@@ -158,9 +157,7 @@ async function createFailedEvent(pool: Pool, params: FailedEventParams): Promise
     await OutboxRepository.insert(client, "command:failed", {
       workspaceId,
       streamId,
-      commandId,
       authorId: userId,
-      error,
       event: serializeBigInt(evt),
     })
   })

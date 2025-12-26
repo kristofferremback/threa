@@ -4,6 +4,7 @@ import type { Pool } from "pg"
 import type { Command, CommandContext, CommandResult } from "./index"
 import type { ProviderRegistry } from "../lib/ai/provider-registry"
 import type { SimulationAgentLike } from "../workers/simulation-worker"
+import { stripMarkdownFences } from "../lib/ai"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { withClient } from "../db"
 import { logger } from "../lib/logger"
@@ -22,14 +23,6 @@ const SimulationParamsSchema = z.object({
 })
 
 type SimulationParams = z.infer<typeof SimulationParamsSchema>
-
-/**
- * Strip markdown code fences from LLM output.
- * Models sometimes wrap JSON in ```json ... ``` even when asked not to.
- */
-async function stripMarkdownFences({ text }: { text: string }): Promise<string> {
-  return text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")
-}
 
 /**
  * Build the parsing prompt with available personas as context.

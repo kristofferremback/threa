@@ -1,4 +1,11 @@
-import type { StreamEvent, CommandDispatchedPayload, CommandCompletedPayload, CommandFailedPayload } from "@threa/types"
+import {
+  COMMAND_EVENT_TYPES,
+  type CommandEventType,
+  type StreamEvent,
+  type CommandDispatchedPayload,
+  type CommandCompletedPayload,
+  type CommandFailedPayload,
+} from "@threa/types"
 import { EventItem } from "./event-item"
 import { CommandEvent } from "./command-event"
 import { useUser } from "@/auth"
@@ -10,11 +17,6 @@ interface EventListProps {
   streamId: string
   highlightMessageId?: string | null
 }
-
-/** Event types that belong to command lifecycle */
-const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"] as const
-
-type CommandEventType = (typeof COMMAND_EVENT_TYPES)[number]
 
 function isCommandEvent(event: StreamEvent): boolean {
   return COMMAND_EVENT_TYPES.includes(event.eventType as CommandEventType)

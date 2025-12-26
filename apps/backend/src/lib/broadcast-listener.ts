@@ -35,6 +35,11 @@ export function createBroadcastListener(
       const { workspaceId } = event.payload
 
       // Author-scoped events: only emit to the author's sockets
+      //
+      // PERFORMANCE NOTE: This iterates all sockets in the stream room (O(n) where n = connected users).
+      // Acceptable for streams with <100 concurrent users. For larger streams, consider adding user-specific
+      // rooms (e.g., `ws:${workspaceId}:user:${userId}`) and emitting directly to those instead of filtering.
+      // Threshold to consider: ~50-100 concurrent users per stream with frequent author-scoped events.
       if (isAuthorScopedEvent(event)) {
         const payload = event.payload as
           | CommandDispatchedOutboxPayload
