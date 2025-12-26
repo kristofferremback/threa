@@ -5,14 +5,21 @@ import {
   isStreamScopedEvent,
   isOutboxEventType,
   isOneOfOutboxEventType,
+  isAuthorScopedEvent,
   type StreamCreatedOutboxPayload,
+  type CommandDispatchedOutboxPayload,
+  type CommandCompletedOutboxPayload,
+  type CommandFailedOutboxPayload,
 } from "../repositories/outbox-repository"
+import type { UserSocketRegistry } from "./user-socket-registry"
+import { logger } from "./logger"
 
 /**
  * Creates a broadcast listener that emits outbox events to Socket.io rooms.
  *
  * Stream-scoped events (messages, reactions) are broadcast to stream rooms: `ws:${workspaceId}:stream:${streamId}`
  * Workspace-scoped events (stream metadata, attachments) are broadcast to workspace rooms: `ws:${workspaceId}`
+ * Author-scoped events (commands) are broadcast only to sockets belonging to the author.
  *
  * Special case: stream:created events for threads go to the parent stream room (so watchers see thread indicators),
  * while non-thread stream:created events go to the workspace room (so all clients see new channels/scratchpads).
@@ -20,6 +27,7 @@ import {
 export function createBroadcastListener(
   pool: Pool,
   io: Server,
+  userSocketRegistry: UserSocketRegistry,
   config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
 ): OutboxListener {
   return new OutboxListener(pool, {
@@ -27,6 +35,23 @@ export function createBroadcastListener(
     listenerId: "broadcast",
     handler: async (event) => {
       const { workspaceId } = event.payload
+
+      // Author-scoped events: only emit to the author's sockets
+      if (isAuthorScopedEvent(event)) {
+        const payload = event.payload as
+          | CommandDispatchedOutboxPayload
+          | CommandCompletedOutboxPayload
+          | CommandFailedOutboxPayload
+        const { authorId } = payload
+
+        // O(1) lookup via in-memory registry instead of filtering all sockets in room
+        const sockets = userSocketRegistry.getSockets(authorId)
+        for (const socket of sockets) {
+          socket.emit(event.eventType, event.payload)
+        }
+        logger.debug({ eventType: event.eventType, authorId, emitted: sockets.length }, "Broadcast author-scoped event")
+        return
+      }
 
       // Special handling for stream:created - route threads to parent stream room
       if (isOutboxEventType(event, "stream:created")) {

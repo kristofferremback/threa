@@ -24,6 +24,8 @@ export const JobQueues = {
   BOUNDARY_EXTRACT: "boundary.extract",
   MEMO_BATCH_CHECK: "memo.batch-check",
   MEMO_BATCH_PROCESS: "memo.batch-process",
+  SIMULATE_RUN: "simulate.run",
+  COMMAND_EXECUTE: "command.execute",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -57,6 +59,24 @@ export interface MemoBatchProcessJobData {
   streamId: string
 }
 
+export interface SimulationJobData {
+  streamId: string
+  workspaceId: string
+  userId: string
+  personas: string[]
+  topic: string
+  turns: number
+}
+
+export interface CommandExecuteJobData {
+  commandId: string
+  commandName: string
+  args: string
+  workspaceId: string
+  streamId: string
+  userId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.COMPANION_RESPOND]: CompanionJobData
@@ -65,6 +85,8 @@ export interface JobDataMap {
   [JobQueues.BOUNDARY_EXTRACT]: BoundaryExtractionJobData
   [JobQueues.MEMO_BATCH_CHECK]: MemoBatchCheckJobData
   [JobQueues.MEMO_BATCH_PROCESS]: MemoBatchProcessJobData
+  [JobQueues.SIMULATE_RUN]: SimulationJobData
+  [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
 }
 
 // Dead letter queue suffix - jobs that exhaust retries go here

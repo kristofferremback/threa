@@ -24,6 +24,9 @@ export type EventType =
   | "member_left"
   | "thread_created"
   | "companion_response"
+  | "command_dispatched"
+  | "command_completed"
+  | "command_failed"
 
 export interface StreamEvent {
   id: string
@@ -93,34 +96,60 @@ export const StreamEventRepository = {
   async list(
     client: PoolClient,
     streamId: string,
-    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number }
+    filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number; viewerId?: string }
   ): Promise<StreamEvent[]> {
     const limit = filters?.limit ?? 50
-    const afterSequence = filters?.afterSequence ?? BigInt(-1)
     const types = filters?.types
+    const viewerId = filters?.viewerId
+    const afterSequence = filters?.afterSequence
 
-    if (types && types.length > 0) {
-      const result = await client.query<StreamEventRow>(sql`
-        SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
-        FROM stream_events
-        WHERE stream_id = ${streamId}
-          AND sequence > ${afterSequence.toString()}
-          AND event_type = ANY(${types})
-        ORDER BY sequence ASC
-        LIMIT ${limit}
-      `)
-      return result.rows.map(mapRowToEvent)
+    // Command events are author-only: only visible to the actor who created them.
+    // If viewerId is provided, filter out command events from other users.
+    // If viewerId is not provided, return all events (backwards compatibility for internal use).
+    const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"]
+
+    // Build query dynamically to avoid 8 permutations of the same query
+    const conditions: string[] = ["stream_id = $1"]
+    const params: unknown[] = [streamId]
+    let paramIndex = 2
+
+    if (afterSequence !== undefined) {
+      conditions.push(`sequence > $${paramIndex}`)
+      params.push(afterSequence.toString())
+      paramIndex++
     }
 
-    const result = await client.query<StreamEventRow>(sql`
+    if (types && types.length > 0) {
+      conditions.push(`event_type = ANY($${paramIndex})`)
+      params.push(types)
+      paramIndex++
+    }
+
+    if (viewerId) {
+      conditions.push(`(event_type != ALL($${paramIndex}) OR actor_id = $${paramIndex + 1})`)
+      params.push(COMMAND_EVENT_TYPES)
+      params.push(viewerId)
+      paramIndex += 2
+    }
+
+    // If afterSequence is provided, paginate forward (ASC order)
+    // Otherwise, get the most recent N events (DESC, then reverse)
+    const orderDirection = afterSequence !== undefined ? "ASC" : "DESC"
+
+    const query = `
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
-      WHERE stream_id = ${streamId}
-        AND sequence > ${afterSequence.toString()}
-      ORDER BY sequence ASC
-      LIMIT ${limit}
-    `)
-    return result.rows.map(mapRowToEvent)
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY sequence ${orderDirection}
+      LIMIT $${paramIndex}
+    `
+    params.push(limit)
+
+    const result = await client.query<StreamEventRow>(query, params)
+    const events = result.rows.map(mapRowToEvent)
+
+    // When fetching most recent (DESC), reverse to return in chronological order
+    return afterSequence !== undefined ? events : events.reverse()
   },
 
   async findById(client: PoolClient, id: string): Promise<StreamEvent | null> {

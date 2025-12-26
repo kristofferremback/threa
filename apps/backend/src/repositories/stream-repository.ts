@@ -210,6 +210,58 @@ export const StreamRepository = {
     return mapRowToStream(result.rows[0])
   },
 
+  /**
+   * Atomically insert a thread or return the existing one.
+   * Uses ON CONFLICT DO NOTHING to handle race conditions where multiple
+   * concurrent requests try to create a thread for the same parent message.
+   *
+   * @returns { stream, created } - The stream and whether it was newly created
+   */
+  async insertThreadOrFind(
+    client: PoolClient,
+    params: InsertStreamParams
+  ): Promise<{ stream: Stream; created: boolean }> {
+    // Try to insert with ON CONFLICT DO NOTHING
+    const insertResult = await client.query<StreamRow>(sql`
+      INSERT INTO streams (
+        id, workspace_id, type, display_name, slug, description, visibility,
+        parent_stream_id, parent_message_id, root_stream_id,
+        companion_mode, companion_persona_id, created_by
+      ) VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        ${params.type},
+        ${params.displayName ?? null},
+        ${params.slug ?? null},
+        ${params.description ?? null},
+        ${params.visibility ?? "private"},
+        ${params.parentStreamId ?? null},
+        ${params.parentMessageId ?? null},
+        ${params.rootStreamId ?? null},
+        ${params.companionMode ?? "off"},
+        ${params.companionPersonaId ?? null},
+        ${params.createdBy}
+      )
+      ON CONFLICT (parent_stream_id, parent_message_id)
+        WHERE parent_message_id IS NOT NULL
+      DO NOTHING
+      RETURNING ${sql.raw(SELECT_FIELDS)}
+    `)
+
+    if (insertResult.rows.length > 0) {
+      // Insert succeeded - this is a new thread
+      return { stream: mapRowToStream(insertResult.rows[0]), created: true }
+    }
+
+    // Insert was no-op due to conflict - find the existing thread
+    const existing = await this.findByParentMessage(client, params.parentStreamId!, params.parentMessageId!)
+    if (!existing) {
+      // This shouldn't happen - if ON CONFLICT triggered, the row exists
+      throw new Error("Thread creation conflict but existing thread not found")
+    }
+    return { stream: existing, created: false }
+  },
+
   async update(client: PoolClient, id: string, params: UpdateStreamParams): Promise<Stream | null> {
     const sets: string[] = []
     const values: unknown[] = []

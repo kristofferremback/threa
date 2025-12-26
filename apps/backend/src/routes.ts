@@ -10,6 +10,7 @@ import { createAttachmentHandlers } from "./handlers/attachment-handlers"
 import { createSearchHandlers } from "./handlers/search-handlers"
 import { createEmojiHandlers } from "./handlers/emoji-handlers"
 import { createConversationHandlers } from "./handlers/conversation-handlers"
+import { createCommandHandlers } from "./handlers/command-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -21,8 +22,11 @@ import type { AttachmentService } from "./services/attachment-service"
 import type { SearchService } from "./services/search-service"
 import type { ConversationService } from "./services/conversation-service"
 import type { S3Config } from "./lib/env"
+import type { CommandRegistry } from "./commands"
+import type { Pool } from "pg"
 
 interface Dependencies {
+  pool: Pool
   authService: AuthService
   userService: UserService
   workspaceService: WorkspaceService
@@ -32,10 +36,12 @@ interface Dependencies {
   searchService: SearchService
   conversationService: ConversationService
   s3Config: S3Config
+  commandRegistry: CommandRegistry
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
   const {
+    pool,
     authService,
     userService,
     workspaceService,
@@ -45,6 +51,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     searchService,
     conversationService,
     s3Config,
+    commandRegistry,
   } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
@@ -54,13 +61,14 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const authed: RequestHandler[] = [auth, workspaceMember]
 
   const authHandlers = createAuthHandlers({ authService, userService })
-  const workspace = createWorkspaceHandlers({ workspaceService, streamService })
+  const workspace = createWorkspaceHandlers({ workspaceService, streamService, commandRegistry })
   const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ searchService })
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
+  const command = createCommandHandlers({ pool, commandRegistry, streamService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -140,6 +148,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/streams/:streamId/conversations", ...authed, conversation.listByStream)
   app.get("/api/workspaces/:workspaceId/conversations/:conversationId", ...authed, conversation.getById)
   app.get("/api/workspaces/:workspaceId/conversations/:conversationId/messages", ...authed, conversation.getMessages)
+
+  // Commands
+  app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, command.dispatch)
+  app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
   app.use(errorHandler)
 }

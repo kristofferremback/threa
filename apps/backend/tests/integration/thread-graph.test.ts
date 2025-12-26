@@ -63,18 +63,26 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message for thread test",
+      })
+
       // Create a thread from the channel
-      const parentMsgId = messageId()
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
       expect(thread.type).toBe(StreamTypes.THREAD)
       expect(thread.parentStreamId).toBe(channel.id)
-      expect(thread.parentMessageId).toBe(parentMsgId)
+      expect(thread.parentMessageId).toBe(parentMessage.id)
       expect(thread.rootStreamId).toBe(channel.id)
       expect(thread.visibility).toBe(Visibilities.PRIVATE)
     })
@@ -107,17 +115,33 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      const msg1 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Message 1",
+      })
+
       const thread1 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: messageId(),
+        parentMessageId: msg1.id,
         createdBy: ownerId,
+      })
+
+      const msg2 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread1.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Message 2",
       })
 
       const thread2 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: thread1.id,
-        parentMessageId: messageId(),
+        parentMessageId: msg2.id,
         createdBy: ownerId,
       })
 
@@ -157,17 +181,26 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
-      let parent = channel
+      let parentStream = channel
       const threads = []
       for (let i = 0; i < 4; i++) {
+        // Create a message in the current parent stream
+        const msg = await eventService.createMessage({
+          workspaceId: wsId,
+          streamId: parentStream.id,
+          authorId: ownerId,
+          authorType: "user",
+          content: `Deep message ${i + 1}`,
+        })
+
         const thread = await streamService.createThread({
           workspaceId: wsId,
-          parentStreamId: parent.id,
-          parentMessageId: messageId(),
+          parentStreamId: parentStream.id,
+          parentMessageId: msg.id,
           createdBy: ownerId,
         })
         threads.push(thread)
-        parent = thread
+        parentStream = thread
       }
 
       // All threads should have channel as root
@@ -210,12 +243,20 @@ describe("Thread Graph", () => {
         createdBy: ownerId,
       })
 
+      // Create a message in the scratchpad
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: scratchpad.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Scratchpad message for thread",
+      })
+
       // Create a thread from the scratchpad
-      const parentMsgId = messageId()
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: scratchpad.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -252,10 +293,18 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Message for thread membership test",
+      })
+
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: messageId(),
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -290,10 +339,10 @@ describe("Thread Graph", () => {
         streamService.createThread({
           workspaceId: wsId,
           parentStreamId: "stream_nonexistent",
-          parentMessageId: messageId(),
+          parentMessageId: "msg_nonexistent",
           createdBy: ownerId,
         })
-      ).rejects.toThrow("Parent stream not found")
+      ).rejects.toThrow("Stream not found")
     })
   })
 
@@ -325,13 +374,20 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
-      const parentMsgId = messageId()
+      // Create actual message to thread from
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message for idempotency test",
+      })
 
       // Create thread first time
       const thread1 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -339,7 +395,7 @@ describe("Thread Graph", () => {
       const thread2 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -383,13 +439,20 @@ describe("Thread Graph", () => {
         visibility: Visibilities.PUBLIC,
       })
 
-      const parentMsgId = messageId()
+      // Create actual message to thread from
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message for multi-user idempotency test",
+      })
 
       // First user creates thread
       const thread1 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -397,7 +460,7 @@ describe("Thread Graph", () => {
       const thread2 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: parentMsgId,
+        parentMessageId: parentMessage.id,
         createdBy: user2Id,
       })
 

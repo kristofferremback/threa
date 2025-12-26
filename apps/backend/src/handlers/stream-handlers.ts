@@ -164,6 +164,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         types,
         limit: limit ? parseInt(limit as string, 10) : undefined,
         afterSequence: after ? BigInt(after as string) : undefined,
+        viewerId: userId,
       })
 
       res.json({ events: events.map(serializeEvent) })
@@ -266,7 +267,7 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
 
       // Fetch all data in parallel - threads with counts is a single optimized query
       const [events, members, membership, threadDataMap] = await Promise.all([
-        eventService.listEvents(streamId, { limit: 50 }),
+        eventService.listEvents(streamId, { limit: 50, viewerId: userId }),
         streamService.getMembers(streamId),
         streamService.getMembership(streamId, userId),
         streamService.getThreadsWithReplyCounts(streamId),

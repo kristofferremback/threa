@@ -4,6 +4,14 @@ export { streamsApi, type StreamBootstrap, type CreateStreamInput, type UpdateSt
 export { messagesApi, type CreateMessageInput, type UpdateMessageInput } from "./messages"
 export { attachmentsApi } from "./attachments"
 export {
+  commandsApi,
+  type DispatchCommandInput,
+  type DispatchCommandResponse,
+  type DispatchCommandError,
+  type DispatchResult,
+  type CommandInfo,
+} from "./commands"
+export {
   searchMessages,
   type SearchFilters,
   type SearchRequest,

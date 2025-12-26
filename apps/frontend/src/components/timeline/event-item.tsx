@@ -47,6 +47,12 @@ export function EventItem({ event, workspaceId, streamId, hideActions, highlight
       // Reactions update the parent message in place, not rendered as separate items
       return null
 
+    case "command_dispatched":
+    case "command_completed":
+    case "command_failed":
+      // Command events are grouped and rendered in EventList, not here
+      return null
+
     default:
       // Unknown event type - render as system event
       return <SystemEvent event={event} />

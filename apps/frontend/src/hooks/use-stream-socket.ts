@@ -40,6 +40,27 @@ interface MessageUpdatedPayload {
   content?: string
 }
 
+interface CommandDispatchedPayload {
+  workspaceId: string
+  streamId: string
+  event: StreamEvent
+  authorId: string
+}
+
+interface CommandCompletedPayload {
+  workspaceId: string
+  streamId: string
+  authorId: string
+  event: StreamEvent
+}
+
+interface CommandFailedPayload {
+  workspaceId: string
+  streamId: string
+  authorId: string
+  event: StreamEvent
+}
+
 interface StreamBootstrap {
   events: StreamEvent[]
   latestSequence: string
@@ -235,6 +256,61 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       })
     }
 
+    // Handle command events (author-only, already filtered by server)
+    const handleCommandDispatched = async (payload: CommandDispatchedPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        // Dedupe by event ID
+        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, payload.event],
+          latestSequence: payload.event.sequence,
+        }
+      })
+
+      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+    }
+
+    const handleCommandCompleted = async (payload: CommandCompletedPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        // Dedupe by event ID
+        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, payload.event],
+          latestSequence: payload.event.sequence,
+        }
+      })
+
+      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+    }
+
+    const handleCommandFailed = async (payload: CommandFailedPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        // Dedupe by event ID
+        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, payload.event],
+          latestSequence: payload.event.sequence,
+        }
+      })
+
+      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+    }
+
     socket.on("message:created", handleMessageCreated)
     socket.on("message:edited", handleMessageEdited)
     socket.on("message:deleted", handleMessageDeleted)
@@ -242,6 +318,9 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("reaction:removed", handleReactionRemoved)
     socket.on("stream:created", handleStreamCreated)
     socket.on("message:updated", handleMessageUpdated)
+    socket.on("command:dispatched", handleCommandDispatched)
+    socket.on("command:completed", handleCommandCompleted)
+    socket.on("command:failed", handleCommandFailed)
 
     return () => {
       socket.emit("leave", room)
@@ -252,6 +331,9 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("reaction:removed", handleReactionRemoved)
       socket.off("stream:created", handleStreamCreated)
       socket.off("message:updated", handleMessageUpdated)
+      socket.off("command:dispatched", handleCommandDispatched)
+      socket.off("command:completed", handleCommandCompleted)
+      socket.off("command:failed", handleCommandFailed)
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient])
 }

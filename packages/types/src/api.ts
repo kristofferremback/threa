@@ -74,6 +74,11 @@ export interface EmojiEntry {
   type: "native" | "custom"
 }
 
+export interface CommandInfo {
+  name: string
+  description: string
+}
+
 export interface WorkspaceBootstrap {
   workspace: Workspace
   members: WorkspaceMember[]
@@ -82,4 +87,45 @@ export interface WorkspaceBootstrap {
   users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
+  commands: CommandInfo[]
+}
+
+// ============================================================================
+// Commands API
+// ============================================================================
+
+export interface DispatchCommandInput {
+  command: string
+  streamId: string
+}
+
+export interface DispatchCommandResponse {
+  success: true
+  commandId: string
+  command: string
+  args: string
+  event: StreamEvent
+}
+
+export interface DispatchCommandError {
+  success: false
+  error: string
+  availableCommands?: string[]
+}
+
+export interface CommandDispatchedPayload {
+  commandId: string
+  name: string
+  args: string
+  status: "dispatched"
+}
+
+export interface CommandCompletedPayload {
+  commandId: string
+  result?: unknown
+}
+
+export interface CommandFailedPayload {
+  commandId: string
+  error: string
 }

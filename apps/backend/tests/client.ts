@@ -598,3 +598,27 @@ export async function getConversation(
   }
   return data.conversation
 }
+
+export interface DispatchCommandResponse {
+  success: boolean
+  commandId: string
+  command: string
+  args: string
+  event: StreamEvent
+}
+
+export async function dispatchCommand(
+  client: TestClient,
+  workspaceId: string,
+  streamId: string,
+  command: string
+): Promise<DispatchCommandResponse> {
+  const { status, data } = await client.post<DispatchCommandResponse>(
+    `/api/workspaces/${workspaceId}/commands/dispatch`,
+    { command, streamId }
+  )
+  if (status !== 202) {
+    throw new Error(`Dispatch command failed: ${JSON.stringify(data)}`)
+  }
+  return data
+}

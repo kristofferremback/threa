@@ -30,6 +30,9 @@ import { createMemoAccumulator } from "./lib/memo-accumulator"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
+import { createCommandListener } from "./lib/command-listener"
+import { CommandRegistry } from "./commands"
+import { SimulateCommand } from "./commands/simulate-command"
 import { createCompanionWorker } from "./workers/companion-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
@@ -39,9 +42,12 @@ import {
   createMemoBatchProcessWorker,
   scheduleMemoBatchCheck,
 } from "./workers/memo-batch-worker"
+import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
+import { createCommandWorker } from "./workers/command-worker"
 import { CompanionAgent } from "./agents/companion-agent"
+import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
@@ -49,6 +55,7 @@ import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
 import { ProviderRegistry, createPostgresCheckpointer } from "./lib/ai"
 import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
+import { UserSocketRegistry } from "./lib/user-socket-registry"
 
 export interface ServerInstance {
   server: Server
@@ -91,9 +98,36 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingService = new EmbeddingService({ providerRegistry })
   const searchService = new SearchService({ pool, embeddingService })
 
+  // Job queue for durable background work (companion responses, etc.)
+  const jobQueue = createJobQueue(pool)
+
+  // Create message helper for agents
+  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
+
+  // Simulation agent - needed for SimulateCommand
+  const simulationAgent = new SimulationAgent({
+    pool,
+    providerRegistry,
+    streamService,
+    checkpointer,
+    createMessage,
+    orchestratorModel: config.ai.namingModel,
+  })
+
+  // Command infrastructure - created early for route registration
+  const commandRegistry = new CommandRegistry()
+  const simulateCommand = new SimulateCommand({
+    pool,
+    providerRegistry,
+    simulationAgent,
+    parsingModel: config.ai.namingModel,
+  })
+  commandRegistry.register(simulateCommand)
+
   const app = createApp()
 
   registerRoutes(app, {
+    pool,
     authService,
     userService,
     workspaceService,
@@ -103,6 +137,7 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationService,
     s3Config: config.s3,
+    commandRegistry,
   })
 
   app.use(errorHandler)
@@ -119,15 +154,12 @@ export async function startServer(): Promise<ServerInstance> {
 
   io.adapter(createAdapter(pool))
 
-  registerSocketHandlers(io, { authService, userService, streamService, workspaceService })
+  const userSocketRegistry = new UserSocketRegistry()
+  registerSocketHandlers(io, { authService, userService, streamService, workspaceService, userSocketRegistry })
 
-  // Job queue for durable background work (companion responses, etc.)
-  const jobQueue = createJobQueue(pool)
   const serverId = `server_${ulid()}`
 
   // Create companion agent and register worker
-  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
-
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()
     : new LangGraphResponseGenerator({ modelRegistry: providerRegistry, checkpointer })
@@ -164,24 +196,35 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
 
+  // Simulation worker - for non-command invocations (e.g., API or scheduled runs)
+  // Note: /simulate command runs the agent inline via SimulateCommand
+  const simulationWorker = createSimulationWorker({ agent: simulationAgent })
+  jobQueue.registerHandler(JobQueues.SIMULATE_RUN, simulationWorker)
+
+  // Command execution worker
+  const commandWorker = createCommandWorker({ pool, commandRegistry })
+  jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
+
   await jobQueue.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
   await scheduleMemoBatchCheck(jobQueue)
 
   // Outbox listeners
-  const broadcastListener = createBroadcastListener(pool, io)
+  const broadcastListener = createBroadcastListener(pool, io, userSocketRegistry)
   const companionListener = createCompanionListener(pool, jobQueue)
   const namingListener = createNamingListener(pool, jobQueue)
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
+  const commandListener = createCommandListener(pool, jobQueue)
   await broadcastListener.start()
   await companionListener.start()
   await namingListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
   await memoAccumulator.start()
+  await commandListener.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -193,6 +236,7 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     await memoAccumulator.stop()
+    await commandListener.stop()
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
     await namingListener.stop()

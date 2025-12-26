@@ -14,22 +14,26 @@ import { Pool } from "pg"
 import { withTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
+import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
 import { StreamService } from "../../src/services/stream-service"
 import { WorkspaceService } from "../../src/services/workspace-service"
+import { EventService } from "../../src/services/event-service"
 import { StreamNotFoundError } from "../../src/lib/errors"
 import { setupTestDatabase } from "./setup"
-import { userId, workspaceId } from "../../src/lib/id"
+import { userId, workspaceId, eventId, commandId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
 
 describe("Access Control", () => {
   let pool: Pool
   let streamService: StreamService
   let workspaceService: WorkspaceService
+  let eventService: EventService
 
   beforeAll(async () => {
     pool = await setupTestDatabase()
     streamService = new StreamService(pool)
     workspaceService = new WorkspaceService(pool)
+    eventService = new EventService(pool)
   })
 
   afterAll(async () => {
@@ -561,11 +565,20 @@ describe("Access Control", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Parent message for thread visibility test",
+      })
+
       // Create a thread from the channel
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_test123",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -615,24 +628,49 @@ describe("Access Control", () => {
         visibility: Visibilities.PUBLIC,
       })
 
+      // Create messages for each level
+      const msg1 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 1",
+      })
+
       const thread1 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_deep1",
+        parentMessageId: msg1.id,
         createdBy: ownerId,
+      })
+
+      const msg2 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread1.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 2",
       })
 
       const thread2 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: thread1.id,
-        parentMessageId: "msg_deep2",
+        parentMessageId: msg2.id,
         createdBy: ownerId,
+      })
+
+      const msg3 = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: thread2.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Deep message 3",
       })
 
       const thread3 = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: thread2.id,
-        parentMessageId: "msg_deep3",
+        parentMessageId: msg3.id,
         createdBy: ownerId,
       })
 
@@ -682,11 +720,20 @@ describe("Access Control", () => {
         visibility: Visibilities.PRIVATE,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Private channel message for thread",
+      })
+
       // Create a thread
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_priv_thread",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -739,10 +786,19 @@ describe("Access Control", () => {
         visibility: Visibilities.PRIVATE,
       })
 
+      // Create a message in the channel
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: ownerId,
+        authorType: "user",
+        content: "Message for add member to thread test",
+      })
+
       const thread = await streamService.createThread({
         workspaceId: wsId,
         parentStreamId: channel.id,
-        parentMessageId: "msg_add_member",
+        parentMessageId: parentMessage.id,
         createdBy: ownerId,
       })
 
@@ -813,6 +869,178 @@ describe("Access Control", () => {
 
       // Non-member is not member
       expect(await streamService.isMember(channel.id, nonMemberId)).toBe(false)
+    })
+  })
+
+  describe("Command Event Visibility", () => {
+    test("command events are only visible to the command author", async () => {
+      const userAId = userId()
+      const userBId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: userAId,
+          email: `cmd-vis-userA-${userAId}@test.com`,
+          name: "User A",
+          workosUserId: `workos_${userAId}`,
+        })
+        await UserRepository.insert(client, {
+          id: userBId,
+          email: `cmd-vis-userB-${userBId}@test.com`,
+          name: "User B",
+          workosUserId: `workos_${userBId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Command Visibility Workspace",
+          slug: `cmd-vis-ws-${wsId}`,
+          createdBy: userAId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, userBId)
+      })
+
+      // Create a public channel with both users as members
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `cmd-vis-channel-${Date.now()}`,
+        displayName: "Command Visibility Channel",
+        createdBy: userAId,
+        visibility: Visibilities.PUBLIC,
+      })
+      await streamService.addMember(channel.id, userBId)
+
+      // Create a regular message (visible to both)
+      await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: userAId,
+        authorType: "user",
+        content: "Regular message visible to all",
+      })
+
+      // Create command events as User A (directly via repository for test control)
+      const cmdId = commandId()
+      await withTransaction(pool, async (client) => {
+        await StreamEventRepository.insert(client, {
+          id: eventId(),
+          streamId: channel.id,
+          eventType: "command_dispatched",
+          payload: {
+            commandId: cmdId,
+            name: "simulate",
+            args: "test args",
+            status: "dispatched",
+          },
+          actorId: userAId,
+          actorType: "user",
+        })
+
+        await StreamEventRepository.insert(client, {
+          id: eventId(),
+          streamId: channel.id,
+          eventType: "command_completed",
+          payload: {
+            commandId: cmdId,
+            result: "test result",
+          },
+          actorId: userAId,
+          actorType: "user",
+        })
+      })
+
+      // User A should see all events including command events
+      const userAEvents = await eventService.listEvents(channel.id, { viewerId: userAId })
+      const userAEventTypes = userAEvents.map((e) => e.eventType)
+      expect(userAEventTypes).toContain("message_created")
+      expect(userAEventTypes).toContain("command_dispatched")
+      expect(userAEventTypes).toContain("command_completed")
+
+      // User B should only see message events, NOT command events
+      const userBEvents = await eventService.listEvents(channel.id, { viewerId: userBId })
+      const userBEventTypes = userBEvents.map((e) => e.eventType)
+      expect(userBEventTypes).toContain("message_created")
+      expect(userBEventTypes).not.toContain("command_dispatched")
+      expect(userBEventTypes).not.toContain("command_completed")
+    })
+
+    test("command_failed events are only visible to the command author", async () => {
+      const userAId = userId()
+      const userBId = userId()
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: userAId,
+          email: `cmd-fail-vis-userA-${userAId}@test.com`,
+          name: "User A",
+          workosUserId: `workos_${userAId}`,
+        })
+        await UserRepository.insert(client, {
+          id: userBId,
+          email: `cmd-fail-vis-userB-${userBId}@test.com`,
+          name: "User B",
+          workosUserId: `workos_${userBId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Command Failed Visibility Workspace",
+          slug: `cmd-fail-vis-ws-${wsId}`,
+          createdBy: userAId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, userBId)
+      })
+
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `cmd-fail-vis-channel-${Date.now()}`,
+        displayName: "Command Failed Visibility Channel",
+        createdBy: userAId,
+        visibility: Visibilities.PUBLIC,
+      })
+      await streamService.addMember(channel.id, userBId)
+
+      // Create command_dispatched and command_failed events as User A
+      const cmdId = commandId()
+      await withTransaction(pool, async (client) => {
+        await StreamEventRepository.insert(client, {
+          id: eventId(),
+          streamId: channel.id,
+          eventType: "command_dispatched",
+          payload: {
+            commandId: cmdId,
+            name: "simulate",
+            args: "bad args",
+            status: "dispatched",
+          },
+          actorId: userAId,
+          actorType: "user",
+        })
+
+        await StreamEventRepository.insert(client, {
+          id: eventId(),
+          streamId: channel.id,
+          eventType: "command_failed",
+          payload: {
+            commandId: cmdId,
+            error: "Something went wrong",
+          },
+          actorId: userAId,
+          actorType: "user",
+        })
+      })
+
+      // User A should see failed command events
+      const userAEvents = await eventService.listEvents(channel.id, { viewerId: userAId })
+      const userAEventTypes = userAEvents.map((e) => e.eventType)
+      expect(userAEventTypes).toContain("command_dispatched")
+      expect(userAEventTypes).toContain("command_failed")
+
+      // User B should NOT see failed command events
+      const userBEvents = await eventService.listEvents(channel.id, { viewerId: userBId })
+      const userBEventTypes = userBEvents.map((e) => e.eventType)
+      expect(userBEventTypes).not.toContain("command_dispatched")
+      expect(userBEventTypes).not.toContain("command_failed")
     })
   })
 })

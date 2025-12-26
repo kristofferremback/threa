@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
+import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../lib/emoji"
 
 const createWorkspaceSchema = z.object({
@@ -13,9 +14,10 @@ export { createWorkspaceSchema }
 interface Dependencies {
   workspaceService: WorkspaceService
   streamService: StreamService
+  commandRegistry: CommandRegistry
 }
 
-export function createWorkspaceHandlers({ workspaceService, streamService }: Dependencies) {
+export function createWorkspaceHandlers({ workspaceService, streamService, commandRegistry }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       const userId = req.userId!
@@ -82,6 +84,11 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
         workspaceService.getUsersForMembers(members),
       ])
 
+      const commands = commandRegistry.getCommandNames().map((name) => {
+        const cmd = commandRegistry.get(name)!
+        return { name, description: cmd.description }
+      })
+
       res.json({
         data: {
           workspace,
@@ -91,6 +98,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService }: Dep
           users,
           personas,
           emojis: getEmojiList(),
+          commands,
         },
       })
     },

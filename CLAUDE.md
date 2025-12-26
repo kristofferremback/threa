@@ -463,3 +463,13 @@ Don't add comments about features that weren't requested, and don't design for i
 ### Abstractions should fully own their domain
 
 A helper that extracts part of a workflow but leaves the caller managing the rest adds indirection without reducing complexity. If you're creating an abstraction for session lifecycle, it should handle find/create, run work, AND track status - not just find/create while the caller still manages status with separate calls. Partial abstractions can be worse than no abstraction because they add a layer of indirection while still requiring the caller to understand the full workflow.
+
+### Always use current-generation Claude models
+
+When specifying Claude models, always use the latest generation:
+
+- **Haiku**: `anthropic/claude-haiku-4.5` (not `claude-3-haiku`)
+- **Sonnet**: `anthropic/claude-sonnet-4.5` or `anthropic/claude-sonnet-4-20250514` (not `claude-3-sonnet` or `claude-3.5-sonnet`)
+- **Opus**: `anthropic/claude-opus-4.5` (not `claude-3-opus`)
+
+The "3" and "3.5" series are deprecated. Always default to 4.5 generation models. Check model defaults in `env.ts`, database seeds, and any hardcoded model strings when touching AI-related code.

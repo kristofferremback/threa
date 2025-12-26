@@ -340,7 +340,7 @@ export class EventService {
 
   async listEvents(
     streamId: string,
-    filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint }
+    filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint; viewerId?: string }
   ): Promise<StreamEvent[]> {
     return withClient(this.pool, (client) => StreamEventRepository.list(client, streamId, filters))
   }

@@ -235,18 +235,7 @@ export class StreamService {
 
   async createThread(params: CreateThreadParams): Promise<Stream> {
     return withTransaction(this.pool, async (client) => {
-      // Check if thread already exists for this parent message (find-or-create)
-      const existing = await StreamRepository.findByParentMessage(client, params.parentStreamId, params.parentMessageId)
-      if (existing) {
-        // Just add user as member if not already
-        const isMember = await StreamMemberRepository.isMember(client, existing.id, params.createdBy)
-        if (!isMember) {
-          await StreamMemberRepository.insert(client, existing.id, params.createdBy)
-        }
-        return existing
-      }
-
-      // Get parent stream to determine root
+      // Get parent stream to determine root (needed for insert)
       const parentStream = await StreamRepository.findById(client, params.parentStreamId)
       if (!parentStream || parentStream.workspaceId !== params.workspaceId) {
         throw new StreamNotFoundError()
@@ -263,7 +252,9 @@ export class StreamService {
 
       const id = streamId()
 
-      const stream = await StreamRepository.insert(client, {
+      // Atomically insert or find existing thread
+      // Uses ON CONFLICT DO NOTHING to handle race conditions
+      const { stream, created } = await StreamRepository.insertThreadOrFind(client, {
         id,
         workspaceId: params.workspaceId,
         type: StreamTypes.THREAD,
@@ -274,16 +265,22 @@ export class StreamService {
         createdBy: params.createdBy,
       })
 
-      // Add creator as member
-      await StreamMemberRepository.insert(client, id, params.createdBy)
+      // Add creator as member (idempotent - handles existing membership)
+      const isMember = await StreamMemberRepository.isMember(client, stream.id, params.createdBy)
+      if (!isMember) {
+        await StreamMemberRepository.insert(client, stream.id, params.createdBy)
+      }
 
-      // Broadcast stream:created to PARENT stream's room (not the new thread's room)
-      // This lets watchers of the parent see the thread indicator appear
-      await OutboxRepository.insert(client, "stream:created", {
-        workspaceId: params.workspaceId,
-        streamId: params.parentStreamId,
-        stream,
-      })
+      // Only broadcast if we created a new thread
+      if (created) {
+        // Broadcast stream:created to PARENT stream's room (not the new thread's room)
+        // This lets watchers of the parent see the thread indicator appear
+        await OutboxRepository.insert(client, "stream:created", {
+          workspaceId: params.workspaceId,
+          streamId: params.parentStreamId,
+          stream,
+        })
+      }
 
       return stream
     })
