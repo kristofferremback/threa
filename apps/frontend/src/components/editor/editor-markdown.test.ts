@@ -559,6 +559,240 @@ const x = 1
     })
   })
 
+  describe("mentions and channels", () => {
+    describe("serialization", () => {
+      it("should serialize mention node to @slug format", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Hey " },
+                {
+                  type: "mention",
+                  attrs: { id: "usr_123", slug: "kristoffer", name: "Kristoffer", mentionType: "user" },
+                },
+                { type: "text", text: " check this out" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Hey @kristoffer check this out")
+      })
+
+      it("should serialize channel link node to #slug format", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "See " },
+                { type: "channelLink", attrs: { id: "stream_456", slug: "general", name: "General" } },
+                { type: "text", text: " for details" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("See #general for details")
+      })
+
+      it("should serialize multiple mentions in same paragraph", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "mention", attrs: { id: "usr_1", slug: "alice", name: "Alice", mentionType: "user" } },
+                { type: "text", text: " and " },
+                { type: "mention", attrs: { id: "usr_2", slug: "bob", name: "Bob", mentionType: "user" } },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("@alice and @bob")
+      })
+
+      it("should serialize broadcast mentions", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "mention",
+                  attrs: { id: "broadcast_channel", slug: "channel", name: "channel", mentionType: "broadcast" },
+                },
+                { type: "text", text: " please review" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("@channel please review")
+      })
+
+      it("should serialize mixed mentions and channels", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "mention",
+                  attrs: { id: "usr_1", slug: "kristoffer", name: "Kristoffer", mentionType: "user" },
+                },
+                { type: "text", text: " posted in " },
+                { type: "channelLink", attrs: { id: "stream_1", slug: "engineering", name: "Engineering" } },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("@kristoffer posted in #engineering")
+      })
+
+      it("should handle mention node without slug gracefully", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Hello " },
+                { type: "mention", attrs: { id: "usr_123" } },
+                { type: "text", text: " there" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Hello  there")
+      })
+    })
+
+    describe("parsing", () => {
+      it("should parse @mention into mention node", () => {
+        const result = parseMarkdown("Hey @kristoffer check this out")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(3)
+        expect(content?.[0]).toEqual({ type: "text", text: "Hey " })
+        expect(content?.[1]).toEqual({
+          type: "mention",
+          attrs: { id: "kristoffer", slug: "kristoffer", name: "kristoffer", mentionType: "user" },
+        })
+        expect(content?.[2]).toEqual({ type: "text", text: " check this out" })
+      })
+
+      it("should parse #channel into channelLink node", () => {
+        const result = parseMarkdown("See #general for details")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(3)
+        expect(content?.[0]).toEqual({ type: "text", text: "See " })
+        expect(content?.[1]).toEqual({
+          type: "channelLink",
+          attrs: { id: "general", slug: "general", name: "general" },
+        })
+        expect(content?.[2]).toEqual({ type: "text", text: " for details" })
+      })
+
+      it("should parse multiple mentions", () => {
+        const result = parseMarkdown("@alice and @bob")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(3)
+        expect(content?.[0]?.type).toBe("mention")
+        expect(content?.[0]?.attrs?.slug).toBe("alice")
+        expect(content?.[1]).toEqual({ type: "text", text: " and " })
+        expect(content?.[2]?.type).toBe("mention")
+        expect(content?.[2]?.attrs?.slug).toBe("bob")
+      })
+
+      it("should parse mentions with hyphens in slug", () => {
+        const result = parseMarkdown("Hey @kristoffer-remback")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[1]?.type).toBe("mention")
+        expect(content?.[1]?.attrs?.slug).toBe("kristoffer-remback")
+      })
+
+      it("should parse channels with hyphens in slug", () => {
+        const result = parseMarkdown("Check #dev-team")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[1]?.type).toBe("channelLink")
+        expect(content?.[1]?.attrs?.slug).toBe("dev-team")
+      })
+
+      it("should parse mixed mentions and channels", () => {
+        const result = parseMarkdown("@alice posted in #general")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(3)
+        expect(content?.[0]?.type).toBe("mention")
+        expect(content?.[1]).toEqual({ type: "text", text: " posted in " })
+        expect(content?.[2]?.type).toBe("channelLink")
+      })
+
+      it("should parse mention at start of text", () => {
+        const result = parseMarkdown("@kristoffer")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(1)
+        expect(content?.[0]?.type).toBe("mention")
+        expect(content?.[0]?.attrs?.slug).toBe("kristoffer")
+      })
+
+      it("should parse channel at end of text", () => {
+        const result = parseMarkdown("Check out #general")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(2)
+        expect(content?.[0]).toEqual({ type: "text", text: "Check out " })
+        expect(content?.[1]?.type).toBe("channelLink")
+      })
+    })
+
+    describe("round-trip", () => {
+      it("should preserve mention through round-trip", () => {
+        const md = "Hey @kristoffer check this"
+        const parsed = parseMarkdown(md)
+        const serialized = serializeToMarkdown(parsed)
+        expect(serialized).toBe(md)
+      })
+
+      it("should preserve channel through round-trip", () => {
+        const md = "See #general for info"
+        const parsed = parseMarkdown(md)
+        const serialized = serializeToMarkdown(parsed)
+        expect(serialized).toBe(md)
+      })
+
+      it("should preserve mixed mentions and channels through round-trip", () => {
+        const md = "@alice and @bob check #engineering"
+        const parsed = parseMarkdown(md)
+        const serialized = serializeToMarkdown(parsed)
+        expect(serialized).toBe(md)
+      })
+
+      it("should preserve mention with surrounding formatting", () => {
+        const md = "**Important:** @kristoffer please review"
+        const parsed = parseMarkdown(md)
+        const serialized = serializeToMarkdown(parsed)
+        expect(serialized).toBe(md)
+      })
+    })
+  })
+
   describe("edge cases", () => {
     it("should handle asterisk in middle of word (not italic)", () => {
       // This tests a common edge case where * appears mid-word
