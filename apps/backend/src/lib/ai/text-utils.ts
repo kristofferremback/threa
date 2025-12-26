@@ -50,6 +50,39 @@ function normalizeObject(obj: unknown): unknown {
 }
 
 /**
+ * Add default values for common missing fields.
+ * The AI SDK validates before applying Zod defaults, so we must add them here.
+ */
+function addDefaults(obj: Record<string, unknown>): Record<string, unknown> {
+  // For message classification: if isGem is false, knowledgeType should be null
+  if ("isGem" in obj && obj.isGem === false) {
+    if (!("knowledgeType" in obj)) {
+      obj.knowledgeType = null
+    }
+  }
+
+  // Default confidence if missing
+  if (!("confidence" in obj)) {
+    obj.confidence = 0.5
+  }
+
+  // For conversation classification: add defaults for boolean fields
+  if ("isKnowledgeWorthy" in obj) {
+    if (!("shouldReviseExisting" in obj)) {
+      obj.shouldReviseExisting = false
+    }
+    if (!("revisionReason" in obj)) {
+      obj.revisionReason = null
+    }
+    if (obj.isKnowledgeWorthy === false && !("knowledgeType" in obj)) {
+      obj.knowledgeType = null
+    }
+  }
+
+  return obj
+}
+
+/**
  * Strip markdown code fences and normalize JSON field names.
  *
  * Handles common LLM output issues:
@@ -76,8 +109,9 @@ export async function stripMarkdownFences({ text }: { text: string }): Promise<s
   // Try to parse and normalize field names
   try {
     const parsed = JSON.parse(cleaned)
-    const normalized = normalizeObject(parsed)
-    return JSON.stringify(normalized)
+    const normalized = normalizeObject(parsed) as Record<string, unknown>
+    const withDefaults = addDefaults(normalized)
+    return JSON.stringify(withDefaults)
   } catch {
     // If parsing fails, return the cleaned text as-is
     return cleaned
