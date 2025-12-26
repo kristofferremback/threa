@@ -3,9 +3,7 @@ import { z } from "zod"
 import type { Pool } from "pg"
 import type { Command, CommandContext, CommandResult } from "./index"
 import type { ProviderRegistry } from "../lib/ai/provider-registry"
-import type { JobQueueManager } from "../lib/job-queue"
-import type { StreamService } from "../services/stream-service"
-import { JobQueues } from "../lib/job-queue"
+import type { SimulationAgentLike } from "../workers/simulation-worker"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { withClient } from "../db"
 import { logger } from "../lib/logger"
@@ -72,9 +70,8 @@ Input:`
 
 interface SimulateCommandDeps {
   pool: Pool
-  jobQueue: JobQueueManager
   providerRegistry: ProviderRegistry
-  streamService: StreamService
+  simulationAgent: SimulationAgentLike
   parsingModel: string
 }
 
@@ -90,12 +87,12 @@ export class SimulateCommand implements Command {
   constructor(private deps: SimulateCommandDeps) {}
 
   async execute(ctx: CommandContext): Promise<CommandResult> {
-    const { args, streamId, workspaceId, userId, messageId } = ctx
+    const { args, streamId, workspaceId, userId, commandId } = ctx
 
     if (!args.trim()) {
       return {
         success: false,
-        error: "Usage: /simulate <personas> discussing <topic> [for N turns] [in a thread]",
+        error: "Usage: /simulate <personas> discussing <topic> [for N turns]",
       }
     }
 
@@ -123,22 +120,28 @@ export class SimulateCommand implements Command {
       }
     }
 
-    // Determine target stream - either a new thread or the current stream
-    let targetStreamId = streamId
+    // Threading from commands not yet supported
     if (params.thread) {
-      const thread = await this.deps.streamService.createThread({
-        workspaceId,
-        parentStreamId: streamId,
-        parentMessageId: messageId,
-        createdBy: userId,
-      })
-      targetStreamId = thread.id
-      logger.info({ threadId: thread.id, parentMessageId: messageId }, "Created thread for simulation")
+      return {
+        success: false,
+        error: "Threading is not yet supported for /simulate. Run without 'in a thread'.",
+      }
     }
 
-    // Dispatch simulation job
-    await this.deps.jobQueue.send(JobQueues.SIMULATE_RUN, {
-      streamId: targetStreamId,
+    logger.info(
+      {
+        commandId,
+        streamId,
+        personas: params.personas,
+        topic: params.topic,
+        turns: params.turns,
+      },
+      "Running simulation"
+    )
+
+    // Run simulation directly (we're already in a background job)
+    const result = await this.deps.simulationAgent.run({
+      streamId,
       workspaceId,
       userId,
       personas: params.personas,
@@ -146,19 +149,22 @@ export class SimulateCommand implements Command {
       turns: params.turns,
     })
 
-    logger.info(
-      {
-        streamId: targetStreamId,
+    if (result.status === "failed") {
+      return {
+        success: false,
+        error: result.error || "Simulation failed",
+      }
+    }
+
+    return {
+      success: true,
+      result: {
         personas: params.personas,
         topic: params.topic,
         turns: params.turns,
-        thread: params.thread,
+        messagesSent: result.messagesSent,
       },
-      "Simulation job dispatched"
-    )
-
-    // Keep the command message if threading (it's the thread anchor)
-    return { success: true, deleteMessage: !params.thread }
+    }
   }
 
   private async parseArgs(args: string, availablePersonas: string[]): Promise<SimulationParams> {

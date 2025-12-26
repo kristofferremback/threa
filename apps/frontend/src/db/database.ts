@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
+import type { EventType } from "@threa/types"
 
 // Cached entity types - mirror backend domain types
 
@@ -39,17 +40,6 @@ export interface CachedStream {
   lastReadEventId?: string | null
   _cachedAt: number
 }
-
-export type EventType =
-  | "message_created"
-  | "message_edited"
-  | "message_deleted"
-  | "reaction_added"
-  | "reaction_removed"
-  | "member_joined"
-  | "member_left"
-  | "thread_created"
-  | "companion_response"
 
 export interface CachedEvent {
   id: string

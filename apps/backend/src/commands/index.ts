@@ -1,21 +1,23 @@
 /**
  * Command infrastructure for slash commands.
  *
- * Commands are registered with the CommandRegistry and executed via the
- * command listener when users send messages starting with /.
+ * Commands are registered with the CommandRegistry and executed via
+ * the job queue when dispatched from the command endpoint.
  */
 
 import { logger } from "../lib/logger"
 
 export interface CommandContext {
-  /** Workspace the command was sent in */
+  /** Unique ID for this command execution */
+  commandId: string
+  /** Command name (e.g., "simulate") */
+  commandName: string
+  /** Workspace the command was dispatched in */
   workspaceId: string
-  /** Stream the command was sent in */
+  /** Stream the command was dispatched in */
   streamId: string
-  /** User who sent the command */
+  /** User who dispatched the command */
   userId: string
-  /** Original message ID (for deletion after execution) */
-  messageId: string
   /** Arguments after the command name */
   args: string
 }
@@ -25,8 +27,8 @@ export interface CommandResult {
   success: boolean
   /** Error message if success is false */
   error?: string
-  /** If false, keep the command message instead of deleting it (default: true) */
-  deleteMessage?: boolean
+  /** Optional result data to include in the completion event */
+  result?: unknown
 }
 
 export interface Command {

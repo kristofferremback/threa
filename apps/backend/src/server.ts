@@ -45,6 +45,7 @@ import {
 import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
+import { createCommandWorker } from "./workers/command-worker"
 import { CompanionAgent } from "./agents/companion-agent"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
@@ -96,9 +97,36 @@ export async function startServer(): Promise<ServerInstance> {
   const embeddingService = new EmbeddingService({ providerRegistry })
   const searchService = new SearchService({ pool, embeddingService })
 
+  // Job queue for durable background work (companion responses, etc.)
+  const jobQueue = createJobQueue(pool)
+
+  // Create message helper for agents
+  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
+
+  // Simulation agent - needed for SimulateCommand
+  const simulationAgent = new SimulationAgent({
+    pool,
+    providerRegistry,
+    streamService,
+    checkpointer,
+    createMessage,
+    orchestratorModel: config.ai.namingModel,
+  })
+
+  // Command infrastructure - created early for route registration
+  const commandRegistry = new CommandRegistry()
+  const simulateCommand = new SimulateCommand({
+    pool,
+    providerRegistry,
+    simulationAgent,
+    parsingModel: config.ai.namingModel,
+  })
+  commandRegistry.register(simulateCommand)
+
   const app = createApp()
 
   registerRoutes(app, {
+    pool,
     authService,
     userService,
     workspaceService,
@@ -108,6 +136,8 @@ export async function startServer(): Promise<ServerInstance> {
     searchService,
     conversationService,
     s3Config: config.s3,
+    commandRegistry,
+    jobQueue,
   })
 
   app.use(errorHandler)
@@ -126,13 +156,9 @@ export async function startServer(): Promise<ServerInstance> {
 
   registerSocketHandlers(io, { authService, userService, streamService, workspaceService })
 
-  // Job queue for durable background work (companion responses, etc.)
-  const jobQueue = createJobQueue(pool)
   const serverId = `server_${ulid()}`
 
   // Create companion agent and register worker
-  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
-
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()
     : new LangGraphResponseGenerator({ modelRegistry: providerRegistry, checkpointer })
@@ -169,33 +195,19 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_PROCESS, memoBatchProcessWorker)
 
-  // Simulation agent and worker for /simulate command
-  const simulationAgent = new SimulationAgent({
-    pool,
-    providerRegistry,
-    streamService,
-    checkpointer,
-    createMessage,
-    orchestratorModel: config.ai.namingModel, // reuse the cheap model for orchestration
-  })
+  // Simulation worker - for non-command invocations (e.g., API or scheduled runs)
+  // Note: /simulate command runs the agent inline via SimulateCommand
   const simulationWorker = createSimulationWorker({ agent: simulationAgent })
   jobQueue.registerHandler(JobQueues.SIMULATE_RUN, simulationWorker)
+
+  // Command execution worker
+  const commandWorker = createCommandWorker({ pool, commandRegistry })
+  jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
 
   await jobQueue.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
   await scheduleMemoBatchCheck(jobQueue)
-
-  // Command infrastructure
-  const commandRegistry = new CommandRegistry()
-  const simulateCommand = new SimulateCommand({
-    pool,
-    jobQueue,
-    providerRegistry,
-    streamService,
-    parsingModel: config.ai.namingModel, // reuse the cheap naming model for parsing
-  })
-  commandRegistry.register(simulateCommand)
 
   // Outbox listeners
   const broadcastListener = createBroadcastListener(pool, io)

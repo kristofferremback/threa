@@ -51,6 +51,9 @@ export const EVENT_TYPES = [
   "member_left",
   "thread_created",
   "companion_response",
+  "command_dispatched",
+  "command_completed",
+  "command_failed",
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 

@@ -7,8 +7,9 @@ export type {
   CachedUser,
   PendingMessage,
   SyncCursor,
-  EventType,
   DraftScratchpad,
   DraftMessage,
   DraftAttachment,
 } from "./database"
+// Re-export EventType from the shared types package
+export type { EventType } from "@threa/types"

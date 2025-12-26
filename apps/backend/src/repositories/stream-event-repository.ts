@@ -24,6 +24,9 @@ export type EventType =
   | "member_left"
   | "thread_created"
   | "companion_response"
+  | "command_dispatched"
+  | "command_completed"
+  | "command_failed"
 
 export interface StreamEvent {
   id: string

@@ -30,6 +30,9 @@ export type OutboxEventType =
   | "conversation:updated"
   | "memo:created"
   | "memo:revised"
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -165,6 +168,26 @@ export interface MemoRevisedOutboxPayload extends WorkspaceScopedPayload {
   revisionReason: string
 }
 
+// Author-scoped event payloads (only visible to the author)
+export interface CommandDispatchedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+  authorId: string
+}
+
+export interface CommandCompletedOutboxPayload extends StreamScopedPayload {
+  commandId: string
+  authorId: string
+  event: StreamEvent
+  result?: unknown
+}
+
+export interface CommandFailedOutboxPayload extends StreamScopedPayload {
+  commandId: string
+  authorId: string
+  event: StreamEvent
+  error: string
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -187,6 +210,9 @@ export interface OutboxEventPayloadMap {
   "conversation:updated": ConversationUpdatedOutboxPayload
   "memo:created": MemoCreatedOutboxPayload
   "memo:revised": MemoRevisedOutboxPayload
+  "command:dispatched": CommandDispatchedOutboxPayload
+  "command:completed": CommandCompletedOutboxPayload
+  "command:failed": CommandFailedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -235,6 +261,19 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
  */
 export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<StreamScopedEventType> {
   return STREAM_SCOPED_EVENTS.includes(event.eventType as StreamScopedEventType)
+}
+
+/** Events that are author-scoped (only visible to the author) */
+export type AuthorScopedEventType = "command:dispatched" | "command:completed" | "command:failed"
+
+const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = ["command:dispatched", "command:completed", "command:failed"]
+
+/**
+ * Type guard to check if an event is author-scoped (only visible to the author).
+ * These events are emitted only to sockets belonging to the author.
+ */
+export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<AuthorScopedEventType> {
+  return AUTHOR_SCOPED_EVENTS.includes(event.eventType as AuthorScopedEventType)
 }
 
 interface OutboxRow {

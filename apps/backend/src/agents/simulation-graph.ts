@@ -142,9 +142,13 @@ function getCallbacks(config: RunnableConfig): SimulationGraphCallbacks {
 
 /**
  * Strip markdown code fences from LLM output.
+ * Handles: leading whitespace, ```json or ```, missing closing fence.
  */
 async function stripMarkdownFences({ text }: { text: string }): Promise<string> {
-  return text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")
+  return text
+    .replace(/^\s*```(?:json)?\s*\n?/i, "") // Opening fence with any leading whitespace
+    .replace(/\n?```\s*$/i, "") // Closing fence if present
+    .trim()
 }
 
 /**

@@ -2,6 +2,8 @@ import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { MessageComposer } from "@/components/composer"
+import { commandsApi } from "@/api"
+import { isCommand } from "@/lib/commands"
 
 interface MessageInputProps {
   workspaceId: string
@@ -23,6 +25,30 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     setError(null)
 
     const trimmed = composer.content.trim()
+
+    // Detect slash commands and dispatch them instead of sending as messages
+    if (isCommand(trimmed)) {
+      // Clear input immediately for responsiveness
+      composer.setContent("")
+      composer.clearDraft()
+
+      try {
+        const result = await commandsApi.dispatch(workspaceId, {
+          command: trimmed,
+          streamId,
+        })
+
+        if (!result.success) {
+          setError(result.error)
+        }
+      } catch {
+        setError("Failed to dispatch command. Please try again.")
+      } finally {
+        composer.setIsSending(false)
+      }
+      return
+    }
+
     const attachmentIds = composer.uploadedIds
     // Capture full attachment info BEFORE clearing for optimistic UI
     const attachments = composer.pendingAttachments
@@ -51,7 +77,7 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
     } finally {
       composer.setIsSending(false)
     }
-  }, [composer, sendMessage, navigate])
+  }, [composer, sendMessage, navigate, workspaceId, streamId])
 
   return (
     <div className="border-t p-4">

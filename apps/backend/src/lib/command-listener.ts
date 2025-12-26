@@ -4,6 +4,7 @@ import { CommandRegistry, parseCommand } from "../commands"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
 import type { EventService } from "../services/event-service"
 import { AuthorTypes } from "@threa/types"
+import { commandId as generateCommandId } from "./id"
 import { logger } from "./logger"
 
 interface MessageCreatedEventPayload {
@@ -71,38 +72,42 @@ export function createCommandListener(
         return
       }
 
-      logger.info({ command: parsed.name, streamId, messageId: eventPayload.messageId }, "Executing command")
+      // This is a backwards-compatibility fallback. New commands should go through
+      // the /commands/dispatch endpoint which avoids the message flash.
+      logger.warn(
+        { command: parsed.name, streamId, messageId: eventPayload.messageId },
+        "[DEPRECATED] Command detected via message. Use /commands/dispatch endpoint instead."
+      )
+
+      const commandId = generateCommandId()
 
       // Execute the command
       const result = await command.execute({
+        commandId,
+        commandName: parsed.name,
         workspaceId,
         streamId,
         userId: event.actorId!,
-        messageId: eventPayload.messageId,
         args: parsed.args,
       })
 
-      if (result.success) {
-        // Delete the command message unless command opted to keep it (e.g., for threading)
-        const shouldDelete = result.deleteMessage !== false
-        if (shouldDelete) {
-          await eventService.deleteMessage({
-            workspaceId,
-            streamId,
-            messageId: eventPayload.messageId,
-            actorId: event.actorId!,
-          })
-        }
+      // Always delete the command message to minimize flash visibility
+      await eventService.deleteMessage({
+        workspaceId,
+        streamId,
+        messageId: eventPayload.messageId,
+        actorId: event.actorId!,
+      })
 
+      if (result.success) {
         logger.info(
-          { command: parsed.name, streamId, messageId: eventPayload.messageId, deleted: shouldDelete },
-          shouldDelete ? "Command executed and message deleted" : "Command executed, message kept"
+          { command: parsed.name, commandId, streamId, messageId: eventPayload.messageId },
+          "Command executed via fallback listener"
         )
       } else {
-        // Leave the message visible for debugging
         logger.warn(
-          { command: parsed.name, error: result.error, streamId, messageId: eventPayload.messageId },
-          "Command execution failed"
+          { command: parsed.name, commandId, error: result.error, streamId, messageId: eventPayload.messageId },
+          "Command execution failed via fallback listener"
         )
       }
     },

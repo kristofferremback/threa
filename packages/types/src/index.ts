@@ -87,4 +87,12 @@ export type {
   WorkspaceBootstrap,
   // Emojis
   EmojiEntry,
+  // Commands
+  CommandInfo,
+  DispatchCommandInput,
+  DispatchCommandResponse,
+  DispatchCommandError,
+  CommandDispatchedPayload,
+  CommandCompletedPayload,
+  CommandFailedPayload,
 } from "./api"
