@@ -32,6 +32,7 @@ export interface User {
   id: string
   email: string
   name: string
+  slug: string
   workosUserId: string | null
   timezone: string | null
   locale: string | null

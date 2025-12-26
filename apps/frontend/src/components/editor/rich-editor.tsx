@@ -1,9 +1,10 @@
-import { useRef, useState, useEffect, useCallback } from "react"
+import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors } from "./editor-behaviors"
 import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
 import { EditorToolbar } from "./editor-toolbar"
+import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion } from "./triggers"
 import { cn } from "@/lib/utils"
 
 interface RichEditorProps {
@@ -32,6 +33,23 @@ export function RichEditor({
   const [, forceUpdate] = useState(0)
   const isInternalUpdate = useRef(false)
 
+  // Mention, channel, and command autocomplete
+  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion()
+  const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
+  const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
+  const extensions = useMemo(
+    () => [
+      ...createEditorExtensions({
+        placeholder,
+        mentionSuggestion: mentionConfig,
+        channelSuggestion: channelConfig,
+        commandSuggestion: commandConfig,
+      }),
+      EditorBehaviors,
+    ],
+    [placeholder, mentionConfig, channelConfig, commandConfig]
+  )
+
   // Debounced toolbar visibility - stays visible 150ms after conditions become false
   const shouldBeVisible = isFocused || linkPopoverOpen || dropdownOpen
   useEffect(() => {
@@ -54,7 +72,7 @@ export function RichEditor({
   }, [shouldBeVisible])
 
   const editor = useEditor({
-    extensions: [...createEditorExtensions(placeholder), EditorBehaviors],
+    extensions,
     content: parseMarkdown(value),
     editable: !disabled,
     onUpdate: ({ editor }) => {
@@ -164,6 +182,9 @@ export function RichEditor({
       >
         <EditorContent editor={editor} />
       </div>
+      {renderMentionList()}
+      {renderChannelList()}
+      {renderCommandList()}
     </div>
   )
 }

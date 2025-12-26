@@ -17,6 +17,7 @@ function createUser(overrides: Partial<User> = {}): User {
     id: "usr_123",
     email: "test@example.com",
     name: "Test User",
+    slug: "test-user",
     workosUserId: null,
     timezone: null,
     locale: null,

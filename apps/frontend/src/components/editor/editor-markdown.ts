@@ -78,6 +78,19 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
   return nodes
     .map((node) => {
       if (node.type === "hardBreak") return "\n"
+
+      // Mention node - serialize to @slug format
+      if (node.type === "mention") {
+        const slug = node.attrs?.slug as string
+        return slug ? `@${slug}` : ""
+      }
+
+      // Channel link node - serialize to #slug format
+      if (node.type === "channelLink") {
+        const slug = node.attrs?.slug as string
+        return slug ? `#${slug}` : ""
+      }
+
       if (node.type !== "text") return ""
 
       let text = node.text ?? ""
@@ -247,8 +260,10 @@ function parseInlineMarkdown(text: string): JSONContent[] {
   //   6-7:  Italic   *text*          → groups: full, text (with negative lookahead/behind for **)
   //   8-9:  Strike   ~~text~~        → groups: full, text
   //   10-11: Code    `text`          → groups: full, text
+  //   12-13: Mention @slug           → groups: full, slug
+  //   14-15: Channel #slug           → groups: full, slug
   const inlinePattern =
-    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)/g
+    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
 
   let lastIndex = 0
   let match
@@ -327,6 +342,20 @@ function parseInlineMarkdown(text: string): JSONContent[] {
         type: "text",
         text: match[11],
         marks: [{ type: "code" }],
+      })
+    } else if (match[12]) {
+      // Mention: @slug
+      const slug = match[13]
+      result.push({
+        type: "mention",
+        attrs: { id: slug, slug, name: slug, mentionType: "user" },
+      })
+    } else if (match[14]) {
+      // Channel: #slug
+      const slug = match[15]
+      result.push({
+        type: "channelLink",
+        attrs: { id: slug, slug, name: slug },
       })
     }
 
