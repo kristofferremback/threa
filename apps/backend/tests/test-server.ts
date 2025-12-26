@@ -124,6 +124,7 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"
   process.env.USE_STUB_COMPANION = "true"
+  process.env.USE_STUB_BOUNDARY_EXTRACTION = "true"
 
   // S3/MinIO configuration for file upload tests
   // Use a test-specific bucket name to avoid conflicts with local development

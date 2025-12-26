@@ -31,6 +31,7 @@ export interface Config {
   databaseUrl: string
   useStubAuth: boolean
   useStubCompanion: boolean
+  useStubBoundaryExtraction: boolean
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
@@ -52,12 +53,14 @@ export function loadConfig(): Config {
   }
 
   const useStubCompanion = process.env.USE_STUB_COMPANION === "true"
+  const useStubBoundaryExtraction = process.env.USE_STUB_BOUNDARY_EXTRACTION === "true"
 
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
     useStubAuth,
     useStubCompanion,
+    useStubBoundaryExtraction,
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",
@@ -85,6 +88,10 @@ export function loadConfig(): Config {
 
   if (useStubCompanion) {
     logger.warn("Using stub companion service - NOT FOR PRODUCTION")
+  }
+
+  if (useStubBoundaryExtraction) {
+    logger.warn("Using stub boundary extraction - NOT FOR PRODUCTION")
   }
 
   return config

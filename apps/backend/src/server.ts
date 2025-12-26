@@ -40,6 +40,7 @@ import {
   scheduleMemoBatchCheck,
 } from "./workers/memo-batch-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
+import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { CompanionAgent } from "./agents/companion-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -142,7 +143,9 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.EMBEDDING_GENERATE, embeddingWorker)
 
   // Boundary extraction
-  const boundaryExtractor = new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
+  const boundaryExtractor = config.useStubBoundaryExtraction
+    ? new StubBoundaryExtractor()
+    : new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
