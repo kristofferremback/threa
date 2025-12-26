@@ -1,4 +1,4 @@
-import { generateObject } from "ai"
+import { generateObject, NoObjectGeneratedError } from "ai"
 import { z } from "zod"
 import type { ProviderRegistry } from "../ai/provider-registry"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
@@ -76,16 +76,35 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
     const prompt = this.buildPrompt(context)
 
     const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
-      system: SYSTEM_PROMPT,
-      prompt,
-      schema: extractionResponseSchema,
-      maxOutputTokens: 500,
-      temperature: 0.2,
-    })
 
-    return this.validateResult(result.object, context)
+    try {
+      const result = await generateObject({
+        model,
+        system: SYSTEM_PROMPT,
+        prompt,
+        schema: extractionResponseSchema,
+        maxOutputTokens: 500,
+        temperature: 0.2,
+      })
+
+      return this.validateResult(result.object, context)
+    } catch (error) {
+      // Handle parsing errors gracefully - LLMs sometimes return JSON wrapped in markdown
+      // This is NOT a silent fallback per INV-11: we log the error and only handle this
+      // specific error type. API errors, rate limits, etc. still propagate for retry.
+      if (error instanceof NoObjectGeneratedError) {
+        logger.warn(
+          { error: error.message, text: error.text?.slice(0, 200) },
+          "LLM returned unparseable response, treating as new conversation"
+        )
+        return {
+          conversationId: null,
+          newConversationTopic: this.truncateAsTopic(context.newMessage),
+          confidence: 0.5,
+        }
+      }
+      throw error
+    }
   }
 
   private handleThreadMessage(context: ExtractionContext): ExtractionResult {

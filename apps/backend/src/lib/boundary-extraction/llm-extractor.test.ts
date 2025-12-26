@@ -14,6 +14,8 @@ import { LLMBoundaryExtractor } from "./llm-extractor"
 import type { ExtractionContext, ConversationSummary } from "./types"
 import type { Message } from "../../repositories/message-repository"
 
+import { NoObjectGeneratedError } from "ai"
+
 // Mock the ai module's generateObject function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockGenerateObject = mock(
@@ -23,6 +25,7 @@ const mockGenerateObject = mock(
 )
 mock.module("ai", () => ({
   generateObject: mockGenerateObject,
+  NoObjectGeneratedError,
 }))
 
 // Mock provider registry
@@ -193,7 +196,7 @@ describe("LLMBoundaryExtractor", () => {
   })
 
   describe("error handling", () => {
-    test("propagates LLM errors for retry handling", async () => {
+    test("propagates API errors for retry handling", async () => {
       const context = createMockContext({
         newMessage: createMockMessage({ content: "Error fallback topic" }),
       })
@@ -201,6 +204,25 @@ describe("LLMBoundaryExtractor", () => {
       mockGenerateObject.mockRejectedValueOnce(new Error("API error"))
 
       await expect(extractor.extract(context)).rejects.toThrow("API error")
+    })
+
+    test("handles NoObjectGeneratedError gracefully with new conversation", async () => {
+      const context = createMockContext({
+        newMessage: createMockMessage({ content: "Parsing error topic here" }),
+      })
+
+      // Simulate LLM returning unparseable response (e.g., JSON wrapped in markdown)
+      const parseError = new NoObjectGeneratedError({
+        message: "No object generated",
+        text: "```json\n{...}\n```",
+      })
+      mockGenerateObject.mockRejectedValueOnce(parseError)
+
+      const result = await extractor.extract(context)
+
+      expect(result.conversationId).toBeNull()
+      expect(result.newConversationTopic).toBe("Parsing error topic here")
+      expect(result.confidence).toBe(0.5)
     })
 
     test("treats invalid conversation ID as new conversation", async () => {

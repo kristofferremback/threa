@@ -61,6 +61,7 @@ export interface InsertMemoParams {
   tags?: string[]
   parentMemoId?: string
   status?: MemoStatus
+  version?: number
 }
 
 export interface UpdateMemoParams {
@@ -162,12 +163,19 @@ export const MemoRepository = {
     const limit = options?.limit ?? 50
     const orderBy = options?.orderBy === "updatedAt" ? "updated_at" : "created_at"
 
+    // Use UNION to fetch both:
+    // 1. Conversation memos (via source_conversation_id -> conversations.stream_id)
+    // 2. Message memos (via source_message_id -> messages.stream_id)
     if (options?.status) {
       const result = await client.query<MemoRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
         JOIN conversations c ON m.source_conversation_id = c.id
         WHERE c.stream_id = ${streamId} AND m.status = ${options.status}
-        ORDER BY m.${sql.raw(orderBy)} DESC
+        UNION
+        SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
+        JOIN messages msg ON m.source_message_id = msg.id
+        WHERE msg.stream_id = ${streamId} AND m.status = ${options.status}
+        ORDER BY ${sql.raw(orderBy)} DESC
         LIMIT ${limit}
       `)
       return result.rows.map(mapRowToMemo)
@@ -177,7 +185,11 @@ export const MemoRepository = {
       SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
       JOIN conversations c ON m.source_conversation_id = c.id
       WHERE c.stream_id = ${streamId}
-      ORDER BY m.${sql.raw(orderBy)} DESC
+      UNION
+      SELECT ${sql.raw(SELECT_FIELDS_PREFIXED)} FROM memos m
+      JOIN messages msg ON m.source_message_id = msg.id
+      WHERE msg.stream_id = ${streamId}
+      ORDER BY ${sql.raw(orderBy)} DESC
       LIMIT ${limit}
     `)
     return result.rows.map(mapRowToMemo)
@@ -217,7 +229,7 @@ export const MemoRepository = {
       INSERT INTO memos (
         id, workspace_id, memo_type, source_message_id, source_conversation_id,
         title, abstract, key_points, source_message_ids, participant_ids,
-        knowledge_type, tags, parent_memo_id, status
+        knowledge_type, tags, parent_memo_id, status, version
       )
       VALUES (
         ${params.id},
@@ -233,7 +245,8 @@ export const MemoRepository = {
         ${params.knowledgeType},
         ${params.tags ?? []},
         ${params.parentMemoId ?? null},
-        ${params.status ?? "active"}
+        ${params.status ?? "active"},
+        ${params.version ?? 1}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)

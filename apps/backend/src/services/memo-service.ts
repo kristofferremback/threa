@@ -67,18 +67,39 @@ export class MemoService {
 
       let memosCreated = 0
       let memosRevised = 0
+      let itemsFailed = 0
 
       const messageItems = pending.filter((p) => p.itemType === "message")
       for (const item of messageItems) {
-        const result = await this.processMessage(client, item, memoryContext, existingTags, workspaceId)
-        if (result) memosCreated++
+        try {
+          const result = await this.processMessage(client, item, memoryContext, existingTags, workspaceId)
+          if (result) memosCreated++
+        } catch (error) {
+          itemsFailed++
+          logger.error({ error, messageId: item.itemId, workspaceId, streamId }, "Failed to process message for memo")
+        }
       }
 
       const convItems = pending.filter((p) => p.itemType === "conversation")
       for (const item of convItems) {
-        const result = await this.processConversation(client, item, memoryContext, existingTags, workspaceId)
-        if (result === "created") memosCreated++
-        if (result === "revised") memosRevised++
+        try {
+          const result = await this.processConversation(client, item, memoryContext, existingTags, workspaceId)
+          if (result === "created") memosCreated++
+          if (result === "revised") memosRevised++
+        } catch (error) {
+          itemsFailed++
+          logger.error(
+            { error, conversationId: item.itemId, workspaceId, streamId },
+            "Failed to process conversation for memo"
+          )
+        }
+      }
+
+      if (itemsFailed > 0) {
+        logger.warn(
+          { workspaceId, streamId, itemsFailed, totalItems: pending.length },
+          "Some items failed during memo batch processing"
+        )
       }
 
       await PendingItemRepository.markProcessed(
@@ -298,9 +319,6 @@ export class MemoService {
       knowledgeType: existingMemo.knowledgeType,
       tags: content.tags,
       status: MemoStatuses.ACTIVE,
-    })
-
-    await MemoRepository.update(client, newMemo.id, {
       version: existingMemo.version + 1,
     })
 
