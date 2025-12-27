@@ -4,6 +4,7 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
+import { AgentToolNames } from "@threa/types"
 import { logger } from "../lib/logger"
 import type { SourceItem, SendMessageInputWithSources, SendMessageResult } from "./tools"
 
@@ -338,7 +339,7 @@ function routeAfterFinalCheck(state: CompanionStateType): "agent" | "synthesize"
 
   // Check if web_search was used - if so, route through synthesis for citations
   const usedWebSearch = state.messages.some(
-    (m) => m instanceof AIMessage && m.tool_calls?.some((tc) => tc.name === "web_search")
+    (m) => m instanceof AIMessage && m.tool_calls?.some((tc) => tc.name === AgentToolNames.WEB_SEARCH)
   )
 
   logger.debug({ usedWebSearch, messageCount: state.messages.length }, "routeAfterFinalCheck decision")
@@ -351,6 +352,7 @@ function routeAfterFinalCheck(state: CompanionStateType): "agent" | "synthesize"
  */
 function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; url: string }> {
   const sources: Array<{ title: string; url: string }> = []
+  const seenUrls = new Set<string>()
 
   for (const msg of messages) {
     if (!(msg instanceof ToolMessage)) continue
@@ -359,7 +361,8 @@ function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; u
       const content = JSON.parse(msg.content as string)
       if (content.results && Array.isArray(content.results)) {
         for (const result of content.results) {
-          if (result.title && result.url) {
+          if (result.title && result.url && !seenUrls.has(result.url)) {
+            seenUrls.add(result.url)
             sources.push({ title: result.title, url: result.url })
           }
         }

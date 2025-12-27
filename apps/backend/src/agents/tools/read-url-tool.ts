@@ -21,6 +21,46 @@ const FETCH_TIMEOUT_MS = 30000
 const nhm = new NodeHtmlMarkdown()
 
 /**
+ * Validates that a URL is safe to fetch (not internal/private network).
+ * Returns error message if blocked, null if allowed.
+ */
+function validateUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return `Unsupported protocol: ${parsed.protocol}. Only HTTP and HTTPS are allowed.`
+    }
+
+    const hostname = parsed.hostname.toLowerCase()
+
+    // Block localhost
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return "Access to localhost is not allowed."
+    }
+
+    // Block private IP ranges (RFC 1918)
+    if (hostname.match(/^10\./) || hostname.match(/^192\.168\./) || hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./)) {
+      return "Access to private network addresses is not allowed."
+    }
+
+    // Block link-local and cloud metadata endpoints
+    if (hostname.match(/^169\.254\./)) {
+      return "Access to link-local addresses is not allowed."
+    }
+
+    // Block common internal hostnames
+    if (hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".localhost")) {
+      return "Access to internal hostnames is not allowed."
+    }
+
+    return null
+  } catch {
+    return "Invalid URL format."
+  }
+}
+
+/**
  * Creates a read_url tool for the agent to fetch full page content.
  *
  * Uses native fetch and converts HTML to markdown using node-html-markdown.
@@ -32,6 +72,15 @@ export function createReadUrlTool() {
       "Fetch and read the full content of a web page. Use this after web_search when you need more detail than the snippet provides, or when the user shares a specific URL to analyze.",
     schema: ReadUrlSchema,
     func: async (input: ReadUrlInput) => {
+      const validationError = validateUrl(input.url)
+      if (validationError) {
+        logger.warn({ url: input.url, reason: validationError }, "URL blocked by SSRF protection")
+        return JSON.stringify({
+          error: validationError,
+          url: input.url,
+        })
+      }
+
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
@@ -108,6 +157,6 @@ export function createReadUrlTool() {
 }
 
 function extractTitle(html: string): string {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-  return titleMatch ? titleMatch[1].trim() : "Untitled"
+  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i)
+  return titleMatch?.[1]?.trim() || "Untitled"
 }

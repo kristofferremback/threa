@@ -152,4 +152,78 @@ describe("read-url-tool", () => {
 
     expect(parsed.error).toContain("timed out")
   })
+
+  describe("SSRF protection", () => {
+    it("should block localhost", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://localhost/admin" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("localhost is not allowed")
+    })
+
+    it("should block 127.0.0.1", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://127.0.0.1:8080/secret" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("localhost is not allowed")
+    })
+
+    it("should block private 10.x.x.x addresses", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://10.0.0.1/internal" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private network")
+    })
+
+    it("should block private 192.168.x.x addresses", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://192.168.1.1/router" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private network")
+    })
+
+    it("should block private 172.16-31.x.x addresses", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://172.16.0.1/internal" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private network")
+    })
+
+    it("should block cloud metadata endpoints (169.254.x.x)", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://169.254.169.254/latest/meta-data/" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("link-local")
+    })
+
+    it("should block .local hostnames", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://internal-service.local/api" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("internal hostnames")
+    })
+
+    it("should block .internal hostnames", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://db.internal:5432/" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("internal hostnames")
+    })
+
+    it("should block non-HTTP protocols", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "file:///etc/passwd" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("Unsupported protocol")
+    })
+  })
 })
