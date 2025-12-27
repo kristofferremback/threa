@@ -242,10 +242,100 @@ function routeAfterNewMessageCheck(state: CompanionStateType): "agent" | "tools"
 /**
  * Determine routing after check_final_messages node.
  * - If new messages found → agent (handle them)
- * - If no new messages → ensure_response
+ * - If web search was used → synthesize (format response with citations)
+ * - Otherwise → ensure_response
  */
-function routeAfterFinalCheck(state: CompanionStateType): "agent" | "ensure_response" {
-  return state.hasNewMessages ? "agent" : "ensure_response"
+function routeAfterFinalCheck(state: CompanionStateType): "agent" | "synthesize" | "ensure_response" {
+  if (state.hasNewMessages) return "agent"
+
+  // Check if web_search was used - if so, route through synthesis for citations
+  const usedWebSearch = state.messages.some(
+    (m) => m instanceof AIMessage && m.tool_calls?.some((tc) => tc.name === "web_search")
+  )
+
+  return usedWebSearch ? "synthesize" : "ensure_response"
+}
+
+/**
+ * Extract sources from web_search tool results in the message history.
+ */
+function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; url: string }> {
+  const sources: Array<{ title: string; url: string }> = []
+
+  for (const msg of messages) {
+    if (!(msg instanceof ToolMessage)) continue
+
+    try {
+      const content = JSON.parse(msg.content as string)
+      if (content.results && Array.isArray(content.results)) {
+        for (const result of content.results) {
+          if (result.title && result.url) {
+            sources.push({ title: result.title, url: result.url })
+          }
+        }
+      }
+    } catch {
+      // Not JSON or not a search result, skip
+    }
+  }
+
+  return sources
+}
+
+/**
+ * Create the synthesize node.
+ * When web search was used, this node prompts the model to write a response
+ * that properly cites the sources found.
+ */
+function createSynthesizeNode(model: ChatOpenAI) {
+  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+    // Extract sources from search results
+    const sources = extractSearchSources(state.messages)
+
+    if (sources.length === 0) {
+      // No sources found, skip synthesis
+      return {}
+    }
+
+    // Build synthesis prompt
+    const sourcesText = sources.map((s) => `- [${s.title}](${s.url})`).join("\n")
+
+    const synthesisPrompt = `Based on the search results above, write a helpful response to the user's question.
+
+IMPORTANT: You must include citations to the sources you used. Format citations as markdown links inline in your text, like this: [Source Title](URL).
+
+At the end of your response, include a "Sources:" section listing the references you cited.
+
+Available sources:
+${sourcesText}
+
+Write your response now:`
+
+    // Call model with synthesis prompt
+    const response = await model.invoke([
+      new SystemMessage(state.systemPrompt),
+      ...state.messages,
+      new HumanMessage(synthesisPrompt),
+    ])
+
+    // Extract synthesized response
+    let synthesizedText: string
+    if (typeof response.content === "string") {
+      synthesizedText = response.content
+    } else if (Array.isArray(response.content)) {
+      synthesizedText = response.content
+        .filter((c): c is { type: "text"; text: string } => c.type === "text")
+        .map((c) => c.text)
+        .join("")
+    } else {
+      synthesizedText = ""
+    }
+
+    return {
+      finalResponse: synthesizedText,
+      iteration: 1, // Increment via reducer
+    }
+  }
 }
 
 /**
@@ -290,10 +380,11 @@ function createEnsureResponseNode(tools: StructuredToolInterface[]) {
  *                                                    → no → tools → agent
  *                     → no → check_final_messages → (new messages?)
  *                                                    → yes → agent
- *                                                    → no → ensure_response → END
+ *                                                    → (used web_search?) → yes → synthesize → ensure_response → END
+ *                                                                         → no → ensure_response → END
  *
- * The ensure_response node guarantees we always send at least one message,
- * even if the model forgets to call send_message after using other tools.
+ * The synthesize node formats responses with proper source citations when web search was used.
+ * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
@@ -301,12 +392,14 @@ export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInt
     .addNode("check_new_messages", createCheckNewMessagesNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
+    .addNode("synthesize", createSynthesizeNode(model))
     .addNode("ensure_response", createEnsureResponseNode(tools))
     .addEdge("__start__", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
     .addConditionalEdges("check_final_messages", routeAfterFinalCheck)
     .addEdge("tools", "agent")
+    .addEdge("synthesize", "ensure_response")
     .addEdge("ensure_response", END)
 
   return graph
