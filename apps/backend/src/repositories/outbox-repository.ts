@@ -22,6 +22,9 @@ export type OutboxEventType =
   | "stream:updated"
   | "stream:archived"
   | "stream:display_name_updated"
+  | "stream:read"
+  | "stream:read_all"
+  | "unread:increment"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -51,6 +54,7 @@ export type WorkspaceScopedEventType =
   | "stream:created"
   | "stream:updated"
   | "stream:archived"
+  | "unread:increment"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -140,6 +144,11 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
   user: User
 }
 
+export interface UnreadIncrementOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  authorId: string
+}
+
 // Conversation event payloads
 export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
   conversationId: string
@@ -184,6 +193,18 @@ export interface CommandFailedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
+// Read state event payloads (author-scoped - only visible to the user marking as read)
+export interface StreamReadOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamId: string
+  lastReadEventId: string
+}
+
+export interface StreamsReadAllOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamIds: string[]
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -198,6 +219,9 @@ export interface OutboxEventPayloadMap {
   "stream:updated": StreamUpdatedOutboxPayload
   "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+  "stream:read": StreamReadOutboxPayload
+  "stream:read_all": StreamsReadAllOutboxPayload
+  "unread:increment": UnreadIncrementOutboxPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
@@ -260,9 +284,20 @@ export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<St
 }
 
 /** Events that are author-scoped (only visible to the author) */
-export type AuthorScopedEventType = "command:dispatched" | "command:completed" | "command:failed"
+export type AuthorScopedEventType =
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
+  | "stream:read"
+  | "stream:read_all"
 
-const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = ["command:dispatched", "command:completed", "command:failed"]
+const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
+  "command:dispatched",
+  "command:completed",
+  "command:failed",
+  "stream:read",
+  "stream:read_all",
+]
 
 /**
  * Type guard to check if an event is author-scoped (only visible to the author).

@@ -8,6 +8,7 @@ import {
 } from "@threa/types"
 import { EventItem } from "./event-item"
 import { CommandEvent } from "./command-event"
+import { UnreadDivider } from "./unread-divider"
 import { useUser } from "@/auth"
 
 interface EventListProps {
@@ -16,6 +17,8 @@ interface EventListProps {
   workspaceId: string
   streamId: string
   highlightMessageId?: string | null
+  firstUnreadEventId?: string
+  isDividerFading?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -70,7 +73,15 @@ function groupTimelineItems(events: StreamEvent[], currentUserId: string | undef
   return result
 }
 
-export function EventList({ events, isLoading, workspaceId, streamId, highlightMessageId }: EventListProps) {
+export function EventList({
+  events,
+  isLoading,
+  workspaceId,
+  streamId,
+  highlightMessageId,
+  firstUnreadEventId,
+  isDividerFading,
+}: EventListProps) {
   const user = useUser()
 
   if (isLoading) {
@@ -94,20 +105,35 @@ export function EventList({ events, isLoading, workspaceId, streamId, highlightM
 
   const timelineItems = groupTimelineItems(events, user?.id)
 
+  // Helper to check if an item is the first unread event
+  const isFirstUnread = (item: TimelineItem): boolean => {
+    if (!firstUnreadEventId) return false
+    if (item.type === "command_group") {
+      return item.events[0]?.id === firstUnreadEventId
+    }
+    return item.event.id === firstUnreadEventId
+  }
+
   return (
     <div className="flex flex-col gap-1 p-4">
       {timelineItems.map((item) => {
-        if (item.type === "command_group") {
-          return <CommandEvent key={`cmd-${item.commandId}`} events={item.events} />
-        }
+        const showUnreadDivider = isFirstUnread(item)
+        const eventId = item.type === "command_group" ? item.commandId : item.event.id
+
         return (
-          <EventItem
-            key={item.event.id}
-            event={item.event}
-            workspaceId={workspaceId}
-            streamId={streamId}
-            highlightMessageId={highlightMessageId}
-          />
+          <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
+            {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
+            {item.type === "command_group" ? (
+              <CommandEvent events={item.events} />
+            ) : (
+              <EventItem
+                event={item.event}
+                workspaceId={workspaceId}
+                streamId={streamId}
+                highlightMessageId={highlightMessageId}
+              />
+            )}
+          </div>
         )
       })}
     </div>

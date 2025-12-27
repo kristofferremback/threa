@@ -192,4 +192,67 @@ export const StreamEventRepository = {
     }
     return map
   },
+
+  /**
+   * Count unread message_created events per stream for a user.
+   * Unread = events with sequence > lastReadEventId's sequence.
+   * If lastReadEventId is null, all messages in that stream are unread.
+   */
+  async countUnreadByStreamBatch(
+    client: PoolClient,
+    memberships: Array<{ streamId: string; lastReadEventId: string | null }>
+  ): Promise<Map<string, number>> {
+    if (memberships.length === 0) return new Map()
+
+    const streamIds = memberships.map((m) => m.streamId)
+    const lastReadEventIds = memberships.map((m) => m.lastReadEventId)
+
+    const result = await client.query<{ stream_id: string; unread_count: string }>(
+      `
+      WITH memberships AS (
+        SELECT
+          m.stream_id,
+          COALESCE(se.sequence, 0) as last_read_seq
+        FROM (
+          SELECT unnest($1::text[]) as stream_id, unnest($2::text[]) as last_read_event_id
+        ) m
+        LEFT JOIN stream_events se ON se.id = m.last_read_event_id
+      )
+      SELECT
+        m.stream_id,
+        COUNT(*) FILTER (WHERE e.sequence > m.last_read_seq)::text as unread_count
+      FROM memberships m
+      LEFT JOIN stream_events e ON e.stream_id = m.stream_id AND e.event_type = 'message_created'
+      GROUP BY m.stream_id
+    `,
+      [streamIds, lastReadEventIds]
+    )
+
+    const map = new Map<string, number>()
+    for (const row of result.rows) {
+      map.set(row.stream_id, parseInt(row.unread_count, 10))
+    }
+    return map
+  },
+
+  /**
+   * Get the latest event ID for multiple streams.
+   * Returns a map of streamId -> latestEventId
+   */
+  async getLatestEventIdByStreamBatch(client: PoolClient, streamIds: string[]): Promise<Map<string, string>> {
+    if (streamIds.length === 0) return new Map()
+
+    const result = await client.query<{ stream_id: string; latest_event_id: string }>(sql`
+      SELECT DISTINCT ON (stream_id) stream_id, id as latest_event_id
+      FROM stream_events
+      WHERE stream_id = ANY(${streamIds})
+      ORDER BY stream_id, sequence DESC
+    `)
+
+    const map = new Map<string, string>()
+    for (const row of result.rows) {
+      map.set(row.stream_id, row.latest_event_id)
+    }
+    return map
+  },
 }

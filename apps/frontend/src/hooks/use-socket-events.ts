@@ -1,10 +1,12 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { useParams } from "react-router-dom"
 import { useSocket } from "@/contexts"
+import { useAuth } from "@/auth"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { Stream, User, WorkspaceMember } from "@threa/types"
+import type { Stream, User, WorkspaceMember, WorkspaceBootstrap, StreamMember } from "@threa/types"
 
 interface StreamPayload {
   workspaceId: string
@@ -27,6 +29,25 @@ interface UserUpdatedPayload {
   user: User
 }
 
+interface StreamReadPayload {
+  workspaceId: string
+  authorId: string
+  streamId: string
+  lastReadEventId: string
+}
+
+interface StreamsReadAllPayload {
+  workspaceId: string
+  authorId: string
+  streamIds: string[]
+}
+
+interface UnreadIncrementPayload {
+  workspaceId: string
+  streamId: string
+  authorId: string
+}
+
 /**
  * Hook to handle Socket.io events for stream updates.
  * Joins the workspace room and listens for stream:created/updated/archived events.
@@ -35,6 +56,12 @@ interface UserUpdatedPayload {
 export function useSocketEvents(workspaceId: string) {
   const queryClient = useQueryClient()
   const socket = useSocket()
+  const { user } = useAuth()
+  const { streamId: currentStreamId } = useParams<{ streamId: string }>()
+
+  // Use ref to avoid stale closure in socket handlers
+  const currentStreamIdRef = useRef(currentStreamId)
+  currentStreamIdRef.current = currentStreamId
 
   useEffect(() => {
     if (!socket || !workspaceId) return
@@ -163,6 +190,74 @@ export function useSocketEvents(workspaceId: string) {
       db.users.put({ ...payload.user, _cachedAt: now })
     })
 
+    // Handle stream read (from other sessions of the same user)
+    socket.on("stream:read", (payload: StreamReadPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { unreadCounts?: Record<string, number> }
+        if (!bootstrap.unreadCounts) return old
+        return {
+          ...bootstrap,
+          unreadCounts: {
+            ...bootstrap.unreadCounts,
+            [payload.streamId]: 0,
+          },
+        }
+      })
+    })
+
+    // Handle all streams read (from other sessions of the same user)
+    socket.on("stream:read_all", (payload: StreamsReadAllPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { unreadCounts?: Record<string, number> }
+        if (!bootstrap.unreadCounts) return old
+
+        const newUnreadCounts = { ...bootstrap.unreadCounts }
+        for (const streamId of payload.streamIds) {
+          newUnreadCounts[streamId] = 0
+        }
+        return {
+          ...bootstrap,
+          unreadCounts: newUnreadCounts,
+        }
+      })
+    })
+
+    // Handle unread increment (when a new message is created in any stream)
+    socket.on("unread:increment", (payload: UnreadIncrementPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      // Skip if this is the current user's own message
+      if (user && payload.authorId === user.id) return
+
+      // Skip if user is currently viewing this stream (they'll see it immediately)
+      if (currentStreamIdRef.current === payload.streamId) return
+
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+
+        // Only increment if user is a member of this stream
+        const isMember = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
+        if (!isMember) return old
+
+        return {
+          ...old,
+          unreadCounts: {
+            ...old.unreadCounts,
+            [payload.streamId]: (old.unreadCounts[payload.streamId] ?? 0) + 1,
+          },
+        }
+      })
+    })
+
     return () => {
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
@@ -171,6 +266,9 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("workspace_member:added")
       socket.off("workspace_member:removed")
       socket.off("user:updated")
+      socket.off("stream:read")
+      socket.off("stream:read_all")
+      socket.off("unread:increment")
     }
-  }, [socket, workspaceId, queryClient])
+  }, [socket, workspaceId, queryClient, user])
 }

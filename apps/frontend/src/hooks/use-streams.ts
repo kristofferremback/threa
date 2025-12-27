@@ -77,6 +77,10 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       return bootstrap
     },
     enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId,
+    // Always refetch on mount to ensure fresh data when switching streams
+    // This overrides the global 30s staleTime since we may miss socket events
+    // when not subscribed to a stream's room
+    staleTime: 0,
   })
 }
 

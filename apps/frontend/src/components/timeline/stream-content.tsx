@@ -1,7 +1,15 @@
 import { useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap } from "@/hooks"
+import {
+  useEvents,
+  useStreamSocket,
+  useScrollBehavior,
+  useStreamBootstrap,
+  useAutoMarkAsRead,
+  useUnreadDivider,
+} from "@/hooks"
+import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { StreamTypes, type Stream } from "@threa/types"
 import { EventList } from "./event-list"
@@ -25,6 +33,7 @@ export function StreamContent({
   stream: streamFromProps,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
+  const user = useUser()
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -83,6 +92,20 @@ export function StreamContent({
     isFetchingMore: isFetchingOlder,
   })
 
+  // Auto-mark stream as read when viewing
+  const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
+  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
+
+  // Unread divider state management (also handles scroll-to-first-unread)
+  const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
+    events,
+    lastReadEventId: bootstrap?.membership?.lastReadEventId,
+    currentUserId: user?.id,
+    streamId,
+    isLoading,
+    highlightMessageId,
+  })
+
   if (error && !isDraft) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -125,6 +148,8 @@ export function StreamContent({
             workspaceId={workspaceId}
             streamId={streamId}
             highlightMessageId={highlightMessageId}
+            firstUnreadEventId={dividerEventId}
+            isDividerFading={isDividerFading}
           />
         )}
       </div>

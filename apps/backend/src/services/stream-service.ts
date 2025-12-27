@@ -3,6 +3,7 @@ import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
 import { StreamRepository, Stream } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
+import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { streamId } from "../lib/id"
@@ -398,10 +399,76 @@ export class StreamService {
     return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, userId, { muted }))
   }
 
-  async markAsRead(streamId: string, userId: string, eventId: string): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: eventId })
-    )
+  async markAsRead(
+    workspaceId: string,
+    streamId: string,
+    userId: string,
+    eventId: string
+  ): Promise<StreamMember | null> {
+    return withTransaction(this.pool, async (client) => {
+      const membership = await StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: eventId })
+      if (membership) {
+        await OutboxRepository.insert(client, "stream:read", {
+          workspaceId,
+          authorId: userId,
+          streamId,
+          lastReadEventId: eventId,
+        })
+      }
+      return membership
+    })
+  }
+
+  async markAllAsRead(workspaceId: string, userId: string): Promise<string[]> {
+    return withTransaction(this.pool, async (client) => {
+      // Get all memberships for this user in this workspace
+      const memberships = await StreamMemberRepository.list(client, { userId })
+
+      // Get all streams in this workspace to filter memberships
+      const streams = await StreamRepository.list(client, workspaceId)
+      const workspaceStreamIds = new Set(streams.map((s) => s.id))
+
+      // Filter to only memberships in this workspace
+      const workspaceMemberships = memberships.filter((m) => workspaceStreamIds.has(m.streamId))
+      if (workspaceMemberships.length === 0) return []
+
+      const streamIds = workspaceMemberships.map((m) => m.streamId)
+
+      // Get latest event ID for each stream
+      const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, streamIds)
+
+      // Build batch update map for streams that need updating
+      const updatesToApply = new Map<string, string>()
+      for (const [streamId, latestEventId] of latestEventIds.entries()) {
+        const membership = workspaceMemberships.find((m) => m.streamId === streamId)
+        if (membership && membership.lastReadEventId !== latestEventId) {
+          updatesToApply.set(streamId, latestEventId)
+        }
+      }
+
+      // Batch update all memberships in a single query
+      if (updatesToApply.size > 0) {
+        await StreamMemberRepository.batchUpdateLastReadEventId(client, userId, updatesToApply)
+      }
+
+      const updatedStreamIds = Array.from(updatesToApply.keys())
+
+      if (updatedStreamIds.length > 0) {
+        await OutboxRepository.insert(client, "stream:read_all", {
+          workspaceId,
+          authorId: userId,
+          streamIds: updatedStreamIds,
+        })
+      }
+
+      return updatedStreamIds
+    })
+  }
+
+  async getUnreadCounts(
+    memberships: Array<{ streamId: string; lastReadEventId: string | null }>
+  ): Promise<Map<string, number>> {
+    return withClient(this.pool, (client) => StreamEventRepository.countUnreadByStreamBatch(client, memberships))
   }
 
   /**

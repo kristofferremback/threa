@@ -50,7 +50,11 @@ const muteSchema = z.object({
   muted: z.boolean(),
 })
 
-export { createStreamSchema, updateStreamSchema, updateCompanionModeSchema, pinSchema, muteSchema }
+const markAsReadSchema = z.object({
+  lastEventId: z.string(),
+})
+
+export { createStreamSchema, updateStreamSchema, updateCompanionModeSchema, pinSchema, muteSchema, markAsReadSchema }
 
 interface Dependencies {
   streamService: StreamService
@@ -236,6 +240,29 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
       await streamService.validateStreamAccess(streamId, workspaceId, userId)
 
       const membership = await streamService.muteStream(streamId, userId, result.data.muted)
+      if (!membership) {
+        return res.status(404).json({ error: "Not a member of this stream" })
+      }
+
+      res.json({ membership })
+    },
+
+    async markAsRead(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const result = markAsReadSchema.safeParse(req.body)
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: z.flattenError(result.error).fieldErrors,
+        })
+      }
+
+      await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      const membership = await streamService.markAsRead(workspaceId, streamId, userId, result.data.lastEventId)
       if (!membership) {
         return res.status(404).json({ error: "Not a member of this stream" })
       }

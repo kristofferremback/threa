@@ -167,7 +167,16 @@ export class EventService {
         event: serializeBigInt(event),
       })
 
-      // 6. If this is a thread, update parent message's reply count
+      // 6. Publish unread increment to workspace room for sidebar updates
+      // This is workspace-scoped so all members receive it, then frontend filters
+      // by stream membership and excludes the author's own messages
+      await OutboxRepository.insert(client, "unread:increment", {
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        authorId: params.authorId,
+      })
+
+      // 7. If this is a thread, update parent message's reply count
       const stream = await StreamRepository.findById(client, params.streamId)
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)

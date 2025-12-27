@@ -88,6 +88,23 @@ export interface WorkspaceBootstrap {
   personas: Persona[]
   emojis: EmojiEntry[]
   commands: CommandInfo[]
+  unreadCounts: Record<string, number>
+}
+
+// ============================================================================
+// Read State API
+// ============================================================================
+
+export interface MarkAsReadInput {
+  lastEventId: string
+}
+
+export interface MarkAsReadResponse {
+  membership: StreamMember
+}
+
+export interface MarkAllAsReadResponse {
+  updatedStreamIds: string[]
 }
 
 // ============================================================================

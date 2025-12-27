@@ -7,6 +7,7 @@ export interface WorkspaceService {
   get: typeof workspacesApi.get
   bootstrap: typeof workspacesApi.bootstrap
   create: typeof workspacesApi.create
+  markAllAsRead: typeof workspacesApi.markAllAsRead
 }
 
 export interface StreamService {
@@ -17,6 +18,7 @@ export interface StreamService {
   update: typeof streamsApi.update
   archive: typeof streamsApi.archive
   getEvents: typeof streamsApi.getEvents
+  markAsRead: typeof streamsApi.markAsRead
 }
 
 export interface MessageService {
