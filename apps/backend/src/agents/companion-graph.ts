@@ -4,6 +4,7 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
+import { logger } from "../lib/logger"
 
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
@@ -253,6 +254,8 @@ function routeAfterFinalCheck(state: CompanionStateType): "agent" | "synthesize"
     (m) => m instanceof AIMessage && m.tool_calls?.some((tc) => tc.name === "web_search")
   )
 
+  logger.debug({ usedWebSearch, messageCount: state.messages.length }, "routeAfterFinalCheck decision")
+
   return usedWebSearch ? "synthesize" : "ensure_response"
 }
 
@@ -289,11 +292,16 @@ function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; u
  */
 function createSynthesizeNode(model: ChatOpenAI) {
   return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+    logger.debug("Synthesize node triggered")
+
     // Extract sources from search results
     const sources = extractSearchSources(state.messages)
 
+    logger.debug({ sourceCount: sources.length, sources }, "Extracted sources for synthesis")
+
     if (sources.length === 0) {
       // No sources found, skip synthesis
+      logger.warn("No sources found, skipping synthesis")
       return {}
     }
 
@@ -331,6 +339,11 @@ Write your response now:`
       synthesizedText = ""
     }
 
+    logger.info(
+      { synthesizedLength: synthesizedText.length, preview: synthesizedText.slice(0, 200) },
+      "Synthesis complete"
+    )
+
     return {
       finalResponse: synthesizedText,
       iteration: 1, // Increment via reducer
@@ -347,21 +360,30 @@ function createEnsureResponseNode(tools: StructuredToolInterface[]) {
   const sendMessageTool = tools.find((t) => t.name === "send_message")
 
   return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+    logger.debug(
+      { messagesSent: state.messagesSent, hasFinalResponse: !!state.finalResponse?.trim() },
+      "ensure_response node triggered"
+    )
+
     // Already sent messages - nothing to do
     if (state.messagesSent > 0) {
+      logger.debug("Messages already sent, skipping ensure_response")
       return {}
     }
 
     // No response content to send - edge case, nothing we can do
     if (!state.finalResponse?.trim()) {
+      logger.warn("No final response to send")
       return {}
     }
 
     // Force send the final response via the send_message tool
     if (sendMessageTool) {
+      logger.debug({ contentLength: state.finalResponse.length }, "Sending final response via send_message")
       const result = await sendMessageTool.invoke({ content: state.finalResponse })
       const parsed = JSON.parse(result as string)
       if (parsed.success) {
+        logger.info("ensure_response sent message successfully")
         return { messagesSent: state.messagesSent + 1 }
       }
     }
