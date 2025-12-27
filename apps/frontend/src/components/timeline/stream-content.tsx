@@ -1,7 +1,14 @@
-import { useMemo, useEffect, useRef, useState } from "react"
+import { useMemo, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap, useAutoMarkAsRead } from "@/hooks"
+import {
+  useEvents,
+  useStreamSocket,
+  useScrollBehavior,
+  useStreamBootstrap,
+  useAutoMarkAsRead,
+  useUnreadDivider,
+} from "@/hooks"
 import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { StreamTypes, type Stream } from "@threa/types"
@@ -89,65 +96,17 @@ export function StreamContent({
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
 
-  // Calculate first unread event from another user for the "New" divider
-  const lastReadEventId = bootstrap?.membership?.lastReadEventId
-  const firstUnreadEventId = useMemo(() => {
-    if (events.length === 0) return undefined
-
-    // Find events after lastReadEventId that are from other users
-    const startIndex = lastReadEventId ? events.findIndex((e) => e.id === lastReadEventId) + 1 : 0
-
-    if (startIndex <= 0 && lastReadEventId) {
-      // lastReadEventId not found in events - can't determine first unread
-      return undefined
-    }
-
-    // Find first event from another user after the last read position
-    for (let i = startIndex; i < events.length; i++) {
-      if (events[i].actorId !== user?.id) {
-        return events[i].id
-      }
-    }
-
-    return undefined
-  }, [events, lastReadEventId, user?.id])
-
-  // Track displayed divider separately - shows for 3 seconds then fades out
-  const [displayedUnreadId, setDisplayedUnreadId] = useState<string | undefined>(undefined)
-  const [isDividerFading, setIsDividerFading] = useState(false)
-  const hasShownDivider = useRef(false)
-
-  useEffect(() => {
-    // Show divider when we have a firstUnreadEventId and haven't shown one yet
-    if (firstUnreadEventId && !hasShownDivider.current) {
-      setDisplayedUnreadId(firstUnreadEventId)
-      setIsDividerFading(false)
-      hasShownDivider.current = true
-
-      // Start fade after 3 seconds
-      const fadeTimer = setTimeout(() => {
-        setIsDividerFading(true)
-      }, 3000)
-
-      // Remove after fade completes (500ms transition)
-      const removeTimer = setTimeout(() => {
-        setDisplayedUnreadId(undefined)
-        setIsDividerFading(false)
-      }, 3500)
-
-      return () => {
-        clearTimeout(fadeTimer)
-        clearTimeout(removeTimer)
-      }
-    }
-  }, [firstUnreadEventId])
-
-  // Reset when stream changes
-  useEffect(() => {
-    hasShownDivider.current = false
-    setDisplayedUnreadId(undefined)
-    setIsDividerFading(false)
-  }, [streamId])
+  // Unread divider state management
+  const {
+    firstUnreadEventId,
+    dividerEventId,
+    isFading: isDividerFading,
+  } = useUnreadDivider({
+    events,
+    lastReadEventId: bootstrap?.membership?.lastReadEventId,
+    currentUserId: user?.id,
+    streamId,
+  })
 
   // Scroll to first unread on initial load
   const hasScrolledToUnread = useRef(false)
@@ -209,7 +168,7 @@ export function StreamContent({
             workspaceId={workspaceId}
             streamId={streamId}
             highlightMessageId={highlightMessageId}
-            firstUnreadEventId={displayedUnreadId}
+            firstUnreadEventId={dividerEventId}
             isDividerFading={isDividerFading}
           />
         )}
