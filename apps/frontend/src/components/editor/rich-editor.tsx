@@ -95,6 +95,11 @@ export function RichEditor({
     extensions,
     content: parseMarkdown(value, getMentionType),
     editable: !disabled,
+    // Disable markdown-like input rules (typing **bold**, `code`, etc.) because:
+    // 1. They corrupt content when atom nodes (mentions) are in between
+    // 2. Users can still use keyboard shortcuts (Cmd+B, Cmd+I, etc.)
+    // 3. Our serializer handles markdown output correctly
+    disableInputRules: true,
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current) return
       const markdown = serializeToMarkdown(editor.getJSON())

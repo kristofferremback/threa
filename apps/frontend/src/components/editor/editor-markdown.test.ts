@@ -736,6 +736,78 @@ const x = 1
 
         expect(serializeToMarkdown(doc)).toBe("`see #general`")
       })
+
+      it("should preserve trailing whitespace outside bold marks", () => {
+        // "Hello @ariadne " with bold should become "**Hello @ariadne** " not "**Hello @ariadne **"
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Hello ", marks: [{ type: "bold" }] },
+                {
+                  type: "mention",
+                  attrs: { id: "persona_1", slug: "ariadne", name: "Ariadne", mentionType: "persona" },
+                },
+                { type: "text", text: " ", marks: [{ type: "bold" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("**Hello @ariadne** ")
+      })
+
+      it("should preserve leading whitespace outside marks", () => {
+        // " Hello" with italic should become " *Hello*" not "* Hello*"
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: " Hello world", marks: [{ type: "italic" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe(" *Hello world*")
+      })
+
+      it("should preserve both leading and trailing whitespace outside marks", () => {
+        // "  content  " with strike should become "  ~~content~~  "
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "  hello world  ", marks: [{ type: "strike" }] }],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("  ~~hello world~~  ")
+      })
+
+      it("should not wrap pure whitespace with marks", () => {
+        // Adjacent groups: "Hello" (bold) + "   " (bold) + "world" (no mark)
+        // Should become "**Hello**   world" not "**Hello****   **world"
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Hello", marks: [{ type: "bold" }] },
+                { type: "text", text: "   " }, // pure whitespace, no marks
+                { type: "text", text: "world" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("**Hello**   world")
+      })
     })
 
     describe("parsing", () => {

@@ -149,10 +149,24 @@ function marksEqual(
 }
 
 /**
- * Wrap text with markdown mark syntax
+ * Wrap text with markdown mark syntax.
+ * Preserves leading/trailing whitespace outside the marks so "Hello @user " with bold
+ * becomes "**Hello @user** " not "**Hello @user **" (which doesn't render correctly).
  */
 function wrapWithMarks(text: string, marks: Array<{ type: string; attrs?: Record<string, unknown> }>): string {
-  let result = text
+  if (marks.length === 0) return text
+
+  // Extract leading and trailing whitespace
+  const leadingMatch = text.match(/^(\s*)/)
+  const trailingMatch = text.match(/(\s*)$/)
+  const leading = leadingMatch?.[1] ?? ""
+  const trailing = trailingMatch?.[1] ?? ""
+  const trimmed = text.slice(leading.length, text.length - trailing.length)
+
+  // Don't wrap pure whitespace
+  if (!trimmed) return text
+
+  let result = trimmed
   for (const mark of marks) {
     switch (mark.type) {
       case "bold":
@@ -172,7 +186,7 @@ function wrapWithMarks(text: string, marks: Array<{ type: string; attrs?: Record
         break
     }
   }
-  return result
+  return leading + result + trailing
 }
 
 function serializeInline(nodes: JSONContent[] | undefined): string {
