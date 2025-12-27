@@ -39,7 +39,6 @@ export const AtomAwareBold = Bold.extend({
 /**
  * Italic extension with atom-aware input rules.
  * Typing *text* or _text_ converts to italic, even with mentions inside.
- * Uses notPrecededBy to avoid matching ** (bold) when looking for * (italic).
  */
 export const AtomAwareItalic = Italic.extend({
   addInputRules() {
@@ -48,13 +47,11 @@ export const AtomAwareItalic = Italic.extend({
         openMarker: "*",
         closeMarker: "*",
         type: this.type,
-        notPrecededBy: "*", // Don't match if part of ** (bold)
       }),
       atomAwareMarkInputRule({
         openMarker: "_",
         closeMarker: "_",
         type: this.type,
-        notPrecededBy: "_", // Don't match if part of __ (bold)
       }),
     ]
   },
