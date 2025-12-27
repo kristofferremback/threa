@@ -50,3 +50,5 @@ export { useUnreadCounts } from "./use-unread-counts"
 export { useAutoMarkAsRead } from "./use-auto-mark-as-read"
 
 export { useUnreadDivider } from "./use-unread-divider"
+
+export { useScrollToElement } from "./use-scroll-to-element"

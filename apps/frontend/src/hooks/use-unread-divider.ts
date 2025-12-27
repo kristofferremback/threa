@@ -1,11 +1,18 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import type { StreamEvent } from "@threa/types"
+import { useScrollToElement } from "./use-scroll-to-element"
 
 interface UseUnreadDividerOptions {
   events: StreamEvent[]
   lastReadEventId: string | null | undefined
   currentUserId: string | undefined
   streamId: string
+  /** Whether to scroll to first unread on initial load */
+  scrollToUnread?: boolean
+  /** Skip scrolling if a message is being highlighted (e.g., from search) */
+  highlightMessageId?: string | null
+  /** Whether content is still loading */
+  isLoading?: boolean
 }
 
 interface UseUnreadDividerResult {
@@ -29,6 +36,9 @@ export function useUnreadDivider({
   lastReadEventId,
   currentUserId,
   streamId,
+  scrollToUnread = true,
+  highlightMessageId,
+  isLoading = false,
 }: UseUnreadDividerOptions): UseUnreadDividerResult {
   // Calculate first unread event from another user
   const firstUnreadEventId = useMemo(() => {
@@ -88,6 +98,13 @@ export function useUnreadDivider({
     setDisplayedUnreadId(undefined)
     setIsFading(false)
   }, [streamId])
+
+  // Scroll to first unread on initial load
+  useScrollToElement({
+    enabled: scrollToUnread && !isLoading && !!firstUnreadEventId && !highlightMessageId,
+    selector: firstUnreadEventId ? `[data-event-id="${firstUnreadEventId}"]` : undefined,
+    resetKey: streamId,
+  })
 
   return {
     firstUnreadEventId,

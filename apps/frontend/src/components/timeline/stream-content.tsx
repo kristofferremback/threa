@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from "react"
+import { useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
 import {
@@ -96,35 +96,15 @@ export function StreamContent({
   const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
   useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
 
-  // Unread divider state management
-  const {
-    firstUnreadEventId,
-    dividerEventId,
-    isFading: isDividerFading,
-  } = useUnreadDivider({
+  // Unread divider state management (also handles scroll-to-first-unread)
+  const { dividerEventId, isFading: isDividerFading } = useUnreadDivider({
     events,
     lastReadEventId: bootstrap?.membership?.lastReadEventId,
     currentUserId: user?.id,
     streamId,
+    isLoading,
+    highlightMessageId,
   })
-
-  // Scroll to first unread on initial load
-  const hasScrolledToUnread = useRef(false)
-  useEffect(() => {
-    if (!isLoading && firstUnreadEventId && !highlightMessageId && !hasScrolledToUnread.current) {
-      // Find the element and scroll to it
-      const element = document.querySelector(`[data-event-id="${firstUnreadEventId}"]`)
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "center" })
-        hasScrolledToUnread.current = true
-      }
-    }
-  }, [isLoading, firstUnreadEventId, highlightMessageId])
-
-  // Reset scroll flag when stream changes
-  useEffect(() => {
-    hasScrolledToUnread.current = false
-  }, [streamId])
 
   if (error && !isDraft) {
     return (
