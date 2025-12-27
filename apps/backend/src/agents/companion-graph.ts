@@ -242,10 +242,42 @@ function routeAfterNewMessageCheck(state: CompanionStateType): "agent" | "tools"
 /**
  * Determine routing after check_final_messages node.
  * - If new messages found → agent (handle them)
- * - If no new messages → END
+ * - If no new messages → ensure_response
  */
-function routeAfterFinalCheck(state: CompanionStateType): "agent" | typeof END {
-  return state.hasNewMessages ? "agent" : END
+function routeAfterFinalCheck(state: CompanionStateType): "agent" | "ensure_response" {
+  return state.hasNewMessages ? "agent" : "ensure_response"
+}
+
+/**
+ * Create the ensure_response node.
+ * If we're about to end without sending any messages, force send the final response.
+ * This handles cases where the model uses tools but forgets to call send_message.
+ */
+function createEnsureResponseNode(tools: StructuredToolInterface[]) {
+  const sendMessageTool = tools.find((t) => t.name === "send_message")
+
+  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+    // Already sent messages - nothing to do
+    if (state.messagesSent > 0) {
+      return {}
+    }
+
+    // No response content to send - edge case, nothing we can do
+    if (!state.finalResponse?.trim()) {
+      return {}
+    }
+
+    // Force send the final response via the send_message tool
+    if (sendMessageTool) {
+      const result = await sendMessageTool.invoke({ content: state.finalResponse })
+      const parsed = JSON.parse(result as string)
+      if (parsed.success) {
+        return { messagesSent: state.messagesSent + 1 }
+      }
+    }
+
+    return {}
+  }
 }
 
 /**
@@ -258,7 +290,10 @@ function routeAfterFinalCheck(state: CompanionStateType): "agent" | typeof END {
  *                                                    → no → tools → agent
  *                     → no → check_final_messages → (new messages?)
  *                                                    → yes → agent
- *                                                    → no → END
+ *                                                    → no → ensure_response → END
+ *
+ * The ensure_response node guarantees we always send at least one message,
+ * even if the model forgets to call send_message after using other tools.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
@@ -266,11 +301,13 @@ export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInt
     .addNode("check_new_messages", createCheckNewMessagesNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
+    .addNode("ensure_response", createEnsureResponseNode(tools))
     .addEdge("__start__", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
     .addConditionalEdges("check_final_messages", routeAfterFinalCheck)
     .addEdge("tools", "agent")
+    .addEdge("ensure_response", END)
 
   return graph
 }
