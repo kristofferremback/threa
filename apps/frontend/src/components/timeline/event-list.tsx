@@ -8,6 +8,7 @@ import {
 } from "@threa/types"
 import { EventItem } from "./event-item"
 import { CommandEvent } from "./command-event"
+import { UnreadDivider } from "./unread-divider"
 import { useUser } from "@/auth"
 
 interface EventListProps {
@@ -121,17 +122,7 @@ export function EventList({
 
         return (
           <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
-            {showUnreadDivider && (
-              <div
-                className={`absolute left-0 right-0 top-0 -translate-y-1/2 z-10 flex items-center gap-3 pointer-events-none transition-opacity duration-500 ${
-                  isDividerFading ? "opacity-0" : "opacity-100"
-                }`}
-              >
-                <div className="flex-1 border-t border-destructive" />
-                <span className="text-xs font-medium text-destructive bg-background px-2">New</span>
-                <div className="flex-1 border-t border-destructive" />
-              </div>
-            )}
+            {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
             {item.type === "command_group" ? (
               <CommandEvent events={item.events} />
             ) : (
