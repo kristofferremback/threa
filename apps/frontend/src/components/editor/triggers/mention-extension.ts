@@ -1,8 +1,6 @@
-import { Node, mergeAttributes } from "@tiptap/react"
-import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
+import { createTriggerExtension, type TriggerExtensionOptions } from "./create-trigger-extension"
 import type { Mentionable } from "./types"
-import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 
 export const MentionPluginKey = new PluginKey("mention")
 
@@ -12,125 +10,33 @@ export interface MentionNodeAttrs {
   mentionType: "user" | "persona" | "broadcast" | "me"
 }
 
-export interface MentionOptions {
-  suggestion: {
-    items: (props: { query: string }) => Mentionable[] | Promise<Mentionable[]>
-    render: () => {
-      onStart: (props: SuggestionProps<Mentionable>) => void
-      onUpdate: (props: SuggestionProps<Mentionable>) => void
-      onExit: () => void
-      onKeyDown: (props: SuggestionKeyDownProps) => boolean
-    }
-  }
+export type MentionOptions = TriggerExtensionOptions<Mentionable>
+
+const mentionTypeClasses: Record<string, string> = {
+  user: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
+  persona: "bg-primary/10 text-primary",
+  broadcast: "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
+  me: "bg-blue-100 text-primary dark:bg-blue-900/50 dark:text-primary",
 }
 
 /**
  * TipTap extension for @mentions.
  * Creates an inline node that renders as a styled mention chip.
  */
-export const MentionExtension = Node.create<MentionOptions>({
+export const MentionExtension = createTriggerExtension<Mentionable, MentionNodeAttrs>({
   name: "mention",
-  group: "inline",
-  inline: true,
-  selectable: false,
-  atom: true,
-
-  addOptions() {
-    return {
-      suggestion: {
-        items: () => [],
-        render: () => ({
-          onStart: () => {},
-          onUpdate: () => {},
-          onExit: () => {},
-          onKeyDown: () => false,
-        }),
-      },
-    }
+  pluginKey: MentionPluginKey,
+  char: "@",
+  attributes: {
+    id: { dataAttr: "data-id" },
+    slug: { dataAttr: "data-slug" },
+    mentionType: { dataAttr: "data-mention-type", default: "user" },
   },
-
-  addAttributes() {
-    return {
-      id: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("data-id"),
-        renderHTML: (attributes) => ({ "data-id": attributes.id }),
-      },
-      slug: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("data-slug"),
-        renderHTML: (attributes) => ({ "data-slug": attributes.slug }),
-      },
-      mentionType: {
-        default: "user",
-        parseHTML: (element) => element.getAttribute("data-mention-type"),
-        renderHTML: (attributes) => ({ "data-mention-type": attributes.mentionType }),
-      },
-    }
-  },
-
-  parseHTML() {
-    return [{ tag: 'span[data-type="mention"]' }]
-  },
-
-  renderHTML({ node, HTMLAttributes }) {
-    const mentionType = node.attrs.mentionType as string
-    const baseClass = "inline-flex items-center rounded px-1 py-0.5 text-sm font-medium"
-    const typeClasses: Record<string, string> = {
-      user: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
-      persona: "bg-primary/10 text-primary",
-      broadcast: "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
-      me: "bg-blue-100 text-primary dark:bg-blue-900/50 dark:text-primary",
-    }
-
-    return [
-      "span",
-      mergeAttributes(HTMLAttributes, {
-        "data-type": "mention",
-        class: `${baseClass} ${typeClasses[mentionType] ?? typeClasses.user}`,
-      }),
-      `@${node.attrs.slug}`,
-    ]
-  },
-
-  renderText({ node }) {
-    return `@${node.attrs.slug}`
-  },
-
-  addProseMirrorPlugins() {
-    return [
-      Suggestion({
-        editor: this.editor,
-        pluginKey: MentionPluginKey,
-        char: "@",
-        allowSpaces: false,
-        startOfLine: false,
-        ...this.options.suggestion,
-        command: ({ editor, range, props }) => {
-          const mentionable = props as Mentionable
-
-          // Use "me" mentionType for current user to get special highlighting
-          const mentionType = mentionable.isCurrentUser ? "me" : mentionable.type
-
-          // Delete the trigger and query, then insert the mention node
-          editor
-            .chain()
-            .focus()
-            .deleteRange(range)
-            .insertContent([
-              {
-                type: this.name,
-                attrs: {
-                  id: mentionable.id,
-                  slug: mentionable.slug,
-                  mentionType,
-                },
-              },
-              { type: "text", text: " " },
-            ])
-            .run()
-        },
-      }),
-    ]
-  },
+  getClassName: (attrs) => mentionTypeClasses[attrs.mentionType] ?? mentionTypeClasses.user,
+  getText: (attrs) => `@${attrs.slug}`,
+  mapPropsToAttrs: (m) => ({
+    id: m.id,
+    slug: m.slug,
+    mentionType: m.isCurrentUser ? "me" : m.type,
+  }),
 })
