@@ -1,4 +1,10 @@
-export { createSendMessageTool, type SendMessageInput, type SendMessageResult } from "./send-message-tool"
+export {
+  createSendMessageTool,
+  type SendMessageInput,
+  type SendMessageInputWithSources,
+  type SendMessageResult,
+  type SourceItem,
+} from "./send-message-tool"
 export { createWebSearchTool, type WebSearchInput, type WebSearchResult } from "./web-search-tool"
 export { createReadUrlTool, type ReadUrlInput, type ReadUrlResult } from "./read-url-tool"
 

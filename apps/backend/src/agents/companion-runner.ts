@@ -7,6 +7,7 @@ import {
   createReadUrlTool,
   isToolEnabled,
   type SendMessageInput,
+  type SendMessageInputWithSources,
   type SendMessageResult,
 } from "./tools"
 import { AgentToolNames } from "@threa/types"
@@ -57,8 +58,10 @@ export interface GenerateResponseResult {
  * Callbacks required by the response generator.
  */
 export interface ResponseGeneratorCallbacks {
-  /** Send a message to the stream */
+  /** Send a message to the stream (used by send_message tool) */
   sendMessage: (input: SendMessageInput) => Promise<SendMessageResult>
+  /** Send a message with optional sources (used by ensure_response node) */
+  sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
   /** Check for new messages since a sequence */
   checkNewMessages: (
     streamId: string,
@@ -160,6 +163,12 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     const graphCallbacks: CompanionGraphCallbacks = {
       checkNewMessages: callbacks.checkNewMessages,
       updateLastSeenSequence: callbacks.updateLastSeenSequence,
+      sendMessageWithSources: async (input) => {
+        const result = await callbacks.sendMessageWithSources(input)
+        sentMessageIds.push(result.messageId)
+        messagesSentCount++
+        return result
+      },
     }
 
     // Invoke the graph
@@ -175,6 +184,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         iteration: 0,
         messagesSent: 0,
         hasNewMessages: false,
+        sources: [],
       },
       {
         configurable: {

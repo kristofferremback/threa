@@ -7,7 +7,7 @@ import { PersonaRepository, type Persona } from "../repositories/persona-reposit
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
-import { isToolEnabled, type SendMessageInput, type SendMessageResult } from "./tools"
+import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult, type SourceItem } from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -129,6 +129,7 @@ export interface CompanionAgentDeps {
     authorId: string
     authorType: AuthorType
     content: string
+    sources?: SourceItem[]
   }) => Promise<{ id: string }>
 }
 
@@ -226,13 +227,28 @@ export class CompanionAgent {
 
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
-          sendMessage: async (input: SendMessageInput): Promise<SendMessageResult> => {
+          // Used by send_message tool (LLM-initiated)
+          sendMessage: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
             const message = await createMessage({
               workspaceId: stream.workspaceId,
               streamId,
               authorId: persona.id,
               authorType: AuthorTypes.PERSONA,
               content: input.content,
+              sources: input.sources,
+            })
+            return { messageId: message.id, content: input.content }
+          },
+
+          // Used by ensure_response node (graph-initiated, can include sources)
+          sendMessageWithSources: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
+            const message = await createMessage({
+              workspaceId: stream.workspaceId,
+              streamId,
+              authorId: persona.id,
+              authorType: AuthorTypes.PERSONA,
+              content: input.content,
+              sources: input.sources,
             })
             return { messageId: message.id, content: input.content }
           },

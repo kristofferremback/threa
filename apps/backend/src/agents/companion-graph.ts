@@ -5,6 +5,7 @@ import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
 import { logger } from "../lib/logger"
+import type { SourceItem, SendMessageInputWithSources, SendMessageResult } from "./tools"
 
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
@@ -22,6 +23,8 @@ export interface CompanionGraphCallbacks {
   ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
   /** Update the last seen sequence on the session */
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
+  /** Send a message with optional sources (used by ensure_response node) */
+  sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
 }
 
 /**
@@ -60,6 +63,12 @@ export const CompanionState = Annotation.Root({
   // Flag to indicate new messages were injected (triggers re-evaluation)
   hasNewMessages: Annotation<boolean>({
     default: () => false,
+    reducer: (_, next) => next,
+  }),
+
+  // Sources extracted from web search results (stored with message metadata)
+  sources: Annotation<SourceItem[]>({
+    default: () => [],
     reducer: (_, next) => next,
   }),
 })
@@ -160,22 +169,67 @@ function createCheckNewMessagesNode() {
 }
 
 /**
+ * Extract sources from a web_search tool result.
+ */
+function extractSourcesFromWebSearch(resultJson: string): SourceItem[] {
+  try {
+    const content = JSON.parse(resultJson)
+    if (content.results && Array.isArray(content.results)) {
+      return content.results
+        .filter((r: { title?: string; url?: string }) => r.title && r.url)
+        .map((r: { title: string; url: string }) => ({ title: r.title, url: r.url }))
+    }
+  } catch {
+    // Not valid JSON or not a search result
+  }
+  return []
+}
+
+/**
  * Create the tools node that executes tool calls.
+ * Uses sendMessageWithSources callback for send_message to attach sources from web_search.
  */
 function createToolsNode(tools: StructuredToolInterface[]) {
   const toolMap = new Map(tools.map((t) => [t.name, t]))
 
-  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
     const lastMessage = state.messages[state.messages.length - 1]
 
     if (!(lastMessage instanceof AIMessage) || !lastMessage.tool_calls?.length) {
       return {}
     }
 
+    // Separate tool calls: execute web_search first to collect sources, then send_message
+    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === "web_search")
+    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === "send_message")
+    const otherCalls = lastMessage.tool_calls.filter((tc) => tc.name !== "web_search" && tc.name !== "send_message")
+
     const toolMessages: ToolMessage[] = []
     let newMessagesSent = state.messagesSent
+    let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
 
-    for (const toolCall of lastMessage.tool_calls) {
+    // Execute web_search calls first and collect sources
+    for (const toolCall of webSearchCalls) {
+      const tool = toolMap.get(toolCall.name)!
+      try {
+        const result = await tool.invoke(toolCall.args)
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+
+        // Extract sources from web_search results
+        const sources = extractSourcesFromWebSearch(resultStr)
+        collectedSources = [...collectedSources, ...sources]
+
+        toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: resultStr }))
+      } catch (error) {
+        toolMessages.push(
+          new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
+        )
+      }
+    }
+
+    // Execute other tools (read_url, etc.)
+    for (const toolCall of otherCalls) {
       const tool = toolMap.get(toolCall.name)
       if (!tool) {
         toolMessages.push(
@@ -186,18 +240,8 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         )
         continue
       }
-
       try {
         const result = await tool.invoke(toolCall.args)
-
-        // Track message sends
-        if (toolCall.name === "send_message") {
-          const parsed = JSON.parse(result as string)
-          if (parsed.success) {
-            newMessagesSent++
-          }
-        }
-
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
@@ -206,10 +250,42 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         )
       } catch (error) {
         toolMessages.push(
+          new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
+        )
+      }
+    }
+
+    // Execute send_message calls with collected sources
+    for (const toolCall of sendMessageCalls) {
+      try {
+        const args = toolCall.args as { content: string }
+
+        // Use callback to send message with sources
+        const result = await callbacks.sendMessageWithSources({
+          content: args.content,
+          sources: collectedSources.length > 0 ? collectedSources : undefined,
+        })
+
+        newMessagesSent++
+        logger.debug(
+          { messageId: result.messageId, sourceCount: collectedSources.length },
+          "send_message executed with sources via callback"
+        )
+
+        toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
-            content: JSON.stringify({ error: String(error) }),
+            content: JSON.stringify({
+              success: true,
+              messageId: result.messageId,
+              content: result.content,
+              messagesSent: newMessagesSent,
+            }),
           })
+        )
+      } catch (error) {
+        toolMessages.push(
+          new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
         )
       }
     }
@@ -217,6 +293,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     return {
       messages: toolMessages,
       messagesSent: newMessagesSent,
+      sources: collectedSources,
     }
   }
 }
@@ -297,8 +374,9 @@ function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; u
 
 /**
  * Create the synthesize node.
- * When web search was used, this node appends a Sources section to the response.
- * This is simpler and more reliable than asking the model to rewrite with citations.
+ * When web search was used, this node extracts sources and stores them in state.
+ * Sources are stored as structured data with the message (not appended as text).
+ * The UI can render sources in a custom format.
  */
 function createSynthesizeNode(_model: ChatOpenAI) {
   return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
@@ -310,32 +388,13 @@ function createSynthesizeNode(_model: ChatOpenAI) {
     logger.debug({ sourceCount: sources.length, sources }, "Extracted sources for synthesis")
 
     if (sources.length === 0) {
-      // No sources found, nothing to append
-      logger.warn("No sources found, skipping synthesis")
-      return {}
+      logger.debug("No sources found")
+      return { sources: [] }
     }
 
-    // If there's no existing response, nothing to append to
-    if (!state.finalResponse?.trim()) {
-      logger.warn("No final response to append sources to")
-      return {}
-    }
+    logger.info({ sourceCount: sources.length }, "Sources extracted and stored in state")
 
-    // Build sources section
-    const sourcesText = sources.map((s) => `- [${s.title}](${s.url})`).join("\n")
-    const sourcesSection = `\n\n---\n**Sources:**\n${sourcesText}`
-
-    // Append sources to existing response
-    const synthesizedText = state.finalResponse.trim() + sourcesSection
-
-    logger.info(
-      { synthesizedLength: synthesizedText.length, sourceCount: sources.length },
-      "Sources appended to response"
-    )
-
-    return {
-      finalResponse: synthesizedText,
-    }
+    return { sources }
   }
 }
 
@@ -343,13 +402,18 @@ function createSynthesizeNode(_model: ChatOpenAI) {
  * Create the ensure_response node.
  * If we're about to end without sending any messages, force send the final response.
  * This handles cases where the model uses tools but forgets to call send_message.
+ * Uses the sendMessageWithSources callback to pass sources for storage.
  */
-function createEnsureResponseNode(tools: StructuredToolInterface[]) {
-  const sendMessageTool = tools.find((t) => t.name === "send_message")
+function createEnsureResponseNode() {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
 
-  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
     logger.debug(
-      { messagesSent: state.messagesSent, hasFinalResponse: !!state.finalResponse?.trim() },
+      {
+        messagesSent: state.messagesSent,
+        hasFinalResponse: !!state.finalResponse?.trim(),
+        sourceCount: state.sources.length,
+      },
       "ensure_response node triggered"
     )
 
@@ -365,18 +429,20 @@ function createEnsureResponseNode(tools: StructuredToolInterface[]) {
       return {}
     }
 
-    // Force send the final response via the send_message tool
-    if (sendMessageTool) {
-      logger.debug({ contentLength: state.finalResponse.length }, "Sending final response via send_message")
-      const result = await sendMessageTool.invoke({ content: state.finalResponse })
-      const parsed = JSON.parse(result as string)
-      if (parsed.success) {
-        logger.info("ensure_response sent message successfully")
-        return { messagesSent: state.messagesSent + 1 }
-      }
-    }
+    // Send the final response with sources via callback
+    logger.debug(
+      { contentLength: state.finalResponse.length, sourceCount: state.sources.length },
+      "Sending final response via sendMessageWithSources"
+    )
 
-    return {}
+    const result = await callbacks.sendMessageWithSources({
+      content: state.finalResponse,
+      sources: state.sources.length > 0 ? state.sources : undefined,
+    })
+
+    logger.info({ messageId: result.messageId, sourceCount: state.sources.length }, "ensure_response sent message")
+
+    return { messagesSent: state.messagesSent + 1 }
   }
 }
 
@@ -403,7 +469,7 @@ export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInt
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
     .addNode("synthesize", createSynthesizeNode(model))
-    .addNode("ensure_response", createEnsureResponseNode(tools))
+    .addNode("ensure_response", createEnsureResponseNode())
     .addEdge("__start__", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
