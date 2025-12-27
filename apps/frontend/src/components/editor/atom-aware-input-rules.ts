@@ -34,9 +34,29 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
   const openEsc = escapeRegex(openMarker)
   const closeEsc = escapeRegex(closeMarker)
 
-  // Pattern: opening + non-whitespace + (anything) + non-whitespace + closing
-  // Or: opening + single non-whitespace char + closing
-  const pattern = new RegExp(`${openEsc}([^\\s]|[^\\s][\\s\\S]*?[^\\s])${closeEsc}$`)
+  // For single-char markers (*, _, `), we need two disambiguations:
+  // 1. Content cannot START with the same char (prevents * matching content *foo* in **foo**)
+  // 2. Opening marker cannot be PRECEDED by same char (prevents *foo* matching in **foo*)
+  //
+  // Example: For `**hello*`:
+  // - Without (1): italic would match position 0 with content `*hello`
+  // - Without (2): italic would match position 1 with content `hello`
+  // - With both: italic correctly fails, waits for second closing `*`
+
+  let contentPattern: string
+  let lookbehind = ""
+
+  if (openMarker.length === 1) {
+    // Single-char marker: add lookbehind and content-start exclusion
+    lookbehind = `(?<!${openEsc})`
+    const charExclusion = openEsc
+    contentPattern = `[^\\s${charExclusion}]|[^\\s${charExclusion}][\\s\\S]*?[^\\s]`
+  } else {
+    // Multi-char marker: standard pattern, no lookbehind needed
+    contentPattern = `[^\\s]|[^\\s][\\s\\S]*?[^\\s]`
+  }
+
+  const pattern = new RegExp(`${lookbehind}${openEsc}(${contentPattern})${closeEsc}$`)
 
   return new InputRule({
     find: pattern,
