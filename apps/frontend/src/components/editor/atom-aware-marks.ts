@@ -79,6 +79,7 @@ export const AtomAwareStrike = Strike.extend({
 /**
  * Code extension with atom-aware input rules.
  * Typing `text` converts to inline code, even with mentions inside.
+ * Mentions are converted to their text representation (e.g., @ariadne becomes plain text).
  */
 export const AtomAwareCode = Code.extend({
   addInputRules() {
@@ -87,6 +88,7 @@ export const AtomAwareCode = Code.extend({
         openMarker: "`",
         closeMarker: "`",
         type: this.type,
+        convertAtomsToText: true,
       }),
     ]
   },

@@ -55,12 +55,13 @@ export const markdownComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{processChildrenForMentions(children)}</p>,
 
   // Links - open in new tab, process @mentions and #channels
+  // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration
   a: ({ href, children }) => (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-primary underline underline-offset-4 hover:text-primary/80"
+      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
       {processChildrenForMentions(children)}
     </a>
@@ -99,9 +100,11 @@ export const markdownComponents: Components = {
   // Italic
   em: ({ children }) => <em className="italic">{processChildrenForMentions(children)}</em>,
 
-  // Strikethrough (GFM)
+  // Strikethrough (GFM) - [&_span] ensures inline-flex elements like TriggerChips inherit decoration
   del: ({ children }) => (
-    <del className="line-through text-muted-foreground">{processChildrenForMentions(children)}</del>
+    <del className="line-through text-muted-foreground [&_span]:[text-decoration:inherit]">
+      {processChildrenForMentions(children)}
+    </del>
   ),
 
   // Blockquote

@@ -18,6 +18,11 @@ interface AtomAwareMarkInputRuleConfig {
    * e.g., italic (*) shouldn't match when closing marker is preceded by * (making it **)
    */
   notPrecededBy?: string
+  /**
+   * If true, atom nodes (like mentions) within the marked range will be converted
+   * to their text representation. Use for inline code where you want raw text, not styled atoms.
+   */
+  convertAtomsToText?: boolean
 }
 
 /**
@@ -103,7 +108,7 @@ function findOpeningMarker(
  * 4. Applies the mark to the full range
  */
 export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): InputRule {
-  const { openMarker, closeMarker, type, notPrecededBy } = config
+  const { openMarker, closeMarker, type, notPrecededBy, convertAtomsToText = false } = config
 
   // Create regex that matches the closing marker at the end
   // If notPrecededBy is set, use negative lookbehind to prevent matching
@@ -117,10 +122,11 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
     find: closePattern,
     handler: ({ state, range }) => {
       const { tr } = state
+      const { doc } = state
 
       // range.to is where the closing marker ends (cursor position)
       // range.from is where the closing marker starts
-      const closeMarkerStart = range.from
+      let closeMarkerStart = range.from
       const closeMarkerEnd = range.to
 
       // Find the opening marker
@@ -136,21 +142,59 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         return null
       }
 
+      // Check for trailing whitespace before the closing marker
+      // e.g., "~~hello @ariadne ~~" should become "~~hello @ariadne~~"
+      let trailingSpaceStart = closeMarkerStart
+      const $closePos = doc.resolve(closeMarkerStart)
+      if ($closePos.nodeBefore?.isText) {
+        const textBefore = $closePos.nodeBefore.text || ""
+        const trailingMatch = textBefore.match(/\s+$/)
+        if (trailingMatch) {
+          // Adjust to include trailing whitespace in deletion
+          trailingSpaceStart = closeMarkerStart - trailingMatch[0].length
+        }
+      }
+
+      // If convertAtomsToText is true, replace atom nodes with their text content
+      // This is needed for inline code where atoms should become plain text
+      if (convertAtomsToText) {
+        // Collect atom nodes in the range (in reverse order to maintain positions)
+        const atomNodes: { pos: number; size: number; text: string }[] = []
+        doc.nodesBetween(textStart, closeMarkerStart, (node, pos) => {
+          if (node.isAtom && node.isInline) {
+            // Get text representation via textContent (uses renderText if defined)
+            const text = node.textContent || ""
+            atomNodes.push({ pos, size: node.nodeSize, text })
+          }
+          return true
+        })
+
+        // Replace atoms with text nodes (in reverse order to maintain positions)
+        for (let i = atomNodes.length - 1; i >= 0; i--) {
+          const { pos, size, text } = atomNodes[i]
+          tr.replaceWith(pos, pos + size, state.schema.text(text))
+        }
+
+        // Remap positions after atom replacements
+        closeMarkerStart = tr.mapping.map(closeMarkerStart)
+        trailingSpaceStart = tr.mapping.map(trailingSpaceStart)
+      }
+
       // Delete the opening marker first (earlier in document)
       // This way the closing marker position remains valid
       tr.delete(openMarkerStart, textStart)
 
-      // Map the closing marker position through the deletion
-      const mappedCloseStart = tr.mapping.map(closeMarkerStart)
+      // Map positions through the deletion
+      const mappedTrailingStart = tr.mapping.map(trailingSpaceStart)
       const mappedCloseEnd = tr.mapping.map(closeMarkerEnd)
 
-      // Delete the closing marker
-      tr.delete(mappedCloseStart, mappedCloseEnd)
+      // Delete trailing whitespace + closing marker
+      tr.delete(mappedTrailingStart, mappedCloseEnd)
 
       // Calculate the mark range (after both deletions)
-      // The content is now between openMarkerStart and mappedCloseStart
+      // The content is now between openMarkerStart and mappedTrailingStart
       const markFrom = openMarkerStart
-      const markTo = mappedCloseStart
+      const markTo = mappedTrailingStart
 
       // Apply the mark
       tr.addMark(markFrom, markTo, type.create())
