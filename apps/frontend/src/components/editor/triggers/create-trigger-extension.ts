@@ -120,6 +120,33 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
           char,
           allowSpaces: false,
           startOfLine,
+          // Disable suggestions in code contexts (code blocks and inline code)
+          allow: ({ state, range }) => {
+            const $from = state.doc.resolve(range.from)
+
+            // Check if inside a code block
+            for (let depth = $from.depth; depth >= 0; depth--) {
+              const node = $from.node(depth)
+              if (node.type.name === "codeBlock") {
+                return false
+              }
+            }
+
+            // Check if cursor position has code mark
+            const marks = $from.marks()
+            if (marks.some((mark) => mark.type.name === "code")) {
+              return false
+            }
+
+            // Also check if the trigger character itself would be inside code
+            // by looking at stored marks
+            const storedMarks = state.storedMarks || $from.marks()
+            if (storedMarks.some((mark) => mark.type.name === "code")) {
+              return false
+            }
+
+            return true
+          },
           ...this.options.suggestion,
           command: ({ editor, range, props }) => {
             const item = props as TItem

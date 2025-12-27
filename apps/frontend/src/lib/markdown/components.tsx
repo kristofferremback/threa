@@ -54,7 +54,7 @@ export const markdownComponents: Components = {
   // Paragraphs - process @mentions and #channels
   p: ({ children }) => <p className="mb-2 last:mb-0">{processChildrenForMentions(children)}</p>,
 
-  // Links - open in new tab
+  // Links - open in new tab, process @mentions and #channels
   a: ({ href, children }) => (
     <a
       href={href}
@@ -62,7 +62,7 @@ export const markdownComponents: Components = {
       rel="noopener noreferrer"
       className="text-primary underline underline-offset-4 hover:text-primary/80"
     >
-      {children}
+      {processChildrenForMentions(children)}
     </a>
   ),
 

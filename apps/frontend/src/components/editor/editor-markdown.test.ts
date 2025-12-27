@@ -808,6 +808,51 @@ const x = 1
 
         expect(serializeToMarkdown(doc)).toBe("**Hello**   world")
       })
+
+      it("should wrap mention with code when followed by text with code mark", () => {
+        // When user selects "@ariadne hello" and applies code via toolbar:
+        // The mention can't have marks (it's an atom), but the following text does
+        // The mention should inherit the code mark from adjacent text
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "mention",
+                  attrs: { id: "persona_1", slug: "ariadne", name: "Ariadne", mentionType: "persona" },
+                },
+                { type: "text", text: " hello", marks: [{ type: "code" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("`@ariadne hello`")
+      })
+
+      it("should wrap mention with strikethrough when surrounded by strikethrough text", () => {
+        // When user types "~~Hello @ariadne world~~" or applies via toolbar
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Hello ", marks: [{ type: "strike" }] },
+                {
+                  type: "mention",
+                  attrs: { id: "user_1", slug: "ariadne", name: "Ariadne", mentionType: "user" },
+                },
+                { type: "text", text: " world", marks: [{ type: "strike" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("~~Hello @ariadne world~~")
+      })
     })
 
     describe("parsing", () => {

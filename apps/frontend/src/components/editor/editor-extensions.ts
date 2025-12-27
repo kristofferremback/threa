@@ -9,6 +9,7 @@ import { CodeBlockComponent } from "./code-block"
 import { MentionExtension, type MentionOptions } from "./triggers/mention-extension"
 import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extension"
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
+import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode } from "./atom-aware-marks"
 
 // Lazy singleton - created on first editor mount, not at module load
 let lowlightInstance: ReturnType<typeof createLowlight> | null = null
@@ -34,6 +35,12 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       codeBlock: false,
+      // Disable default mark extensions - we use atom-aware versions instead
+      // that correctly handle mentions and other atom nodes
+      bold: false,
+      italic: false,
+      strike: false,
+      code: false,
       blockquote: {
         HTMLAttributes: {
           class: "border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic",
@@ -62,6 +69,11 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
       dropcursor: false,
       gapcursor: false,
     }),
+    // Atom-aware mark extensions that handle mentions correctly
+    AtomAwareBold,
+    AtomAwareItalic,
+    AtomAwareStrike,
+    AtomAwareCode,
     Placeholder.configure({
       placeholder: config.placeholder,
       emptyEditorClass: "is-editor-empty",
