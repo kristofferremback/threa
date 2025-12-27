@@ -50,15 +50,22 @@ function findOpeningMarker(
 
   doc.nodesBetween(blockStart, closePos, (node, pos) => {
     if (node.isText) {
-      for (let i = 0; i < node.text!.length; i++) {
+      // Only include characters up to closePos (nodesBetween visits the whole node)
+      // Skip if node starts at or after closePos
+      if (pos >= closePos) return true
+      const endOffset = Math.min(node.text!.length, closePos - pos)
+      for (let i = 0; i < endOffset; i++) {
         positionMap.push(pos + i)
         text += node.text![i]
       }
     } else if (node.isAtom && node.isInline) {
-      // Atom nodes contribute a single character position
-      // We use a placeholder that won't match the marker
-      positionMap.push(pos)
-      text += "\uFFFC" // Object replacement character
+      // Only include atom if it's before closePos
+      if (pos < closePos) {
+        // Atom nodes contribute a single character position
+        // We use a placeholder that won't match the marker
+        positionMap.push(pos)
+        text += "\uFFFC" // Object replacement character
+      }
     }
     return true
   })
@@ -175,16 +182,15 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
           tr.replaceWith(pos, pos + size, state.schema.text(text))
         }
 
-        // Remap positions after atom replacements
-        closeMarkerStart = tr.mapping.map(closeMarkerStart)
-        trailingSpaceStart = tr.mapping.map(trailingSpaceStart)
+        // Don't manually remap here - let tr.mapping.map() handle all remapping at the end
       }
 
       // Delete the opening marker first (earlier in document)
       // This way the closing marker position remains valid
       tr.delete(openMarkerStart, textStart)
 
-      // Map positions through the deletion
+      // Map ALL original positions through the accumulated transaction mapping
+      // This handles both atom replacements (if any) and the marker deletion
       const mappedTrailingStart = tr.mapping.map(trailingSpaceStart)
       const mappedCloseEnd = tr.mapping.map(closeMarkerEnd)
 
@@ -192,7 +198,8 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
       tr.delete(mappedTrailingStart, mappedCloseEnd)
 
       // Calculate the mark range (after both deletions)
-      // The content is now between openMarkerStart and mappedTrailingStart
+      // openMarkerStart is still valid (nothing before it was modified)
+      // The content end is mappedTrailingStart (position where we deleted from)
       const markFrom = openMarkerStart
       const markTo = mappedTrailingStart
 
