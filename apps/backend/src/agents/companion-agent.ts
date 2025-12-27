@@ -1,13 +1,13 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient, withTransaction } from "../db"
-import { AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
+import { AgentToolNames, AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
-import type { SendMessageInput, SendMessageResult } from "./tools/send-message-tool"
+import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult, type SourceItem } from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -129,6 +129,7 @@ export interface CompanionAgentDeps {
     authorId: string
     authorType: AuthorType
     content: string
+    sources?: SourceItem[]
   }) => Promise<{ id: string }>
 }
 
@@ -226,13 +227,28 @@ export class CompanionAgent {
 
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
-          sendMessage: async (input: SendMessageInput): Promise<SendMessageResult> => {
+          // Used by send_message tool (LLM-initiated)
+          sendMessage: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
             const message = await createMessage({
               workspaceId: stream.workspaceId,
               streamId,
               authorId: persona.id,
               authorType: AuthorTypes.PERSONA,
               content: input.content,
+              sources: input.sources,
+            })
+            return { messageId: message.id, content: input.content }
+          },
+
+          // Used by ensure_response node (graph-initiated, can include sources)
+          sendMessageWithSources: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
+            const message = await createMessage({
+              workspaceId: stream.workspaceId,
+              streamId,
+              authorId: persona.id,
+              authorType: AuthorTypes.PERSONA,
+              content: input.content,
+              sources: input.sources,
             })
             return { messageId: message.id, content: input.content }
           },
@@ -267,6 +283,7 @@ export class CompanionAgent {
             sessionId: session.id,
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
+            enabledTools: persona.enabledTools,
           },
           callbacks
         )
@@ -363,6 +380,35 @@ Key behaviors:
 - If you have nothing to add (e.g., the question was already answered), simply don't call send_message.
 - If new messages arrive while you're processing, you'll see them and can incorporate them in your response.
 - Be helpful, concise, and conversational.`
+
+  // Add web search tool instructions if enabled
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.WEB_SEARCH)) {
+    prompt += `
+
+## Web Search
+
+You have a \`web_search\` tool to search the web for current information.
+
+When using web search:
+- Search when you need up-to-date information not in your training data
+- Search for facts, current events, or specific details you're uncertain about
+- Cite sources in your responses using markdown links: [Title](URL)
+- Use the snippets to answer accurately`
+  }
+
+  // Add read_url tool instructions if enabled
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.READ_URL)) {
+    prompt += `
+
+## Reading URLs
+
+You have a \`read_url\` tool to fetch and read the full content of a web page.
+
+When to use read_url:
+- After web_search when you need more detail than the snippet provides
+- When the user shares a specific URL they want you to analyze
+- To verify information or get complete context from a source`
+  }
 
   return prompt
 }

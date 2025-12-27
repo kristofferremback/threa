@@ -1,11 +1,28 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 
+/**
+ * A source reference from web search results.
+ * Stored with messages for later UI rendering.
+ */
+export interface SourceItem {
+  title: string
+  url: string
+}
+
 const SendMessageSchema = z.object({
   content: z.string().describe("The message content to send"),
 })
 
 export type SendMessageInput = z.infer<typeof SendMessageSchema>
+
+/**
+ * Extended input for internal use (not exposed to the LLM tool schema).
+ * The sources are added programmatically by the graph, not by the LLM.
+ */
+export interface SendMessageInputWithSources extends SendMessageInput {
+  sources?: SourceItem[]
+}
 
 export interface SendMessageResult {
   messageId: string

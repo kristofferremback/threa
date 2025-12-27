@@ -16,11 +16,17 @@ export interface AttachmentSummary {
   sizeBytes: number
 }
 
+export interface SourceItem {
+  title: string
+  url: string
+}
+
 export interface MessageCreatedPayload {
   messageId: string
   content: string
   contentFormat: "markdown" | "plaintext"
   attachments?: AttachmentSummary[]
+  sources?: SourceItem[]
 }
 
 export interface MessageEditedPayload {
@@ -52,6 +58,7 @@ export interface CreateMessageParams {
   content: string
   contentFormat?: "markdown" | "plaintext"
   attachmentIds?: string[]
+  sources?: SourceItem[]
 }
 
 export interface EditMessageParams {
@@ -113,7 +120,7 @@ export class EventService {
         }))
       }
 
-      // 2. Append event (source of truth) - includes attachments in payload
+      // 2. Append event (source of truth) - includes attachments and sources in payload
       const event = await StreamEventRepository.insert(client, {
         id: evtId,
         streamId: params.streamId,
@@ -123,6 +130,7 @@ export class EventService {
           content: params.content,
           contentFormat: params.contentFormat ?? "markdown",
           ...(attachmentSummaries && { attachments: attachmentSummaries }),
+          ...(params.sources && params.sources.length > 0 && { sources: params.sources }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,

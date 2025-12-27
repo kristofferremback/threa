@@ -1,7 +1,16 @@
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import { createCompanionGraph, toLangChainMessages, type CompanionGraphCallbacks } from "./companion-graph"
-import { createSendMessageTool, type SendMessageInput, type SendMessageResult } from "./tools/send-message-tool"
+import {
+  createSendMessageTool,
+  createWebSearchTool,
+  createReadUrlTool,
+  isToolEnabled,
+  type SendMessageInput,
+  type SendMessageInputWithSources,
+  type SendMessageResult,
+} from "./tools"
+import { AgentToolNames } from "@threa/types"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
 
@@ -27,6 +36,8 @@ export interface GenerateResponseParams {
   personaId: string
   /** Last processed sequence for new message detection */
   lastProcessedSequence: bigint
+  /** Enabled tools for this persona (null means all tools enabled) */
+  enabledTools: string[] | null
 }
 
 /**
@@ -47,8 +58,10 @@ export interface GenerateResponseResult {
  * Callbacks required by the response generator.
  */
 export interface ResponseGeneratorCallbacks {
-  /** Send a message to the stream */
+  /** Send a message to the stream (used by send_message tool) */
   sendMessage: (input: SendMessageInput) => Promise<SendMessageResult>
+  /** Send a message with optional sources (used by ensure_response node) */
+  sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
   /** Check for new messages since a sequence */
   checkNewMessages: (
     streamId: string,
@@ -76,12 +89,23 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     private readonly deps: {
       modelRegistry: ProviderRegistry
       checkpointer: PostgresSaver
+      tavilyApiKey?: string
     }
   ) {}
 
   async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
-    const { modelRegistry, checkpointer } = this.deps
-    const { threadId, modelId, systemPrompt, messages, streamId, sessionId, personaId, lastProcessedSequence } = params
+    const { modelRegistry, checkpointer, tavilyApiKey } = this.deps
+    const {
+      threadId,
+      modelId,
+      systemPrompt,
+      messages,
+      streamId,
+      sessionId,
+      personaId,
+      lastProcessedSequence,
+      enabledTools,
+    } = params
 
     logger.debug(
       {
@@ -112,8 +136,21 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     // Get LangChain model from registry
     const model = modelRegistry.getLangChainModel(modelId)
 
-    // Create tools array
+    // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]
+
+    if (tavilyApiKey && isToolEnabled(enabledTools, AgentToolNames.WEB_SEARCH)) {
+      tools.push(createWebSearchTool({ tavilyApiKey }))
+    }
+
+    if (isToolEnabled(enabledTools, AgentToolNames.READ_URL)) {
+      tools.push(createReadUrlTool())
+    }
+
+    logger.debug(
+      { enabledToolCount: tools.length, toolNames: tools.map((t) => t.name) },
+      "Tools configured for session"
+    )
 
     // Create and compile graph with checkpointer
     const graph = createCompanionGraph(model, tools)
@@ -126,6 +163,12 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     const graphCallbacks: CompanionGraphCallbacks = {
       checkNewMessages: callbacks.checkNewMessages,
       updateLastSeenSequence: callbacks.updateLastSeenSequence,
+      sendMessageWithSources: async (input) => {
+        const result = await callbacks.sendMessageWithSources(input)
+        sentMessageIds.push(result.messageId)
+        messagesSentCount++
+        return result
+      },
     }
 
     // Invoke the graph
@@ -141,6 +184,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         iteration: 0,
         messagesSent: 0,
         hasNewMessages: false,
+        sources: [],
       },
       {
         configurable: {
