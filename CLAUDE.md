@@ -209,6 +209,26 @@ bun run db:start
 bun run db:reset
 ```
 
+### Langfuse (AI Observability)
+
+Langfuse provides visibility into LLM calls, costs, and performance. Optional but recommended for development.
+
+```bash
+# Start Langfuse stack (postgres, redis, clickhouse, minio)
+docker compose -f docker-compose.langfuse.yml up -d
+
+# UI at http://localhost:3100
+# Create account, then create a project and copy keys to .env:
+#   LANGFUSE_SECRET_KEY=sk-lf-...
+#   LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   LANGFUSE_BASE_URL=http://localhost:3100
+
+# Restart backend to enable tracing
+bun run dev
+```
+
+Langfuse uses OpenTelemetry to automatically trace LangChain and Vercel AI SDK calls. No code changes needed in AI call sites.
+
 ### Testing
 
 Tests are organized by type:

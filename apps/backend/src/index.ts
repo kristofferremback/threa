@@ -1,3 +1,7 @@
+// MUST be first - OTEL needs to instrument LangChain before it loads
+import { initLangfuse, shutdownLangfuse } from "./lib/langfuse"
+initLangfuse()
+
 import { startServer } from "./server"
 import { logger } from "./lib/logger"
 
@@ -9,6 +13,7 @@ async function shutdown(code: number) {
   if (isShuttingDown) return
   isShuttingDown = true
   await stop()
+  await shutdownLangfuse()
   process.exit(code)
 }
 

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.956.0",
+    "@langfuse/otel": "^4.0.1",
+    "@opentelemetry/sdk-node": "^0.57.2",
     "@aws-sdk/s3-request-presigner": "^3.956.0",
     "@langchain/core": "^1.1.5",
     "@langchain/langgraph": "^1.0.5",
