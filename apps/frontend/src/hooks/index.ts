@@ -44,3 +44,7 @@ export { useActors } from "./use-actors"
 export { useWorkspaceEmoji } from "./use-workspace-emoji"
 
 export { useConversations, conversationKeys } from "./use-conversations"
+
+export { useUnreadCounts } from "./use-unread-counts"
+
+export { useAutoMarkAsRead } from "./use-auto-mark-as-read"

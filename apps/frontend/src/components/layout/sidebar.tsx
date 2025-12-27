@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, Search } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, Search, CheckCheck } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useWorkspaceBootstrap, useCreateStream, useDraftScratchpads, useStreamOrDraft, workspaceKeys } from "@/hooks"
+import {
+  useWorkspaceBootstrap,
+  useCreateStream,
+  useDraftScratchpads,
+  useStreamOrDraft,
+  useUnreadCounts,
+  workspaceKeys,
+} from "@/hooks"
+import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -26,8 +34,10 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
   const { drafts, createDraft } = useDraftScratchpads(workspaceId)
+  const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const totalUnread = getTotalUnreadCount()
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")
@@ -67,18 +77,32 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         <Link to="/workspaces" className="font-semibold hover:underline truncate">
           {bootstrap?.workspace.name ?? "Loading..."}
         </Link>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => {
-            // Dispatch keyboard event to trigger search
-            document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
-          }}
-          title="Search (⌘P)"
-        >
-          <Search className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {totalUnread > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => markAllAsRead()}
+              disabled={isMarkingAllAsRead}
+              title="Mark all as read"
+            >
+              <CheckCheck className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              // Dispatch keyboard event to trigger search
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
+            }}
+            title="Search (⌘P)"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
@@ -100,6 +124,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                       workspaceId={workspaceId}
                       streamId={item.id}
                       isActive={item.id === activeStreamId}
+                      unreadCount={getUnreadCount(item.id)}
                     />
                   ))
                 )}
@@ -127,6 +152,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                       streamId={stream.id}
                       name={stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"}
                       isActive={stream.id === activeStreamId}
+                      unreadCount={getUnreadCount(stream.id)}
                     />
                   ))
                 )}
@@ -162,18 +188,23 @@ interface StreamItemProps {
   streamId: string
   name: string
   isActive: boolean
+  unreadCount: number
 }
 
-function StreamItem({ workspaceId, streamId, name, isActive }: StreamItemProps) {
+function StreamItem({ workspaceId, streamId, name, isActive, unreadCount }: StreamItemProps) {
+  const hasUnread = unreadCount > 0
+
   return (
     <Link
       to={`/w/${workspaceId}/s/${streamId}`}
       className={cn(
-        "block rounded-md px-2 py-1.5 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+        "flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors",
+        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        hasUnread && !isActive && "font-medium"
       )}
     >
-      {name}
+      <span className="truncate">{name}</span>
+      <UnreadBadge count={unreadCount} />
     </Link>
   )
 }
@@ -182,10 +213,12 @@ interface ScratchpadItemProps {
   workspaceId: string
   streamId: string
   isActive: boolean
+  unreadCount: number
 }
 
-function ScratchpadItem({ workspaceId, streamId, isActive }: ScratchpadItemProps) {
+function ScratchpadItem({ workspaceId, streamId, isActive, unreadCount }: ScratchpadItemProps) {
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamId)
+  const hasUnread = unreadCount > 0
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -244,36 +277,40 @@ function ScratchpadItem({ workspaceId, streamId, isActive }: ScratchpadItemProps
     <div
       className={cn(
         "group flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        hasUnread && !isActive && "font-medium"
       )}
     >
       <Link to={`/w/${workspaceId}/s/${streamId}`} className="flex-1 truncate">
         {name}
-        {isDraft && <span className="ml-1 text-xs text-muted-foreground">(draft)</span>}
+        {isDraft && <span className="ml-1 text-xs text-muted-foreground font-normal">(draft)</span>}
       </Link>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-            onClick={(e) => e.preventDefault()}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem onClick={handleStartRename}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-            <Archive className="mr-2 h-4 w-4" />
-            {isDraft ? "Delete" : "Archive"}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex items-center gap-1">
+        <UnreadBadge count={unreadCount} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+              onClick={(e) => e.preventDefault()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={handleStartRename}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+              <Archive className="mr-2 h-4 w-4" />
+              {isDraft ? "Delete" : "Archive"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   )
 }

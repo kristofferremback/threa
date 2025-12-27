@@ -23,24 +23,38 @@ export function EventItem({ event, workspaceId, streamId, hideActions, highlight
     case "message_edited":
     case "companion_response":
       return (
-        <MessageEvent
-          event={event}
-          workspaceId={workspaceId}
-          streamId={streamId}
-          hideActions={hideActions}
-          isHighlighted={isHighlighted}
-        />
+        <div data-event-id={event.id}>
+          <MessageEvent
+            event={event}
+            workspaceId={workspaceId}
+            streamId={streamId}
+            hideActions={hideActions}
+            isHighlighted={isHighlighted}
+          />
+        </div>
       )
 
     case "message_deleted":
-      return <DeletedMessageEvent event={event} />
+      return (
+        <div data-event-id={event.id}>
+          <DeletedMessageEvent event={event} />
+        </div>
+      )
 
     case "member_joined":
     case "member_left":
-      return <MembershipEvent event={event} workspaceId={workspaceId} />
+      return (
+        <div data-event-id={event.id}>
+          <MembershipEvent event={event} workspaceId={workspaceId} />
+        </div>
+      )
 
     case "thread_created":
-      return <SystemEvent event={event} />
+      return (
+        <div data-event-id={event.id}>
+          <SystemEvent event={event} />
+        </div>
+      )
 
     case "reaction_added":
     case "reaction_removed":
@@ -55,7 +69,11 @@ export function EventItem({ event, workspaceId, streamId, hideActions, highlight
 
     default:
       // Unknown event type - render as system event
-      return <SystemEvent event={event} />
+      return (
+        <div data-event-id={event.id}>
+          <SystemEvent event={event} />
+        </div>
+      )
   }
 }
 

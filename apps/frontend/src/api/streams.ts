@@ -2,6 +2,7 @@ import { api } from "./client"
 import type {
   Stream,
   StreamEvent,
+  StreamMember,
   StreamType,
   StreamBootstrap,
   CreateStreamInput,
@@ -59,5 +60,13 @@ export const streamsApi = {
       `/api/workspaces/${workspaceId}/streams/${streamId}/events${query ? `?${query}` : ""}`
     )
     return res.events
+  },
+
+  async markAsRead(workspaceId: string, streamId: string, lastEventId: string): Promise<StreamMember> {
+    const res = await api.post<{ membership: StreamMember }>(
+      `/api/workspaces/${workspaceId}/streams/${streamId}/read`,
+      { lastEventId }
+    )
+    return res.membership
   },
 }

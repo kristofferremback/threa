@@ -27,6 +27,19 @@ interface UserUpdatedPayload {
   user: User
 }
 
+interface StreamReadPayload {
+  workspaceId: string
+  authorId: string
+  streamId: string
+  lastReadEventId: string
+}
+
+interface StreamsReadAllPayload {
+  workspaceId: string
+  authorId: string
+  streamIds: string[]
+}
+
 /**
  * Hook to handle Socket.io events for stream updates.
  * Joins the workspace room and listens for stream:created/updated/archived events.
@@ -163,6 +176,46 @@ export function useSocketEvents(workspaceId: string) {
       db.users.put({ ...payload.user, _cachedAt: now })
     })
 
+    // Handle stream read (from other sessions of the same user)
+    socket.on("stream:read", (payload: StreamReadPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { unreadCounts?: Record<string, number> }
+        if (!bootstrap.unreadCounts) return old
+        return {
+          ...bootstrap,
+          unreadCounts: {
+            ...bootstrap.unreadCounts,
+            [payload.streamId]: 0,
+          },
+        }
+      })
+    })
+
+    // Handle all streams read (from other sessions of the same user)
+    socket.on("streams:read_all", (payload: StreamsReadAllPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { unreadCounts?: Record<string, number> }
+        if (!bootstrap.unreadCounts) return old
+
+        const newUnreadCounts = { ...bootstrap.unreadCounts }
+        for (const streamId of payload.streamIds) {
+          newUnreadCounts[streamId] = 0
+        }
+        return {
+          ...bootstrap,
+          unreadCounts: newUnreadCounts,
+        }
+      })
+    })
+
     return () => {
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
@@ -171,6 +224,8 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("workspace_member:added")
       socket.off("workspace_member:removed")
       socket.off("user:updated")
+      socket.off("stream:read")
+      socket.off("streams:read_all")
     }
   }, [socket, workspaceId, queryClient])
 }

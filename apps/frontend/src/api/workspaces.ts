@@ -23,4 +23,9 @@ export const workspacesApi = {
     const res = await api.post<{ workspace: Workspace }>("/api/workspaces", data)
     return res.workspace
   },
+
+  async markAllAsRead(workspaceId: string): Promise<string[]> {
+    const res = await api.post<{ updatedStreamIds: string[] }>(`/api/workspaces/${workspaceId}/streams/read-all`)
+    return res.updatedStreamIds
+  },
 }

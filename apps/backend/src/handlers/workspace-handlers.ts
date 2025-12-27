@@ -84,6 +84,15 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
         workspaceService.getUsersForMembers(members),
       ])
 
+      // Calculate unread counts for all streams based on memberships
+      const unreadCountsMap = await streamService.getUnreadCounts(
+        streamMemberships.map((m) => ({ streamId: m.streamId, lastReadEventId: m.lastReadEventId }))
+      )
+      const unreadCounts: Record<string, number> = {}
+      for (const [streamId, count] of unreadCountsMap) {
+        unreadCounts[streamId] = count
+      }
+
       const commands = commandRegistry.getCommandNames().map((name) => {
         const cmd = commandRegistry.get(name)!
         return { name, description: cmd.description }
@@ -99,8 +108,18 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
           personas,
           emojis: getEmojiList(),
           commands,
+          unreadCounts,
         },
       })
+    },
+
+    async markAllAsRead(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+
+      const updatedStreamIds = await streamService.markAllAsRead(workspaceId, userId)
+
+      res.json({ updatedStreamIds })
     },
   }
 }

@@ -22,6 +22,8 @@ export type OutboxEventType =
   | "stream:updated"
   | "stream:archived"
   | "stream:display_name_updated"
+  | "stream:read"
+  | "streams:read_all"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -184,6 +186,18 @@ export interface CommandFailedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
+// Read state event payloads (author-scoped - only visible to the user marking as read)
+export interface StreamReadOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamId: string
+  lastReadEventId: string
+}
+
+export interface StreamsReadAllOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamIds: string[]
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -198,6 +212,8 @@ export interface OutboxEventPayloadMap {
   "stream:updated": StreamUpdatedOutboxPayload
   "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+  "stream:read": StreamReadOutboxPayload
+  "streams:read_all": StreamsReadAllOutboxPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
@@ -260,9 +276,20 @@ export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<St
 }
 
 /** Events that are author-scoped (only visible to the author) */
-export type AuthorScopedEventType = "command:dispatched" | "command:completed" | "command:failed"
+export type AuthorScopedEventType =
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
+  | "stream:read"
+  | "streams:read_all"
 
-const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = ["command:dispatched", "command:completed", "command:failed"]
+const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
+  "command:dispatched",
+  "command:completed",
+  "command:failed",
+  "stream:read",
+  "streams:read_all",
+]
 
 /**
  * Type guard to check if an event is author-scoped (only visible to the author).

@@ -1,7 +1,7 @@
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap } from "@/hooks"
+import { useEvents, useStreamSocket, useScrollBehavior, useStreamBootstrap, useAutoMarkAsRead } from "@/hooks"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { StreamTypes, type Stream } from "@threa/types"
 import { EventList } from "./event-list"
@@ -82,6 +82,49 @@ export function StreamContent({
     onScrollNearTop: hasOlderEvents ? fetchOlderEvents : undefined,
     isFetchingMore: isFetchingOlder,
   })
+
+  // Auto-mark stream as read when viewing
+  const lastEventId = events.length > 0 ? events[events.length - 1].id : undefined
+  useAutoMarkAsRead(workspaceId, streamId, lastEventId, { enabled: !isDraft && !isLoading })
+
+  // Calculate first unread event for scroll-to-first-unread behavior
+  const lastReadEventId = bootstrap?.membership?.lastReadEventId
+  const firstUnreadEventId = useMemo(() => {
+    if (events.length === 0) return undefined
+    if (!lastReadEventId) {
+      // Never read this stream - first event is first unread
+      return events[0].id
+    }
+    // Find lastReadEventId in events array, then return the next one
+    const lastReadIndex = events.findIndex((e) => e.id === lastReadEventId)
+    if (lastReadIndex === -1) {
+      // lastReadEventId not in current events - can't determine first unread
+      return undefined
+    }
+    if (lastReadIndex >= events.length - 1) {
+      // All events are read
+      return undefined
+    }
+    return events[lastReadIndex + 1].id
+  }, [events, lastReadEventId])
+
+  // Scroll to first unread on initial load
+  const hasScrolledToUnread = useRef(false)
+  useEffect(() => {
+    if (!isLoading && firstUnreadEventId && !highlightMessageId && !hasScrolledToUnread.current) {
+      // Find the element and scroll to it
+      const element = document.querySelector(`[data-event-id="${firstUnreadEventId}"]`)
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" })
+        hasScrolledToUnread.current = true
+      }
+    }
+  }, [isLoading, firstUnreadEventId, highlightMessageId])
+
+  // Reset scroll flag when stream changes
+  useEffect(() => {
+    hasScrolledToUnread.current = false
+  }, [streamId])
 
   if (error && !isDraft) {
     return (
