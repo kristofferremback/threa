@@ -72,59 +72,132 @@ function serializeNode(node: JSONContent, listDepth = 0, listIndex?: number): st
   }
 }
 
+/**
+ * Get plain text content from a node (for atom nodes like mentions)
+ */
+function getNodeText(node: JSONContent): string {
+  if (node.type === "hardBreak") return "\n"
+  if (node.type === "mention") {
+    const slug = node.attrs?.slug as string
+    return slug ? `@${slug}` : ""
+  }
+  if (node.type === "channelLink") {
+    const slug = node.attrs?.slug as string
+    return slug ? `#${slug}` : ""
+  }
+  if (node.type === "slashCommand") {
+    const name = node.attrs?.name as string
+    return name ? `/${name}` : ""
+  }
+  if (node.type === "text") return node.text ?? ""
+  return ""
+}
+
+/**
+ * Check if a node is an atom (mention, channel, command)
+ */
+function isAtomNode(node: JSONContent): boolean {
+  return node.type === "mention" || node.type === "channelLink" || node.type === "slashCommand"
+}
+
+/**
+ * Get marks from a node, with atom nodes inheriting from adjacent text
+ */
+function getEffectiveMarks(
+  nodes: JSONContent[],
+  index: number
+): Array<{ type: string; attrs?: Record<string, unknown> }> {
+  const node = nodes[index]
+
+  // Text nodes have their own marks
+  if (node.type === "text") {
+    return node.marks ?? []
+  }
+
+  // Atom nodes inherit marks from adjacent text nodes
+  if (isAtomNode(node)) {
+    // Look for marks from next text node (preferred for "@here hello" case)
+    for (let i = index + 1; i < nodes.length; i++) {
+      if (nodes[i].type === "text" && nodes[i].marks?.length) {
+        return nodes[i].marks!
+      }
+      if (!isAtomNode(nodes[i])) break
+    }
+    // Fall back to previous text node
+    for (let i = index - 1; i >= 0; i--) {
+      if (nodes[i].type === "text" && nodes[i].marks?.length) {
+        return nodes[i].marks!
+      }
+      if (!isAtomNode(nodes[i])) break
+    }
+  }
+
+  return []
+}
+
+/**
+ * Check if two mark arrays are equivalent
+ */
+function marksEqual(
+  a: Array<{ type: string; attrs?: Record<string, unknown> }>,
+  b: Array<{ type: string; attrs?: Record<string, unknown> }>
+): boolean {
+  if (a.length !== b.length) return false
+  const aTypes = a.map((m) => m.type).sort()
+  const bTypes = b.map((m) => m.type).sort()
+  return aTypes.every((t, i) => t === bTypes[i])
+}
+
+/**
+ * Wrap text with markdown mark syntax
+ */
+function wrapWithMarks(text: string, marks: Array<{ type: string; attrs?: Record<string, unknown> }>): string {
+  let result = text
+  for (const mark of marks) {
+    switch (mark.type) {
+      case "bold":
+        result = `**${result}**`
+        break
+      case "italic":
+        result = `*${result}*`
+        break
+      case "strike":
+        result = `~~${result}~~`
+        break
+      case "code":
+        result = "`" + result + "`"
+        break
+      case "link":
+        result = `[${result}](${(mark.attrs?.href as string) ?? ""})`
+        break
+    }
+  }
+  return result
+}
+
 function serializeInline(nodes: JSONContent[] | undefined): string {
   if (!nodes) return ""
 
-  return nodes
-    .map((node) => {
-      if (node.type === "hardBreak") return "\n"
+  // Group consecutive nodes with same effective marks
+  const groups: Array<{ text: string; marks: Array<{ type: string; attrs?: Record<string, unknown> }> }> = []
 
-      // Mention node - serialize to @slug format
-      if (node.type === "mention") {
-        const slug = node.attrs?.slug as string
-        return slug ? `@${slug}` : ""
-      }
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    const text = getNodeText(node)
+    if (!text) continue
 
-      // Channel link node - serialize to #slug format
-      if (node.type === "channelLink") {
-        const slug = node.attrs?.slug as string
-        return slug ? `#${slug}` : ""
-      }
+    const marks = getEffectiveMarks(nodes, i)
 
-      // Slash command node - serialize to /name format
-      if (node.type === "slashCommand") {
-        const name = node.attrs?.name as string
-        return name ? `/${name}` : ""
-      }
+    // Check if we can append to the last group
+    if (groups.length > 0 && marksEqual(groups[groups.length - 1].marks, marks)) {
+      groups[groups.length - 1].text += text
+    } else {
+      groups.push({ text, marks })
+    }
+  }
 
-      if (node.type !== "text") return ""
-
-      let text = node.text ?? ""
-      const marks = node.marks ?? []
-
-      // Apply marks in reverse order for proper nesting
-      for (const mark of marks) {
-        switch (mark.type) {
-          case "bold":
-            text = `**${text}**`
-            break
-          case "italic":
-            text = `*${text}*`
-            break
-          case "strike":
-            text = `~~${text}~~`
-            break
-          case "code":
-            text = "`" + text + "`"
-            break
-          case "link":
-            text = `[${text}](${(mark.attrs?.href as string) ?? ""})`
-            break
-        }
-      }
-      return text
-    })
-    .join("")
+  // Serialize each group with its marks
+  return groups.map((group) => wrapWithMarks(group.text, group.marks)).join("")
 }
 
 /**

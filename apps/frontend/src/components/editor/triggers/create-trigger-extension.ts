@@ -48,7 +48,9 @@ export interface TriggerExtensionOptions<TItem> {
   }
 }
 
-const baseClassName = "inline-flex items-center rounded px-1 py-0.5 text-sm font-medium"
+// No text-sm - inherit font size from parent (important for headers)
+// No font-medium - inherit font weight from parent (important for bold)
+const baseClassName = "inline-flex items-center rounded px-1 py-0.5"
 
 /**
  * Factory function to create TipTap trigger extensions.

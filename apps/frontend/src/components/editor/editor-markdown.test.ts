@@ -676,6 +676,66 @@ const x = 1
 
         expect(serializeToMarkdown(doc)).toBe("Hello  there")
       })
+
+      it("should wrap mention with bold when adjacent text is bold", () => {
+        // When user selects "@here hello" and applies bold, ProseMirror produces:
+        // [mention @here] [text " hello" with bold mark]
+        // This should serialize as **@here hello** (not @here ** hello**)
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "mention",
+                  attrs: { id: "broadcast:here", slug: "here", name: "Here", mentionType: "broadcast" },
+                },
+                { type: "text", text: " hello", marks: [{ type: "bold" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("**@here hello**")
+      })
+
+      it("should wrap mention with italic when adjacent text is italic", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "mention",
+                  attrs: { id: "usr_1", slug: "kristoffer", name: "Kristoffer", mentionType: "user" },
+                },
+                { type: "text", text: " check this", marks: [{ type: "italic" }] },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("*@kristoffer check this*")
+      })
+
+      it("should wrap channel with code when adjacent text has code mark", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "see ", marks: [{ type: "code" }] },
+                { type: "channelLink", attrs: { id: "stream_1", slug: "general", name: "General" } },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("`see #general`")
+      })
     })
 
     describe("parsing", () => {

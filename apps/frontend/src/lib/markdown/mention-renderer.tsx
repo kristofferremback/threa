@@ -43,7 +43,7 @@ function TriggerChip({ type, text }: TriggerChipProps) {
   }
 
   return (
-    <span className={cn("inline-flex items-center rounded px-1 py-0.5 text-sm font-medium", style)}>
+    <span className={cn("inline-flex items-center rounded px-1 py-0.5", style)}>
       {prefix}
       {text}
     </span>
