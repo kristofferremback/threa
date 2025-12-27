@@ -1,3 +1,4 @@
+import { type AnyExtension } from "@tiptap/core"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
 import Link from "@tiptap/extension-link"
@@ -29,8 +30,7 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
   // Support legacy string-only signature
   const config: CreateEditorExtensionsOptions = typeof options === "string" ? { placeholder: options } : options
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const extensions: any[] = [
+  const extensions: AnyExtension[] = [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       codeBlock: false,
