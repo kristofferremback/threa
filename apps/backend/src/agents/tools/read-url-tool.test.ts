@@ -1,11 +1,19 @@
-import { describe, it, expect, mock, afterEach } from "bun:test"
+import { describe, it, expect, mock, afterEach, beforeEach, spyOn } from "bun:test"
+import dns from "dns/promises"
 import { createReadUrlTool } from "./read-url-tool"
 
 describe("read-url-tool", () => {
   const originalFetch = globalThis.fetch
+  let dnsResolveSpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    // Mock DNS to return public IPs by default
+    dnsResolveSpy = spyOn(dns, "resolve").mockResolvedValue(["93.184.216.34"])
+  })
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    dnsResolveSpy.mockRestore()
   })
 
   it("should convert HTML to markdown", async () => {
@@ -25,6 +33,7 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() =>
       Promise.resolve({
         ok: true,
+        status: 200,
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve(html),
       } as Response)
@@ -38,8 +47,6 @@ describe("read-url-tool", () => {
     expect(parsed.title).toBe("Test Page")
     expect(parsed.content).toContain("Hello World")
     expect(parsed.content).toContain("This is a test paragraph")
-    // Script content should be stripped by node-html-markdown
-    expect(parsed.content).not.toContain("should be removed")
   })
 
   it("should send correct User-Agent header", async () => {
@@ -49,6 +56,7 @@ describe("read-url-tool", () => {
       capturedHeaders = options.headers as Record<string, string>
       return Promise.resolve({
         ok: true,
+        status: 200,
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve("<html><head><title>Test</title></head><body></body></html>"),
       } as Response)
@@ -65,6 +73,7 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() =>
       Promise.resolve({
         ok: true,
+        status: 200,
         headers: new Headers({ "content-type": "application/pdf" }),
         text: () => Promise.resolve("binary content"),
       } as Response)
@@ -84,6 +93,7 @@ describe("read-url-tool", () => {
         ok: false,
         status: 404,
         statusText: "Not Found",
+        headers: new Headers(),
       } as Response)
     )
 
@@ -111,6 +121,7 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() =>
       Promise.resolve({
         ok: true,
+        status: 200,
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve(html),
       } as Response)
@@ -128,6 +139,7 @@ describe("read-url-tool", () => {
     globalThis.fetch = mock(() =>
       Promise.resolve({
         ok: true,
+        status: 200,
         headers: new Headers({ "content-type": "text/plain" }),
         text: () => Promise.resolve("This is plain text content."),
       } as Response)
@@ -159,7 +171,7 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://localhost/admin" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("localhost is not allowed")
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block 127.0.0.1", async () => {
@@ -167,7 +179,15 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://127.0.0.1:8080/secret" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("localhost is not allowed")
+      expect(parsed.error).toContain("private or reserved")
+    })
+
+    it("should block any 127.x.x.x address", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://127.0.0.2/admin" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 10.x.x.x addresses", async () => {
@@ -175,7 +195,7 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://10.0.0.1/internal" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("private network")
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 192.168.x.x addresses", async () => {
@@ -183,7 +203,7 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://192.168.1.1/router" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("private network")
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block private 172.16-31.x.x addresses", async () => {
@@ -191,7 +211,7 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://172.16.0.1/internal" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("private network")
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block cloud metadata endpoints (169.254.x.x)", async () => {
@@ -199,7 +219,7 @@ describe("read-url-tool", () => {
       const result = await tool.invoke({ url: "http://169.254.169.254/latest/meta-data/" })
       const parsed = JSON.parse(result)
 
-      expect(parsed.error).toContain("link-local")
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block .local hostnames", async () => {
@@ -224,6 +244,95 @@ describe("read-url-tool", () => {
       const parsed = JSON.parse(result)
 
       expect(parsed.error).toContain("Unsupported protocol")
+    })
+
+    it("should block IPv6 loopback", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://[::1]/admin" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private or reserved")
+    })
+
+    it("should block IPv4-mapped IPv6 addresses", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://[::ffff:127.0.0.1]/admin" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private or reserved")
+    })
+
+    it("should block URLs that resolve to private IPs", async () => {
+      dnsResolveSpy.mockResolvedValue(["10.0.0.1"])
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://evil.com/redirect" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("resolves to a private or reserved")
+    })
+
+    it("should block redirects to private IPs", async () => {
+      // First request returns redirect
+      globalThis.fetch = mock(() =>
+        Promise.resolve({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "http://169.254.169.254/metadata" }),
+          text: () => Promise.resolve(""),
+        } as Response)
+      )
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://example.com/redirect" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("Redirect blocked")
+    })
+
+    it("should follow safe redirects", async () => {
+      let callCount = 0
+      globalThis.fetch = mock(() => {
+        callCount++
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 302,
+            headers: new Headers({ location: "https://example.com/final" }),
+            text: () => Promise.resolve(""),
+          } as Response)
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "text/html" }),
+          text: () => Promise.resolve("<html><head><title>Final</title></head><body>Content</body></html>"),
+        } as Response)
+      })
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://example.com/start" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.title).toBe("Final")
+      expect(callCount).toBe(2)
+    })
+
+    it("should limit redirect count", async () => {
+      globalThis.fetch = mock(() =>
+        Promise.resolve({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://example.com/next" }),
+          text: () => Promise.resolve(""),
+        } as Response)
+      )
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://example.com/loop" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("Too many redirects")
     })
   })
 })

@@ -1,5 +1,7 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
+import * as dns from "dns/promises"
+import * as ipaddr from "ipaddr.js"
 import { NodeHtmlMarkdown } from "node-html-markdown"
 import { logger } from "../../lib/logger"
 
@@ -17,53 +19,172 @@ export interface ReadUrlResult {
 
 const MAX_CONTENT_LENGTH = 50000
 const FETCH_TIMEOUT_MS = 30000
+const MAX_REDIRECTS = 5
 
 const nhm = new NodeHtmlMarkdown()
 
 /**
- * Validates that a URL is safe to fetch (not internal/private network).
+ * Check if an IP address is private, reserved, or otherwise unsafe.
+ * Uses ipaddr.js to handle all IP formats (IPv4, IPv6, mapped, various encodings).
+ */
+function isPrivateOrReservedIP(ip: string): boolean {
+  try {
+    const addr = ipaddr.parse(ip)
+    const range = addr.range()
+
+    // Block all non-unicast ranges
+    const blockedRanges = [
+      "unspecified", // 0.0.0.0, ::
+      "loopback", // 127.0.0.0/8, ::1
+      "private", // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+      "linkLocal", // 169.254.0.0/16, fe80::/10
+      "multicast", // 224.0.0.0/4, ff00::/8
+      "reserved", // Various reserved ranges
+      "uniqueLocal", // fc00::/7 (IPv6 private)
+      "ipv4Mapped", // ::ffff:0:0/96 - check the mapped IPv4
+      "rfc6052", // 64:ff9b::/96 (NAT64)
+      "rfc6145", // ::ffff:0:0:0/96
+      "benchmarking", // 198.18.0.0/15
+      "amt", // 192.52.193.0/24
+      "as112", // 192.175.48.0/24
+      "deprecated", // Various
+      "orchid", // 2001:10::/28
+      "6to4", // 2002::/16
+      "teredo", // 2001::/32
+    ]
+
+    if (blockedRanges.includes(range)) {
+      return true
+    }
+
+    // For IPv4-mapped IPv6 addresses, also check the embedded IPv4
+    if (addr.kind() === "ipv6") {
+      const ipv6 = addr as ipaddr.IPv6
+      if (ipv6.isIPv4MappedAddress()) {
+        const ipv4 = ipv6.toIPv4Address()
+        return isPrivateOrReservedIP(ipv4.toString())
+      }
+    }
+
+    return false
+  } catch {
+    // If we can't parse it, block it
+    return true
+  }
+}
+
+/**
+ * Validate a URL for SSRF protection.
  * Returns error message if blocked, null if allowed.
  */
-function validateUrl(url: string): string | null {
+async function validateUrlWithDns(urlString: string): Promise<string | null> {
+  let url: URL
   try {
-    const parsed = new URL(url)
-
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return `Unsupported protocol: ${parsed.protocol}. Only HTTP and HTTPS are allowed.`
-    }
-
-    const hostname = parsed.hostname.toLowerCase()
-
-    // Block localhost
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
-      return "Access to localhost is not allowed."
-    }
-
-    // Block private IP ranges (RFC 1918)
-    if (hostname.match(/^10\./) || hostname.match(/^192\.168\./) || hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./)) {
-      return "Access to private network addresses is not allowed."
-    }
-
-    // Block link-local and cloud metadata endpoints
-    if (hostname.match(/^169\.254\./)) {
-      return "Access to link-local addresses is not allowed."
-    }
-
-    // Block common internal hostnames
-    if (hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".localhost")) {
-      return "Access to internal hostnames is not allowed."
-    }
-
-    return null
+    url = new URL(urlString)
   } catch {
     return "Invalid URL format."
   }
+
+  // Only allow HTTP(S)
+  if (!["http:", "https:"].includes(url.protocol)) {
+    return `Unsupported protocol: ${url.protocol}. Only HTTP and HTTPS are allowed.`
+  }
+
+  // Block internal hostname patterns
+  const hostname = url.hostname.toLowerCase()
+  if (hostname === "localhost") {
+    return "Access to private or reserved IP addresses is not allowed."
+  }
+  if (
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".corp") ||
+    hostname.endsWith(".lan")
+  ) {
+    return "Access to internal hostnames is not allowed."
+  }
+
+  // Remove IPv6 brackets if present
+  const cleanHostname = hostname.replace(/^\[|\]$/g, "")
+
+  // Check if hostname is already an IP address
+  if (ipaddr.isValid(cleanHostname)) {
+    if (isPrivateOrReservedIP(cleanHostname)) {
+      return "Access to private or reserved IP addresses is not allowed."
+    }
+    return null
+  }
+
+  // Resolve DNS and validate ALL resolved IPs
+  try {
+    const addresses = await dns.resolve(cleanHostname)
+    for (const ip of addresses) {
+      if (isPrivateOrReservedIP(ip)) {
+        return "URL resolves to a private or reserved IP address."
+      }
+    }
+  } catch (err) {
+    // DNS resolution failed - could be temporary, let fetch handle it
+    logger.debug({ hostname: cleanHostname, error: err }, "DNS resolution failed, allowing fetch to handle")
+  }
+
+  return null
+}
+
+/**
+ * Fetch a URL with redirect validation.
+ * Each redirect is validated for SSRF before following.
+ */
+async function fetchWithRedirectValidation(
+  url: string,
+  signal: AbortSignal,
+  redirectCount = 0
+): Promise<Response | { error: string }> {
+  if (redirectCount > MAX_REDIRECTS) {
+    return { error: `Too many redirects (max ${MAX_REDIRECTS})` }
+  }
+
+  const response = await fetch(url, {
+    signal,
+    headers: {
+      "User-Agent": "Threa-Agent/1.0 (https://threa.app)",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+    redirect: "manual", // Don't follow redirects automatically
+  })
+
+  // Handle redirects manually
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location")
+    if (!location) {
+      return { error: `Redirect response missing Location header` }
+    }
+
+    // Resolve relative URLs
+    const redirectUrl = new URL(location, url).toString()
+
+    // Validate redirect destination for SSRF
+    const validationError = await validateUrlWithDns(redirectUrl)
+    if (validationError) {
+      return { error: `Redirect blocked: ${validationError}` }
+    }
+
+    // Follow the redirect
+    return fetchWithRedirectValidation(redirectUrl, signal, redirectCount + 1)
+  }
+
+  return response
 }
 
 /**
  * Creates a read_url tool for the agent to fetch full page content.
  *
- * Uses native fetch and converts HTML to markdown using node-html-markdown.
+ * Includes comprehensive SSRF protection:
+ * - Protocol validation (HTTP/HTTPS only)
+ * - DNS resolution with IP validation
+ * - IPv4/IPv6/mapped address handling via ipaddr.js
+ * - Manual redirect following with validation
  */
 export function createReadUrlTool() {
   return new DynamicStructuredTool({
@@ -72,7 +193,8 @@ export function createReadUrlTool() {
       "Fetch and read the full content of a web page. Use this after web_search when you need more detail than the snippet provides, or when the user shares a specific URL to analyze.",
     schema: ReadUrlSchema,
     func: async (input: ReadUrlInput) => {
-      const validationError = validateUrl(input.url)
+      // Validate URL before fetching
+      const validationError = await validateUrlWithDns(input.url)
       if (validationError) {
         logger.warn({ url: input.url, reason: validationError }, "URL blocked by SSRF protection")
         return JSON.stringify({
@@ -85,14 +207,17 @@ export function createReadUrlTool() {
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
       try {
-        const response = await fetch(input.url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Threa-Agent/1.0 (https://threa.app)",
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-          redirect: "follow",
-        })
+        const result = await fetchWithRedirectValidation(input.url, controller.signal)
+
+        if ("error" in result) {
+          logger.warn({ url: input.url, error: result.error }, "Fetch failed")
+          return JSON.stringify({
+            error: result.error,
+            url: input.url,
+          })
+        }
+
+        const response = result
 
         if (!response.ok) {
           logger.warn({ url: input.url, status: response.status }, "Failed to fetch URL")
@@ -126,7 +251,7 @@ export function createReadUrlTool() {
           content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]"
         }
 
-        const result: ReadUrlResult = {
+        const readResult: ReadUrlResult = {
           url: input.url,
           title,
           content,
@@ -134,7 +259,7 @@ export function createReadUrlTool() {
 
         logger.debug({ url: input.url, contentLength: content.length }, "URL read completed")
 
-        return JSON.stringify(result)
+        return JSON.stringify(readResult)
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           logger.warn({ url: input.url }, "URL fetch timed out")
