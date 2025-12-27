@@ -1,16 +1,9 @@
-import { useState, useCallback, useRef, useMemo } from "react"
-import { createPortal } from "react-dom"
+import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { ChannelItem } from "./types"
-import { ChannelList, type ChannelListRef } from "./channel-list"
+import { ChannelList } from "./channel-list"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
-
-interface SuggestionState {
-  items: ChannelItem[]
-  clientRect: (() => DOMRect | null) | null
-  command: ((item: ChannelItem) => void) | null
-}
+import { useSuggestion } from "./use-suggestion"
 
 /**
  * Filter channels by query string.
@@ -33,8 +26,6 @@ function filterChannels(items: ChannelItem[], query: string): ChannelItem[] {
 export function useChannelSuggestion() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
-  const [state, setState] = useState<SuggestionState | null>(null)
-  const listRef = useRef<ChannelListRef>(null)
 
   // Convert streams to channel items
   const channels = useMemo<ChannelItem[]>(() => {
@@ -50,67 +41,24 @@ export function useChannelSuggestion() {
       }))
   }, [bootstrap])
 
-  // Use ref to avoid stale closure in TipTap callback
-  const channelsRef = useRef(channels)
-  channelsRef.current = channels
-
-  // Use stable callback that reads from ref - TipTap captures this at extension creation time
-  const getSuggestionItems = useCallback(
-    ({ query }: { query: string }) => {
-      return filterChannels(channelsRef.current, query)
-    },
-    [] // Empty deps - callback is stable, reads current value from ref
+  const renderList = useCallback(
+    (props: {
+      ref: React.RefObject<{ onKeyDown: (event: KeyboardEvent) => boolean } | null>
+      items: ChannelItem[]
+      clientRect: (() => DOMRect | null) | null
+      command: (item: ChannelItem) => void
+    }) => <ChannelList ref={props.ref} items={props.items} clientRect={props.clientRect} command={props.command} />,
+    []
   )
 
-  const onStart = useCallback((props: SuggestionProps<ChannelItem>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
-
-  const onUpdate = useCallback((props: SuggestionProps<ChannelItem>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
-
-  const onExit = useCallback(() => {
-    setState(null)
-  }, [])
-
-  const onKeyDown = useCallback((props: SuggestionKeyDownProps) => {
-    if (props.event.key === "Escape") {
-      setState(null)
-      return true
-    }
-    return listRef.current?.onKeyDown(props.event) ?? false
-  }, [])
-
-  const suggestionConfig = {
-    items: getSuggestionItems,
-    render: () => ({
-      onStart,
-      onUpdate,
-      onExit,
-      onKeyDown,
-    }),
-  }
-
-  const renderChannelList = useCallback(() => {
-    if (!state || !state.command) return null
-
-    return createPortal(
-      <ChannelList ref={listRef} items={state.items} clientRect={state.clientRect} command={state.command} />,
-      document.body
-    )
-  }, [state])
+  const { suggestionConfig, renderSuggestionList } = useSuggestion<ChannelItem>({
+    getItems: () => channels,
+    filterItems: filterChannels,
+    renderList,
+  })
 
   return {
     suggestionConfig,
-    renderChannelList,
+    renderChannelList: renderSuggestionList,
   }
 }

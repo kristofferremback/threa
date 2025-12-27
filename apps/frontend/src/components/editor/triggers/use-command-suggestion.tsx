@@ -1,16 +1,9 @@
-import { useState, useCallback, useRef, useMemo } from "react"
-import { createPortal } from "react-dom"
+import { useCallback, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { CommandItem } from "./types"
-import { CommandList, type CommandListRef } from "./command-list"
+import { CommandList } from "./command-list"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
-
-interface SuggestionState {
-  items: CommandItem[]
-  clientRect: (() => DOMRect | null) | null
-  command: ((item: CommandItem) => void) | null
-}
+import { useSuggestion } from "./use-suggestion"
 
 /**
  * Filter commands by query string.
@@ -32,8 +25,6 @@ function filterCommands(items: CommandItem[], query: string): CommandItem[] {
 export function useCommandSuggestion() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId ?? "")
-  const [state, setState] = useState<SuggestionState | null>(null)
-  const listRef = useRef<CommandListRef>(null)
 
   // Get commands from bootstrap
   const commands = useMemo<CommandItem[]>(() => {
@@ -45,67 +36,24 @@ export function useCommandSuggestion() {
     }))
   }, [bootstrap])
 
-  // Use ref to avoid stale closure in TipTap callback
-  const commandsRef = useRef(commands)
-  commandsRef.current = commands
-
-  // Use stable callback that reads from ref - TipTap captures this at extension creation time
-  const getSuggestionItems = useCallback(
-    ({ query }: { query: string }) => {
-      return filterCommands(commandsRef.current, query)
-    },
-    [] // Empty deps - callback is stable, reads current value from ref
+  const renderList = useCallback(
+    (props: {
+      ref: React.RefObject<{ onKeyDown: (event: KeyboardEvent) => boolean } | null>
+      items: CommandItem[]
+      clientRect: (() => DOMRect | null) | null
+      command: (item: CommandItem) => void
+    }) => <CommandList ref={props.ref} items={props.items} clientRect={props.clientRect} command={props.command} />,
+    []
   )
 
-  const onStart = useCallback((props: SuggestionProps<CommandItem>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
-
-  const onUpdate = useCallback((props: SuggestionProps<CommandItem>) => {
-    setState({
-      items: props.items,
-      clientRect: props.clientRect ?? null,
-      command: props.command,
-    })
-  }, [])
-
-  const onExit = useCallback(() => {
-    setState(null)
-  }, [])
-
-  const onKeyDown = useCallback((props: SuggestionKeyDownProps) => {
-    if (props.event.key === "Escape") {
-      setState(null)
-      return true
-    }
-    return listRef.current?.onKeyDown(props.event) ?? false
-  }, [])
-
-  const suggestionConfig = {
-    items: getSuggestionItems,
-    render: () => ({
-      onStart,
-      onUpdate,
-      onExit,
-      onKeyDown,
-    }),
-  }
-
-  const renderCommandList = useCallback(() => {
-    if (!state || !state.command) return null
-
-    return createPortal(
-      <CommandList ref={listRef} items={state.items} clientRect={state.clientRect} command={state.command} />,
-      document.body
-    )
-  }, [state])
+  const { suggestionConfig, renderSuggestionList } = useSuggestion<CommandItem>({
+    getItems: () => commands,
+    filterItems: filterCommands,
+    renderList,
+  })
 
   return {
     suggestionConfig,
-    renderCommandList,
+    renderCommandList: renderSuggestionList,
   }
 }
