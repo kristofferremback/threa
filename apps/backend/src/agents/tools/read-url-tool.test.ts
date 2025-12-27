@@ -1,19 +1,22 @@
 import { describe, it, expect, mock, afterEach, beforeEach, spyOn } from "bun:test"
-import dns from "dns/promises"
+import * as dns from "dns/promises"
 import { createReadUrlTool } from "./read-url-tool"
 
 describe("read-url-tool", () => {
   const originalFetch = globalThis.fetch
-  let dnsResolveSpy: ReturnType<typeof spyOn>
+  let dnsResolve4Spy: ReturnType<typeof spyOn>
+  let dnsResolve6Spy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
-    // Mock DNS to return public IPs by default
-    dnsResolveSpy = spyOn(dns, "resolve").mockResolvedValue(["93.184.216.34"])
+    // Mock DNS to return public IPs by default (both IPv4 and IPv6)
+    dnsResolve4Spy = spyOn(dns, "resolve4").mockResolvedValue(["93.184.216.34"])
+    dnsResolve6Spy = spyOn(dns, "resolve6").mockRejectedValue(new Error("No AAAA records"))
   })
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    dnsResolveSpy.mockRestore()
+    dnsResolve4Spy.mockRestore()
+    dnsResolve6Spy.mockRestore()
   })
 
   it("should convert HTML to markdown", async () => {
@@ -262,14 +265,44 @@ describe("read-url-tool", () => {
       expect(parsed.error).toContain("private or reserved")
     })
 
-    it("should block URLs that resolve to private IPs", async () => {
-      dnsResolveSpy.mockResolvedValue(["10.0.0.1"])
+    it("should block URLs that resolve to private IPs via A records", async () => {
+      dnsResolve4Spy.mockResolvedValue(["10.0.0.1"])
 
       const tool = createReadUrlTool()
       const result = await tool.invoke({ url: "https://evil.com/redirect" })
       const parsed = JSON.parse(result)
 
       expect(parsed.error).toContain("resolves to a private or reserved")
+    })
+
+    it("should block URLs that resolve to private IPs via AAAA records", async () => {
+      dnsResolve4Spy.mockRejectedValue(new Error("No A records"))
+      dnsResolve6Spy.mockResolvedValue(["::1"])
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://evil.com/ipv6-only" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("resolves to a private or reserved")
+    })
+
+    it("should block when DNS resolution fails (fail-closed)", async () => {
+      dnsResolve4Spy.mockRejectedValue(new Error("DNS timeout"))
+      dnsResolve6Spy.mockRejectedValue(new Error("DNS timeout"))
+
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "https://unreachable.example.com" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("no DNS records found")
+    })
+
+    it("should block localhost with trailing dot (FQDN)", async () => {
+      const tool = createReadUrlTool()
+      const result = await tool.invoke({ url: "http://localhost./admin" })
+      const parsed = JSON.parse(result)
+
+      expect(parsed.error).toContain("private or reserved")
     })
 
     it("should block redirects to private IPs", async () => {

@@ -90,8 +90,8 @@ async function validateUrlWithDns(urlString: string): Promise<string | null> {
     return `Unsupported protocol: ${url.protocol}. Only HTTP and HTTPS are allowed.`
   }
 
-  // Block internal hostname patterns
-  const hostname = url.hostname.toLowerCase()
+  // Block internal hostname patterns (normalize trailing dot for FQDN)
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "")
   if (hostname === "localhost") {
     return "Access to private or reserved IP addresses is not allowed."
   }
@@ -116,17 +116,32 @@ async function validateUrlWithDns(urlString: string): Promise<string | null> {
     return null
   }
 
-  // Resolve DNS and validate ALL resolved IPs
+  // Resolve DNS (both A and AAAA records) and validate ALL resolved IPs
   try {
-    const addresses = await dns.resolve(cleanHostname)
-    for (const ip of addresses) {
+    const [ipv4Result, ipv6Result] = await Promise.allSettled([
+      dns.resolve4(cleanHostname),
+      dns.resolve6(cleanHostname),
+    ])
+
+    const allAddresses: string[] = []
+    if (ipv4Result.status === "fulfilled") allAddresses.push(...ipv4Result.value)
+    if (ipv6Result.status === "fulfilled") allAddresses.push(...ipv6Result.value)
+
+    // If no records found at all, fail closed
+    if (allAddresses.length === 0) {
+      logger.warn({ hostname: cleanHostname }, "DNS resolution returned no records")
+      return "Unable to validate URL - no DNS records found."
+    }
+
+    for (const ip of allAddresses) {
       if (isPrivateOrReservedIP(ip)) {
         return "URL resolves to a private or reserved IP address."
       }
     }
   } catch (err) {
-    // DNS resolution failed - could be temporary, let fetch handle it
-    logger.debug({ hostname: cleanHostname, error: err }, "DNS resolution failed, allowing fetch to handle")
+    // DNS resolution failed - fail closed for security
+    logger.warn({ hostname: cleanHostname, error: err }, "DNS resolution failed, blocking request")
+    return "Unable to validate URL - DNS resolution failed."
   }
 
   return null
