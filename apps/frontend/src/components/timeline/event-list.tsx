@@ -16,6 +16,8 @@ interface EventListProps {
   workspaceId: string
   streamId: string
   highlightMessageId?: string | null
+  firstUnreadEventId?: string
+  isDividerFading?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -70,7 +72,15 @@ function groupTimelineItems(events: StreamEvent[], currentUserId: string | undef
   return result
 }
 
-export function EventList({ events, isLoading, workspaceId, streamId, highlightMessageId }: EventListProps) {
+export function EventList({
+  events,
+  isLoading,
+  workspaceId,
+  streamId,
+  highlightMessageId,
+  firstUnreadEventId,
+  isDividerFading,
+}: EventListProps) {
   const user = useUser()
 
   if (isLoading) {
@@ -94,20 +104,45 @@ export function EventList({ events, isLoading, workspaceId, streamId, highlightM
 
   const timelineItems = groupTimelineItems(events, user?.id)
 
+  // Helper to check if an item is the first unread event
+  const isFirstUnread = (item: TimelineItem): boolean => {
+    if (!firstUnreadEventId) return false
+    if (item.type === "command_group") {
+      return item.events[0]?.id === firstUnreadEventId
+    }
+    return item.event.id === firstUnreadEventId
+  }
+
   return (
     <div className="flex flex-col gap-1 p-4">
       {timelineItems.map((item) => {
-        if (item.type === "command_group") {
-          return <CommandEvent key={`cmd-${item.commandId}`} events={item.events} />
-        }
+        const showUnreadDivider = isFirstUnread(item)
+        const eventId = item.type === "command_group" ? item.commandId : item.event.id
+
         return (
-          <EventItem
-            key={item.event.id}
-            event={item.event}
-            workspaceId={workspaceId}
-            streamId={streamId}
-            highlightMessageId={highlightMessageId}
-          />
+          <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
+            {showUnreadDivider && (
+              <div
+                className={`absolute left-0 right-0 top-0 -translate-y-1/2 z-10 flex items-center gap-3 pointer-events-none transition-opacity duration-500 ${
+                  isDividerFading ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                <div className="flex-1 border-t border-destructive" />
+                <span className="text-xs font-medium text-destructive bg-background px-2">New</span>
+                <div className="flex-1 border-t border-destructive" />
+              </div>
+            )}
+            {item.type === "command_group" ? (
+              <CommandEvent events={item.events} />
+            ) : (
+              <EventItem
+                event={item.event}
+                workspaceId={workspaceId}
+                streamId={streamId}
+                highlightMessageId={highlightMessageId}
+              />
+            )}
+          </div>
         )
       })}
     </div>

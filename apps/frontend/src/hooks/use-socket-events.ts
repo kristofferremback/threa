@@ -1,5 +1,6 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { useParams } from "react-router-dom"
 import { useSocket } from "@/contexts"
 import { useAuth } from "@/auth"
 import { db } from "@/db"
@@ -56,6 +57,11 @@ export function useSocketEvents(workspaceId: string) {
   const queryClient = useQueryClient()
   const socket = useSocket()
   const { user } = useAuth()
+  const { streamId: currentStreamId } = useParams<{ streamId: string }>()
+
+  // Use ref to avoid stale closure in socket handlers
+  const currentStreamIdRef = useRef(currentStreamId)
+  currentStreamIdRef.current = currentStreamId
 
   useEffect(() => {
     if (!socket || !workspaceId) return
@@ -231,6 +237,9 @@ export function useSocketEvents(workspaceId: string) {
 
       // Skip if this is the current user's own message
       if (user && payload.authorId === user.id) return
+
+      // Skip if user is currently viewing this stream (they'll see it immediately)
+      if (currentStreamIdRef.current === payload.streamId) return
 
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
