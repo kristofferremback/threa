@@ -45,11 +45,16 @@ export function useCommandSuggestion() {
     }))
   }, [bootstrap])
 
+  // Use ref to avoid stale closure in TipTap callback
+  const commandsRef = useRef(commands)
+  commandsRef.current = commands
+
+  // Use stable callback that reads from ref - TipTap captures this at extension creation time
   const getSuggestionItems = useCallback(
     ({ query }: { query: string }) => {
-      return filterCommands(commands, query)
+      return filterCommands(commandsRef.current, query)
     },
-    [commands]
+    [] // Empty deps - callback is stable, reads current value from ref
   )
 
   const onStart = useCallback((props: SuggestionProps<CommandItem>) => {

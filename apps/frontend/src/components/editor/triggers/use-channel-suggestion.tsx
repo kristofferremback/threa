@@ -50,11 +50,16 @@ export function useChannelSuggestion() {
       }))
   }, [bootstrap])
 
+  // Use ref to avoid stale closure in TipTap callback
+  const channelsRef = useRef(channels)
+  channelsRef.current = channels
+
+  // Use stable callback that reads from ref - TipTap captures this at extension creation time
   const getSuggestionItems = useCallback(
     ({ query }: { query: string }) => {
-      return filterChannels(channels, query)
+      return filterChannels(channelsRef.current, query)
     },
-    [channels]
+    [] // Empty deps - callback is stable, reads current value from ref
   )
 
   const onStart = useCallback((props: SuggestionProps<ChannelItem>) => {

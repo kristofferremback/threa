@@ -66,6 +66,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(function
           event.preventDefault()
           setSelectedIndex((prev) => (prev + 1) % items.length)
           return true
+        case "Tab":
         case "Enter":
           event.preventDefault()
           command(items[selectedIndex])

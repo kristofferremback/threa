@@ -8,6 +8,8 @@ export interface Mentionable {
   type: "user" | "persona" | "broadcast"
   avatarEmoji?: string
   avatarUrl?: string
+  /** True if this is the current user */
+  isCurrentUser?: boolean
 }
 
 /**

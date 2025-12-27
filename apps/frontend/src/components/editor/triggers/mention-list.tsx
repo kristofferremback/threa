@@ -66,6 +66,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(function
           event.preventDefault()
           setSelectedIndex((prev) => (prev + 1) % items.length)
           return true
+        case "Tab":
         case "Enter":
           event.preventDefault()
           command(items[selectedIndex])
@@ -124,9 +125,12 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(function
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-1 flex-col items-start">
-                <span className="font-medium">{item.name}</span>
+                <span className="font-medium">
+                  {item.name}
+                  {item.isCurrentUser && <span className="text-muted-foreground"> (me)</span>}
+                </span>
                 <span className={cn("text-xs", typeColors[item.type])}>
-                  @{item.slug} · {typeLabels[item.type]}
+                  @{item.slug} · {item.isCurrentUser ? "You" : typeLabels[item.type]}
                 </span>
               </div>
             </button>

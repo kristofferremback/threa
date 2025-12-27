@@ -9,7 +9,7 @@ export const MentionPluginKey = new PluginKey("mention")
 export interface MentionNodeAttrs {
   id: string
   slug: string
-  mentionType: "user" | "persona" | "broadcast"
+  mentionType: "user" | "persona" | "broadcast" | "me"
 }
 
 export interface MentionOptions {
@@ -80,6 +80,7 @@ export const MentionExtension = Node.create<MentionOptions>({
       user: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
       persona: "bg-primary/10 text-primary",
       broadcast: "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
+      me: "bg-blue-100 text-primary dark:bg-blue-900/50 dark:text-primary",
     }
 
     return [
@@ -108,6 +109,9 @@ export const MentionExtension = Node.create<MentionOptions>({
         command: ({ editor, range, props }) => {
           const mentionable = props as Mentionable
 
+          // Use "me" mentionType for current user to get special highlighting
+          const mentionType = mentionable.isCurrentUser ? "me" : mentionable.type
+
           // Delete the trigger and query, then insert the mention node
           editor
             .chain()
@@ -119,7 +123,7 @@ export const MentionExtension = Node.create<MentionOptions>({
                 attrs: {
                   id: mentionable.id,
                   slug: mentionable.slug,
-                  mentionType: mentionable.type,
+                  mentionType,
                 },
               },
               { type: "text", text: " " },

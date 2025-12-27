@@ -91,6 +91,12 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
         return slug ? `#${slug}` : ""
       }
 
+      // Slash command node - serialize to /name format
+      if (node.type === "slashCommand") {
+        const name = node.attrs?.name as string
+        return name ? `/${name}` : ""
+      }
+
       if (node.type !== "text") return ""
 
       let text = node.text ?? ""
@@ -122,10 +128,16 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
 }
 
 /**
+ * Lookup function to determine mention type from slug.
+ * "me" is a special type for the current user's own mentions.
+ */
+export type MentionTypeLookup = (slug: string) => "user" | "persona" | "broadcast" | "me"
+
+/**
  * Parse Markdown string to ProseMirror JSON
  * This is a simple parser for restoring drafts - Tiptap handles display
  */
-export function parseMarkdown(markdown: string): JSONContent {
+export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLookup): JSONContent {
   if (!markdown.trim()) {
     return { type: "doc", content: [{ type: "paragraph" }] }
   }
@@ -161,7 +173,7 @@ export function parseMarkdown(markdown: string): JSONContent {
       content.push({
         type: "heading",
         attrs: { level: headingMatch[1].length },
-        content: parseInlineMarkdown(headingMatch[2]),
+        content: parseInlineMarkdown(headingMatch[2], getMentionType),
       })
       i++
       continue
@@ -179,7 +191,7 @@ export function parseMarkdown(markdown: string): JSONContent {
         content: [
           {
             type: "paragraph",
-            content: parseInlineMarkdown(quoteLines.join("\n")),
+            content: parseInlineMarkdown(quoteLines.join("\n"), getMentionType),
           },
         ],
       })
@@ -195,7 +207,7 @@ export function parseMarkdown(markdown: string): JSONContent {
           content: [
             {
               type: "paragraph",
-              content: parseInlineMarkdown(lines[i].replace(/^[-*]\s/, "")),
+              content: parseInlineMarkdown(lines[i].replace(/^[-*]\s/, ""), getMentionType),
             },
           ],
         })
@@ -214,7 +226,7 @@ export function parseMarkdown(markdown: string): JSONContent {
           content: [
             {
               type: "paragraph",
-              content: parseInlineMarkdown(lines[i].replace(/^\d+\.\s/, "")),
+              content: parseInlineMarkdown(lines[i].replace(/^\d+\.\s/, ""), getMentionType),
             },
           ],
         })
@@ -240,7 +252,7 @@ export function parseMarkdown(markdown: string): JSONContent {
     // Regular paragraph
     content.push({
       type: "paragraph",
-      content: parseInlineMarkdown(line),
+      content: parseInlineMarkdown(line, getMentionType),
     })
     i++
   }
@@ -248,10 +260,33 @@ export function parseMarkdown(markdown: string): JSONContent {
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] }
 }
 
-function parseInlineMarkdown(text: string): JSONContent[] {
+function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): JSONContent[] {
   if (!text) return []
 
   const result: JSONContent[] = []
+
+  // Default lookup for mention types (without context, can't determine "me")
+  const lookupMentionType: MentionTypeLookup =
+    getMentionType ??
+    ((slug): "user" | "persona" | "broadcast" | "me" => {
+      if (slug === "here" || slug === "channel") return "broadcast"
+      return "user"
+    })
+
+  // Check for slash command at start of text
+  const commandMatch = text.match(/^(\s*)(\/)([\w-]+)/)
+  let processText = text
+  if (commandMatch) {
+    // Preserve leading whitespace
+    if (commandMatch[1]) {
+      result.push({ type: "text", text: commandMatch[1] })
+    }
+    result.push({
+      type: "slashCommand",
+      attrs: { name: commandMatch[3] },
+    })
+    processText = text.slice(commandMatch[0].length)
+  }
 
   // Inline markdown pattern - captures each format type in separate groups
   // Group layout (order matters for matching priority):
@@ -268,10 +303,10 @@ function parseInlineMarkdown(text: string): JSONContent[] {
   let lastIndex = 0
   let match
 
-  while ((match = inlinePattern.exec(text)) !== null) {
+  while ((match = inlinePattern.exec(processText)) !== null) {
     // Add plain text before this match
     if (match.index > lastIndex) {
-      result.push({ type: "text", text: text.slice(lastIndex, match.index) })
+      result.push({ type: "text", text: processText.slice(lastIndex, match.index) })
     }
 
     if (match[1]) {
@@ -279,7 +314,7 @@ function parseInlineMarkdown(text: string): JSONContent[] {
       const linkText = match[2]
       const linkUrl = match[3]
       // Recursively parse the link text for nested formatting
-      const innerContent = parseInlineMarkdown(linkText)
+      const innerContent = parseInlineMarkdown(linkText, getMentionType)
       for (const node of innerContent) {
         if (node.type === "text") {
           result.push({
@@ -294,7 +329,7 @@ function parseInlineMarkdown(text: string): JSONContent[] {
     } else if (match[4]) {
       // Bold: **text**
       const boldText = match[5]
-      const innerContent = parseInlineMarkdown(boldText)
+      const innerContent = parseInlineMarkdown(boldText, getMentionType)
       for (const node of innerContent) {
         if (node.type === "text") {
           result.push({
@@ -309,7 +344,7 @@ function parseInlineMarkdown(text: string): JSONContent[] {
     } else if (match[6]) {
       // Italic: *text*
       const italicText = match[7]
-      const innerContent = parseInlineMarkdown(italicText)
+      const innerContent = parseInlineMarkdown(italicText, getMentionType)
       for (const node of innerContent) {
         if (node.type === "text") {
           result.push({
@@ -324,7 +359,7 @@ function parseInlineMarkdown(text: string): JSONContent[] {
     } else if (match[8]) {
       // Strike: ~~text~~
       const strikeText = match[9]
-      const innerContent = parseInlineMarkdown(strikeText)
+      const innerContent = parseInlineMarkdown(strikeText, getMentionType)
       for (const node of innerContent) {
         if (node.type === "text") {
           result.push({
@@ -348,7 +383,7 @@ function parseInlineMarkdown(text: string): JSONContent[] {
       const slug = match[13]
       result.push({
         type: "mention",
-        attrs: { id: slug, slug, name: slug, mentionType: "user" },
+        attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
       })
     } else if (match[14]) {
       // Channel: #slug
@@ -363,8 +398,8 @@ function parseInlineMarkdown(text: string): JSONContent[] {
   }
 
   // Add remaining plain text
-  if (lastIndex < text.length) {
-    result.push({ type: "text", text: text.slice(lastIndex) })
+  if (lastIndex < processText.length) {
+    result.push({ type: "text", text: processText.slice(lastIndex) })
   }
 
   return result.length ? result : [{ type: "text", text }]

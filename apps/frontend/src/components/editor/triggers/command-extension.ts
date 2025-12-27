@@ -1,10 +1,14 @@
-import { Extension } from "@tiptap/react"
+import { Node, mergeAttributes } from "@tiptap/react"
 import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { CommandItem } from "./types"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 
 export const CommandPluginKey = new PluginKey("slashCommand")
+
+export interface CommandNodeAttrs {
+  name: string
+}
 
 export interface CommandOptions {
   suggestion: {
@@ -20,10 +24,14 @@ export interface CommandOptions {
 
 /**
  * TipTap extension for /slash commands.
- * Unlike mentions/channels, this replaces the trigger with plain text.
+ * Creates an inline node that renders as a styled command chip.
  */
-export const CommandExtension = Extension.create<CommandOptions>({
+export const CommandExtension = Node.create<CommandOptions>({
   name: "slashCommand",
+  group: "inline",
+  inline: true,
+  selectable: false,
+  atom: true,
 
   addOptions() {
     return {
@@ -39,6 +47,35 @@ export const CommandExtension = Extension.create<CommandOptions>({
     }
   },
 
+  addAttributes() {
+    return {
+      name: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-name"),
+        renderHTML: (attributes) => ({ "data-name": attributes.name }),
+      },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-type="slashCommand"]' }]
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    return [
+      "span",
+      mergeAttributes(HTMLAttributes, {
+        "data-type": "slashCommand",
+        class: "inline-flex items-center rounded px-1 py-0.5 text-sm font-mono font-bold bg-muted text-primary",
+      }),
+      `/${node.attrs.name}`,
+    ]
+  },
+
+  renderText({ node }) {
+    return `/${node.attrs.name}`
+  },
+
   addProseMirrorPlugins() {
     return [
       Suggestion({
@@ -51,9 +88,19 @@ export const CommandExtension = Extension.create<CommandOptions>({
         command: ({ editor, range, props }) => {
           const command = props as CommandItem
 
-          // Replace the trigger with the command name (plain text, not a node)
-          // Keep a space so user can continue typing arguments
-          editor.chain().focus().deleteRange(range).insertContent(`/${command.name} `).run()
+          // Delete the trigger and query, then insert the command node
+          editor
+            .chain()
+            .focus()
+            .deleteRange(range)
+            .insertContent([
+              {
+                type: this.name,
+                attrs: { name: command.name },
+              },
+              { type: "text", text: " " },
+            ])
+            .run()
         },
       }),
     ]

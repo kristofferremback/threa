@@ -1,97 +1,104 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
+import { useMentionType } from "./mention-context"
 
 /**
- * Styles for different mention types.
+ * Styles for different trigger types.
  */
-const mentionStyles = {
+const triggerStyles = {
   user: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
   persona: "bg-primary/10 text-primary",
   broadcast: "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
   channel: "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
+  command: "bg-muted text-primary font-mono font-bold",
+  me: "bg-blue-100 text-primary dark:bg-blue-900/50 dark:text-primary",
+}
+
+interface TriggerChipProps {
+  type: "mention" | "channel" | "command"
+  text: string
 }
 
 /**
- * Reserved broadcast slugs.
+ * Styled chip for rendered triggers (mentions, channels, commands).
+ * Uses MentionContext for correct mention type styling.
  */
-const BROADCAST_SLUGS = new Set(["channel", "here"])
+function TriggerChip({ type, text }: TriggerChipProps) {
+  const getMentionType = useMentionType()
+  let style: string
+  let prefix: string
 
-/**
- * Determine the type of mention based on slug.
- * This is a simple heuristic - in a real implementation,
- * you'd look up the slug against workspace users/personas.
- */
-function getMentionType(slug: string): keyof typeof mentionStyles {
-  if (BROADCAST_SLUGS.has(slug)) {
-    return "broadcast"
+  switch (type) {
+    case "channel":
+      style = triggerStyles.channel
+      prefix = "#"
+      break
+    case "command":
+      style = triggerStyles.command
+      prefix = "/"
+      break
+    default:
+      style = triggerStyles[getMentionType(text)]
+      prefix = "@"
   }
-  // Default to user - we'd need context to distinguish user vs persona
-  return "user"
-}
-
-interface MentionChipProps {
-  type: "mention" | "channel"
-  slug: string
-}
-
-/**
- * Styled chip for rendered mentions and channels.
- */
-function MentionChip({ type, slug }: MentionChipProps) {
-  const style = type === "channel" ? mentionStyles.channel : mentionStyles[getMentionType(slug)]
 
   return (
     <span className={cn("inline-flex items-center rounded px-1 py-0.5 text-sm font-medium", style)}>
-      {type === "channel" ? "#" : "@"}
-      {slug}
+      {prefix}
+      {text}
     </span>
   )
 }
 
 /**
- * Pattern to match @mentions and #channels in text.
- * Matches:
- * - @word (mention)
- * - #word (channel)
- * Word characters are letters, numbers, hyphens, and underscores.
+ * Pattern to match @mentions, #channels, and /commands at start.
+ * Command pattern allows optional leading whitespace.
  */
+const COMMAND_PATTERN = /^(\s*)(\/)([\w-]+)/
 const TRIGGER_PATTERN = /(@|#)([\w-]+)/g
 
 /**
- * Parse text and render mentions/channels as styled chips.
- * Returns an array of React nodes (strings and MentionChip components).
+ * Parse text and render triggers as styled chips.
+ * Returns an array of React nodes.
  */
 export function renderMentions(text: string): ReactNode[] {
   const result: ReactNode[] = []
+  let processText = text
+  let keyIndex = 0
+
+  // Check for command at start of text (allowing leading whitespace)
+  const commandMatch = processText.match(COMMAND_PATTERN)
+  if (commandMatch) {
+    // Preserve any leading whitespace
+    if (commandMatch[1]) {
+      result.push(commandMatch[1])
+    }
+    result.push(<TriggerChip key={`cmd-${keyIndex++}`} type="command" text={commandMatch[3]} />)
+    processText = processText.slice(commandMatch[0].length)
+  }
+
+  // Process remaining text for mentions and channels
   let lastIndex = 0
   let match
 
-  // Reset regex state
   TRIGGER_PATTERN.lastIndex = 0
-
-  while ((match = TRIGGER_PATTERN.exec(text)) !== null) {
-    // Add text before the match
+  while ((match = TRIGGER_PATTERN.exec(processText)) !== null) {
     if (match.index > lastIndex) {
-      result.push(text.slice(lastIndex, match.index))
+      result.push(processText.slice(lastIndex, match.index))
     }
 
     const trigger = match[1] as "@" | "#"
     const slug = match[2]
 
     result.push(
-      <MentionChip
-        key={`${match.index}-${trigger}${slug}`}
-        type={trigger === "@" ? "mention" : "channel"}
-        slug={slug}
-      />
+      <TriggerChip key={`${keyIndex++}-${trigger}${slug}`} type={trigger === "@" ? "mention" : "channel"} text={slug} />
     )
 
     lastIndex = match.index + match[0].length
   }
 
-  // Add remaining text
-  if (lastIndex < text.length) {
-    result.push(text.slice(lastIndex))
+  if (lastIndex < processText.length) {
+    result.push(processText.slice(lastIndex))
   }
 
   return result.length > 0 ? result : [text]
