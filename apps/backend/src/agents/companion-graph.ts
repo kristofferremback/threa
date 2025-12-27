@@ -108,6 +108,16 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       responseText = ""
     }
 
+    logger.debug(
+      {
+        hasToolCalls: !!response.tool_calls?.length,
+        toolCallCount: response.tool_calls?.length ?? 0,
+        responseTextLength: responseText.length,
+        responseTextPreview: responseText.slice(0, 100),
+      },
+      "Agent node response"
+    )
+
     return {
       messages: [response],
       finalResponse: responseText,
@@ -287,10 +297,10 @@ function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; u
 
 /**
  * Create the synthesize node.
- * When web search was used, this node prompts the model to write a response
- * that properly cites the sources found.
+ * When web search was used, this node appends a Sources section to the response.
+ * This is simpler and more reliable than asking the model to rewrite with citations.
  */
-function createSynthesizeNode(model: ChatOpenAI) {
+function createSynthesizeNode(_model: ChatOpenAI) {
   return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
     logger.debug("Synthesize node triggered")
 
@@ -300,53 +310,31 @@ function createSynthesizeNode(model: ChatOpenAI) {
     logger.debug({ sourceCount: sources.length, sources }, "Extracted sources for synthesis")
 
     if (sources.length === 0) {
-      // No sources found, skip synthesis
+      // No sources found, nothing to append
       logger.warn("No sources found, skipping synthesis")
       return {}
     }
 
-    // Build synthesis prompt
-    const sourcesText = sources.map((s) => `- [${s.title}](${s.url})`).join("\n")
-
-    const synthesisPrompt = `Based on the search results above, write a helpful response to the user's question.
-
-IMPORTANT: You must include citations to the sources you used. Format citations as markdown links inline in your text, like this: [Source Title](URL).
-
-At the end of your response, include a "Sources:" section listing the references you cited.
-
-Available sources:
-${sourcesText}
-
-Write your response now:`
-
-    // Call model with synthesis prompt
-    const response = await model.invoke([
-      new SystemMessage(state.systemPrompt),
-      ...state.messages,
-      new HumanMessage(synthesisPrompt),
-    ])
-
-    // Extract synthesized response
-    let synthesizedText: string
-    if (typeof response.content === "string") {
-      synthesizedText = response.content
-    } else if (Array.isArray(response.content)) {
-      synthesizedText = response.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join("")
-    } else {
-      synthesizedText = ""
+    // If there's no existing response, nothing to append to
+    if (!state.finalResponse?.trim()) {
+      logger.warn("No final response to append sources to")
+      return {}
     }
 
+    // Build sources section
+    const sourcesText = sources.map((s) => `- [${s.title}](${s.url})`).join("\n")
+    const sourcesSection = `\n\n---\n**Sources:**\n${sourcesText}`
+
+    // Append sources to existing response
+    const synthesizedText = state.finalResponse.trim() + sourcesSection
+
     logger.info(
-      { synthesizedLength: synthesizedText.length, preview: synthesizedText.slice(0, 200) },
-      "Synthesis complete"
+      { synthesizedLength: synthesizedText.length, sourceCount: sources.length },
+      "Sources appended to response"
     )
 
     return {
       finalResponse: synthesizedText,
-      iteration: 1, // Increment via reducer
     }
   }
 }
