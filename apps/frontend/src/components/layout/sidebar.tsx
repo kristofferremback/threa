@@ -96,10 +96,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             size="icon"
             className="h-8 w-8"
             onClick={() => {
-              // Dispatch keyboard event to trigger search
               document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
             }}
-            title="Search (⌘P)"
+            title="Quick Switcher (⌘P)"
           >
             <Search className="h-4 w-4" />
           </Button>
