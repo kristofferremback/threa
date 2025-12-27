@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test"
+import { describe, it, expect, mock, afterEach } from "bun:test"
 import { createWebSearchTool } from "./web-search-tool"
 
 describe("web-search-tool", () => {
@@ -108,5 +108,18 @@ describe("web-search-tool", () => {
 
     expect(capturedBody).not.toBeNull()
     expect(capturedBody!.max_results).toBe(10)
+  })
+
+  it("should return timeout error when request takes too long", async () => {
+    const abortError = new Error("The operation was aborted")
+    abortError.name = "AbortError"
+
+    globalThis.fetch = mock(() => Promise.reject(abortError))
+
+    const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
+    const result = await tool.invoke({ query: "test" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.error).toContain("timed out")
   })
 })

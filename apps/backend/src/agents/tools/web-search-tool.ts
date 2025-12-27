@@ -38,6 +38,8 @@ export interface CreateWebSearchToolParams {
   maxResults?: number
 }
 
+const FETCH_TIMEOUT_MS = 30000
+
 /**
  * Creates a web_search tool for the agent to search the web.
  *
@@ -52,9 +54,13 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
       "Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.",
     schema: WebSearchSchema,
     func: async (input: WebSearchInput) => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
       try {
         const response = await fetch("https://api.tavily.com/search", {
           method: "POST",
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${tavilyApiKey}`,
@@ -93,11 +99,21 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
 
         return JSON.stringify(result)
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          logger.warn({ query: input.query }, "Web search timed out")
+          return JSON.stringify({
+            error: `Search timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
+            query: input.query,
+          })
+        }
+
         logger.error({ error, query: input.query }, "Web search failed")
         return JSON.stringify({
           error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
           query: input.query,
         })
+      } finally {
+        clearTimeout(timeout)
       }
     },
   })

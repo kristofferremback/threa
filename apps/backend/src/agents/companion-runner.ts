@@ -1,9 +1,14 @@
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import { createCompanionGraph, toLangChainMessages, type CompanionGraphCallbacks } from "./companion-graph"
-import { createSendMessageTool, type SendMessageInput, type SendMessageResult } from "./tools/send-message-tool"
-import { createWebSearchTool } from "./tools/web-search-tool"
-import { createReadUrlTool } from "./tools/read-url-tool"
+import {
+  createSendMessageTool,
+  createWebSearchTool,
+  createReadUrlTool,
+  isToolEnabled,
+  type SendMessageInput,
+  type SendMessageResult,
+} from "./tools"
 import { AgentToolNames } from "@threa/types"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
@@ -226,13 +231,4 @@ export class StubResponseGenerator implements ResponseGenerator {
       lastProcessedSequence: params.lastProcessedSequence,
     }
   }
-}
-
-/**
- * Check if a tool is enabled for a persona.
- * If enabledTools is null, all tools are enabled.
- */
-function isToolEnabled(enabledTools: string[] | null, toolName: string): boolean {
-  if (enabledTools === null) return true
-  return enabledTools.includes(toolName)
 }

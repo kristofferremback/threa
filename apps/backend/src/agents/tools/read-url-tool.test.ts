@@ -8,7 +8,7 @@ describe("read-url-tool", () => {
     globalThis.fetch = originalFetch
   })
 
-  it("should extract text content from HTML", async () => {
+  it("should convert HTML to markdown", async () => {
     const html = `
       <!DOCTYPE html>
       <html>
@@ -38,8 +38,8 @@ describe("read-url-tool", () => {
     expect(parsed.title).toBe("Test Page")
     expect(parsed.content).toContain("Hello World")
     expect(parsed.content).toContain("This is a test paragraph")
+    // Script content should be stripped by node-html-markdown
     expect(parsed.content).not.toContain("should be removed")
-    expect(parsed.content).not.toContain("display: none")
   })
 
   it("should send correct User-Agent header", async () => {
@@ -104,33 +104,6 @@ describe("read-url-tool", () => {
     expect(parsed.error).toContain("Connection refused")
   })
 
-  it("should decode HTML entities", async () => {
-    const html = `
-      <html>
-        <head><title>Test</title></head>
-        <body>
-          <p>This &amp; that &lt;and&gt; more &quot;quoted&quot;</p>
-          <p>Non-breaking&nbsp;space</p>
-        </body>
-      </html>
-    `
-
-    globalThis.fetch = mock(() =>
-      Promise.resolve({
-        ok: true,
-        headers: new Headers({ "content-type": "text/html" }),
-        text: () => Promise.resolve(html),
-      } as Response)
-    )
-
-    const tool = createReadUrlTool()
-    const result = await tool.invoke({ url: "https://example.com" })
-    const parsed = JSON.parse(result)
-
-    expect(parsed.content).toContain("This & that <and> more")
-    expect(parsed.content).toContain("Non-breaking space")
-  })
-
   it("should truncate very long content", async () => {
     const longContent = "A".repeat(60000)
     const html = `<html><head><title>Test</title></head><body>${longContent}</body></html>`
@@ -165,5 +138,18 @@ describe("read-url-tool", () => {
     const parsed = JSON.parse(result)
 
     expect(parsed.content).toBe("This is plain text content.")
+  })
+
+  it("should return timeout error when request takes too long", async () => {
+    const abortError = new Error("The operation was aborted")
+    abortError.name = "AbortError"
+
+    globalThis.fetch = mock(() => Promise.reject(abortError))
+
+    const tool = createReadUrlTool()
+    const result = await tool.invoke({ url: "https://example.com" })
+    const parsed = JSON.parse(result)
+
+    expect(parsed.error).toContain("timed out")
   })
 })

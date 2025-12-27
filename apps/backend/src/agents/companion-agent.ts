@@ -7,7 +7,7 @@ import { PersonaRepository, type Persona } from "../repositories/persona-reposit
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
-import type { SendMessageInput, SendMessageResult } from "./tools/send-message-tool"
+import { isToolEnabled, type SendMessageInput, type SendMessageResult } from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -395,15 +395,6 @@ When to use read_url:
   }
 
   return prompt
-}
-
-/**
- * Check if a tool is enabled for a persona.
- * If enabledTools is null, all tools are enabled.
- */
-function isToolEnabled(enabledTools: string[] | null, toolName: string): boolean {
-  if (enabledTools === null) return true
-  return enabledTools.includes(toolName)
 }
 
 /**

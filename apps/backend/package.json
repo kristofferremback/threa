@@ -30,6 +30,7 @@
     "express": "^5",
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
+    "node-html-markdown": "^2.0.0",
     "pg": "^8",
     "pg-boss": "^12.5.2",
     "pino": "^9",

@@ -1,5 +1,6 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
+import { NodeHtmlMarkdown } from "node-html-markdown"
 import { logger } from "../../lib/logger"
 
 const ReadUrlSchema = z.object({
@@ -15,11 +16,14 @@ export interface ReadUrlResult {
 }
 
 const MAX_CONTENT_LENGTH = 50000
+const FETCH_TIMEOUT_MS = 30000
+
+const nhm = new NodeHtmlMarkdown()
 
 /**
  * Creates a read_url tool for the agent to fetch full page content.
  *
- * Uses native fetch and extracts text content from HTML.
+ * Uses native fetch and converts HTML to markdown using node-html-markdown.
  */
 export function createReadUrlTool() {
   return new DynamicStructuredTool({
@@ -28,8 +32,12 @@ export function createReadUrlTool() {
       "Fetch and read the full content of a web page. Use this after web_search when you need more detail than the snippet provides, or when the user shares a specific URL to analyze.",
     schema: ReadUrlSchema,
     func: async (input: ReadUrlInput) => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
       try {
         const response = await fetch(input.url, {
+          signal: controller.signal,
           headers: {
             "User-Agent": "Threa-Agent/1.0 (https://threa.app)",
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -56,7 +64,14 @@ export function createReadUrlTool() {
         const html = await response.text()
 
         const title = extractTitle(html)
-        let content = extractTextContent(html)
+
+        // For plain text, just use the content directly; for HTML, convert to markdown
+        let content: string
+        if (contentType.includes("text/plain")) {
+          content = html
+        } else {
+          content = nhm.translate(html)
+        }
 
         if (content.length > MAX_CONTENT_LENGTH) {
           content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]"
@@ -72,11 +87,21 @@ export function createReadUrlTool() {
 
         return JSON.stringify(result)
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          logger.warn({ url: input.url }, "URL fetch timed out")
+          return JSON.stringify({
+            error: `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
+            url: input.url,
+          })
+        }
+
         logger.error({ error, url: input.url }, "Failed to read URL")
         return JSON.stringify({
           error: `Failed to read URL: ${error instanceof Error ? error.message : "Unknown error"}`,
           url: input.url,
         })
+      } finally {
+        clearTimeout(timeout)
       }
     },
   })
@@ -85,42 +110,4 @@ export function createReadUrlTool() {
 function extractTitle(html: string): string {
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
   return titleMatch ? titleMatch[1].trim() : "Untitled"
-}
-
-function extractTextContent(html: string): string {
-  let text = html
-
-  // Remove script and style elements
-  text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-
-  // Remove head section
-  text = text.replace(/<head\b[^<]*(?:(?!<\/head>)<[^<]*)*<\/head>/gi, "")
-
-  // Remove HTML comments
-  text = text.replace(/<!--[\s\S]*?-->/g, "")
-
-  // Convert block-level elements to newlines
-  text = text.replace(/<\/(p|div|h[1-6]|li|tr|br|hr)[^>]*>/gi, "\n")
-  text = text.replace(/<br[^>]*\/?>/gi, "\n")
-
-  // Remove all remaining HTML tags
-  text = text.replace(/<[^>]+>/g, "")
-
-  // Decode common HTML entities
-  text = text.replace(/&nbsp;/gi, " ")
-  text = text.replace(/&amp;/gi, "&")
-  text = text.replace(/&lt;/gi, "<")
-  text = text.replace(/&gt;/gi, ">")
-  text = text.replace(/&quot;/gi, '"')
-  text = text.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
-  text = text.replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
-
-  // Normalize whitespace
-  text = text.replace(/[ \t]+/g, " ")
-  text = text.replace(/\n[ \t]+/g, "\n")
-  text = text.replace(/[ \t]+\n/g, "\n")
-  text = text.replace(/\n{3,}/g, "\n\n")
-
-  return text.trim()
 }
