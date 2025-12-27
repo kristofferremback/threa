@@ -67,13 +67,10 @@ export function useUnreadCounts(workspaceId: string) {
   /**
    * Increment unread count for a stream.
    *
-   * Note: This is currently not wired up to real-time socket events because
-   * message:created events are stream-scoped (sent to stream rooms) rather than
-   * workspace-scoped. Users not viewing a stream don't receive its message events.
-   *
-   * For real-time unread updates across all streams, the backend would need to
-   * broadcast a workspace-scoped "unread:increment" event when messages are created.
-   * Until then, unread counts are recalculated on workspace bootstrap.
+   * Note: This is wired up to real-time socket events via the `unread:increment`
+   * event in use-socket-events.ts. The backend broadcasts this workspace-scoped
+   * event when messages are created, and the frontend filters by stream membership
+   * and excludes the current user's own messages.
    */
   const incrementUnread = (streamId: string) => {
     queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
