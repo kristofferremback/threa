@@ -170,6 +170,27 @@ export const StreamMemberRepository = {
   },
 
   /**
+   * Batch update lastReadEventId for multiple streams for a single user.
+   * Uses a single UPDATE query with unnest for efficiency.
+   */
+  async batchUpdateLastReadEventId(client: PoolClient, userId: string, updates: Map<string, string>): Promise<void> {
+    if (updates.size === 0) return
+
+    const streamIds = Array.from(updates.keys())
+    const eventIds = Array.from(updates.values())
+
+    await client.query(
+      `
+      UPDATE stream_members sm
+      SET last_read_event_id = u.event_id, last_read_at = NOW()
+      FROM (SELECT unnest($1::text[]) as stream_id, unnest($2::text[]) as event_id) u
+      WHERE sm.stream_id = u.stream_id AND sm.user_id = $3
+      `,
+      [streamIds, eventIds, userId]
+    )
+  },
+
+  /**
    * Check which streams have ALL of the specified users as members.
    * Returns the set of stream IDs where every user is a member.
    */

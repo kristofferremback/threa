@@ -196,7 +196,7 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle all streams read (from other sessions of the same user)
-    socket.on("streams:read_all", (payload: StreamsReadAllPayload) => {
+    socket.on("stream:read_all", (payload: StreamsReadAllPayload) => {
       // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
@@ -225,7 +225,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("workspace_member:removed")
       socket.off("user:updated")
       socket.off("stream:read")
-      socket.off("streams:read_all")
+      socket.off("stream:read_all")
     }
   }, [socket, workspaceId, queryClient])
 }

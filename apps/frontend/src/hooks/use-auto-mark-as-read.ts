@@ -21,6 +21,12 @@ export function useAutoMarkAsRead(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMarkedRef = useRef<string | null>(null)
 
+  // Use refs to avoid stale closure in setTimeout callback
+  const streamIdRef = useRef(streamId)
+  const lastEventIdRef = useRef(lastEventId)
+  streamIdRef.current = streamId
+  lastEventIdRef.current = lastEventId
+
   useEffect(() => {
     if (!enabled || !lastEventId) return
 
@@ -37,8 +43,13 @@ export function useAutoMarkAsRead(
     }
 
     timerRef.current = setTimeout(() => {
-      markAsRead(streamId, lastEventId)
-      lastMarkedRef.current = lastEventId
+      // Use refs to get current values at execution time, not capture time
+      const currentStreamId = streamIdRef.current
+      const currentLastEventId = lastEventIdRef.current
+      if (currentLastEventId) {
+        markAsRead(currentStreamId, currentLastEventId)
+        lastMarkedRef.current = currentLastEventId
+      }
     }, debounceMs)
 
     return () => {

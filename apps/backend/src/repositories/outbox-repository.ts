@@ -23,7 +23,7 @@ export type OutboxEventType =
   | "stream:archived"
   | "stream:display_name_updated"
   | "stream:read"
-  | "streams:read_all"
+  | "stream:read_all"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -213,7 +213,7 @@ export interface OutboxEventPayloadMap {
   "stream:archived": StreamArchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
   "stream:read": StreamReadOutboxPayload
-  "streams:read_all": StreamsReadAllOutboxPayload
+  "stream:read_all": StreamsReadAllOutboxPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
@@ -281,14 +281,14 @@ export type AuthorScopedEventType =
   | "command:completed"
   | "command:failed"
   | "stream:read"
-  | "streams:read_all"
+  | "stream:read_all"
 
 const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
   "command:dispatched",
   "command:completed",
   "command:failed",
   "stream:read",
-  "streams:read_all",
+  "stream:read_all",
 ]
 
 /**

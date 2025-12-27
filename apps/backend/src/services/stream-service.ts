@@ -437,18 +437,24 @@ export class StreamService {
       // Get latest event ID for each stream
       const latestEventIds = await StreamEventRepository.getLatestEventIdByStreamBatch(client, streamIds)
 
-      // Update each membership with the latest event ID
-      const updatedStreamIds: string[] = []
+      // Build batch update map for streams that need updating
+      const updatesToApply = new Map<string, string>()
       for (const [streamId, latestEventId] of latestEventIds.entries()) {
         const membership = workspaceMemberships.find((m) => m.streamId === streamId)
         if (membership && membership.lastReadEventId !== latestEventId) {
-          await StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: latestEventId })
-          updatedStreamIds.push(streamId)
+          updatesToApply.set(streamId, latestEventId)
         }
       }
 
+      // Batch update all memberships in a single query
+      if (updatesToApply.size > 0) {
+        await StreamMemberRepository.batchUpdateLastReadEventId(client, userId, updatesToApply)
+      }
+
+      const updatedStreamIds = Array.from(updatesToApply.keys())
+
       if (updatedStreamIds.length > 0) {
-        await OutboxRepository.insert(client, "streams:read_all", {
+        await OutboxRepository.insert(client, "stream:read_all", {
           workspaceId,
           authorId: userId,
           streamIds: updatedStreamIds,
