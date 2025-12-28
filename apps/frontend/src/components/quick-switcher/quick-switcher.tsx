@@ -1,17 +1,15 @@
 import { useState, useEffect, useMemo, useCallback, type KeyboardEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Terminal, FileText, Hash } from "lucide-react"
+import { Search, Terminal, FileText } from "lucide-react"
 import { CommandDialog, CommandList } from "@/components/ui/command"
-import { toast } from "sonner"
 import { useWorkspaceBootstrap, useDraftScratchpads, useCreateStream } from "@/hooks"
 import { StreamTypes } from "@threa/types"
 import { StreamResults } from "./stream-results"
 import { CommandResults } from "./command-results"
 import { SearchResults } from "./search-results"
-import type { CommandContext } from "./commands"
+import type { CommandContext, InputRequest } from "./commands"
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
-type PendingAction = "create-channel" | null
 
 interface QuickSwitcherProps {
   workspaceId: string
@@ -61,8 +59,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const createStream = useCreateStream(workspaceId)
 
   const [query, setQuery] = useState("")
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
-  const [actionInput, setActionInput] = useState("")
+  const [inputRequest, setInputRequest] = useState<InputRequest | null>(null)
+  const [inputValue, setInputValue] = useState("")
 
   const mode = deriveMode(query)
   const displayQuery = getDisplayQuery(query, mode)
@@ -81,8 +79,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   useEffect(() => {
     if (!open) {
       setQuery("")
-      setPendingAction(null)
-      setActionInput("")
+      setInputRequest(null)
+      setInputValue("")
     }
   }, [open])
 
@@ -94,42 +92,34 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     setQuery(MODE_PREFIXES[newMode])
   }, [])
 
-  const startCreateChannel = useCallback(() => {
-    setPendingAction("create-channel")
-    setActionInput("")
+  const requestInput = useCallback((request: InputRequest) => {
+    setInputRequest(request)
+    setInputValue("")
   }, [])
 
-  const executeCreateChannel = useCallback(async () => {
-    const name = actionInput.trim()
-    if (!name) return
+  const clearInputRequest = useCallback(() => {
+    setInputRequest(null)
+    setInputValue("")
+  }, [])
 
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-    if (!slug) return
+  const createChannel = useCallback(
+    async (slug: string) => {
+      return createStream.mutateAsync({ type: StreamTypes.CHANNEL, slug })
+    },
+    [createStream]
+  )
 
-    try {
-      const stream = await createStream.mutateAsync({ type: StreamTypes.CHANNEL, slug })
-      handleClose()
-      navigate(`/w/${workspaceId}/s/${stream.id}`)
-    } catch (error) {
-      toast.error("Failed to create channel")
-    }
-  }, [actionInput, createStream, handleClose, navigate, workspaceId])
-
-  const handleActionKeyDown = useCallback(
+  const handleInputKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && pendingAction === "create-channel") {
+      if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
-        executeCreateChannel()
+        inputRequest.onSubmit(inputValue)
       } else if (e.key === "Escape") {
         e.preventDefault()
-        setPendingAction(null)
-        setActionInput("")
+        clearInputRequest()
       }
     },
-    [pendingAction, executeCreateChannel]
+    [inputRequest, inputValue, clearInputRequest]
   )
 
   const commandContext: CommandContext = useMemo(
@@ -138,13 +128,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       navigate,
       closeDialog: handleClose,
       createDraftScratchpad: createDraft,
-      startCreateChannel,
+      createChannel,
       setMode,
+      requestInput,
     }),
-    [workspaceId, navigate, handleClose, createDraft, startCreateChannel, setMode]
+    [workspaceId, navigate, handleClose, createDraft, createChannel, setMode, requestInput]
   )
 
-  const ModeIcon = pendingAction === "create-channel" ? Hash : MODE_ICONS[mode]
+  const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -152,17 +143,17 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-          {pendingAction === "create-channel" ? (
+          {inputRequest ? (
             <input
-              value={actionInput}
-              onChange={(e) => setActionInput(e.target.value)}
-              onKeyDown={handleActionKeyDown}
-              placeholder="Enter channel name..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder={inputRequest.placeholder}
               className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               autoFocus
               role="combobox"
               aria-expanded="false"
-              aria-label="Channel name input"
+              aria-label="Command input"
             />
           ) : (
             <input
@@ -178,28 +169,23 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           )}
         </div>
 
-        {/* Action hint for create-channel */}
-        {pendingAction === "create-channel" && (
-          <div className="px-3 py-2 text-xs text-muted-foreground border-b">
-            Press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Enter</kbd> to create,{" "}
-            <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> to cancel
-          </div>
-        )}
+        {/* Hint from input request */}
+        {inputRequest && <div className="px-3 py-2 text-xs text-muted-foreground border-b">{inputRequest.hint}</div>}
 
-        {/* Mode-specific content (hidden during pending action) */}
-        {!pendingAction && mode === "stream" && (
+        {/* Mode-specific content (hidden during input request) */}
+        {!inputRequest && mode === "stream" && (
           <CommandList className="max-h-[400px]">
             <StreamResults workspaceId={workspaceId} streams={streams} onSelect={handleClose} />
           </CommandList>
         )}
 
-        {!pendingAction && mode === "command" && (
+        {!inputRequest && mode === "command" && (
           <CommandList className="max-h-[400px]">
             <CommandResults context={commandContext} />
           </CommandList>
         )}
 
-        {!pendingAction && mode === "search" && (
+        {!inputRequest && mode === "search" && (
           <SearchResults workspaceId={workspaceId} query={displayQuery} onSelect={handleClose} />
         )}
       </div>
