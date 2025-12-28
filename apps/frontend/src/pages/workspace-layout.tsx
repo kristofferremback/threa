@@ -22,15 +22,15 @@ export function WorkspaceLayout() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
 
-      // Cmd+Shift+P → Command mode
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "p") {
+      // Cmd+Shift+K → Command mode
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault()
         openSwitcher("command")
         return
       }
 
-      // Cmd+P → Stream mode (default)
-      if (isMod && e.key.toLowerCase() === "p") {
+      // Cmd+K → Stream mode (default)
+      if (isMod && e.key.toLowerCase() === "k") {
         e.preventDefault()
         openSwitcher("stream")
         return
