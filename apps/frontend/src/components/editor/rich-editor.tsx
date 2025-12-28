@@ -133,12 +133,6 @@ export function RichEditor({
           onSubmit()
           return true
         }
-        // Cmd/Ctrl+K to open link popover
-        if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault()
-          setLinkPopoverOpen(true)
-          return true
-        }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()
