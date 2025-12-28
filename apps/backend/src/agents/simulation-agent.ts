@@ -138,6 +138,7 @@ export class SimulationAgent {
 
     try {
       const result = await compiledGraph.invoke(initialState, {
+        runName: "simulation-agent",
         callbacks: langchainCallbacks,
         configurable: {
           thread_id: threadId,

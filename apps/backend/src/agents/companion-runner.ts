@@ -194,6 +194,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         sources: [],
       },
       {
+        runName: "companion-agent",
         callbacks: langchainCallbacks,
         configurable: {
           thread_id: threadId,
