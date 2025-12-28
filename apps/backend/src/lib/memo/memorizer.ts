@@ -131,6 +131,11 @@ export class Memorizer {
       maxOutputTokens: 500,
       temperature: 0.3,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "memorize-message",
+        metadata: { messageId: message.id },
+      },
     })
 
     return {
@@ -171,6 +176,11 @@ export class Memorizer {
       maxOutputTokens: 700,
       temperature: 0.3,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "memorize-conversation",
+        metadata: { messageCount: messages.length },
+      },
     })
 
     const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
@@ -219,6 +229,14 @@ export class Memorizer {
       maxOutputTokens: 700,
       temperature: 0.3,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "revise-memo",
+        metadata: {
+          memoId: existingMemo.id,
+          messageCount: messages.length,
+        },
+      },
     })
 
     const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))

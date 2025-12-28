@@ -170,6 +170,10 @@ export class SimulateCommand implements Command {
       prompt: `${prompt} ${args}`,
       temperature: 0,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "simulate-parse-args",
+      },
     })
 
     return result.object

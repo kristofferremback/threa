@@ -7,6 +7,7 @@ import type { ProviderRegistry } from "../lib/ai/provider-registry"
 import type { StreamService } from "../services/stream-service"
 import { logger } from "../lib/logger"
 import { createSimulationGraph, type SimulationGraphCallbacks, type SimulationStateType } from "./simulation-graph"
+import { getLangfuseCallbacks } from "../lib/langfuse"
 
 export interface SimulationAgentDeps {
   pool: Pool
@@ -131,6 +132,8 @@ export class SimulationAgent {
 
     try {
       const result = await compiledGraph.invoke(initialState, {
+        runName: "simulation-agent",
+        callbacks: getLangfuseCallbacks({ sessionId: threadId, tags: ["simulation"] }),
         configurable: {
           thread_id: threadId,
           callbacks,

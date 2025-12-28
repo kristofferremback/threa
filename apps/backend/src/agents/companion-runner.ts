@@ -13,6 +13,7 @@ import {
 import { AgentToolNames } from "@threa/types"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
+import { getLangfuseCallbacks } from "../lib/langfuse"
 
 const MAX_MESSAGES = 5
 
@@ -187,6 +188,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         sources: [],
       },
       {
+        runName: "companion-agent",
+        callbacks: getLangfuseCallbacks({ sessionId, userId: personaId, tags: ["companion"] }),
         configurable: {
           thread_id: threadId,
           callbacks: graphCallbacks,

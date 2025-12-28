@@ -1,0 +1,92 @@
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { LangfuseSpanProcessor } from "@langfuse/otel"
+import { CallbackHandler } from "@langfuse/langchain"
+import { logger } from "./logger"
+
+let otelSdk: NodeSDK | null = null
+
+interface LangfuseConfig {
+  secretKey: string
+  publicKey: string
+  baseUrl: string
+}
+
+/**
+ * Check if Langfuse is configured and available.
+ */
+export function isLangfuseEnabled(): boolean {
+  return !!(process.env.LANGFUSE_SECRET_KEY && process.env.LANGFUSE_PUBLIC_KEY)
+}
+
+/**
+ * Initialize Langfuse OpenTelemetry tracing.
+ * Must be called early in application startup, before any LangChain usage.
+ * Fails gracefully - if initialization fails, continues without tracing.
+ */
+export function initLangfuse(): void {
+  if (!isLangfuseEnabled()) {
+    logger.info("Langfuse not configured, skipping initialization")
+    return
+  }
+
+  if (otelSdk) {
+    logger.warn("Langfuse already initialized")
+    return
+  }
+
+  const config: LangfuseConfig = {
+    secretKey: process.env.LANGFUSE_SECRET_KEY!,
+    publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
+    baseUrl: process.env.LANGFUSE_BASE_URL || "http://localhost:3100",
+  }
+
+  try {
+    otelSdk = new NodeSDK({
+      spanProcessors: [
+        new LangfuseSpanProcessor({
+          secretKey: config.secretKey,
+          publicKey: config.publicKey,
+          baseUrl: config.baseUrl,
+        }),
+      ],
+    })
+
+    otelSdk.start()
+    logger.info({ baseUrl: config.baseUrl }, "Langfuse tracing initialized")
+  } catch (err) {
+    logger.error({ err }, "Failed to initialize Langfuse - continuing without tracing")
+    otelSdk = null
+  }
+}
+
+/**
+ * Shutdown Langfuse and OpenTelemetry SDK.
+ * Call this before application shutdown.
+ */
+export async function shutdownLangfuse(): Promise<void> {
+  if (otelSdk) {
+    await otelSdk.shutdown()
+    otelSdk = null
+    logger.info("Langfuse tracing shutdown")
+  }
+}
+
+/**
+ * Create LangChain callbacks for Langfuse tracing.
+ * Returns an empty array if Langfuse is not enabled, so callers don't need to check.
+ *
+ * @example
+ * const result = await graph.invoke(input, {
+ *   callbacks: getLangfuseCallbacks({ sessionId, tags: ["companion"] }),
+ * })
+ */
+export function getLangfuseCallbacks(params?: {
+  sessionId?: string
+  userId?: string
+  tags?: string[]
+}): CallbackHandler[] {
+  if (!isLangfuseEnabled()) {
+    return []
+  }
+  return [new CallbackHandler(params)]
+}

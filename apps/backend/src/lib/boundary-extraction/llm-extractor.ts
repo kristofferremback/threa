@@ -87,6 +87,14 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
         maxOutputTokens: 500,
         temperature: 0.2,
         experimental_repairText: stripMarkdownFences,
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: "boundary-extraction",
+          metadata: {
+            streamType: context.streamType,
+            activeConversationCount: context.activeConversations.length,
+          },
+        },
       })
 
       return this.validateResult(result.object, context)

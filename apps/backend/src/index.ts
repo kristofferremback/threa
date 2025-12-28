@@ -1,3 +1,7 @@
+// MUST be first - OTEL needs to instrument LangChain before it loads
+import { initLangfuse, shutdownLangfuse } from "./lib/langfuse"
+initLangfuse()
+
 import { startServer } from "./server"
 import { logger } from "./lib/logger"
 
@@ -9,6 +13,7 @@ async function shutdown(code: number) {
   if (isShuttingDown) return
   isShuttingDown = true
   await stop()
+  await shutdownLangfuse()
   process.exit(code)
 }
 
@@ -24,6 +29,20 @@ process.on("uncaughtException", (err) => {
 })
 
 process.on("unhandledRejection", (reason) => {
-  logger.fatal({ reason }, "Unhandled rejection")
+  // Try to extract useful info from the rejection reason
+  let reasonInfo: Record<string, unknown>
+  if (reason instanceof Error) {
+    reasonInfo = { message: reason.message, stack: reason.stack, name: reason.name }
+  } else if (typeof reason === "object" && reason !== null) {
+    try {
+      reasonInfo = { ...reason, stringified: JSON.stringify(reason) }
+    } catch {
+      // JSON.stringify can throw for circular refs, BigInt, etc.
+      reasonInfo = { value: String(reason) }
+    }
+  } else {
+    reasonInfo = { value: String(reason) }
+  }
+  logger.fatal({ reason: reasonInfo }, "Unhandled rejection")
   shutdown(1)
 })
