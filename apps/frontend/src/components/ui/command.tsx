@@ -28,9 +28,21 @@ interface CommandDialogProps extends DialogProps {
 }
 
 const CommandDialog = ({ children, onEscapeKeyDown, ...props }: CommandDialogProps) => {
+  // Use capture phase to intercept Escape BEFORE cmdk's bubble-phase handler
+  // Without this, cmdk intercepts Escape and blurs the input, requiring two presses to close
+  const handleKeyDownCapture = onEscapeKeyDown
+    ? (e: React.KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+          onEscapeKeyDown(e.nativeEvent)
+        }
+      }
+    : undefined
+
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 shadow-lg" onEscapeKeyDown={onEscapeKeyDown}>
+      <DialogContent className="overflow-hidden p-0 shadow-lg" onKeyDownCapture={handleKeyDownCapture}>
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
         </Command>
