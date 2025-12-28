@@ -4,7 +4,7 @@ import { logger } from "./logger"
 
 let otelSdk: NodeSDK | null = null
 
-export interface LangfuseConfig {
+interface LangfuseConfig {
   secretKey: string
   publicKey: string
   baseUrl: string
@@ -20,6 +20,7 @@ export function isLangfuseEnabled(): boolean {
 /**
  * Initialize Langfuse OpenTelemetry tracing.
  * Must be called early in application startup, before any LangChain usage.
+ * Fails gracefully - if initialization fails, continues without tracing.
  */
 export function initLangfuse(): void {
   if (!isLangfuseEnabled()) {
@@ -38,18 +39,23 @@ export function initLangfuse(): void {
     baseUrl: process.env.LANGFUSE_BASE_URL || "http://localhost:3100",
   }
 
-  otelSdk = new NodeSDK({
-    spanProcessors: [
-      new LangfuseSpanProcessor({
-        secretKey: config.secretKey,
-        publicKey: config.publicKey,
-        baseUrl: config.baseUrl,
-      }),
-    ],
-  })
+  try {
+    otelSdk = new NodeSDK({
+      spanProcessors: [
+        new LangfuseSpanProcessor({
+          secretKey: config.secretKey,
+          publicKey: config.publicKey,
+          baseUrl: config.baseUrl,
+        }),
+      ],
+    })
 
-  otelSdk.start()
-  logger.info({ baseUrl: config.baseUrl }, "Langfuse tracing initialized")
+    otelSdk.start()
+    logger.info({ baseUrl: config.baseUrl }, "Langfuse tracing initialized")
+  } catch (err) {
+    logger.error({ err }, "Failed to initialize Langfuse - continuing without tracing")
+    otelSdk = null
+  }
 }
 
 /**
