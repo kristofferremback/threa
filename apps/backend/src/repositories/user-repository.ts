@@ -192,26 +192,22 @@ export const UserRepository = {
   },
 
   async upsertByEmail(client: PoolClient, params: InsertUserParams): Promise<User> {
-    // Check if user exists to determine if we need a new slug
-    const existing = await client.query<{ id: string }>(sql`
-      SELECT id FROM users WHERE email = ${params.email}
+    // Generate candidate slug for potential new user
+    // The slug is only used on INSERT, not on UPDATE (existing users keep their slug)
+    const candidateSlug = await generateCandidateSlug(client, params.name)
+
+    // Atomic upsert - no race condition between concurrent requests
+    // ON CONFLICT updates existing users; INSERT uses the candidate slug for new users
+    const result = await client.query<UserRow>(sql`
+      INSERT INTO users (id, email, name, slug, workos_user_id)
+      VALUES (${params.id}, ${params.email}, ${params.name}, ${candidateSlug}, ${params.workosUserId ?? null})
+      ON CONFLICT (email) DO UPDATE SET
+        name = EXCLUDED.name,
+        workos_user_id = COALESCE(EXCLUDED.workos_user_id, users.workos_user_id),
+        updated_at = NOW()
+      RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
     `)
 
-    if (existing.rows.length > 0) {
-      // User exists, just update (slug stays the same)
-      const result = await client.query<UserRow>(sql`
-        UPDATE users SET
-          name = ${params.name},
-          workos_user_id = COALESCE(${params.workosUserId ?? null}, workos_user_id),
-          updated_at = NOW()
-        WHERE email = ${params.email}
-        RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
-      `)
-      return mapRowToUser(result.rows[0])
-    }
-
-    // New user, generate slug with retry logic for race conditions
-    const candidateSlug = await generateCandidateSlug(client, params.name)
-    return insertUserWithUniqueSlug(client, params, candidateSlug)
+    return mapRowToUser(result.rows[0])
   },
 }
