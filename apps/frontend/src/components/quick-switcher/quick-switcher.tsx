@@ -114,24 +114,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
-      } else if (e.key === "Escape") {
-        e.preventDefault()
-        e.stopPropagation()
-        clearInputRequest()
       }
     },
-    [inputRequest, inputValue, clearInputRequest]
-  )
-
-  const handleMainInputKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        e.stopPropagation()
-        handleClose()
-      }
-    },
-    [handleClose]
+    [inputRequest, inputValue]
   )
 
   const commandContext: CommandContext = useMemo(
@@ -149,28 +134,20 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
-  // Handle Escape at document level to beat cmdk's handler
-  useEffect(() => {
-    if (!open) return
-
-    const handleEscape = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        e.stopPropagation()
-        if (inputRequest) {
-          clearInputRequest()
-        } else {
-          handleClose()
-        }
+  const handleEscapeKeyDown = useCallback(
+    (e: globalThis.KeyboardEvent) => {
+      e.preventDefault()
+      if (inputRequest) {
+        clearInputRequest()
+      } else {
+        handleClose()
       }
-    }
-
-    document.addEventListener("keydown", handleEscape, true)
-    return () => document.removeEventListener("keydown", handleEscape, true)
-  }, [open, inputRequest, clearInputRequest, handleClose])
+    },
+    [inputRequest, clearInputRequest, handleClose]
+  )
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} onEscapeKeyDown={handleEscapeKeyDown}>
       <div className="flex flex-col">
         {/* Input area */}
         <div className="flex items-center border-b px-3">
@@ -191,7 +168,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleMainInputKeyDown}
               placeholder={MODE_PLACEHOLDERS[mode]}
               className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               autoFocus
