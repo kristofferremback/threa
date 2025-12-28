@@ -68,26 +68,133 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
 
       if (!content) return null
 
-      // Calculate positions
-      const start = range.from
+      // Calculate positions in original document
+      // Note: range.from can be wrong when atom nodes (like mentions) have text representations
+      // longer than their nodeSize. TipTap calculates positions based on text length, but
+      // we need document positions. range.to is usually correct, so we find the opening
+      // marker by searching backwards if range.from is invalid.
+      let start = range.from
       const end = range.to
 
+      // Bounds check - if start is negative, find the actual start by searching backwards
+      if (start < 0 || start >= end) {
+        // Search for opening marker in the document before end position
+        const $end = state.doc.resolve(end)
+        const parent = $end.parent
+        const parentStart = end - $end.parentOffset
+
+        // Walk through parent's children to find where the opening marker is
+        let foundStart = -1
+        let docPos = parentStart
+        for (let i = 0; i < parent.childCount && docPos < end; i++) {
+          const child = parent.child(i)
+          if (child.isText && child.text) {
+            // Check if this text node contains the opening marker
+            const markerIndex = child.text.indexOf(openMarker)
+            if (markerIndex !== -1) {
+              // Found the marker - but we want the LAST occurrence before end
+              // that could start our pattern
+              let lastIndex = -1
+              let searchFrom = 0
+              while (true) {
+                const idx = child.text.indexOf(openMarker, searchFrom)
+                if (idx === -1 || docPos + idx >= end - closeMarker.length) break
+                lastIndex = idx
+                searchFrom = idx + 1
+              }
+              if (lastIndex !== -1) {
+                foundStart = docPos + lastIndex
+              }
+            }
+          }
+          docPos += child.nodeSize
+        }
+
+        if (foundStart === -1) {
+          return null // Couldn't find the opening marker
+        }
+        start = foundStart
+      }
+
+      const contentStart = start + openMarker.length
+
+      // Check if the closing marker is actually in the document
+      // When typing, InputRule runs BEFORE the character is committed
+      // In that case, we shouldn't subtract closeMarker.length from end
+      let closingMarkerInDoc = false
+      try {
+        // The closing marker would be at position (end - closeMarker.length) if committed
+        // Check if there's text there that matches the closing marker
+        if (end <= state.doc.content.size) {
+          const potentialMarkerPos = end - closeMarker.length
+          if (potentialMarkerPos >= 0 && potentialMarkerPos < state.doc.content.size) {
+            const $pos = state.doc.resolve(potentialMarkerPos)
+            const nodeAfter = $pos.nodeAfter
+            closingMarkerInDoc = !!(nodeAfter?.isText && nodeAfter.text?.startsWith(closeMarker))
+          }
+        }
+      } catch {
+        // Position resolution failed, marker not in doc
+      }
+
+      // If closing marker is in doc, content ends before it
+      // If closing marker is pending (not in doc), content goes to end
+      const contentEnd = closingMarkerInDoc ? end - closeMarker.length : end
+
+      // DEBUG: Log all positions to diagnose the issue
+      console.log("[atom-aware] HANDLER CALLED:", {
+        marker: openMarker,
+        matchedContent: content,
+        rangeFrom: range.from,
+        rangeTo: range.to,
+        calculatedStart: start,
+        end,
+        contentStart,
+        contentEnd,
+        closingMarkerInDoc,
+        docSize: state.doc.content.size,
+        docText: state.doc.textBetween(0, Math.min(50, state.doc.content.size)),
+      })
+
+      // Final bounds check
+      if (start < 0 || contentStart < 0 || contentEnd < 0 || contentEnd <= contentStart) {
+        console.log("[atom-aware] ABORTING: bounds check failed", { start, contentStart, contentEnd })
+        return null
+      }
+      if (end > state.doc.content.size) {
+        console.log("[atom-aware] ABORTING: end > docSize", { end, docSize: state.doc.content.size })
+        return null
+      }
+
       // Check if already marked (prevents double-application)
-      const $start = state.doc.resolve(start + openMarker.length)
+      const $start = state.doc.resolve(contentStart)
       if ($start.marks().some((m) => m.type === type)) {
+        console.log("[atom-aware] ABORTING: already marked")
         return null
       }
 
       // If convertAtomsToText, we need to handle atoms specially
       if (convertAtomsToText) {
-        // Collect atoms in the content range
-        const contentStart = start + openMarker.length
-        const contentEnd = end - closeMarker.length
+        // Use end (not contentEnd) as the upper bound for nodesBetween
+        // because contentEnd might equal the mention's position, excluding it
+        const searchEnd = end
         const atomNodes: { pos: number; size: number; text: string }[] = []
 
-        state.doc.nodesBetween(contentStart, contentEnd, (node, pos) => {
-          if (node.isAtom && node.isInline && pos >= contentStart && pos < contentEnd) {
-            const text = node.textContent || ""
+        state.doc.nodesBetween(contentStart, searchEnd, (node, pos) => {
+          const nodeEnd = pos + node.nodeSize
+          const isInContentRange = pos < contentEnd && nodeEnd > contentStart
+          // IMPORTANT: isAtom is true for ALL leaf nodes including text!
+          // Must check !node.isText to only match actual atom nodes like mentions
+          if (node.isAtom && node.isInline && !node.isText && isInContentRange) {
+            // Get text representation from the node
+            // Try renderText from the node's type spec (set by TipTap extensions)
+            let text = ""
+            const spec = node.type.spec as { renderText?: (props: { node: typeof node }) => string }
+            if (spec.renderText) {
+              text = spec.renderText({ node })
+            } else {
+              text = node.textContent || ""
+            }
             atomNodes.push({ pos, size: node.nodeSize, text })
           }
           return true
@@ -104,31 +211,46 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         }
       }
 
-      // Map positions through any atom replacements
+      // Map through any atom replacements
       const mappedStart = tr.mapping.map(start)
       const mappedEnd = tr.mapping.map(end)
+      const mappedContentEnd = tr.mapping.map(contentEnd)
 
-      // Delete the markers and apply the mark
-      // Calculate content boundaries
-      const contentEnd = mappedEnd - closeMarker.length
+      // DEBUG: Log mapped positions
+      console.log("[atom-aware] BEFORE DELETIONS:", {
+        mappedStart,
+        mappedEnd,
+        mappedContentEnd,
+        closingMarkerInDoc,
+        deleteClosing: closingMarkerInDoc
+          ? `[${mappedContentEnd}, ${mappedContentEnd + closeMarker.length})`
+          : "SKIPPED (pending)",
+        deleteOpening: `[${mappedStart}, ${mappedStart + openMarker.length})`,
+      })
 
-      // Delete closing marker first
-      tr.delete(contentEnd, mappedEnd)
+      // Delete closing marker only if it's actually in the document
+      // (When typing, it's pending and hasn't been inserted yet)
+      if (closingMarkerInDoc) {
+        tr.delete(mappedContentEnd, mappedContentEnd + closeMarker.length)
+      }
 
       // Delete opening marker
       tr.delete(mappedStart, mappedStart + openMarker.length)
 
-      // Calculate final mark range (after both deletions)
-      const markStart = mappedStart
+      // Map the ORIGINAL content boundaries through ALL transformations
+      // This gives us the correct positions in the final document
+      const markStart = tr.mapping.map(contentStart)
       const markEnd = tr.mapping.map(contentEnd)
 
       // Apply the mark
+      console.log("[atom-aware] APPLYING MARK:", { markStart, markEnd, markType: type.name })
       if (markStart < markEnd) {
         tr.addMark(markStart, markEnd, type.create())
       }
 
       // Remove stored mark so typing after doesn't continue the mark
       tr.removeStoredMark(type)
+      console.log("[atom-aware] HANDLER COMPLETE - transaction applied")
     },
   })
 }
