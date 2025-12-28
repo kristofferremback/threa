@@ -118,28 +118,40 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
 
       const contentStart = start + openMarker.length
 
-      // Check if the closing marker is actually in the document
-      // When typing, InputRule runs BEFORE the character is committed
-      // In that case, we shouldn't subtract closeMarker.length from end
-      let closingMarkerInDoc = false
+      // Count how many characters of the closing marker are actually in the document.
+      // When typing, InputRule runs BEFORE the character is committed, so:
+      // - For single-char markers: the char may be pending (0 in doc) or committed (1 in doc)
+      // - For multi-char markers: some chars may be in doc, some pending
+      //   e.g., for "**", first "*" may be in doc while second "*" is pending
+      //
+      // We check from end-1 backwards, matching against closeMarker from right to left.
+      // This handles the case where the user has typed part of a multi-char marker.
+      let closingCharsInDoc = 0
       try {
-        // The closing marker would be at position (end - closeMarker.length) if committed
-        // Check if there's text there that matches the closing marker
-        if (end <= state.doc.content.size) {
-          const potentialMarkerPos = end - closeMarker.length
-          if (potentialMarkerPos >= 0 && potentialMarkerPos < state.doc.content.size) {
-            const $pos = state.doc.resolve(potentialMarkerPos)
+        for (let i = 0; i < closeMarker.length; i++) {
+          const checkPos = end - 1 - i // Check from end-1 backwards
+          const markerCharIndex = closeMarker.length - 1 - i // Match from right to left
+          if (checkPos >= 0 && checkPos < state.doc.content.size) {
+            const $pos = state.doc.resolve(checkPos)
             const nodeAfter = $pos.nodeAfter
-            closingMarkerInDoc = !!(nodeAfter?.isText && nodeAfter.text?.startsWith(closeMarker))
+            if (nodeAfter?.isText && nodeAfter.text?.charAt(0) === closeMarker.charAt(markerCharIndex)) {
+              closingCharsInDoc++
+            } else {
+              break // Stop at first mismatch
+            }
+          } else {
+            break // Position is beyond doc bounds
           }
         }
       } catch {
-        // Position resolution failed, marker not in doc
+        // Position resolution failed
       }
 
-      // If closing marker is in doc, content ends before it
-      // If closing marker is pending (not in doc), content goes to end
-      const contentEnd = closingMarkerInDoc ? end - closeMarker.length : end
+      // Content ends at position (end - closingCharsInDoc):
+      // - If closing marker is fully pending: closingCharsInDoc=0, contentEnd=end (content goes to cursor)
+      // - If closing marker is fully in doc: closingCharsInDoc=markerLength, contentEnd=end-markerLength
+      // - If partially pending: subtract only the chars that are in doc
+      const contentEnd = end - closingCharsInDoc
 
       // DEBUG: Log all positions to diagnose the issue
       console.log("[atom-aware] HANDLER CALLED:", {
@@ -151,18 +163,26 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         end,
         contentStart,
         contentEnd,
-        closingMarkerInDoc,
+        closingCharsInDoc,
+        closeMarkerLength: closeMarker.length,
         docSize: state.doc.content.size,
         docText: state.doc.textBetween(0, Math.min(50, state.doc.content.size)),
       })
 
       // Final bounds check
+      // Note: contentEnd may be at or before docSize even when end > docSize (pending chars)
       if (start < 0 || contentStart < 0 || contentEnd < 0 || contentEnd <= contentStart) {
         console.log("[atom-aware] ABORTING: bounds check failed", { start, contentStart, contentEnd })
         return null
       }
-      if (end > state.doc.content.size) {
-        console.log("[atom-aware] ABORTING: end > docSize", { end, docSize: state.doc.content.size })
+      // Allow end to exceed docSize by the number of pending chars (closeMarker.length - closingCharsInDoc)
+      const pendingChars = closeMarker.length - closingCharsInDoc
+      if (end > state.doc.content.size + pendingChars) {
+        console.log("[atom-aware] ABORTING: end too far beyond docSize", {
+          end,
+          docSize: state.doc.content.size,
+          pendingChars,
+        })
         return null
       }
 
@@ -187,12 +207,20 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
           // Must check !node.isText to only match actual atom nodes like mentions
           if (node.isAtom && node.isInline && !node.isText && isInContentRange) {
             // Get text representation from the node
-            // Try renderText from the node's type spec (set by TipTap extensions)
+            // Try multiple approaches since TipTap/ProseMirror have different conventions
             let text = ""
-            const spec = node.type.spec as { renderText?: (props: { node: typeof node }) => string }
+            const spec = node.type.spec as {
+              renderText?: (props: { node: typeof node }) => string
+              leafText?: (node: typeof node) => string
+            }
             if (spec.renderText) {
+              // TipTap style
               text = spec.renderText({ node })
+            } else if (spec.leafText) {
+              // ProseMirror style
+              text = spec.leafText(node)
             } else {
+              // Fallback to textContent
               text = node.textContent || ""
             }
             atomNodes.push({ pos, size: node.nodeSize, text })
@@ -221,17 +249,19 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         mappedStart,
         mappedEnd,
         mappedContentEnd,
-        closingMarkerInDoc,
-        deleteClosing: closingMarkerInDoc
-          ? `[${mappedContentEnd}, ${mappedContentEnd + closeMarker.length})`
-          : "SKIPPED (pending)",
+        closingCharsInDoc,
+        closeMarkerLength: closeMarker.length,
+        deleteClosing:
+          closingCharsInDoc > 0
+            ? `[${mappedContentEnd}, ${mappedContentEnd + closingCharsInDoc})`
+            : "SKIPPED (all pending)",
         deleteOpening: `[${mappedStart}, ${mappedStart + openMarker.length})`,
       })
 
-      // Delete closing marker only if it's actually in the document
-      // (When typing, it's pending and hasn't been inserted yet)
-      if (closingMarkerInDoc) {
-        tr.delete(mappedContentEnd, mappedContentEnd + closeMarker.length)
+      // Delete only the closing marker characters that are actually in the document
+      // (Pending characters haven't been inserted yet)
+      if (closingCharsInDoc > 0) {
+        tr.delete(mappedContentEnd, mappedContentEnd + closingCharsInDoc)
       }
 
       // Delete opening marker
