@@ -153,43 +153,20 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
       // - If partially pending: subtract only the chars that are in doc
       const contentEnd = end - closingCharsInDoc
 
-      // DEBUG: Log all positions to diagnose the issue
-      console.log("[atom-aware] HANDLER CALLED:", {
-        marker: openMarker,
-        matchedContent: content,
-        rangeFrom: range.from,
-        rangeTo: range.to,
-        calculatedStart: start,
-        end,
-        contentStart,
-        contentEnd,
-        closingCharsInDoc,
-        closeMarkerLength: closeMarker.length,
-        docSize: state.doc.content.size,
-        docText: state.doc.textBetween(0, Math.min(50, state.doc.content.size)),
-      })
-
       // Final bounds check
       // Note: contentEnd may be at or before docSize even when end > docSize (pending chars)
       if (start < 0 || contentStart < 0 || contentEnd < 0 || contentEnd <= contentStart) {
-        console.log("[atom-aware] ABORTING: bounds check failed", { start, contentStart, contentEnd })
         return null
       }
       // Allow end to exceed docSize by the number of pending chars (closeMarker.length - closingCharsInDoc)
       const pendingChars = closeMarker.length - closingCharsInDoc
       if (end > state.doc.content.size + pendingChars) {
-        console.log("[atom-aware] ABORTING: end too far beyond docSize", {
-          end,
-          docSize: state.doc.content.size,
-          pendingChars,
-        })
         return null
       }
 
       // Check if already marked (prevents double-application)
       const $start = state.doc.resolve(contentStart)
       if ($start.marks().some((m) => m.type === type)) {
-        console.log("[atom-aware] ABORTING: already marked")
         return null
       }
 
@@ -200,23 +177,9 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         const searchEnd = end
         const atomNodes: { pos: number; size: number; text: string }[] = []
 
-        console.log("[atom-aware] SEARCHING FOR ATOMS:", { contentStart, searchEnd, contentEnd })
-
         state.doc.nodesBetween(contentStart, searchEnd, (node, pos) => {
           const nodeEnd = pos + node.nodeSize
           const isInContentRange = pos < contentEnd && nodeEnd > contentStart
-
-          console.log("[atom-aware] NODE:", {
-            type: node.type.name,
-            pos,
-            nodeEnd,
-            nodeSize: node.nodeSize,
-            isAtom: node.isAtom,
-            isInline: node.isInline,
-            isText: node.isText,
-            isInContentRange,
-            contentEnd,
-          })
 
           // IMPORTANT: isAtom is true for ALL leaf nodes including text!
           // Must check !node.isText to only match actual atom nodes like mentions
@@ -241,22 +204,17 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
               }
             }
 
-            console.log("[atom-aware] ATOM TEXT:", { nodeType: node.type.name, text, slug: attrs.slug })
             atomNodes.push({ pos, size: node.nodeSize, text })
           }
           return true
         })
 
-        console.log("[atom-aware] FOUND ATOMS:", atomNodes)
-
         // Replace atoms with text (in reverse order)
         for (let i = atomNodes.length - 1; i >= 0; i--) {
           const { pos, size, text } = atomNodes[i]
           if (text) {
-            console.log("[atom-aware] REPLACING ATOM:", { pos, size, text })
             tr.replaceWith(pos, pos + size, state.schema.text(text))
           } else {
-            console.log("[atom-aware] DELETING ATOM (no text):", { pos, size })
             tr.delete(pos, pos + size)
           }
         }
@@ -264,22 +222,7 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
 
       // Map through any atom replacements
       const mappedStart = tr.mapping.map(start)
-      const mappedEnd = tr.mapping.map(end)
       const mappedContentEnd = tr.mapping.map(contentEnd)
-
-      // DEBUG: Log mapped positions
-      console.log("[atom-aware] BEFORE DELETIONS:", {
-        mappedStart,
-        mappedEnd,
-        mappedContentEnd,
-        closingCharsInDoc,
-        closeMarkerLength: closeMarker.length,
-        deleteClosing:
-          closingCharsInDoc > 0
-            ? `[${mappedContentEnd}, ${mappedContentEnd + closingCharsInDoc})`
-            : "SKIPPED (all pending)",
-        deleteOpening: `[${mappedStart}, ${mappedStart + openMarker.length})`,
-      })
 
       // Delete only the closing marker characters that are actually in the document
       // (Pending characters haven't been inserted yet)
@@ -296,14 +239,12 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
       const markEnd = tr.mapping.map(contentEnd)
 
       // Apply the mark
-      console.log("[atom-aware] APPLYING MARK:", { markStart, markEnd, markType: type.name })
       if (markStart < markEnd) {
         tr.addMark(markStart, markEnd, type.create())
       }
 
       // Remove stored mark so typing after doesn't continue the mark
       tr.removeStoredMark(type)
-      console.log("[atom-aware] HANDLER COMPLETE - transaction applied")
     },
   })
 }

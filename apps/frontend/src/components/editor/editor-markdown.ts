@@ -403,60 +403,44 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
       // Recursively parse the link text for nested formatting
       const innerContent = parseInlineMarkdown(linkText, getMentionType)
       for (const node of innerContent) {
-        if (node.type === "text") {
-          result.push({
-            type: "text",
-            text: node.text,
-            marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
-          })
-        } else {
-          result.push(node)
-        }
+        // Add link mark to all nodes (text, mentions, channels, etc.)
+        result.push({
+          ...node,
+          marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
+        })
       }
     } else if (match[4]) {
       // Bold: **text**
       const boldText = match[5]
       const innerContent = parseInlineMarkdown(boldText, getMentionType)
       for (const node of innerContent) {
-        if (node.type === "text") {
-          result.push({
-            type: "text",
-            text: node.text,
-            marks: [...(node.marks || []), { type: "bold" }],
-          })
-        } else {
-          result.push(node)
-        }
+        // Add bold mark to all nodes (text, mentions, channels, etc.)
+        result.push({
+          ...node,
+          marks: [...(node.marks || []), { type: "bold" }],
+        })
       }
     } else if (match[6]) {
       // Italic: *text*
       const italicText = match[7]
       const innerContent = parseInlineMarkdown(italicText, getMentionType)
       for (const node of innerContent) {
-        if (node.type === "text") {
-          result.push({
-            type: "text",
-            text: node.text,
-            marks: [...(node.marks || []), { type: "italic" }],
-          })
-        } else {
-          result.push(node)
-        }
+        // Add italic mark to all nodes (text, mentions, channels, etc.)
+        result.push({
+          ...node,
+          marks: [...(node.marks || []), { type: "italic" }],
+        })
       }
     } else if (match[8]) {
       // Strike: ~~text~~
       const strikeText = match[9]
       const innerContent = parseInlineMarkdown(strikeText, getMentionType)
       for (const node of innerContent) {
-        if (node.type === "text") {
-          result.push({
-            type: "text",
-            text: node.text,
-            marks: [...(node.marks || []), { type: "strike" }],
-          })
-        } else {
-          result.push(node)
-        }
+        // Add strike mark to all nodes (text, mentions, channels, etc.)
+        result.push({
+          ...node,
+          marks: [...(node.marks || []), { type: "strike" }],
+        })
       }
     } else if (match[10]) {
       // Code: `text` (no nesting for code)
