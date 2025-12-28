@@ -7,6 +7,8 @@ import type { ProviderRegistry } from "../lib/ai/provider-registry"
 import type { StreamService } from "../services/stream-service"
 import { logger } from "../lib/logger"
 import { createSimulationGraph, type SimulationGraphCallbacks, type SimulationStateType } from "./simulation-graph"
+import { CallbackHandler } from "@langfuse/langchain"
+import { isLangfuseEnabled } from "../lib/langfuse"
 
 export interface SimulationAgentDeps {
   pool: Pool
@@ -129,8 +131,14 @@ export class SimulationAgent {
     // Thread ID for checkpointing (unique per simulation run)
     const threadId = `simulation_${streamId}_${Date.now()}`
 
+    // Create Langfuse callback for tracing (if enabled)
+    const langchainCallbacks = isLangfuseEnabled()
+      ? [new CallbackHandler({ sessionId: threadId, tags: ["simulation"] })]
+      : []
+
     try {
       const result = await compiledGraph.invoke(initialState, {
+        callbacks: langchainCallbacks,
         configurable: {
           thread_id: threadId,
           callbacks,
