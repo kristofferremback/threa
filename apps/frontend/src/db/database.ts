@@ -60,6 +60,7 @@ export interface CachedUser {
   id: string
   email: string
   name: string
+  slug: string
   _cachedAt: number
 }
 
@@ -162,6 +163,10 @@ class ThreaDatabase extends Dexie {
 
     this.version(4).stores({
       personas: "id, workspaceId, slug, _cachedAt",
+    })
+
+    this.version(5).stores({
+      users: "id, email, slug, _cachedAt",
     })
   }
 }

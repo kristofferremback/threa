@@ -1,9 +1,11 @@
-import { useRef, useState, useEffect, useCallback } from "react"
+import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors } from "./editor-behaviors"
-import { serializeToMarkdown, parseMarkdown } from "./editor-markdown"
+import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { EditorToolbar } from "./editor-toolbar"
+import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion } from "./triggers"
+import { useMentionables } from "@/hooks/use-mentionables"
 import { cn } from "@/lib/utils"
 
 interface RichEditorProps {
@@ -32,6 +34,42 @@ export function RichEditor({
   const [, forceUpdate] = useState(0)
   const isInternalUpdate = useRef(false)
 
+  // Mention, channel, and command autocomplete
+  const { mentionables } = useMentionables()
+  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion()
+  const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
+  const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
+
+  // Create lookup for mention types from mentionables
+  // Current user's slug maps to "me" for special highlighting
+  const getMentionType = useMemo<MentionTypeLookup>(() => {
+    const slugToType = new Map<string, "user" | "persona" | "broadcast" | "me">()
+    for (const m of mentionables) {
+      // Map current user to "me" type for special highlighting
+      slugToType.set(m.slug, m.isCurrentUser ? "me" : m.type)
+    }
+    return (slug: string) => slugToType.get(slug) ?? "user"
+  }, [mentionables])
+
+  // Ref to avoid stale closure in TipTap paste handler
+  const getMentionTypeRef = useRef(getMentionType)
+  getMentionTypeRef.current = getMentionType
+
+  // Track mentionables state to detect when data loads or currentUser becomes known
+  const lastParsedState = useRef({ count: mentionables.length, hasCurrentUser: false })
+  const extensions = useMemo(
+    () => [
+      ...createEditorExtensions({
+        placeholder,
+        mentionSuggestion: mentionConfig,
+        channelSuggestion: channelConfig,
+        commandSuggestion: commandConfig,
+      }),
+      EditorBehaviors,
+    ],
+    [placeholder, mentionConfig, channelConfig, commandConfig]
+  )
+
   // Debounced toolbar visibility - stays visible 150ms after conditions become false
   const shouldBeVisible = isFocused || linkPopoverOpen || dropdownOpen
   useEffect(() => {
@@ -54,8 +92,8 @@ export function RichEditor({
   }, [shouldBeVisible])
 
   const editor = useEditor({
-    extensions: [...createEditorExtensions(placeholder), EditorBehaviors],
-    content: parseMarkdown(value),
+    extensions,
+    content: parseMarkdown(value, getMentionType),
     editable: !disabled,
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current) return
@@ -77,6 +115,17 @@ export function RichEditor({
           "focus:outline-none"
         ),
       },
+      handlePaste: (_view, event) => {
+        // Parse pasted text through markdown parser to convert @mentions, #channels
+        const text = event.clipboardData?.getData("text/plain")
+        if (text) {
+          event.preventDefault()
+          const parsed = parseMarkdown(text, getMentionTypeRef.current)
+          editor?.commands.insertContent(parsed)
+          return true
+        }
+        return false
+      },
       handleKeyDown: (_view, event) => {
         // Cmd/Ctrl+Enter to submit
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -90,7 +139,7 @@ export function RichEditor({
           setLinkPopoverOpen(true)
           return true
         }
-        // Shift+Cmd/Ctrl+V to paste as plain text
+        // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()
           navigator.clipboard
@@ -115,10 +164,35 @@ export function RichEditor({
     const currentMarkdown = serializeToMarkdown(editor.getJSON())
     if (value !== currentMarkdown) {
       isInternalUpdate.current = true
-      editor.commands.setContent(parseMarkdown(value))
+      editor.commands.setContent(parseMarkdown(value, getMentionType))
       isInternalUpdate.current = false
     }
-  }, [value, editor])
+  }, [value, editor, getMentionType])
+
+  // Re-parse content when mentionables load or currentUser becomes known (for correct mention type colors)
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+
+    const hasCurrentUser = mentionables.some((m) => m.isCurrentUser)
+    const current = { count: mentionables.length, hasCurrentUser }
+
+    // Re-parse if:
+    // 1. More mentionables loaded than last time, OR
+    // 2. We now have current user info but didn't before
+    const shouldReparse =
+      current.count > lastParsedState.current.count ||
+      (current.hasCurrentUser && !lastParsedState.current.hasCurrentUser)
+
+    if (shouldReparse) {
+      lastParsedState.current = current
+      const markdown = serializeToMarkdown(editor.getJSON())
+      if (markdown) {
+        isInternalUpdate.current = true
+        editor.commands.setContent(parseMarkdown(markdown, getMentionType))
+        isInternalUpdate.current = false
+      }
+    }
+  }, [editor, mentionables, getMentionType])
 
   // Focus editor on mount
   useEffect(() => {
@@ -164,6 +238,9 @@ export function RichEditor({
       >
         <EditorContent editor={editor} />
       </div>
+      {renderMentionList()}
+      {renderChannelList()}
+      {renderCommandList()}
     </div>
   )
 }

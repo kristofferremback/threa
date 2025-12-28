@@ -1,6 +1,23 @@
 import { Extension, type Editor } from "@tiptap/react"
 import { TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
+import { MentionPluginKey } from "./triggers/mention-extension"
+import { ChannelPluginKey } from "./triggers/channel-extension"
+import { CommandPluginKey } from "./triggers/command-extension"
+
+/**
+ * Check if any suggestion popup is currently active.
+ * When a suggestion is active, we should not handle Tab ourselves.
+ */
+function isSuggestionActive(editor: Editor): boolean {
+  const { state } = editor
+  const mentionState = MentionPluginKey.getState(state)
+  const channelState = ChannelPluginKey.getState(state)
+  const commandState = CommandPluginKey.getState(state)
+
+  // The suggestion plugin stores state when active (has query, range, etc.)
+  return !!(mentionState?.active || channelState?.active || commandState?.active)
+}
 
 /**
  * Calculate how many characters were removed from a line when dedenting
@@ -250,8 +267,13 @@ export const EditorBehaviors = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      // Tab for indent - always handle to prevent browser focus change
+      // Tab for indent - handle unless a suggestion popup is active
       Tab: () => {
+        // If a suggestion popup is active, let the suggestion plugin handle Tab
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
         if (this.editor.isActive("codeBlock")) {
           return handleCodeBlockTab(this.editor, false)
         }

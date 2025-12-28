@@ -3,6 +3,7 @@ import { Suspense, lazy, Component, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { processChildrenForMentions } from "./mention-renderer"
 
 const CodeBlock = lazy(() => import("./code-block"))
 
@@ -28,26 +29,41 @@ class CodeBlockErrorBoundary extends Component<{ children: ReactNode; fallback: 
 }
 
 export const markdownComponents: Components = {
-  // Headers - scaled for message context
-  h1: ({ children }) => <h1 className="text-xl font-bold mt-4 mb-2 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-lg font-bold mt-3 mb-2 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1 first:mt-0">{children}</h3>,
-  h4: ({ children }) => <h4 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h4>,
-  h5: ({ children }) => <h5 className="text-sm font-medium mt-2 mb-1 first:mt-0">{children}</h5>,
-  h6: ({ children }) => <h6 className="text-sm font-medium text-muted-foreground mt-2 mb-1 first:mt-0">{children}</h6>,
+  // Headers - scaled for message context, process @mentions and #channels
+  h1: ({ children }) => (
+    <h1 className="text-xl font-bold mt-4 mb-2 first:mt-0">{processChildrenForMentions(children)}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="text-lg font-bold mt-3 mb-2 first:mt-0">{processChildrenForMentions(children)}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-base font-semibold mt-3 mb-1 first:mt-0">{processChildrenForMentions(children)}</h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{processChildrenForMentions(children)}</h4>
+  ),
+  h5: ({ children }) => (
+    <h5 className="text-sm font-medium mt-2 mb-1 first:mt-0">{processChildrenForMentions(children)}</h5>
+  ),
+  h6: ({ children }) => (
+    <h6 className="text-sm font-medium text-muted-foreground mt-2 mb-1 first:mt-0">
+      {processChildrenForMentions(children)}
+    </h6>
+  ),
 
-  // Paragraphs
-  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  // Paragraphs - process @mentions and #channels
+  p: ({ children }) => <p className="mb-2 last:mb-0">{processChildrenForMentions(children)}</p>,
 
-  // Links - open in new tab
+  // Links - open in new tab, process @mentions and #channels
+  // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration
   a: ({ href, children }) => (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-primary underline underline-offset-4 hover:text-primary/80"
+      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
-      {children}
+      {processChildrenForMentions(children)}
     </a>
   ),
 
@@ -79,13 +95,17 @@ export const markdownComponents: Components = {
   pre: ({ children }) => <>{children}</>,
 
   // Bold
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  strong: ({ children }) => <strong className="font-semibold">{processChildrenForMentions(children)}</strong>,
 
   // Italic
-  em: ({ children }) => <em className="italic">{children}</em>,
+  em: ({ children }) => <em className="italic">{processChildrenForMentions(children)}</em>,
 
-  // Strikethrough (GFM)
-  del: ({ children }) => <del className="line-through text-muted-foreground">{children}</del>,
+  // Strikethrough (GFM) - [&_span] ensures inline-flex elements like TriggerChips inherit decoration
+  del: ({ children }) => (
+    <del className="line-through text-muted-foreground [&_span]:[text-decoration:inherit]">
+      {processChildrenForMentions(children)}
+    </del>
+  ),
 
   // Blockquote
   blockquote: ({ children }) => (
@@ -97,7 +117,7 @@ export const markdownComponents: Components = {
   ol: ({ children }) => <ol className="list-decimal pl-6 my-2">{children}</ol>,
   li: ({ children, className }) => {
     const isTaskItem = className?.includes("task-list-item")
-    return <li className={cn("mb-1", isTaskItem && "list-none -ml-6")}>{children}</li>
+    return <li className={cn("mb-1", isTaskItem && "list-none -ml-6")}>{processChildrenForMentions(children)}</li>
   },
 
   // Task list checkboxes (read-only)
@@ -117,8 +137,8 @@ export const markdownComponents: Components = {
   thead: ({ children }) => <TableHeader>{children}</TableHeader>,
   tbody: ({ children }) => <TableBody>{children}</TableBody>,
   tr: ({ children }) => <TableRow>{children}</TableRow>,
-  th: ({ children }) => <TableHead>{children}</TableHead>,
-  td: ({ children }) => <TableCell>{children}</TableCell>,
+  th: ({ children }) => <TableHead>{processChildrenForMentions(children)}</TableHead>,
+  td: ({ children }) => <TableCell>{processChildrenForMentions(children)}</TableCell>,
 
   // Horizontal rule
   hr: () => <hr className="my-4 border-border" />,
