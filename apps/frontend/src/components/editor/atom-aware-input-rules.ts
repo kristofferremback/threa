@@ -190,7 +190,7 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
 
             // For mentions/channels, use the slug attribute directly (most reliable)
             if (attrs.slug) {
-              const prefix = node.type.name === "mention" ? "@" : node.type.name === "channelMention" ? "#" : ""
+              const prefix = node.type.name === "mention" ? "@" : node.type.name === "channelLink" ? "#" : ""
               text = `${prefix}${attrs.slug}`
             } else {
               // Try spec methods for other atom types
