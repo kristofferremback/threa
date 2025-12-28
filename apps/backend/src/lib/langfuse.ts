@@ -1,5 +1,6 @@
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { LangfuseSpanProcessor } from "@langfuse/otel"
+import { CallbackHandler } from "@langfuse/langchain"
 import { logger } from "./logger"
 
 let otelSdk: NodeSDK | null = null
@@ -68,4 +69,24 @@ export async function shutdownLangfuse(): Promise<void> {
     otelSdk = null
     logger.info("Langfuse tracing shutdown")
   }
+}
+
+/**
+ * Create LangChain callbacks for Langfuse tracing.
+ * Returns an empty array if Langfuse is not enabled, so callers don't need to check.
+ *
+ * @example
+ * const result = await graph.invoke(input, {
+ *   callbacks: getLangfuseCallbacks({ sessionId, tags: ["companion"] }),
+ * })
+ */
+export function getLangfuseCallbacks(params?: {
+  sessionId?: string
+  userId?: string
+  tags?: string[]
+}): CallbackHandler[] {
+  if (!isLangfuseEnabled()) {
+    return []
+  }
+  return [new CallbackHandler(params)]
 }

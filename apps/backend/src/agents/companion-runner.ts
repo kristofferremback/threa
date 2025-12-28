@@ -13,8 +13,7 @@ import {
 import { AgentToolNames } from "@threa/types"
 import type { ProviderRegistry } from "../lib/ai"
 import { logger } from "../lib/logger"
-import { CallbackHandler } from "@langfuse/langchain"
-import { isLangfuseEnabled } from "../lib/langfuse"
+import { getLangfuseCallbacks } from "../lib/langfuse"
 
 const MAX_MESSAGES = 5
 
@@ -173,11 +172,6 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
     }
 
-    // Create Langfuse callback for tracing (if enabled)
-    const langchainCallbacks = isLangfuseEnabled()
-      ? [new CallbackHandler({ sessionId, userId: personaId, tags: ["companion"] })]
-      : []
-
     // Invoke the graph
     const result = await compiledGraph.invoke(
       {
@@ -195,7 +189,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
       {
         runName: "companion-agent",
-        callbacks: langchainCallbacks,
+        callbacks: getLangfuseCallbacks({ sessionId, userId: personaId, tags: ["companion"] }),
         configurable: {
           thread_id: threadId,
           callbacks: graphCallbacks,
