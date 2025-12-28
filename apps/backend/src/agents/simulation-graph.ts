@@ -240,6 +240,15 @@ function createOrchestrateNode() {
       prompt,
       temperature: 0.3,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "simulation-orchestrate",
+        metadata: {
+          streamId: state.streamId,
+          turn: state.currentTurn,
+          personaCount: state.personas.length,
+        },
+      },
     })
 
     const decision = result.object
@@ -336,6 +345,15 @@ function createGenerateNode() {
       prompt,
       temperature: persona.temperature ?? 0.7,
       maxOutputTokens: persona.maxTokens ?? 500,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "simulation-generate",
+        metadata: {
+          streamId: state.streamId,
+          turn: state.currentTurn,
+          personaSlug: persona.slug,
+        },
+      },
     })
 
     const content = result.text?.trim() || null

@@ -65,6 +65,11 @@ export class StreamNamingService {
           prompt,
           maxOutputTokens: 100,
           temperature: 0.3,
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: "stream-naming",
+            metadata: { streamId },
+          },
         })
         generatedName = result.text?.trim() || null
       } catch (err) {

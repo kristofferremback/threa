@@ -161,6 +161,11 @@ export class MemoClassifier {
       maxOutputTokens: 200,
       temperature: 0.1,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "memo-classify-message",
+        metadata: { messageId: message.id },
+      },
     })
 
     return {
@@ -200,6 +205,15 @@ export class MemoClassifier {
       maxOutputTokens: 300,
       temperature: 0.1,
       experimental_repairText: stripMarkdownFences,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "memo-classify-conversation",
+        metadata: {
+          conversationId: conversation.id,
+          messageCount: messages.length,
+          hasExistingMemo: !!existingMemo,
+        },
+      },
     })
 
     return {
