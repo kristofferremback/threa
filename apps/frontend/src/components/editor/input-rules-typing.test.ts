@@ -282,6 +282,42 @@ describe("Input Rules - Simulated Typing", () => {
       expect(codeNode).toBeDefined()
       expect(codeNode?.text).toContain("@ariadne")
     })
+
+    it("should convert channel to text when typing closing backtick for code", () => {
+      // Set up: `Check [channel]
+      editor = createTestEditor({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "`Check " },
+              {
+                type: "channelLink",
+                attrs: { id: "general", slug: "general", name: "general" },
+              },
+            ],
+          },
+        ],
+      })
+
+      editor.commands.focus("end")
+
+      // Type the closing backtick
+      simulateTyping(editor, "`")
+
+      const json = editor.getJSON()
+
+      // The channel should be converted to text
+      const channels = findAllNodes(json, "channelLink")
+      expect(channels.length).toBe(0)
+
+      // Should have code-marked text containing "#general"
+      const textNodes = findAllTextNodes(json)
+      const codeNode = textNodes.find((n) => nodeHasMark(n, "code"))
+      expect(codeNode).toBeDefined()
+      expect(codeNode?.text).toContain("#general")
+    })
   })
 
   describe("Edge cases", () => {
