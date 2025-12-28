@@ -66,6 +66,7 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
     inline: true,
     selectable: false,
     atom: true,
+    marks: "_", // Allow all marks (bold, italic, code, strike) on this node
 
     addOptions() {
       return {
@@ -153,13 +154,21 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
             const item = props as TItem
             const attrs = mapPropsToAttrs(item)
 
+            // Get marks at the current position to preserve styling (bold, italic, etc.)
+            const { storedMarks, $from } = editor.state.selection
+            const currentMarks = storedMarks || $from.marks()
+            const marks = currentMarks.map((mark) => ({
+              type: mark.type.name,
+              attrs: mark.attrs,
+            }))
+
             editor
               .chain()
               .focus()
               .deleteRange(range)
               .insertContent([
-                { type: name, attrs },
-                { type: "text", text: " " },
+                { type: name, attrs, marks },
+                { type: "text", text: " ", marks },
               ])
               .run()
           },
