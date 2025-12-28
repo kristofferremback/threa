@@ -114,9 +114,24 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
+      } else if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        clearInputRequest()
       }
     },
-    [inputRequest, inputValue]
+    [inputRequest, inputValue, clearInputRequest]
+  )
+
+  const handleMainInputKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        handleClose()
+      }
+    },
+    [handleClose]
   )
 
   const commandContext: CommandContext = useMemo(
@@ -176,6 +191,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleMainInputKeyDown}
               placeholder={MODE_PLACEHOLDERS[mode]}
               className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               autoFocus
