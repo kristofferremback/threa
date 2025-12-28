@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, type KeyboardEvent } from "react"
+import React, { useState, useEffect, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
 import { CommandDialog, CommandList } from "@/components/ui/command"
@@ -110,7 +110,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   )
 
   const handleInputKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
@@ -134,20 +134,29 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
-  const handleEscapeKeyDown = useCallback(
-    (e: globalThis.KeyboardEvent) => {
-      e.preventDefault()
-      if (inputRequest) {
-        clearInputRequest()
-      } else {
-        handleClose()
+  // Document-level capture listener to intercept Escape before cmdk/Radix can blur the input
+  useEffect(() => {
+    if (!open) return
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+        if (inputRequest) {
+          clearInputRequest()
+        } else {
+          handleClose()
+        }
       }
-    },
-    [inputRequest, clearInputRequest, handleClose]
-  )
+    }
+
+    document.addEventListener("keydown", handler, true)
+    return () => document.removeEventListener("keydown", handler, true)
+  }, [open, inputRequest, clearInputRequest, handleClose])
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} onEscapeKeyDown={handleEscapeKeyDown}>
+    <CommandDialog open={open} onOpenChange={onOpenChange}>
       <div className="flex flex-col">
         {/* Input area */}
         <div className="flex items-center border-b px-3">
