@@ -114,12 +114,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
-      } else if (e.key === "Escape") {
-        e.preventDefault()
-        clearInputRequest()
       }
     },
-    [inputRequest, inputValue, clearInputRequest]
+    [inputRequest, inputValue]
   )
 
   const commandContext: CommandContext = useMemo(
@@ -137,9 +134,24 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
+  const handleEscapeCapture = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (inputRequest) {
+          e.stopPropagation()
+          clearInputRequest()
+        } else {
+          e.stopPropagation()
+          handleClose()
+        }
+      }
+    },
+    [inputRequest, clearInputRequest, handleClose]
+  )
+
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <div className="flex flex-col">
+      <div className="flex flex-col" onKeyDownCapture={handleEscapeCapture}>
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
