@@ -31,9 +31,11 @@ import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
 import { createCommandListener } from "./lib/command-listener"
+import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
 import { createCompanionWorker } from "./workers/companion-worker"
+import { createMentionInvokeWorker } from "./workers/mention-invoke-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
@@ -47,6 +49,7 @@ import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
 import { CompanionAgent } from "./agents/companion-agent"
+import { MentionInvokeAgent } from "./agents/mention-invoke-agent"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -172,6 +175,11 @@ export async function startServer(): Promise<ServerInstance> {
   const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })
   jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
 
+  // Create mention invoke agent and register worker (for @persona invocations)
+  const mentionInvokeAgent = new MentionInvokeAgent({ pool, responseGenerator, createMessage })
+  const mentionInvokeWorker = createMentionInvokeWorker({ agent: mentionInvokeAgent, serverId })
+  jobQueue.registerHandler(JobQueues.PERSONA_INVOKE, mentionInvokeWorker)
+
   const namingWorker = createNamingWorker({ streamNamingService })
   jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker)
 
@@ -222,8 +230,10 @@ export async function startServer(): Promise<ServerInstance> {
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
   const commandListener = createCommandListener(pool, jobQueue)
+  const mentionInvokeListener = createMentionInvokeListener({ pool, jobQueue, streamService })
   await broadcastListener.start()
   await companionListener.start()
+  await mentionInvokeListener.start()
   await namingListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
@@ -244,6 +254,7 @@ export async function startServer(): Promise<ServerInstance> {
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
     await namingListener.stop()
+    await mentionInvokeListener.stop()
     await companionListener.stop()
     await broadcastListener.stop()
     await jobQueue.stop()
