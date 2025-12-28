@@ -134,24 +134,29 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
-  const handleEscapeCapture = useCallback(
-    (e: React.KeyboardEvent) => {
+  // Handle Escape at document level to beat cmdk's handler
+  useEffect(() => {
+    if (!open) return
+
+    const handleEscape = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
         if (inputRequest) {
-          e.stopPropagation()
           clearInputRequest()
         } else {
-          e.stopPropagation()
           handleClose()
         }
       }
-    },
-    [inputRequest, clearInputRequest, handleClose]
-  )
+    }
+
+    document.addEventListener("keydown", handleEscape, true)
+    return () => document.removeEventListener("keydown", handleEscape, true)
+  }, [open, inputRequest, clearInputRequest, handleClose])
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <div className="flex flex-col" onKeyDownCapture={handleEscapeCapture}>
+      <div className="flex flex-col">
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
