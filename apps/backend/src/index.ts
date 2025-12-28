@@ -30,12 +30,19 @@ process.on("uncaughtException", (err) => {
 
 process.on("unhandledRejection", (reason) => {
   // Try to extract useful info from the rejection reason
-  const reasonInfo =
-    reason instanceof Error
-      ? { message: reason.message, stack: reason.stack, name: reason.name }
-      : typeof reason === "object" && reason !== null
-        ? { ...reason, stringified: JSON.stringify(reason) }
-        : { value: String(reason) }
+  let reasonInfo: Record<string, unknown>
+  if (reason instanceof Error) {
+    reasonInfo = { message: reason.message, stack: reason.stack, name: reason.name }
+  } else if (typeof reason === "object" && reason !== null) {
+    try {
+      reasonInfo = { ...reason, stringified: JSON.stringify(reason) }
+    } catch {
+      // JSON.stringify can throw for circular refs, BigInt, etc.
+      reasonInfo = { value: String(reason) }
+    }
+  } else {
+    reasonInfo = { value: String(reason) }
+  }
   logger.fatal({ reason: reasonInfo }, "Unhandled rejection")
   shutdown(1)
 })
