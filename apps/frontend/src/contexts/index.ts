@@ -15,3 +15,4 @@ export {
 export { SocketProvider, useSocket, useSocketConnected } from "./socket-context"
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
 export { PanelProvider, usePanel } from "./panel-context"
+export { ThemeProvider, useTheme, type Theme } from "./theme-context"

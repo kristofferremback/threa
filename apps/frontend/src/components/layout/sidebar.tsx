@@ -24,6 +24,7 @@ import {
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
+import { ThemeDropdown } from "@/components/theme-dropdown"
 
 interface SidebarProps {
   workspaceId: string
@@ -102,6 +103,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           >
             <Search className="h-4 w-4" />
           </Button>
+          <ThemeDropdown />
         </div>
       </div>
 

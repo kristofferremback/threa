@@ -141,6 +141,9 @@
   }
   body {
     @apply bg-background text-foreground;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
   }
 }
 
