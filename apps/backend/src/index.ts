@@ -29,6 +29,13 @@ process.on("uncaughtException", (err) => {
 })
 
 process.on("unhandledRejection", (reason) => {
-  logger.fatal({ reason }, "Unhandled rejection")
+  // Try to extract useful info from the rejection reason
+  const reasonInfo =
+    reason instanceof Error
+      ? { message: reason.message, stack: reason.stack, name: reason.name }
+      : typeof reason === "object" && reason !== null
+        ? { ...reason, stringified: JSON.stringify(reason) }
+        : { value: String(reason) }
+  logger.fatal({ reason: reasonInfo }, "Unhandled rejection")
   shutdown(1)
 })
