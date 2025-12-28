@@ -377,15 +377,16 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
 
   // Inline markdown pattern - captures each format type in separate groups
   // Group layout (order matters for matching priority):
-  //   1-3:  Link     [text](url)     → groups: full, text, url
-  //   4-5:  Bold     **text**        → groups: full, text
-  //   6-7:  Italic   *text*          → groups: full, text (with negative lookahead/behind for **)
-  //   8-9:  Strike   ~~text~~        → groups: full, text
-  //   10-11: Code    `text`          → groups: full, text
-  //   12-13: Mention @slug           → groups: full, slug
-  //   14-15: Channel #slug           → groups: full, slug
+  //   1-3:   Link        [text](url)     → groups: full, text, url
+  //   4-5:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
+  //   6-7:   Bold        **text**        → groups: full, text
+  //   8-9:   Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
+  //   10-11: Strike      ~~text~~        → groups: full, text
+  //   12-13: Code        `text`          → groups: full, text
+  //   14-15: Mention     @slug           → groups: full, slug
+  //   16-17: Channel     #slug           → groups: full, slug
   const inlinePattern =
-    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
+    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
 
   let lastIndex = 0
   let match
@@ -410,8 +411,19 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
         })
       }
     } else if (match[4]) {
+      // BoldItalic: ***text*** - apply both marks
+      const boldItalicText = match[5]
+      const innerContent = parseInlineMarkdown(boldItalicText, getMentionType)
+      for (const node of innerContent) {
+        // Add both bold and italic marks to all nodes
+        result.push({
+          ...node,
+          marks: [...(node.marks || []), { type: "bold" }, { type: "italic" }],
+        })
+      }
+    } else if (match[6]) {
       // Bold: **text**
-      const boldText = match[5]
+      const boldText = match[7]
       const innerContent = parseInlineMarkdown(boldText, getMentionType)
       for (const node of innerContent) {
         // Add bold mark to all nodes (text, mentions, channels, etc.)
@@ -420,9 +432,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "bold" }],
         })
       }
-    } else if (match[6]) {
+    } else if (match[8]) {
       // Italic: *text*
-      const italicText = match[7]
+      const italicText = match[9]
       const innerContent = parseInlineMarkdown(italicText, getMentionType)
       for (const node of innerContent) {
         // Add italic mark to all nodes (text, mentions, channels, etc.)
@@ -431,9 +443,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "italic" }],
         })
       }
-    } else if (match[8]) {
+    } else if (match[10]) {
       // Strike: ~~text~~
-      const strikeText = match[9]
+      const strikeText = match[11]
       const innerContent = parseInlineMarkdown(strikeText, getMentionType)
       for (const node of innerContent) {
         // Add strike mark to all nodes (text, mentions, channels, etc.)
@@ -442,23 +454,23 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "strike" }],
         })
       }
-    } else if (match[10]) {
+    } else if (match[12]) {
       // Code: `text` (no nesting for code)
       result.push({
         type: "text",
-        text: match[11],
+        text: match[13],
         marks: [{ type: "code" }],
       })
-    } else if (match[12]) {
+    } else if (match[14]) {
       // Mention: @slug
-      const slug = match[13]
+      const slug = match[15]
       result.push({
         type: "mention",
         attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
       })
-    } else if (match[14]) {
+    } else if (match[16]) {
       // Channel: #slug
-      const slug = match[15]
+      const slug = match[17]
       result.push({
         type: "channelLink",
         attrs: { id: slug, slug, name: slug },
