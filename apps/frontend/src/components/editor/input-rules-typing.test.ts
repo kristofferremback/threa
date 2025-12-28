@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { Editor, JSONContent } from "@tiptap/react"
+import type { EditorView } from "@tiptap/pm/view"
 import { createEditorExtensions } from "./editor-extensions"
 
 /**
@@ -50,7 +51,9 @@ function simulateTyping(editor: Editor, char: string): boolean {
   // This is the same path that real typing takes
   let handled = false
   view.someProp("handleTextInput", (f) => {
-    const result = f(view, from, to, char)
+    // Type assertion needed because someProp types are complex
+    const handler = f as (view: EditorView, from: number, to: number, text: string) => boolean | void
+    const result = handler(view, from, to, char)
     if (result) handled = true
     return result
   })
@@ -118,7 +121,7 @@ describe("Input Rules - Simulated Typing", () => {
       editor.commands.focus("end")
 
       // Type the closing *
-      const handled = simulateTyping(editor, "*")
+      simulateTyping(editor, "*")
 
       // Check the result
       const json = editor.getJSON()

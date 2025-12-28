@@ -155,9 +155,10 @@ export function createTriggerExtension<TItem, TAttrs extends object>(config: Tri
             const attrs = mapPropsToAttrs(item)
 
             // Get marks at the current position to preserve styling (bold, italic, etc.)
-            const { storedMarks, $from } = editor.state.selection
+            const { $from } = editor.state.selection
+            const { storedMarks } = editor.state
             const currentMarks = storedMarks || $from.marks()
-            const marks = currentMarks.map((mark) => ({
+            const marks = currentMarks.map((mark: { type: { name: string }; attrs: Record<string, unknown> }) => ({
               type: mark.type.name,
               attrs: mark.attrs,
             }))

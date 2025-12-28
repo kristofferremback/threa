@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from "vitest"
-import { Schema, Node as ProseMirrorNode } from "@tiptap/pm/model"
-import { EditorState, Transaction } from "@tiptap/pm/state"
+import { describe, it, expect } from "vitest"
+import { Schema } from "@tiptap/pm/model"
+import { EditorState } from "@tiptap/pm/state"
 import { atomAwareMarkInputRule } from "./atom-aware-input-rules"
 
 /**
@@ -244,8 +244,8 @@ describe("Atom-aware input rule handler logic", () => {
       // 11: * (closing)
       // 12: paragraph end
 
-      // Create the input rule
-      const rule = atomAwareMarkInputRule({
+      // Create the input rule (verifying it can be created with these params)
+      atomAwareMarkInputRule({
         openMarker: "*",
         closeMarker: "*",
         type: testSchema.marks.code, // Using code mark since we have it in schema

@@ -1,5 +1,5 @@
 import { InputRule } from "@tiptap/core"
-import type { MarkType } from "@tiptap/pm/model"
+import type { MarkType, Node as ProseMirrorNode } from "@tiptap/pm/model"
 
 /**
  * Configuration for an atom-aware mark input rule.
@@ -195,7 +195,7 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
             } else {
               // Try spec methods for other atom types
               const spec = node.type.spec as {
-                leafText?: (node: typeof node) => string
+                leafText?: (n: ProseMirrorNode) => string
               }
               if (spec.leafText) {
                 text = spec.leafText(node)
