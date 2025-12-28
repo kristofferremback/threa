@@ -200,40 +200,63 @@ export function atomAwareMarkInputRule(config: AtomAwareMarkInputRuleConfig): In
         const searchEnd = end
         const atomNodes: { pos: number; size: number; text: string }[] = []
 
+        console.log("[atom-aware] SEARCHING FOR ATOMS:", { contentStart, searchEnd, contentEnd })
+
         state.doc.nodesBetween(contentStart, searchEnd, (node, pos) => {
           const nodeEnd = pos + node.nodeSize
           const isInContentRange = pos < contentEnd && nodeEnd > contentStart
+
+          console.log("[atom-aware] NODE:", {
+            type: node.type.name,
+            pos,
+            nodeEnd,
+            nodeSize: node.nodeSize,
+            isAtom: node.isAtom,
+            isInline: node.isInline,
+            isText: node.isText,
+            isInContentRange,
+            contentEnd,
+          })
+
           // IMPORTANT: isAtom is true for ALL leaf nodes including text!
           // Must check !node.isText to only match actual atom nodes like mentions
           if (node.isAtom && node.isInline && !node.isText && isInContentRange) {
             // Get text representation from the node
-            // Try multiple approaches since TipTap/ProseMirror have different conventions
+            const attrs = node.attrs as { slug?: string }
             let text = ""
-            const spec = node.type.spec as {
-              renderText?: (props: { node: typeof node }) => string
-              leafText?: (node: typeof node) => string
-            }
-            if (spec.renderText) {
-              // TipTap style
-              text = spec.renderText({ node })
-            } else if (spec.leafText) {
-              // ProseMirror style
-              text = spec.leafText(node)
+
+            // For mentions/channels, use the slug attribute directly (most reliable)
+            if (attrs.slug) {
+              const prefix = node.type.name === "mention" ? "@" : node.type.name === "channelMention" ? "#" : ""
+              text = `${prefix}${attrs.slug}`
             } else {
-              // Fallback to textContent
-              text = node.textContent || ""
+              // Try spec methods for other atom types
+              const spec = node.type.spec as {
+                leafText?: (node: typeof node) => string
+              }
+              if (spec.leafText) {
+                text = spec.leafText(node)
+              } else {
+                text = node.textContent || ""
+              }
             }
+
+            console.log("[atom-aware] ATOM TEXT:", { nodeType: node.type.name, text, slug: attrs.slug })
             atomNodes.push({ pos, size: node.nodeSize, text })
           }
           return true
         })
 
+        console.log("[atom-aware] FOUND ATOMS:", atomNodes)
+
         // Replace atoms with text (in reverse order)
         for (let i = atomNodes.length - 1; i >= 0; i--) {
           const { pos, size, text } = atomNodes[i]
           if (text) {
+            console.log("[atom-aware] REPLACING ATOM:", { pos, size, text })
             tr.replaceWith(pos, pos + size, state.schema.text(text))
           } else {
+            console.log("[atom-aware] DELETING ATOM (no text):", { pos, size })
             tr.delete(pos, pos + size)
           }
         }
