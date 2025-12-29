@@ -8,17 +8,8 @@ import { useStreamItems } from "./use-stream-items"
 import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
-import { ModeTabs, getNextUnselectedTabIndex } from "./mode-tabs"
+import { ModeTabs } from "./mode-tabs"
 import type { CommandContext, InputRequest } from "./commands"
-
-// TODO: Add a button to open the command palette with keyboard shortcut hint
-// - Show `⌘K` (Mac) or `Ctrl+K` (Windows/Linux) near the button
-// - Tooltip: "Open Quick Switcher"
-// - Could go in the sidebar header or as a floating button
-
-// TODO: Fix bug where pressing Escape when creating a new channel closes the dialog
-// instead of "going back" to the command palette. The inputRequest state should
-// be cleared first, returning to command mode, before a second Escape closes the dialog.
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
 
@@ -195,10 +186,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // Ctrl+[ as vim-style Escape alternative
-      const isEscape = e.key === "Escape" || (e.ctrlKey && e.key === "[")
-
-      if (isEscape) {
+      // Ctrl+[ as vim-style Escape alternative (handled here since onEscapeKeyDown doesn't catch it)
+      if (e.ctrlKey && e.key === "[") {
         e.preventDefault()
         receivedEscapeRef.current = true
         if (inputRequest) {
@@ -209,36 +198,15 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         return
       }
 
-      if (e.key === "Tab" && !e.shiftKey && !inputRequest) {
-        e.preventDefault()
-        const nextTabIndex = getNextUnselectedTabIndex(mode)
-        setFocusedTabIndex(nextTabIndex)
-        return
-      }
+      // Let Tab work naturally for accessibility - browser handles tab order
 
-      if (e.key === "ArrowDown") {
+      if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
-        setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev))
-        return
-      }
-
-      if (e.key === "ArrowUp") {
-        e.preventDefault()
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
-        return
-      }
-
-      if (e.key === "Enter") {
-        e.preventDefault()
-        if (inputRequest) {
-          inputRequest.onSubmit(inputValue)
-        } else if (items[selectedIndex]) {
-          items[selectedIndex].onSelect()
-        }
+        inputRequest.onSubmit(inputValue)
         return
       }
     },
-    [inputRequest, inputValue, clearInputRequest, handleClose, items, selectedIndex, mode]
+    [inputRequest, inputValue, clearInputRequest, handleClose]
   )
 
   const handleInputBlur = useCallback(() => {
@@ -256,7 +224,34 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0">
+      <DialogContent
+        className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
+        onEscapeKeyDown={(e) => {
+          receivedEscapeRef.current = true
+          if (inputRequest) {
+            e.preventDefault()
+            clearInputRequest()
+            // Refocus input after clearing
+            requestAnimationFrame(() => {
+              inputRef.current?.focus()
+            })
+          }
+        }}
+        onKeyDown={(e) => {
+          // Global arrow key navigation - works even when focus is on tabs
+          if (e.key === "ArrowDown" && !inputRequest) {
+            e.preventDefault()
+            setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev))
+          } else if (e.key === "ArrowUp" && !inputRequest) {
+            e.preventDefault()
+            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
+          } else if (e.key === "Enter" && !inputRequest && focusedTabIndex === null) {
+            // Enter selects item when not focused on tabs
+            e.preventDefault()
+            items[selectedIndex]?.onSelect()
+          }
+        }}
+      >
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />

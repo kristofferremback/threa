@@ -96,9 +96,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             size="icon"
             className="h-8 w-8"
             onClick={() => {
-              document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, ctrlKey: true }))
             }}
-            title="Quick Switcher (⌘P)"
+            title={`Search (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}F)`}
           >
             <Search className="h-4 w-4" />
           </Button>

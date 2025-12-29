@@ -33,42 +33,22 @@ export function ModeTabs({
   }, [focusedTabIndex])
 
   const handleTabKeyDown = (e: React.KeyboardEvent, index: number) => {
-    if (e.key === "Tab" && !e.shiftKey) {
-      // Tab cycles through tabs, then back to input
-      e.preventDefault()
-      const nextIndex = (index + 1) % MODES.length
-      if (nextIndex === 0) {
-        // Cycled back to start - return to input
-        onFocusedTabIndexChange(null)
-        onTabSelect()
-      } else {
-        onFocusedTabIndexChange(nextIndex)
-      }
-    } else if (e.key === "Tab" && e.shiftKey) {
-      // Shift+Tab goes back through tabs, then to input
-      e.preventDefault()
-      if (index === 0) {
-        onFocusedTabIndexChange(null)
-        onTabSelect()
-      } else {
-        onFocusedTabIndexChange(index - 1)
-      }
-    } else if (e.key === "ArrowRight") {
+    // Let Tab work naturally for accessibility - browser handles tab order
+    // Arrow keys for quick navigation within tabs
+    if (e.key === "ArrowRight") {
       e.preventDefault()
       const nextIndex = (index + 1) % MODES.length
       onFocusedTabIndexChange(nextIndex)
+      tabRefs.current[nextIndex]?.focus()
     } else if (e.key === "ArrowLeft") {
       e.preventDefault()
       const prevIndex = (index - 1 + MODES.length) % MODES.length
       onFocusedTabIndexChange(prevIndex)
+      tabRefs.current[prevIndex]?.focus()
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault()
       const mode = MODES[index].mode
       onModeChange(mode)
-      onTabSelect()
-    } else if (e.key === "Escape") {
-      e.preventDefault()
-      onFocusedTabIndexChange(null)
       onTabSelect()
     }
   }
@@ -83,7 +63,6 @@ export function ModeTabs({
     <div className="flex" role="tablist" aria-label="Quick switcher modes">
       {MODES.map(({ mode, label, shortcut }, index) => {
         const isSelected = mode === currentMode
-        const isFocused = focusedTabIndex === index
 
         return (
           <button
@@ -93,7 +72,7 @@ export function ModeTabs({
             }}
             role="tab"
             aria-selected={isSelected}
-            tabIndex={isFocused ? 0 : -1}
+            tabIndex={0}
             onClick={() => handleTabClick(mode)}
             onKeyDown={(e) => handleTabKeyDown(e, index)}
             onFocus={() => onFocusedTabIndexChange(index)}
@@ -122,17 +101,4 @@ export function ModeTabs({
       })}
     </div>
   )
-}
-
-/** Get the index of the next unselected tab for Tab key navigation */
-export function getNextUnselectedTabIndex(currentMode: QuickSwitcherMode): number {
-  const currentIndex = MODES.findIndex((m) => m.mode === currentMode)
-  // Return the next tab (wrapping around), but skip the current one
-  for (let i = 1; i < MODES.length; i++) {
-    const nextIndex = (currentIndex + i) % MODES.length
-    if (MODES[nextIndex].mode !== currentMode) {
-      return nextIndex
-    }
-  }
-  return (currentIndex + 1) % MODES.length
 }
