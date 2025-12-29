@@ -22,6 +22,13 @@ export function WorkspaceLayout() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
 
+      // Ctrl+[ as vim-style Escape alternative for closing quick switcher
+      if (e.ctrlKey && e.key === "[" && switcherOpen) {
+        e.preventDefault()
+        setSwitcherOpen(false)
+        return
+      }
+
       // Cmd+Shift+K → Command mode
       if (isMod && e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault()
@@ -46,7 +53,7 @@ export function WorkspaceLayout() {
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [openSwitcher])
+  }, [openSwitcher, switcherOpen])
 
   if (!workspaceId) {
     return null

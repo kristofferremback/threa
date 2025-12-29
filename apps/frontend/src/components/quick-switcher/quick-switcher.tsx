@@ -8,7 +8,17 @@ import { useStreamItems } from "./use-stream-items"
 import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
+import { ModeTabs, getNextUnselectedTabIndex } from "./mode-tabs"
 import type { CommandContext, InputRequest } from "./commands"
+
+// TODO: Add a button to open the command palette with keyboard shortcut hint
+// - Show `⌘K` (Mac) or `Ctrl+K` (Windows/Linux) near the button
+// - Tooltip: "Open Quick Switcher"
+// - Could go in the sidebar header or as a floating button
+
+// TODO: Fix bug where pressing Escape when creating a new channel closes the dialog
+// instead of "going back" to the command palette. The inputRequest state should
+// be cleared first, returning to command mode, before a second Escape closes the dialog.
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
 
@@ -63,6 +73,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [inputRequest, setInputRequest] = useState<InputRequest | null>(null)
   const [inputValue, setInputValue] = useState("")
+  const [focusedTabIndex, setFocusedTabIndex] = useState<number | null>(null)
+  const [showEscapeHint, setShowEscapeHint] = useState(false)
 
   const mode = deriveMode(query)
   const displayQuery = getDisplayQuery(query, mode)
@@ -70,6 +82,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const receivedEscapeRef = useRef(false)
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
@@ -145,6 +158,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       const prefix = initialMode ? MODE_PREFIXES[initialMode] : ""
       setQuery(prefix)
       setSelectedIndex(0)
+      setFocusedTabIndex(null)
       requestAnimationFrame(() => {
         inputRef.current?.focus()
       })
@@ -158,18 +172,47 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       setSelectedIndex(0)
       setInputRequest(null)
       setInputValue("")
+      setFocusedTabIndex(null)
+      setShowEscapeHint(false)
     }
   }, [open])
 
+  const focusInput = useCallback(() => {
+    setFocusedTabIndex(null)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+    })
+  }, [])
+
+  const handleModeChange = useCallback(
+    (newMode: QuickSwitcherMode) => {
+      if (newMode !== mode) {
+        setMode(newMode)
+      }
+    },
+    [mode, setMode]
+  )
+
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Escape") {
+      // Ctrl+[ as vim-style Escape alternative
+      const isEscape = e.key === "Escape" || (e.ctrlKey && e.key === "[")
+
+      if (isEscape) {
         e.preventDefault()
+        receivedEscapeRef.current = true
         if (inputRequest) {
           clearInputRequest()
         } else {
           handleClose()
         }
+        return
+      }
+
+      if (e.key === "Tab" && !e.shiftKey && !inputRequest) {
+        e.preventDefault()
+        const nextTabIndex = getNextUnselectedTabIndex(mode)
+        setFocusedTabIndex(nextTabIndex)
         return
       }
 
@@ -195,14 +238,25 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         return
       }
     },
-    [inputRequest, inputValue, clearInputRequest, handleClose, items, selectedIndex]
+    [inputRequest, inputValue, clearInputRequest, handleClose, items, selectedIndex, mode]
   )
+
+  const handleInputBlur = useCallback(() => {
+    // Vimium detection: if dialog is still open and we didn't see Escape,
+    // something (likely Vimium) swallowed the Escape key
+    setTimeout(() => {
+      if (open && !receivedEscapeRef.current && focusedTabIndex === null) {
+        setShowEscapeHint(true)
+      }
+      receivedEscapeRef.current = false
+    }, 50)
+  }, [open, focusedTabIndex])
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 shadow-lg">
+      <DialogContent className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0">
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
@@ -218,18 +272,24 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
               }
             }}
             onKeyDown={handleInputKeyDown}
-            onBlur={() => {
-              // Keep input focused while dialog is open
-              requestAnimationFrame(() => {
-                if (open) inputRef.current?.focus()
-              })
-            }}
+            onBlur={handleInputBlur}
             placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
             className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             autoFocus
             aria-label={inputRequest ? "Command input" : "Quick switcher input"}
           />
         </div>
+
+        {/* Mode tabs - only show when not in input request mode */}
+        {!inputRequest && (
+          <ModeTabs
+            currentMode={mode}
+            onModeChange={handleModeChange}
+            focusedTabIndex={focusedTabIndex}
+            onFocusedTabIndexChange={setFocusedTabIndex}
+            onTabSelect={focusInput}
+          />
+        )}
 
         {/* Hint from input request */}
         {inputRequest && <div className="px-3 py-2 text-xs text-muted-foreground border-b">{inputRequest.hint}</div>}
@@ -246,6 +306,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             isLoading={currentResult.isLoading}
             emptyMessage={currentResult.emptyMessage}
           />
+        )}
+
+        {/* Vimium escape hint */}
+        {showEscapeHint && (
+          <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded border">
+            Escape blocked (Vimium?) — use <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+[</kbd> or
+            click outside
+          </div>
         )}
       </DialogContent>
     </Dialog>
