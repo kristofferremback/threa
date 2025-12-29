@@ -73,7 +73,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   const inputRef = useRef<HTMLInputElement>(null)
-  const receivedEscapeRef = useRef(false)
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
@@ -168,6 +167,22 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     }
   }, [open])
 
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Show escape hint after 2 seconds if focus has left the dialog (Vimium scenario)
+  useEffect(() => {
+    if (!open) return
+
+    const timer = setTimeout(() => {
+      const focusInDialog = dialogRef.current?.contains(document.activeElement)
+      if (!focusInDialog) {
+        setShowEscapeHint(true)
+      }
+    }, 2000)
+
+    return () => clearTimeout(timer)
+  }, [open])
+
   const focusInput = useCallback(() => {
     setFocusedTabIndex(null)
     requestAnimationFrame(() => {
@@ -189,7 +204,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       // Ctrl+[ as vim-style Escape alternative (handled here since onEscapeKeyDown doesn't catch it)
       if (e.ctrlKey && e.key === "[") {
         e.preventDefault()
-        receivedEscapeRef.current = true
         if (inputRequest) {
           clearInputRequest()
         } else {
@@ -197,8 +211,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         }
         return
       }
-
-      // Let Tab work naturally for accessibility - browser handles tab order
 
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
@@ -209,29 +221,18 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     [inputRequest, inputValue, clearInputRequest, handleClose]
   )
 
-  const handleInputBlur = useCallback(() => {
-    // Vimium detection: if dialog is still open and we didn't see Escape,
-    // something (likely Vimium) swallowed the Escape key
-    setTimeout(() => {
-      if (open && !receivedEscapeRef.current && focusedTabIndex === null) {
-        setShowEscapeHint(true)
-      }
-      receivedEscapeRef.current = false
-    }, 50)
-  }, [open, focusedTabIndex])
-
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        ref={dialogRef}
         className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
         onEscapeKeyDown={(e) => {
-          receivedEscapeRef.current = true
+          // When in inputRequest mode, Escape returns to command list instead of closing
           if (inputRequest) {
             e.preventDefault()
             clearInputRequest()
-            // Refocus input after clearing
             requestAnimationFrame(() => {
               inputRef.current?.focus()
             })
@@ -267,7 +268,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
               }
             }}
             onKeyDown={handleInputKeyDown}
-            onBlur={handleInputBlur}
             placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
             className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             autoFocus
@@ -303,11 +303,10 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           />
         )}
 
-        {/* Vimium escape hint */}
+        {/* Escape hint - shown after 2s to help users with Vimium or similar */}
         {showEscapeHint && (
-          <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded border">
-            Escape blocked (Vimium?) — use <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+[</kbd> or
-            click outside
+          <div className="px-3 py-1.5 text-xs text-muted-foreground border-t text-center animate-in fade-in duration-500">
+            Tip: Use <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+[</kbd> or click outside to close
           </div>
         )}
       </DialogContent>
