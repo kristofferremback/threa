@@ -239,59 +239,36 @@ export class PersonaAgent {
         let targetStreamId = streamId
         let threadCreated = false
 
+        // Helper to send a message, creating a thread for channel mentions on first send
+        const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
+          // For channel mentions: create thread on first message
+          if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
+            const thread = await createThread({
+              workspaceId,
+              parentStreamId: streamId,
+              parentMessageId: messageId,
+              createdBy: persona.id,
+            })
+            targetStreamId = thread.id
+            threadCreated = true
+            logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
+          }
+
+          const message = await createMessage({
+            workspaceId,
+            streamId: targetStreamId,
+            authorId: persona.id,
+            authorType: AuthorTypes.PERSONA,
+            content: msgInput.content,
+            sources: msgInput.sources,
+          })
+          return { messageId: message.id, content: msgInput.content }
+        }
+
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
-          // Used by send_message tool (LLM-initiated)
-          sendMessage: async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
-            // For channel mentions: create thread on first message
-            if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
-              const thread = await createThread({
-                workspaceId,
-                parentStreamId: streamId,
-                parentMessageId: messageId,
-                createdBy: persona.id,
-              })
-              targetStreamId = thread.id
-              threadCreated = true
-              logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
-            }
-
-            const message = await createMessage({
-              workspaceId,
-              streamId: targetStreamId,
-              authorId: persona.id,
-              authorType: AuthorTypes.PERSONA,
-              content: msgInput.content,
-              sources: msgInput.sources,
-            })
-            return { messageId: message.id, content: msgInput.content }
-          },
-
-          // Used by ensure_response node (graph-initiated, can include sources)
-          sendMessageWithSources: async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
-            // For channel mentions: create thread on first message
-            if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
-              const thread = await createThread({
-                workspaceId,
-                parentStreamId: streamId,
-                parentMessageId: messageId,
-                createdBy: persona.id,
-              })
-              targetStreamId = thread.id
-              threadCreated = true
-              logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
-            }
-
-            const message = await createMessage({
-              workspaceId,
-              streamId: targetStreamId,
-              authorId: persona.id,
-              authorType: AuthorTypes.PERSONA,
-              content: msgInput.content,
-              sources: msgInput.sources,
-            })
-            return { messageId: message.id, content: msgInput.content }
-          },
+          sendMessage: doSendMessage,
+          sendMessageWithSources: doSendMessage,
 
           checkNewMessages: async (checkStreamId: string, sinceSequence: bigint, excludeAuthorId: string) => {
             const messages = await MessageRepository.listSince(client, checkStreamId, sinceSequence, {

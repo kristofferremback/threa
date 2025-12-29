@@ -22,6 +22,9 @@ export function extractMentions(content: string): ExtractedMention[] {
   const mentions: ExtractedMention[] = []
   const seen = new Set<string>()
 
+  // Reset lastIndex to avoid state leakage between calls (global regex footgun)
+  MENTION_PATTERN.lastIndex = 0
+
   let match
   while ((match = MENTION_PATTERN.exec(content)) !== null) {
     const slug = match[1]

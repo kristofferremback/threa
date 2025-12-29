@@ -54,6 +54,12 @@ export function createMentionInvokeListener(
         return
       }
 
+      // Guard against missing actorId (should always exist for USER messages)
+      if (!event.actorId) {
+        logger.warn({ streamId }, "Mention invoke: USER message has no actorId, skipping")
+        return
+      }
+
       // Extract @mentions from message content
       const mentionSlugs = extractMentionSlugs(eventPayload.content)
       if (mentionSlugs.length === 0) {
@@ -77,7 +83,7 @@ export function createMentionInvokeListener(
             streamId,
             messageId: eventPayload.messageId,
             personaId: persona.id,
-            triggeredBy: event.actorId!,
+            triggeredBy: event.actorId,
             trigger: "mention",
           })
 

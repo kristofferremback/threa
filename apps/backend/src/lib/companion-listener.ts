@@ -48,6 +48,12 @@ export function createCompanionListener(
         return
       }
 
+      // Guard against missing actorId (should always exist for USER messages)
+      if (!event.actorId) {
+        logger.warn({ streamId }, "Companion listener: USER message has no actorId, skipping")
+        return
+      }
+
       // Look up stream to check companion mode
       await withClient(pool, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
@@ -97,7 +103,7 @@ export function createCompanionListener(
           streamId,
           messageId: eventPayload.messageId,
           personaId: persona.id,
-          triggeredBy: event.actorId!,
+          triggeredBy: event.actorId,
           // No trigger = companion mode
         })
 
