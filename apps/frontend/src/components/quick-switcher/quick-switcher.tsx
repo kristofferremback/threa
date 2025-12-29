@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
-import { CommandDialog, CommandList } from "@/components/ui/command"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Command, CommandList } from "@/components/ui/command"
 import { useWorkspaceBootstrap, useDraftScratchpads, useCreateStream } from "@/hooks"
 import { StreamTypes } from "@threa/types"
 import { StreamResults } from "./stream-results"
@@ -67,6 +68,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
+  const inputRef = useRef<HTMLInputElement>(null)
+
   // Reset query when dialog opens, applying initial mode prefix
   useEffect(() => {
     if (open) {
@@ -111,12 +114,22 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        if (inputRequest) {
+          clearInputRequest()
+        } else {
+          handleClose()
+        }
+        return
+      }
+
       if (e.key === "Enter" && inputRequest) {
         e.preventDefault()
         inputRequest.onSubmit(inputValue)
       }
     },
-    [inputRequest, inputValue]
+    [inputRequest, inputValue, clearInputRequest, handleClose]
   )
 
   const commandContext: CommandContext = useMemo(
@@ -134,79 +147,46 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
-  // Document-level capture listener to intercept Escape before cmdk/Radix can blur the input
-  useEffect(() => {
-    if (!open) return
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        e.stopPropagation()
-        e.stopImmediatePropagation()
-        if (inputRequest) {
-          clearInputRequest()
-        } else {
-          handleClose()
-        }
-      }
-    }
-
-    document.addEventListener("keydown", handler, true)
-    return () => document.removeEventListener("keydown", handler, true)
-  }, [open, inputRequest, clearInputRequest, handleClose])
-
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <div className="flex flex-col">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="overflow-hidden p-0 shadow-lg">
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-          {inputRequest ? (
-            <input
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder={inputRequest.placeholder}
-              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              autoFocus
-              role="combobox"
-              aria-expanded="false"
-              aria-label="Command input"
-            />
-          ) : (
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={MODE_PLACEHOLDERS[mode]}
-              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              autoFocus
-              role="combobox"
-              aria-expanded="true"
-              aria-label="Quick switcher input"
-            />
-          )}
+          <input
+            ref={inputRef}
+            value={inputRequest ? inputValue : query}
+            onChange={(e) => (inputRequest ? setInputValue(e.target.value) : setQuery(e.target.value))}
+            onKeyDown={handleInputKeyDown}
+            placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
+            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            autoFocus
+            aria-label={inputRequest ? "Command input" : "Quick switcher input"}
+          />
         </div>
 
         {/* Hint from input request */}
         {inputRequest && <div className="px-3 py-2 text-xs text-muted-foreground border-b">{inputRequest.hint}</div>}
 
-        {/* Mode-specific content (hidden during input request) */}
-        {!inputRequest && mode === "stream" && (
-          <CommandList className="max-h-[400px]">
-            <StreamResults workspaceId={workspaceId} streams={streams} onSelect={handleClose} />
-          </CommandList>
-        )}
+        {/* Command palette content */}
+        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+          {!inputRequest && mode === "stream" && (
+            <CommandList className="max-h-[400px]">
+              <StreamResults workspaceId={workspaceId} streams={streams} onSelect={handleClose} />
+            </CommandList>
+          )}
 
-        {!inputRequest && mode === "command" && (
-          <CommandList className="max-h-[400px]">
-            <CommandResults context={commandContext} />
-          </CommandList>
-        )}
+          {!inputRequest && mode === "command" && (
+            <CommandList className="max-h-[400px]">
+              <CommandResults context={commandContext} />
+            </CommandList>
+          )}
 
-        {!inputRequest && mode === "search" && (
-          <SearchResults workspaceId={workspaceId} query={displayQuery} onSelect={handleClose} />
-        )}
-      </div>
-    </CommandDialog>
+          {!inputRequest && mode === "search" && (
+            <SearchResults workspaceId={workspaceId} query={displayQuery} onSelect={handleClose} />
+          )}
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }
