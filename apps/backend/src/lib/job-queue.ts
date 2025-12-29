@@ -18,8 +18,7 @@ import { logger } from "./logger"
 
 // Job type definitions
 export const JobQueues = {
-  COMPANION_RESPOND: "companion.respond",
-  PERSONA_INVOKE: "persona.invoke",
+  PERSONA_AGENT: "persona.agent",
   NAMING_GENERATE: "naming.generate",
   EMBEDDING_GENERATE: "embedding.generate",
   BOUNDARY_EXTRACT: "boundary.extract",
@@ -31,21 +30,14 @@ export const JobQueues = {
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
 
-export interface CompanionJobData {
-  streamId: string
-  messageId: string
-  triggeredBy: string
-}
-
-export interface PersonaInvokeJobData {
+/** Unified persona agent job - handles both companion mode and @mention invocations */
+export interface PersonaAgentJobData {
   workspaceId: string
-  streamId: string
-  messageId: string
+  streamId: string // Where message was sent
+  messageId: string // Trigger message
   personaId: string
   triggeredBy: string
-  // For channels, the agent responds in a thread; targetStreamId is the thread
-  // For threads/scratchpads/DMs, targetStreamId equals streamId
-  targetStreamId: string
+  trigger?: "mention" // undefined = companion mode
 }
 
 export interface NamingJobData {
@@ -91,8 +83,7 @@ export interface CommandExecuteJobData {
 
 // Map queue names to their data types
 export interface JobDataMap {
-  [JobQueues.COMPANION_RESPOND]: CompanionJobData
-  [JobQueues.PERSONA_INVOKE]: PersonaInvokeJobData
+  [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
   [JobQueues.NAMING_GENERATE]: NamingJobData
   [JobQueues.EMBEDDING_GENERATE]: EmbeddingJobData
   [JobQueues.BOUNDARY_EXTRACT]: BoundaryExtractionJobData

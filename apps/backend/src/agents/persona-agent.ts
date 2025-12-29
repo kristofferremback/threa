@@ -12,15 +12,115 @@ import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 
-export type MentionInvokeResult =
+export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
   | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[] }
   | { status: "failed"; sessionId: string }
 
 /**
- * Dependencies required to construct a MentionInvokeAgent.
+ * Manages the complete lifecycle of an agent session.
  */
-export interface MentionInvokeAgentDeps {
+export async function withSession(
+  params: {
+    pool: Pool
+    triggerMessageId: string
+    streamId: string
+    personaId: string
+    serverId: string
+    initialSequence: bigint
+  },
+  work: (
+    client: PoolClient,
+    session: AgentSession
+  ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
+): Promise<WithSessionResult> {
+  const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
+
+  return withClient(pool, async (client) => {
+    // Check for already running session on this stream (concurrency control)
+    const runningSession = await AgentSessionRepository.findRunningByStream(client, streamId)
+    if (runningSession) {
+      logger.info({ streamId, existingSessionId: runningSession.id }, "Agent already running for stream, skipping")
+      return {
+        status: "skipped" as const,
+        sessionId: null,
+        reason: "agent already running for stream",
+      }
+    }
+
+    // Find or create session
+    let session = await AgentSessionRepository.findByTriggerMessage(client, triggerMessageId)
+
+    if (session?.status === SessionStatuses.COMPLETED) {
+      logger.info({ sessionId: session.id }, "Session already completed")
+      return {
+        status: "skipped" as const,
+        sessionId: null,
+        reason: "session already completed",
+      }
+    }
+
+    if (!session) {
+      session = await AgentSessionRepository.insert(client, {
+        id: sessionId(),
+        streamId,
+        personaId,
+        triggerMessageId,
+        status: SessionStatuses.RUNNING,
+        serverId,
+      })
+      // Set initial last seen sequence
+      await AgentSessionRepository.updateLastSeenSequence(client, session.id, initialSequence)
+    } else {
+      session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, {
+        serverId,
+      })
+    }
+
+    if (!session) {
+      return {
+        status: "skipped" as const,
+        sessionId: null,
+        reason: "failed to create session",
+      }
+    }
+
+    // Run work and track status
+    try {
+      const { messagesSent, sentMessageIds, lastSeenSequence } = await work(client, session)
+
+      // Update last seen sequence before completing
+      await AgentSessionRepository.updateLastSeenSequence(client, session.id, lastSeenSequence)
+
+      await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.COMPLETED, {
+        responseMessageId: sentMessageIds[0] ?? null,
+        sentMessageIds,
+      })
+
+      logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
+
+      return {
+        status: "completed" as const,
+        sessionId: session.id,
+        messagesSent,
+        sentMessageIds,
+      }
+    } catch (err) {
+      logger.error({ err, sessionId: session.id }, "Session failed")
+
+      await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.FAILED, {
+        error: String(err),
+      }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
+
+      return { status: "failed" as const, sessionId: session.id }
+    }
+  })
+}
+
+/**
+ * Dependencies required to construct a PersonaAgent.
+ */
+export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
   createMessage: (params: {
@@ -31,59 +131,74 @@ export interface MentionInvokeAgentDeps {
     content: string
     sources?: SourceItem[]
   }) => Promise<{ id: string }>
+  createThread: (params: {
+    workspaceId: string
+    parentStreamId: string
+    parentMessageId: string
+    createdBy: string
+  }) => Promise<{ id: string }>
 }
 
 /**
- * Input parameters for running the mention invoke agent.
+ * Input parameters for running the persona agent.
  */
-export interface MentionInvokeAgentInput {
+export interface PersonaAgentInput {
   workspaceId: string
-  streamId: string
-  messageId: string
-  personaId: string
-  targetStreamId: string
+  streamId: string // Where message was sent
+  messageId: string // Trigger message
+  personaId: string // Which persona to invoke
   serverId: string
+  trigger?: "mention" // undefined = companion mode
 }
 
 /**
- * Agent that responds when a persona is @mentioned.
- *
- * Unlike CompanionAgent which requires companionMode to be enabled,
- * this agent responds to explicit @mentions of a persona in any stream.
- *
- * Response location by stream type:
- * - Channel: Responds in a thread (targetStreamId is the thread)
- * - Thread: Responds directly in the thread
- * - Scratchpad: Responds directly in the scratchpad
- * - DM: Responds directly in the DM
+ * Result from running the persona agent.
  */
-export class MentionInvokeAgent {
-  constructor(private readonly deps: MentionInvokeAgentDeps) {}
+export interface PersonaAgentResult {
+  sessionId: string | null
+  messagesSent: number
+  sentMessageIds: string[]
+  status: "completed" | "failed" | "skipped"
+  skipReason?: string
+}
 
-  async run(input: MentionInvokeAgentInput): Promise<MentionInvokeResult> {
-    const { pool, responseGenerator, createMessage } = this.deps
-    const { workspaceId, streamId, messageId, personaId, targetStreamId, serverId } = input
+/**
+ * Unified persona agent that handles both companion mode and @mention invocations.
+ *
+ * The agent receives explicit personaId and trigger context - listeners handle
+ * the source-specific logic (companion mode checks, @mention extraction).
+ *
+ * For channel mentions, the agent creates a thread lazily on first message send.
+ */
+export class PersonaAgent {
+  constructor(private readonly deps: PersonaAgentDeps) {}
 
-    // Step 1: Load and validate persona
+  /**
+   * Run the persona agent for a given message.
+   */
+  async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
+    const { pool, responseGenerator, createMessage, createThread } = this.deps
+    const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
+
+    // Step 1: Load and validate persona and stream
     const precheck = await withClient(pool, async (client) => {
       const persona = await PersonaRepository.findById(client, personaId)
       if (!persona || persona.status !== "active") {
         return { skip: true as const, reason: "persona not found or inactive" }
       }
 
-      // Get target stream for response context
-      const targetStream = await StreamRepository.findById(client, targetStreamId)
-      if (!targetStream) {
-        return { skip: true as const, reason: "target stream not found" }
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream) {
+        return { skip: true as const, reason: "stream not found" }
       }
 
       // Get the current max sequence to use as initial lastProcessedSequence
-      const latestSequence = await StreamEventRepository.getLatestSequence(client, targetStreamId)
+      const latestSequence = await StreamEventRepository.getLatestSequence(client, streamId)
 
       return {
         skip: false as const,
         persona,
-        targetStream,
+        stream,
         initialSequence: latestSequence ?? BigInt(0),
       }
     })
@@ -91,36 +206,56 @@ export class MentionInvokeAgent {
     if (precheck.skip) {
       return {
         sessionId: null,
+        messagesSent: 0,
+        sentMessageIds: [],
         status: "skipped",
-        reason: precheck.reason,
+        skipReason: precheck.reason,
       }
     }
 
-    const { persona, targetStream, initialSequence } = precheck
+    const { persona, stream, initialSequence } = precheck
 
     // Step 2: Run with session lifecycle management
-    const result = await this.withSession(
+    const result = await withSession(
       {
         pool,
         triggerMessageId: messageId,
-        streamId: targetStreamId,
+        streamId,
         personaId: persona.id,
         serverId,
         initialSequence,
       },
       async (client, session) => {
-        // Build stream context from target stream (includes conversation history)
-        const context = await buildStreamContext(client, targetStreamId, messageId)
+        // Build stream context (includes conversation history)
+        const context = await buildStreamContext(client, streamId, messageId)
         if (!context) {
-          throw new Error(`Failed to build context for stream ${targetStreamId}`)
+          throw new Error(`Failed to build context for stream ${streamId}`)
         }
 
-        // Build system prompt with stream context and invocation context
-        const systemPrompt = buildSystemPrompt(persona, context, streamId !== targetStreamId)
+        // Build system prompt with stream context and trigger info
+        const systemPrompt = buildSystemPrompt(persona, context, trigger)
+
+        // Track target stream for responses - may change if we create a thread
+        let targetStreamId = streamId
+        let threadCreated = false
 
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
+          // Used by send_message tool (LLM-initiated)
           sendMessage: async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
+            // For channel mentions: create thread on first message
+            if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
+              const thread = await createThread({
+                workspaceId,
+                parentStreamId: streamId,
+                parentMessageId: messageId,
+                createdBy: persona.id,
+              })
+              targetStreamId = thread.id
+              threadCreated = true
+              logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
+            }
+
             const message = await createMessage({
               workspaceId,
               streamId: targetStreamId,
@@ -132,7 +267,21 @@ export class MentionInvokeAgent {
             return { messageId: message.id, content: msgInput.content }
           },
 
+          // Used by ensure_response node (graph-initiated, can include sources)
           sendMessageWithSources: async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
+            // For channel mentions: create thread on first message
+            if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
+              const thread = await createThread({
+                workspaceId,
+                parentStreamId: streamId,
+                parentMessageId: messageId,
+                createdBy: persona.id,
+              })
+              targetStreamId = thread.id
+              threadCreated = true
+              logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
+            }
+
             const message = await createMessage({
               workspaceId,
               streamId: targetStreamId,
@@ -191,13 +340,17 @@ export class MentionInvokeAgent {
       case "skipped":
         return {
           sessionId: null,
+          messagesSent: 0,
+          sentMessageIds: [],
           status: "skipped",
-          reason: result.reason,
+          skipReason: result.reason,
         }
 
       case "failed":
         return {
           sessionId: result.sessionId,
+          messagesSent: 0,
+          sentMessageIds: [],
           status: "failed",
         }
 
@@ -210,125 +363,30 @@ export class MentionInvokeAgent {
         }
     }
   }
-
-  /**
-   * Manages the complete lifecycle of an agent session.
-   */
-  private async withSession(
-    params: {
-      pool: Pool
-      triggerMessageId: string
-      streamId: string
-      personaId: string
-      serverId: string
-      initialSequence: bigint
-    },
-    work: (
-      client: PoolClient,
-      session: AgentSession
-    ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
-  ): Promise<MentionInvokeResult> {
-    const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
-
-    return withClient(pool, async (client) => {
-      // Check for already running session on this stream (concurrency control)
-      const runningSession = await AgentSessionRepository.findRunningByStream(client, streamId)
-      if (runningSession) {
-        logger.info({ streamId, existingSessionId: runningSession.id }, "Agent already running for stream, skipping")
-        return {
-          status: "skipped" as const,
-          sessionId: null,
-          reason: "agent already running for stream",
-        }
-      }
-
-      // Find or create session
-      let session = await AgentSessionRepository.findByTriggerMessage(client, triggerMessageId)
-
-      if (session?.status === SessionStatuses.COMPLETED) {
-        logger.info({ sessionId: session.id }, "Session already completed")
-        return {
-          status: "skipped" as const,
-          sessionId: null,
-          reason: "session already completed",
-        }
-      }
-
-      if (!session) {
-        session = await AgentSessionRepository.insert(client, {
-          id: sessionId(),
-          streamId,
-          personaId,
-          triggerMessageId,
-          status: SessionStatuses.RUNNING,
-          serverId,
-        })
-        await AgentSessionRepository.updateLastSeenSequence(client, session.id, initialSequence)
-      } else {
-        session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, {
-          serverId,
-        })
-      }
-
-      if (!session) {
-        return {
-          status: "skipped" as const,
-          sessionId: null,
-          reason: "failed to create session",
-        }
-      }
-
-      // Run work and track status
-      try {
-        const { messagesSent, sentMessageIds, lastSeenSequence } = await work(client, session)
-
-        await AgentSessionRepository.updateLastSeenSequence(client, session.id, lastSeenSequence)
-
-        await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.COMPLETED, {
-          responseMessageId: sentMessageIds[0] ?? null,
-          sentMessageIds,
-        })
-
-        logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Mention invoke session completed")
-
-        return {
-          status: "completed" as const,
-          sessionId: session.id,
-          messagesSent,
-          sentMessageIds,
-        }
-      } catch (err) {
-        logger.error({ err, sessionId: session.id }, "Mention invoke session failed")
-
-        await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.FAILED, {
-          error: String(err),
-        }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
-
-        return { status: "failed" as const, sessionId: session.id }
-      }
-    })
-  }
 }
 
 /**
- * Build the system prompt for the mention invoke agent.
+ * Build the system prompt for the persona agent.
+ * Produces stream-type-specific context and optional mention invocation context.
  */
-function buildSystemPrompt(persona: Persona, context: StreamContext, wasInvokedFromChannel: boolean): string {
+function buildSystemPrompt(persona: Persona, context: StreamContext, trigger?: "mention"): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
   }
 
   let prompt = persona.systemPrompt
 
-  // Add mention invocation context
-  prompt += `
+  // Add mention invocation context if applicable
+  if (trigger === "mention") {
+    prompt += `
 
 ## Invocation Context
 
 You were explicitly @mentioned by a user who wants your assistance.`
 
-  if (wasInvokedFromChannel) {
-    prompt += ` This conversation is happening in a thread created specifically for your response.`
+    if (context.streamType === StreamTypes.CHANNEL) {
+      prompt += ` This conversation is happening in a thread created specifically for your response.`
+    }
   }
 
   // Add stream-type-specific context
@@ -398,6 +456,10 @@ When to use read_url:
   return prompt
 }
 
+/**
+ * Build prompt section for scratchpads.
+ * Personal, solo-first context. Conversation history is primary.
+ */
 function buildScratchpadPrompt(context: StreamContext): string {
   let section = "\n\n## Context\n\n"
   section += "You are in a personal scratchpad"
@@ -415,6 +477,10 @@ function buildScratchpadPrompt(context: StreamContext): string {
   return section
 }
 
+/**
+ * Build prompt section for channels.
+ * Collaborative context with member awareness.
+ */
 function buildChannelPrompt(context: StreamContext): string {
   let section = "\n\n## Context\n\n"
   section += "You are in a channel"
@@ -441,6 +507,10 @@ function buildChannelPrompt(context: StreamContext): string {
   return section
 }
 
+/**
+ * Build prompt section for threads.
+ * Nested discussion with hierarchy awareness.
+ */
 function buildThreadPrompt(context: StreamContext): string {
   let section = "\n\n## Context\n\n"
   section += "You are in a thread"
@@ -454,6 +524,7 @@ function buildThreadPrompt(context: StreamContext): string {
     section += `\n\nThread description: ${context.streamInfo.description}`
   }
 
+  // Add thread hierarchy context
   if (context.threadContext && context.threadContext.path.length > 1) {
     section += `\n\nThread hierarchy (${context.threadContext.depth} levels deep):\n`
 
@@ -479,6 +550,10 @@ function buildThreadPrompt(context: StreamContext): string {
   return section
 }
 
+/**
+ * Build prompt section for DMs.
+ * Two-party context, more focused than channels.
+ */
 function buildDmPrompt(context: StreamContext): string {
   let section = "\n\n## Context\n\n"
   section += "You are in a direct message conversation"

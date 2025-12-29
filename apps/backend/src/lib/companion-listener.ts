@@ -3,6 +3,7 @@ import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
+import { PersonaRepository } from "../repositories/persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "../repositories/agent-session-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
 import { AuthorTypes, CompanionModes } from "@threa/types"
@@ -59,6 +60,18 @@ export function createCompanionListener(
           return
         }
 
+        if (!stream.companionPersonaId) {
+          logger.warn({ streamId }, "Companion mode on but no persona configured")
+          return
+        }
+
+        // Resolve persona and validate it's active
+        const persona = await PersonaRepository.findById(client, stream.companionPersonaId)
+        if (!persona || persona.status !== "active") {
+          logger.warn({ streamId, personaId: stream.companionPersonaId }, "Companion persona not found or inactive")
+          return
+        }
+
         // Check if this message was already seen by a previous session
         // This prevents re-triggering for messages that an agent decided not to respond to
         const lastSession = await AgentSessionRepository.findLatestByStream(client, streamId)
@@ -79,14 +92,19 @@ export function createCompanionListener(
         }
 
         // Dispatch job to pg-boss for durable processing
-        // actorId is guaranteed to be set since we already checked actorType === USER
-        await jobQueue.send(JobQueues.COMPANION_RESPOND, {
+        await jobQueue.send(JobQueues.PERSONA_AGENT, {
+          workspaceId: stream.workspaceId,
           streamId,
           messageId: eventPayload.messageId,
+          personaId: persona.id,
           triggeredBy: event.actorId!,
+          // No trigger = companion mode
         })
 
-        logger.info({ streamId, messageId: eventPayload.messageId }, "Companion job dispatched")
+        logger.info(
+          { streamId, messageId: eventPayload.messageId, personaId: persona.id },
+          "Persona agent job dispatched (companion mode)"
+        )
       })
     },
   })

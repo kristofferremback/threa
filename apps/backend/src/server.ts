@@ -34,8 +34,7 @@ import { createCommandListener } from "./lib/command-listener"
 import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
-import { createCompanionWorker } from "./workers/companion-worker"
-import { createMentionInvokeWorker } from "./workers/mention-invoke-worker"
+import { createPersonaAgentWorker } from "./workers/persona-agent-worker"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
@@ -48,8 +47,7 @@ import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
-import { CompanionAgent } from "./agents/companion-agent"
-import { MentionInvokeAgent } from "./agents/mention-invoke-agent"
+import { PersonaAgent } from "./agents/persona-agent"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -104,8 +102,9 @@ export async function startServer(): Promise<ServerInstance> {
   // Job queue for durable background work (companion responses, etc.)
   const jobQueue = createJobQueue(pool)
 
-  // Create message helper for agents
+  // Create helpers for agents
   const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
+  const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = new SimulationAgent({
@@ -162,7 +161,8 @@ export async function startServer(): Promise<ServerInstance> {
 
   const serverId = `server_${ulid()}`
 
-  // Create companion agent and register worker
+  // Create unified persona agent and register worker
+  // Handles both companion mode and @mention invocations
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()
     : new LangGraphResponseGenerator({
@@ -171,14 +171,9 @@ export async function startServer(): Promise<ServerInstance> {
         tavilyApiKey: config.ai.tavilyApiKey || undefined,
       })
 
-  const companionAgent = new CompanionAgent({ pool, responseGenerator, createMessage })
-  const companionWorker = createCompanionWorker({ agent: companionAgent, serverId })
-  jobQueue.registerHandler(JobQueues.COMPANION_RESPOND, companionWorker)
-
-  // Create mention invoke agent and register worker (for @persona invocations)
-  const mentionInvokeAgent = new MentionInvokeAgent({ pool, responseGenerator, createMessage })
-  const mentionInvokeWorker = createMentionInvokeWorker({ agent: mentionInvokeAgent, serverId })
-  jobQueue.registerHandler(JobQueues.PERSONA_INVOKE, mentionInvokeWorker)
+  const personaAgent = new PersonaAgent({ pool, responseGenerator, createMessage, createThread })
+  const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId })
+  jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker)
 
   const namingWorker = createNamingWorker({ streamNamingService })
   jobQueue.registerHandler(JobQueues.NAMING_GENERATE, namingWorker)
@@ -230,7 +225,7 @@ export async function startServer(): Promise<ServerInstance> {
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
   const commandListener = createCommandListener(pool, jobQueue)
-  const mentionInvokeListener = createMentionInvokeListener({ pool, jobQueue, streamService })
+  const mentionInvokeListener = createMentionInvokeListener({ pool, jobQueue })
   await broadcastListener.start()
   await companionListener.start()
   await mentionInvokeListener.start()

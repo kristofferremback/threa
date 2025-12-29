@@ -2,12 +2,10 @@ import type { Pool } from "pg"
 import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
-import { StreamRepository } from "../repositories/stream-repository"
 import { PersonaRepository } from "../repositories/persona-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
-import { AuthorTypes, StreamTypes } from "@threa/types"
+import { AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
-import { StreamService } from "../services/stream-service"
 import { logger } from "./logger"
 
 interface MessageCreatedEventPayload {
@@ -19,23 +17,24 @@ interface MessageCreatedEventPayload {
 export interface MentionInvokeListenerDeps {
   pool: Pool
   jobQueue: JobQueueManager
-  streamService: StreamService
 }
 
 /**
  * Creates a listener that invokes personas when @mentioned in messages.
  *
  * Behavior by stream type:
- * - Channel: Create a thread on the message, persona responds there
+ * - Channel: Agent creates a thread on the message, persona responds there
  * - Thread: Persona responds directly in the thread
  * - Scratchpad: Persona responds directly in the scratchpad
  * - DM: Persona responds directly in the DM
+ *
+ * Note: Thread creation for channels is handled by the PersonaAgent, not this listener.
  */
 export function createMentionInvokeListener(
   deps: MentionInvokeListenerDeps,
   config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
 ): OutboxListener {
-  const { pool, jobQueue, streamService } = deps
+  const { pool, jobQueue } = deps
 
   return new OutboxListener(pool, {
     ...config,
@@ -62,13 +61,6 @@ export function createMentionInvokeListener(
       }
 
       await withClient(pool, async (client) => {
-        // Get the stream to determine type and response behavior
-        const stream = await StreamRepository.findById(client, streamId)
-        if (!stream) {
-          logger.warn({ streamId }, "Mention invoke listener: stream not found")
-          return
-        }
-
         // Look up each mention to find persona matches
         for (const slug of mentionSlugs) {
           const persona = await PersonaRepository.findBySlug(client, slug, workspaceId)
@@ -78,40 +70,25 @@ export function createMentionInvokeListener(
             continue
           }
 
-          // Determine where the persona should respond
-          let targetStreamId = streamId
-
-          if (stream.type === StreamTypes.CHANNEL) {
-            // For channels, create a thread on the message and respond there
-            const thread = await streamService.createThread({
-              workspaceId,
-              parentStreamId: streamId,
-              parentMessageId: eventPayload.messageId,
-              createdBy: event.actorId!,
-            })
-            targetStreamId = thread.id
-          }
-          // For thread/scratchpad/dm, respond directly in the same stream
-
           // Dispatch job to invoke the persona
-          await jobQueue.send(JobQueues.PERSONA_INVOKE, {
+          // Note: Agent handles thread creation for channels
+          await jobQueue.send(JobQueues.PERSONA_AGENT, {
             workspaceId,
             streamId,
             messageId: eventPayload.messageId,
             personaId: persona.id,
             triggeredBy: event.actorId!,
-            targetStreamId,
+            trigger: "mention",
           })
 
           logger.info(
             {
               streamId,
-              targetStreamId,
               messageId: eventPayload.messageId,
               personaId: persona.id,
               personaSlug: persona.slug,
             },
-            "Persona invoke job dispatched"
+            "Persona agent job dispatched (mention trigger)"
           )
         }
       })
