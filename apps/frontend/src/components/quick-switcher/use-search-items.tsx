@@ -1,7 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
-import { Link } from "react-router-dom"
 import { X, Plus, User, Calendar, Hash, MessageSquare } from "lucide-react"
-import { CommandList, CommandEmpty, CommandGroup } from "@/components/ui/command"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -9,12 +7,7 @@ import { useSearch, useWorkspaceBootstrap } from "@/hooks"
 import type { SearchFilters } from "@/api"
 import type { StreamType } from "@threa/types"
 import { FilterSelect } from "./filter-select"
-
-interface SearchResultsProps {
-  workspaceId: string
-  query: string
-  onSelect: () => void
-}
+import type { ModeResult, QuickSwitcherItem } from "./types"
 
 type FilterType = "from" | "is" | "in" | "after" | "before"
 
@@ -39,7 +32,13 @@ const STREAM_TYPE_OPTIONS: { value: StreamType; label: string }[] = [
   { value: "thread", label: "Thread" },
 ]
 
-export function SearchResults({ workspaceId, query, onSelect }: SearchResultsProps) {
+interface UseSearchItemsParams {
+  workspaceId: string
+  query: string
+  closeDialog: () => void
+}
+
+export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchItemsParams): ModeResult {
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
 
@@ -94,7 +93,6 @@ export function SearchResults({ workspaceId, query, onSelect }: SearchResultsPro
 
   const handleFilterSelect = (value: string, label: string) => {
     if (!addingFilter) return
-
     setActiveFilters((prev) => [...prev, { type: addingFilter, value, label }])
     setAddingFilter(null)
   }
@@ -103,17 +101,26 @@ export function SearchResults({ workspaceId, query, onSelect }: SearchResultsPro
     setActiveFilters((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const getMessageUrl = (streamId: string, messageId: string) => {
-    return `/w/${workspaceId}/s/${streamId}?m=${messageId}`
-  }
-
   const getFilterIcon = (type: FilterType) => {
     const filterType = FILTER_TYPES.find((f) => f.type === type)
     return filterType?.icon ?? null
   }
 
-  return (
-    <div className="flex flex-col">
+  const items = useMemo((): QuickSwitcherItem[] => {
+    return results.map((result) => ({
+      id: result.id,
+      label: result.content,
+      description: new Date(result.createdAt).toLocaleDateString(),
+      group: "Messages",
+      onSelect: () => {
+        closeDialog()
+        window.location.href = `/w/${workspaceId}/s/${result.streamId}?m=${result.id}`
+      },
+    }))
+  }, [results, workspaceId, closeDialog])
+
+  const header = (
+    <>
       {(activeFilters.length > 0 || addingFilter) && (
         <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
           {activeFilters.map((filter, index) => (
@@ -162,30 +169,13 @@ export function SearchResults({ workspaceId, query, onSelect }: SearchResultsPro
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
-      <CommandList className="max-h-[400px]">
-        {isLoading && <div className="py-6 text-center text-sm text-muted-foreground">Searching...</div>}
-        {!isLoading && results.length === 0 && (query.trim() || activeFilters.length > 0) && (
-          <CommandEmpty>No results found.</CommandEmpty>
-        )}
-        {!isLoading && results.length > 0 && (
-          <CommandGroup heading="Messages">
-            {results.map((result) => (
-              <Link
-                key={result.id}
-                to={getMessageUrl(result.streamId, result.id)}
-                onClick={onSelect}
-                className="flex flex-col items-start gap-1 py-3 px-2 rounded-sm cursor-default select-none outline-none hover:bg-accent hover:text-accent-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-              >
-                <div className="line-clamp-2 text-sm">{result.content}</div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{new Date(result.createdAt).toLocaleDateString()}</span>
-                </div>
-              </Link>
-            ))}
-          </CommandGroup>
-        )}
-      </CommandList>
-    </div>
+    </>
   )
+
+  return {
+    items,
+    isLoading,
+    emptyMessage: query.trim() || activeFilters.length > 0 ? "No results found." : undefined,
+    header,
+  }
 }

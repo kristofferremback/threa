@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { Command, CommandList } from "@/components/ui/command"
 import { useWorkspaceBootstrap, useDraftScratchpads, useCreateStream } from "@/hooks"
 import { StreamTypes } from "@threa/types"
-import { StreamResults } from "./stream-results"
-import { CommandResults } from "./command-results"
-import { SearchResults } from "./search-results"
+import { useStreamItems } from "./use-stream-items"
+import { useCommandItems } from "./use-command-items"
+import { useSearchItems } from "./use-search-items"
+import { ItemList } from "./item-list"
 import type { CommandContext, InputRequest } from "./commands"
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
@@ -60,6 +60,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const createStream = useCreateStream(workspaceId)
 
   const [query, setQuery] = useState("")
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const [inputRequest, setInputRequest] = useState<InputRequest | null>(null)
   const [inputValue, setInputValue] = useState("")
 
@@ -70,29 +71,13 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Reset query when dialog opens, applying initial mode prefix
-  useEffect(() => {
-    if (open) {
-      const prefix = initialMode ? MODE_PREFIXES[initialMode] : ""
-      setQuery(prefix)
-    }
-  }, [open, initialMode])
-
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setQuery("")
-      setInputRequest(null)
-      setInputValue("")
-    }
-  }, [open])
-
   const handleClose = useCallback(() => {
     onOpenChange(false)
   }, [onOpenChange])
 
   const setMode = useCallback((newMode: QuickSwitcherMode) => {
     setQuery(MODE_PREFIXES[newMode])
+    setSelectedIndex(0)
   }, [])
 
   const requestInput = useCallback((request: InputRequest) => {
@@ -112,26 +97,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     [createStream]
   )
 
-  const handleInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        if (inputRequest) {
-          clearInputRequest()
-        } else {
-          handleClose()
-        }
-        return
-      }
-
-      if (e.key === "Enter" && inputRequest) {
-        e.preventDefault()
-        inputRequest.onSubmit(inputValue)
-      }
-    },
-    [inputRequest, inputValue, clearInputRequest, handleClose]
-  )
-
   const commandContext: CommandContext = useMemo(
     () => ({
       workspaceId,
@@ -145,6 +110,94 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     [workspaceId, navigate, handleClose, createDraft, createChannel, setMode, requestInput]
   )
 
+  // Get items based on current mode
+  const streamResult = useStreamItems({
+    workspaceId,
+    query: displayQuery,
+    navigate,
+    closeDialog: handleClose,
+    streams,
+  })
+
+  const commandResult = useCommandItems({
+    query: displayQuery,
+    commandContext,
+  })
+
+  const searchResult = useSearchItems({
+    workspaceId,
+    query: displayQuery,
+    closeDialog: handleClose,
+  })
+
+  // Select the current mode's result
+  const currentResult = mode === "stream" ? streamResult : mode === "command" ? commandResult : searchResult
+  const items = currentResult.items
+
+  // Reset selection when items change
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [items.length, mode])
+
+  // Reset query and focus input when dialog opens
+  useEffect(() => {
+    if (open) {
+      const prefix = initialMode ? MODE_PREFIXES[initialMode] : ""
+      setQuery(prefix)
+      setSelectedIndex(0)
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
+    }
+  }, [open, initialMode])
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setQuery("")
+      setSelectedIndex(0)
+      setInputRequest(null)
+      setInputValue("")
+    }
+  }, [open])
+
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        if (inputRequest) {
+          clearInputRequest()
+        } else {
+          handleClose()
+        }
+        return
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev))
+        return
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
+        return
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault()
+        if (inputRequest) {
+          inputRequest.onSubmit(inputValue)
+        } else if (items[selectedIndex]) {
+          items[selectedIndex].onSelect()
+        }
+        return
+      }
+    },
+    [inputRequest, inputValue, clearInputRequest, handleClose, items, selectedIndex]
+  )
+
   const ModeIcon = inputRequest?.icon ?? MODE_ICONS[mode]
 
   return (
@@ -156,8 +209,21 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           <input
             ref={inputRef}
             value={inputRequest ? inputValue : query}
-            onChange={(e) => (inputRequest ? setInputValue(e.target.value) : setQuery(e.target.value))}
+            onChange={(e) => {
+              if (inputRequest) {
+                setInputValue(e.target.value)
+              } else {
+                setQuery(e.target.value)
+                setSelectedIndex(0)
+              }
+            }}
             onKeyDown={handleInputKeyDown}
+            onBlur={() => {
+              // Keep input focused while dialog is open
+              requestAnimationFrame(() => {
+                if (open) inputRef.current?.focus()
+              })
+            }}
             placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
             className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             autoFocus
@@ -168,24 +234,19 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         {/* Hint from input request */}
         {inputRequest && <div className="px-3 py-2 text-xs text-muted-foreground border-b">{inputRequest.hint}</div>}
 
-        {/* Command palette content */}
-        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
-          {!inputRequest && mode === "stream" && (
-            <CommandList className="max-h-[400px]">
-              <StreamResults workspaceId={workspaceId} streams={streams} onSelect={handleClose} />
-            </CommandList>
-          )}
+        {/* Mode-specific header (e.g., search filters) */}
+        {!inputRequest && currentResult.header}
 
-          {!inputRequest && mode === "command" && (
-            <CommandList className="max-h-[400px]">
-              <CommandResults context={commandContext} />
-            </CommandList>
-          )}
-
-          {!inputRequest && mode === "search" && (
-            <SearchResults workspaceId={workspaceId} query={displayQuery} onSelect={handleClose} />
-          )}
-        </Command>
+        {/* Item list */}
+        {!inputRequest && (
+          <ItemList
+            items={items}
+            selectedIndex={selectedIndex}
+            onSelectIndex={setSelectedIndex}
+            isLoading={currentResult.isLoading}
+            emptyMessage={currentResult.emptyMessage}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
