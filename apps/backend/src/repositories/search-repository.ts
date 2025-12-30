@@ -1,6 +1,13 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
-import type { StreamType } from "@threa/types"
+import { Visibilities, type StreamType } from "@threa/types"
+
+export interface GetAccessibleStreamsParams {
+  workspaceId: string
+  userId: string
+  memberIds?: string[] // Can mix user_xxx and persona_xxx - ID prefix distinguishes
+  streamTypes?: StreamType[]
+}
 
 export interface SearchResult {
   id: string
@@ -64,6 +71,81 @@ export interface HybridSearchParams {
 }
 
 export const SearchRepository = {
+  /**
+   * Get stream IDs that a user can access, optionally filtered by required members.
+   * Combines access control + member filtering in ONE query.
+   *
+   * Access rules:
+   * - User is a member of the stream, OR
+   * - Stream is public, OR
+   * - For threads: user can access the root stream (member OR root is public)
+   *
+   * Member filtering (AND logic):
+   * - If memberIds provided, stream must have ALL specified members
+   * - Members can be users (stream_members) or personas (stream_persona_participants)
+   */
+  async getAccessibleStreamsWithMembers(client: PoolClient, params: GetAccessibleStreamsParams): Promise<string[]> {
+    const { workspaceId, userId, memberIds, streamTypes } = params
+    const hasMemberFilter = memberIds && memberIds.length > 0
+    const hasTypeFilter = streamTypes && streamTypes.length > 0
+
+    // If no member filter, simpler query
+    if (!hasMemberFilter) {
+      const result = await client.query<{ id: string }>(sql`
+        SELECT DISTINCT s.id
+        FROM streams s
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN streams root ON s.root_stream_id = root.id
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
+        WHERE s.workspace_id = ${workspaceId}
+          AND (
+            sm.user_id IS NOT NULL
+            OR s.visibility = ${Visibilities.PUBLIC}
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+          )
+          AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
+      `)
+      return result.rows.map((r) => r.id)
+    }
+
+    // With member filter: combined query using UNION for users + personas
+    const result = await client.query<{ id: string }>(sql`
+      WITH accessible AS (
+        SELECT DISTINCT s.id
+        FROM streams s
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN streams root ON s.root_stream_id = root.id
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
+        WHERE s.workspace_id = ${workspaceId}
+          AND (
+            sm.user_id IS NOT NULL
+            OR s.visibility = ${Visibilities.PUBLIC}
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+          )
+          AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
+      ),
+      member_streams AS (
+        SELECT stream_id
+        FROM (
+          SELECT stream_id, user_id AS member_id
+          FROM stream_members
+          WHERE user_id = ANY(${memberIds})
+          UNION ALL
+          SELECT stream_id, persona_id AS member_id
+          FROM stream_persona_participants
+          WHERE persona_id = ANY(${memberIds})
+        ) t
+        GROUP BY stream_id
+        HAVING COUNT(DISTINCT member_id) = ${memberIds.length}
+      )
+      SELECT a.id
+      FROM accessible a
+      JOIN member_streams m ON a.id = m.stream_id
+    `)
+
+    return result.rows.map((r) => r.id)
+  },
+
   /**
    * Full-text search using PostgreSQL tsvector with websearch syntax.
    * Supports quoted phrases for exact matching: "chicken wingz"

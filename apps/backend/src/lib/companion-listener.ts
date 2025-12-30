@@ -3,6 +3,7 @@ import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
+import { PersonaRepository } from "../repositories/persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "../repositories/agent-session-repository"
 import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
 import { AuthorTypes, CompanionModes } from "@threa/types"
@@ -47,6 +48,15 @@ export function createCompanionListener(
         return
       }
 
+      // Guard against missing actorId (should always exist for USER messages)
+      if (!event.actorId) {
+        logger.warn({ streamId }, "Companion listener: USER message has no actorId, skipping")
+        return
+      }
+
+      // Capture actorId after null check for type narrowing in async closure
+      const triggeredBy = event.actorId
+
       // Look up stream to check companion mode
       await withClient(pool, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
@@ -56,6 +66,21 @@ export function createCompanionListener(
         }
 
         if (stream.companionMode !== CompanionModes.ON) {
+          return
+        }
+
+        // Resolve persona: use stream's configured persona, or fall back to system default
+        let persona = stream.companionPersonaId
+          ? await PersonaRepository.findById(client, stream.companionPersonaId)
+          : null
+
+        // If configured persona is missing or inactive, try system default
+        if (!persona || persona.status !== "active") {
+          persona = await PersonaRepository.getSystemDefault(client)
+        }
+
+        if (!persona) {
+          logger.warn({ streamId }, "Companion mode on but no active persona available")
           return
         }
 
@@ -79,14 +104,19 @@ export function createCompanionListener(
         }
 
         // Dispatch job to pg-boss for durable processing
-        // actorId is guaranteed to be set since we already checked actorType === USER
-        await jobQueue.send(JobQueues.COMPANION_RESPOND, {
+        await jobQueue.send(JobQueues.PERSONA_AGENT, {
+          workspaceId: stream.workspaceId,
           streamId,
           messageId: eventPayload.messageId,
-          triggeredBy: event.actorId!,
+          personaId: persona.id,
+          triggeredBy,
+          // No trigger = companion mode
         })
 
-        logger.info({ streamId, messageId: eventPayload.messageId }, "Companion job dispatched")
+        logger.info(
+          { streamId, messageId: eventPayload.messageId, personaId: persona.id },
+          "Persona agent job dispatched (companion mode)"
+        )
       })
     },
   })

@@ -272,6 +272,14 @@ export class StreamService {
         await StreamMemberRepository.insert(client, stream.id, params.createdBy)
       }
 
+      // Add parent message author as member so they can participate in the thread
+      if (parentMessage.authorType === "user" && parentMessage.authorId !== params.createdBy) {
+        const authorIsMember = await StreamMemberRepository.isMember(client, stream.id, parentMessage.authorId)
+        if (!authorIsMember) {
+          await StreamMemberRepository.insert(client, stream.id, parentMessage.authorId)
+        }
+      }
+
       // Only broadcast if we created a new thread
       if (created) {
         // Broadcast stream:created to PARENT stream's room (not the new thread's room)
@@ -387,8 +395,25 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndUser(client, streamIds, userId))
   }
 
+  // TODO: This is a permission check masquerading as a membership check. "isMember" is
+  // misleading because for threads we actually check root stream membership, not direct
+  // membership. Should be broken out into a proper authz module (e.g., canParticipate,
+  // canRead, canWrite) that encapsulates the permission model cleanly.
   async isMember(streamId: string, userId: string): Promise<boolean> {
-    return withClient(this.pool, (client) => StreamMemberRepository.isMember(client, streamId, userId))
+    return withClient(this.pool, async (client) => {
+      const directMember = await StreamMemberRepository.isMember(client, streamId, userId)
+      if (directMember) {
+        return true
+      }
+
+      // Threads inherit participation rights from root stream
+      const stream = await StreamRepository.findById(client, streamId)
+      if (stream?.rootStreamId) {
+        return StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+      }
+
+      return false
+    })
   }
 
   async pinStream(streamId: string, userId: string, pinned: boolean): Promise<StreamMember | null> {

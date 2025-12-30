@@ -750,6 +750,71 @@ describe("Access Control", () => {
       expect(access.id).toBe(thread.id)
     })
 
+    test("channel member can post to thread via isMember inheritance", async () => {
+      const channelOwnerId = userId()
+      const channelMemberId = userId()
+      const threadCreatorId = userId() // e.g., a persona
+      const wsId = workspaceId()
+
+      await withTransaction(pool, async (client) => {
+        await UserRepository.insert(client, {
+          id: channelOwnerId,
+          email: `thread-ismember-owner-${channelOwnerId}@test.com`,
+          name: "Channel Owner",
+          workosUserId: `workos_${channelOwnerId}`,
+        })
+        await UserRepository.insert(client, {
+          id: channelMemberId,
+          email: `thread-ismember-member-${channelMemberId}@test.com`,
+          name: "Channel Member",
+          workosUserId: `workos_${channelMemberId}`,
+        })
+        await UserRepository.insert(client, {
+          id: threadCreatorId,
+          email: `thread-ismember-creator-${threadCreatorId}@test.com`,
+          name: "Thread Creator",
+          workosUserId: `workos_${threadCreatorId}`,
+        })
+        await WorkspaceRepository.insert(client, {
+          id: wsId,
+          name: "Thread isMember Workspace",
+          slug: `thread-ismember-ws-${wsId}`,
+          createdBy: channelOwnerId,
+        })
+        await WorkspaceRepository.addMember(client, wsId, channelMemberId)
+        await WorkspaceRepository.addMember(client, wsId, threadCreatorId)
+      })
+
+      // Create channel with owner and member
+      const channel = await streamService.createChannel({
+        workspaceId: wsId,
+        slug: `thread-ismember-channel-${Date.now()}`,
+        createdBy: channelOwnerId,
+        visibility: Visibilities.PRIVATE,
+      })
+      await streamService.addMember(channel.id, channelMemberId)
+
+      // Create message and thread by a different user (e.g., persona creating thread for mention response)
+      const parentMessage = await eventService.createMessage({
+        workspaceId: wsId,
+        streamId: channel.id,
+        authorId: channelMemberId,
+        authorType: "user",
+        content: "Message that will spawn a thread",
+      })
+      const thread = await streamService.createThread({
+        workspaceId: wsId,
+        parentStreamId: channel.id,
+        parentMessageId: parentMessage.id,
+        createdBy: threadCreatorId,
+      })
+
+      // Channel member should be able to post to thread even without direct thread membership
+      // This is the exact scenario: user mentions @ariadne, ariadne creates thread, user should be able to respond
+      expect(await streamService.isMember(thread.id, channelMemberId)).toBe(true)
+      expect(await streamService.isMember(thread.id, channelOwnerId)).toBe(true)
+    })
+
     test("adding member to thread adds them to root stream", async () => {
       const ownerId = userId()
       const newMemberId = userId()

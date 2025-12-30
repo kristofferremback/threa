@@ -1,9 +1,10 @@
 import type { Pool, PoolClient } from "pg"
-import { withClient, withTransaction } from "../db"
-import { AgentToolNames, AuthorTypes, CompanionModes, StreamTypes, type AuthorType } from "@threa/types"
+import { withClient } from "../db"
+import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
+import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
@@ -118,9 +119,9 @@ export async function withSession(
 }
 
 /**
- * Dependencies required to construct a CompanionAgent.
+ * Dependencies required to construct a PersonaAgent.
  */
-export interface CompanionAgentDeps {
+export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
   createMessage: (params: {
@@ -131,21 +132,30 @@ export interface CompanionAgentDeps {
     content: string
     sources?: SourceItem[]
   }) => Promise<{ id: string }>
+  createThread: (params: {
+    workspaceId: string
+    parentStreamId: string
+    parentMessageId: string
+    createdBy: string
+  }) => Promise<{ id: string }>
 }
 
 /**
- * Input parameters for running the companion agent.
+ * Input parameters for running the persona agent.
  */
-export interface CompanionAgentInput {
-  streamId: string
-  messageId: string
+export interface PersonaAgentInput {
+  workspaceId: string
+  streamId: string // Where message was sent
+  messageId: string // Trigger message
+  personaId: string // Which persona to invoke
   serverId: string
+  trigger?: "mention" // undefined = companion mode
 }
 
 /**
- * Result from running the companion agent.
+ * Result from running the persona agent.
  */
-export interface CompanionAgentResult {
+export interface PersonaAgentResult {
   sessionId: string | null
   messagesSent: number
   sentMessageIds: string[]
@@ -154,32 +164,33 @@ export interface CompanionAgentResult {
 }
 
 /**
- * Companion agent that responds to messages in streams.
+ * Unified persona agent that handles both companion mode and @mention invocations.
+ *
+ * The agent receives explicit personaId and trigger context - listeners handle
+ * the source-specific logic (companion mode checks, @mention extraction).
+ *
+ * For channel mentions, the agent creates a thread lazily on first message send.
  */
-export class CompanionAgent {
-  constructor(private readonly deps: CompanionAgentDeps) {}
+export class PersonaAgent {
+  constructor(private readonly deps: PersonaAgentDeps) {}
 
   /**
-   * Run the companion agent for a given message in a stream.
+   * Run the persona agent for a given message.
    */
-  async run(input: CompanionAgentInput): Promise<CompanionAgentResult> {
-    const { pool, responseGenerator, createMessage } = this.deps
-    const { streamId, messageId, serverId } = input
+  async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
+    const { pool, responseGenerator, createMessage, createThread } = this.deps
+    const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
-    // Step 1: Load and validate stream/persona
+    // Step 1: Load and validate persona and stream
     const precheck = await withClient(pool, async (client) => {
-      const stream = await StreamRepository.findById(client, streamId)
-      if (!stream || stream.companionMode !== CompanionModes.ON) {
-        return {
-          skip: true as const,
-          reason: "stream not found or companion mode off",
-        }
+      const persona = await PersonaRepository.findById(client, personaId)
+      if (!persona || persona.status !== "active") {
+        return { skip: true as const, reason: "persona not found or inactive" }
       }
 
-      const persona = await getPersona(client, stream.companionPersonaId)
-      if (!persona) {
-        logger.error({ streamId }, "No persona found")
-        return { skip: true as const, reason: "no persona found" }
+      const stream = await StreamRepository.findById(client, streamId)
+      if (!stream) {
+        return { skip: true as const, reason: "stream not found" }
       }
 
       // Get the current max sequence to use as initial lastProcessedSequence
@@ -187,8 +198,8 @@ export class CompanionAgent {
 
       return {
         skip: false as const,
-        stream,
         persona,
+        stream,
         initialSequence: latestSequence ?? BigInt(0),
       }
     })
@@ -203,7 +214,7 @@ export class CompanionAgent {
       }
     }
 
-    const { stream, persona, initialSequence } = precheck
+    const { persona, stream, initialSequence } = precheck
 
     // Step 2: Run with session lifecycle management
     const result = await withSession(
@@ -217,41 +228,56 @@ export class CompanionAgent {
       },
       async (client, session) => {
         // Build stream context (includes conversation history)
-        const context = await buildStreamContext(client, streamId, messageId)
-        if (!context) {
-          throw new Error(`Failed to build context for stream ${streamId}`)
+        const context = await buildStreamContext(client, stream)
+
+        // Look up mentioner name if this is a mention trigger
+        let mentionerName: string | undefined
+        if (trigger === "mention") {
+          const triggerMessage = await MessageRepository.findById(client, messageId)
+          if (triggerMessage && triggerMessage.authorType === "user") {
+            const mentioner = await UserRepository.findById(client, triggerMessage.authorId)
+            mentionerName = mentioner?.name ?? undefined
+          }
         }
 
-        // Build system prompt with stream context
-        const systemPrompt = buildSystemPrompt(persona, context)
+        // Build system prompt with stream context and trigger info
+        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName)
+
+        // Track target stream for responses - may change if we create a thread
+        let targetStreamId = streamId
+        let threadCreated = false
+
+        // Helper to send a message, creating a thread for channel mentions on first send
+        const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
+          // For channel mentions: create thread on first message
+          // Note: createThread is idempotent (uses ON CONFLICT DO NOTHING), so retries are safe
+          if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
+            const thread = await createThread({
+              workspaceId,
+              parentStreamId: streamId,
+              parentMessageId: messageId,
+              createdBy: persona.id,
+            })
+            targetStreamId = thread.id
+            threadCreated = true
+            logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
+          }
+
+          const message = await createMessage({
+            workspaceId,
+            streamId: targetStreamId,
+            authorId: persona.id,
+            authorType: AuthorTypes.PERSONA,
+            content: msgInput.content,
+            sources: msgInput.sources,
+          })
+          return { messageId: message.id, content: msgInput.content }
+        }
 
         // Create callbacks for the response generator
         const callbacks: ResponseGeneratorCallbacks = {
-          // Used by send_message tool (LLM-initiated)
-          sendMessage: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
-            const message = await createMessage({
-              workspaceId: stream.workspaceId,
-              streamId,
-              authorId: persona.id,
-              authorType: AuthorTypes.PERSONA,
-              content: input.content,
-              sources: input.sources,
-            })
-            return { messageId: message.id, content: input.content }
-          },
-
-          // Used by ensure_response node (graph-initiated, can include sources)
-          sendMessageWithSources: async (input: SendMessageInputWithSources): Promise<SendMessageResult> => {
-            const message = await createMessage({
-              workspaceId: stream.workspaceId,
-              streamId,
-              authorId: persona.id,
-              authorType: AuthorTypes.PERSONA,
-              content: input.content,
-              sources: input.sources,
-            })
-            return { messageId: message.id, content: input.content }
-          },
+          sendMessage: doSendMessage,
+          sendMessageWithSources: doSendMessage,
 
           checkNewMessages: async (checkStreamId: string, sinceSequence: bigint, excludeAuthorId: string) => {
             const messages = await MessageRepository.listSince(client, checkStreamId, sinceSequence, {
@@ -279,7 +305,7 @@ export class CompanionAgent {
               role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
               content: m.content,
             })),
-            streamId,
+            streamId: targetStreamId,
             sessionId: session.id,
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
@@ -325,26 +351,35 @@ export class CompanionAgent {
   }
 }
 
-async function getPersona(client: PoolClient, personaId: string | null): Promise<Persona | null> {
-  if (personaId) {
-    const persona = await PersonaRepository.findById(client, personaId)
-    if (persona?.status === "active") {
-      return persona
-    }
-  }
-  return PersonaRepository.getSystemDefault(client)
-}
-
 /**
- * Build the system prompt for the companion agent.
- * Produces stream-type-specific context for richer responses.
+ * Build the system prompt for the persona agent.
+ * Produces stream-type-specific context and optional mention invocation context.
  */
-function buildSystemPrompt(persona: Persona, context: StreamContext): string {
+function buildSystemPrompt(
+  persona: Persona,
+  context: StreamContext,
+  trigger?: "mention",
+  mentionerName?: string
+): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
   }
 
   let prompt = persona.systemPrompt
+
+  // Add mention invocation context if applicable
+  if (trigger === "mention") {
+    const mentionerDesc = mentionerName ? `**${mentionerName}**` : "a user"
+    prompt += `
+
+## Invocation Context
+
+You were explicitly @mentioned by ${mentionerDesc} who wants your assistance.`
+
+    if (context.streamType === StreamTypes.CHANNEL) {
+      prompt += ` This conversation is happening in a thread created specifically for your response.`
+    }
+  }
 
   // Add stream-type-specific context
   switch (context.streamType) {

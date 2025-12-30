@@ -200,11 +200,20 @@ describe("Event Sourcing", () => {
       await withClient(pool, async (client) => {
         const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
 
-        expect(outboxEvents).toHaveLength(1)
-        expect(outboxEvents[0].eventType).toBe("message:created")
-        expect(outboxEvents[0].payload).toMatchObject({
+        // INV-23: Don't assert event count - verify specific events we care about
+        const messageCreatedEvent = outboxEvents.find((e) => e.eventType === "message:created")
+        expect(messageCreatedEvent).toBeDefined()
+        expect(messageCreatedEvent!.payload).toMatchObject({
           workspaceId: testWorkspaceId,
           streamId: testStreamId,
+        })
+
+        const unreadIncrementEvent = outboxEvents.find((e) => e.eventType === "unread:increment")
+        expect(unreadIncrementEvent).toBeDefined()
+        expect(unreadIncrementEvent!.payload).toMatchObject({
+          workspaceId: testWorkspaceId,
+          streamId: testStreamId,
+          authorId: testUserId,
         })
       })
     })
