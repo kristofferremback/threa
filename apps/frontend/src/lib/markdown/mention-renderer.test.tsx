@@ -59,10 +59,12 @@ describe("mention-renderer", () => {
       expect(result).toHaveLength(1)
     })
 
-    it("should handle channels with underscores", () => {
+    it("should NOT parse channels with underscores", () => {
+      // Underscores are not valid in slugs
       const result = renderMentions("#dev_team")
 
       expect(result).toHaveLength(1)
+      expect(result[0]).toBe("#dev_team") // Returned as plain text
     })
 
     it("should render mention chip with correct type styling", () => {
@@ -104,9 +106,9 @@ describe("mention-renderer", () => {
     it("should not parse email addresses as mentions", () => {
       const result = renderMentions("Contact test@example.com")
 
-      // The @ in email should still be detected, but we're testing the behavior
-      // Email protection would require more sophisticated parsing
-      expect(result.length).toBeGreaterThanOrEqual(1)
+      // Email addresses should NOT extract mentions (@ preceded by alphanumeric)
+      expect(result).toHaveLength(1)
+      expect(result[0]).toBe("Contact test@example.com")
     })
 
     it("should handle empty string", () => {
@@ -204,20 +206,26 @@ describe("mention-renderer", () => {
 
   describe("edge cases", () => {
     it("should handle consecutive mentions without space", () => {
+      // @alice@bob - the second @ is preceded by alphanumeric, so only @alice is extracted
       const result = renderMentions("@alice@bob")
+
+      expect(result).toHaveLength(2)
       render(<>{result}</>)
 
-      // Both should be rendered as separate chips
       expect(screen.getByText(/@alice/)).toBeInTheDocument()
-      expect(screen.getByText(/@bob/)).toBeInTheDocument()
+      // @bob is NOT extracted because @ is preceded by 'e' (no word boundary)
+      expect(result[1]).toBe("@bob")
     })
 
     it("should handle mention followed by channel", () => {
+      // @alice#general - # preceded by 'e' so #general is NOT extracted
       const result = renderMentions("@alice#general")
+
+      expect(result).toHaveLength(2)
       render(<>{result}</>)
 
       expect(screen.getByText(/@alice/)).toBeInTheDocument()
-      expect(screen.getByText(/#general/)).toBeInTheDocument()
+      expect(result[1]).toBe("#general") // Not extracted, returned as plain text
     })
 
     it("should handle very long slugs", () => {

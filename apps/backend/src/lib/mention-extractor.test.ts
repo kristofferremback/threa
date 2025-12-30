@@ -30,10 +30,11 @@ describe("mention-extractor", () => {
       expect(result).toEqual([{ slug: "customer-support", position: 4 }])
     })
 
-    it("should handle mentions with underscores", () => {
+    it("should NOT extract mentions with underscores", () => {
+      // Underscores are not valid in slugs
       const result = extractMentions("Ask @tech_lead for help")
 
-      expect(result).toEqual([{ slug: "tech_lead", position: 4 }])
+      expect(result).toEqual([])
     })
 
     it("should handle mentions at start of message", () => {
@@ -54,17 +55,17 @@ describe("mention-extractor", () => {
       expect(result).toEqual([])
     })
 
-    it("should handle empty string", () => {
+    it("should return empty array for empty string", () => {
       const result = extractMentions("")
 
       expect(result).toEqual([])
     })
 
-    it("should not match email addresses", () => {
+    it("should NOT match email addresses", () => {
+      // Email format: user@domain - should not extract domain as mention
       const result = extractMentions("Contact me at test@example.com")
 
-      // Should match @example but not as an email
-      expect(result).toEqual([{ slug: "example", position: 18 }])
+      expect(result).toEqual([])
     })
 
     it("should handle mentions in markdown", () => {
@@ -105,8 +106,8 @@ describe("mention-extractor", () => {
       expect(hasMention("@ariadne can you help?", "ariadne")).toBe(true)
     })
 
-    it("should handle special regex characters in slug", () => {
-      // Edge case: if someone has a slug with special chars (shouldn't happen but let's be safe)
+    it("should return false for invalid slug parameter", () => {
+      // test.user contains a dot which is invalid
       expect(hasMention("Hello @test", "test.user")).toBe(false)
     })
   })

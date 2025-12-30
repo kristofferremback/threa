@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { useMentionType } from "./mention-context"
+import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
 /**
  * Styles for different trigger types.
@@ -51,11 +52,15 @@ function TriggerChip({ type, text }: TriggerChipProps) {
 }
 
 /**
- * Pattern to match @mentions, #channels, and /commands at start.
- * Command pattern allows optional leading whitespace.
+ * Patterns for triggers.
+ * - Commands: /command at start of text
+ * - Channels: #channel-name (uses same rules as slugs)
+ * - Mentions: @slug (uses shared MENTION_PATTERN from @threa/types)
  */
 const COMMAND_PATTERN = /^(\s*)(\/)([\w-]+)/
-const TRIGGER_PATTERN = /(@|#)([\w-]+)/g
+
+// Channel pattern uses same slug rules as mentions
+const CHANNEL_PATTERN = /(?<![a-z0-9])#([a-z][a-z0-9-]*[a-z0-9]|[a-z])(?![a-z0-9_.-])/g
 
 /**
  * Parse text and render triggers as styled chips.
@@ -77,24 +82,44 @@ export function renderMentions(text: string): ReactNode[] {
     processText = processText.slice(commandMatch[0].length)
   }
 
-  // Process remaining text for mentions and channels
-  let lastIndex = 0
-  let match
+  // Collect all trigger matches with their positions
+  type TriggerMatch = { index: number; length: number; type: "mention" | "channel"; slug: string }
+  const triggers: TriggerMatch[] = []
 
-  TRIGGER_PATTERN.lastIndex = 0
-  while ((match = TRIGGER_PATTERN.exec(processText)) !== null) {
-    if (match.index > lastIndex) {
-      result.push(processText.slice(lastIndex, match.index))
+  // Find mentions using shared pattern
+  const mentionPattern = new RegExp(MENTION_PATTERN.source, MENTION_PATTERN.flags)
+  let match
+  while ((match = mentionPattern.exec(processText)) !== null) {
+    if (isValidSlug(match[1])) {
+      triggers.push({ index: match.index, length: match[0].length, type: "mention", slug: match[1] })
+    }
+  }
+
+  // Find channels
+  CHANNEL_PATTERN.lastIndex = 0
+  while ((match = CHANNEL_PATTERN.exec(processText)) !== null) {
+    if (isValidSlug(match[1])) {
+      triggers.push({ index: match.index, length: match[0].length, type: "channel", slug: match[1] })
+    }
+  }
+
+  // Sort by position
+  triggers.sort((a, b) => a.index - b.index)
+
+  // Build result
+  let lastIndex = 0
+  for (const trigger of triggers) {
+    // Skip if overlapping with previous
+    if (trigger.index < lastIndex) continue
+
+    if (trigger.index > lastIndex) {
+      result.push(processText.slice(lastIndex, trigger.index))
     }
 
-    const trigger = match[1] as "@" | "#"
-    const slug = match[2]
-
     result.push(
-      <TriggerChip key={`${keyIndex++}-${trigger}${slug}`} type={trigger === "@" ? "mention" : "channel"} text={slug} />
+      <TriggerChip key={`${keyIndex++}-${trigger.type}-${trigger.slug}`} type={trigger.type} text={trigger.slug} />
     )
-
-    lastIndex = match.index + match[0].length
+    lastIndex = trigger.index + trigger.length
   }
 
   if (lastIndex < processText.length) {

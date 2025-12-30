@@ -52,7 +52,7 @@ describe("Context Builder", () => {
           createdBy: ownerId,
         })
 
-        await StreamRepository.insert(client, {
+        const scratchpad = await StreamRepository.insert(client, {
           id: scratchpadId,
           workspaceId: wsId,
           type: StreamTypes.SCRATCHPAD,
@@ -82,16 +82,15 @@ describe("Context Builder", () => {
           content: "Second message",
         })
 
-        const context = await buildStreamContext(client, scratchpadId, msg2Id)
+        const context = await buildStreamContext(client, scratchpad)
 
-        expect(context).not.toBeNull()
-        expect(context!.streamType).toBe(StreamTypes.SCRATCHPAD)
-        expect(context!.streamInfo.name).toBe("My Scratchpad")
-        expect(context!.streamInfo.description).toBe("Personal notes")
-        expect(context!.conversationHistory).toHaveLength(2)
-        expect(context!.conversationHistory[0].content).toBe("Hello world")
-        expect(context!.conversationHistory[1].content).toBe("Second message")
-        expect(context!.participants).toBeUndefined()
+        expect(context.streamType).toBe(StreamTypes.SCRATCHPAD)
+        expect(context.streamInfo.name).toBe("My Scratchpad")
+        expect(context.streamInfo.description).toBe("Personal notes")
+        expect(context.conversationHistory).toHaveLength(2)
+        expect(context.conversationHistory[0].content).toBe("Hello world")
+        expect(context.conversationHistory[1].content).toBe("Second message")
+        expect(context.participants).toBeUndefined()
       })
     })
   })
@@ -123,7 +122,7 @@ describe("Context Builder", () => {
           createdBy: ownerId,
         })
 
-        await StreamRepository.insert(client, {
+        const channel = await StreamRepository.insert(client, {
           id: channelId,
           workspaceId: wsId,
           type: StreamTypes.CHANNEL,
@@ -149,17 +148,16 @@ describe("Context Builder", () => {
           content: "Welcome to the channel!",
         })
 
-        const context = await buildStreamContext(client, channelId, msgId)
+        const context = await buildStreamContext(client, channel)
 
-        expect(context).not.toBeNull()
-        expect(context!.streamType).toBe(StreamTypes.CHANNEL)
-        expect(context!.streamInfo.name).toBe("General")
-        expect(context!.streamInfo.slug).toBe("general")
-        expect(context!.streamInfo.description).toBe("General discussion")
-        expect(context!.conversationHistory).toHaveLength(1)
-        expect(context!.participants).toHaveLength(2)
+        expect(context.streamType).toBe(StreamTypes.CHANNEL)
+        expect(context.streamInfo.name).toBe("General")
+        expect(context.streamInfo.slug).toBe("general")
+        expect(context.streamInfo.description).toBe("General discussion")
+        expect(context.conversationHistory).toHaveLength(1)
+        expect(context.participants).toHaveLength(2)
 
-        const participantNames = context!.participants!.map((p) => p.name).sort()
+        const participantNames = context.participants!.map((p) => p.name).sort()
         expect(participantNames).toEqual(["Channel Member", "Channel Owner"])
       })
     })
@@ -209,7 +207,7 @@ describe("Context Builder", () => {
         })
 
         // Create thread from channel
-        await StreamRepository.insert(client, {
+        const thread = await StreamRepository.insert(client, {
           id: threadId,
           workspaceId: wsId,
           type: StreamTypes.THREAD,
@@ -232,25 +230,24 @@ describe("Context Builder", () => {
           content: "Reply in thread",
         })
 
-        const context = await buildStreamContext(client, threadId, threadMsgId)
+        const context = await buildStreamContext(client, thread)
 
-        expect(context).not.toBeNull()
-        expect(context!.streamType).toBe(StreamTypes.THREAD)
-        expect(context!.streamInfo.name).toBe("Thread Discussion")
-        expect(context!.conversationHistory).toHaveLength(1)
-        expect(context!.threadContext).toBeDefined()
-        expect(context!.threadContext!.depth).toBe(2)
-        expect(context!.threadContext!.path).toHaveLength(2)
+        expect(context.streamType).toBe(StreamTypes.THREAD)
+        expect(context.streamInfo.name).toBe("Thread Discussion")
+        expect(context.conversationHistory).toHaveLength(1)
+        expect(context.threadContext).toBeDefined()
+        expect(context.threadContext!.depth).toBe(2)
+        expect(context.threadContext!.path).toHaveLength(2)
 
         // Root should be channel
-        expect(context!.threadContext!.path[0].streamId).toBe(channelId)
-        expect(context!.threadContext!.path[0].displayName).toBe("Discussions")
+        expect(context.threadContext!.path[0].streamId).toBe(channelId)
+        expect(context.threadContext!.path[0].displayName).toBe("Discussions")
 
         // Current should be thread
-        expect(context!.threadContext!.path[1].streamId).toBe(threadId)
-        expect(context!.threadContext!.path[1].displayName).toBe("Thread Discussion")
-        expect(context!.threadContext!.path[1].anchorMessage).toBeDefined()
-        expect(context!.threadContext!.path[1].anchorMessage!.content).toContain("parent message")
+        expect(context.threadContext!.path[1].streamId).toBe(threadId)
+        expect(context.threadContext!.path[1].displayName).toBe("Thread Discussion")
+        expect(context.threadContext!.path[1].anchorMessage).toBeDefined()
+        expect(context.threadContext!.path[1].anchorMessage!.content).toContain("parent message")
       })
     })
 
@@ -318,7 +315,7 @@ describe("Context Builder", () => {
           content: "Second level message",
         })
 
-        await StreamRepository.insert(client, {
+        const thread2 = await StreamRepository.insert(client, {
           id: thread2Id,
           workspaceId: wsId,
           type: StreamTypes.THREAD,
@@ -340,14 +337,13 @@ describe("Context Builder", () => {
           content: "Third level message",
         })
 
-        const context = await buildStreamContext(client, thread2Id, msg3Id)
+        const context = await buildStreamContext(client, thread2)
 
-        expect(context).not.toBeNull()
-        expect(context!.threadContext!.depth).toBe(3)
-        expect(context!.threadContext!.path).toHaveLength(3)
-        expect(context!.threadContext!.path[0].displayName).toBe("Root Channel")
-        expect(context!.threadContext!.path[1].displayName).toBe("Thread Level 1")
-        expect(context!.threadContext!.path[2].displayName).toBe("Thread Level 2")
+        // INV-24: Use object comparison instead of assert chains
+        expect(context.threadContext).toMatchObject({
+          depth: 3,
+          path: [{ displayName: "Root Channel" }, { displayName: "Thread Level 1" }, { displayName: "Thread Level 2" }],
+        })
       })
     })
   })
@@ -379,7 +375,7 @@ describe("Context Builder", () => {
           createdBy: user1Id,
         })
 
-        await StreamRepository.insert(client, {
+        const dm = await StreamRepository.insert(client, {
           id: dmId,
           workspaceId: wsId,
           type: StreamTypes.DM,
@@ -402,24 +398,14 @@ describe("Context Builder", () => {
           content: "Hey Bob!",
         })
 
-        const context = await buildStreamContext(client, dmId, msgId)
+        const context = await buildStreamContext(client, dm)
 
-        expect(context).not.toBeNull()
-        expect(context!.streamType).toBe(StreamTypes.DM)
-        expect(context!.conversationHistory).toHaveLength(1)
-        expect(context!.participants).toHaveLength(2)
+        expect(context.streamType).toBe(StreamTypes.DM)
+        expect(context.conversationHistory).toHaveLength(1)
+        expect(context.participants).toHaveLength(2)
 
-        const participantNames = context!.participants!.map((p) => p.name).sort()
+        const participantNames = context.participants!.map((p) => p.name).sort()
         expect(participantNames).toEqual(["Alice", "Bob"])
-      })
-    })
-  })
-
-  describe("Non-existent Stream", () => {
-    test("should return null for non-existent stream", async () => {
-      await withTransaction(pool, async (client) => {
-        const context = await buildStreamContext(client, "stream_nonexistent", "msg_nonexistent")
-        expect(context).toBeNull()
       })
     })
   })

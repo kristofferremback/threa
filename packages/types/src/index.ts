@@ -78,6 +78,17 @@ export type {
   MemoStreamState,
 } from "./domain"
 
+// Slug validation
+export {
+  SLUG_MAX_LENGTH,
+  SLUG_PATTERN,
+  MENTION_PATTERN,
+  INVALID_SLUG_CHARS,
+  isValidSlug,
+  extractMentionSlugs,
+  hasMention,
+} from "./slug"
+
 // API types
 export type {
   // Streams

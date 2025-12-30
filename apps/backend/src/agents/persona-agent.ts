@@ -227,10 +227,7 @@ export class PersonaAgent {
       },
       async (client, session) => {
         // Build stream context (includes conversation history)
-        const context = await buildStreamContext(client, streamId, messageId)
-        if (!context) {
-          throw new Error(`Failed to build context for stream ${streamId}`)
-        }
+        const context = await buildStreamContext(client, stream)
 
         // Build system prompt with stream context and trigger info
         const systemPrompt = buildSystemPrompt(persona, context, trigger)

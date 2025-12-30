@@ -62,14 +62,7 @@ const MAX_CONTEXT_MESSAGES = 20
  * Build stream context for the companion agent.
  * Returns stream-type-specific context for enriching the system prompt.
  */
-export async function buildStreamContext(
-  client: PoolClient,
-  streamId: string,
-  _triggerMessageId: string
-): Promise<StreamContext | null> {
-  const stream = await StreamRepository.findById(client, streamId)
-  if (!stream) return null
-
+export async function buildStreamContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
   switch (stream.type) {
     case StreamTypes.SCRATCHPAD:
       return buildScratchpadContext(client, stream)

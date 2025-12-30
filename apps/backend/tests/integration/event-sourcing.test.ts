@@ -200,11 +200,7 @@ describe("Event Sourcing", () => {
       await withClient(pool, async (client) => {
         const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
 
-        // createMessage publishes two outbox events:
-        // 1. message:created - for real-time message delivery
-        // 2. unread:increment - for sidebar unread count updates
-        expect(outboxEvents).toHaveLength(2)
-
+        // INV-23: Don't assert event count - verify specific events we care about
         const messageCreatedEvent = outboxEvents.find((e) => e.eventType === "message:created")
         expect(messageCreatedEvent).toBeDefined()
         expect(messageCreatedEvent!.payload).toMatchObject({

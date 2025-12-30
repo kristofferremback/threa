@@ -77,7 +77,8 @@ export const SearchRepository = {
    *
    * Access rules:
    * - User is a member of the stream, OR
-   * - Stream is public
+   * - Stream is public, OR
+   * - For threads: user can access the root stream (member OR root is public)
    *
    * Member filtering (AND logic):
    * - If memberIds provided, stream must have ALL specified members
@@ -94,8 +95,14 @@ export const SearchRepository = {
         SELECT DISTINCT s.id
         FROM streams s
         LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN streams root ON s.root_stream_id = root.id
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
         WHERE s.workspace_id = ${workspaceId}
-          AND (sm.user_id IS NOT NULL OR s.visibility = ${Visibilities.PUBLIC})
+          AND (
+            sm.user_id IS NOT NULL
+            OR s.visibility = ${Visibilities.PUBLIC}
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+          )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
       `)
       return result.rows.map((r) => r.id)
@@ -107,8 +114,14 @@ export const SearchRepository = {
         SELECT DISTINCT s.id
         FROM streams s
         LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN streams root ON s.root_stream_id = root.id
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
         WHERE s.workspace_id = ${workspaceId}
-          AND (sm.user_id IS NOT NULL OR s.visibility = ${Visibilities.PUBLIC})
+          AND (
+            sm.user_id IS NOT NULL
+            OR s.visibility = ${Visibilities.PUBLIC}
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+          )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
       ),
       member_streams AS (

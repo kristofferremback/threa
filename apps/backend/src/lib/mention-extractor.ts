@@ -1,35 +1,37 @@
 /**
- * Extracts @mentions from message content.
+ * Re-exports mention extraction utilities from @threa/types.
  *
- * The frontend serializes mentions as @slug (markdown format).
- * This module extracts those slugs for lookup against users/personas.
+ * The shared module in @threa/types is the single source of truth for
+ * slug validation and mention extraction rules.
  */
 
-// Matches @slug patterns where slug is word chars + hyphens
-// Same pattern as frontend: [\w-]+
-const MENTION_PATTERN = /@([\w-]+)/g
+import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
+export { extractMentionSlugs, hasMention, isValidSlug, MENTION_PATTERN, SLUG_PATTERN } from "@threa/types"
+
+/**
+ * Extended mention info with position (for highlighting, etc).
+ */
 export interface ExtractedMention {
   slug: string
   position: number
 }
 
 /**
- * Extract all @mentions from message content.
- * Returns unique slugs with their positions.
+ * Extract all @mentions from message content with positions.
+ * Returns unique slugs with their first occurrence position.
  */
 export function extractMentions(content: string): ExtractedMention[] {
   const mentions: ExtractedMention[] = []
   const seen = new Set<string>()
 
-  // Reset lastIndex to avoid state leakage between calls (global regex footgun)
-  MENTION_PATTERN.lastIndex = 0
+  // Create a fresh regex instance to avoid state leakage (global regex footgun)
+  const pattern = new RegExp(MENTION_PATTERN.source, MENTION_PATTERN.flags)
 
   let match
-  while ((match = MENTION_PATTERN.exec(content)) !== null) {
+  while ((match = pattern.exec(content)) !== null) {
     const slug = match[1]
-    // Dedupe by slug, keep first occurrence
-    if (!seen.has(slug)) {
+    if (!seen.has(slug) && isValidSlug(slug)) {
       seen.add(slug)
       mentions.push({
         slug,
@@ -39,23 +41,4 @@ export function extractMentions(content: string): ExtractedMention[] {
   }
 
   return mentions
-}
-
-/**
- * Extract just the unique slugs from message content.
- */
-export function extractMentionSlugs(content: string): string[] {
-  return extractMentions(content).map((m) => m.slug)
-}
-
-/**
- * Check if a message contains a specific @mention.
- */
-export function hasMention(content: string, slug: string): boolean {
-  const pattern = new RegExp(`@${escapeRegex(slug)}(?![\\w-])`)
-  return pattern.test(content)
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
