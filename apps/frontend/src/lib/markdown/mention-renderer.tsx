@@ -95,9 +95,9 @@ export function renderMentions(text: string): ReactNode[] {
     }
   }
 
-  // Find channels
-  CHANNEL_PATTERN.lastIndex = 0
-  while ((match = CHANNEL_PATTERN.exec(processText)) !== null) {
+  // Find channels using cloned pattern (avoid global state issues)
+  const channelPattern = new RegExp(CHANNEL_PATTERN.source, CHANNEL_PATTERN.flags)
+  while ((match = channelPattern.exec(processText)) !== null) {
     if (isValidSlug(match[1])) {
       triggers.push({ index: match.index, length: match[0].length, type: "channel", slug: match[1] })
     }

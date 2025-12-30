@@ -4,6 +4,7 @@ import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType } from "@thre
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
+import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
@@ -229,8 +230,18 @@ export class PersonaAgent {
         // Build stream context (includes conversation history)
         const context = await buildStreamContext(client, stream)
 
+        // Look up mentioner name if this is a mention trigger
+        let mentionerName: string | undefined
+        if (trigger === "mention") {
+          const triggerMessage = await MessageRepository.findById(client, messageId)
+          if (triggerMessage && triggerMessage.authorType === "user") {
+            const mentioner = await UserRepository.findById(client, triggerMessage.authorId)
+            mentionerName = mentioner?.name ?? undefined
+          }
+        }
+
         // Build system prompt with stream context and trigger info
-        const systemPrompt = buildSystemPrompt(persona, context, trigger)
+        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName)
 
         // Track target stream for responses - may change if we create a thread
         let targetStreamId = streamId
@@ -239,6 +250,7 @@ export class PersonaAgent {
         // Helper to send a message, creating a thread for channel mentions on first send
         const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
           // For channel mentions: create thread on first message
+          // Note: createThread is idempotent (uses ON CONFLICT DO NOTHING), so retries are safe
           if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
             const thread = await createThread({
               workspaceId,
@@ -343,7 +355,12 @@ export class PersonaAgent {
  * Build the system prompt for the persona agent.
  * Produces stream-type-specific context and optional mention invocation context.
  */
-function buildSystemPrompt(persona: Persona, context: StreamContext, trigger?: "mention"): string {
+function buildSystemPrompt(
+  persona: Persona,
+  context: StreamContext,
+  trigger?: "mention",
+  mentionerName?: string
+): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
   }
@@ -352,11 +369,12 @@ function buildSystemPrompt(persona: Persona, context: StreamContext, trigger?: "
 
   // Add mention invocation context if applicable
   if (trigger === "mention") {
+    const mentionerDesc = mentionerName ? `**${mentionerName}**` : "a user"
     prompt += `
 
 ## Invocation Context
 
-You were explicitly @mentioned by a user who wants your assistance.`
+You were explicitly @mentioned by ${mentionerDesc} who wants your assistance.`
 
     if (context.streamType === StreamTypes.CHANNEL) {
       prompt += ` This conversation is happening in a thread created specifically for your response.`

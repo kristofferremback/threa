@@ -4,7 +4,19 @@ import { isValidSlug, extractMentionSlugs, hasMention, SLUG_MAX_LENGTH } from ".
 describe("slug validation", () => {
   describe("isValidSlug", () => {
     test("accepts valid slugs", () => {
-      const validSlugs = ["ariadne", "alice", "user-1", "customer-support", "a", "a1", "team-42", "q1-2025-planning"]
+      const validSlugs = [
+        "ariadne",
+        "alice",
+        "user-1",
+        "customer-support",
+        "a",
+        "a1",
+        "team-42",
+        "q1-2025-planning",
+        "tech_lead",
+        "hello_world",
+        "team_alpha-1",
+      ]
 
       for (const slug of validSlugs) {
         expect(isValidSlug(slug)).toBe(true)
@@ -17,11 +29,15 @@ describe("slug validation", () => {
         "123", // starts with number
         "1abc", // starts with number
         "-abc", // starts with hyphen
+        "_abc", // starts with underscore
         "abc-", // ends with hyphen
+        "abc_", // ends with underscore
         "abc--def", // consecutive hyphens
+        "abc__def", // consecutive underscores
+        "abc-_def", // mixed consecutive separators
+        "abc_-def", // mixed consecutive separators
         "ABC", // uppercase
         "aBc", // mixed case
-        "hello_world", // underscore
         "hello.world", // dot
         "hello world", // space
         "café", // unicode
@@ -62,9 +78,8 @@ describe("slug validation", () => {
       expect(extractMentionSlugs("Contact test@example.com")).toEqual([])
     })
 
-    test("does NOT match underscored names", () => {
-      // @tech_lead contains underscore which is not valid
-      expect(extractMentionSlugs("Ask @tech_lead")).toEqual([])
+    test("extracts mentions with underscores", () => {
+      expect(extractMentionSlugs("Ask @tech_lead for help")).toEqual(["tech_lead"])
     })
 
     test("does NOT match uppercase mentions", () => {

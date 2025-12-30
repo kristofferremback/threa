@@ -6,10 +6,10 @@
  *
  * Valid slug characteristics:
  * - Lowercase letters (a-z) and numbers (0-9) only
- * - Hyphens (-) allowed as word separators
+ * - Hyphens (-) and underscores (_) allowed as word separators
  * - Must start with a letter
- * - No leading/trailing hyphens
- * - No consecutive hyphens
+ * - No leading/trailing separators
+ * - No consecutive separators
  * - Max 50 characters
  */
 
@@ -18,11 +18,11 @@ export const SLUG_MAX_LENGTH = 50
 /**
  * Pattern for a valid slug.
  * - Starts with a letter
- * - Followed by alphanumeric characters or hyphens
- * - Ends with alphanumeric (no trailing hyphen)
- * - No consecutive hyphens (enforced separately for clarity)
+ * - Followed by alphanumeric characters, hyphens, or underscores
+ * - Ends with alphanumeric (no trailing separator)
+ * - No consecutive separators (enforced separately for clarity)
  */
-export const SLUG_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+export const SLUG_PATTERN = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/
 
 /**
  * Pattern for extracting @mentions from text.
@@ -30,10 +30,10 @@ export const SLUG_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
  *
  * Key constraints:
  * - @ must NOT be preceded by alphanumeric (avoids email addresses)
- * - Slug must be valid (a-z, 0-9, hyphens, starts with letter)
- * - Slug must NOT be followed by invalid slug chars that suggest user intended a longer slug
+ * - Slug must be valid (a-z, 0-9, hyphens, underscores, starts with letter)
+ * - Slug must NOT be followed by chars that suggest user intended a longer slug
  */
-export const MENTION_PATTERN = /(?<![a-z0-9])@([a-z][a-z0-9-]*[a-z0-9]|[a-z])(?![a-z0-9_.-])/g
+export const MENTION_PATTERN = /(?<![a-z0-9])@([a-z][a-z0-9_-]*[a-z0-9]|[a-z])(?![a-z0-9.-])/g
 
 /**
  * Check if a string is a valid slug.
@@ -48,8 +48,8 @@ export function isValidSlug(slug: string): boolean {
     return false
   }
 
-  // No consecutive hyphens
-  if (slug.includes("--")) {
+  // No consecutive separators
+  if (slug.includes("--") || slug.includes("__") || slug.includes("-_") || slug.includes("_-")) {
     return false
   }
 
@@ -60,7 +60,7 @@ export function isValidSlug(slug: string): boolean {
  * Characters that are NOT allowed in slugs.
  * Used for generating clear error messages.
  */
-export const INVALID_SLUG_CHARS = /[^a-z0-9-]/g
+export const INVALID_SLUG_CHARS = /[^a-z0-9_-]/g
 
 /**
  * Extract @mentions from message content.
@@ -95,7 +95,7 @@ export function hasMention(content: string, slug: string): boolean {
 
   // Build a specific pattern for this slug
   // Must be preceded by @ and followed by non-slug character or end
-  const pattern = new RegExp(`@${escapeRegex(slug)}(?![a-z0-9-])`)
+  const pattern = new RegExp(`@${escapeRegex(slug)}(?![a-z0-9_-])`)
   return pattern.test(content)
 }
 

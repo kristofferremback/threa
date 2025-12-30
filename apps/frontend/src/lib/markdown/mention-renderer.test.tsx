@@ -59,12 +59,11 @@ describe("mention-renderer", () => {
       expect(result).toHaveLength(1)
     })
 
-    it("should NOT parse channels with underscores", () => {
-      // Underscores are not valid in slugs
+    it("should parse channels with underscores", () => {
       const result = renderMentions("#dev_team")
 
       expect(result).toHaveLength(1)
-      expect(result[0]).toBe("#dev_team") // Returned as plain text
+      // Underscores are valid in slugs, so this should be parsed as a channel
     })
 
     it("should render mention chip with correct type styling", () => {

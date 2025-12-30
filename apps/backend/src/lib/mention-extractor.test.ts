@@ -30,11 +30,10 @@ describe("mention-extractor", () => {
       expect(result).toEqual([{ slug: "customer-support", position: 4 }])
     })
 
-    it("should NOT extract mentions with underscores", () => {
-      // Underscores are not valid in slugs
+    it("should extract mentions with underscores", () => {
       const result = extractMentions("Ask @tech_lead for help")
 
-      expect(result).toEqual([])
+      expect(result).toEqual([{ slug: "tech_lead", position: 4 }])
     })
 
     it("should handle mentions at start of message", () => {

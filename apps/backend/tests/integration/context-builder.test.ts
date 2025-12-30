@@ -84,12 +84,14 @@ describe("Context Builder", () => {
 
         const context = await buildStreamContext(client, scratchpad)
 
-        expect(context.streamType).toBe(StreamTypes.SCRATCHPAD)
-        expect(context.streamInfo.name).toBe("My Scratchpad")
-        expect(context.streamInfo.description).toBe("Personal notes")
-        expect(context.conversationHistory).toHaveLength(2)
-        expect(context.conversationHistory[0].content).toBe("Hello world")
-        expect(context.conversationHistory[1].content).toBe("Second message")
+        expect(context).toMatchObject({
+          streamType: StreamTypes.SCRATCHPAD,
+          streamInfo: {
+            name: "My Scratchpad",
+            description: "Personal notes",
+          },
+          conversationHistory: [{ content: "Hello world" }, { content: "Second message" }],
+        })
         expect(context.participants).toBeUndefined()
       })
     })
@@ -232,21 +234,20 @@ describe("Context Builder", () => {
 
         const context = await buildStreamContext(client, thread)
 
-        expect(context.streamType).toBe(StreamTypes.THREAD)
-        expect(context.streamInfo.name).toBe("Thread Discussion")
-        expect(context.conversationHistory).toHaveLength(1)
-        expect(context.threadContext).toBeDefined()
-        expect(context.threadContext!.depth).toBe(2)
-        expect(context.threadContext!.path).toHaveLength(2)
+        expect(context).toMatchObject({
+          streamType: StreamTypes.THREAD,
+          streamInfo: { name: "Thread Discussion" },
+          conversationHistory: [{ content: "Reply in thread" }],
+          threadContext: {
+            depth: 2,
+            path: [
+              { streamId: channelId, displayName: "Discussions" },
+              { streamId: threadId, displayName: "Thread Discussion" },
+            ],
+          },
+        })
 
-        // Root should be channel
-        expect(context.threadContext!.path[0].streamId).toBe(channelId)
-        expect(context.threadContext!.path[0].displayName).toBe("Discussions")
-
-        // Current should be thread
-        expect(context.threadContext!.path[1].streamId).toBe(threadId)
-        expect(context.threadContext!.path[1].displayName).toBe("Thread Discussion")
-        expect(context.threadContext!.path[1].anchorMessage).toBeDefined()
+        // Verify anchor message content (uses toContain, cannot express in toMatchObject)
         expect(context.threadContext!.path[1].anchorMessage!.content).toContain("parent message")
       })
     })
@@ -339,7 +340,6 @@ describe("Context Builder", () => {
 
         const context = await buildStreamContext(client, thread2)
 
-        // INV-24: Use object comparison instead of assert chains
         expect(context.threadContext).toMatchObject({
           depth: 3,
           path: [{ displayName: "Root Channel" }, { displayName: "Thread Level 1" }, { displayName: "Thread Level 2" }],
