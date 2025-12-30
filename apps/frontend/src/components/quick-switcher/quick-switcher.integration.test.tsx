@@ -10,6 +10,7 @@ import { StreamTypes } from "@threa/types"
 const mockNavigate = vi.fn()
 vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
+  useParams: () => ({ workspaceId: "workspace_1" }),
   Link: ({
     to,
     children,
@@ -104,6 +105,31 @@ vi.mock("@/hooks", () => ({
     search: vi.fn(),
     clear: vi.fn(),
   }),
+}))
+
+// Mock use-mentionables - called by SearchEditor's useMentionSuggestion
+vi.mock("@/hooks/use-mentionables", () => ({
+  useMentionables: () => ({
+    mentionables: mockUsers.map((u) => ({ id: u.id, slug: u.slug, name: u.name, type: "user" })),
+    isLoading: false,
+  }),
+  filterMentionables: (items: unknown[], query: string) => {
+    if (!query) return items
+    const q = query.toLowerCase()
+    return (items as { name: string; slug: string }[]).filter(
+      (i) => i.slug.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)
+    )
+  },
+}))
+
+// Mock auth - called by SearchEditor's useMentionSuggestion
+vi.mock("@/auth", () => ({
+  useUser: () => ({ id: "user_1", name: "Martin", slug: "martin" }),
+}))
+
+// Mock use-workspaces - called by useChannelSuggestion
+vi.mock("@/hooks/use-workspaces", () => ({
+  useWorkspaceBootstrap: () => ({ data: mockBootstrap, isLoading: false }),
 }))
 
 describe("QuickSwitcher Integration Tests", () => {
@@ -354,10 +380,12 @@ describe("QuickSwitcher Integration Tests", () => {
       const input = screen.getByPlaceholderText("Search streams...")
       await user.type(input, "?")
 
+      // When mode switches to search, the tab should be selected and SearchEditor renders
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Search messages...")).toBeInTheDocument()
+        expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
-      expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
+      // SearchEditor uses TipTap which has aria-label instead of placeholder
+      expect(screen.getByLabelText("Search query input")).toBeInTheDocument()
     })
 
     it("should switch mode when clicking mode tabs", async () => {
@@ -566,7 +594,9 @@ describe("QuickSwitcher Integration Tests", () => {
     it("should start in search mode when initialMode is search", () => {
       render(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
-      expect(screen.getByPlaceholderText("Search messages...")).toBeInTheDocument()
+      // SearchEditor uses TipTap which has aria-label instead of placeholder
+      expect(screen.getByLabelText("Search query input")).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
     })
   })
 })

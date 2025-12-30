@@ -9,6 +9,7 @@ import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
 import { ModeTabs } from "./mode-tabs"
+import { SearchEditor, type SearchEditorRef } from "./search-editor"
 import type { CommandContext, InputRequest } from "./commands"
 import type { QuickSwitcherItem } from "./types"
 import { clamp } from "@/lib/math-utils"
@@ -68,6 +69,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const [inputValue, setInputValue] = useState("")
   const [focusedTabIndex, setFocusedTabIndex] = useState<number | null>(null)
   const [showEscapeHint, setShowEscapeHint] = useState(false)
+  const [isSuggestionPopoverActive, setIsSuggestionPopoverActive] = useState(false)
 
   const mode = deriveMode(query)
   const displayQuery = getDisplayQuery(query, mode)
@@ -75,6 +77,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const searchEditorRef = useRef<SearchEditorRef>(null)
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
@@ -162,7 +165,11 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       setSelectedIndex(0)
       setFocusedTabIndex(null)
       requestAnimationFrame(() => {
-        inputRef.current?.focus()
+        if (initialMode === "search") {
+          searchEditorRef.current?.focus()
+        } else {
+          inputRef.current?.focus()
+        }
       })
     }
   }, [open, initialMode])
@@ -198,9 +205,13 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const focusInput = useCallback(() => {
     setFocusedTabIndex(null)
     requestAnimationFrame(() => {
-      inputRef.current?.focus()
+      if (mode === "search") {
+        searchEditorRef.current?.focus()
+      } else {
+        inputRef.current?.focus()
+      }
     })
-  }, [])
+  }, [mode])
 
   const handleModeChange = useCallback(
     (newMode: QuickSwitcherMode) => {
@@ -241,6 +252,11 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         ref={dialogRef}
         className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
         onEscapeKeyDown={(e) => {
+          // When suggestion popover is open, TipTap handles Escape to close popover
+          if (isSuggestionPopoverActive) {
+            e.preventDefault()
+            return
+          }
           // When in inputRequest mode, Escape returns to command list instead of closing
           if (inputRequest) {
             e.preventDefault()
@@ -252,6 +268,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         }}
         onKeyDown={(e) => {
           const isMod = e.metaKey || e.ctrlKey
+          // When suggestion popover is open, let TipTap handle keyboard events
+          if (isSuggestionPopoverActive) return
+
           // Global arrow key navigation - works even when focus is on tabs
           // Refocus input so Enter works on items (not mode tabs)
           switch (true) {
@@ -281,23 +300,38 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-          <input
-            ref={inputRef}
-            value={inputRequest ? inputValue : query}
-            onChange={(e) => {
-              if (inputRequest) {
-                setInputValue(e.target.value)
-              } else {
-                setQuery(e.target.value)
+          {mode === "search" && !inputRequest ? (
+            <SearchEditor
+              ref={searchEditorRef}
+              value={displayQuery}
+              onChange={(value) => {
+                // Keep the ? prefix for mode detection
+                setQuery(`? ${value}`)
                 setSelectedIndex(0)
-              }
-            }}
-            onKeyDown={handleInputKeyDown}
-            placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
-            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            autoFocus
-            aria-label={inputRequest ? "Command input" : "Quick switcher input"}
-          />
+              }}
+              onPopoverActiveChange={setIsSuggestionPopoverActive}
+              placeholder={MODE_PLACEHOLDERS.search}
+              autoFocus
+            />
+          ) : (
+            <input
+              ref={inputRef}
+              value={inputRequest ? inputValue : query}
+              onChange={(e) => {
+                if (inputRequest) {
+                  setInputValue(e.target.value)
+                } else {
+                  setQuery(e.target.value)
+                  setSelectedIndex(0)
+                }
+              }}
+              onKeyDown={handleInputKeyDown}
+              placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
+              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              autoFocus
+              aria-label={inputRequest ? "Command input" : "Quick switcher input"}
+            />
+          )}
         </div>
 
         {/* Mode tabs - only show when not in input request mode */}
