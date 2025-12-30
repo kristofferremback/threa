@@ -252,12 +252,19 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         onKeyDown={(e) => {
           const isMod = e.metaKey || e.ctrlKey
           // Global arrow key navigation - works even when focus is on tabs
+          // Refocus input so Enter works on items (not mode tabs)
           if (e.key === "ArrowDown" && !inputRequest) {
             e.preventDefault()
             setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev))
+            if (focusedTabIndex !== null) {
+              focusInput()
+            }
           } else if (e.key === "ArrowUp" && !inputRequest) {
             e.preventDefault()
             setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
+            if (focusedTabIndex !== null) {
+              focusInput()
+            }
           } else if (e.key === "Enter" && !inputRequest && focusedTabIndex === null) {
             e.preventDefault()
             const item = items[selectedIndex]
