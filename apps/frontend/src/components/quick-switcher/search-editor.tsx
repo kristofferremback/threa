@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils"
 export interface SearchEditorProps {
   value: string
   onChange: (value: string) => void
+  /** Called when text is pasted, with the normalized pasted text */
+  onPaste?: (text: string) => void
   onSubmit?: () => void
   onPopoverActiveChange?: (active: boolean) => void
   placeholder?: string
@@ -51,6 +53,7 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   {
     value,
     onChange,
+    onPaste,
     onSubmit,
     onPopoverActiveChange,
     placeholder = "Search...",
@@ -196,18 +199,22 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
         }
         return false
       },
-      handlePaste: (view, event) => {
-        // Paste as plain text
+      handlePaste: (_view, event) => {
+        // Paste as plain text with prefix normalization
         const text = event.clipboardData?.getData("text/plain")
-        if (text) {
+        if (text && onPaste) {
           event.preventDefault()
-          // Remove any leading ? characters (including multiples like "??" or "? ?")
-          // since search mode is already implied
+          // Normalize multiple mode prefixes to one: "?? food" → "? food", "> > cmd" → "> cmd"
+          // But keep the prefix so mode detection works (pasting "food" should switch to stream mode)
           const normalized = text
-            .trim()
-            .replace(/^([?\s]+)/, "")
-            .trim()
-          view.dispatch(view.state.tr.insertText(normalized))
+            .replace(/^([?>][\s?>]*)+/, (match) => {
+              const prefix = match.trim()[0]
+              return prefix ? `${prefix} ` : ""
+            })
+            .trimEnd()
+          // Call onPaste with full normalized text (including any prefix)
+          // Parent handles mode switching based on prefix
+          onPaste(normalized)
           return true
         }
         return false

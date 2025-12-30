@@ -93,32 +93,44 @@ describe("paste prefix normalization", () => {
 
 describe("SearchEditor paste prefix normalization", () => {
   /**
-   * SearchEditor strips the ? prefix entirely since we're already in search mode.
-   * The query state adds the "? " prefix back via onChange.
+   * SearchEditor normalizes prefixes but keeps them for mode detection.
+   * Pasting "food" without prefix should switch to stream mode.
+   * Pasting "? food" should stay in search mode.
    */
   function normalizeSearchEditorPaste(text: string): string {
     // This is the logic from SearchEditor's handlePaste
     return text
-      .trim()
-      .replace(/^([?\s]+)/, "")
-      .trim()
+      .replace(/^([?>][\s?>]*)+/, (match) => {
+        const prefix = match.trim()[0]
+        return prefix ? `${prefix} ` : ""
+      })
+      .trimEnd()
   }
 
-  it("should strip leading ? from pasted text", () => {
-    expect(normalizeSearchEditorPaste("? hello")).toBe("hello")
+  it("should normalize ?? to ? (keeps prefix for mode detection)", () => {
+    expect(normalizeSearchEditorPaste("?? hello")).toBe("? hello")
   })
 
-  it("should strip multiple ? from pasted text", () => {
-    expect(normalizeSearchEditorPaste("?? hello")).toBe("hello")
+  it("should normalize ? ? to ? (keeps prefix for mode detection)", () => {
+    expect(normalizeSearchEditorPaste("? ? hello")).toBe("? hello")
   })
 
-  it("should strip ? with spaces from pasted text", () => {
-    expect(normalizeSearchEditorPaste("? ? hello")).toBe("hello")
+  it("should keep single ? prefix", () => {
+    expect(normalizeSearchEditorPaste("? hello")).toBe("? hello")
   })
 
-  it("should not strip > from pasted text (not a search prefix)", () => {
-    // Note: > is not stripped because it's not a search mode prefix
-    expect(normalizeSearchEditorPaste("> command")).toBe("> command")
+  it("should normalize >> to >", () => {
+    expect(normalizeSearchEditorPaste(">> command")).toBe("> command")
+  })
+
+  it("should normalize > > to >", () => {
+    expect(normalizeSearchEditorPaste("> > command")).toBe("> command")
+  })
+
+  it("should keep text without prefix as-is (allows mode switch to stream)", () => {
+    // Pasting "food" without prefix should NOT add a prefix
+    // This allows the mode to switch to stream mode
+    expect(normalizeSearchEditorPaste("food")).toBe("food")
   })
 
   it("should preserve filter prefixes like from:@", () => {

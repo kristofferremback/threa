@@ -319,8 +319,14 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
               ref={searchEditorRef}
               value={displayQuery}
               onChange={(value) => {
-                // Keep the ? prefix for mode detection
+                // Normal typing: stay in search mode
                 setQuery(`? ${value}`)
+                setSelectedIndex(0)
+              }}
+              onPaste={(text) => {
+                // Paste: use text directly so mode is determined by prefix (or lack thereof)
+                // "? food" → search mode, "> cmd" → command mode, "food" → stream mode
+                setQuery(text)
                 setSelectedIndex(0)
               }}
               onPopoverActiveChange={setIsSuggestionPopoverActive}
