@@ -10,7 +10,7 @@ interface StreamTypeOption {
 }
 
 interface FilterSelectProps {
-  type: "from" | "is" | "in" | "after" | "before"
+  type: "from" | "with" | "is" | "in" | "after" | "before"
   members: WorkspaceMember[]
   users: User[]
   streams: Stream[]
@@ -31,7 +31,7 @@ export function FilterSelect({ type, members, users, streams, streamTypes, onSel
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [onCancel])
 
-  if (type === "from") {
+  if (type === "from" || type === "with") {
     return <UserSelect members={members} users={users} onSelect={onSelect} />
   }
 

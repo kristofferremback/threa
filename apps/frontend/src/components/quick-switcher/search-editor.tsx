@@ -7,11 +7,13 @@ import { useSearchMentionSuggestion } from "@/components/editor/triggers/use-sea
 import { useFilterTypeSuggestion } from "@/components/editor/triggers/use-filter-type-suggestion"
 import { useDateFilterSuggestion } from "@/components/editor/triggers/use-date-filter-suggestion"
 import { useFromFilterSuggestion } from "@/components/editor/triggers/use-from-filter-suggestion"
+import { useWithFilterSuggestion } from "@/components/editor/triggers/use-with-filter-suggestion"
 import { useInUserFilterSuggestion } from "@/components/editor/triggers/use-in-user-filter-suggestion"
 import { useInChannelFilterSuggestion } from "@/components/editor/triggers/use-in-channel-filter-suggestion"
 import { FilterTypeExtension } from "@/components/editor/triggers/filter-type-extension"
 import { DateFilterExtension } from "@/components/editor/triggers/date-filter-extension"
 import { FromFilterExtension } from "@/components/editor/triggers/from-filter-extension"
+import { WithFilterExtension } from "@/components/editor/triggers/with-filter-extension"
 import { InUserFilterExtension } from "@/components/editor/triggers/in-user-filter-extension"
 import { InChannelFilterExtension } from "@/components/editor/triggers/in-channel-filter-extension"
 import { SearchMentionExtension } from "@/components/editor/triggers/search-mention-extension"
@@ -85,6 +87,11 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     isActive: fromFilterActive,
   } = useFromFilterSuggestion()
   const {
+    suggestionConfig: withFilterConfig,
+    renderWithFilterList,
+    isActive: withFilterActive,
+  } = useWithFilterSuggestion()
+  const {
     suggestionConfig: inUserFilterConfig,
     renderInUserFilterList,
     isActive: inUserFilterActive,
@@ -102,6 +109,7 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     filterTypeActive ||
     dateFilterActive ||
     fromFilterActive ||
+    withFilterActive ||
     inUserFilterActive ||
     inChannelFilterActive
   isPopoverActiveRef.current = isPopoverActive
@@ -160,6 +168,10 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     // from:@ filter - insert "from:@slug " as plain text
     FromFilterExtension.configure({
       suggestion: fromFilterConfig,
+    }),
+    // with:@ filter - insert "with:@slug " as plain text (stream member filter)
+    WithFilterExtension.configure({
+      suggestion: withFilterConfig,
     }),
     // in:@ filter - insert "in:@slug " as plain text (DM filter)
     InUserFilterExtension.configure({
@@ -264,6 +276,7 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
       {renderFilterTypeList()}
       {renderDateFilterList()}
       {renderFromFilterList()}
+      {renderWithFilterList()}
       {renderInUserFilterList()}
       {renderInChannelFilterList()}
     </div>

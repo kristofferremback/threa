@@ -19,6 +19,7 @@ import {
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: "from", label: "From user", icon: <User className="h-4 w-4" /> },
+  { type: "with", label: "With user", icon: <User className="h-4 w-4" /> },
   { type: "is", label: "Stream type", icon: <Hash className="h-4 w-4" /> },
   { type: "in", label: "In stream", icon: <MessageSquare className="h-4 w-4" /> },
   { type: "after", label: "After date", icon: <Calendar className="h-4 w-4" /> },
@@ -61,6 +62,9 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
       switch (filter.type) {
         case "from":
           filters.from = filter.value
+          break
+        case "with":
+          filters.with = [...(filters.with ?? []), filter.value]
           break
         case "is":
           filters.is = [...(filters.is ?? []), filter.value as StreamType]

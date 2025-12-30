@@ -1,10 +1,10 @@
 /**
  * Parse and serialize search queries with filter support.
  *
- * Supports filters: from:@user, in:#channel, in:@user (DM), is:type, after:date, before:date
+ * Supports filters: from:@user, with:@user, in:#channel, in:@user (DM), is:type, after:date, before:date
  */
 
-export type FilterType = "from" | "in" | "is" | "after" | "before"
+export type FilterType = "from" | "with" | "in" | "is" | "after" | "before"
 
 export interface ParsedFilter {
   type: FilterType
@@ -29,9 +29,9 @@ export function parseSearchQuery(query: string): ParsedQuery {
   const filters: ParsedFilter[] = []
   const parts: string[] = []
 
-  // Match filter patterns: from:@slug, in:#slug, in:@slug, is:type, after:date, before:date
+  // Match filter patterns: from:@slug, with:@slug, in:#slug, in:@slug, is:type, after:date, before:date
   // Using regex to find all filters while preserving order
-  const filterRegex = /\b(from:@|in:#|in:@|is:|after:|before:)(\S*)/g
+  const filterRegex = /\b(from:@|with:@|in:#|in:@|is:|after:|before:)(\S*)/g
 
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -70,6 +70,8 @@ function extractFilterType(prefix: string): FilterType | null {
   switch (prefix) {
     case "from:@":
       return "from"
+    case "with:@":
+      return "with"
     case "in:#":
     case "in:@":
       return "in"
@@ -119,6 +121,9 @@ export function addFilterToQuery(query: string, type: FilterType, value: string)
     case "from":
       raw = `from:@${value}`
       break
+    case "with":
+      raw = `with:@${value}`
+      break
     case "in":
       // Determine if it's a channel or user based on value prefix or content
       raw = value.startsWith("#") ? `in:${value}` : `in:@${value}`
@@ -144,6 +149,8 @@ export function addFilterToQuery(query: string, type: FilterType, value: string)
 export function getFilterLabel(filter: ParsedFilter): string {
   switch (filter.type) {
     case "from":
+      return `@${filter.value}`
+    case "with":
       return `@${filter.value}`
     case "in":
       return filter.raw.startsWith("in:#") ? `#${filter.value}` : `@${filter.value}`
