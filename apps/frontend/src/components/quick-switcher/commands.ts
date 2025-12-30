@@ -43,6 +43,7 @@ export const commands: Command[] = [
         closeDialog()
         navigate(`/w/${workspaceId}/s/${draftId}`)
       } catch (error) {
+        console.error("Failed to create scratchpad:", error)
         toast.error("Failed to create scratchpad")
       }
     },
@@ -72,6 +73,7 @@ export const commands: Command[] = [
             closeDialog()
             navigate(`/w/${workspaceId}/s/${stream.id}`)
           } catch (error) {
+            console.error("Failed to create channel:", error)
             toast.error("Failed to create channel")
           }
         },

@@ -134,7 +134,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   })
 
   // Select the current mode's result
-  const currentResult = mode === "stream" ? streamResult : mode === "command" ? commandResult : searchResult
+  const resultByMode = { stream: streamResult, command: commandResult, search: searchResult }
+  const currentResult = resultByMode[mode]
   const items = currentResult.items
 
   // Reset selection when items change
@@ -312,8 +313,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         )}
 
         {/* Escape hint - shown after 2s to help users with Vimium or similar */}
+        {/* Uses absolute positioning to avoid layout shift (INV-21) */}
         {showEscapeHint && (
-          <div className="px-3 py-1.5 text-xs text-muted-foreground border-t text-center animate-in fade-in duration-500">
+          <div className="absolute -bottom-8 left-0 right-0 text-xs text-muted-foreground/80 text-center animate-in fade-in duration-500">
             Tip: Use <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+[</kbd> or click outside to close
           </div>
         )}
