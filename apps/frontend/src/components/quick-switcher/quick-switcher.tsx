@@ -132,9 +132,16 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     commandContext,
   })
 
+  // Handler for search mode query changes (from filter badge removal/addition)
+  const handleSearchQueryChange = useCallback((newDisplayQuery: string) => {
+    setQuery(`? ${newDisplayQuery}`)
+    setSelectedIndex(0)
+  }, [])
+
   const searchResult = useSearchItems({
     workspaceId,
     query: displayQuery,
+    onQueryChange: handleSearchQueryChange,
     closeDialog: handleClose,
   })
 

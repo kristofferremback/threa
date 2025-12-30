@@ -24,8 +24,9 @@ export interface FromFilterOptions {
 }
 
 /**
- * Custom match function for `from:@` trigger.
- * Detects when user types `from:@` followed by optional characters.
+ * Custom match function for `from:` trigger.
+ * Detects when user types `from:` followed by optional `@` and characters.
+ * This allows both `from:martin` and `from:@martin` to work.
  */
 function findFromFilterMatch(config: {
   char: string
@@ -39,13 +40,14 @@ function findFromFilterMatch(config: {
   // Get text from start of text block to cursor
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
-  // Match `from:@` at word boundary (start of text or after whitespace)
-  const match = textBefore.match(/(?:^|\s)(from:@)(\S*)$/)
+  // Match `from:` at word boundary, optionally followed by `@`
+  // Examples: "from:", "from:@", "from:mar", "from:@mar"
+  const match = textBefore.match(/(?:^|\s)(from:@?)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]
-  const triggerPart = match[1] // "from:@"
-  const query = match[2] || "" // characters after "from:@"
+  const triggerPart = match[1] // "from:" or "from:@"
+  const query = match[2] || "" // characters after trigger
 
   // Calculate positions relative to document
   const matchStart = $position.pos - fullMatch.length + (fullMatch.startsWith(" ") ? 1 : 0)
@@ -79,7 +81,7 @@ export const FromFilterExtension = Extension.create<FromFilterOptions>({
       Suggestion({
         editor: this.editor,
         pluginKey: FromFilterPluginKey,
-        char: "from:@",
+        char: "from:",
         allowSpaces: false,
         findSuggestionMatch: findFromFilterMatch,
         ...this.options.suggestion,

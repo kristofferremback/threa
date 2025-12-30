@@ -24,8 +24,9 @@ export interface InUserFilterOptions {
 }
 
 /**
- * Custom match function for `in:@` trigger.
- * Detects when user types `in:@` followed by optional characters.
+ * Custom match function for `in:@` trigger (for DM filtering).
+ * Requires `in:@` specifically to distinguish from channel filter `in:#`.
+ * Examples: "in:@", "in:@mar", "in:@martin"
  */
 function findInUserFilterMatch(config: {
   char: string
@@ -40,6 +41,7 @@ function findInUserFilterMatch(config: {
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
   // Match `in:@` at word boundary (start of text or after whitespace)
+  // Note: We specifically require @ here to distinguish from in:# (channel filter)
   const match = textBefore.match(/(?:^|\s)(in:@)(\S*)$/)
   if (!match) return null
 

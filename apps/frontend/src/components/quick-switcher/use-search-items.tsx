@@ -9,14 +9,13 @@ import type { SearchFilters } from "@/api"
 import type { StreamType } from "@threa/types"
 import { FilterSelect } from "./filter-select"
 import type { ModeResult, QuickSwitcherItem } from "./types"
-
-type FilterType = "from" | "is" | "in" | "after" | "before"
-
-interface ActiveFilter {
-  type: FilterType
-  value: string
-  label: string
-}
+import {
+  parseSearchQuery,
+  removeFilterFromQuery,
+  addFilterToQuery,
+  getFilterLabel,
+  type FilterType,
+} from "./search-query-parser"
 
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: "from", label: "From user", icon: <User className="h-4 w-4" /> },
@@ -36,25 +35,29 @@ const STREAM_TYPE_OPTIONS: { value: StreamType; label: string }[] = [
 interface UseSearchItemsParams {
   workspaceId: string
   query: string
+  onQueryChange: (query: string) => void
   closeDialog: () => void
 }
 
-export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchItemsParams): ModeResult {
+export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog }: UseSearchItemsParams): ModeResult {
   const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
 
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
   const members = useMemo(() => bootstrap?.members ?? [], [bootstrap?.members])
   const users = useMemo(() => bootstrap?.users ?? [], [bootstrap?.users])
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
+  // Parse filters from query string (single source of truth)
+  const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])
+
+  // Build API filters from parsed filters
   const buildFilters = useCallback((): SearchFilters => {
     const filters: SearchFilters = {}
 
-    for (const filter of activeFilters) {
+    for (const filter of parsedFilters) {
       switch (filter.type) {
         case "from":
           filters.from = filter.value
@@ -75,32 +78,36 @@ export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchIte
     }
 
     return filters
-  }, [activeFilters])
+  }, [parsedFilters])
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (query.trim() || activeFilters.length > 0) {
-        search(query, buildFilters())
+      if (searchText.trim() || parsedFilters.length > 0) {
+        search(searchText, buildFilters())
       } else {
         clear()
       }
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [query, activeFilters, search, clear, buildFilters])
+  }, [searchText, parsedFilters, search, clear, buildFilters])
 
   const handleAddFilter = (type: FilterType) => {
     setAddingFilter(type)
   }
 
-  const handleFilterSelect = (value: string, label: string) => {
+  const handleFilterSelect = (value: string, _label: string) => {
     if (!addingFilter) return
-    setActiveFilters((prev) => [...prev, { type: addingFilter, value, label }])
+    // Add filter to query string (two-way sync)
+    const newQuery = addFilterToQuery(query, addingFilter, value)
+    onQueryChange(newQuery)
     setAddingFilter(null)
   }
 
   const handleRemoveFilter = (index: number) => {
-    setActiveFilters((prev) => prev.filter((_, i) => i !== index))
+    // Remove filter from query string (two-way sync)
+    const newQuery = removeFilterFromQuery(query, index)
+    onQueryChange(newQuery)
   }
 
   const getFilterIcon = (type: FilterType) => {
@@ -127,12 +134,12 @@ export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchIte
 
   const header = (
     <>
-      {(activeFilters.length > 0 || addingFilter) && (
+      {(parsedFilters.length > 0 || addingFilter) && (
         <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-          {activeFilters.map((filter, index) => (
+          {parsedFilters.map((filter, index) => (
             <Badge key={index} variant="secondary" className="gap-1 pr-1">
               {getFilterIcon(filter.type)}
-              <span className="text-xs">{filter.label}</span>
+              <span className="text-xs">{getFilterLabel(filter)}</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -181,7 +188,7 @@ export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchIte
   return {
     items,
     isLoading,
-    emptyMessage: query.trim() || activeFilters.length > 0 ? "No results found." : undefined,
+    emptyMessage: query.trim() || parsedFilters.length > 0 ? "No results found." : undefined,
     header,
   }
 }
