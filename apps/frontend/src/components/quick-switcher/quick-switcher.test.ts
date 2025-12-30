@@ -1,21 +1,5 @@
 import { describe, it, expect } from "vitest"
-
-// Mode detection logic extracted for testing
-function deriveMode(query: string): "stream" | "command" | "search" {
-  if (query.startsWith(">")) return "command"
-  if (query.startsWith("?")) return "search"
-  return "stream"
-}
-
-function getDisplayQuery(query: string, mode: "stream" | "command" | "search"): string {
-  if (mode === "command" && query.startsWith(">")) {
-    return query.slice(1).trimStart()
-  }
-  if (mode === "search" && query.startsWith("?")) {
-    return query.slice(1).trimStart()
-  }
-  return query
-}
+import { deriveMode, getDisplayQuery } from "./quick-switcher"
 
 describe("QuickSwitcher mode detection", () => {
   describe("deriveMode", () => {

@@ -44,40 +44,46 @@ export function useStreamItems(context: ModeContext): ModeResult {
     const dms = filteredStreams.filter((s) => s.type === StreamTypes.DM)
 
     for (const stream of scratchpads) {
+      const href = `/w/${workspaceId}/s/${stream.id}`
       result.push({
         id: stream.id,
         label: getStreamDisplayName(stream),
         icon: STREAM_ICONS[stream.type],
         group: "Scratchpads",
+        href,
         onSelect: () => {
           closeDialog()
-          navigate(`/w/${workspaceId}/s/${stream.id}`)
+          navigate(href)
         },
       })
     }
 
     for (const stream of channels) {
+      const href = `/w/${workspaceId}/s/${stream.id}`
       result.push({
         id: stream.id,
         label: getStreamDisplayName(stream),
         icon: STREAM_ICONS[stream.type],
         group: "Channels",
+        href,
         onSelect: () => {
           closeDialog()
-          navigate(`/w/${workspaceId}/s/${stream.id}`)
+          navigate(href)
         },
       })
     }
 
     for (const stream of dms) {
+      const href = `/w/${workspaceId}/s/${stream.id}`
       result.push({
         id: stream.id,
         label: getStreamDisplayName(stream),
         icon: STREAM_ICONS[stream.type],
         group: "Direct Messages",
+        href,
         onSelect: () => {
           closeDialog()
-          navigate(`/w/${workspaceId}/s/${stream.id}`)
+          navigate(href)
         },
       })
     }

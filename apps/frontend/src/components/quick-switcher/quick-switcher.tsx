@@ -38,13 +38,13 @@ const MODE_PLACEHOLDERS: Record<QuickSwitcherMode, string> = {
   search: "Search messages...",
 }
 
-function deriveMode(query: string): QuickSwitcherMode {
+export function deriveMode(query: string): QuickSwitcherMode {
   if (query.startsWith(">")) return "command"
   if (query.startsWith("?")) return "search"
   return "stream"
 }
 
-function getDisplayQuery(query: string, mode: QuickSwitcherMode): string {
+export function getDisplayQuery(query: string, mode: QuickSwitcherMode): string {
   if (mode === "command" && query.startsWith(">")) {
     return query.slice(1).trimStart()
   }
@@ -239,6 +239,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           }
         }}
         onKeyDown={(e) => {
+          const isMod = e.metaKey || e.ctrlKey
           // Global arrow key navigation - works even when focus is on tabs
           if (e.key === "ArrowDown" && !inputRequest) {
             e.preventDefault()
@@ -247,9 +248,16 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             e.preventDefault()
             setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
           } else if (e.key === "Enter" && !inputRequest && focusedTabIndex === null) {
-            // Enter selects item when not focused on tabs
             e.preventDefault()
-            items[selectedIndex]?.onSelect()
+            const item = items[selectedIndex]
+            if (!item) return
+
+            if (isMod && item.href) {
+              // Cmd+Enter opens in new tab
+              window.open(item.href, "_blank")
+            } else {
+              item.onSelect()
+            }
           }
         }}
       >

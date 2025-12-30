@@ -7,6 +7,7 @@ export interface QuickSwitcherItem {
   icon?: React.ComponentType<{ className?: string }>
   description?: string
   group?: string
+  href?: string
   onSelect: () => void
 }
 

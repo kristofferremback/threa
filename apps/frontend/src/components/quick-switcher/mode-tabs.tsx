@@ -24,6 +24,15 @@ export function ModeTabs({
   onTabSelect,
 }: ModeTabsProps) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const isMountedRef = useRef(true)
+
+  // Track mounted state to prevent rAF callbacks after unmount
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Focus the tab when focusedTabIndex changes
   useEffect(() => {
@@ -79,6 +88,7 @@ export function ModeTabs({
             onBlur={() => {
               // Only clear if we're not moving to another tab
               requestAnimationFrame(() => {
+                if (!isMountedRef.current) return
                 const activeElement = document.activeElement
                 const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
                 if (!isTabFocused) {

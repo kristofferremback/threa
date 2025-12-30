@@ -30,7 +30,9 @@ export function RichEditor({
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
+  const [showLinkHint, setShowLinkHint] = useState(false)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const linkHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [, forceUpdate] = useState(0)
   const isInternalUpdate = useRef(false)
 
@@ -211,6 +213,35 @@ export function RichEditor({
     }
   }, [disabled, editor, focus])
 
+  // Show hint when user presses Cmd+K with text selected (former link shortcut)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey
+      if (isMod && e.key.toLowerCase() === "k" && !e.shiftKey) {
+        // Check if editor has text selected
+        if (editor && !editor.state.selection.empty && isFocused) {
+          // Clear any existing timeout
+          if (linkHintTimeoutRef.current) {
+            clearTimeout(linkHintTimeoutRef.current)
+          }
+          setShowLinkHint(true)
+          linkHintTimeoutRef.current = setTimeout(() => {
+            setShowLinkHint(false)
+          }, 4000)
+        }
+      }
+    }
+
+    // Use capture phase to detect before the global quick switcher handler
+    document.addEventListener("keydown", handleKeyDown, true)
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true)
+      if (linkHintTimeoutRef.current) {
+        clearTimeout(linkHintTimeoutRef.current)
+      }
+    }
+  }, [editor, isFocused])
+
   return (
     <div ref={containerRef} className="relative flex-1">
       <EditorToolbar
@@ -232,6 +263,11 @@ export function RichEditor({
       >
         <EditorContent editor={editor} />
       </div>
+      {showLinkHint && (
+        <div className="absolute left-0 right-0 -bottom-7 text-xs text-muted-foreground text-center animate-in fade-in duration-300">
+          Trying to add a link? Link support coming soon!
+        </div>
+      )}
       {renderMentionList()}
       {renderChannelList()}
       {renderCommandList()}

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import { X, Plus, User, Calendar, Hash, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +40,7 @@ interface UseSearchItemsParams {
 }
 
 export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchItemsParams): ModeResult {
+  const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
 
@@ -107,17 +109,21 @@ export function useSearchItems({ workspaceId, query, closeDialog }: UseSearchIte
   }
 
   const items = useMemo((): QuickSwitcherItem[] => {
-    return results.map((result) => ({
-      id: result.id,
-      label: result.content,
-      description: new Date(result.createdAt).toLocaleDateString(),
-      group: "Messages",
-      onSelect: () => {
-        closeDialog()
-        window.location.href = `/w/${workspaceId}/s/${result.streamId}?m=${result.id}`
-      },
-    }))
-  }, [results, workspaceId, closeDialog])
+    return results.map((result) => {
+      const href = `/w/${workspaceId}/s/${result.streamId}?m=${result.id}`
+      return {
+        id: result.id,
+        label: result.content,
+        description: new Date(result.createdAt).toLocaleDateString(),
+        group: "Messages",
+        href,
+        onSelect: () => {
+          closeDialog()
+          navigate(href)
+        },
+      }
+    })
+  }, [results, workspaceId, closeDialog, navigate])
 
   const header = (
     <>
