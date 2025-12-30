@@ -395,15 +395,18 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndUser(client, streamIds, userId))
   }
 
+  // TODO: This is a permission check masquerading as a membership check. "isMember" is
+  // misleading because for threads we actually check root stream membership, not direct
+  // membership. Should be broken out into a proper authz module (e.g., canParticipate,
+  // canRead, canWrite) that encapsulates the permission model cleanly.
   async isMember(streamId: string, userId: string): Promise<boolean> {
     return withClient(this.pool, async (client) => {
-      // Check direct membership first
       const directMember = await StreamMemberRepository.isMember(client, streamId, userId)
       if (directMember) {
         return true
       }
 
-      // For threads, also check membership in the root stream
+      // Threads inherit participation rights from root stream
       const stream = await StreamRepository.findById(client, streamId)
       if (stream?.rootStreamId) {
         return StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
