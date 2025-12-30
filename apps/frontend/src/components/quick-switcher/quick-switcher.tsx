@@ -251,6 +251,13 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       <DialogContent
         ref={dialogRef}
         className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
+        onPointerDownOutside={(e) => {
+          // Prevent closing when clicking on suggestion popover (rendered via portal)
+          const target = e.target as HTMLElement
+          if (target.closest('[role="listbox"]')) {
+            e.preventDefault()
+          }
+        }}
         onEscapeKeyDown={(e) => {
           // When suggestion popover is open, TipTap handles Escape to close popover
           if (isSuggestionPopoverActive) {
