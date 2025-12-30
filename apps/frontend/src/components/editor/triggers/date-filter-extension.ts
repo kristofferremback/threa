@@ -19,6 +19,7 @@ export interface DateFilterItem {
   value: string // ISO date string or relative value
   description: string
   filterType: DateFilterType
+  isCustom?: boolean // True for "Pick a date..." option that opens calendar
 }
 
 /**
@@ -81,6 +82,14 @@ export function getDateFilterOptions(filterType: DateFilterType): DateFilterItem
         description: formatDate(lastYear),
         filterType,
       },
+      {
+        id: "custom",
+        label: "Pick a date...",
+        value: "",
+        description: "Open calendar",
+        filterType,
+        isCustom: true,
+      },
     ]
   } else {
     // "before" - show future-oriented options
@@ -112,6 +121,14 @@ export function getDateFilterOptions(filterType: DateFilterType): DateFilterItem
         value: formatDate(lastMonth),
         description: formatDate(lastMonth),
         filterType,
+      },
+      {
+        id: "custom",
+        label: "Pick a date...",
+        value: "",
+        description: "Open calendar",
+        filterType,
+        isCustom: true,
       },
     ]
   }
