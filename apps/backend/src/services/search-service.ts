@@ -1,8 +1,6 @@
 import { Pool, PoolClient } from "pg"
 import { withClient } from "../db"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "../repositories/search-repository"
-import { StreamRepository } from "../repositories/stream-repository"
-import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { EmbeddingService } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
@@ -13,7 +11,7 @@ import type { StreamType } from "@threa/types"
  */
 export interface SearchFilters {
   authorId?: string // Single author (from:@user)
-  withUserIds?: string[] // Multiple users, AND logic (with:@user)
+  memberIds?: string[] // Multiple users/personas, AND logic (with:@user or with:@persona)
   streamIds?: string[] // Stream IDs (in:#channel)
   streamTypes?: StreamType[] // Stream types, OR logic (is:type)
   before?: Date // Exclusive (<)
@@ -115,6 +113,7 @@ export class SearchService {
 
   /**
    * Get stream IDs the user can access, optionally filtered by search filters.
+   * Uses combined query for access control + member filtering.
    */
   private async getAccessibleStreamIds(
     client: PoolClient,
@@ -122,80 +121,20 @@ export class SearchService {
     userId: string,
     filters: SearchFilters
   ): Promise<string[]> {
-    // If specific stream IDs provided, verify user has access
+    // Use combined query for access + member filtering
+    const accessibleStreamIds = await SearchRepository.getAccessibleStreamsWithMembers(client, {
+      workspaceId,
+      userId,
+      memberIds: filters.memberIds,
+      streamTypes: filters.streamTypes,
+    })
+
+    // If specific stream IDs requested, filter to those
     if (filters.streamIds && filters.streamIds.length > 0) {
-      return this.filterAccessibleStreams(client, workspaceId, userId, filters.streamIds, filters)
+      const requestedSet = new Set(filters.streamIds)
+      return accessibleStreamIds.filter((id) => requestedSet.has(id))
     }
 
-    // Get all streams user is a member of
-    const memberships = await StreamMemberRepository.list(client, { userId })
-    const memberStreamIds = new Set(memberships.map((m) => m.streamId))
-
-    // Get public streams in workspace
-    const allStreams = await StreamRepository.list(client, workspaceId, {
-      types: filters.streamTypes,
-      userMembershipStreamIds: [...memberStreamIds],
-    })
-
-    // Apply with:user filter - only streams where the specified users are also members
-    let accessibleStreams = allStreams
-    if (filters.withUserIds && filters.withUserIds.length > 0) {
-      accessibleStreams = await this.filterStreamsByUserMembership(client, allStreams, filters.withUserIds)
-    }
-
-    return accessibleStreams.map((s) => s.id)
-  }
-
-  /**
-   * Filter requested stream IDs to only those the user can access.
-   */
-  private async filterAccessibleStreams(
-    client: PoolClient,
-    workspaceId: string,
-    userId: string,
-    requestedStreamIds: string[],
-    filters: SearchFilters
-  ): Promise<string[]> {
-    // Get user memberships
-    const memberships = await StreamMemberRepository.list(client, { userId })
-    const memberStreamIds = new Set(memberships.map((m) => m.streamId))
-
-    // Get public streams in workspace
-    const allStreams = await StreamRepository.list(client, workspaceId, {
-      types: filters.streamTypes,
-      userMembershipStreamIds: [...memberStreamIds],
-    })
-    const accessibleIds = new Set(allStreams.map((s) => s.id))
-
-    // Filter to requested streams that user can access
-    let result = requestedStreamIds.filter((id) => accessibleIds.has(id))
-
-    // Apply with:user filter if present
-    if (filters.withUserIds && filters.withUserIds.length > 0 && result.length > 0) {
-      const validStreamIds = await StreamMemberRepository.filterStreamsWithAllUsers(client, result, filters.withUserIds)
-      result = result.filter((id) => validStreamIds.has(id))
-    }
-
-    return result
-  }
-
-  /**
-   * Filter streams to only those where all specified users are members.
-   * Uses a single batch query instead of N+1 queries.
-   */
-  private async filterStreamsByUserMembership<T extends { id: string }>(
-    client: PoolClient,
-    streams: T[],
-    userIds: string[]
-  ): Promise<T[]> {
-    if (streams.length === 0 || userIds.length === 0) {
-      return streams
-    }
-
-    // Use batch query to find streams where all users are members
-    const streamIds = streams.map((s) => s.id)
-    const validStreamIds = await StreamMemberRepository.filterStreamsWithAllUsers(client, streamIds, userIds)
-
-    return streams.filter((s) => validStreamIds.has(s.id))
+    return accessibleStreamIds
   }
 }

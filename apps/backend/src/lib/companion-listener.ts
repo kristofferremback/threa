@@ -54,6 +54,9 @@ export function createCompanionListener(
         return
       }
 
+      // Capture actorId after null check for type narrowing in async closure
+      const triggeredBy = event.actorId
+
       // Look up stream to check companion mode
       await withClient(pool, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
@@ -106,7 +109,7 @@ export function createCompanionListener(
           streamId,
           messageId: eventPayload.messageId,
           personaId: persona.id,
-          triggeredBy: event.actorId,
+          triggeredBy,
           // No trigger = companion mode
         })
 

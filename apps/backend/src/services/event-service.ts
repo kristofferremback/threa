@@ -5,6 +5,7 @@ import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
+import { StreamPersonaParticipantRepository } from "../repositories/stream-persona-participant-repository"
 import { eventId, messageId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
 
@@ -147,7 +148,12 @@ export class EventService {
         contentFormat: params.contentFormat,
       })
 
-      // 4. Link attachments to message (also sets streamId)
+      // 4. Record persona participation (idempotent)
+      if (params.authorType === "persona") {
+        await StreamPersonaParticipantRepository.recordParticipation(client, params.streamId, params.authorId)
+      }
+
+      // 5. Link attachments to message (also sets streamId)
       if (params.attachmentIds && params.attachmentIds.length > 0) {
         const attached = await AttachmentRepository.attachToMessage(
           client,
@@ -160,14 +166,14 @@ export class EventService {
         }
       }
 
-      // 5. Publish to outbox for real-time delivery
+      // 6. Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
         event: serializeBigInt(event),
       })
 
-      // 6. Publish unread increment to workspace room for sidebar updates
+      // 7. Publish unread increment to workspace room for sidebar updates
       // This is workspace-scoped so all members receive it, then frontend filters
       // by stream membership and excludes the author's own messages
       await OutboxRepository.insert(client, "unread:increment", {
@@ -176,7 +182,7 @@ export class EventService {
         authorId: params.authorId,
       })
 
-      // 7. If this is a thread, update parent message's reply count
+      // 8. If this is a thread, update parent message's reply count
       const stream = await StreamRepository.findById(client, params.streamId)
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)

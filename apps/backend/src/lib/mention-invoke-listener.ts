@@ -60,6 +60,9 @@ export function createMentionInvokeListener(
         return
       }
 
+      // Capture actorId after null check for type narrowing in async closure
+      const triggeredBy = event.actorId
+
       // Extract @mentions from message content
       const mentionSlugs = extractMentionSlugs(eventPayload.content)
       if (mentionSlugs.length === 0) {
@@ -83,7 +86,7 @@ export function createMentionInvokeListener(
             streamId,
             messageId: eventPayload.messageId,
             personaId: persona.id,
-            triggeredBy: event.actorId,
+            triggeredBy,
             trigger: "mention",
           })
 

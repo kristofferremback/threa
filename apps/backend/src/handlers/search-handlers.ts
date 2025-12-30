@@ -7,7 +7,7 @@ import { STREAM_TYPES } from "@threa/types"
 const searchQuerySchema = z.object({
   query: z.string().optional().default(""),
   from: z.string().optional(), // Single author ID
-  with: z.array(z.string()).optional(), // User IDs (AND logic)
+  with: z.array(z.string()).optional(), // User or persona IDs (AND logic)
   in: z.array(z.string()).optional(), // Stream IDs
   is: z.array(z.enum(STREAM_TYPES)).optional(), // Stream types (OR logic)
   before: z.string().datetime().optional(), // Exclusive (<)
@@ -40,8 +40,8 @@ export function createSearchHandlers({ searchService }: Dependencies) {
      *
      * Body:
      * - query: string (optional) - text search terms
-     * - from: string[] (optional) - filter by author user IDs
-     * - with: string[] (optional) - filter to streams where these users are members
+     * - from: string (optional) - filter by author ID
+     * - with: string[] (optional) - filter to streams where these users/personas are members/participants
      * - in: string[] (optional) - filter to specific stream IDs
      * - is: StreamType[] (optional) - filter by stream type
      * - before: ISO datetime (optional) - messages before date
@@ -60,7 +60,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         })
       }
 
-      const { query, from, with: withUsers, in: inStreams, is, before, after, limit } = result.data
+      const { query, from, with: withMembers, in: inStreams, is, before, after, limit } = result.data
 
       const results = await searchService.search({
         workspaceId,
@@ -68,7 +68,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         query,
         filters: {
           authorId: from,
-          withUserIds: withUsers,
+          memberIds: withMembers,
           streamIds: inStreams,
           streamTypes: is,
           before: before ? new Date(before) : undefined,

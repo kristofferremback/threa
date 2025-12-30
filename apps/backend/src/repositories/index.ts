@@ -10,6 +10,9 @@ export type { Stream, StreamType, CompanionMode, InsertStreamParams, UpdateStrea
 export { StreamMemberRepository } from "./stream-member-repository"
 export type { StreamMember, UpdateStreamMemberParams } from "./stream-member-repository"
 
+export { StreamPersonaParticipantRepository } from "./stream-persona-participant-repository"
+export type { StreamPersonaParticipant } from "./stream-persona-participant-repository"
+
 export { StreamEventRepository } from "./stream-event-repository"
 export type { StreamEvent, EventType, InsertEventParams } from "./stream-event-repository"
 
