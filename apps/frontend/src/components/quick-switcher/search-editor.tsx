@@ -15,6 +15,7 @@ export interface SearchEditorProps {
   value: string
   onChange: (value: string) => void
   onSubmit?: () => void
+  onPopoverActiveChange?: (active: boolean) => void
   placeholder?: string
   className?: string
   autoFocus?: boolean
@@ -40,16 +41,41 @@ export interface SearchEditorRef {
  * Visual badges are rendered separately from the parsed query.
  */
 export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(function SearchEditor(
-  { value, onChange, onSubmit, placeholder = "Search...", className, autoFocus = false, disabled = false },
+  {
+    value,
+    onChange,
+    onSubmit,
+    onPopoverActiveChange,
+    placeholder = "Search...",
+    className,
+    autoFocus = false,
+    disabled = false,
+  },
   ref
 ) {
   const isInternalUpdate = useRef(false)
 
   // Trigger suggestions - reuse existing hooks
-  const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion()
-  const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
-  const { suggestionConfig: filterTypeConfig, renderFilterTypeList } = useFilterTypeSuggestion()
-  const { suggestionConfig: dateFilterConfig, renderDateFilterList } = useDateFilterSuggestion()
+  const { suggestionConfig: mentionConfig, renderMentionList, isActive: mentionActive } = useMentionSuggestion()
+  const { suggestionConfig: channelConfig, renderChannelList, isActive: channelActive } = useChannelSuggestion()
+  const {
+    suggestionConfig: filterTypeConfig,
+    renderFilterTypeList,
+    isActive: filterTypeActive,
+  } = useFilterTypeSuggestion()
+  const {
+    suggestionConfig: dateFilterConfig,
+    renderDateFilterList,
+    isActive: dateFilterActive,
+  } = useDateFilterSuggestion()
+
+  // Track combined popover active state
+  const isPopoverActive = mentionActive || channelActive || filterTypeActive || dateFilterActive
+
+  // Notify parent when popover state changes
+  useEffect(() => {
+    onPopoverActiveChange?.(isPopoverActive)
+  }, [isPopoverActive, onPopoverActiveChange])
 
   // Create extensions for search editor
   // Uses plain-text inserting extensions (SearchMention, SearchChannel)

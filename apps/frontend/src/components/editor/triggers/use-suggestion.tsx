@@ -36,6 +36,8 @@ export interface UseSuggestionResult<T> {
   }
   /** Call this in your component to render the suggestion popup */
   renderSuggestionList: () => ReactNode
+  /** Whether the suggestion popup is currently active */
+  isActive: boolean
 }
 
 /**
@@ -112,5 +114,6 @@ export function useSuggestion<T>(config: UseSuggestionConfig<T>): UseSuggestionR
   return {
     suggestionConfig,
     renderSuggestionList,
+    isActive: state !== null,
   }
 }

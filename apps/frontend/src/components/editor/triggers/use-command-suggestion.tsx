@@ -46,7 +46,7 @@ export function useCommandSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList } = useSuggestion<CommandItem>({
+  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<CommandItem>({
     getItems: () => commands,
     filterItems: filterCommands,
     renderList,
@@ -55,5 +55,6 @@ export function useCommandSuggestion() {
   return {
     suggestionConfig,
     renderCommandList: renderSuggestionList,
+    isActive,
   }
 }

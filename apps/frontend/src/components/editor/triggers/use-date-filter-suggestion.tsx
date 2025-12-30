@@ -124,5 +124,6 @@ export function useDateFilterSuggestion() {
   return {
     suggestionConfig,
     renderDateFilterList,
+    isActive: state !== null,
   }
 }

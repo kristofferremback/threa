@@ -51,7 +51,7 @@ export function useChannelSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList } = useSuggestion<ChannelItem>({
+  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<ChannelItem>({
     getItems: () => channels,
     filterItems: filterChannels,
     renderList,
@@ -60,5 +60,6 @@ export function useChannelSuggestion() {
   return {
     suggestionConfig,
     renderChannelList: renderSuggestionList,
+    isActive,
   }
 }
