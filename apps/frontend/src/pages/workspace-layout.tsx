@@ -1,41 +1,77 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Outlet, useParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
-import { PanelProvider } from "@/contexts"
+import { PanelProvider, QuickSwitcherProvider } from "@/contexts"
 import { useSocketEvents } from "@/hooks"
-import { SearchDialog } from "@/components/search"
+import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
 
-  // Subscribe to workspace-level socket events (stream create/update/archive)
   useSocketEvents(workspaceId ?? "")
 
-  // Keyboard shortcut to open search (Cmd+P or Ctrl+P)
+  const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
+    setSwitcherMode(mode)
+    setSwitcherOpen(true)
+  }, [])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      const isMod = e.metaKey || e.ctrlKey
+
+      // Ctrl+[ as vim-style Escape alternative for closing quick switcher
+      if (e.ctrlKey && e.key === "[" && switcherOpen) {
         e.preventDefault()
-        setSearchOpen(true)
+        setSwitcherOpen(false)
+        return
+      }
+
+      // Cmd+Shift+K → Command mode
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        openSwitcher("command")
+        return
+      }
+
+      // Cmd+K → Stream mode (default)
+      if (isMod && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        openSwitcher("stream")
+        return
+      }
+
+      // Cmd+F → Search mode
+      if (isMod && e.key.toLowerCase() === "f") {
+        e.preventDefault()
+        openSwitcher("search")
+        return
       }
     }
 
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [])
+  }, [openSwitcher, switcherOpen])
 
   if (!workspaceId) {
     return null
   }
 
   return (
-    <PanelProvider>
-      <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-        <Outlet />
-      </AppShell>
-      <SearchDialog workspaceId={workspaceId} open={searchOpen} onOpenChange={setSearchOpen} />
-    </PanelProvider>
+    <QuickSwitcherProvider openSwitcher={openSwitcher}>
+      <PanelProvider>
+        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+          <Outlet />
+        </AppShell>
+        <QuickSwitcher
+          workspaceId={workspaceId}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          initialMode={switcherMode}
+        />
+      </PanelProvider>
+    </QuickSwitcherProvider>
   )
 }

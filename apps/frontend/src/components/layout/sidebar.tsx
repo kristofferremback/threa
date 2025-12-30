@@ -21,6 +21,7 @@ import {
   useUnreadCounts,
   workspaceKeys,
 } from "@/hooks"
+import { useQuickSwitcher } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -36,6 +37,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const createStream = useCreateStream(workspaceId)
   const { drafts, createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
+  const { openSwitcher } = useQuickSwitcher()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const totalUnread = getTotalUnreadCount()
@@ -95,11 +97,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => {
-              // Dispatch keyboard event to trigger search
-              document.dispatchEvent(new KeyboardEvent("keydown", { key: "p", metaKey: true }))
-            }}
-            title="Search (⌘P)"
+            onClick={() => openSwitcher("search")}
+            title={`Search (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}F)`}
           >
             <Search className="h-4 w-4" />
           </Button>

@@ -20,7 +20,6 @@ interface FilterSelectProps {
 }
 
 export function FilterSelect({ type, members, users, streams, streamTypes, onSelect, onCancel }: FilterSelectProps) {
-  // Handle escape key to cancel
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -60,7 +59,6 @@ interface UserSelectProps {
 function UserSelect({ members, users, onSelect }: UserSelectProps) {
   const [search, setSearch] = useState("")
 
-  // Create a lookup map for user names
   const userMap = useMemo(() => {
     const map = new Map<string, User>()
     for (const user of users) {
@@ -73,7 +71,6 @@ function UserSelect({ members, users, onSelect }: UserSelectProps) {
     return userMap.get(userId)?.name ?? userId.substring(0, 8)
   }
 
-  // Filter members by user name or ID
   const filtered = useMemo(() => {
     const searchLower = search.toLowerCase()
     return members.filter((m) => {

@@ -30,7 +30,9 @@ export function RichEditor({
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
+  const [showLinkHint, setShowLinkHint] = useState(false)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const linkHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [, forceUpdate] = useState(0)
   const isInternalUpdate = useRef(false)
 
@@ -133,12 +135,6 @@ export function RichEditor({
           onSubmit()
           return true
         }
-        // Cmd/Ctrl+K to open link popover
-        if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault()
-          setLinkPopoverOpen(true)
-          return true
-        }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()
@@ -217,6 +213,36 @@ export function RichEditor({
     }
   }, [disabled, editor, focus])
 
+  // Show hint when user presses Cmd+K with text selected (former link shortcut)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey
+      if (isMod && e.key.toLowerCase() === "k" && !e.shiftKey) {
+        // Check if editor has text selected and focus is within editor container
+        const focusInEditor = containerRef.current?.contains(document.activeElement)
+        if (editor && !editor.state.selection.empty && focusInEditor) {
+          // Clear any existing timeout
+          if (linkHintTimeoutRef.current) {
+            clearTimeout(linkHintTimeoutRef.current)
+          }
+          setShowLinkHint(true)
+          linkHintTimeoutRef.current = setTimeout(() => {
+            setShowLinkHint(false)
+          }, 4000)
+        }
+      }
+    }
+
+    // Use capture phase to detect before the global quick switcher handler
+    document.addEventListener("keydown", handleKeyDown, true)
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true)
+      if (linkHintTimeoutRef.current) {
+        clearTimeout(linkHintTimeoutRef.current)
+      }
+    }
+  }, [editor])
+
   return (
     <div ref={containerRef} className="relative flex-1">
       <EditorToolbar
@@ -237,6 +263,11 @@ export function RichEditor({
         )}
       >
         <EditorContent editor={editor} />
+        {showLinkHint && (
+          <div className="absolute left-1/2 -translate-x-1/2 -top-10 z-50 px-3 py-2 text-xs font-medium bg-popover text-popover-foreground border rounded-md shadow-md animate-in fade-in slide-in-from-bottom-2 duration-200">
+            Trying to add a link? Paste a URL or use the toolbar.
+          </div>
+        )}
       </div>
       {renderMentionList()}
       {renderChannelList()}

@@ -1,0 +1,118 @@
+import { useRef, useEffect } from "react"
+import { cn } from "@/lib/utils"
+import type { QuickSwitcherMode } from "./quick-switcher"
+
+interface ModeTabsProps {
+  currentMode: QuickSwitcherMode
+  onModeChange: (mode: QuickSwitcherMode) => void
+  focusedTabIndex: number | null
+  onFocusedTabIndexChange: (index: number | null) => void
+  onTabSelect: () => void
+}
+
+const MODES: { mode: QuickSwitcherMode; label: string; shortcut: string | null }[] = [
+  { mode: "stream", label: "Stream search", shortcut: null },
+  { mode: "command", label: "Command palette", shortcut: ">" },
+  { mode: "search", label: "Message search", shortcut: "?" },
+]
+
+export function ModeTabs({
+  currentMode,
+  onModeChange,
+  focusedTabIndex,
+  onFocusedTabIndexChange,
+  onTabSelect,
+}: ModeTabsProps) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const isMountedRef = useRef(true)
+
+  // Track mounted state to prevent rAF callbacks after unmount
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  // Focus the tab when focusedTabIndex changes
+  useEffect(() => {
+    if (focusedTabIndex !== null && tabRefs.current[focusedTabIndex]) {
+      tabRefs.current[focusedTabIndex]?.focus()
+    }
+  }, [focusedTabIndex])
+
+  const handleTabKeyDown = (e: React.KeyboardEvent, index: number) => {
+    // Let Tab work naturally for accessibility - browser handles tab order
+    // Arrow keys for quick navigation within tabs
+    switch (true) {
+      case e.key === "ArrowRight":
+        e.preventDefault()
+        const nextIndex = (index + 1) % MODES.length
+        onFocusedTabIndexChange(nextIndex)
+        tabRefs.current[nextIndex]?.focus()
+        break
+      case e.key === "ArrowLeft":
+        e.preventDefault()
+        const prevIndex = (index - 1 + MODES.length) % MODES.length
+        onFocusedTabIndexChange(prevIndex)
+        tabRefs.current[prevIndex]?.focus()
+        break
+      case e.key === "Enter" || e.key === " ":
+        e.preventDefault()
+        const mode = MODES[index].mode
+        onModeChange(mode)
+        onTabSelect()
+        break
+    }
+  }
+
+  const handleTabClick = (mode: QuickSwitcherMode) => {
+    onModeChange(mode)
+    onFocusedTabIndexChange(null)
+    onTabSelect()
+  }
+
+  return (
+    <div className="flex" role="tablist" aria-label="Quick switcher modes">
+      {MODES.map(({ mode, label, shortcut }, index) => {
+        const isSelected = mode === currentMode
+
+        return (
+          <button
+            key={mode}
+            ref={(el) => {
+              tabRefs.current[index] = el
+            }}
+            role="tab"
+            aria-selected={isSelected}
+            tabIndex={0}
+            onClick={() => handleTabClick(mode)}
+            onKeyDown={(e) => handleTabKeyDown(e, index)}
+            onFocus={() => onFocusedTabIndexChange(index)}
+            onBlur={() => {
+              // Only clear if we're not moving to another tab
+              requestAnimationFrame(() => {
+                if (!isMountedRef.current) return
+                const activeElement = document.activeElement
+                const isTabFocused = tabRefs.current.some((ref) => ref === activeElement)
+                if (!isTabFocused) {
+                  onFocusedTabIndexChange(null)
+                }
+              })
+            }}
+            className={cn(
+              "flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              isSelected
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            )}
+          >
+            {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
