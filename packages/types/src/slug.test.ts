@@ -16,6 +16,9 @@ describe("slug validation", () => {
         "tech_lead",
         "hello_world",
         "team_alpha-1",
+        "teamx__alerts-info", // consecutive separators allowed
+        "foo--bar",
+        "a__b",
       ]
 
       for (const slug of validSlugs) {
@@ -32,10 +35,6 @@ describe("slug validation", () => {
         "_abc", // starts with underscore
         "abc-", // ends with hyphen
         "abc_", // ends with underscore
-        "abc--def", // consecutive hyphens
-        "abc__def", // consecutive underscores
-        "abc-_def", // mixed consecutive separators
-        "abc_-def", // mixed consecutive separators
         "ABC", // uppercase
         "aBc", // mixed case
         "hello.world", // dot

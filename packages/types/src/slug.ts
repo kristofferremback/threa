@@ -6,10 +6,9 @@
  *
  * Valid slug characteristics:
  * - Lowercase letters (a-z) and numbers (0-9) only
- * - Hyphens (-) and underscores (_) allowed as word separators
+ * - Hyphens (-) and underscores (_) allowed as separators (consecutive allowed)
  * - Must start with a letter
  * - No leading/trailing separators
- * - No consecutive separators
  * - Max 50 characters
  */
 
@@ -20,9 +19,8 @@ export const SLUG_MAX_LENGTH = 50
  * - Starts with a letter
  * - Followed by alphanumeric characters, hyphens, or underscores
  * - Ends with alphanumeric (no trailing separator)
- * - No consecutive separators (enforced separately for clarity)
  */
-export const SLUG_PATTERN = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/
+export const SLUG_PATTERN = /^[a-z](?:[a-z0-9_-]*[a-z0-9])?$/
 
 /**
  * Pattern for extracting @mentions from text.
@@ -43,17 +41,7 @@ export function isValidSlug(slug: string): boolean {
     return false
   }
 
-  // Check pattern
-  if (!SLUG_PATTERN.test(slug)) {
-    return false
-  }
-
-  // No consecutive separators
-  if (slug.includes("--") || slug.includes("__") || slug.includes("-_") || slug.includes("_-")) {
-    return false
-  }
-
-  return true
+  return SLUG_PATTERN.test(slug)
 }
 
 /**
