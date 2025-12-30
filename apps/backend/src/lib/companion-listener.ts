@@ -66,15 +66,18 @@ export function createCompanionListener(
           return
         }
 
-        if (!stream.companionPersonaId) {
-          logger.warn({ streamId }, "Companion mode on but no persona configured")
-          return
+        // Resolve persona: use stream's configured persona, or fall back to system default
+        let persona = stream.companionPersonaId
+          ? await PersonaRepository.findById(client, stream.companionPersonaId)
+          : null
+
+        // If configured persona is missing or inactive, try system default
+        if (!persona || persona.status !== "active") {
+          persona = await PersonaRepository.getSystemDefault(client)
         }
 
-        // Resolve persona and validate it's active
-        const persona = await PersonaRepository.findById(client, stream.companionPersonaId)
-        if (!persona || persona.status !== "active") {
-          logger.warn({ streamId, personaId: stream.companionPersonaId }, "Companion persona not found or inactive")
+        if (!persona) {
+          logger.warn({ streamId }, "Companion mode on but no active persona available")
           return
         }
 
