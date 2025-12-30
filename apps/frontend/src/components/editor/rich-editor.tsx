@@ -218,8 +218,9 @@ export function RichEditor({
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
       if (isMod && e.key.toLowerCase() === "k" && !e.shiftKey) {
-        // Check if editor has text selected
-        if (editor && !editor.state.selection.empty && isFocused) {
+        // Check if editor has text selected and focus is within editor container
+        const focusInEditor = containerRef.current?.contains(document.activeElement)
+        if (editor && !editor.state.selection.empty && focusInEditor) {
           // Clear any existing timeout
           if (linkHintTimeoutRef.current) {
             clearTimeout(linkHintTimeoutRef.current)
@@ -240,7 +241,7 @@ export function RichEditor({
         clearTimeout(linkHintTimeoutRef.current)
       }
     }
-  }, [editor, isFocused])
+  }, [editor])
 
   return (
     <div ref={containerRef} className="relative flex-1">
@@ -262,12 +263,12 @@ export function RichEditor({
         )}
       >
         <EditorContent editor={editor} />
+        {showLinkHint && (
+          <div className="absolute left-1/2 -translate-x-1/2 -top-10 z-50 px-3 py-2 text-xs font-medium bg-popover text-popover-foreground border rounded-md shadow-md animate-in fade-in slide-in-from-bottom-2 duration-200">
+            Trying to add a link? Paste a URL or use the toolbar.
+          </div>
+        )}
       </div>
-      {showLinkHint && (
-        <div className="absolute left-0 right-0 -bottom-7 text-xs text-muted-foreground text-center animate-in fade-in duration-300">
-          Trying to add a link? Link support coming soon!
-        </div>
-      )}
       {renderMentionList()}
       {renderChannelList()}
       {renderCommandList()}
