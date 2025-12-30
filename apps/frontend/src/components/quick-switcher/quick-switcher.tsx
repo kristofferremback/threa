@@ -24,8 +24,8 @@ interface QuickSwitcherProps {
 
 const MODE_PREFIXES: Record<QuickSwitcherMode, string> = {
   stream: "",
-  command: ">",
-  search: "?",
+  command: "> ",
+  search: "? ",
 }
 
 const MODE_ICONS: Record<QuickSwitcherMode, React.ComponentType<{ className?: string }>> = {
