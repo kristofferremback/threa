@@ -28,67 +28,34 @@ export function useStreamItems(context: ModeContext): ModeResult {
       (s) => s.type === StreamTypes.SCRATCHPAD || s.type === StreamTypes.CHANNEL || s.type === StreamTypes.DM
     )
 
-    const matchesQuery = (stream: Stream) => {
-      if (!query) return true
-      const displayName = getStreamDisplayName(stream).toLowerCase()
-      return displayName.includes(lowerQuery) || stream.id.toLowerCase().includes(lowerQuery)
+    // Score streams by match quality (lower = better)
+    const scoreStream = (stream: Stream): number => {
+      if (!query) return 0
+      const name = getStreamDisplayName(stream).toLowerCase()
+      if (name === lowerQuery) return 0 // Exact match
+      if (name.startsWith(lowerQuery)) return 1 // Starts with
+      if (name.includes(lowerQuery)) return 2 // Contains
+      if (stream.id.toLowerCase().includes(lowerQuery)) return 3 // ID match
+      return Infinity // No match
     }
 
-    const filteredStreams = topLevelStreams.filter(matchesQuery)
-
-    const result: QuickSwitcherItem[] = []
-
-    // Group by type
-    const scratchpads = filteredStreams.filter((s) => s.type === StreamTypes.SCRATCHPAD)
-    const channels = filteredStreams.filter((s) => s.type === StreamTypes.CHANNEL)
-    const dms = filteredStreams.filter((s) => s.type === StreamTypes.DM)
-
-    for (const stream of scratchpads) {
-      const href = `/w/${workspaceId}/s/${stream.id}`
-      result.push({
-        id: stream.id,
-        label: getStreamDisplayName(stream),
-        icon: STREAM_ICONS[stream.type],
-        group: "Scratchpads",
-        href,
-        onSelect: () => {
-          closeDialog()
-          navigate(href)
-        },
+    return topLevelStreams
+      .map((stream) => ({ stream, score: scoreStream(stream) }))
+      .filter(({ score }) => score !== Infinity)
+      .sort((a, b) => a.score - b.score || a.stream.displayName.localeCompare(b.stream.displayName))
+      .map(({ stream }): QuickSwitcherItem => {
+        const href = `/w/${workspaceId}/s/${stream.id}`
+        return {
+          id: stream.id,
+          label: getStreamDisplayName(stream),
+          icon: STREAM_ICONS[stream.type],
+          href,
+          onSelect: () => {
+            closeDialog()
+            navigate(href)
+          },
+        }
       })
-    }
-
-    for (const stream of channels) {
-      const href = `/w/${workspaceId}/s/${stream.id}`
-      result.push({
-        id: stream.id,
-        label: getStreamDisplayName(stream),
-        icon: STREAM_ICONS[stream.type],
-        group: "Channels",
-        href,
-        onSelect: () => {
-          closeDialog()
-          navigate(href)
-        },
-      })
-    }
-
-    for (const stream of dms) {
-      const href = `/w/${workspaceId}/s/${stream.id}`
-      result.push({
-        id: stream.id,
-        label: getStreamDisplayName(stream),
-        icon: STREAM_ICONS[stream.type],
-        group: "Direct Messages",
-        href,
-        onSelect: () => {
-          closeDialog()
-          navigate(href)
-        },
-      })
-    }
-
-    return result
   }, [streams, query, workspaceId, navigate, closeDialog])
 
   return {
