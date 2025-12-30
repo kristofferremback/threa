@@ -42,7 +42,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
     return topLevelStreams
       .map((stream) => ({ stream, score: scoreStream(stream) }))
       .filter(({ score }) => score !== Infinity)
-      .sort((a, b) => a.score - b.score || a.stream.displayName.localeCompare(b.stream.displayName))
+      .sort((a, b) => a.score - b.score || getStreamDisplayName(a.stream).localeCompare(getStreamDisplayName(b.stream)))
       .map(({ stream }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         return {
