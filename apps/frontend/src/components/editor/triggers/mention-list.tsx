@@ -1,4 +1,5 @@
 import { forwardRef } from "react"
+import type { Placement } from "@floating-ui/react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { SuggestionList, type SuggestionListRef } from "./suggestion-list"
@@ -10,6 +11,7 @@ interface MentionListProps {
   items: Mentionable[]
   clientRect: (() => DOMRect | null) | null
   command: (item: Mentionable) => void
+  placement?: Placement
 }
 
 const typeLabels: Record<Mentionable["type"], string> = {
@@ -48,7 +50,7 @@ function MentionItem({ item }: { item: Mentionable }) {
  * Shows users, personas, and broadcast options with keyboard navigation.
  */
 export const MentionList = forwardRef<MentionListRef, MentionListProps>(function MentionList(
-  { items, clientRect, command },
+  { items, clientRect, command, placement },
   ref
 ) {
   return (
@@ -60,6 +62,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(function
       getKey={(item) => item.id}
       ariaLabel="Mention suggestions"
       renderItem={(item) => <MentionItem item={item} />}
+      placement={placement}
     />
   )
 })

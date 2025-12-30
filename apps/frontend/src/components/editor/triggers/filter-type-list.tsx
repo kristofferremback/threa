@@ -16,7 +16,7 @@ interface FilterTypeListProps extends Omit<
 > {}
 
 export const FilterTypeList = forwardRef<SuggestionListRef, FilterTypeListProps>(function FilterTypeList(
-  { items, clientRect, command },
+  { items, clientRect, command, placement },
   ref
 ) {
   const renderItem = useCallback((item: FilterTypeItem) => <FilterTypeItemContent item={item} />, [])
@@ -31,6 +31,7 @@ export const FilterTypeList = forwardRef<SuggestionListRef, FilterTypeListProps>
       ariaLabel="Stream type options"
       width="240px"
       renderItem={renderItem}
+      placement={placement}
     />
   )
 })

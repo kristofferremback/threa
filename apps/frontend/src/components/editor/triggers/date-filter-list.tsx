@@ -9,7 +9,7 @@ interface DateFilterListProps extends Omit<
 > {}
 
 export const DateFilterList = forwardRef<SuggestionListRef, DateFilterListProps>(function DateFilterList(
-  { items, clientRect, command },
+  { items, clientRect, command, placement },
   ref
 ) {
   const renderItem = useCallback((item: DateFilterItem) => <DateFilterItemContent item={item} />, [])
@@ -24,6 +24,7 @@ export const DateFilterList = forwardRef<SuggestionListRef, DateFilterListProps>
       ariaLabel="Date options"
       width="220px"
       renderItem={renderItem}
+      placement={placement}
     />
   )
 })

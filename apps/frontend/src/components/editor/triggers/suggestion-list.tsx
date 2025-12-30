@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react"
-import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
+import { useFloating, offset, flip, shift, autoUpdate, type Placement } from "@floating-ui/react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
@@ -19,6 +19,8 @@ export interface SuggestionListProps<T> {
   ariaLabel: string
   width?: string
   renderItem: (item: T) => ReactNode
+  /** Preferred placement direction. Defaults to "bottom-start". Uses flip() to auto-adjust. */
+  placement?: Placement
 }
 
 /**
@@ -26,7 +28,16 @@ export interface SuggestionListProps<T> {
  * Used as the base for MentionList, ChannelList, and CommandList.
  */
 function SuggestionListInner<T>(
-  { items, clientRect, command, getKey, ariaLabel, width = "w-64", renderItem }: SuggestionListProps<T>,
+  {
+    items,
+    clientRect,
+    command,
+    getKey,
+    ariaLabel,
+    width = "w-64",
+    renderItem,
+    placement = "bottom-start",
+  }: SuggestionListProps<T>,
   ref: React.ForwardedRef<SuggestionListRef>
 ) {
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -44,7 +55,7 @@ function SuggestionListInner<T>(
   }, [selectedIndex])
 
   const { refs, floatingStyles } = useFloating({
-    placement: "bottom-start",
+    placement,
     middleware: [offset(4), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   })
