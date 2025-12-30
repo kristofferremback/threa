@@ -90,3 +90,13 @@ export function filterMentionables(items: Mentionable[], query: string): Mention
     (item) => item.slug.toLowerCase().includes(lowerQuery) || item.name.toLowerCase().includes(lowerQuery)
   )
 }
+
+/**
+ * Filter mentionables for search context.
+ * Excludes broadcast mentions (@channel, @here) since they don't make sense to search for.
+ */
+export function filterSearchMentionables(items: Mentionable[], query: string): Mentionable[] {
+  // Filter out broadcast mentions first
+  const searchableItems = items.filter((item) => item.type !== "broadcast")
+  return filterMentionables(searchableItems, query)
+}

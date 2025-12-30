@@ -326,6 +326,29 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
                 }
               }}
               onKeyDown={handleInputKeyDown}
+              onPaste={(e) => {
+                // Normalize pasted mode prefixes: "?? food" or "? ? food" → "? food"
+                // Same for ">>" or "> >" → "> "
+                const text = e.clipboardData?.getData("text/plain")
+                if (text) {
+                  const normalized = text
+                    .replace(/^([?>][\s?>]*)+/, (match) => {
+                      // Extract the first prefix character and normalize
+                      const prefix = match.trim()[0]
+                      return prefix ? `${prefix} ` : ""
+                    })
+                    .trimEnd()
+                  if (normalized !== text) {
+                    e.preventDefault()
+                    if (inputRequest) {
+                      setInputValue(normalized)
+                    } else {
+                      setQuery(normalized)
+                      setSelectedIndex(0)
+                    }
+                  }
+                }
+              }}
               placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
               className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               autoFocus

@@ -2,11 +2,18 @@ import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
-import { useMentionSuggestion, useChannelSuggestion } from "@/components/editor/triggers"
+import { useChannelSuggestion } from "@/components/editor/triggers"
+import { useSearchMentionSuggestion } from "@/components/editor/triggers/use-search-mention-suggestion"
 import { useFilterTypeSuggestion } from "@/components/editor/triggers/use-filter-type-suggestion"
 import { useDateFilterSuggestion } from "@/components/editor/triggers/use-date-filter-suggestion"
+import { useFromFilterSuggestion } from "@/components/editor/triggers/use-from-filter-suggestion"
+import { useInUserFilterSuggestion } from "@/components/editor/triggers/use-in-user-filter-suggestion"
+import { useInChannelFilterSuggestion } from "@/components/editor/triggers/use-in-channel-filter-suggestion"
 import { FilterTypeExtension } from "@/components/editor/triggers/filter-type-extension"
 import { DateFilterExtension } from "@/components/editor/triggers/date-filter-extension"
+import { FromFilterExtension } from "@/components/editor/triggers/from-filter-extension"
+import { InUserFilterExtension } from "@/components/editor/triggers/in-user-filter-extension"
+import { InChannelFilterExtension } from "@/components/editor/triggers/in-channel-filter-extension"
 import { SearchMentionExtension } from "@/components/editor/triggers/search-mention-extension"
 import { SearchChannelExtension } from "@/components/editor/triggers/search-channel-extension"
 import { cn } from "@/lib/utils"
@@ -54,9 +61,10 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   ref
 ) {
   const isInternalUpdate = useRef(false)
+  const isPopoverActiveRef = useRef(false)
 
-  // Trigger suggestions - reuse existing hooks
-  const { suggestionConfig: mentionConfig, renderMentionList, isActive: mentionActive } = useMentionSuggestion()
+  // Trigger suggestions - use search-specific hooks that exclude broadcast mentions
+  const { suggestionConfig: mentionConfig, renderMentionList, isActive: mentionActive } = useSearchMentionSuggestion()
   const { suggestionConfig: channelConfig, renderChannelList, isActive: channelActive } = useChannelSuggestion()
   const {
     suggestionConfig: filterTypeConfig,
@@ -68,9 +76,32 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     renderDateFilterList,
     isActive: dateFilterActive,
   } = useDateFilterSuggestion()
+  const {
+    suggestionConfig: fromFilterConfig,
+    renderFromFilterList,
+    isActive: fromFilterActive,
+  } = useFromFilterSuggestion()
+  const {
+    suggestionConfig: inUserFilterConfig,
+    renderInUserFilterList,
+    isActive: inUserFilterActive,
+  } = useInUserFilterSuggestion()
+  const {
+    suggestionConfig: inChannelFilterConfig,
+    renderInChannelFilterList,
+    isActive: inChannelFilterActive,
+  } = useInChannelFilterSuggestion()
 
   // Track combined popover active state
-  const isPopoverActive = mentionActive || channelActive || filterTypeActive || dateFilterActive
+  const isPopoverActive =
+    mentionActive ||
+    channelActive ||
+    filterTypeActive ||
+    dateFilterActive ||
+    fromFilterActive ||
+    inUserFilterActive ||
+    inChannelFilterActive
+  isPopoverActiveRef.current = isPopoverActive
 
   // Notify parent when popover state changes
   useEffect(() => {
@@ -123,6 +154,18 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     DateFilterExtension.configure({
       suggestion: dateFilterConfig,
     }),
+    // from:@ filter - insert "from:@slug " as plain text
+    FromFilterExtension.configure({
+      suggestion: fromFilterConfig,
+    }),
+    // in:@ filter - insert "in:@slug " as plain text (DM filter)
+    InUserFilterExtension.configure({
+      suggestion: inUserFilterConfig,
+    }),
+    // in:# filter - insert "in:#slug " as plain text (channel filter)
+    InChannelFilterExtension.configure({
+      suggestion: inChannelFilterConfig,
+    }),
   ]
 
   const editor = useEditor({
@@ -145,7 +188,8 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
       },
       handleKeyDown: (_view, event) => {
         // Enter to submit (unless a suggestion popover is open)
-        if (event.key === "Enter" && !event.shiftKey) {
+        // Check ref because this callback captures stale closure
+        if (event.key === "Enter" && !event.shiftKey && !isPopoverActiveRef.current) {
           event.preventDefault()
           onSubmit?.()
           return true
@@ -157,8 +201,12 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
         const text = event.clipboardData?.getData("text/plain")
         if (text) {
           event.preventDefault()
-          // Normalize ? prefix - remove it since search mode is implied
-          const normalized = text.trim().replace(/^\?/, "").trim()
+          // Remove any leading ? characters (including multiples like "??" or "? ?")
+          // since search mode is already implied
+          const normalized = text
+            .trim()
+            .replace(/^([?\s]+)/, "")
+            .trim()
           view.dispatch(view.state.tr.insertText(normalized))
           return true
         }
@@ -208,6 +256,9 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
       {renderChannelList()}
       {renderFilterTypeList()}
       {renderDateFilterList()}
+      {renderFromFilterList()}
+      {renderInUserFilterList()}
+      {renderInChannelFilterList()}
     </div>
   )
 })
