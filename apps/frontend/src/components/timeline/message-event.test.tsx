@@ -1,12 +1,7 @@
-import { describe, it, expect, vi, beforeAll } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { MessageEvent } from "./message-event"
 import type { StreamEvent } from "@threa/types"
-
-// Mock scrollIntoView which isn't available in jsdom
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn()
-})
 
 // Mock dependencies
 vi.mock("react-router-dom", () => ({

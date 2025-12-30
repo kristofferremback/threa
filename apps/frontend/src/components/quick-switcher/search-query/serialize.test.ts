@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { serialize } from "./serialize"
 import { parse } from "./parse"
-import type { QueryNode, FilterNode, TextNode } from "./types"
+import type { QueryNode } from "./types"
 
 describe("serialize", () => {
   it("should serialize a single text node", () => {
