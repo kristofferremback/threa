@@ -44,21 +44,25 @@ export function ModeTabs({
   const handleTabKeyDown = (e: React.KeyboardEvent, index: number) => {
     // Let Tab work naturally for accessibility - browser handles tab order
     // Arrow keys for quick navigation within tabs
-    if (e.key === "ArrowRight") {
-      e.preventDefault()
-      const nextIndex = (index + 1) % MODES.length
-      onFocusedTabIndexChange(nextIndex)
-      tabRefs.current[nextIndex]?.focus()
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault()
-      const prevIndex = (index - 1 + MODES.length) % MODES.length
-      onFocusedTabIndexChange(prevIndex)
-      tabRefs.current[prevIndex]?.focus()
-    } else if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault()
-      const mode = MODES[index].mode
-      onModeChange(mode)
-      onTabSelect()
+    switch (true) {
+      case e.key === "ArrowRight":
+        e.preventDefault()
+        const nextIndex = (index + 1) % MODES.length
+        onFocusedTabIndexChange(nextIndex)
+        tabRefs.current[nextIndex]?.focus()
+        break
+      case e.key === "ArrowLeft":
+        e.preventDefault()
+        const prevIndex = (index - 1 + MODES.length) % MODES.length
+        onFocusedTabIndexChange(prevIndex)
+        tabRefs.current[prevIndex]?.focus()
+        break
+      case e.key === "Enter" || e.key === " ":
+        e.preventDefault()
+        const mode = MODES[index].mode
+        onModeChange(mode)
+        onTabSelect()
+        break
     }
   }
 

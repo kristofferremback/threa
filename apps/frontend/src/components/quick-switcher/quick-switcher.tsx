@@ -11,6 +11,7 @@ import { ItemList } from "./item-list"
 import { ModeTabs } from "./mode-tabs"
 import type { CommandContext, InputRequest } from "./commands"
 import type { QuickSwitcherItem } from "./types"
+import { clamp } from "@/lib/math-utils"
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
 
@@ -253,23 +254,27 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           const isMod = e.metaKey || e.ctrlKey
           // Global arrow key navigation - works even when focus is on tabs
           // Refocus input so Enter works on items (not mode tabs)
-          if (e.key === "ArrowDown" && !inputRequest) {
-            e.preventDefault()
-            setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev))
-            if (focusedTabIndex !== null) {
-              focusInput()
-            }
-          } else if (e.key === "ArrowUp" && !inputRequest) {
-            e.preventDefault()
-            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev))
-            if (focusedTabIndex !== null) {
-              focusInput()
-            }
-          } else if (e.key === "Enter" && !inputRequest && focusedTabIndex === null) {
-            e.preventDefault()
-            const item = items[selectedIndex]
-            if (!item) return
-            handleSelectItem(item, isMod)
+          switch (true) {
+            case !inputRequest && e.key === "ArrowDown":
+              e.preventDefault()
+              setSelectedIndex((prev) => clamp(prev + 1, 0, items.length - 1))
+              if (focusedTabIndex !== null) {
+                focusInput()
+              }
+              break
+            case !inputRequest && e.key === "ArrowUp":
+              e.preventDefault()
+              setSelectedIndex((prev) => clamp(prev - 1, 0, items.length - 1))
+              if (focusedTabIndex !== null) {
+                focusInput()
+              }
+              break
+            case !inputRequest && e.key === "Enter" && focusedTabIndex === null:
+              e.preventDefault()
+              const item = items[selectedIndex]
+              if (!item) return
+              handleSelectItem(item, isMod)
+              break
           }
         }}
       >
