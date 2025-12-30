@@ -7,7 +7,7 @@ interface ItemListProps {
   items: QuickSwitcherItem[]
   selectedIndex: number
   onSelectIndex: (index: number) => void
-  onSelectWithModifier?: (index: number) => void
+  onSelectItem: (item: QuickSwitcherItem, withModifier: boolean) => void
   isLoading?: boolean
   emptyMessage?: string
 }
@@ -16,7 +16,7 @@ export function ItemList({
   items,
   selectedIndex,
   onSelectIndex,
-  onSelectWithModifier,
+  onSelectItem,
   isLoading,
   emptyMessage,
 }: ItemListProps) {
@@ -55,18 +55,14 @@ export function ItemList({
     {} as Record<string, Array<{ item: QuickSwitcherItem; index: number }>>
   )
 
-  const handleClick = (e: React.MouseEvent, item: QuickSwitcherItem, index: number) => {
+  const handleClick = (e: React.MouseEvent, item: QuickSwitcherItem) => {
     const isModifier = e.metaKey || e.ctrlKey
     if (isModifier && item.href) {
       // Let the browser handle Cmd+click on links natively (opens in new tab)
       return
     }
     e.preventDefault()
-    if (isModifier && onSelectWithModifier) {
-      onSelectWithModifier(index)
-    } else {
-      item.onSelect()
-    }
+    onSelectItem(item, isModifier)
   }
 
   return (
@@ -103,7 +99,7 @@ export function ItemList({
                   data-index={index}
                   className={className}
                   onMouseEnter={() => onSelectIndex(index)}
-                  onClick={(e) => handleClick(e, item, index)}
+                  onClick={(e) => handleClick(e, item)}
                 >
                   {itemContent}
                 </Link>
@@ -116,7 +112,7 @@ export function ItemList({
                 data-index={index}
                 className={className}
                 onMouseEnter={() => onSelectIndex(index)}
-                onClick={(e) => handleClick(e, item, index)}
+                onClick={(e) => handleClick(e, item)}
               >
                 {itemContent}
               </div>

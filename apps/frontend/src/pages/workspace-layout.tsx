@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Outlet, useParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
-import { PanelProvider } from "@/contexts"
+import { PanelProvider, QuickSwitcherProvider } from "@/contexts"
 import { useSocketEvents } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 
@@ -60,16 +60,18 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <PanelProvider>
-      <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-        <Outlet />
-      </AppShell>
-      <QuickSwitcher
-        workspaceId={workspaceId}
-        open={switcherOpen}
-        onOpenChange={setSwitcherOpen}
-        initialMode={switcherMode}
-      />
-    </PanelProvider>
+    <QuickSwitcherProvider openSwitcher={openSwitcher}>
+      <PanelProvider>
+        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+          <Outlet />
+        </AppShell>
+        <QuickSwitcher
+          workspaceId={workspaceId}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          initialMode={switcherMode}
+        />
+      </PanelProvider>
+    </QuickSwitcherProvider>
   )
 }

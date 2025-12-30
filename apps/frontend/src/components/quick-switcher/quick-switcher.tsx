@@ -10,6 +10,7 @@ import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
 import { ModeTabs } from "./mode-tabs"
 import type { CommandContext, InputRequest } from "./commands"
+import type { QuickSwitcherItem } from "./types"
 
 export type QuickSwitcherMode = "stream" | "command" | "search"
 
@@ -138,6 +139,15 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const currentResult = resultByMode[mode]
   const items = currentResult.items
 
+  // Single source of truth for item selection (used by both Enter key and click)
+  const handleSelectItem = useCallback((item: QuickSwitcherItem, withModifier: boolean) => {
+    if (withModifier && item.href) {
+      window.open(item.href, "_blank")
+    } else {
+      item.onSelect()
+    }
+  }, [])
+
   // Reset selection when items change
   useEffect(() => {
     setSelectedIndex(0)
@@ -252,13 +262,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             e.preventDefault()
             const item = items[selectedIndex]
             if (!item) return
-
-            if (isMod && item.href) {
-              // Cmd+Enter opens in new tab
-              window.open(item.href, "_blank")
-            } else {
-              item.onSelect()
-            }
+            handleSelectItem(item, isMod)
           }
         }}
       >
@@ -307,6 +311,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             items={items}
             selectedIndex={selectedIndex}
             onSelectIndex={setSelectedIndex}
+            onSelectItem={handleSelectItem}
             isLoading={currentResult.isLoading}
             emptyMessage={currentResult.emptyMessage}
           />
