@@ -22,7 +22,7 @@ export function useSearchMentionSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<Mentionable>({
+  const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
     getItems: () => mentionables,
     filterItems: filterSearchMentionables,
     renderList,
@@ -32,5 +32,6 @@ export function useSearchMentionSuggestion() {
     suggestionConfig,
     renderMentionList: renderSuggestionList,
     isActive,
+    close,
   }
 }

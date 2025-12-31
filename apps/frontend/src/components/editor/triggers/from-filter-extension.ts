@@ -41,8 +41,9 @@ function findFromFilterMatch(config: {
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
   // Match `from:` at word boundary, optionally followed by `@`
+  // Also match after `?` since search mode uses `?` prefix
   // Examples: "from:", "from:@", "from:mar", "from:@mar"
-  const match = textBefore.match(/(?:^|\s)(from:@?)(\S*)$/)
+  const match = textBefore.match(/(?:^|\s|\?)(from:@?)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]

@@ -22,7 +22,7 @@ export function useWithFilterSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<Mentionable>({
+  const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
     getItems: () => mentionables,
     filterItems: filterSearchMentionables,
     renderList,
@@ -32,5 +32,6 @@ export function useWithFilterSuggestion() {
     suggestionConfig,
     renderWithFilterList: renderSuggestionList,
     isActive,
+    close,
   }
 }

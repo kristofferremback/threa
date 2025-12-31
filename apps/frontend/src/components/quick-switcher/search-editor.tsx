@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react"
+import { useRef, useEffect, useLayoutEffect, useCallback, useImperativeHandle, forwardRef } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
@@ -25,7 +25,10 @@ export interface SearchEditorProps {
   onChange: (value: string) => void
   /** Called when text is pasted, with the normalized pasted text */
   onPaste?: (text: string) => void
-  onSubmit?: () => void
+  /** Called when Enter is pressed and no suggestion popover is open.
+   *  withModifier is true if Cmd/Ctrl was held (for "open in new tab" behavior).
+   */
+  onSubmit?: (withModifier: boolean) => void
   onPopoverActiveChange?: (active: boolean) => void
   placeholder?: string
   className?: string
@@ -36,6 +39,8 @@ export interface SearchEditorProps {
 export interface SearchEditorRef {
   focus: () => void
   blur: () => void
+  /** Imperatively close all open suggestion popovers */
+  closePopovers: () => void
 }
 
 /**
@@ -69,37 +74,53 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   const isPopoverActiveRef = useRef(false)
 
   // Trigger suggestions - use search-specific hooks that exclude broadcast mentions
-  const { suggestionConfig: mentionConfig, renderMentionList, isActive: mentionActive } = useSearchMentionSuggestion()
-  const { suggestionConfig: channelConfig, renderChannelList, isActive: channelActive } = useChannelSuggestion()
+  const {
+    suggestionConfig: mentionConfig,
+    renderMentionList,
+    isActive: mentionActive,
+    close: closeMention,
+  } = useSearchMentionSuggestion()
+  const {
+    suggestionConfig: channelConfig,
+    renderChannelList,
+    isActive: channelActive,
+    close: closeChannel,
+  } = useChannelSuggestion()
   const {
     suggestionConfig: filterTypeConfig,
     renderFilterTypeList,
     isActive: filterTypeActive,
+    close: closeFilterType,
   } = useFilterTypeSuggestion()
   const {
     suggestionConfig: dateFilterConfig,
     renderDateFilterList,
     isActive: dateFilterActive,
+    close: closeDateFilter,
   } = useDateFilterSuggestion()
   const {
     suggestionConfig: fromFilterConfig,
     renderFromFilterList,
     isActive: fromFilterActive,
+    close: closeFromFilter,
   } = useFromFilterSuggestion()
   const {
     suggestionConfig: withFilterConfig,
     renderWithFilterList,
     isActive: withFilterActive,
+    close: closeWithFilter,
   } = useWithFilterSuggestion()
   const {
     suggestionConfig: inUserFilterConfig,
     renderInUserFilterList,
     isActive: inUserFilterActive,
+    close: closeInUserFilter,
   } = useInUserFilterSuggestion()
   const {
     suggestionConfig: inChannelFilterConfig,
     renderInChannelFilterList,
     isActive: inChannelFilterActive,
+    close: closeInChannelFilter,
   } = useInChannelFilterSuggestion()
 
   // Track combined popover active state
@@ -115,7 +136,10 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   isPopoverActiveRef.current = isPopoverActive
 
   // Notify parent when popover state changes
-  useEffect(() => {
+  // IMPORTANT: Use useLayoutEffect (not useEffect) to notify SYNCHRONOUSLY
+  // before the browser handles any keyboard events. With useEffect, there's a
+  // race condition where keyboard events fire before the parent knows the popover is open.
+  useLayoutEffect(() => {
     onPopoverActiveChange?.(isPopoverActive)
   }, [isPopoverActive, onPopoverActiveChange])
 
@@ -205,9 +229,14 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
         // Enter to submit (unless a suggestion popover is open)
         // Check ref because this callback captures stale closure
         if (event.key === "Enter" && !event.shiftKey && !isPopoverActiveRef.current) {
-          event.preventDefault()
-          onSubmit?.()
-          return true
+          if (onSubmit) {
+            event.preventDefault()
+            const withModifier = event.metaKey || event.ctrlKey
+            onSubmit(withModifier)
+            return true
+          }
+          // No onSubmit handler - let event bubble to parent for handling
+          return false
         }
         return false
       },
@@ -266,7 +295,29 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     }
   }, [editor])
 
-  useImperativeHandle(ref, () => ({ focus, blur }), [focus, blur])
+  // Close all open suggestion popovers - called by parent when Escape is pressed
+  // (Radix Dialog intercepts Escape before TipTap can see it)
+  const closePopovers = useCallback(() => {
+    closeMention()
+    closeChannel()
+    closeFilterType()
+    closeDateFilter()
+    closeFromFilter()
+    closeWithFilter()
+    closeInUserFilter()
+    closeInChannelFilter()
+  }, [
+    closeMention,
+    closeChannel,
+    closeFilterType,
+    closeDateFilter,
+    closeFromFilter,
+    closeWithFilter,
+    closeInUserFilter,
+    closeInChannelFilter,
+  ])
+
+  useImperativeHandle(ref, () => ({ focus, blur, closePopovers }), [focus, blur, closePopovers])
 
   return (
     <div className={cn("relative flex-1", className)}>

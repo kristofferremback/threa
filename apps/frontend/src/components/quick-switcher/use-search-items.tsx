@@ -54,24 +54,59 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
   // Parse filters from query string (single source of truth)
   const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])
 
-  // Build API filters from parsed filters
+  // Resolve slug to user ID
+  const resolveUserSlug = useCallback(
+    (slug: string): string | null => {
+      const user = users.find((u) => u.slug === slug)
+      return user?.id ?? null
+    },
+    [users]
+  )
+
+  // Resolve slug to stream ID
+  const resolveStreamSlug = useCallback(
+    (slug: string): string | null => {
+      const stream = streams.find((s) => s.slug === slug)
+      return stream?.id ?? null
+    },
+    [streams]
+  )
+
+  // Build API filters from parsed filters, resolving slugs to IDs
   const buildFilters = useCallback((): SearchFilters => {
     const filters: SearchFilters = {}
 
     for (const filter of parsedFilters) {
       switch (filter.type) {
-        case "from":
-          filters.from = filter.value
+        case "from": {
+          const userId = resolveUserSlug(filter.value)
+          if (userId) filters.from = userId
           break
-        case "with":
-          filters.with = [...(filters.with ?? []), filter.value]
+        }
+        case "with": {
+          const userId = resolveUserSlug(filter.value)
+          if (userId) filters.with = [...(filters.with ?? []), userId]
           break
+        }
         case "is":
           filters.is = [...(filters.is ?? []), filter.value as StreamType]
           break
-        case "in":
-          filters.in = [...(filters.in ?? []), filter.value]
+        case "in": {
+          // in: can be either a stream slug or user slug (for DMs)
+          // Check if the raw value started with in:# (stream) or in:@ (user)
+          const rawFilter = parsedFilters.find((f) => f === filter)
+          const isStreamFilter = rawFilter?.raw.startsWith("in:#")
+          if (isStreamFilter) {
+            const streamId = resolveStreamSlug(filter.value)
+            if (streamId) filters.in = [...(filters.in ?? []), streamId]
+          } else {
+            // For in:@user, we need to find the DM stream with this user
+            // For now, just resolve as user ID - backend should handle DM lookup
+            const userId = resolveUserSlug(filter.value)
+            if (userId) filters.in = [...(filters.in ?? []), userId]
+          }
           break
+        }
         case "after":
           filters.after = filter.value
           break
@@ -82,7 +117,7 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
     }
 
     return filters
-  }, [parsedFilters])
+  }, [parsedFilters, resolveUserSlug, resolveStreamSlug])
 
   useEffect(() => {
     const timer = setTimeout(() => {

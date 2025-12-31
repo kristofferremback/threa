@@ -1,7 +1,13 @@
 /**
  * TipTap extension for `in:@` filter trigger in search mode.
- * Shows user/persona suggestions when user types `in:@` (for DM filtering).
+ * Shows user suggestions when user types `in:@` (for DM filtering).
  * Inserts plain text: `in:@slug `
+ *
+ * Examples:
+ * - `in:@` → shows all users
+ * - `in:@mar` → shows users matching "mar"
+ * - `in:` → NOT matched (handled by in-channel-filter-extension for streams)
+ * - `in:#` → NOT matched (handled by in-channel-filter-extension for streams)
  */
 import { Extension } from "@tiptap/core"
 import Suggestion from "@tiptap/suggestion"
@@ -25,8 +31,8 @@ export interface InUserFilterOptions {
 
 /**
  * Custom match function for `in:@` trigger (for DM filtering).
- * Requires `in:@` specifically to distinguish from channel filter `in:#`.
- * Examples: "in:@", "in:@mar", "in:@martin"
+ * Only matches `in:@` followed by optional query.
+ * `in:` alone is handled by in-channel-filter-extension (shows streams).
  */
 function findInUserFilterMatch(config: {
   char: string
@@ -40,14 +46,17 @@ function findInUserFilterMatch(config: {
   // Get text from start of text block to cursor
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
-  // Match `in:@` at word boundary (start of text or after whitespace)
-  // Note: We specifically require @ here to distinguish from in:# (channel filter)
-  const match = textBefore.match(/(?:^|\s)(in:@)(\S*)$/)
+  // Match `in:@` at word boundary - requires explicit @ for DM filter
+  // - `in:@` → matches (shows users)
+  // - `in:@mar` → matches (query="mar")
+  // - `in:` → does NOT match (handled by in-channel-filter-extension)
+  // - `in:#` → does NOT match (handled by in-channel-filter-extension)
+  const match = textBefore.match(/(?:^|\s|\?)(in:@)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]
   const triggerPart = match[1] // "in:@"
-  const query = match[2] || "" // characters after "in:@"
+  const query = match[2] || "" // characters after trigger
 
   // Calculate positions relative to document
   const matchStart = $position.pos - fullMatch.length + (fullMatch.startsWith(" ") ? 1 : 0)
@@ -81,13 +90,13 @@ export const InUserFilterExtension = Extension.create<InUserFilterOptions>({
       Suggestion({
         editor: this.editor,
         pluginKey: InUserFilterPluginKey,
-        char: "in:@",
+        char: "in:@", // Explicit @ required for DM filter
         allowSpaces: false,
         findSuggestionMatch: findInUserFilterMatch,
         ...this.options.suggestion,
         command: ({ editor, range, props }) => {
           const item = props as Mentionable
-          // Insert plain text: "in:@slug "
+          // Insert "in:@slug " for DM filter
           editor.chain().focus().deleteRange(range).insertContent(`in:@${item.slug} `).run()
         },
       }),

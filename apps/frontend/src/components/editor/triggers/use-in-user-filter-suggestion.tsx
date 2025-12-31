@@ -1,12 +1,12 @@
 import { useCallback } from "react"
 import type { Mentionable } from "./types"
 import { MentionList } from "./mention-list"
-import { filterSearchMentionables, useMentionables } from "@/hooks/use-mentionables"
+import { filterUsersOnly, useMentionables } from "@/hooks/use-mentionables"
 import { useSuggestion } from "./use-suggestion"
 
 /**
- * Hook for `in:@` filter suggestions in search context.
- * Shows users/personas when typing `in:@` for DM filtering.
+ * Hook for `in:` and `in:@` filter suggestions in search context.
+ * Shows only users (not personas) since you can only DM with users.
  */
 export function useInUserFilterSuggestion() {
   const { mentionables } = useMentionables()
@@ -21,9 +21,9 @@ export function useInUserFilterSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<Mentionable>({
+  const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
     getItems: () => mentionables,
-    filterItems: filterSearchMentionables,
+    filterItems: filterUsersOnly, // Only users, not personas (can't DM with agents)
     renderList,
   })
 
@@ -31,5 +31,6 @@ export function useInUserFilterSuggestion() {
     suggestionConfig,
     renderInUserFilterList: renderSuggestionList,
     isActive,
+    close,
   }
 }

@@ -38,6 +38,8 @@ export interface UseSuggestionResult<T> {
   renderSuggestionList: () => ReactNode
   /** Whether the suggestion popup is currently active */
   isActive: boolean
+  /** Imperatively close the suggestion popup */
+  close: () => void
 }
 
 /**
@@ -79,8 +81,14 @@ export function useSuggestion<T>(config: UseSuggestionConfig<T>): UseSuggestionR
     setState(null)
   }, [])
 
+  // Imperative close for when Radix intercepts Escape before TipTap
+  const close = useCallback(() => {
+    setState(null)
+  }, [])
+
   const onKeyDown = useCallback((props: SuggestionKeyDownProps) => {
     if (props.event.key === "Escape") {
+      props.event.preventDefault()
       setState(null)
       return true
     }
@@ -115,5 +123,6 @@ export function useSuggestion<T>(config: UseSuggestionConfig<T>): UseSuggestionR
     suggestionConfig,
     renderSuggestionList,
     isActive: state !== null,
+    close,
   }
 }

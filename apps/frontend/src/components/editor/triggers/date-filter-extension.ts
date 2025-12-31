@@ -165,8 +165,9 @@ function findDateFilterMatch(config: {
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
   // Match `after:` or `before:` at word boundary, allowing spaces in query
+  // Also match after `?` since search mode uses `?` prefix
   // Popover stays open as long as there are matching items
-  const match = textBefore.match(/(?:^|\s)(after:|before:)(.*)$/)
+  const match = textBefore.match(/(?:^|\s|\?)(after:|before:)(.*)$/)
   if (!match) return null
 
   const fullMatch = match[0]

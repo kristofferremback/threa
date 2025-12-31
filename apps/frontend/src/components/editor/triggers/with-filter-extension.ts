@@ -42,8 +42,9 @@ function findWithFilterMatch(config: {
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
   // Match `with:` at word boundary, optionally followed by `@`
+  // Also match after `?` since search mode uses `?` prefix
   // Examples: "with:", "with:@", "with:mar", "with:@mar"
-  const match = textBefore.match(/(?:^|\s)(with:@?)(\S*)$/)
+  const match = textBefore.match(/(?:^|\s|\?)(with:@?)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]

@@ -56,7 +56,8 @@ function findFilterTypeMatch(config: {
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
   // Match `is:` at word boundary (start of text or after whitespace)
-  const match = textBefore.match(/(?:^|\s)(is:)(\S*)$/)
+  // Also match after `?` since search mode uses `?` prefix
+  const match = textBefore.match(/(?:^|\s|\?)(is:)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]

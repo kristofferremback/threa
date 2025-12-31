@@ -94,6 +94,11 @@ export function useDateFilterSuggestion() {
     setState(null)
   }, [])
 
+  // Imperative close for when Radix intercepts Escape before TipTap
+  const close = useCallback(() => {
+    setState(null)
+  }, [])
+
   const onKeyDown = useCallback((props: SuggestionKeyDownProps) => {
     if (props.event.key === "Escape") {
       setState(null)
@@ -125,5 +130,6 @@ export function useDateFilterSuggestion() {
     suggestionConfig,
     renderDateFilterList,
     isActive: state !== null,
+    close,
   }
 }

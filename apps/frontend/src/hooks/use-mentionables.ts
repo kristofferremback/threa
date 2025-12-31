@@ -100,3 +100,12 @@ export function filterSearchMentionables(items: Mentionable[], query: string): M
   const searchableItems = items.filter((item) => item.type !== "broadcast")
   return filterMentionables(searchableItems, query)
 }
+
+/**
+ * Filter to only users (no personas, no broadcasts).
+ * Used for `in:` filter since you can only DM with users, not personas.
+ */
+export function filterUsersOnly(items: Mentionable[], query: string): Mentionable[] {
+  const usersOnly = items.filter((item) => item.type === "user")
+  return filterMentionables(usersOnly, query)
+}
