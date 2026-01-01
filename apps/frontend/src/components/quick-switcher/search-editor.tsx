@@ -18,7 +18,7 @@ import { InUserFilterExtension } from "@/components/editor/triggers/in-user-filt
 import { InChannelFilterExtension } from "@/components/editor/triggers/in-channel-filter-extension"
 import { SearchMentionExtension } from "@/components/editor/triggers/search-mention-extension"
 import { SearchChannelExtension } from "@/components/editor/triggers/search-channel-extension"
-import { cn } from "@/lib/utils"
+import { cn, escapeHtml } from "@/lib/utils"
 
 export interface SearchEditorProps {
   value: string
@@ -333,7 +333,3 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     </div>
   )
 })
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-}

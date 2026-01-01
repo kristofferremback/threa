@@ -8,6 +8,7 @@ import { Extension } from "@tiptap/core"
 import Suggestion from "@tiptap/suggestion"
 import { PluginKey } from "@tiptap/pm/state"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
+import { formatISODate, getPastDatePresets, getFutureDatePresets } from "@/lib/dates"
 
 export const DateFilterPluginKey = new PluginKey("dateFilter")
 
@@ -24,114 +25,33 @@ export interface DateFilterItem {
 
 /**
  * Generate quick date options for the date picker.
+ *
+ * - "after:" shows past-oriented options (search for messages after this date)
+ * - "before:" shows future-oriented options first (upper bound), then past dates
  */
 export function getDateFilterOptions(filterType: DateFilterType): DateFilterItem[] {
-  const today = new Date()
-  const formatDate = (d: Date) => d.toISOString().split("T")[0]
+  const now = new Date()
+  const presets = filterType === "after" ? getPastDatePresets(now) : getFutureDatePresets(now)
 
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
+  const items: DateFilterItem[] = presets.map((preset) => ({
+    id: preset.id,
+    label: preset.label,
+    value: formatISODate(preset.date),
+    description: formatISODate(preset.date),
+    filterType,
+  }))
 
-  const lastWeek = new Date(today)
-  lastWeek.setDate(lastWeek.getDate() - 7)
+  // Add "Pick a date..." option at the end
+  items.push({
+    id: "custom",
+    label: "Pick a date...",
+    value: "",
+    description: "Open calendar",
+    filterType,
+    isCustom: true,
+  })
 
-  const lastMonth = new Date(today)
-  lastMonth.setMonth(lastMonth.getMonth() - 1)
-
-  const last3Months = new Date(today)
-  last3Months.setMonth(last3Months.getMonth() - 3)
-
-  const lastYear = new Date(today)
-  lastYear.setFullYear(lastYear.getFullYear() - 1)
-
-  if (filterType === "after") {
-    return [
-      { id: "today", label: "Today", value: formatDate(today), description: formatDate(today), filterType },
-      {
-        id: "yesterday",
-        label: "Yesterday",
-        value: formatDate(yesterday),
-        description: formatDate(yesterday),
-        filterType,
-      },
-      {
-        id: "last-week",
-        label: "Last week",
-        value: formatDate(lastWeek),
-        description: formatDate(lastWeek),
-        filterType,
-      },
-      {
-        id: "last-month",
-        label: "Last month",
-        value: formatDate(lastMonth),
-        description: formatDate(lastMonth),
-        filterType,
-      },
-      {
-        id: "last-3-months",
-        label: "Last 3 months",
-        value: formatDate(last3Months),
-        description: formatDate(last3Months),
-        filterType,
-      },
-      {
-        id: "last-year",
-        label: "Last year",
-        value: formatDate(lastYear),
-        description: formatDate(lastYear),
-        filterType,
-      },
-      {
-        id: "custom",
-        label: "Pick a date...",
-        value: "",
-        description: "Open calendar",
-        filterType,
-        isCustom: true,
-      },
-    ]
-  } else {
-    // "before" - show future-oriented options
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const nextWeek = new Date(today)
-    nextWeek.setDate(nextWeek.getDate() + 7)
-
-    return [
-      { id: "today", label: "Today", value: formatDate(today), description: formatDate(today), filterType },
-      {
-        id: "yesterday",
-        label: "Yesterday",
-        value: formatDate(yesterday),
-        description: formatDate(yesterday),
-        filterType,
-      },
-      {
-        id: "last-week",
-        label: "Last week",
-        value: formatDate(lastWeek),
-        description: formatDate(lastWeek),
-        filterType,
-      },
-      {
-        id: "last-month",
-        label: "Last month",
-        value: formatDate(lastMonth),
-        description: formatDate(lastMonth),
-        filterType,
-      },
-      {
-        id: "custom",
-        label: "Pick a date...",
-        value: "",
-        description: "Open calendar",
-        filterType,
-        isCustom: true,
-      },
-    ]
-  }
+  return items
 }
 
 export interface DateFilterOptions {

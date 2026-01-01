@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useState, useImperativeHandle, useEffect, useRef } from "react"
+import { formatISODate } from "@/lib/dates"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
@@ -19,10 +20,11 @@ export const DateFilterList = forwardRef<SuggestionListRef, DateFilterListProps>
   const [filterType, setFilterType] = useState<DateFilterType>("after")
   const listRef = useRef<SuggestionListRef>(null)
 
-  // Reset calendar when items change (new trigger)
-  useEffect(() => {
-    setShowCalendar(false)
-  }, [items])
+  // Calendar is closed explicitly via:
+  // - User selects a date (handleDateSelect)
+  // - User presses Escape (onKeyDown handler)
+  // - Popover closes entirely (parent handles via onExit)
+  // We don't close on items change to avoid jarring UX when typing while calendar is open
 
   const { refs, floatingStyles } = useFloating({
     placement: placement ?? "bottom-start",
@@ -53,7 +55,7 @@ export const DateFilterList = forwardRef<SuggestionListRef, DateFilterListProps>
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        const isoDate = date.toISOString().split("T")[0]
+        const isoDate = formatISODate(date)
         const syntheticItem: DateFilterItem = {
           id: "selected",
           label: isoDate,

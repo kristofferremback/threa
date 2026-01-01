@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns"
+import { formatISODate, formatDisplayDate } from "@/lib/dates"
 import type { StreamType, WorkspaceMember, Stream, User } from "@threa/types"
 
 interface StreamTypeOption {
@@ -177,8 +177,9 @@ function DateSelect({ type, onSelect }: DateSelectProps) {
   const handleSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       setDate(selectedDate)
-      const isoDate = selectedDate.toISOString()
-      const label = `${type === "after" ? "After" : "Before"} ${format(selectedDate, "MMM d, yyyy")}`
+      const isoDate = formatISODate(selectedDate)
+      const displayDate = formatDisplayDate(selectedDate)
+      const label = `${type === "after" ? "After" : "Before"} ${displayDate}`
       onSelect(isoDate, label)
     }
   }
