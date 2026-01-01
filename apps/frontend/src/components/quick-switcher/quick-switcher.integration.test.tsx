@@ -1,16 +1,27 @@
 import type React from "react"
-import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QuickSwitcher } from "./quick-switcher"
-import type { Stream, StreamType } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import { mockStreamsList } from "@/test/fixtures"
+import { mockUsersList, mockMembersList } from "@/test/fixtures/users"
+import { mockSearchResultsList } from "@/test/fixtures/messages"
 
 // Note: DOM polyfills (ResizeObserver, Range, Element.getClientRects, etc.)
 // are in src/test/setup.ts which runs before tests via vitest config
 
+// Hoisted values for configurable mocks (vi.mock is hoisted above imports)
+const { mockNavigate, mockSearchState } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+  mockSearchState: {
+    results: [] as typeof import("@/test/fixtures/messages").mockSearchResultsList,
+    isLoading: false,
+    search: vi.fn(),
+    clear: vi.fn(),
+  },
+}))
+
 // Mock react-router-dom
-const mockNavigate = vi.fn()
 vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
   useParams: () => ({ workspaceId: "workspace_1" }),
@@ -32,178 +43,13 @@ vi.mock("react-router-dom", () => ({
   ),
 }))
 
-// Helper to create a mock stream with all required fields
-function createMockStream(overrides: Partial<Stream> & { id: string; type: StreamType }): Stream {
-  return {
-    workspaceId: "workspace_1",
-    displayName: null,
-    slug: null,
-    description: null,
-    visibility: "private" as const,
-    parentStreamId: null,
-    parentMessageId: null,
-    rootStreamId: null,
-    companionMode: "off" as const,
-    companionPersonaId: null,
-    createdBy: "user_1",
-    createdAt: "2025-01-01T00:00:00Z",
-    updatedAt: "2025-01-01T00:00:00Z",
-    archivedAt: null,
-    ...overrides,
-  }
-}
-
-// Mock workspace bootstrap data
-const mockStreams: Stream[] = [
-  createMockStream({
-    id: "stream_scratchpad1",
-    type: StreamTypes.SCRATCHPAD as StreamType,
-    displayName: "My Notes",
-  }),
-  createMockStream({
-    id: "stream_channel1",
-    type: StreamTypes.CHANNEL as StreamType,
-    displayName: "General",
-    slug: "general",
-  }),
-  createMockStream({
-    id: "stream_channel2",
-    type: StreamTypes.CHANNEL as StreamType,
-    displayName: "Random",
-    slug: "random",
-  }),
-  createMockStream({
-    id: "stream_dm1",
-    type: StreamTypes.DM as StreamType,
-    displayName: "Martin",
-  }),
-]
-
-const mockUsers = [
-  { id: "user_1", name: "Martin", slug: "martin", avatarUrl: null },
-  { id: "user_2", name: "Kate", slug: "kate", avatarUrl: null },
-]
-
-const mockMembers = [
-  { userId: "user_1", workspaceId: "workspace_1", role: "admin" },
-  { userId: "user_2", workspaceId: "workspace_1", role: "member" },
-]
-
-const mockBootstrap = {
-  streams: mockStreams,
-  users: mockUsers,
-  members: mockMembers,
-  personas: [],
-}
-
-// Mock search results for testing
-const mockSearchResults = [
-  {
-    id: "msg_1",
-    streamId: "stream_channel1",
-    content: "Hello from the search results",
-    createdAt: "2025-01-15T10:00:00Z",
-  },
-  {
-    id: "msg_2",
-    streamId: "stream_channel2",
-    content: "Another search result message",
-    createdAt: "2025-01-14T09:00:00Z",
-  },
-]
-
-// Configurable search mock
-let mockSearchFn = vi.fn()
-let mockClearFn = vi.fn()
-let mockSearchResultsToReturn: typeof mockSearchResults = []
-let mockSearchIsLoading = false
-
-// Mock hooks
+// Mock @/hooks with fixture data
 vi.mock("@/hooks", () => ({
   useWorkspaceBootstrap: () => ({
     data: {
-      streams: [
-        {
-          id: "stream_scratchpad1",
-          type: "scratchpad",
-          displayName: "My Notes",
-          workspaceId: "workspace_1",
-          slug: null,
-          description: null,
-          visibility: "private",
-          parentStreamId: null,
-          parentMessageId: null,
-          rootStreamId: null,
-          companionMode: "off",
-          companionPersonaId: null,
-          createdBy: "user_1",
-          createdAt: "2025-01-01T00:00:00Z",
-          updatedAt: "2025-01-01T00:00:00Z",
-          archivedAt: null,
-        },
-        {
-          id: "stream_channel1",
-          type: "channel",
-          displayName: "General",
-          slug: "general",
-          workspaceId: "workspace_1",
-          description: null,
-          visibility: "private",
-          parentStreamId: null,
-          parentMessageId: null,
-          rootStreamId: null,
-          companionMode: "off",
-          companionPersonaId: null,
-          createdBy: "user_1",
-          createdAt: "2025-01-01T00:00:00Z",
-          updatedAt: "2025-01-01T00:00:00Z",
-          archivedAt: null,
-        },
-        {
-          id: "stream_channel2",
-          type: "channel",
-          displayName: "Random",
-          slug: "random",
-          workspaceId: "workspace_1",
-          description: null,
-          visibility: "private",
-          parentStreamId: null,
-          parentMessageId: null,
-          rootStreamId: null,
-          companionMode: "off",
-          companionPersonaId: null,
-          createdBy: "user_1",
-          createdAt: "2025-01-01T00:00:00Z",
-          updatedAt: "2025-01-01T00:00:00Z",
-          archivedAt: null,
-        },
-        {
-          id: "stream_dm1",
-          type: "dm",
-          displayName: "Martin",
-          workspaceId: "workspace_1",
-          slug: null,
-          description: null,
-          visibility: "private",
-          parentStreamId: null,
-          parentMessageId: null,
-          rootStreamId: null,
-          companionMode: "off",
-          companionPersonaId: null,
-          createdBy: "user_1",
-          createdAt: "2025-01-01T00:00:00Z",
-          updatedAt: "2025-01-01T00:00:00Z",
-          archivedAt: null,
-        },
-      ],
-      users: [
-        { id: "user_1", name: "Martin", slug: "martin", avatarUrl: null },
-        { id: "user_2", name: "Kate", slug: "kate", avatarUrl: null },
-      ],
-      members: [
-        { userId: "user_1", workspaceId: "workspace_1", role: "admin" },
-        { userId: "user_2", workspaceId: "workspace_1", role: "member" },
-      ],
+      streams: mockStreamsList,
+      users: mockUsersList,
+      members: mockMembersList,
       personas: [],
     },
     isLoading: false,
@@ -211,11 +57,11 @@ vi.mock("@/hooks", () => ({
   useDraftScratchpads: () => ({ createDraft: vi.fn() }),
   useCreateStream: () => ({ mutateAsync: vi.fn() }),
   useSearch: () => ({
-    results: mockSearchResultsToReturn,
-    isLoading: mockSearchIsLoading,
+    results: mockSearchState.results,
+    isLoading: mockSearchState.isLoading,
     error: null,
-    search: mockSearchFn,
-    clear: mockClearFn,
+    search: mockSearchState.search,
+    clear: mockSearchState.clear,
   }),
 }))
 
@@ -258,7 +104,15 @@ vi.mock("@/auth", () => ({
 
 // Mock use-workspaces - called by useChannelSuggestion
 vi.mock("@/hooks/use-workspaces", () => ({
-  useWorkspaceBootstrap: () => ({ data: mockBootstrap, isLoading: false }),
+  useWorkspaceBootstrap: () => ({
+    data: {
+      streams: mockStreamsList,
+      users: mockUsersList,
+      members: mockMembersList,
+      personas: [],
+    },
+    isLoading: false,
+  }),
 }))
 
 describe("QuickSwitcher Integration Tests", () => {
@@ -271,10 +125,10 @@ describe("QuickSwitcher Integration Tests", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // Reset configurable mocks
-    mockSearchFn = vi.fn()
-    mockClearFn = vi.fn()
-    mockSearchResultsToReturn = []
-    mockSearchIsLoading = false
+    mockSearchState.results = []
+    mockSearchState.isLoading = false
+    mockSearchState.search = vi.fn()
+    mockSearchState.clear = vi.fn()
   })
 
   describe("dialog lifecycle", () => {
@@ -1095,15 +949,15 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // Search should not be called immediately with empty query
-      expect(mockSearchFn).not.toHaveBeenCalled()
+      expect(mockSearchState.search).not.toHaveBeenCalled()
 
       // Verify clear is not called either until there's content
-      expect(mockClearFn).not.toHaveBeenCalled()
+      expect(mockSearchState.clear).not.toHaveBeenCalled()
     })
 
     it("should display search results", async () => {
       // Configure mock to return results
-      mockSearchResultsToReturn = mockSearchResults
+      mockSearchState.results = mockSearchResultsList
 
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} initialMode="search" />)
@@ -1120,7 +974,7 @@ describe("QuickSwitcher Integration Tests", () => {
     })
 
     it("should navigate to message when selecting result", async () => {
-      mockSearchResultsToReturn = mockSearchResults
+      mockSearchState.results = mockSearchResultsList
       const onOpenChange = vi.fn()
 
       const user = userEvent.setup({ pointerEventsCheck: 0 })
@@ -1144,7 +998,7 @@ describe("QuickSwitcher Integration Tests", () => {
     })
 
     it("should navigate to message when pressing Enter in search mode (no popover)", async () => {
-      mockSearchResultsToReturn = mockSearchResults
+      mockSearchState.results = mockSearchResultsList
       const onOpenChange = vi.fn()
 
       const user = userEvent.setup()
@@ -1168,7 +1022,7 @@ describe("QuickSwitcher Integration Tests", () => {
     })
 
     it("should open in new tab with Cmd+Enter in search mode", async () => {
-      mockSearchResultsToReturn = mockSearchResults
+      mockSearchState.results = mockSearchResultsList
       const onOpenChange = vi.fn()
       const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => null)
 
@@ -1412,7 +1266,7 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       it("should trace Enter key event flow", async () => {
-        mockSearchResultsToReturn = mockSearchResults
+        mockSearchState.results = mockSearchResultsList
         const user = userEvent.setup()
         render(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
@@ -1485,7 +1339,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // selecting the popover item.
       it("should NOT navigate to a message when pressing Enter with popover open", async () => {
         // Configure mock to return search results (which appear as list items behind popover)
-        mockSearchResultsToReturn = mockSearchResults
+        mockSearchState.results = mockSearchResultsList
 
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
@@ -1632,7 +1486,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // PREVIOUS TEST ISSUE: Using pointerEventsCheck: 0 bypasses this check,
       // so the test passes but doesn't catch the real bug!
       it("should select popover item when clicking it, not the list item behind", async () => {
-        mockSearchResultsToReturn = mockSearchResults
+        mockSearchState.results = mockSearchResultsList
 
         // INTENTIONALLY NOT using pointerEventsCheck: 0 to expose the bug
         const user = userEvent.setup()

@@ -20,7 +20,6 @@ if (typeof Range !== "undefined") {
       [Symbol.iterator]: function* () {},
     }
   }
-  // @ts-expect-error - polyfill for jsdom
   Range.prototype.getBoundingClientRect = function () {
     return {
       top: 0,

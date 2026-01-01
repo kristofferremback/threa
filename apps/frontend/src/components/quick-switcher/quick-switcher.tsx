@@ -69,7 +69,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const [inputValue, setInputValue] = useState("")
   const [focusedTabIndex, setFocusedTabIndex] = useState<number | null>(null)
   const [showEscapeHint, setShowEscapeHint] = useState(false)
-  const [isSuggestionPopoverActive, setIsSuggestionPopoverActive] = useState(false)
   // Ref for synchronous access in event handlers (state updates are batched)
   const isSuggestionPopoverActiveRef = useRef(false)
 
@@ -81,9 +80,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const inputRef = useRef<HTMLInputElement>(null)
   const searchEditorRef = useRef<SearchEditorRef>(null)
 
-  // Update both state and ref when popover state changes
+  // Update ref when popover state changes (for synchronous access in event handlers)
   const handlePopoverActiveChange = useCallback((active: boolean) => {
-    setIsSuggestionPopoverActive(active)
     isSuggestionPopoverActiveRef.current = active
   }, [])
 
