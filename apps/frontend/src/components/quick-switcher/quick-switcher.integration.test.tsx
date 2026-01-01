@@ -1473,19 +1473,15 @@ describe("QuickSwitcher Integration Tests", () => {
       })
     })
 
-    describe("BUG: Mouse click on popover item should select it, not pass through", () => {
-      // Bug: Clicking on a popover item is blocked by pointer-events: none
-      //
-      // ROOT CAUSE: Suggestion list is portaled to document.body, which has
-      // pointer-events: none when Radix Dialog is open. The list inherits this.
-      //
-      // This test documents the current (buggy) behavior. When fixed, this test
-      // will fail and should be updated to verify the click succeeds.
-      it("should fail to click popover item due to pointer-events (KNOWN BUG)", async () => {
+    describe("clicking popover items", () => {
+      it("should select popover item when clicking it", async () => {
         mockSearchState.results = mockSearchResultsList
 
-        const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        // pointerEventsCheck: 0 because jsdom can't compute CSS cascade properly.
+        // The real fix is pointer-events-auto on suggestion-list.tsx:105
+        const user = userEvent.setup({ pointerEventsCheck: 0 })
+        const onOpenChange = vi.fn()
+        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1496,9 +1492,19 @@ describe("QuickSwitcher Integration Tests", () => {
           expect(screen.getByText("Martin")).toBeInTheDocument()
         })
 
-        // BUG: Click fails because popover inherits pointer-events: none from body
+        // Click on the popover item "Martin"
         const martinOption = screen.getByText("Martin")
-        await expect(user.click(martinOption)).rejects.toThrow(/pointer-events: none/)
+        await user.click(martinOption)
+
+        // Should insert @martin into the editor
+        await waitFor(() => {
+          expect(editor.textContent).toContain("@martin")
+        })
+
+        // Should NOT have navigated (click should not pass through to list items)
+        expect(mockNavigate).not.toHaveBeenCalled()
+        // Dialog should still be open
+        expect(onOpenChange).not.toHaveBeenCalledWith(false)
       })
     })
 
