@@ -72,7 +72,7 @@ export function loadConfig(): Config {
     ai: {
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
       tavilyApiKey: process.env.TAVILY_API_KEY || "",
-      namingModel: process.env.AI_NAMING_MODEL || "openrouter:anthropic/claude-haiku-4.5",
+      namingModel: process.env.AI_NAMING_MODEL || "openrouter:openai/gpt-5-mini",
       extractionModel: process.env.AI_EXTRACTION_MODEL || "openrouter:anthropic/claude-haiku-4.5",
       memoModel: process.env.AI_MEMO_MODEL || "openrouter:anthropic/claude-haiku-4.5",
     },

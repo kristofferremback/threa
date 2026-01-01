@@ -3,9 +3,11 @@ import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { needsAutoNaming } from "./display-name"
 import { logger } from "./logger"
+import { AuthorTypes } from "@threa/types"
 
 /**
  * Creates a naming listener that dispatches auto-naming jobs for messages
@@ -24,13 +26,19 @@ export function createNamingListener(
   return new OutboxListener(pool, {
     ...config,
     listenerId: "naming",
-    handler: async (event: OutboxEvent) => {
-      if (event.eventType !== "message:created") {
+    handler: async (outboxEvent: OutboxEvent) => {
+      if (outboxEvent.eventType !== "message:created") {
         return
       }
 
-      const payload = event.payload as MessageCreatedOutboxPayload
-      const { streamId } = payload
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      if (!payload) {
+        logger.debug({ eventId: outboxEvent.id }, "Naming listener: malformed event, skipping")
+        return
+      }
+
+      const { streamId, event } = payload
+      const isAgentMessage = event.actorType !== AuthorTypes.USER
 
       await withClient(pool, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
@@ -43,9 +51,12 @@ export function createNamingListener(
           return
         }
 
-        await jobQueue.send(JobQueues.NAMING_GENERATE, { streamId })
+        await jobQueue.send(JobQueues.NAMING_GENERATE, {
+          streamId,
+          requireName: isAgentMessage,
+        })
 
-        logger.info({ streamId }, "Naming job dispatched")
+        logger.info({ streamId, requireName: isAgentMessage }, "Naming job dispatched")
       })
     },
   })

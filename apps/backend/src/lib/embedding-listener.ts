@@ -1,12 +1,9 @@
 import type { Pool } from "pg"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { logger } from "./logger"
-
-interface MessageCreatedEventPayload {
-  messageId: string
-}
 
 /**
  * Creates a listener that dispatches embedding generation jobs for new messages.
@@ -32,22 +29,18 @@ export function createEmbeddingListener(
         return
       }
 
-      const payload = outboxEvent.payload as MessageCreatedOutboxPayload
-
-      // Guard against malformed events (e.g., old events before migration)
-      if (!payload.event?.payload) {
-        logger.warn({ eventId: outboxEvent.id }, "Embedding listener: malformed event, skipping")
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      if (!payload) {
+        logger.debug({ eventId: outboxEvent.id }, "Embedding listener: malformed event, skipping")
         return
       }
 
-      const eventPayload = payload.event.payload as MessageCreatedEventPayload
-
       // Dispatch job to pg-boss for durable processing
       await jobQueue.send(JobQueues.EMBEDDING_GENERATE, {
-        messageId: eventPayload.messageId,
+        messageId: payload.event.payload.messageId,
       })
 
-      logger.debug({ messageId: eventPayload.messageId }, "Embedding job dispatched")
+      logger.debug({ messageId: payload.event.payload.messageId }, "Embedding job dispatched")
     },
   })
 }

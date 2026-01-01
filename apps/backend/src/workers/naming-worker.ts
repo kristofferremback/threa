@@ -3,7 +3,7 @@ import { logger } from "../lib/logger"
 
 /** Interface for any service that can handle naming jobs */
 export interface StreamNamingServiceLike {
-  attemptAutoNaming(streamId: string): Promise<boolean>
+  attemptAutoNaming(streamId: string, requireName: boolean): Promise<boolean>
 }
 
 export interface NamingWorkerDeps {
@@ -20,12 +20,12 @@ export function createNamingWorker(deps: NamingWorkerDeps): JobHandler<NamingJob
   const { streamNamingService } = deps
 
   return async (job) => {
-    const { streamId } = job.data
+    const { streamId, requireName } = job.data
 
-    logger.info({ jobId: job.id, streamId }, "Processing naming job")
+    logger.info({ jobId: job.id, streamId, requireName }, "Processing naming job")
 
-    const named = await streamNamingService.attemptAutoNaming(streamId)
+    const named = await streamNamingService.attemptAutoNaming(streamId, requireName)
 
-    logger.info({ jobId: job.id, streamId, named }, "Naming job completed")
+    logger.info({ jobId: job.id, streamId, requireName, named }, "Naming job completed")
   }
 }

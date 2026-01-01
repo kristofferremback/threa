@@ -2,7 +2,8 @@ import type { Pool } from "pg"
 import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { PendingItemRepository, StreamStateRepository, StreamRepository } from "../repositories"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { pendingItemId } from "./id"
 import { AuthorTypes, StreamTypes } from "@threa/types"
 import { logger } from "./logger"
@@ -42,27 +43,19 @@ export function createMemoAccumulator(
 }
 
 async function handleMessageCreated(pool: Pool, outboxEvent: OutboxEvent): Promise<void> {
-  const payload = outboxEvent.payload as unknown as Record<string, unknown>
-
-  if (
-    typeof payload.streamId !== "string" ||
-    typeof payload.workspaceId !== "string" ||
-    !payload.event ||
-    typeof payload.event !== "object"
-  ) {
+  const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+  if (!payload) {
+    logger.debug({ eventId: outboxEvent.id }, "Memo accumulator: malformed event, skipping")
     return
   }
 
-  const { event, streamId, workspaceId } = payload as unknown as MessageCreatedOutboxPayload
-  const eventPayload = event.payload as Record<string, unknown>
-
-  if (typeof eventPayload?.messageId !== "string") {
-    return
-  }
+  const { streamId, workspaceId, event } = payload
 
   if (event.actorType !== AuthorTypes.USER) {
     return
   }
+
+  const messageId = event.payload.messageId
 
   await withClient(pool, async (client) => {
     const stream = await StreamRepository.findById(client, streamId)
@@ -72,8 +65,6 @@ async function handleMessageCreated(pool: Pool, outboxEvent: OutboxEvent): Promi
     }
 
     const topLevelStreamId = stream.type === StreamTypes.THREAD ? (stream.rootStreamId ?? streamId) : streamId
-
-    const messageId = eventPayload.messageId as string
 
     await PendingItemRepository.queue(client, [
       {
