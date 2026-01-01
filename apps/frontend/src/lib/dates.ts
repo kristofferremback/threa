@@ -16,7 +16,6 @@ import {
   addWeeks,
   addMonths,
   isSameDay as dateFnsIsSameDay,
-  isYesterday,
   differenceInDays,
   startOfDay,
 } from "date-fns"
@@ -78,13 +77,15 @@ export function formatRelativeTime(date: Date, now: Date = new Date()): string {
     return time
   }
 
-  // Yesterday
-  if (isYesterday(date)) {
+  // Calculate days difference relative to `now` parameter, not system time
+  const daysAgo = differenceInDays(startOfDay(now), startOfDay(date))
+
+  // Yesterday (exactly 1 day ago)
+  if (daysAgo === 1) {
     return `yesterday ${time}`
   }
 
   // Within the last week: show day name
-  const daysAgo = differenceInDays(startOfDay(now), startOfDay(date))
   if (daysAgo < 7 && daysAgo > 0) {
     const dayName = date.toLocaleDateString(undefined, { weekday: "long" })
     return `${dayName} ${time}`
