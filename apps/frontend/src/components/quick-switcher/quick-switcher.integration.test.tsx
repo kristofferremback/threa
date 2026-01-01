@@ -1,6 +1,6 @@
 import type React from "react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
@@ -65,7 +65,7 @@ vi.mock("@/hooks", () => ({
   }),
 }))
 
-// Mock use-mentionables - called by SearchEditor's useMentionSuggestion
+// Mock use-mentionables - called by RichInput's useMentionSuggestion
 vi.mock("@/hooks/use-mentionables", () => {
   const filterFn = (items: unknown[], query: string) => {
     if (!query) return items
@@ -97,7 +97,7 @@ vi.mock("@/hooks/use-mentionables", () => {
   }
 })
 
-// Mock auth - called by SearchEditor's useMentionSuggestion
+// Mock auth - called by RichInput's useMentionSuggestion
 vi.mock("@/auth", () => ({
   useUser: () => ({ id: "user_1", name: "Martin", slug: "martin" }),
 }))
@@ -136,7 +136,7 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} open={true} />)
 
       expect(screen.getByRole("dialog")).toBeInTheDocument()
-      expect(screen.getByPlaceholderText("Search streams...")).toBeInTheDocument()
+      expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
     })
 
     it("should not render dialog content when open=false", () => {
@@ -149,7 +149,7 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} open={true} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Search streams...")).toHaveFocus()
+        expect(screen.getByLabelText("Quick switcher input")).toHaveFocus()
       })
     })
 
@@ -157,9 +157,9 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       const { rerender } = render(<QuickSwitcher {...defaultProps} open={true} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "test query")
-      expect(input).toHaveValue("test query")
+      expect(input).toHaveTextContent("test query")
 
       // Close dialog
       rerender(<QuickSwitcher {...defaultProps} open={false} />)
@@ -168,7 +168,7 @@ describe("QuickSwitcher Integration Tests", () => {
       rerender(<QuickSwitcher {...defaultProps} open={true} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Search streams...")).toHaveValue("")
+        expect(screen.getByLabelText("Quick switcher input")).toHaveTextContent("")
       })
     })
 
@@ -312,17 +312,14 @@ describe("QuickSwitcher Integration Tests", () => {
         render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         // Focus the input first
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.click(input)
 
         // Simulate Ctrl+[ using fireEvent since userEvent doesn't properly handle this combo
-        // The component checks e.ctrlKey && e.key === "["
-        const event = new KeyboardEvent("keydown", {
-          key: "[",
-          ctrlKey: true,
-          bubbles: true,
-        })
-        input.dispatchEvent(event)
+        // The component checks e.ctrlKey && e.key === "[" on the DialogContent's onKeyDown
+        // Use fireEvent to properly trigger React's synthetic event handlers
+        const dialog = screen.getByRole("dialog")
+        fireEvent.keyDown(dialog, { key: "[", ctrlKey: true })
 
         expect(onOpenChange).toHaveBeenCalledWith(false)
       })
@@ -336,7 +333,7 @@ describe("QuickSwitcher Integration Tests", () => {
         render(<QuickSwitcher {...defaultProps} />)
 
         // Switch to search mode first
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -364,7 +361,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const user = userEvent.setup()
         render(<QuickSwitcher {...defaultProps} />)
 
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -391,7 +388,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const user = userEvent.setup()
         render(<QuickSwitcher {...defaultProps} />)
 
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -419,7 +416,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const user = userEvent.setup()
         render(<QuickSwitcher {...defaultProps} />)
 
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -448,7 +445,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const onOpenChange = vi.fn()
         render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -474,7 +471,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const user = userEvent.setup()
         render(<QuickSwitcher {...defaultProps} />)
 
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
 
         await waitFor(() => {
@@ -504,7 +501,7 @@ describe("QuickSwitcher Integration Tests", () => {
     it("should start in stream mode by default", () => {
       render(<QuickSwitcher {...defaultProps} />)
 
-      expect(screen.getByPlaceholderText("Search streams...")).toBeInTheDocument()
+      expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       // Stream tab should be active
       expect(screen.getByRole("tab", { name: /stream search/i })).toHaveAttribute("aria-selected", "true")
     })
@@ -513,11 +510,11 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, ">")
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Run a command...")).toBeInTheDocument()
+        expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       })
       expect(screen.getByRole("tab", { name: /command palette/i })).toHaveAttribute("aria-selected", "true")
     })
@@ -526,14 +523,14 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "?")
 
-      // When mode switches to search, the tab should be selected and SearchEditor renders
+      // When mode switches to search, the tab should be selected and RichInput renders
       await waitFor(() => {
         expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
-      // SearchEditor uses TipTap which has aria-label instead of placeholder
+      // RichInput uses TipTap which has aria-label instead of placeholder
       expect(screen.getByLabelText("Search query input")).toBeInTheDocument()
     })
 
@@ -546,7 +543,7 @@ describe("QuickSwitcher Integration Tests", () => {
       await user.click(commandsTab)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Run a command...")).toBeInTheDocument()
+        expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       })
     })
 
@@ -565,7 +562,7 @@ describe("QuickSwitcher Integration Tests", () => {
       expect(secondItem?.classList.contains("bg-accent")).toBe(true)
 
       // Switch to command mode
-      await user.type(screen.getByRole("textbox"), ">")
+      await user.type(screen.getByLabelText("Quick switcher input"), ">")
 
       // First command should be selected after mode switch
       await waitFor(() => {
@@ -585,7 +582,7 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Type "?" - should switch to search mode
       await user.type(input, "?")
@@ -595,11 +592,11 @@ describe("QuickSwitcher Integration Tests", () => {
         expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
 
-      // SearchEditor should show "?" (the full query including prefix)
+      // RichInput should show "?" (the full query including prefix)
       const searchEditor = screen.getByLabelText("Search query input")
       expect(searchEditor.textContent).toBe("?")
 
-      // Now continue typing into the SearchEditor
+      // Now continue typing into the RichInput
       await user.click(searchEditor)
       await user.type(searchEditor, " test")
 
@@ -611,7 +608,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Type "> new" - should switch to command mode and preserve the query
       await user.type(input, "> new")
@@ -622,15 +619,15 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Input should show "> new"
-      const commandInput = screen.getByPlaceholderText("Run a command...")
-      expect(commandInput).toHaveValue("> new")
+      const commandInput = screen.getByLabelText("Quick switcher input")
+      expect(commandInput).toHaveTextContent("> new")
     })
 
     it("should not clear query when switching to search mode by typing ?", async () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Type just "?" first
       await user.type(input, "?")
@@ -653,7 +650,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Paste "? test" into the input
       await user.click(input)
@@ -664,7 +661,7 @@ describe("QuickSwitcher Integration Tests", () => {
         expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
 
-      // SearchEditor should show "? test" (full query with prefix)
+      // RichInput should show "? test" (full query with prefix)
       const searchEditor = screen.getByLabelText("Search query input")
       expect(searchEditor.textContent).toBe("? test")
     })
@@ -673,7 +670,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Paste "? ? test" - should normalize to "? test"
       await user.click(input)
@@ -684,7 +681,7 @@ describe("QuickSwitcher Integration Tests", () => {
         expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
 
-      // SearchEditor should show "? test" (normalized, full query with prefix)
+      // RichInput should show "? test" (normalized, full query with prefix)
       const searchEditor = screen.getByLabelText("Search query input")
       expect(searchEditor.textContent).toBe("? test")
     })
@@ -693,7 +690,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
 
       // Paste "> > new" - should normalize to "> new"
       await user.click(input)
@@ -705,8 +702,8 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Input should show "> new" (normalized)
-      const commandInput = screen.getByPlaceholderText("Run a command...")
-      expect(commandInput).toHaveValue("> new")
+      const commandInput = screen.getByLabelText("Quick switcher input")
+      expect(commandInput).toHaveTextContent("> new")
     })
 
     it("should allow switching from search mode to stream mode by clearing prefix", async () => {
@@ -714,14 +711,14 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode, switch to search mode
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "?")
 
       await waitFor(() => {
         expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
 
-      // Clear the SearchEditor and type something without prefix
+      // Clear the RichInput and type something without prefix
       const editor = screen.getByLabelText("Search query input")
       await user.clear(editor)
       await user.type(editor, "general")
@@ -732,8 +729,8 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Should show "general" in stream mode input
-      const streamInput = screen.getByPlaceholderText("Search streams...")
-      expect(streamInput).toHaveValue("general")
+      const streamInput = screen.getByLabelText("Quick switcher input")
+      expect(streamInput).toHaveTextContent("general")
     })
 
     it("should allow switching from search mode to command mode by changing prefix", async () => {
@@ -741,7 +738,7 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode, switch to search mode
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "?")
 
       await waitFor(() => {
@@ -759,8 +756,8 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Should show "> new" in command mode input
-      const commandInput = screen.getByPlaceholderText("Run a command...")
-      expect(commandInput).toHaveValue("> new")
+      const commandInput = screen.getByLabelText("Quick switcher input")
+      expect(commandInput).toHaveTextContent("> new")
     })
 
     it("should switch from search mode to stream mode when pasting text without prefix", async () => {
@@ -780,8 +777,8 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Input should show "general"
-      const input = screen.getByPlaceholderText("Search streams...")
-      expect(input).toHaveValue("general")
+      const input = screen.getByLabelText("Quick switcher input")
+      expect(input).toHaveTextContent("general")
     })
   })
 
@@ -791,14 +788,14 @@ describe("QuickSwitcher Integration Tests", () => {
       render(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode
-      expect(screen.getByPlaceholderText("Search streams...")).toBeInTheDocument()
+      expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
 
       // Click commands tab
       const commandsTab = screen.getByRole("tab", { name: /command palette/i })
       await user.click(commandsTab)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Run a command...")).toBeInTheDocument()
+        expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       })
 
       // Click search tab
@@ -814,7 +811,7 @@ describe("QuickSwitcher Integration Tests", () => {
       await user.click(streamsTab)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Search streams...")).toBeInTheDocument()
+        expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       })
     })
 
@@ -849,7 +846,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       // Input should be focused
       await waitFor(() => {
-        expect(screen.getByRole("textbox")).toHaveFocus()
+        expect(screen.getByLabelText("Quick switcher input")).toHaveFocus()
       })
     })
 
@@ -866,7 +863,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       // Input should be focused
       await waitFor(() => {
-        expect(screen.getByRole("textbox")).toHaveFocus()
+        expect(screen.getByLabelText("Quick switcher input")).toHaveFocus()
       })
     })
   })
@@ -1127,7 +1124,7 @@ describe("QuickSwitcher Integration Tests", () => {
       })
 
       // Type to filter
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "general")
 
       await waitFor(() => {
@@ -1141,7 +1138,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const user = userEvent.setup()
       render(<QuickSwitcher {...defaultProps} />)
 
-      const input = screen.getByPlaceholderText("Search streams...")
+      const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "nonexistent")
 
       await waitFor(() => {
@@ -1154,13 +1151,13 @@ describe("QuickSwitcher Integration Tests", () => {
     it("should start in command mode when initialMode is command", () => {
       render(<QuickSwitcher {...defaultProps} initialMode="command" />)
 
-      expect(screen.getByPlaceholderText("Run a command...")).toBeInTheDocument()
+      expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
     })
 
     it("should start in search mode when initialMode is search", () => {
       render(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
-      // SearchEditor uses TipTap which has aria-label instead of placeholder
+      // RichInput uses TipTap which has aria-label instead of placeholder
       expect(screen.getByLabelText("Search query input")).toBeInTheDocument()
       expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
     })
@@ -1447,7 +1444,7 @@ describe("QuickSwitcher Integration Tests", () => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
 
         // Focus the input (stream mode)
-        const input = screen.getByPlaceholderText("Search streams...")
+        const input = screen.getByLabelText("Quick switcher input")
         await user.click(input)
 
         // Press Escape

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect, useCallback, useImperativeHandle, forwardRef } from "react"
+import { useRef, useEffect, useLayoutEffect, useCallback, useImperativeHandle, forwardRef, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
@@ -20,7 +20,34 @@ import { SearchMentionExtension } from "@/components/editor/triggers/search-ment
 import { SearchChannelExtension } from "@/components/editor/triggers/search-channel-extension"
 import { cn, escapeHtml } from "@/lib/utils"
 
-export interface SearchEditorProps {
+/**
+ * Available trigger types for RichInput.
+ */
+export type TriggerType =
+  | "mention" // @user - inserts "@slug "
+  | "channel" // #channel - inserts "#slug "
+  | "filterType" // is: - inserts "is:value "
+  | "dateFilter" // after:/before: - inserts date filter
+  | "fromFilter" // from:@ - inserts "from:@slug "
+  | "withFilter" // with:@ - inserts "with:@slug "
+  | "inUserFilter" // in:@ - inserts "in:@slug " (DM filter)
+  | "inChannelFilter" // in:# - inserts "in:#slug " (channel filter)
+
+/**
+ * Preset trigger configurations for common use cases.
+ */
+export const SEARCH_TRIGGERS: TriggerType[] = [
+  "mention",
+  "channel",
+  "filterType",
+  "dateFilter",
+  "fromFilter",
+  "withFilter",
+  "inUserFilter",
+  "inChannelFilter",
+]
+
+export interface RichInputProps {
   value: string
   onChange: (value: string) => void
   /** Called when text is pasted, with the normalized pasted text */
@@ -30,40 +57,50 @@ export interface SearchEditorProps {
    */
   onSubmit?: (withModifier: boolean) => void
   onPopoverActiveChange?: (active: boolean) => void
+  /** Which triggers to enable. Empty or undefined means no triggers (plain input). */
+  triggers?: TriggerType[]
   placeholder?: string
+  /** Accessible label for the input (used by screen readers and testing) */
+  ariaLabel?: string
   className?: string
   autoFocus?: boolean
   disabled?: boolean
 }
 
-export interface SearchEditorRef {
+export interface RichInputRef {
   focus: () => void
   blur: () => void
   /** Imperatively close all open suggestion popovers */
   closePopovers: () => void
 }
 
+/** @deprecated Use RichInput instead */
+export type SearchEditorProps = RichInputProps
+/** @deprecated Use RichInputRef instead */
+export type SearchEditorRef = RichInputRef
+
 /**
- * TipTap-based editor for search queries.
- * Styled to look like a plain input with autocomplete support.
+ * TipTap-based input with optional autocomplete triggers.
+ * Styled to look like a plain input.
  *
- * Supports triggers:
+ * When triggers are enabled, supports:
  * - @ for user/persona mentions (search terms)
  * - # for channel references (search terms)
  * - is: for stream type filters
  * - after:/before: for date filters
  *
  * All triggers insert plain text - no styled nodes.
- * Visual badges are rendered separately from the parsed query.
  */
-export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(function SearchEditor(
+export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichInput(
   {
     value,
     onChange,
     onPaste,
     onSubmit,
     onPopoverActiveChange,
-    placeholder = "Search...",
+    triggers = [],
+    placeholder = "Type here...",
+    ariaLabel = "Text input",
     className,
     autoFocus = false,
     disabled = false,
@@ -73,7 +110,10 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   const isInternalUpdate = useRef(false)
   const isPopoverActiveRef = useRef(false)
 
-  // Trigger suggestions - use search-specific hooks that exclude broadcast mentions
+  // Helper to check if a trigger is enabled
+  const hasTrigger = useCallback((type: TriggerType) => triggers.includes(type), [triggers])
+
+  // Trigger suggestions - always call hooks (React rules), but only use when enabled
   const {
     suggestionConfig: mentionConfig,
     renderMentionList,
@@ -123,16 +163,16 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     close: closeInChannelFilter,
   } = useInChannelFilterSuggestion()
 
-  // Track combined popover active state
+  // Track combined popover active state (only for enabled triggers)
   const isPopoverActive =
-    mentionActive ||
-    channelActive ||
-    filterTypeActive ||
-    dateFilterActive ||
-    fromFilterActive ||
-    withFilterActive ||
-    inUserFilterActive ||
-    inChannelFilterActive
+    (hasTrigger("mention") && mentionActive) ||
+    (hasTrigger("channel") && channelActive) ||
+    (hasTrigger("filterType") && filterTypeActive) ||
+    (hasTrigger("dateFilter") && dateFilterActive) ||
+    (hasTrigger("fromFilter") && fromFilterActive) ||
+    (hasTrigger("withFilter") && withFilterActive) ||
+    (hasTrigger("inUserFilter") && inUserFilterActive) ||
+    (hasTrigger("inChannelFilter") && inChannelFilterActive)
   isPopoverActiveRef.current = isPopoverActive
 
   // Notify parent when popover state changes
@@ -143,69 +183,53 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
     onPopoverActiveChange?.(isPopoverActive)
   }, [isPopoverActive, onPopoverActiveChange])
 
-  // Create extensions for search editor
-  // Uses plain-text inserting extensions (SearchMention, SearchChannel)
-  // instead of node-based ones (Mention, Channel) since search queries are plain text
-  const extensions = [
-    // StarterKit with most features disabled - just basic text editing
-    StarterKit.configure({
-      heading: false,
-      codeBlock: false,
-      bold: false,
-      italic: false,
-      strike: false,
-      code: false,
-      blockquote: false,
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
-      horizontalRule: false,
-      dropcursor: false,
-      gapcursor: false,
-      hardBreak: false, // Prevent Shift+Enter from creating hard breaks
-      paragraph: {
-        HTMLAttributes: {
-          class: "m-0 p-0",
+  // Build extensions array - always include all trigger extensions
+  // TipTap's useEditor doesn't recreate when extensions change, so we load all upfront.
+  // Extensions are lightweight - they only activate when their trigger pattern is typed.
+  // We control visibility via hasTrigger() for popover state and rendering.
+  const extensions = useMemo(
+    () => [
+      // StarterKit with most features disabled - just basic text editing
+      StarterKit.configure({
+        heading: false,
+        codeBlock: false,
+        bold: false,
+        italic: false,
+        strike: false,
+        code: false,
+        blockquote: false,
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+        horizontalRule: false,
+        dropcursor: false,
+        gapcursor: false,
+        hardBreak: false, // Prevent Shift+Enter from creating hard breaks
+        paragraph: {
+          HTMLAttributes: {
+            class: "m-0 p-0",
+          },
         },
-      },
-    }),
-    Placeholder.configure({
-      placeholder,
-      emptyEditorClass: "is-editor-empty",
-    }),
-    // @ mentions - insert "@slug " as plain text
-    SearchMentionExtension.configure({
-      suggestion: mentionConfig,
-    }),
-    // # channels - insert "#slug " as plain text
-    SearchChannelExtension.configure({
-      suggestion: channelConfig,
-    }),
-    // is: filter - insert "is:value " as plain text
-    FilterTypeExtension.configure({
-      suggestion: filterTypeConfig,
-    }),
-    // after:/before: date filters - insert "after:date " or "before:date " as plain text
-    DateFilterExtension.configure({
-      suggestion: dateFilterConfig,
-    }),
-    // from:@ filter - insert "from:@slug " as plain text
-    FromFilterExtension.configure({
-      suggestion: fromFilterConfig,
-    }),
-    // with:@ filter - insert "with:@slug " as plain text (stream member filter)
-    WithFilterExtension.configure({
-      suggestion: withFilterConfig,
-    }),
-    // in:@ filter - insert "in:@slug " as plain text (DM filter)
-    InUserFilterExtension.configure({
-      suggestion: inUserFilterConfig,
-    }),
-    // in:# filter - insert "in:#slug " as plain text (channel filter)
-    InChannelFilterExtension.configure({
-      suggestion: inChannelFilterConfig,
-    }),
-  ]
+      }),
+      Placeholder.configure({
+        placeholder,
+        emptyEditorClass: "is-editor-empty",
+      }),
+      // All trigger extensions - always loaded, visibility controlled by hasTrigger()
+      SearchMentionExtension.configure({ suggestion: mentionConfig }),
+      SearchChannelExtension.configure({ suggestion: channelConfig }),
+      FilterTypeExtension.configure({ suggestion: filterTypeConfig }),
+      DateFilterExtension.configure({ suggestion: dateFilterConfig }),
+      FromFilterExtension.configure({ suggestion: fromFilterConfig }),
+      WithFilterExtension.configure({ suggestion: withFilterConfig }),
+      InUserFilterExtension.configure({ suggestion: inUserFilterConfig }),
+      InChannelFilterExtension.configure({ suggestion: inChannelFilterConfig }),
+    ],
+    // Note: We intentionally exclude suggestion configs from deps - they're stable refs
+    // and including them causes unnecessary editor recreation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [placeholder]
+  )
 
   const editor = useEditor({
     extensions,
@@ -223,7 +247,7 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
           "placeholder:text-muted-foreground",
           "disabled:cursor-not-allowed disabled:opacity-50"
         ),
-        "aria-label": "Search query input",
+        "aria-label": ariaLabel,
       },
       handleKeyDown: (_view, event) => {
         // Enter to submit (unless a suggestion popover is open)
@@ -298,15 +322,16 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   // Close all open suggestion popovers - called by parent when Escape is pressed
   // (Radix Dialog intercepts Escape before TipTap can see it)
   const closePopovers = useCallback(() => {
-    closeMention()
-    closeChannel()
-    closeFilterType()
-    closeDateFilter()
-    closeFromFilter()
-    closeWithFilter()
-    closeInUserFilter()
-    closeInChannelFilter()
+    if (hasTrigger("mention")) closeMention()
+    if (hasTrigger("channel")) closeChannel()
+    if (hasTrigger("filterType")) closeFilterType()
+    if (hasTrigger("dateFilter")) closeDateFilter()
+    if (hasTrigger("fromFilter")) closeFromFilter()
+    if (hasTrigger("withFilter")) closeWithFilter()
+    if (hasTrigger("inUserFilter")) closeInUserFilter()
+    if (hasTrigger("inChannelFilter")) closeInChannelFilter()
   }, [
+    hasTrigger,
     closeMention,
     closeChannel,
     closeFilterType,
@@ -322,14 +347,17 @@ export const SearchEditor = forwardRef<SearchEditorRef, SearchEditorProps>(funct
   return (
     <div className={cn("relative flex-1", className)}>
       <EditorContent editor={editor} />
-      {renderMentionList()}
-      {renderChannelList()}
-      {renderFilterTypeList()}
-      {renderDateFilterList()}
-      {renderFromFilterList()}
-      {renderWithFilterList()}
-      {renderInUserFilterList()}
-      {renderInChannelFilterList()}
+      {hasTrigger("mention") && renderMentionList()}
+      {hasTrigger("channel") && renderChannelList()}
+      {hasTrigger("filterType") && renderFilterTypeList()}
+      {hasTrigger("dateFilter") && renderDateFilterList()}
+      {hasTrigger("fromFilter") && renderFromFilterList()}
+      {hasTrigger("withFilter") && renderWithFilterList()}
+      {hasTrigger("inUserFilter") && renderInUserFilterList()}
+      {hasTrigger("inChannelFilter") && renderInChannelFilterList()}
     </div>
   )
 })
+
+/** @deprecated Use RichInput instead */
+export const SearchEditor = RichInput
