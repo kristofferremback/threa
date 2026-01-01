@@ -101,13 +101,8 @@ function SuggestionListInner<T>(
   return (
     <div
       ref={refs.setFloating}
-      style={{
-        ...floatingStyles,
-        // When rendered via portal to document.body, Radix Dialog sets pointer-events: none
-        // on body. We need to explicitly enable pointer-events for the suggestion list.
-        pointerEvents: "auto",
-      }}
-      className={cn("z-50 rounded-md border bg-popover text-popover-foreground shadow-md", width)}
+      style={floatingStyles}
+      className={cn("z-50 rounded-md border bg-popover text-popover-foreground shadow-md pointer-events-auto", width)}
       role="listbox"
       aria-label={ariaLabel}
     >
