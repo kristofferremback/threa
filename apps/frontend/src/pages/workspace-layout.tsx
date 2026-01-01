@@ -43,8 +43,8 @@ export function WorkspaceLayout() {
         return
       }
 
-      // Cmd+F → Search mode
-      if (isMod && e.key.toLowerCase() === "f") {
+      // Cmd+Shift+F → Search mode (leave Cmd+F for browser find)
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault()
         openSwitcher("search")
         return

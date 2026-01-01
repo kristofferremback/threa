@@ -177,6 +177,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-23** | Don't Assert Event Count             | Tests should NOT assert the number of events emitted after an operation. Event count is an implementation detail that changes as features evolve. Instead, verify that specific event types you care about are present and have correct payloads. Use `.find()` or filtering to locate expected events.                                                                                |
 | **INV-24** | No Assert Chains                     | Avoid sequential `expect()` calls checking properties of the same object. Use object comparison instead: build a `want` object and compare with `expect(got).toMatchObject(want)` or `expect(got).toEqual(want)`. Assert chains obscure relationships, make failures harder to diagnose, and clutter tests.                                                                            |
 | **INV-25** | No Change Justification Comments     | Comments like `// INV-24: refactored to use toMatchObject` or `// Uses X instead of Y` reference refactoring decisions, not current behavior. Future readers don't care what the code used to be. Put change justifications in commit messages; code comments explain WHY the current code works this way, not how it differs from a previous version.                                 |
+| **INV-26** | No TODO Tests                        | Never leave tests as `.todo()` or `.skip()`. Tests must either pass or be deleted. If a test cannot be made to pass in the current environment (e.g., jsdom limitations), either refactor the test to verify the behavior differently or remove it and document why in a comment. TODO tests are technical debt that never gets paid.                                                  |
 
 When introducing a new invariant:
 
@@ -502,3 +503,61 @@ When specifying Claude models, always use the latest generation:
 - **Opus**: `anthropic/claude-opus-4.5` (not `claude-3-opus`)
 
 The "3" and "3.5" series are deprecated. Always default to 4.5 generation models. Check model defaults in `env.ts`, database seeds, and any hardcoded model strings when touching AI-related code.
+
+### Frontend tests must be integration tests that mount real components
+
+Unit tests for frontend components are nearly useless for catching real bugs. When fixing bugs or adding features:
+
+1. **Write integration tests first** - Mount the actual component with `render(<Component />)`
+2. **Simulate real user behavior** - Use `userEvent` to type, click, and press keys
+3. **Tests must fail before fixing** - If you can't make a test fail for the bug, you don't understand the bug
+4. **Test the observable behavior** - What does the user see? What happens when they interact?
+
+```tsx
+// Good - integration test that catches real bugs
+it("should select popover item with Enter, not the list item behind it", async () => {
+  const user = userEvent.setup()
+  render(<QuickSwitcher {...defaultProps} />)
+
+  // Open popover by typing trigger
+  const input = screen.getByPlaceholderText("Search...")
+  await user.type(input, "@")
+
+  // Wait for popover
+  await waitFor(() => {
+    expect(screen.getByText("Martin")).toBeInTheDocument()
+  })
+
+  // Press Enter - should select popover item
+  await user.keyboard("{Enter}")
+
+  // Verify popover item was selected, not list item
+  expect(input).toHaveValue("@martin ")
+  expect(mockNavigate).not.toHaveBeenCalled() // list item would navigate
+})
+
+// Bad - unit test that misses real bugs
+it("should call onSelect when selected", () => {
+  const onSelect = vi.fn()
+  render(<PopoverItem onSelect={onSelect} />)
+  fireEvent.click(screen.getByRole("option"))
+  expect(onSelect).toHaveBeenCalled()
+  // This passes but the bug is in how keyboard events propagate between components
+})
+```
+
+**Why unit tests fail to catch UI bugs:**
+
+- They test components in isolation, missing interaction between layers
+- They mock too much, hiding the real behavior
+- They don't catch event propagation issues (Enter key handled by wrong component)
+- They don't catch focus management bugs
+- They don't catch z-index/pointer-events issues
+
+**The TDD cycle for bug fixes:**
+
+1. Reproduce the bug manually
+2. Write a test that simulates the user's actions
+3. Verify the test fails (if it passes, your test is wrong)
+4. Fix the bug
+5. Verify the test passes

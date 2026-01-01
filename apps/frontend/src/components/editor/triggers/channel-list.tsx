@@ -1,4 +1,5 @@
 import { forwardRef } from "react"
+import type { Placement } from "@floating-ui/react"
 import { Hash } from "lucide-react"
 import { SuggestionList, type SuggestionListRef } from "./suggestion-list"
 import type { ChannelItem } from "./types"
@@ -9,6 +10,7 @@ interface ChannelListProps {
   items: ChannelItem[]
   clientRect: (() => DOMRect | null) | null
   command: (item: ChannelItem) => void
+  placement?: Placement
 }
 
 function ChannelItemContent({ item }: { item: ChannelItem }) {
@@ -31,7 +33,7 @@ function ChannelItemContent({ item }: { item: ChannelItem }) {
  * Shows available channels/streams with keyboard navigation.
  */
 export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(function ChannelList(
-  { items, clientRect, command },
+  { items, clientRect, command, placement },
   ref
 ) {
   return (
@@ -43,6 +45,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(function
       getKey={(item) => item.id}
       ariaLabel="Channel suggestions"
       renderItem={(item) => <ChannelItemContent item={item} />}
+      placement={placement}
     />
   )
 })

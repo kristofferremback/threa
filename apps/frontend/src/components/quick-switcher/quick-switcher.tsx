@@ -9,6 +9,7 @@ import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
 import { ModeTabs } from "./mode-tabs"
+import { RichInput, type RichInputRef, SEARCH_TRIGGERS } from "./rich-input"
 import type { CommandContext, InputRequest } from "./commands"
 import type { QuickSwitcherItem } from "./types"
 import { clamp } from "@/lib/math-utils"
@@ -68,6 +69,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const [inputValue, setInputValue] = useState("")
   const [focusedTabIndex, setFocusedTabIndex] = useState<number | null>(null)
   const [showEscapeHint, setShowEscapeHint] = useState(false)
+  // Ref for synchronous access in event handlers (state updates are batched)
+  const isSuggestionPopoverActiveRef = useRef(false)
 
   const mode = deriveMode(query)
   const displayQuery = getDisplayQuery(query, mode)
@@ -75,6 +78,12 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const richInputRef = useRef<RichInputRef>(null)
+
+  // Update ref when popover state changes (for synchronous access in event handlers)
+  const handlePopoverActiveChange = useCallback((active: boolean) => {
+    isSuggestionPopoverActiveRef.current = active
+  }, [])
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
@@ -129,9 +138,16 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     commandContext,
   })
 
+  // Handler for search mode query changes (from filter badge removal/addition)
+  const handleSearchQueryChange = useCallback((newDisplayQuery: string) => {
+    setQuery(`? ${newDisplayQuery}`)
+    setSelectedIndex(0)
+  }, [])
+
   const searchResult = useSearchItems({
     workspaceId,
     query: displayQuery,
+    onQueryChange: handleSearchQueryChange,
     closeDialog: handleClose,
   })
 
@@ -154,6 +170,17 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     setSelectedIndex(0)
   }, [items.length, mode])
 
+  // Refocus appropriate input when mode changes (e.g., typing "?" switches to SearchEditor)
+  const prevModeRef = useRef(mode)
+  useEffect(() => {
+    if (prevModeRef.current !== mode && open && !inputRequest) {
+      requestAnimationFrame(() => {
+        richInputRef.current?.focus()
+      })
+    }
+    prevModeRef.current = mode
+  }, [mode, open, inputRequest])
+
   // Reset query and focus input when dialog opens
   useEffect(() => {
     if (open) {
@@ -162,7 +189,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       setSelectedIndex(0)
       setFocusedTabIndex(null)
       requestAnimationFrame(() => {
-        inputRef.current?.focus()
+        richInputRef.current?.focus()
       })
     }
   }, [open, initialMode])
@@ -198,7 +225,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const focusInput = useCallback(() => {
     setFocusedTabIndex(null)
     requestAnimationFrame(() => {
-      inputRef.current?.focus()
+      richInputRef.current?.focus()
     })
   }, [])
 
@@ -240,18 +267,56 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       <DialogContent
         ref={dialogRef}
         className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
+        onPointerDownOutside={(e) => {
+          // Prevent closing when clicking on suggestion popover (rendered via portal)
+          const target = e.target as HTMLElement
+          if (target.closest('[role="listbox"]')) {
+            e.preventDefault()
+          }
+        }}
         onEscapeKeyDown={(e) => {
+          // If TipTap already handled this event (closed a popover), don't close dialog
+          if (e.defaultPrevented) return
+
+          // Use ref for synchronous access (state updates are batched)
+          // When suggestion popover is open, close it instead of closing dialog
+          // (Radix intercepts Escape before TipTap sees it, so we close imperatively)
+          if (isSuggestionPopoverActiveRef.current) {
+            e.preventDefault()
+            richInputRef.current?.closePopovers()
+            return
+          }
           // When in inputRequest mode, Escape returns to command list instead of closing
           if (inputRequest) {
             e.preventDefault()
             clearInputRequest()
             requestAnimationFrame(() => {
-              inputRef.current?.focus()
+              richInputRef.current?.focus()
             })
           }
         }}
         onKeyDown={(e) => {
+          // If TipTap already handled this event (e.g., popover keyboard nav), don't interfere
+          if (e.defaultPrevented) return
+
+          // Ctrl+[ as vim-style Escape alternative
+          if (e.ctrlKey && e.key === "[") {
+            e.preventDefault()
+            if (isSuggestionPopoverActiveRef.current) {
+              richInputRef.current?.closePopovers()
+            } else if (inputRequest) {
+              clearInputRequest()
+            } else {
+              handleClose()
+            }
+            return
+          }
+
           const isMod = e.metaKey || e.ctrlKey
+          // Use ref for synchronous access (state updates are batched)
+          // When suggestion popover is open, let TipTap handle keyboard events
+          if (isSuggestionPopoverActiveRef.current) return
+
           // Global arrow key navigation - works even when focus is on tabs
           // Refocus input so Enter works on items (not mode tabs)
           switch (true) {
@@ -281,23 +346,48 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         {/* Input area */}
         <div className="flex items-center border-b px-3">
           <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-          <input
-            ref={inputRef}
-            value={inputRequest ? inputValue : query}
-            onChange={(e) => {
-              if (inputRequest) {
-                setInputValue(e.target.value)
-              } else {
-                setQuery(e.target.value)
+          {inputRequest ? (
+            // Plain input for command input requests (e.g., "Enter channel name")
+            <input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder={inputRequest.placeholder}
+              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              autoFocus
+              aria-label="Command input"
+            />
+          ) : (
+            // RichInput for all modes - triggers only enabled for search mode
+            <RichInput
+              ref={richInputRef}
+              value={query}
+              onChange={(value) => {
+                // Let mode be derived from the query - allows switching modes by typing prefix
+                setQuery(value)
                 setSelectedIndex(0)
-              }
-            }}
-            onKeyDown={handleInputKeyDown}
-            placeholder={inputRequest?.placeholder ?? MODE_PLACEHOLDERS[mode]}
-            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            autoFocus
-            aria-label={inputRequest ? "Command input" : "Quick switcher input"}
-          />
+              }}
+              onPaste={(text) => {
+                // Paste: use text directly so mode is determined by prefix (or lack thereof)
+                // "? food" → search mode, "> cmd" → command mode, "food" → stream mode
+                setQuery(text)
+                setSelectedIndex(0)
+              }}
+              onSubmit={(withModifier) => {
+                // Enter pressed with no popover open - select current item
+                const item = items[selectedIndex]
+                if (item) {
+                  handleSelectItem(item, withModifier)
+                }
+              }}
+              onPopoverActiveChange={handlePopoverActiveChange}
+              triggers={mode === "search" ? SEARCH_TRIGGERS : undefined}
+              placeholder={MODE_PLACEHOLDERS[mode]}
+              ariaLabel={mode === "search" ? "Search query input" : "Quick switcher input"}
+              autoFocus
+            />
+          )}
         </div>
 
         {/* Mode tabs - only show when not in input request mode */}

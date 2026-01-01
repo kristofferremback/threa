@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns"
+import { formatISODate, formatDisplayDate } from "@/lib/dates"
 import type { StreamType, WorkspaceMember, Stream, User } from "@threa/types"
 
 interface StreamTypeOption {
@@ -10,7 +10,7 @@ interface StreamTypeOption {
 }
 
 interface FilterSelectProps {
-  type: "from" | "is" | "in" | "after" | "before"
+  type: "from" | "with" | "is" | "in" | "after" | "before"
   members: WorkspaceMember[]
   users: User[]
   streams: Stream[]
@@ -31,7 +31,7 @@ export function FilterSelect({ type, members, users, streams, streamTypes, onSel
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [onCancel])
 
-  if (type === "from") {
+  if (type === "from" || type === "with") {
     return <UserSelect members={members} users={users} onSelect={onSelect} />
   }
 
@@ -177,8 +177,9 @@ function DateSelect({ type, onSelect }: DateSelectProps) {
   const handleSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       setDate(selectedDate)
-      const isoDate = selectedDate.toISOString()
-      const label = `${type === "after" ? "After" : "Before"} ${format(selectedDate, "MMM d, yyyy")}`
+      const isoDate = formatISODate(selectedDate)
+      const displayDate = formatDisplayDate(selectedDate)
+      const label = `${type === "after" ? "After" : "Before"} ${displayDate}`
       onSelect(isoDate, label)
     }
   }

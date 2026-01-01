@@ -100,8 +100,8 @@ async function findPostgresContainer(): Promise<string | null> {
   const result = await $`docker ps --format '{{.Names}}' --filter 'name=postgres'`.quiet().nothrow()
   const containers = result.stdout.toString().trim().split("\n").filter(Boolean)
 
-  // Prefer threa-postgres container if multiple match
-  const threaContainer = containers.find((c) => c.includes("threa"))
+  // Prefer threa-postgres container (e.g., threa-postgres-1) over other postgres containers (e.g., langfuse)
+  const threaContainer = containers.find((c) => c.startsWith("threa-postgres"))
   return threaContainer || containers[0] || null
 }
 

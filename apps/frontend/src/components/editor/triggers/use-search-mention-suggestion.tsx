@@ -1,14 +1,15 @@
 import { useCallback } from "react"
 import type { Mentionable } from "./types"
 import { MentionList } from "./mention-list"
-import { filterMentionables, useMentionables } from "@/hooks/use-mentionables"
+import { filterSearchMentionables, useMentionables } from "@/hooks/use-mentionables"
 import { useSuggestion } from "./use-suggestion"
 
 /**
- * Hook that manages the mention suggestion state and provides render callbacks.
- * Returns configuration for the MentionExtension and a render function for the popup.
+ * Hook for @mention suggestions in search context.
+ * Unlike the regular useMentionSuggestion, this excludes broadcast mentions
+ * (@channel, @here) since they don't make sense to search for.
  */
-export function useMentionSuggestion() {
+export function useSearchMentionSuggestion() {
   const { mentionables } = useMentionables()
 
   const renderList = useCallback(
@@ -21,9 +22,9 @@ export function useMentionSuggestion() {
     []
   )
 
-  const { suggestionConfig, renderSuggestionList, isActive } = useSuggestion<Mentionable>({
+  const { suggestionConfig, renderSuggestionList, isActive, close } = useSuggestion<Mentionable>({
     getItems: () => mentionables,
-    filterItems: filterMentionables,
+    filterItems: filterSearchMentionables,
     renderList,
   })
 
@@ -31,5 +32,6 @@ export function useMentionSuggestion() {
     suggestionConfig,
     renderMentionList: renderSuggestionList,
     isActive,
+    close,
   }
 }

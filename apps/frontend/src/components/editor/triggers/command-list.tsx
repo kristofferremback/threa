@@ -1,4 +1,5 @@
 import { forwardRef } from "react"
+import type { Placement } from "@floating-ui/react"
 import { Slash } from "lucide-react"
 import { SuggestionList, type SuggestionListRef } from "./suggestion-list"
 import type { CommandItem } from "./types"
@@ -9,6 +10,7 @@ interface CommandListProps {
   items: CommandItem[]
   clientRect: (() => DOMRect | null) | null
   command: (item: CommandItem) => void
+  placement?: Placement
 }
 
 function CommandItemContent({ item }: { item: CommandItem }) {
@@ -30,7 +32,7 @@ function CommandItemContent({ item }: { item: CommandItem }) {
  * Shows available commands with descriptions and keyboard navigation.
  */
 export const CommandList = forwardRef<CommandListRef, CommandListProps>(function CommandList(
-  { items, clientRect, command },
+  { items, clientRect, command, placement },
   ref
 ) {
   return (
@@ -43,6 +45,7 @@ export const CommandList = forwardRef<CommandListRef, CommandListProps>(function
       ariaLabel="Slash command suggestions"
       width="w-72"
       renderItem={(item) => <CommandItemContent item={item} />}
+      placement={placement}
     />
   )
 })
