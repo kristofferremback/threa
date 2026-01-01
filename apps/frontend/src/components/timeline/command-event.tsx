@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { StreamEvent, CommandDispatchedPayload, CommandCompletedPayload, CommandFailedPayload } from "@threa/types"
 import { Loader2, CheckCircle, XCircle, ChevronRight } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { formatTime24h } from "@/lib/dates"
 
 interface CommandEventProps {
   /** All events for this command, grouped by commandId */
@@ -142,6 +143,5 @@ function formatResult(result: unknown): string {
 }
 
 function formatTime(isoString: string): string {
-  const date = new Date(isoString)
-  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+  return formatTime24h(new Date(isoString))
 }

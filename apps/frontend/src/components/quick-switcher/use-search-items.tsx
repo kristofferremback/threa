@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { X, Plus, User, Calendar, Hash, MessageSquare } from "lucide-react"
+import { formatDisplayDate } from "@/lib/dates"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -160,7 +161,7 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
       return {
         id: result.id,
         label: result.content,
-        description: new Date(result.createdAt).toLocaleDateString(),
+        description: formatDisplayDate(new Date(result.createdAt)),
         group: "Messages",
         href,
         onSelect: () => {
