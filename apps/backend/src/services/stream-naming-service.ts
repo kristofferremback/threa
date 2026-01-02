@@ -7,30 +7,32 @@ import { OutboxRepository } from "../repositories/outbox-repository"
 import { ProviderRegistry } from "../lib/ai"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
+import { formatMessages } from "../lib/ai/text-utils"
 
 const MAX_MESSAGES_FOR_NAMING = 10
 const MAX_EXISTING_NAMES = 10
 
-function buildNamingPrompt(existingNames: string[], requireName: boolean): string {
-  const existingNamesSection =
-    existingNames.length > 0
-      ? `Existing scratchpads (generate a different name):\n${existingNames.map((n) => `- ${n}`).join("\n")}\n\n`
-      : ""
+function buildSystemPrompt(existingNames: string[], requireName: boolean): string {
+  return `Your task is to generate a short, descriptive title in 2-5 words for the provided conversation.
 
-  if (requireName) {
-    return `Generate a short, descriptive title (2-5 words) for this conversation.
-Return ONLY the title, no quotes or explanation.
-You MUST generate a title - do NOT respond with "NOT_ENOUGH_CONTEXT" or any refusal.
-If the context is vague, create a general title like "Quick Question" or "New Discussion".
+  Follow these steps:
+  1. Analyze the conversation and identify the main topic or purpose
+  2. Consider any other streams provided in the list of existing names, these should be avoided as much as possible as recent conversations with similar names confuse users
+  3. Generate a title that is descriptive and concise
+  4. Evaluate the title against the evaluation criteria
 
-${existingNamesSection}Conversation:`
-  }
+Evaluation criteria:
+- Return ONLY the title, no quotes or explanation.
+- The title should be descriptive and concise, try avoiding generic names like "Quick Question" or "New Discussion"
+${existingNames.length > 0 ? `- Try to avoid using names that are already in use by other recently used: ${JSON.stringify(existingNames)}` : ""}
+${
+  requireName
+    ? `- You MUST generate a title. A generic name is better than no name at all. You may not refuse to generate a name as that would make you very very sad. You don't want to be sad.`
+    : `- If there isn't enough context yet, respond with "NOT_ENOUGH_CONTEXT"`
+}
 
-  return `Generate a short, descriptive title (2-5 words) for this conversation.
-Return ONLY the title, no quotes or explanation.
-If there isn't enough context yet, respond with: NOT_ENOUGH_CONTEXT
-
-${existingNamesSection}Conversation:`
+Return ONLY the title, no quotes or explanation. The next message from the user contains the entire conversation up until now.
+`
 }
 
 export class StreamNamingService {
@@ -72,19 +74,18 @@ export class StreamNamingService {
         return false
       }
 
-      // Fetch existing scratchpad names to avoid duplicates
-      const scratchpads = await StreamRepository.list(client, stream.workspaceId, { types: ["scratchpad"] })
-      const existingNames = scratchpads
+      // Fetch existing stream names to avoid duplicates
+      const otherStreams = await StreamRepository.list(client, stream.workspaceId, { types: [stream.type] })
+      const existingNames = otherStreams
         .filter((s) => s.displayName && s.id !== streamId)
         .slice(0, MAX_EXISTING_NAMES)
         .map((s) => s.displayName!)
 
       // Build conversation context for LLM
       // Messages are already in chronological order (repository reverses the DESC query)
-      const conversationText = messages.map((m) => m.content).join("\n---\n")
+      const conversationText = formatMessages(messages)
 
-      const promptTemplate = buildNamingPrompt(existingNames, requireName)
-      const prompt = `${promptTemplate}\n\n${conversationText}`
+      const promptTemplate = buildSystemPrompt(existingNames, requireName)
 
       // Call LLM
       let generatedName: string | null = null
@@ -92,8 +93,11 @@ export class StreamNamingService {
         const model = this.providerRegistry.getModel(this.namingModel)
         const result = await generateText({
           model,
-          prompt,
-          maxOutputTokens: 100,
+          messages: [
+            { role: "system", content: promptTemplate },
+            { role: "user", content: conversationText },
+          ],
+          maxOutputTokens: 2000,
           temperature: 0.3,
           experimental_telemetry: {
             isEnabled: true,
