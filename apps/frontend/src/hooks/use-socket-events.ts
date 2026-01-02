@@ -48,6 +48,12 @@ interface UnreadIncrementPayload {
   authorId: string
 }
 
+interface StreamDisplayNameUpdatedPayload {
+  workspaceId: string
+  streamId: string
+  displayName: string
+}
+
 /**
  * Hook to handle Socket.io events for stream updates.
  * Joins the workspace room and listens for stream:created/updated/archived events.
@@ -258,11 +264,45 @@ export function useSocketEvents(workspaceId: string) {
       })
     })
 
+    // Handle stream display name updated (from auto-naming service)
+    socket.on("stream:display_name_updated", (payload: StreamDisplayNameUpdatedPayload) => {
+      // Update stream detail cache
+      queryClient.setQueryData(streamKeys.detail(workspaceId, payload.streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        return { ...old, displayName: payload.displayName }
+      })
+
+      // Update stream bootstrap cache
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { stream?: Stream }
+        if (!bootstrap.stream) return old
+        return { ...old, stream: { ...bootstrap.stream, displayName: payload.displayName } }
+      })
+
+      // Update workspace bootstrap cache (sidebar)
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { streams?: Stream[] }
+        if (!bootstrap.streams) return old
+        return {
+          ...bootstrap,
+          streams: bootstrap.streams.map((s) =>
+            s.id === payload.streamId ? { ...s, displayName: payload.displayName } : s
+          ),
+        }
+      })
+
+      // Update IndexedDB
+      db.streams.update(payload.streamId, { displayName: payload.displayName, _cachedAt: Date.now() })
+    })
+
     return () => {
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
       socket.off("stream:updated")
       socket.off("stream:archived")
+      socket.off("stream:display_name_updated")
       socket.off("workspace_member:added")
       socket.off("workspace_member:removed")
       socket.off("user:updated")
