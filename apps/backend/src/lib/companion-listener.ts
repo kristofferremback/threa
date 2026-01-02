@@ -5,15 +5,10 @@ import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "../repositories/agent-session-repository"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes, CompanionModes } from "@threa/types"
 import { logger } from "./logger"
-
-interface MessageCreatedEventPayload {
-  messageId: string
-  content: string
-  contentFormat: string
-}
 
 /**
  * Creates a companion listener that dispatches agentic jobs for messages
@@ -39,9 +34,13 @@ export function createCompanionListener(
         return
       }
 
-      const payload = outboxEvent.payload as MessageCreatedOutboxPayload
-      const { event, streamId } = payload
-      const eventPayload = event.payload as MessageCreatedEventPayload
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      if (!payload) {
+        logger.debug({ eventId: outboxEvent.id }, "Companion listener: malformed event, skipping")
+        return
+      }
+
+      const { streamId, event } = payload
 
       // Ignore persona messages (avoid infinite loops)
       if (event.actorType !== AuthorTypes.USER) {
@@ -93,7 +92,7 @@ export function createCompanionListener(
             logger.debug(
               {
                 streamId,
-                messageId: eventPayload.messageId,
+                messageId: event.payload.messageId,
                 messageSequence: messageSequence.toString(),
                 lastSeenSequence: lastSession.lastSeenSequence.toString(),
               },
@@ -107,14 +106,14 @@ export function createCompanionListener(
         await jobQueue.send(JobQueues.PERSONA_AGENT, {
           workspaceId: stream.workspaceId,
           streamId,
-          messageId: eventPayload.messageId,
+          messageId: event.payload.messageId,
           personaId: persona.id,
           triggeredBy,
           // No trigger = companion mode
         })
 
         logger.info(
-          { streamId, messageId: eventPayload.messageId, personaId: persona.id },
+          { streamId, messageId: event.payload.messageId, personaId: persona.id },
           "Persona agent job dispatched (companion mode)"
         )
       })

@@ -1,7 +1,8 @@
 import type { Pool } from "pg"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "./logger"
 
@@ -27,38 +28,25 @@ export function createBoundaryExtractionListener(
         return
       }
 
-      const payload = outboxEvent.payload as unknown as Record<string, unknown>
-
-      // Validate required payload fields
-      if (
-        typeof payload.streamId !== "string" ||
-        typeof payload.workspaceId !== "string" ||
-        !payload.event ||
-        typeof payload.event !== "object"
-      ) {
-        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing or invalid payload fields")
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      if (!payload) {
+        logger.debug({ eventId: outboxEvent.id }, "Boundary extraction: malformed event, skipping")
         return
       }
 
-      const { event, streamId, workspaceId } = payload as unknown as MessageCreatedOutboxPayload
-      const eventPayload = event.payload as Record<string, unknown>
-
-      if (typeof eventPayload?.messageId !== "string") {
-        logger.debug({ eventType: outboxEvent.eventType }, "Skipping event with missing messageId")
-        return
-      }
+      const { streamId, workspaceId, event } = payload
 
       if (event.actorType !== AuthorTypes.USER) {
         return
       }
 
       await jobQueue.send(JobQueues.BOUNDARY_EXTRACT, {
-        messageId: eventPayload.messageId,
+        messageId: event.payload.messageId,
         streamId,
         workspaceId,
       })
 
-      logger.debug({ streamId, messageId: eventPayload.messageId }, "Boundary extraction job dispatched")
+      logger.debug({ streamId, messageId: event.payload.messageId }, "Boundary extraction job dispatched")
     },
   })
 }

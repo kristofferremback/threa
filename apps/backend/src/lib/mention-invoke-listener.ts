@@ -3,16 +3,11 @@ import { withClient } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { PersonaRepository } from "../repositories/persona-repository"
-import type { OutboxEvent, MessageCreatedOutboxPayload } from "../repositories/outbox-repository"
+import type { OutboxEvent } from "../repositories/outbox-repository"
+import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "./logger"
-
-interface MessageCreatedEventPayload {
-  messageId: string
-  content: string
-  contentFormat: string
-}
 
 export interface MentionInvokeListenerDeps {
   pool: Pool
@@ -45,9 +40,13 @@ export function createMentionInvokeListener(
         return
       }
 
-      const payload = outboxEvent.payload as MessageCreatedOutboxPayload
-      const { event, streamId, workspaceId } = payload
-      const eventPayload = event.payload as MessageCreatedEventPayload
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      if (!payload) {
+        logger.debug({ eventId: outboxEvent.id }, "Mention invoke: malformed event, skipping")
+        return
+      }
+
+      const { streamId, workspaceId, event } = payload
 
       // Ignore persona messages (avoid infinite loops)
       if (event.actorType !== AuthorTypes.USER) {
@@ -64,7 +63,7 @@ export function createMentionInvokeListener(
       const triggeredBy = event.actorId
 
       // Extract @mentions from message content
-      const mentionSlugs = extractMentionSlugs(eventPayload.content)
+      const mentionSlugs = extractMentionSlugs(event.payload.content)
       if (mentionSlugs.length === 0) {
         return
       }
@@ -84,7 +83,7 @@ export function createMentionInvokeListener(
           await jobQueue.send(JobQueues.PERSONA_AGENT, {
             workspaceId,
             streamId,
-            messageId: eventPayload.messageId,
+            messageId: event.payload.messageId,
             personaId: persona.id,
             triggeredBy,
             trigger: "mention",
@@ -93,7 +92,7 @@ export function createMentionInvokeListener(
           logger.info(
             {
               streamId,
-              messageId: eventPayload.messageId,
+              messageId: event.payload.messageId,
               personaId: persona.id,
               personaSlug: persona.slug,
             },

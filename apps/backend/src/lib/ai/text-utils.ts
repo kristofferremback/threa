@@ -2,6 +2,8 @@
  * AI text processing utilities.
  */
 
+import { Message } from "../../repositories/message-repository"
+
 /**
  * Convert snake_case to camelCase.
  */
@@ -116,4 +118,46 @@ export async function stripMarkdownFences({ text }: { text: string }): Promise<s
     // If parsing fails, return the cleaned text as-is
     return cleaned
   }
+}
+
+/**
+ * Format a message for use in a prompt as a structured message.
+ *
+ * @example
+ * formatMessage({
+ *   authorType: "user",
+ *   authorId: "123",
+ *   content: "Hello, world!",
+ *   createdAt: "2021-01-01T00:00:00Z",
+ * })
+ * // <message authorType="user" authorId="123" createdAt="2021-01-01T00:00:00Z">Hello, world!</message>
+ */
+export function formatMessage(m: Message): string {
+  // TODO: Enrich the message with the author name (user, persona)
+  // Note for future self: we need to add timezone local time formatting in here.
+  return `<message authorType="${m.authorType}" authorId="${m.authorId}" createdAt="${m.createdAt}">${m.content}</message>`
+}
+
+/**
+ * Format a list of messages for use in a prompt as a structured list of messages.
+ *
+ * @example
+ * formatMessages([{
+ *   authorType: "user",
+ *   authorId: "123",
+ *   content: "Hello, world!",
+ *   createdAt: "2021-01-01T00:00:00Z",
+ * }, {
+ *   authorType: "persona",
+ *   authorId: "456",
+ *   content: "Hello, world!",
+ *   createdAt: "2021-01-01T00:00:01Z",
+ * }])
+ * // <messages>
+ * // <message authorType="user" authorId="123" createdAt="2021-01-01T00:00:00Z">Hello, world!</message>
+ * // <message authorType="persona" authorId="456" createdAt="2021-01-01T00:00:01Z">Hello, world!</message>
+ * // </messages>
+ */
+export function formatMessages(messages: Message[]): string {
+  return `<messages>${messages.map((m) => formatMessage(m)).join("\n")}</messages>`
 }

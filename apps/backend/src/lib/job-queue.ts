@@ -42,6 +42,8 @@ export interface PersonaAgentJobData {
 
 export interface NamingJobData {
   streamId: string
+  /** If true, must generate a name (no NOT_ENOUGH_CONTEXT escape). Set when message is from agent. */
+  requireName: boolean
 }
 
 export interface EmbeddingJobData {
