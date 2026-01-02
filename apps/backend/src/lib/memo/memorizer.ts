@@ -1,8 +1,6 @@
-import { generateObject } from "ai"
 import { z } from "zod"
 import type { PoolClient } from "pg"
-import type { ProviderRegistry } from "../ai/provider-registry"
-import { stripMarkdownFences } from "../ai/text-utils"
+import type { AI } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -102,7 +100,7 @@ Prefer these tags when applicable, but create new ones if needed:
 
 export class Memorizer {
   constructor(
-    private providerRegistry: ProviderRegistry,
+    private ai: AI,
     private modelId: string,
     private messageFormatter: MessageFormatter
   ) {}
@@ -125,27 +123,24 @@ export class Memorizer {
       .replace("{{CONTENT}}", message.content)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
+    const { value } = await this.ai.generateObject({
+      model: this.modelId,
+      schema: memoContentSchema,
       system: SYSTEM_PROMPT,
       prompt,
-      schema: memoContentSchema,
-      maxOutputTokens: 500,
+      maxTokens: 500,
       temperature: 0.3,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "memorize-message",
         metadata: { messageId: message.id },
       },
     })
 
     return {
-      title: result.object.title,
-      abstract: result.object.abstract,
-      keyPoints: result.object.keyPoints,
-      tags: result.object.tags,
+      title: value.title,
+      abstract: value.abstract,
+      keyPoints: value.keyPoints,
+      tags: value.tags,
       sourceMessageIds: [message.id],
     }
   }
@@ -168,29 +163,26 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
+    const { value } = await this.ai.generateObject({
+      model: this.modelId,
+      schema: memoContentSchema,
       system: SYSTEM_PROMPT,
       prompt,
-      schema: memoContentSchema,
-      maxOutputTokens: 700,
+      maxTokens: 700,
       temperature: 0.3,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "memorize-conversation",
         metadata: { messageCount: messages.length },
       },
     })
 
-    const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
+    const validSourceIds = value.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
 
     return {
-      title: result.object.title,
-      abstract: result.object.abstract,
-      keyPoints: result.object.keyPoints,
-      tags: result.object.tags,
+      title: value.title,
+      abstract: value.abstract,
+      keyPoints: value.keyPoints,
+      tags: value.tags,
       sourceMessageIds: validSourceIds.length > 0 ? validSourceIds : messages.map((m) => m.id),
     }
   }
@@ -219,17 +211,14 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
+    const { value } = await this.ai.generateObject({
+      model: this.modelId,
+      schema: memoContentSchema,
       system: SYSTEM_PROMPT,
       prompt,
-      schema: memoContentSchema,
-      maxOutputTokens: 700,
+      maxTokens: 700,
       temperature: 0.3,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "revise-memo",
         metadata: {
           memoId: existingMemo.id,
@@ -238,13 +227,13 @@ export class Memorizer {
       },
     })
 
-    const validSourceIds = result.object.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
+    const validSourceIds = value.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
 
     return {
-      title: result.object.title,
-      abstract: result.object.abstract,
-      keyPoints: result.object.keyPoints,
-      tags: result.object.tags,
+      title: value.title,
+      abstract: value.abstract,
+      keyPoints: value.keyPoints,
+      tags: value.tags,
       sourceMessageIds: validSourceIds.length > 0 ? validSourceIds : messages.map((m) => m.id),
     }
   }

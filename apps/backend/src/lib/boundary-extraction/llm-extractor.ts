@@ -1,7 +1,6 @@
-import { generateObject, NoObjectGeneratedError } from "ai"
+import { NoObjectGeneratedError } from "ai"
 import { z } from "zod"
-import type { ProviderRegistry } from "../ai/provider-registry"
-import { stripMarkdownFences } from "../ai/text-utils"
+import type { AI } from "../ai/ai"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
@@ -67,7 +66,7 @@ Respond with ONLY the JSON object. No explanation, no markdown code blocks.`
 
 export class LLMBoundaryExtractor implements BoundaryExtractor {
   constructor(
-    private providerRegistry: ProviderRegistry,
+    private ai: AI,
     private modelId: string
   ) {}
 
@@ -78,19 +77,15 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
 
     const prompt = this.buildPrompt(context)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-
     try {
-      const result = await generateObject({
-        model,
+      const { value } = await this.ai.generateObject({
+        model: this.modelId,
+        schema: extractionResponseSchema,
         system: SYSTEM_PROMPT,
         prompt,
-        schema: extractionResponseSchema,
-        maxOutputTokens: 500,
+        maxTokens: 500,
         temperature: 0.2,
-        experimental_repairText: stripMarkdownFences,
-        experimental_telemetry: {
-          isEnabled: true,
+        telemetry: {
           functionId: "boundary-extraction",
           metadata: {
             streamType: context.streamType,
@@ -99,7 +94,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
         },
       })
 
-      return this.validateResult(result.object, context)
+      return this.validateResult(value, context)
     } catch (error) {
       // Handle parsing errors gracefully - LLMs sometimes return JSON wrapped in markdown
       // This is NOT a silent fallback per INV-11: we log the error and only handle this

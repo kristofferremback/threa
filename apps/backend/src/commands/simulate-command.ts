@@ -1,10 +1,8 @@
-import { generateObject } from "ai"
 import { z } from "zod"
 import type { Pool } from "pg"
 import type { Command, CommandContext, CommandResult } from "./index"
-import type { ProviderRegistry } from "../lib/ai/provider-registry"
+import type { AI } from "../lib/ai/ai"
 import type { SimulationAgentLike } from "../workers/simulation-worker"
-import { stripMarkdownFences } from "../lib/ai"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { withClient } from "../db"
 import { logger } from "../lib/logger"
@@ -63,7 +61,7 @@ Input:`
 
 interface SimulateCommandDeps {
   pool: Pool
-  providerRegistry: ProviderRegistry
+  ai: AI
   simulationAgent: SimulationAgentLike
   parsingModel: string
 }
@@ -161,22 +159,19 @@ export class SimulateCommand implements Command {
   }
 
   private async parseArgs(args: string, availablePersonas: string[]): Promise<SimulationParams> {
-    const model = this.deps.providerRegistry.getModel(this.deps.parsingModel)
     const prompt = buildParsingPrompt(availablePersonas)
 
-    const result = await generateObject({
-      model,
+    const { value } = await this.deps.ai.generateObject({
+      model: this.deps.parsingModel,
       schema: SimulationParamsSchema,
       prompt: `${prompt} ${args}`,
       temperature: 0,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "simulate-parse-args",
       },
     })
 
-    return result.object
+    return value
   }
 
   private async getAvailablePersonaSlugs(workspaceId: string): Promise<string[]> {

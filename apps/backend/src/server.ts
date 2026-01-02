@@ -55,7 +55,8 @@ import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { logger } from "./lib/logger"
-import { ProviderRegistry, createPostgresCheckpointer } from "./lib/ai"
+import { createPostgresCheckpointer } from "./lib/ai"
+import { createAI } from "./lib/ai/ai"
 import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 
@@ -90,15 +91,15 @@ export async function startServer(): Promise<ServerInstance> {
   const storage = createS3Storage(config.s3)
   const attachmentService = new AttachmentService(pool, storage)
 
-  const providerRegistry = new ProviderRegistry({
+  const ai = createAI({
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
   const messageFormatter = new MessageFormatter()
-  const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel, messageFormatter)
+  const streamNamingService = new StreamNamingService(pool, ai, config.ai.namingModel, messageFormatter)
   const conversationService = new ConversationService(pool)
 
   // Search and embedding services
-  const embeddingService = new EmbeddingService({ providerRegistry })
+  const embeddingService = new EmbeddingService({ ai })
   const searchService = new SearchService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.)
@@ -111,7 +112,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = new SimulationAgent({
     pool,
-    providerRegistry,
+    ai,
     streamService,
     checkpointer,
     createMessage,
@@ -122,7 +123,7 @@ export async function startServer(): Promise<ServerInstance> {
   const commandRegistry = new CommandRegistry()
   const simulateCommand = new SimulateCommand({
     pool,
-    providerRegistry,
+    ai,
     simulationAgent,
     parsingModel: config.ai.namingModel,
   })
@@ -168,7 +169,7 @@ export async function startServer(): Promise<ServerInstance> {
   const responseGenerator = config.useStubCompanion
     ? new StubResponseGenerator()
     : new LangGraphResponseGenerator({
-        modelRegistry: providerRegistry,
+        ai,
         checkpointer,
         tavilyApiKey: config.ai.tavilyApiKey || undefined,
       })
@@ -186,14 +187,14 @@ export async function startServer(): Promise<ServerInstance> {
   // Boundary extraction
   const boundaryExtractor = config.useStubBoundaryExtraction
     ? new StubBoundaryExtractor()
-    : new LLMBoundaryExtractor(providerRegistry, config.ai.extractionModel)
+    : new LLMBoundaryExtractor(ai, config.ai.extractionModel)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
 
   // Memo (GAM) processing
-  const memoClassifier = new MemoClassifier(providerRegistry, config.ai.memoModel, messageFormatter)
-  const memorizer = new Memorizer(providerRegistry, config.ai.memoModel, messageFormatter)
+  const memoClassifier = new MemoClassifier(ai, config.ai.memoModel, messageFormatter)
+  const memorizer = new Memorizer(ai, config.ai.memoModel, messageFormatter)
   const memoService = new MemoService({
     pool,
     classifier: memoClassifier,
