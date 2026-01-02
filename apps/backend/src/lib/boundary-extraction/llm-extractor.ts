@@ -9,14 +9,14 @@ import { CONVERSATION_STATUSES, StreamTypes } from "@threa/types"
 
 /**
  * Schema for LLM extraction response using structured outputs.
- * The model outputs directly conform to this schema, eliminating JSON parsing errors.
+ * OpenAI's strict mode requires ALL properties in the `required` array,
+ * so we use `.nullable()` instead of `.optional()` for optional semantics.
  */
 const extractionResponseSchema = z.object({
   conversationId: z.string().nullable().describe("ID of existing conversation to join, or null for new conversation"),
   newConversationTopic: z
     .string()
     .nullable()
-    .optional()
     .describe("Topic summary if starting a new conversation (required when conversationId is null)"),
   completenessUpdates: z
     .array(
@@ -28,10 +28,10 @@ const extractionResponseSchema = z.object({
           .describe(`Conversation status: ${CONVERSATION_STATUSES.map((s) => `"${s}"`).join(" | ")}`),
       })
     )
-    .optional()
-    .describe("Updates to completeness scores for affected conversations"),
+    .nullable()
+    .describe("Updates to completeness scores for affected conversations, or null if none"),
   confidence: z.number().min(0).max(1).describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().optional().describe("Brief explanation of the classification decision"),
+  reasoning: z.string().nullable().describe("Brief explanation of the classification decision"),
 })
 
 const SYSTEM_PROMPT = `You are a conversation boundary classifier. You analyze messages and output ONLY valid JSON matching the required schema. No explanations, no markdown, no prose - just the JSON object.`
@@ -185,7 +185,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
     return {
       conversationId: parsed.conversationId,
       newConversationTopic: parsed.newConversationTopic ?? undefined,
-      completenessUpdates: parsed.completenessUpdates,
+      completenessUpdates: parsed.completenessUpdates ?? undefined,
       confidence: parsed.confidence,
     }
   }
