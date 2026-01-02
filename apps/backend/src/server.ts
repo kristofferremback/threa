@@ -16,6 +16,7 @@ import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { AttachmentService } from "./services/attachment-service"
 import { StreamNamingService } from "./services/stream-naming-service"
+import { MessageFormatter } from "./lib/ai/message-formatter"
 import { SearchService } from "./services/search-service"
 import { EmbeddingService } from "./services/embedding-service"
 import { ConversationService } from "./services/conversation-service"
@@ -92,7 +93,8 @@ export async function startServer(): Promise<ServerInstance> {
   const providerRegistry = new ProviderRegistry({
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
-  const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel)
+  const messageFormatter = new MessageFormatter()
+  const streamNamingService = new StreamNamingService(pool, providerRegistry, config.ai.namingModel, messageFormatter)
   const conversationService = new ConversationService(pool)
 
   // Search and embedding services

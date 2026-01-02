@@ -77,6 +77,19 @@ export const PersonaRepository = {
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
 
+  async findByIds(client: PoolClient, ids: string[]): Promise<Persona[]> {
+    if (ids.length === 0) return []
+
+    const result = await client.query<PersonaRow>(
+      sql`
+        SELECT ${sql.raw(SELECT_FIELDS)}
+        FROM personas
+        WHERE id = ANY(${ids})
+      `
+    )
+    return result.rows.map(mapRowToPersona)
+  },
+
   async findBySlug(client: PoolClient, slug: string, workspaceId?: string | null): Promise<Persona | null> {
     // System personas have null workspace_id
     if (workspaceId === null || workspaceId === undefined) {

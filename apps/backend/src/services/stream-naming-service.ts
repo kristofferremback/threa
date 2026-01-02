@@ -7,7 +7,7 @@ import { OutboxRepository } from "../repositories/outbox-repository"
 import { ProviderRegistry } from "../lib/ai"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
-import { formatMessages } from "../lib/ai/text-utils"
+import { MessageFormatter } from "../lib/ai/message-formatter"
 
 const MAX_MESSAGES_FOR_NAMING = 10
 const MAX_EXISTING_NAMES = 10
@@ -39,7 +39,8 @@ export class StreamNamingService {
   constructor(
     private pool: Pool,
     private providerRegistry: ProviderRegistry,
-    private namingModel: string
+    private namingModel: string,
+    private messageFormatter: MessageFormatter
   ) {}
 
   /**
@@ -83,7 +84,7 @@ export class StreamNamingService {
 
       // Build conversation context for LLM
       // Messages are already in chronological order (repository reverses the DESC query)
-      const conversationText = formatMessages(messages)
+      const conversationText = await this.messageFormatter.formatMessages(client, messages)
 
       const promptTemplate = buildSystemPrompt(existingNames, requireName)
 
