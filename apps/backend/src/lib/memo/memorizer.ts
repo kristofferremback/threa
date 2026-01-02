@@ -1,7 +1,9 @@
 import { generateObject } from "ai"
 import { z } from "zod"
+import type { PoolClient } from "pg"
 import type { ProviderRegistry } from "../ai/provider-registry"
 import { stripMarkdownFences } from "../ai/text-utils"
+import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Memo } from "../../repositories/memo-repository"
 
@@ -101,7 +103,8 @@ Prefer these tags when applicable, but create new ones if needed:
 export class Memorizer {
   constructor(
     private providerRegistry: ProviderRegistry,
-    private modelId: string
+    private modelId: string,
+    private messageFormatter: MessageFormatter
   ) {}
 
   async memorizeMessage(context: MemorizerContext): Promise<MemoContent> {
@@ -147,7 +150,7 @@ export class Memorizer {
     }
   }
 
-  async memorizeConversation(context: MemorizerContext): Promise<MemoContent> {
+  async memorizeConversation(client: PoolClient, context: MemorizerContext): Promise<MemoContent> {
     const messages = context.content as Message[]
 
     const memoryContextText =
@@ -155,9 +158,7 @@ export class Memorizer {
         ? context.memoryContext.map((a, i) => `${i + 1}. ${a}`).join("\n")
         : "No prior memos in this stream yet."
 
-    const messagesText = messages
-      .map((m) => `[ID:${m.id}] [${m.authorType}:${m.authorId.slice(-8)}]: ${m.content}`)
-      .join("\n\n")
+    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages, { includeIds: true })
 
     const existingTagsSection = context.existingTags?.length
       ? EXISTING_TAGS_TEMPLATE.replace("{{TAGS}}", context.existingTags.join(", "))
@@ -194,7 +195,7 @@ export class Memorizer {
     }
   }
 
-  async reviseMemo(context: MemorizerContext): Promise<MemoContent> {
+  async reviseMemo(client: PoolClient, context: MemorizerContext): Promise<MemoContent> {
     const messages = context.content as Message[]
     const existingMemo = context.existingMemo!
 
@@ -203,9 +204,7 @@ export class Memorizer {
         ? context.memoryContext.map((a, i) => `${i + 1}. ${a}`).join("\n")
         : "No prior memos in this stream yet."
 
-    const messagesText = messages
-      .map((m) => `[ID:${m.id}] [${m.authorType}:${m.authorId.slice(-8)}]: ${m.content}`)
-      .join("\n\n")
+    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages, { includeIds: true })
 
     const keyPointsText = existingMemo.keyPoints.map((kp, i) => `${i + 1}. ${kp}`).join("\n")
 

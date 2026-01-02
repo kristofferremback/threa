@@ -1,6 +1,13 @@
 import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
 import { StreamNamingService } from "./stream-naming-service"
+import { MessageFormatter } from "../lib/ai/message-formatter"
 import * as ai from "ai"
+
+// Mock message formatter
+const mockFormatMessages = mock(() => Promise.resolve("<messages></messages>"))
+const mockMessageFormatter = {
+  formatMessages: mockFormatMessages,
+} as unknown as MessageFormatter
 
 // Mock repositories
 const mockStream = {
@@ -80,13 +87,15 @@ describe("StreamNamingService", () => {
     mockStreamUpdate.mockReset()
     mockOutboxInsert.mockReset()
     mockGetModel.mockReset()
+    mockFormatMessages.mockReset()
 
     mockFindByIdForUpdate.mockResolvedValue(mockStream)
     mockMessageList.mockResolvedValue(mockMessages)
     mockGetModel.mockReturnValue({})
+    mockFormatMessages.mockResolvedValue("<messages></messages>")
     // Don't set default for mockStreamList - each test that needs it will set it
 
-    service = new StreamNamingService(mockPool, mockProviderRegistry as any, "test-model")
+    service = new StreamNamingService(mockPool, mockProviderRegistry as any, "test-model", mockMessageFormatter)
 
     generateTextSpy = spyOn(ai, "generateText")
   })

@@ -1,7 +1,9 @@
 import { generateObject } from "ai"
 import { z } from "zod"
+import type { PoolClient } from "pg"
 import type { ProviderRegistry } from "../ai/provider-registry"
 import { stripMarkdownFences } from "../ai/text-utils"
+import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -30,21 +32,18 @@ export interface ConversationClassification {
   confidence: number
 }
 
+/**
+ * OpenAI's strict mode requires ALL properties in the `required` array,
+ * so we use `.nullable()` instead of `.optional()` for optional semantics.
+ */
 const messageClassificationSchema = z.object({
   isGem: z.boolean().describe("Whether this message is a standalone gem worth memorizing"),
   knowledgeType: z
     .enum(KNOWLEDGE_TYPES)
     .nullable()
-    .optional()
     .describe(`Type of knowledge if isGem is true: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
-  confidence: z
-    .number()
-    .min(0)
-    .max(1)
-    .optional()
-    .default(0.5)
-    .describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().optional().default("").describe("Brief explanation of the classification decision"),
+  confidence: z.number().min(0).max(1).nullable().describe("Confidence in this classification (0.0 to 1.0)"),
+  reasoning: z.string().nullable().describe("Brief explanation of the classification decision"),
 })
 
 const conversationClassificationSchema = z.object({
@@ -52,25 +51,13 @@ const conversationClassificationSchema = z.object({
   knowledgeType: z
     .enum(KNOWLEDGE_TYPES)
     .nullable()
-    .optional()
     .describe(`Primary type of knowledge if worthy: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
-  shouldReviseExisting: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe("If a memo exists, whether it should be revised"),
+  shouldReviseExisting: z.boolean().nullable().describe("If a memo exists, whether it should be revised"),
   revisionReason: z
     .string()
     .nullable()
-    .optional()
     .describe("Why the existing memo should be revised (if shouldReviseExisting is true)"),
-  confidence: z
-    .number()
-    .min(0)
-    .max(1)
-    .optional()
-    .default(0.5)
-    .describe("Confidence in this classification (0.0 to 1.0)"),
+  confidence: z.number().min(0).max(1).nullable().describe("Confidence in this classification (0.0 to 1.0)"),
 })
 
 const MESSAGE_SYSTEM_PROMPT = `You are a knowledge classifier for a team chat application. You identify standalone messages that contain valuable knowledge worth preserving ("gems").
@@ -144,7 +131,8 @@ Should this memo be revised based on the conversation above?`
 export class MemoClassifier {
   constructor(
     private providerRegistry: ProviderRegistry,
-    private modelId: string
+    private modelId: string,
+    private messageFormatter: MessageFormatter
   ) {}
 
   async classifyMessage(message: Message): Promise<MessageClassification> {
@@ -171,17 +159,18 @@ export class MemoClassifier {
     return {
       isGem: result.object.isGem,
       knowledgeType: result.object.knowledgeType,
-      confidence: result.object.confidence,
-      reasoning: result.object.reasoning,
+      confidence: result.object.confidence ?? 0.5,
+      reasoning: result.object.reasoning ?? "",
     }
   }
 
   async classifyConversation(
+    client: PoolClient,
     conversation: Conversation,
     messages: Message[],
     existingMemo?: Memo
   ): Promise<ConversationClassification> {
-    const messagesText = messages.map((m) => `[${m.authorType}:${m.authorId.slice(-8)}]: ${m.content}`).join("\n\n")
+    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages)
 
     const existingMemoSection = existingMemo
       ? EXISTING_MEMO_TEMPLATE.replace("{{MEMO_TITLE}}", existingMemo.title)
@@ -219,9 +208,9 @@ export class MemoClassifier {
     return {
       isKnowledgeWorthy: result.object.isKnowledgeWorthy,
       knowledgeType: result.object.knowledgeType,
-      shouldReviseExisting: existingMemo ? result.object.shouldReviseExisting : false,
+      shouldReviseExisting: existingMemo ? (result.object.shouldReviseExisting ?? false) : false,
       revisionReason: result.object.revisionReason,
-      confidence: result.object.confidence,
+      confidence: result.object.confidence ?? 0.5,
     }
   }
 }
