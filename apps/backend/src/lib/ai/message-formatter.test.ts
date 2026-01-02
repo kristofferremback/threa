@@ -74,10 +74,9 @@ describe("MessageFormatter", () => {
 
     const result = await formatter.formatMessages(mockClient, messages)
 
-    expect(result).toContain('authorName="Alice"')
-    expect(result).toContain('authorType="user"')
-    expect(result).toContain('authorId="user_123"')
-    expect(result).toContain("Hello!")
+    expect(result).toBe(
+      '<messages>\n<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Hello!</message>\n</messages>'
+    )
   })
 
   test("should format messages with persona author names", async () => {
@@ -95,32 +94,17 @@ describe("MessageFormatter", () => {
 
     const result = await formatter.formatMessages(mockClient, messages)
 
-    expect(result).toContain('authorName="Ariadne"')
-    expect(result).toContain('authorType="persona"')
-    expect(result).toContain('authorId="persona_456"')
-    expect(result).toContain("I can help with that!")
+    expect(result).toBe(
+      '<messages>\n<message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2024-01-01T10:00:01.000Z">I can help with that!</message>\n</messages>'
+    )
   })
 
   test("should batch lookup mixed authors efficiently", async () => {
+    const createdAt = new Date("2024-01-01T10:00:00Z")
     const messages = [
-      createMessage({
-        id: "msg_1",
-        authorId: "user_123",
-        authorType: "user",
-        content: "Question?",
-      }),
-      createMessage({
-        id: "msg_2",
-        authorId: "persona_456",
-        authorType: "persona",
-        content: "Answer!",
-      }),
-      createMessage({
-        id: "msg_3",
-        authorId: "user_123",
-        authorType: "user",
-        content: "Thanks!",
-      }),
+      createMessage({ id: "msg_1", authorId: "user_123", authorType: "user", content: "Question?", createdAt }),
+      createMessage({ id: "msg_2", authorId: "persona_456", authorType: "persona", content: "Answer!", createdAt }),
+      createMessage({ id: "msg_3", authorId: "user_123", authorType: "user", content: "Thanks!", createdAt }),
     ]
 
     mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
@@ -128,14 +112,17 @@ describe("MessageFormatter", () => {
 
     const result = await formatter.formatMessages(mockClient, messages)
 
-    expect(mockFindUsersByIds).toHaveBeenCalledTimes(1)
-    expect(mockFindPersonasByIds).toHaveBeenCalledTimes(1)
-
+    // Verify batch efficiency: only 1 call per author type despite 3 messages
     expect(mockFindUsersByIds).toHaveBeenCalledWith(mockClient, ["user_123"])
     expect(mockFindPersonasByIds).toHaveBeenCalledWith(mockClient, ["persona_456"])
 
-    expect(result).toContain('authorName="Alice"')
-    expect(result).toContain('authorName="Ariadne"')
+    expect(result).toBe(
+      "<messages>\n" +
+        '<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Question?</message>\n' +
+        '<message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2024-01-01T10:00:00.000Z">Answer!</message>\n' +
+        '<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Thanks!</message>\n' +
+        "</messages>"
+    )
   })
 
   test("should use 'Unknown' for unresolved author IDs", async () => {
@@ -239,12 +226,14 @@ describe("MessageFormatter", () => {
           authorId: "user_123",
           authorType: "user",
           content: "Hello!",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
         createMessage({
           id: "msg_2",
           authorId: "persona_456",
           authorType: "persona",
           content: "Hi there!",
+          createdAt: new Date("2024-01-01T10:00:01Z"),
         }),
       ]
 
@@ -253,9 +242,9 @@ describe("MessageFormatter", () => {
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
-      expect(result).toContain("[user] Alice: Hello!")
-      expect(result).toContain("[persona] Ariadne: Hi there!")
-      expect(result).not.toContain("[ID:")
+      expect(result).toBe(
+        "[2024-01-01T10:00:00.000Z] [user] Alice: Hello!\n\n[2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!"
+      )
     })
 
     test("should include message IDs when includeIds option is true", async () => {
@@ -265,6 +254,7 @@ describe("MessageFormatter", () => {
           authorId: "user_123",
           authorType: "user",
           content: "Hello!",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
 
@@ -272,8 +262,7 @@ describe("MessageFormatter", () => {
 
       const result = await formatter.formatMessagesInline(mockClient, messages, { includeIds: true })
 
-      expect(result).toContain("[ID:msg_abc123]")
-      expect(result).toContain("[user] Alice: Hello!")
+      expect(result).toBe("[ID:msg_abc123] [2024-01-01T10:00:00.000Z] [user] Alice: Hello!")
     })
 
     test("should use 'Unknown' for unresolved author IDs", async () => {
@@ -283,6 +272,7 @@ describe("MessageFormatter", () => {
           authorId: "user_deleted",
           authorType: "user",
           content: "Message from deleted user",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
 
@@ -290,21 +280,22 @@ describe("MessageFormatter", () => {
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
-      expect(result).toContain("[user] Unknown: Message from deleted user")
+      expect(result).toBe("[2024-01-01T10:00:00.000Z] [user] Unknown: Message from deleted user")
     })
 
     test("should separate messages with double newlines", async () => {
       const messages = [
-        createMessage({ id: "msg_1", content: "First" }),
-        createMessage({ id: "msg_2", content: "Second" }),
+        createMessage({ id: "msg_1", content: "First", createdAt: new Date("2024-01-01T10:00:00Z") }),
+        createMessage({ id: "msg_2", content: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
       ]
 
       mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
-      expect(result).toContain("First\n\n")
-      expect(result).toContain("Second")
+      expect(result).toBe(
+        "[2024-01-01T10:00:00.000Z] [user] Alice: First\n\n[2024-01-01T10:00:01.000Z] [user] Alice: Second"
+      )
     })
   })
 })

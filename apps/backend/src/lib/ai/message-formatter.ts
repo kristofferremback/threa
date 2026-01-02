@@ -81,14 +81,14 @@ export class MessageFormatter {
    * @example
    * // Without IDs (classifier)
    * const formatted = await messageFormatter.formatMessagesInline(client, messages)
-   * // [user] Alice: Hello!
-   * // [persona] Ariadne: Hi there!
+   * // [2024-01-01T10:00:00.000Z] [user] Alice: Hello!
+   * // [2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!
    *
    * @example
    * // With IDs (memorizer)
    * const formatted = await messageFormatter.formatMessagesInline(client, messages, { includeIds: true })
-   * // [ID:msg_123] [user] Alice: Hello!
-   * // [ID:msg_456] [persona] Ariadne: Hi there!
+   * // [ID:msg_123] [2024-01-01T10:00:00.000Z] [user] Alice: Hello!
+   * // [ID:msg_456] [2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!
    */
   async formatMessagesInline(
     client: PoolClient,
@@ -102,7 +102,8 @@ export class MessageFormatter {
     const formatted = messages.map((m) => {
       const authorName = nameById.get(m.authorId) ?? "Unknown"
       const idPrefix = options?.includeIds ? `[ID:${m.id}] ` : ""
-      return `${idPrefix}[${m.authorType}] ${authorName}: ${m.content}`
+      const timestamp = m.createdAt.toISOString()
+      return `${idPrefix}[${timestamp}] [${m.authorType}] ${authorName}: ${m.content}`
     })
 
     return formatted.join("\n\n")
