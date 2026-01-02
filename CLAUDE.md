@@ -197,13 +197,10 @@ When introducing a new invariant:
 
 Multi-provider system with `provider:model` format:
 
-- `anthropic:claude-sonnet-4-20250514`
-- `openai:gpt-4o-mini`
-- `ollama:granite4:1b`
+- `openrouter:anthropic/claude-sonnet-4-20250514`
+- `openrouter:openai/gpt-4o-mini`
 
-Dual-tier classification: fast/free SLM for most messages, expensive model only when uncertain.
-
-Ollama-first for embeddings (free), fallback to paid APIs.
+All AI calls go through OpenRouter for unified billing and model access.
 
 ## Development
 

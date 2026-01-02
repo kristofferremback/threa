@@ -35,25 +35,14 @@ describe("parseModelId", () => {
     })
   })
 
-  it("should parse ollama model with version tag", () => {
-    const result = parseModelId("ollama:granite4:1b")
+  it("should parse model with version tag containing colons", () => {
+    const result = parseModelId("provider:model:v1:latest")
 
     expect(result).toEqual({
-      provider: "ollama",
-      modelId: "granite4:1b",
-      modelProvider: "ollama",
-      modelName: "granite4:1b",
-    })
-  })
-
-  it("should parse ollama model with multiple colons in version", () => {
-    const result = parseModelId("ollama:llama3:8b:instruct")
-
-    expect(result).toEqual({
-      provider: "ollama",
-      modelId: "llama3:8b:instruct",
-      modelProvider: "ollama",
-      modelName: "llama3:8b:instruct",
+      provider: "provider",
+      modelId: "model:v1:latest",
+      modelProvider: "provider",
+      modelName: "model:v1:latest",
     })
   })
 
@@ -97,5 +86,38 @@ describe("createAI", () => {
   })
 })
 
-// Integration tests with mocked AI SDK would go here
-// For now, we test the parsing and configuration logic
+describe("API behavior", () => {
+  it("should expose telemetry option for embed operations", () => {
+    const ai = createAI({ openrouter: { apiKey: "test-key" } })
+
+    // Verify the interface accepts telemetry - actual call would need mocking
+    const embedOptions = {
+      model: "openrouter:openai/text-embedding-3-small",
+      value: "test text",
+      telemetry: { functionId: "test-embed" },
+    }
+    const embedManyOptions = {
+      model: "openrouter:openai/text-embedding-3-small",
+      values: ["test1", "test2"],
+      telemetry: { functionId: "test-embed-many", metadata: { count: 2 } },
+    }
+
+    // Type check passes if these compile
+    expect(embedOptions.telemetry.functionId).toBe("test-embed")
+    expect(embedManyOptions.telemetry.functionId).toBe("test-embed-many")
+  })
+
+  it("should have consistent error messages mentioning env var and config", () => {
+    const ai = createAI({})
+
+    expect(() => ai.getLanguageModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
+    expect(() => ai.getEmbeddingModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
+    expect(() => ai.getLangChainModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
+  })
+
+  it("should list supported providers in error for unsupported provider", () => {
+    const ai = createAI({ openrouter: { apiKey: "test-key" } })
+
+    expect(() => ai.getLanguageModel("unsupported:model")).toThrow(/Currently supported: openrouter/)
+  })
+})

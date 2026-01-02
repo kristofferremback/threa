@@ -29,7 +29,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 // -----------------------------------------------------------------------------
 
 export interface ParsedModel {
-  /** The provider (e.g., "openrouter", "anthropic", "ollama") */
+  /** The provider (e.g., "openrouter", "anthropic") */
   provider: string
   /** The full model ID after the provider prefix (e.g., "anthropic/claude-haiku-4.5") */
   modelId: string
@@ -41,8 +41,6 @@ export interface ParsedModel {
 
 export interface AIConfig {
   openrouter?: { apiKey: string }
-  anthropic?: { apiKey: string }
-  ollama?: { baseUrl?: string }
   defaults?: {
     repair?: RepairFunction
   }
@@ -77,11 +75,13 @@ export interface GenerateObjectOptions<T extends z.ZodType> {
 export interface EmbedOptions {
   model: string
   value: string
+  telemetry?: TelemetryConfig
 }
 
 export interface EmbedManyOptions {
   model: string
   values: string[]
+  telemetry?: TelemetryConfig
 }
 
 // Response types from AI SDK
@@ -97,7 +97,6 @@ export interface TextResult {
 export interface ObjectResult<T> {
   value: T
   response: {
-    object: T
     usage: {
       readonly promptTokens?: number
       readonly completionTokens?: number
@@ -116,7 +115,7 @@ export interface ManyEmbedResult {
   response: EmbedManyResponse
 }
 
-export type RepairFunction = (args: { text: string }) => Promise<string>
+export type RepairFunction = (args: { text: string }) => Promise<string> | string
 
 export interface AI {
   // Generation
@@ -159,13 +158,6 @@ export interface AI {
  *     modelProvider: "anthropic",
  *     modelName: "claude-sonnet-4-20250514"
  *   }
- *
- *   "ollama:granite4:1b" → {
- *     provider: "ollama",
- *     modelId: "granite4:1b",
- *     modelProvider: "ollama",
- *     modelName: "granite4:1b"
- *   }
  */
 export function parseModelId(providerModelString: string): ParsedModel {
   const colonIndex = providerModelString.indexOf(":")
@@ -201,7 +193,6 @@ export function createAI(config: AIConfig): AI {
   // Initialize providers
   const providers = {
     openrouter: config.openrouter ? createOpenRouter({ apiKey: config.openrouter.apiKey }) : null,
-    // Future: anthropic, ollama, etc.
   }
 
   // Store API keys for LangChain (needs raw key, not provider instance)
@@ -217,12 +208,12 @@ export function createAI(config: AIConfig): AI {
     switch (provider) {
       case "openrouter":
         if (!providers.openrouter) {
-          throw new Error("OpenRouter not configured. Provide openrouter.apiKey in config.")
+          throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId }, "Creating language model instance")
         return providers.openrouter.chat(modelId)
       default:
-        throw new Error(`Unsupported provider: "${provider}"`)
+        throw new Error(`Unsupported provider: "${provider}". Currently supported: openrouter`)
     }
   }
 
@@ -232,12 +223,12 @@ export function createAI(config: AIConfig): AI {
     switch (provider) {
       case "openrouter":
         if (!providers.openrouter) {
-          throw new Error("OpenRouter not configured. Provide openrouter.apiKey in config.")
+          throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId }, "Creating embedding model instance")
         return providers.openrouter.textEmbeddingModel(modelId)
       default:
-        throw new Error(`Unsupported embedding provider: "${provider}"`)
+        throw new Error(`Unsupported embedding provider: "${provider}". Currently supported: openrouter`)
     }
   }
 
@@ -247,7 +238,7 @@ export function createAI(config: AIConfig): AI {
     switch (provider) {
       case "openrouter":
         if (!apiKeys.openrouter) {
-          throw new Error("OpenRouter not configured. Provide openrouter.apiKey in config.")
+          throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId }, "Creating LangChain model instance")
         return new ChatOpenAI({
@@ -256,7 +247,7 @@ export function createAI(config: AIConfig): AI {
           configuration: { baseURL: OPENROUTER_BASE_URL },
         })
       default:
-        throw new Error(`Unsupported LangChain provider: "${provider}"`)
+        throw new Error(`Unsupported LangChain provider: "${provider}". Currently supported: openrouter`)
     }
   }
 
@@ -277,14 +268,14 @@ export function createAI(config: AIConfig): AI {
 
     async generateText(options) {
       const model = getLanguageModel(options.model)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const response = await aiGenerateText({
         model,
         prompt: options.prompt,
         system: options.system,
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
-        experimental_telemetry: buildTelemetry(options.telemetry) as any,
+        // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
+        experimental_telemetry: buildTelemetry(options.telemetry),
       })
 
       return {
@@ -297,8 +288,8 @@ export function createAI(config: AIConfig): AI {
       const model = getLanguageModel(options.model)
       const repair = options.repair === false ? undefined : (options.repair ?? defaultRepair)
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await (aiGenerateObject as any)({
+      // @ts-expect-error AI SDK generateObject has complex generics; we validate schema type at our interface level
+      const response = await aiGenerateObject({
         model,
         schema: options.schema,
         prompt: options.prompt,
@@ -312,7 +303,6 @@ export function createAI(config: AIConfig): AI {
       return {
         value: response.object as z.infer<T>,
         response: {
-          object: response.object as z.infer<T>,
           usage: response.usage,
         },
       }
@@ -320,7 +310,12 @@ export function createAI(config: AIConfig): AI {
 
     async embed(options) {
       const model = getEmbeddingModel(options.model)
-      const response = await aiEmbed({ model, value: options.value })
+      const response = await aiEmbed({
+        model,
+        value: options.value,
+        // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
+        experimental_telemetry: buildTelemetry(options.telemetry),
+      })
 
       return {
         value: response.embedding,
@@ -330,7 +325,12 @@ export function createAI(config: AIConfig): AI {
 
     async embedMany(options) {
       const model = getEmbeddingModel(options.model)
-      const response = await aiEmbedMany({ model, values: options.values })
+      const response = await aiEmbedMany({
+        model,
+        values: options.values,
+        // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
+        experimental_telemetry: buildTelemetry(options.telemetry),
+      })
 
       return {
         value: response.embeddings,
