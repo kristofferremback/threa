@@ -227,7 +227,6 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
     ],
     // Note: We intentionally exclude suggestion configs from deps - they're stable refs
     // and including them causes unnecessary editor recreation
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [placeholder]
   )
 

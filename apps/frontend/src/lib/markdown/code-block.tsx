@@ -18,6 +18,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
         light: "github-light",
         dark: "github-dark",
       },
+      defaultColor: false,
     })
       .then((result) => {
         if (!cancelled) {
