@@ -20,13 +20,15 @@ const extractionResponseSchema = z.object({
     .describe("Topic summary if starting a new conversation (required when conversationId is null)"),
   completenessUpdates: z
     .array(
-      z.object({
-        conversationId: z.string(),
-        score: z.number().min(1).max(7).describe("Completeness score: 1 = just started, 7 = fully resolved"),
-        status: z
-          .enum(CONVERSATION_STATUSES)
-          .describe(`Conversation status: ${CONVERSATION_STATUSES.map((s) => `"${s}"`).join(" | ")}`),
-      })
+      z
+        .object({
+          conversationId: z.string(),
+          score: z.number().min(1).max(7).describe("Completeness score: 1 = just started, 7 = fully resolved"),
+          status: z
+            .enum(CONVERSATION_STATUSES)
+            .describe(`Conversation status: ${CONVERSATION_STATUSES.map((s) => `"${s}"`).join(" | ")}`),
+        })
+        .strict()
     )
     .nullable()
     .describe("Updates to completeness scores for affected conversations, or null if none"),
