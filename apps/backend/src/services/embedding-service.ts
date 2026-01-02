@@ -24,7 +24,11 @@ export class EmbeddingService {
    * Generate embedding for a single text.
    */
   async embed(text: string): Promise<number[]> {
-    const { value } = await this.ai.embed({ model: this.modelId, value: text })
+    const { value } = await this.ai.embed({
+      model: this.modelId,
+      value: text,
+      telemetry: { functionId: "embedding-single" },
+    })
     return value
   }
 
@@ -35,7 +39,11 @@ export class EmbeddingService {
     if (texts.length === 0) {
       return []
     }
-    const { value } = await this.ai.embedMany({ model: this.modelId, values: texts })
+    const { value } = await this.ai.embedMany({
+      model: this.modelId,
+      values: texts,
+      telemetry: { functionId: "embedding-batch", metadata: { count: texts.length } },
+    })
     return value
   }
 }
