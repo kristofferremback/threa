@@ -192,8 +192,8 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
 
   // Memo (GAM) processing
-  const memoClassifier = new MemoClassifier(providerRegistry, config.ai.memoModel)
-  const memorizer = new Memorizer(providerRegistry, config.ai.memoModel)
+  const memoClassifier = new MemoClassifier(providerRegistry, config.ai.memoModel, messageFormatter)
+  const memorizer = new Memorizer(providerRegistry, config.ai.memoModel, messageFormatter)
   const memoService = new MemoService({
     pool,
     classifier: memoClassifier,

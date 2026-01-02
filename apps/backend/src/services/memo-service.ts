@@ -206,6 +206,7 @@ export class MemoService {
     const existingMemo = await MemoRepository.findActiveByConversation(client, conversation.id)
 
     const classification = await this.classifier.classifyConversation(
+      client,
       conversation,
       messagesArray,
       existingMemo ?? undefined
@@ -252,7 +253,7 @@ export class MemoService {
     workspaceId: string,
     knowledgeType: import("@threa/types").KnowledgeType
   ): Promise<"created"> {
-    const content = await this.memorizer.memorizeConversation({
+    const content = await this.memorizer.memorizeConversation(client, {
       memoryContext,
       content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
       existingTags,
@@ -299,7 +300,7 @@ export class MemoService {
   ): Promise<"revised"> {
     await MemoRepository.supersede(client, existingMemo.id, revisionReason)
 
-    const content = await this.memorizer.reviseMemo({
+    const content = await this.memorizer.reviseMemo(client, {
       memoryContext,
       content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
       existingMemo,

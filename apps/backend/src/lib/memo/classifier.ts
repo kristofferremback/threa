@@ -1,7 +1,9 @@
 import { generateObject } from "ai"
 import { z } from "zod"
+import type { PoolClient } from "pg"
 import type { ProviderRegistry } from "../ai/provider-registry"
 import { stripMarkdownFences } from "../ai/text-utils"
+import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -144,7 +146,8 @@ Should this memo be revised based on the conversation above?`
 export class MemoClassifier {
   constructor(
     private providerRegistry: ProviderRegistry,
-    private modelId: string
+    private modelId: string,
+    private messageFormatter: MessageFormatter
   ) {}
 
   async classifyMessage(message: Message): Promise<MessageClassification> {
@@ -177,11 +180,12 @@ export class MemoClassifier {
   }
 
   async classifyConversation(
+    client: PoolClient,
     conversation: Conversation,
     messages: Message[],
     existingMemo?: Memo
   ): Promise<ConversationClassification> {
-    const messagesText = messages.map((m) => `[${m.authorType}:${m.authorId.slice(-8)}]: ${m.content}`).join("\n\n")
+    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages)
 
     const existingMemoSection = existingMemo
       ? EXISTING_MEMO_TEMPLATE.replace("{{MEMO_TITLE}}", existingMemo.title)
