@@ -3,6 +3,14 @@ import type { Message } from "../../repositories/message-repository"
 import { UserRepository } from "../../repositories/user-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
 
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function escapeXmlAttr(s: string): string {
+  return escapeXml(s).replace(/"/g, "&quot;")
+}
+
 /**
  * Formats messages for use in AI prompts with author names resolved from the database.
  *
@@ -36,20 +44,20 @@ export class MessageFormatter {
    * Returns a map from authorId to name.
    */
   private async resolveAuthorNames(client: PoolClient, messages: Message[]): Promise<Map<string, string>> {
-    const userIds: string[] = []
-    const personaIds: string[] = []
+    const userIds = new Set<string>()
+    const personaIds = new Set<string>()
 
     for (const m of messages) {
       if (m.authorType === "user") {
-        userIds.push(m.authorId)
+        userIds.add(m.authorId)
       } else {
-        personaIds.push(m.authorId)
+        personaIds.add(m.authorId)
       }
     }
 
     const [users, personas] = await Promise.all([
-      UserRepository.findByIds(client, [...new Set(userIds)]),
-      PersonaRepository.findByIds(client, [...new Set(personaIds)]),
+      UserRepository.findByIds(client, [...userIds]),
+      PersonaRepository.findByIds(client, [...personaIds]),
     ])
 
     const nameById = new Map<string, string>()
@@ -61,7 +69,7 @@ export class MessageFormatter {
 
   private formatSingleMessage(m: Message, nameById: Map<string, string>): string {
     const authorName = nameById.get(m.authorId) ?? "Unknown"
-    return `<message authorType="${m.authorType}" authorId="${m.authorId}" authorName="${authorName}" createdAt="${m.createdAt}">${m.content}</message>`
+    return `<message authorType="${m.authorType}" authorId="${m.authorId}" authorName="${escapeXmlAttr(authorName)}" createdAt="${m.createdAt.toISOString()}">${escapeXml(m.content)}</message>`
   }
 
   /**

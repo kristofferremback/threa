@@ -174,7 +174,7 @@ describe("MessageFormatter", () => {
     expect(secondIndex).toBeLessThan(thirdIndex)
   })
 
-  test("should include createdAt in output", async () => {
+  test("should include createdAt in ISO format", async () => {
     const messages = [
       createMessage({
         id: "msg_1",
@@ -186,7 +186,41 @@ describe("MessageFormatter", () => {
 
     const result = await formatter.formatMessages(mockClient, messages)
 
-    expect(result).toContain("createdAt=")
+    expect(result).toContain('createdAt="2024-01-01T10:00:00.000Z"')
+  })
+
+  test("should escape XML special characters in message content", async () => {
+    const messages = [
+      createMessage({
+        id: "msg_1",
+        content: "if (a < b && c > d) { return <tag>; }",
+      }),
+    ]
+
+    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+    const result = await formatter.formatMessages(mockClient, messages)
+
+    expect(result).toContain("if (a &lt; b &amp;&amp; c &gt; d) { return &lt;tag&gt;; }")
+    expect(result).not.toContain("<tag>")
+  })
+
+  test("should escape quotes in author names", async () => {
+    const messages = [
+      createMessage({
+        id: "msg_1",
+        authorId: "user_123",
+        authorType: "user",
+        content: "Hello",
+      }),
+    ]
+
+    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: 'Bob "The Builder" Smith' }])
+
+    const result = await formatter.formatMessages(mockClient, messages)
+
+    expect(result).toContain('authorName="Bob &quot;The Builder&quot; Smith"')
+    expect(result).not.toContain('authorName="Bob "The Builder" Smith"')
   })
 
   describe("formatMessagesInline", () => {
