@@ -12,8 +12,20 @@ const mockStream = {
 }
 
 const mockMessages = [
-  { id: "msg_1", content: "Hello, can you help me with something?" },
-  { id: "msg_2", content: "Sure, what do you need?" },
+  {
+    id: "msg_1",
+    content: "Hello, can you help me with something?",
+    authorType: "user",
+    authorId: "user_123",
+    createdAt: new Date("2024-01-01T10:00:00Z"),
+  },
+  {
+    id: "msg_2",
+    content: "Sure, what do you need?",
+    authorType: "persona",
+    authorId: "persona_456",
+    createdAt: new Date("2024-01-01T10:00:01Z"),
+  },
 ]
 
 const mockFindByIdForUpdate = mock(() => Promise.resolve(mockStream))
@@ -137,7 +149,7 @@ describe("StreamNamingService", () => {
   })
 
   describe("existing names in prompt", () => {
-    test("should include existing scratchpad names in prompt", async () => {
+    test("should include existing scratchpad names in system message", async () => {
       mockStreamList.mockImplementation(() =>
         Promise.resolve([
           { id: "stream_other1", displayName: "Project Planning" },
@@ -150,20 +162,15 @@ describe("StreamNamingService", () => {
 
       await service.attemptAutoNaming("stream_123", false)
 
-      expect(generateTextSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: expect.stringContaining("Project Planning"),
-        })
-      )
-      expect(generateTextSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: expect.stringContaining("Bug Fixes"),
-        })
-      )
+      const calls = generateTextSpy.mock.calls
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
+
+      expect(systemMessage).toContain("Project Planning")
+      expect(systemMessage).toContain("Bug Fixes")
     })
 
     test("should exclude current stream from existing names list", async () => {
-      // Use mockImplementation like the previous test to ensure consistent behavior
       mockStreamList.mockImplementation(() =>
         Promise.resolve([
           { id: "stream_123", displayName: "Current Stream Name" },
@@ -175,13 +182,14 @@ describe("StreamNamingService", () => {
 
       await service.attemptAutoNaming("stream_123", false)
 
-      // Get the LAST call (this test's call, not previous tests')
       const calls = generateTextSpy.mock.calls
-      const promptArg = calls[calls.length - 1]?.[0] as { prompt: string }
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
+
       // Should include the other stream's name
-      expect(promptArg.prompt).toContain("Another Scratchpad")
+      expect(systemMessage).toContain("Another Scratchpad")
       // Should NOT include current stream's name (excluded by filter)
-      expect(promptArg.prompt).not.toContain("Current Stream Name")
+      expect(systemMessage).not.toContain("Current Stream Name")
     })
   })
 
@@ -192,24 +200,24 @@ describe("StreamNamingService", () => {
 
       await service.attemptAutoNaming("stream_123", false)
 
-      expect(generateTextSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: expect.stringContaining("NOT_ENOUGH_CONTEXT"),
-        })
-      )
+      const calls = generateTextSpy.mock.calls
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
+
+      expect(systemMessage).toContain("NOT_ENOUGH_CONTEXT")
     })
 
-    test("should forbid NOT_ENOUGH_CONTEXT when requireName=true", async () => {
+    test("should require generating a name when requireName=true", async () => {
       mockStreamList.mockResolvedValue([])
       generateTextSpy.mockResolvedValue({ text: "Title" } as any)
 
       await service.attemptAutoNaming("stream_123", true)
 
-      expect(generateTextSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: expect.stringContaining("do NOT respond with"),
-        })
-      )
+      const calls = generateTextSpy.mock.calls
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
+
+      expect(systemMessage).toContain("You MUST generate a title")
     })
   })
 
