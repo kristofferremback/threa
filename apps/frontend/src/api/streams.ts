@@ -11,10 +11,18 @@ import type {
 
 export type { StreamBootstrap, CreateStreamInput, UpdateStreamInput }
 
+export type StreamArchiveStatus = "active" | "archived"
+
 export const streamsApi = {
-  async list(workspaceId: string, params?: { type?: StreamType }): Promise<Stream[]> {
+  async list(
+    workspaceId: string,
+    params?: { type?: StreamType; archiveStatus?: StreamArchiveStatus[] }
+  ): Promise<Stream[]> {
     const searchParams = new URLSearchParams()
     if (params?.type) searchParams.set("stream_type", params.type)
+    if (params?.archiveStatus) {
+      params.archiveStatus.forEach((status) => searchParams.append("archive_status", status))
+    }
     const query = searchParams.toString()
     const res = await api.get<{ streams: Stream[] }>(
       `/api/workspaces/${workspaceId}/streams${query ? `?${query}` : ""}`
@@ -44,6 +52,10 @@ export const streamsApi = {
 
   archive(workspaceId: string, streamId: string): Promise<void> {
     return api.post(`/api/workspaces/${workspaceId}/streams/${streamId}/archive`)
+  },
+
+  unarchive(workspaceId: string, streamId: string): Promise<void> {
+    return api.post(`/api/workspaces/${workspaceId}/streams/${streamId}/unarchive`)
   },
 
   // Event fetching for pagination

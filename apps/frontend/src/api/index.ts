@@ -17,5 +17,6 @@ export {
   type SearchRequest,
   type SearchResultItem,
   type SearchResponse,
+  type ArchiveStatus,
 } from "./search"
 export { conversationsApi, type ListConversationsParams } from "./conversations"

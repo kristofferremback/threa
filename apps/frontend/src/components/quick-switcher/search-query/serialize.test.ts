@@ -31,9 +31,9 @@ describe("serialize", () => {
     const nodes: QueryNode[] = [
       { type: "filter", filterType: "from", value: "@martin" },
       { type: "text", text: "restaurants" },
-      { type: "filter", filterType: "is", value: "thread" },
+      { type: "filter", filterType: "status", value: "active" },
     ]
-    expect(serialize(nodes)).toBe("from:@martin restaurants is:thread")
+    expect(serialize(nodes)).toBe("from:@martin restaurants status:active")
   })
 
   it("should preserve quoted strings as literal text", () => {
@@ -51,11 +51,14 @@ describe("serialize", () => {
       { type: "filter", filterType: "from", value: "@martin" },
       { type: "filter", filterType: "with", value: "@kate" },
       { type: "filter", filterType: "in", value: "#general" },
-      { type: "filter", filterType: "is", value: "thread" },
+      { type: "filter", filterType: "type", value: "channel" },
+      { type: "filter", filterType: "status", value: "active" },
       { type: "filter", filterType: "after", value: "2025-01-01" },
       { type: "filter", filterType: "before", value: "2025-12-31" },
     ]
-    expect(serialize(nodes)).toBe("from:@martin with:@kate in:#general is:thread after:2025-01-01 before:2025-12-31")
+    expect(serialize(nodes)).toBe(
+      "from:@martin with:@kate in:#general type:channel status:active after:2025-01-01 before:2025-12-31"
+    )
   })
 })
 
@@ -80,9 +83,19 @@ describe("parse", () => {
     expect(result).toEqual([{ type: "filter", filterType: "in", value: "@martin" }])
   })
 
-  it("should parse is:thread into filter node", () => {
-    const result = parse("is:thread")
-    expect(result).toEqual([{ type: "filter", filterType: "is", value: "thread" }])
+  it("should parse type:channel into filter node", () => {
+    const result = parse("type:channel")
+    expect(result).toEqual([{ type: "filter", filterType: "type", value: "channel" }])
+  })
+
+  it("should parse status:active into filter node", () => {
+    const result = parse("status:active")
+    expect(result).toEqual([{ type: "filter", filterType: "status", value: "active" }])
+  })
+
+  it("should parse is: active into status filter node (alias)", () => {
+    const result = parse("is:active")
+    expect(result).toEqual([{ type: "filter", filterType: "status", value: "active" }])
   })
 
   it("should parse after:date into filter node", () => {
@@ -143,12 +156,13 @@ describe("parse", () => {
   })
 
   it("should handle complex query with all filter types", () => {
-    const result = parse("from:@martin with:@kate in:#general is:thread after:2025-01-01 restaurants")
+    const result = parse("from:@martin with:@kate in:#general type:channel status:active after:2025-01-01 restaurants")
     expect(result).toEqual([
       { type: "filter", filterType: "from", value: "@martin" },
       { type: "filter", filterType: "with", value: "@kate" },
       { type: "filter", filterType: "in", value: "#general" },
-      { type: "filter", filterType: "is", value: "thread" },
+      { type: "filter", filterType: "type", value: "channel" },
+      { type: "filter", filterType: "status", value: "active" },
       { type: "filter", filterType: "after", value: "2025-01-01" },
       { type: "text", text: "restaurants" },
     ])
@@ -159,11 +173,11 @@ describe("roundtrip (parse -> serialize -> parse)", () => {
   const testCases = [
     "from:@martin",
     "from:@martin in:#general",
-    "from:@martin restaurants is:thread",
+    "from:@martin restaurants status:active",
     "restaurants",
     "@martin",
     "#general",
-    "from:@martin with:@kate in:#general is:thread after:2025-01-01 before:2025-12-31 restaurants",
+    "from:@martin with:@kate in:#general type:channel status:active after:2025-01-01 before:2025-12-31 restaurants",
   ]
 
   for (const input of testCases) {

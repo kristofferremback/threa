@@ -1,11 +1,14 @@
 import api from "./client"
 import type { StreamType } from "@threa/types"
 
+export type ArchiveStatus = "active" | "archived"
+
 export interface SearchFilters {
   from?: string // Single author ID
   with?: string[] // User IDs (AND logic)
   in?: string[] // Stream IDs
-  is?: StreamType[] // Stream types (OR logic)
+  type?: StreamType[] // Stream types (OR logic)
+  archiveStatus?: ArchiveStatus[] // Archive status (active, archived)
   before?: string // ISO datetime
   after?: string // ISO datetime
 }
@@ -37,7 +40,8 @@ export async function searchMessages(workspaceId: string, request: SearchRequest
     from: request.filters?.from,
     with: request.filters?.with,
     in: request.filters?.in,
-    is: request.filters?.is,
+    type: request.filters?.type,
+    archive_status: request.filters?.archiveStatus,
     before: request.filters?.before,
     after: request.filters?.after,
     limit: request.limit,

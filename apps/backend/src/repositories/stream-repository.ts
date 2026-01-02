@@ -123,18 +123,29 @@ export const StreamRepository = {
       types?: StreamType[]
       parentStreamId?: string
       userMembershipStreamIds?: string[]
+      archiveStatus?: ("active" | "archived")[]
     }
   ): Promise<Stream[]> {
     const types = filters?.types
     const parentStreamId = filters?.parentStreamId
     const userMembershipStreamIds = filters?.userMembershipStreamIds
+    const archiveStatus = filters?.archiveStatus
+
+    // Archive status filtering logic:
+    // - Default (undefined/empty) → active only
+    // - ["active"] → active only
+    // - ["archived"] → archived only
+    // - ["active", "archived"] → all streams (no filter)
+    const includeActive = !archiveStatus || archiveStatus.length === 0 || archiveStatus.includes("active")
+    const includeArchived = archiveStatus?.includes("archived") ?? false
+    const filterAll = includeActive && includeArchived
 
     if (parentStreamId) {
       const result = await client.query<StreamRow>(
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND parent_stream_id = ${parentStreamId}
-              AND archived_at IS NULL
+              AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
             ORDER BY created_at DESC`
       )
       return result.rows.map(mapRowToStream)
@@ -147,7 +158,7 @@ export const StreamRepository = {
           sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
               WHERE workspace_id = ${workspaceId}
                 AND type = ANY(${types})
-                AND archived_at IS NULL
+                AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
                 AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
               ORDER BY created_at DESC`
         )
@@ -157,7 +168,7 @@ export const StreamRepository = {
       const result = await client.query<StreamRow>(
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
-              AND archived_at IS NULL
+              AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
               AND (visibility = 'public' OR id = ANY(${userMembershipStreamIds}))
             ORDER BY created_at DESC`
       )
@@ -169,7 +180,7 @@ export const StreamRepository = {
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND type = ANY(${types})
-              AND archived_at IS NULL
+              AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
             ORDER BY created_at DESC`
       )
       return result.rows.map(mapRowToStream)
@@ -178,7 +189,7 @@ export const StreamRepository = {
     const result = await client.query<StreamRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
           WHERE workspace_id = ${workspaceId}
-            AND archived_at IS NULL
+            AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
           ORDER BY created_at DESC`
     )
     return result.rows.map(mapRowToStream)

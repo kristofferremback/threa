@@ -18,6 +18,10 @@ function getSystemMessage(event: StreamEvent): string {
   switch (event.eventType) {
     case "thread_created":
       return "A thread was started"
+    case "stream_archived":
+      return "This thread has been sealed in the labyrinth"
+    case "stream_unarchived":
+      return "This thread has been restored from the labyrinth"
     default:
       return `System event: ${event.eventType}`
   }

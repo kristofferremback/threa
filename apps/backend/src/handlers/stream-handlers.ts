@@ -70,13 +70,17 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
     async list(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
-      const { stream_type } = req.query
+      const { stream_type, archive_status } = req.query
 
       const types = stream_type
         ? ((Array.isArray(stream_type) ? stream_type : [stream_type]) as ("scratchpad" | "channel")[])
         : undefined
 
-      const streams = await streamService.list(workspaceId, userId, { types })
+      const archiveStatus = archive_status
+        ? ((Array.isArray(archive_status) ? archive_status : [archive_status]) as ("active" | "archived")[])
+        : undefined
+
+      const streams = await streamService.list(workspaceId, userId, { types, archiveStatus })
       res.json({ streams })
     },
 
@@ -281,8 +285,23 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
         return res.status(403).json({ error: "Only the creator can archive this stream" })
       }
 
-      const archived = await streamService.archiveStream(streamId)
+      const archived = await streamService.archiveStream(streamId, userId)
       res.json({ stream: archived })
+    },
+
+    async unarchive(req: Request, res: Response) {
+      const userId = req.userId!
+      const workspaceId = req.workspaceId!
+      const { streamId } = req.params
+
+      const stream = await streamService.validateStreamAccess(streamId, workspaceId, userId)
+
+      if (stream.createdBy !== userId) {
+        return res.status(403).json({ error: "Only the creator can unarchive this stream" })
+      }
+
+      const unarchived = await streamService.unarchiveStream(streamId, userId)
+      res.json({ stream: unarchived })
     },
 
     async bootstrap(req: Request, res: Response) {

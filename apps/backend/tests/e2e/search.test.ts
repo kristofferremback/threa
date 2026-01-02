@@ -15,6 +15,8 @@ import {
   search,
   joinWorkspace,
   joinStream,
+  archiveStream,
+  unarchiveStream,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -154,7 +156,7 @@ describe("Search E2E Tests", () => {
   })
 
   describe("Filter Operators", () => {
-    test("should filter by stream type with is:scratchpad", async () => {
+    test("should filter by stream type with type:scratchpad", async () => {
       const client = new TestClient()
       await loginAs(client, testEmail("istype"), "Is Type Test")
       const workspace = await createWorkspace(client, `IsType WS ${testRunId}`)
@@ -165,14 +167,14 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, `Scratchpad ${keyword}`)
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
-      // Search with is:scratchpad filter
-      const results = await search(client, workspace.id, { query: keyword, is: ["scratchpad"] })
+      // Search with type:scratchpad filter
+      const results = await search(client, workspace.id, { query: keyword, type: ["scratchpad"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Scratchpad")
     })
 
-    test("should filter by stream type with is:channel", async () => {
+    test("should filter by stream type with type:channel", async () => {
       const client = new TestClient()
       await loginAs(client, testEmail("ischan"), "Is Channel Test")
       const workspace = await createWorkspace(client, `IsChan WS ${testRunId}`)
@@ -183,7 +185,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, `Scratchpad ${keyword}`)
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
-      const results = await search(client, workspace.id, { query: keyword, is: ["channel"] })
+      const results = await search(client, workspace.id, { query: keyword, type: ["channel"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Channel")
@@ -249,8 +251,8 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, `Scratchpad ${keyword}`)
       await sendMessage(client, workspace.id, channel.id, `Channel ${keyword}`)
 
-      // Search with is:scratchpad filter - should only find the scratchpad message
-      const results = await search(client, workspace.id, { query: keyword, is: ["scratchpad"] })
+      // Search with type:scratchpad filter - should only find the scratchpad message
+      const results = await search(client, workspace.id, { query: keyword, type: ["scratchpad"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain("Scratchpad")
@@ -267,7 +269,7 @@ describe("Search E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, "Some message content")
 
       // Search with only filter, no query
-      const results = await search(client, workspace.id, { is: ["scratchpad"] })
+      const results = await search(client, workspace.id, { type: ["scratchpad"] })
 
       expect(results.length).toBeGreaterThan(0)
     })
@@ -343,6 +345,93 @@ describe("Search E2E Tests", () => {
       })
 
       expect(results.length).toBe(0)
+    })
+  })
+
+  describe("Archive Status Filtering", () => {
+    test("should exclude archived stream messages by default", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("archdef"), "Archive Default Test")
+      const workspace = await createWorkspace(client, `ArchDef WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      const keyword = `wyvern${testRunId}`
+      await sendMessage(client, workspace.id, scratchpad.id, `Message in ${keyword}`)
+
+      // Archive the stream
+      await archiveStream(client, workspace.id, scratchpad.id)
+
+      // Default search (no archive_status) should NOT find the message
+      const results = await search(client, workspace.id, { query: keyword })
+
+      expect(results.length).toBe(0)
+    })
+
+    test("should find archived stream messages with archive_status:archived", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("archonly"), "Archive Only Test")
+      const workspace = await createWorkspace(client, `ArchOnly WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      const keyword = `gargoyle${testRunId}`
+      await sendMessage(client, workspace.id, scratchpad.id, `Message in ${keyword}`)
+
+      // Archive the stream
+      await archiveStream(client, workspace.id, scratchpad.id)
+
+      // Search with archive_status:archived should find it
+      const results = await search(client, workspace.id, { query: keyword, archive_status: ["archived"] })
+
+      expect(results.length).toBe(1)
+      expect(results[0].content).toContain(keyword)
+    })
+
+    test("should find all messages with both active and archived status", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("archboth"), "Archive Both Test")
+      const workspace = await createWorkspace(client, `ArchBoth WS ${testRunId}`)
+      const scratchpadActive = await createScratchpad(client, workspace.id, "off")
+      const scratchpadArchived = await createScratchpad(client, workspace.id, "off")
+
+      const keyword = `leviathan${testRunId}`
+      await sendMessage(client, workspace.id, scratchpadActive.id, `Active ${keyword}`)
+      await sendMessage(client, workspace.id, scratchpadArchived.id, `Archived ${keyword}`)
+
+      // Archive one of the streams
+      await archiveStream(client, workspace.id, scratchpadArchived.id)
+
+      // Search with both statuses should find both messages
+      const results = await search(client, workspace.id, {
+        query: keyword,
+        archive_status: ["active", "archived"],
+      })
+
+      expect(results.length).toBe(2)
+    })
+
+    test("should unarchive stream and make messages searchable again", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("unarch"), "Unarchive Test")
+      const workspace = await createWorkspace(client, `Unarch WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      const keyword = `cerberus${testRunId}`
+      await sendMessage(client, workspace.id, scratchpad.id, `Message about ${keyword}`)
+
+      // Archive the stream
+      await archiveStream(client, workspace.id, scratchpad.id)
+
+      // Verify message not found with default search
+      const archivedResults = await search(client, workspace.id, { query: keyword })
+      expect(archivedResults.length).toBe(0)
+
+      // Unarchive the stream
+      await unarchiveStream(client, workspace.id, scratchpad.id)
+
+      // Now message should be found again
+      const restoredResults = await search(client, workspace.id, { query: keyword })
+      expect(restoredResults.length).toBe(1)
+      expect(restoredResults[0].content).toContain(keyword)
     })
   })
 })

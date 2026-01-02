@@ -1,8 +1,9 @@
 import { useState, useRef, Fragment } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, MessageCircle, X } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,11 +19,13 @@ import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
 import { StreamTypes } from "@threa/types"
+import { ApiError } from "@/api/client"
+import { StreamNotFoundPage } from "./stream-not-found"
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId!, streamId!)
+  const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
 
   const isConversationViewOpen = searchParams.get("convView") === "open"
@@ -57,7 +60,12 @@ export function StreamPage() {
     return null
   }
 
+  if (error && ApiError.isApiError(error) && error.status === 404) {
+    return <StreamNotFoundPage workspaceId={workspaceId} />
+  }
+
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
+  const isArchived = stream?.archivedAt != null
   const streamName = stream?.displayName || (isDraft ? "New scratchpad" : isThread ? "Thread" : "Stream")
 
   const handleStartRename = () => {
@@ -76,6 +84,10 @@ export function StreamPage() {
 
   const handleArchive = async () => {
     await archive()
+  }
+
+  const handleUnarchive = async () => {
+    await unarchive?.()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -117,6 +129,12 @@ export function StreamPage() {
           ) : (
             <h1 className="font-semibold">{streamName}</h1>
           )}
+          {isArchived && (
+            <Badge variant="secondary" className="gap-1">
+              <ArchiveX className="h-3 w-3" />
+              Archived
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {!isDraft && (
@@ -143,10 +161,17 @@ export function StreamPage() {
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                  <Archive className="mr-2 h-4 w-4" />
-                  {isDraft ? "Delete" : "Archive"}
-                </DropdownMenuItem>
+                {isArchived ? (
+                  <DropdownMenuItem onClick={handleUnarchive}>
+                    <Archive className="mr-2 h-4 w-4" />
+                    Unarchive
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                    <Archive className="mr-2 h-4 w-4" />
+                    {isDraft ? "Delete" : "Archive"}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

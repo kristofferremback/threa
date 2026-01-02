@@ -3,27 +3,31 @@ import { LoginPage } from "@/pages/login"
 import { WorkspaceSelectPage } from "@/pages/workspace-select"
 import { WorkspaceLayout } from "@/pages/workspace-layout"
 import { StreamPage } from "@/pages/stream"
+import { ErrorBoundary } from "@/components/error-boundary"
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <Navigate to="/workspaces" replace />,
+    errorElement: <ErrorBoundary />,
   },
   {
     path: "/login",
     element: <LoginPage />,
+    errorElement: <ErrorBoundary />,
   },
   {
     path: "/workspaces",
     element: <WorkspaceSelectPage />,
+    errorElement: <ErrorBoundary />,
   },
   {
     path: "/w/:workspaceId",
     element: <WorkspaceLayout />,
+    errorElement: <ErrorBoundary />,
     children: [
       {
         index: true,
-        // Workspace home - will redirect to scratchpad or show empty state
         element: <WorkspaceHome />,
       },
       {

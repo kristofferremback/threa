@@ -1,6 +1,6 @@
 import type { QueryNode, FilterType, FilterNode, TextNode } from "./types"
 
-const FILTER_TYPES: FilterType[] = ["from", "with", "in", "is", "after", "before"]
+const FILTER_TYPES: FilterType[] = ["from", "with", "in", "type", "status", "after", "before"]
 
 /**
  * Parses a query string into an array of query nodes.
@@ -10,7 +10,8 @@ const FILTER_TYPES: FilterType[] = ["from", "with", "in", "is", "after", "before
  * - with:@user → filter node
  * - in:#channel → filter node
  * - in:@user → filter node (DM)
- * - is:type → filter node
+ * - type:type → filter node
+ * - status:active → filter node
  * - after:date → filter node
  * - before:date → filter node
  *
@@ -120,6 +121,14 @@ function parseToken(token: string): QueryNode | null {
       if (value) {
         return { type: "filter", filterType, value } as FilterNode
       }
+    }
+  }
+
+  // Handle aliases
+  if (token.startsWith("is:")) {
+    const value = token.slice(3)
+    if (value) {
+      return { type: "filter", filterType: "status", value } as FilterNode
     }
   }
 

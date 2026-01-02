@@ -9,7 +9,7 @@ import { useCommandItems } from "./use-command-items"
 import { useSearchItems } from "./use-search-items"
 import { ItemList } from "./item-list"
 import { ModeTabs } from "./mode-tabs"
-import { RichInput, type RichInputRef, SEARCH_TRIGGERS } from "./rich-input"
+import { COMMAND_TRIGGERS, RichInput, type RichInputRef, SEARCH_TRIGGERS, STREAM_TRIGGERS } from "./rich-input"
 import type { CommandContext, InputRequest } from "./commands"
 import type { QuickSwitcherItem } from "./types"
 import { clamp } from "@/lib/math-utils"
@@ -74,6 +74,15 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
 
   const mode = deriveMode(query)
   const displayQuery = getDisplayQuery(query, mode)
+  const triggers = useMemo(() => {
+    return (
+      {
+        stream: STREAM_TRIGGERS,
+        command: COMMAND_TRIGGERS,
+        search: SEARCH_TRIGGERS,
+      }[mode] ?? undefined
+    )
+  }, [mode])
 
   const streams = useMemo(() => bootstrap?.streams ?? [], [bootstrap?.streams])
 
@@ -128,6 +137,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const streamResult = useStreamItems({
     workspaceId,
     query: displayQuery,
+    onQueryChange: (newDisplayQuery) => setQuery(newDisplayQuery),
     navigate,
     closeDialog: handleClose,
     streams,
@@ -149,6 +159,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     query: displayQuery,
     onQueryChange: handleSearchQueryChange,
     closeDialog: handleClose,
+    navigate,
+    streams,
   })
 
   // Select the current mode's result
@@ -286,6 +298,12 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             richInputRef.current?.closePopovers()
             return
           }
+          // When filter select picker is open, close it instead of closing dialog
+          if (currentResult.isFilterSelectActive && currentResult.closeFilterSelect) {
+            e.preventDefault()
+            currentResult.closeFilterSelect()
+            return
+          }
           // When in inputRequest mode, Escape returns to command list instead of closing
           if (inputRequest) {
             e.preventDefault()
@@ -304,6 +322,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             e.preventDefault()
             if (isSuggestionPopoverActiveRef.current) {
               richInputRef.current?.closePopovers()
+            } else if (currentResult.isFilterSelectActive && currentResult.closeFilterSelect) {
+              currentResult.closeFilterSelect()
             } else if (inputRequest) {
               clearInputRequest()
             } else {
@@ -382,7 +402,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
                 }
               }}
               onPopoverActiveChange={handlePopoverActiveChange}
-              triggers={mode === "search" ? SEARCH_TRIGGERS : undefined}
+              triggers={triggers}
               placeholder={MODE_PLACEHOLDERS[mode]}
               ariaLabel={mode === "search" ? "Search query input" : "Quick switcher input"}
               autoFocus

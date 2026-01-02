@@ -1,8 +1,27 @@
-import { QueryClient, QueryClientProvider as TanStackQueryClientProvider } from "@tanstack/react-query"
+import {
+  QueryClient,
+  QueryClientProvider as TanStackQueryClientProvider,
+  QueryCache,
+  MutationCache,
+} from "@tanstack/react-query"
 import { ReactNode, useState } from "react"
+import { ApiError } from "@/api/client"
+
+function handleGlobalError(error: Error) {
+  if (ApiError.isApiError(error) && error.status === 401) {
+    const currentPath = window.location.pathname + window.location.search
+    window.location.href = `/api/auth/login?redirect_to=${encodeURIComponent(currentPath)}`
+  }
+}
 
 function makeQueryClient() {
   return new QueryClient({
+    queryCache: new QueryCache({
+      onError: handleGlobalError,
+    }),
+    mutationCache: new MutationCache({
+      onError: handleGlobalError,
+    }),
     defaultOptions: {
       queries: {
         staleTime: 30 * 1000,

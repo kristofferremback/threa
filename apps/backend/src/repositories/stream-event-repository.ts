@@ -23,6 +23,8 @@ export type EventType =
   | "member_joined"
   | "member_left"
   | "thread_created"
+  | "stream_archived"
+  | "stream_unarchived"
   | "companion_response"
   | "command_dispatched"
   | "command_completed"

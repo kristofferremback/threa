@@ -21,6 +21,7 @@ export type OutboxEventType =
   | "stream:created"
   | "stream:updated"
   | "stream:archived"
+  | "stream:unarchived"
   | "stream:display_name_updated"
   | "stream:read"
   | "stream:read_all"
@@ -54,6 +55,7 @@ export type WorkspaceScopedEventType =
   | "stream:created"
   | "stream:updated"
   | "stream:archived"
+  | "stream:unarchived"
   | "unread:increment"
   | "attachment:uploaded"
   | "workspace_member:added"
@@ -120,6 +122,11 @@ export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {
 }
 
 export interface StreamArchivedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  stream: Stream
+}
+
+export interface StreamUnarchivedOutboxPayload extends WorkspaceScopedPayload {
   streamId: string
   stream: Stream
 }
@@ -218,6 +225,7 @@ export interface OutboxEventPayloadMap {
   "stream:created": StreamCreatedOutboxPayload
   "stream:updated": StreamUpdatedOutboxPayload
   "stream:archived": StreamArchivedOutboxPayload
+  "stream:unarchived": StreamUnarchivedOutboxPayload
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
   "stream:read": StreamReadOutboxPayload
   "stream:read_all": StreamsReadAllOutboxPayload

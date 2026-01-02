@@ -60,6 +60,7 @@ export function StreamContent({
   })
   const stream = streamFromProps ?? bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
+  const isArchived = stream?.archivedAt != null
   const parentStreamId = stream?.parentStreamId
   const parentMessageId = stream?.parentMessageId
 
@@ -157,7 +158,14 @@ export function StreamContent({
             />
           )}
         </div>
-        <MessageInput workspaceId={workspaceId} streamId={streamId} />
+        <MessageInput
+          workspaceId={workspaceId}
+          streamId={streamId}
+          disabled={isArchived}
+          disabledReason={
+            isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
+          }
+        />
       </div>
     </MentionableMarkdownWrapper>
   )

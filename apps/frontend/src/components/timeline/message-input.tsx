@@ -8,9 +8,11 @@ import { isCommand } from "@/lib/commands"
 interface MessageInputProps {
   workspaceId: string
   streamId: string
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
+export function MessageInput({ workspaceId, streamId, disabled, disabledReason }: MessageInputProps) {
   const navigate = useNavigate()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
@@ -78,6 +80,34 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       composer.setIsSending(false)
     }
   }, [composer, sendMessage, navigate, workspaceId, streamId])
+
+  if (disabled && disabledReason) {
+    return (
+      <div className="border-t p-4">
+        <div className="relative">
+          <div className="pointer-events-none opacity-30">
+            <MessageComposer
+              content=""
+              onContentChange={() => {}}
+              pendingAttachments={[]}
+              onRemoveAttachment={() => {}}
+              fileInputRef={{ current: null }}
+              onFileSelect={() => {}}
+              onSubmit={() => {}}
+              canSubmit={false}
+              isSubmitting={false}
+              hasFailed={false}
+              disabled={true}
+              placeholder=""
+            />
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+            <p className="text-sm text-muted-foreground px-4 text-center">{disabledReason}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="border-t p-4">

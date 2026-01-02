@@ -1,15 +1,15 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { X, Plus, User, Calendar, Hash, MessageSquare } from "lucide-react"
+import { X, Plus, User, Calendar, Hash, MessageSquare, Archive } from "lucide-react"
 import { formatDisplayDate } from "@/lib/dates"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useSearch, useWorkspaceBootstrap } from "@/hooks"
-import type { SearchFilters } from "@/api"
+import type { SearchFilters, ArchiveStatus } from "@/api"
 import type { StreamType } from "@threa/types"
 import { FilterSelect } from "./filter-select"
-import type { ModeResult, QuickSwitcherItem } from "./types"
+import type { ModeContext, ModeResult, QuickSwitcherItem } from "./types"
 import {
   parseSearchQuery,
   removeFilterFromQuery,
@@ -21,7 +21,8 @@ import {
 const FILTER_TYPES: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: "from", label: "From user", icon: <User className="h-4 w-4" /> },
   { type: "with", label: "With user", icon: <User className="h-4 w-4" /> },
-  { type: "is", label: "Stream type", icon: <Hash className="h-4 w-4" /> },
+  { type: "type", label: "Stream type", icon: <Hash className="h-4 w-4" /> },
+  { type: "status", label: "Status", icon: <Archive className="h-4 w-4" /> },
   { type: "in", label: "In stream", icon: <MessageSquare className="h-4 w-4" /> },
   { type: "after", label: "After date", icon: <Calendar className="h-4 w-4" /> },
   { type: "before", label: "Before date", icon: <Calendar className="h-4 w-4" /> },
@@ -34,14 +35,13 @@ const STREAM_TYPE_OPTIONS: { value: StreamType; label: string }[] = [
   { value: "thread", label: "Thread" },
 ]
 
-interface UseSearchItemsParams {
-  workspaceId: string
-  query: string
-  onQueryChange: (query: string) => void
-  closeDialog: () => void
-}
+const ARCHIVE_STATUS_OPTIONS: { value: ArchiveStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+]
 
-export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog }: UseSearchItemsParams): ModeResult {
+export function useSearchItems(context: ModeContext): ModeResult {
+  const { workspaceId, query, onQueryChange, closeDialog } = context
   const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
@@ -89,8 +89,11 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
           if (userId) filters.with = [...(filters.with ?? []), userId]
           break
         }
-        case "is":
-          filters.is = [...(filters.is ?? []), filter.value as StreamType]
+        case "type":
+          filters.type = [...(filters.type ?? []), filter.value as StreamType]
+          break
+        case "status":
+          filters.archiveStatus = [...(filters.archiveStatus ?? []), filter.value as ArchiveStatus]
           break
         case "in": {
           // in: can be either a stream slug or user slug (for DMs)
@@ -140,7 +143,8 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
     if (!addingFilter) return
     // Add filter to query string (two-way sync)
     const newQuery = addFilterToQuery(query, addingFilter, value)
-    onQueryChange(newQuery)
+    // Add trailing space so cursor moves out of the filter, closing any popovers
+    onQueryChange(newQuery + " ")
     setAddingFilter(null)
   }
 
@@ -149,6 +153,10 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
     const newQuery = removeFilterFromQuery(query, index)
     onQueryChange(newQuery)
   }
+
+  const closeFilterSelect = useCallback(() => {
+    setAddingFilter(null)
+  }, [])
 
   const getFilterIcon = (type: FilterType) => {
     const filterType = FILTER_TYPES.find((f) => f.type === type)
@@ -197,6 +205,7 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
               users={users}
               streams={streams}
               streamTypes={STREAM_TYPE_OPTIONS}
+              archiveStatusOptions={ARCHIVE_STATUS_OPTIONS}
               onSelect={handleFilterSelect}
               onCancel={() => setAddingFilter(null)}
             />
@@ -230,5 +239,7 @@ export function useSearchItems({ workspaceId, query, onQueryChange, closeDialog 
     isLoading,
     emptyMessage: query.trim() || parsedFilters.length > 0 ? "No results found." : undefined,
     header,
+    isFilterSelectActive: addingFilter !== null,
+    closeFilterSelect,
   }
 }

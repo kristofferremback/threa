@@ -1,10 +1,10 @@
 /**
  * Parse and serialize search queries with filter support.
  *
- * Supports filters: from:@user, with:@user, in:#channel, in:@user (DM), is:type, after:date, before:date
+ * Supports filters: from:@user, with:@user, in:#channel, in:@user (DM), type:streamType, status:streamStatus, is:streamStatus, after:date, before:date
  */
 
-export type FilterType = "from" | "with" | "in" | "is" | "after" | "before"
+export type FilterType = "from" | "with" | "in" | "type" | "status" | "after" | "before"
 
 export interface ParsedFilter {
   type: FilterType
@@ -23,15 +23,17 @@ export interface ParsedQuery {
  *
  * Examples:
  * - "from:@martin hello" → { filters: [{type: "from", value: "martin"}], text: "hello" }
- * - "in:#general is:thread" → { filters: [{type: "in", value: "general"}, {type: "is", value: "thread"}], text: "" }
+ * - "in:#general type:thread" → { filters: [{type: "in", value: "general"}, {type: "type", value: "thread"}], text: "" }
+ * - "status:archived bug" → { filters: [{type: "status", value: "archived"}], text: "bug" }
+ * - "is:archived bug" → { filters: [{type: "status", value: "archived"}], text: "bug" }
  */
 export function parseSearchQuery(query: string): ParsedQuery {
   const filters: ParsedFilter[] = []
   const parts: string[] = []
 
-  // Match filter patterns: from:@slug, with:@slug, in:#slug, in:@slug, is:type, after:date, before:date
+  // Match filter patterns: from:@slug, with:@slug, in:#slug, in:@slug, type:streamType, status:streamStatus, is:streamStatus, after:date, before:date
   // Using regex to find all filters while preserving order
-  const filterRegex = /\b(from:@|with:@|in:#|in:@|is:|after:|before:)(\S*)/g
+  const filterRegex = /\b(from:@|with:@|in:#|in:@|type:|status:|is:|after:|before:)(\S*)/g
 
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -75,8 +77,11 @@ function extractFilterType(prefix: string): FilterType | null {
     case "in:#":
     case "in:@":
       return "in"
+    case "type:":
+      return "type"
+    case "status:":
     case "is:":
-      return "is"
+      return "status"
     case "after:":
       return "after"
     case "before:":
@@ -89,7 +94,7 @@ function extractFilterType(prefix: string): FilterType | null {
 /**
  * Build a search query string from filters and text.
  */
-export function buildSearchQuery(filters: ParsedFilter[], text: string): string {
+export function serializeSearchQuery(filters: ParsedFilter[], text: string): string {
   const filterParts = filters.map((f) => f.raw)
   const parts = [...filterParts]
 
@@ -106,7 +111,7 @@ export function buildSearchQuery(filters: ParsedFilter[], text: string): string 
 export function removeFilterFromQuery(query: string, filterIndex: number): string {
   const { filters, text } = parseSearchQuery(query)
   const newFilters = filters.filter((_, i) => i !== filterIndex)
-  return buildSearchQuery(newFilters, text)
+  return serializeSearchQuery(newFilters, text)
 }
 
 /**
@@ -128,8 +133,11 @@ export function addFilterToQuery(query: string, type: FilterType, value: string)
       // Determine if it's a channel or user based on value prefix or content
       raw = value.startsWith("#") ? `in:${value}` : `in:@${value}`
       break
-    case "is":
-      raw = `is:${value}`
+    case "type":
+      raw = `type:${value}`
+      break
+    case "status":
+      raw = `status:${value}`
       break
     case "after":
       raw = `after:${value}`
@@ -140,7 +148,7 @@ export function addFilterToQuery(query: string, type: FilterType, value: string)
   }
 
   const newFilter: ParsedFilter = { type, value, raw }
-  return buildSearchQuery([...filters, newFilter], text)
+  return serializeSearchQuery([...filters, newFilter], text)
 }
 
 /**
@@ -154,7 +162,9 @@ export function getFilterLabel(filter: ParsedFilter): string {
       return `@${filter.value}`
     case "in":
       return filter.raw.startsWith("in:#") ? `#${filter.value}` : `@${filter.value}`
-    case "is":
+    case "type":
+      return filter.value
+    case "status":
       return filter.value
     case "after":
       return `after ${filter.value}`

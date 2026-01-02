@@ -50,6 +50,8 @@ export const EVENT_TYPES = [
   "member_joined",
   "member_left",
   "thread_created",
+  "stream_archived",
+  "stream_unarchived",
   "companion_response",
   "command_dispatched",
   "command_completed",

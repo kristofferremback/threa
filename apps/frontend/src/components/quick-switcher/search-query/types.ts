@@ -6,7 +6,7 @@
  * and serialized back to strings for API calls.
  */
 
-export type FilterType = "from" | "with" | "in" | "is" | "after" | "before"
+export type FilterType = "from" | "with" | "in" | "type" | "status" | "after" | "before"
 
 /**
  * A filter node represents a search filter like "from:@martin".

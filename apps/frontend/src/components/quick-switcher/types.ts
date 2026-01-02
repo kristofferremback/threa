@@ -14,6 +14,7 @@ export interface QuickSwitcherItem {
 export interface ModeContext {
   workspaceId: string
   query: string
+  onQueryChange: (query: string) => void
   navigate: NavigateFunction
   closeDialog: () => void
   streams: Stream[]
@@ -24,4 +25,8 @@ export interface ModeResult {
   isLoading?: boolean
   emptyMessage?: string
   header?: React.ReactNode
+  /** True when filter select picker is open (for Escape handling) */
+  isFilterSelectActive?: boolean
+  /** Close the filter select picker */
+  closeFilterSelect?: () => void
 }

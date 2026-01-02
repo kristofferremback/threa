@@ -17,6 +17,7 @@ export interface StreamService {
   create: typeof streamsApi.create
   update: typeof streamsApi.update
   archive: typeof streamsApi.archive
+  unarchive: typeof streamsApi.unarchive
   getEvents: typeof streamsApi.getEvents
   markAsRead: typeof streamsApi.markAsRead
 }

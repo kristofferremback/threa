@@ -1,15 +1,29 @@
 import { useState, useEffect, useCallback } from "react"
-import { Outlet, useParams } from "react-router-dom"
+import { Outlet, useParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { PanelProvider, QuickSwitcherProvider } from "@/contexts"
-import { useSocketEvents } from "@/hooks"
+import { useSocketEvents, useWorkspaceBootstrap } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
+import { ApiError } from "@/api/client"
 
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const navigate = useNavigate()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
+
+  const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
+
+  useEffect(() => {
+    if (
+      workspaceError &&
+      ApiError.isApiError(workspaceError) &&
+      (workspaceError.status === 404 || workspaceError.status === 403)
+    ) {
+      navigate("/workspaces", { replace: true })
+    }
+  }, [workspaceError, navigate])
 
   useSocketEvents(workspaceId ?? "")
 

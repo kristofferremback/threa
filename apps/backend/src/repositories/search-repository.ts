@@ -2,11 +2,14 @@ import { PoolClient } from "pg"
 import { sql } from "../db"
 import { Visibilities, type StreamType } from "@threa/types"
 
+export type ArchiveStatus = "active" | "archived"
+
 export interface GetAccessibleStreamsParams {
   workspaceId: string
   userId: string
   memberIds?: string[] // Can mix user_xxx and persona_xxx - ID prefix distinguishes
   streamTypes?: StreamType[]
+  archiveStatus?: ArchiveStatus[] // ["active"] = active only, ["archived"] = archived only, ["active", "archived"] = all
 }
 
 export interface SearchResult {
@@ -83,11 +86,25 @@ export const SearchRepository = {
    * Member filtering (AND logic):
    * - If memberIds provided, stream must have ALL specified members
    * - Members can be users (stream_members) or personas (stream_persona_participants)
+   *
+   * Archive status:
+   * - ["active"] (default) → only non-archived streams
+   * - ["archived"] → only archived streams
+   * - ["active", "archived"] → all streams
    */
   async getAccessibleStreamsWithMembers(client: PoolClient, params: GetAccessibleStreamsParams): Promise<string[]> {
-    const { workspaceId, userId, memberIds, streamTypes } = params
+    const { workspaceId, userId, memberIds, streamTypes, archiveStatus } = params
     const hasMemberFilter = memberIds && memberIds.length > 0
     const hasTypeFilter = streamTypes && streamTypes.length > 0
+
+    // Archive status filtering logic:
+    // - Default (undefined/empty) → active only
+    // - ["active"] → active only
+    // - ["archived"] → archived only
+    // - ["active", "archived"] → all streams (no filter)
+    const includeActive = !archiveStatus || archiveStatus.length === 0 || archiveStatus.includes("active")
+    const includeArchived = archiveStatus?.includes("archived") ?? false
+    const filterAll = includeActive && includeArchived
 
     // If no member filter, simpler query
     if (!hasMemberFilter) {
@@ -104,6 +121,7 @@ export const SearchRepository = {
             OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
           )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
+          AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
       `)
       return result.rows.map((r) => r.id)
     }
@@ -123,6 +141,7 @@ export const SearchRepository = {
             OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
           )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
+          AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
       ),
       member_streams AS (
         SELECT stream_id

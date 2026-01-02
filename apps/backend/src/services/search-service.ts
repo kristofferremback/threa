@@ -5,6 +5,8 @@ import type { EmbeddingServiceLike } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
 
+export type ArchiveStatus = "active" | "archived"
+
 /**
  * Client-provided filters with pre-resolved IDs.
  * All lookups (username to ID, etc.) happen client-side.
@@ -13,7 +15,8 @@ export interface SearchFilters {
   authorId?: string // Single author (from:@user)
   memberIds?: string[] // Multiple users/personas, AND logic (with:@user or with:@persona)
   streamIds?: string[] // Stream IDs (in:#channel)
-  streamTypes?: StreamType[] // Stream types, OR logic (is:type)
+  streamTypes?: StreamType[] // Stream types, OR logic (type:scratchpad)
+  archiveStatus?: ArchiveStatus[] // Archive status (is:archived, is:active)
   before?: Date // Exclusive (<)
   after?: Date // Inclusive (>=)
 }
@@ -127,6 +130,7 @@ export class SearchService {
       userId,
       memberIds: filters.memberIds,
       streamTypes: filters.streamTypes,
+      archiveStatus: filters.archiveStatus,
     })
 
     // If specific stream IDs requested, filter to those

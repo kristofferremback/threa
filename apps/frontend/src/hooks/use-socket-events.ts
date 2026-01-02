@@ -122,11 +122,13 @@ export function useSocketEvents(workspaceId: string) {
 
     // Handle stream archived
     socket.on("stream:archived", (payload: StreamPayload) => {
-      // Remove from stream-specific caches
-      queryClient.removeQueries({ queryKey: streamKeys.detail(workspaceId, payload.stream.id) })
-      queryClient.removeQueries({ queryKey: streamKeys.bootstrap(workspaceId, payload.stream.id) })
+      // Update stream bootstrap cache with archived stream
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.stream.id), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        return { ...old, stream: payload.stream }
+      })
 
-      // Remove from workspace bootstrap cache (sidebar)
+      // Remove from workspace bootstrap cache (sidebar - archived streams don't show)
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as { streams?: Stream[] }
@@ -137,8 +139,39 @@ export function useSocketEvents(workspaceId: string) {
         }
       })
 
-      // Remove from IndexedDB
-      db.streams.delete(payload.stream.id)
+      // Update IndexedDB
+      db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
+    })
+
+    // Handle stream unarchived
+    socket.on("stream:unarchived", (payload: StreamPayload) => {
+      // Update stream bootstrap cache with unarchived stream
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, payload.stream.id), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        return { ...old, stream: payload.stream }
+      })
+
+      // Add back to workspace bootstrap cache (sidebar)
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as { streams?: Stream[] }
+        if (!bootstrap.streams) return old
+        // Only add if not already present
+        if (bootstrap.streams.some((s) => s.id === payload.stream.id)) {
+          // Update existing entry
+          return {
+            ...bootstrap,
+            streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? payload.stream : s)),
+          }
+        }
+        return {
+          ...bootstrap,
+          streams: [...bootstrap.streams, payload.stream],
+        }
+      })
+
+      // Update IndexedDB
+      db.streams.put({ ...payload.stream, _cachedAt: Date.now() })
     })
 
     // Handle workspace member added
@@ -302,6 +335,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:created")
       socket.off("stream:updated")
       socket.off("stream:archived")
+      socket.off("stream:unarchived")
       socket.off("stream:display_name_updated")
       socket.off("workspace_member:added")
       socket.off("workspace_member:removed")
