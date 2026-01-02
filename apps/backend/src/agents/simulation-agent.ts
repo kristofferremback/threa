@@ -88,8 +88,8 @@ export class SimulationAgent {
 
     // Create callbacks for the graph
     const callbacks: SimulationGraphCallbacks = {
-      getOrchestratorModel: () => ai.getLanguageModel(orchestratorModel),
-      getPersonaModel: (persona) => ai.getLanguageModel(persona.model),
+      ai,
+      orchestratorModel,
       createThread: async (params) => {
         const thread = await streamService.createThread(params)
         logger.debug({ threadId: thread.id, parentMessageId: params.parentMessageId }, "Created thread for simulation")

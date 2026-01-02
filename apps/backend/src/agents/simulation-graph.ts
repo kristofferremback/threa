@@ -1,10 +1,8 @@
 import { Annotation, StateGraph, END } from "@langchain/langgraph"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { generateObject, generateText } from "ai"
 import { z } from "zod"
-import type { LanguageModel } from "ai"
 import type { Persona } from "../repositories/persona-repository"
-import { stripMarkdownFences } from "../lib/ai"
+import type { AI } from "../lib/ai/ai"
 
 /**
  * Tracks a message sent during simulation for context and threading.
@@ -42,10 +40,10 @@ export type TurnDecision = z.infer<typeof TurnDecisionSchema>
  * Passed via configurable in the RunnableConfig.
  */
 export interface SimulationGraphCallbacks {
-  /** Get the orchestrator model (cheap/fast) */
-  getOrchestratorModel: () => LanguageModel
-  /** Get a persona's model */
-  getPersonaModel: (persona: Persona) => LanguageModel
+  /** AI wrapper instance for generating text/objects */
+  ai: AI
+  /** Model string for orchestration decisions (cheap/fast model) */
+  orchestratorModel: string
   /** Create a thread for threading off a message */
   createThread: (params: {
     workspaceId: string
@@ -230,18 +228,14 @@ Respond in character. Be natural and engaging. Keep your response concise but me
 function createOrchestrateNode() {
   return async (state: SimulationStateType, config: RunnableConfig): Promise<Partial<SimulationStateType>> => {
     const callbacks = getCallbacks(config)
-    const model = callbacks.getOrchestratorModel()
-
     const prompt = buildOrchestratorPrompt(state)
 
-    const result = await generateObject({
-      model,
+    const { value: decision } = await callbacks.ai.generateObject({
+      model: callbacks.orchestratorModel,
       schema: TurnDecisionSchema,
       prompt,
       temperature: 0.3,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "simulation-orchestrate",
         metadata: {
           streamId: state.streamId,
@@ -250,8 +244,6 @@ function createOrchestrateNode() {
         },
       },
     })
-
-    const decision = result.object
 
     // Validate persona exists
     const persona = state.personaMap[decision.nextSpeaker.toLowerCase()]
@@ -336,17 +328,15 @@ function createGenerateNode() {
       return { status: "failed", error: "No persona selected" }
     }
 
-    const model = callbacks.getPersonaModel(persona)
     const prompt = buildPersonaPrompt(state, persona)
 
-    const result = await generateText({
-      model,
+    const { value } = await callbacks.ai.generateText({
+      model: persona.model,
       system: persona.systemPrompt ?? undefined,
       prompt,
       temperature: persona.temperature ?? 0.7,
-      maxOutputTokens: persona.maxTokens ?? 500,
-      experimental_telemetry: {
-        isEnabled: true,
+      maxTokens: persona.maxTokens ?? 500,
+      telemetry: {
         functionId: "simulation-generate",
         metadata: {
           streamId: state.streamId,
@@ -356,7 +346,7 @@ function createGenerateNode() {
       },
     })
 
-    const content = result.text?.trim() || null
+    const content = value?.trim() || null
 
     if (!content) {
       return { currentContent: null }
