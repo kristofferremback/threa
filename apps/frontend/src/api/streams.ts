@@ -21,7 +21,7 @@ export const streamsApi = {
     const searchParams = new URLSearchParams()
     if (params?.type) searchParams.set("stream_type", params.type)
     if (params?.archiveStatus) {
-      params.archiveStatus.forEach((status) => searchParams.append("archive_status", status))
+      params.archiveStatus.forEach((s) => searchParams.append("status", s))
     }
     const query = searchParams.toString()
     const res = await api.get<{ streams: Stream[] }>(

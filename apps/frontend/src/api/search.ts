@@ -41,7 +41,7 @@ export async function searchMessages(workspaceId: string, request: SearchRequest
     with: request.filters?.with,
     in: request.filters?.in,
     type: request.filters?.type,
-    archive_status: request.filters?.archiveStatus,
+    status: request.filters?.archiveStatus,
     before: request.filters?.before,
     after: request.filters?.after,
     limit: request.limit,

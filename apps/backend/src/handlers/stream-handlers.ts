@@ -70,14 +70,14 @@ export function createStreamHandlers({ streamService, eventService }: Dependenci
     async list(req: Request, res: Response) {
       const userId = req.userId!
       const workspaceId = req.workspaceId!
-      const { stream_type, archive_status } = req.query
+      const { stream_type, status } = req.query
 
       const types = stream_type
         ? ((Array.isArray(stream_type) ? stream_type : [stream_type]) as ("scratchpad" | "channel")[])
         : undefined
 
-      const archiveStatus = archive_status
-        ? ((Array.isArray(archive_status) ? archive_status : [archive_status]) as ("active" | "archived")[])
+      const archiveStatus = status
+        ? ((Array.isArray(status) ? status : [status]) as ("active" | "archived")[])
         : undefined
 
       const streams = await streamService.list(workspaceId, userId, { types, archiveStatus })

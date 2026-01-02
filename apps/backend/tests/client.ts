@@ -521,7 +521,7 @@ export interface SearchParams {
   with?: string[] // User IDs (AND logic)
   in?: string[] // Stream IDs
   type?: ("scratchpad" | "channel" | "dm" | "thread")[] // Stream types (OR logic)
-  archive_status?: ("active" | "archived")[] // Archive status filter
+  status?: ("active" | "archived")[] // Archive status filter
   before?: string // Exclusive (<)
   after?: string // Inclusive (>=)
   limit?: number

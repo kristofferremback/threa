@@ -1,8 +1,9 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 import type { StreamType, Visibility, CompanionMode } from "@threa/types"
+import { parseArchiveStatusFilter, type ArchiveStatus } from "../lib/sql-filters"
 
-export type { StreamType, Visibility, CompanionMode }
+export type { StreamType, Visibility, CompanionMode, ArchiveStatus }
 
 // Internal row type (snake_case, not exported)
 interface StreamRow {
@@ -123,7 +124,7 @@ export const StreamRepository = {
       types?: StreamType[]
       parentStreamId?: string
       userMembershipStreamIds?: string[]
-      archiveStatus?: ("active" | "archived")[]
+      archiveStatus?: ArchiveStatus[]
     }
   ): Promise<Stream[]> {
     const types = filters?.types
@@ -131,14 +132,7 @@ export const StreamRepository = {
     const userMembershipStreamIds = filters?.userMembershipStreamIds
     const archiveStatus = filters?.archiveStatus
 
-    // Archive status filtering logic:
-    // - Default (undefined/empty) → active only
-    // - ["active"] → active only
-    // - ["archived"] → archived only
-    // - ["active", "archived"] → all streams (no filter)
-    const includeActive = !archiveStatus || archiveStatus.length === 0 || archiveStatus.includes("active")
-    const includeArchived = archiveStatus?.includes("archived") ?? false
-    const filterAll = includeActive && includeArchived
+    const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(archiveStatus)
 
     if (parentStreamId) {
       const result = await client.query<StreamRow>(

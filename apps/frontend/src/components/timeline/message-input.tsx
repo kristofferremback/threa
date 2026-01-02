@@ -84,26 +84,8 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
   if (disabled && disabledReason) {
     return (
       <div className="border-t p-4">
-        <div className="relative">
-          <div className="pointer-events-none opacity-30">
-            <MessageComposer
-              content=""
-              onContentChange={() => {}}
-              pendingAttachments={[]}
-              onRemoveAttachment={() => {}}
-              fileInputRef={{ current: null }}
-              onFileSelect={() => {}}
-              onSubmit={() => {}}
-              canSubmit={false}
-              isSubmitting={false}
-              hasFailed={false}
-              disabled={true}
-              placeholder=""
-            />
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center bg-background/60">
-            <p className="text-sm text-muted-foreground px-4 text-center">{disabledReason}</p>
-          </div>
+        <div className="flex items-center justify-center py-3 px-4 rounded-md bg-muted/50">
+          <p className="text-sm text-muted-foreground text-center">{disabledReason}</p>
         </div>
       </div>
     )

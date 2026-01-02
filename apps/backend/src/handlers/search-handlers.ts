@@ -12,7 +12,7 @@ const searchQuerySchema = z.object({
   with: z.array(z.string()).optional(), // User or persona IDs (AND logic)
   in: z.array(z.string()).optional(), // Stream IDs
   type: z.array(z.enum(STREAM_TYPES)).optional(), // Stream types (OR logic)
-  archive_status: z.array(z.enum(ARCHIVE_STATUSES)).optional(), // Archive status (active, archived)
+  status: z.array(z.enum(ARCHIVE_STATUSES)).optional(), // Archive status (active, archived)
   before: z.string().datetime().optional(), // Exclusive (<)
   after: z.string().datetime().optional(), // Inclusive (>=)
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -47,7 +47,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
      * - with: string[] (optional) - filter to streams where these users/personas are members/participants
      * - in: string[] (optional) - filter to specific stream IDs
      * - type: StreamType[] (optional) - filter by stream type
-     * - archive_status: ("active" | "archived")[] (optional) - filter by archive status
+     * - status: ("active" | "archived")[] (optional) - filter by archive status
      * - before: ISO datetime (optional) - messages before date
      * - after: ISO datetime (optional) - messages after date
      * - limit: number (optional) - max results (1-100)
@@ -64,7 +64,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
         })
       }
 
-      const { query, from, with: withMembers, in: inStreams, type, archive_status, before, after, limit } = result.data
+      const { query, from, with: withMembers, in: inStreams, type, status, before, after, limit } = result.data
 
       const results = await searchService.search({
         workspaceId,
@@ -75,7 +75,7 @@ export function createSearchHandlers({ searchService }: Dependencies) {
           memberIds: withMembers,
           streamIds: inStreams,
           streamTypes: type,
-          archiveStatus: archive_status,
+          archiveStatus: status,
           before: before ? new Date(before) : undefined,
           after: after ? new Date(after) : undefined,
         },

@@ -361,13 +361,13 @@ describe("Search E2E Tests", () => {
       // Archive the stream
       await archiveStream(client, workspace.id, scratchpad.id)
 
-      // Default search (no archive_status) should NOT find the message
+      // Default search (no status filter) should NOT find the message
       const results = await search(client, workspace.id, { query: keyword })
 
       expect(results.length).toBe(0)
     })
 
-    test("should find archived stream messages with archive_status:archived", async () => {
+    test("should find archived stream messages with status:archived", async () => {
       const client = new TestClient()
       await loginAs(client, testEmail("archonly"), "Archive Only Test")
       const workspace = await createWorkspace(client, `ArchOnly WS ${testRunId}`)
@@ -379,8 +379,8 @@ describe("Search E2E Tests", () => {
       // Archive the stream
       await archiveStream(client, workspace.id, scratchpad.id)
 
-      // Search with archive_status:archived should find it
-      const results = await search(client, workspace.id, { query: keyword, archive_status: ["archived"] })
+      // Search with status:archived should find it
+      const results = await search(client, workspace.id, { query: keyword, status: ["archived"] })
 
       expect(results.length).toBe(1)
       expect(results[0].content).toContain(keyword)
@@ -403,7 +403,7 @@ describe("Search E2E Tests", () => {
       // Search with both statuses should find both messages
       const results = await search(client, workspace.id, {
         query: keyword,
-        archive_status: ["active", "archived"],
+        status: ["active", "archived"],
       })
 
       expect(results.length).toBe(2)
@@ -432,6 +432,46 @@ describe("Search E2E Tests", () => {
       const restoredResults = await search(client, workspace.id, { query: keyword })
       expect(restoredResults.length).toBe(1)
       expect(restoredResults[0].content).toContain(keyword)
+    })
+
+    test("should reject sending message to archived stream with 403", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("archmsg"), "Archive Message Test")
+      const workspace = await createWorkspace(client, `ArchMsg WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id, "off")
+
+      // Archive the stream
+      await archiveStream(client, workspace.id, scratchpad.id)
+
+      // Attempt to send a message - should get 403
+      const { status, data } = await client.post(`/api/workspaces/${workspace.id}/messages`, {
+        streamId: scratchpad.id,
+        content: "This should fail",
+      })
+
+      expect(status).toBe(403)
+      expect(data).toHaveProperty("error")
+    })
+
+    test("should reject unarchive by non-creator with 403", async () => {
+      // Creator creates and archives a public channel
+      const creator = new TestClient()
+      await loginAs(creator, testEmail("archcreator"), "Archive Creator")
+      const workspace = await createWorkspace(creator, `ArchCreator WS ${testRunId}`)
+      const channel = await createChannel(creator, workspace.id, `archtest-${testRunId}`)
+      await archiveStream(creator, workspace.id, channel.id)
+
+      // Different user joins the workspace and the channel
+      const other = new TestClient()
+      await loginAs(other, testEmail("archother"), "Archive Other")
+      await joinWorkspace(other, workspace.id)
+      await joinStream(other, workspace.id, channel.id)
+
+      // Other user attempts to unarchive - should get 403 (not the creator)
+      const { status, data } = await other.post(`/api/workspaces/${workspace.id}/streams/${channel.id}/unarchive`)
+
+      expect(status).toBe(403)
+      expect(data).toHaveProperty("error")
     })
   })
 })

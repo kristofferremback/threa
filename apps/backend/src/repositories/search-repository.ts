@@ -1,8 +1,7 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 import { Visibilities, type StreamType } from "@threa/types"
-
-export type ArchiveStatus = "active" | "archived"
+import { parseArchiveStatusFilter, type ArchiveStatus } from "../lib/sql-filters"
 
 export interface GetAccessibleStreamsParams {
   workspaceId: string
@@ -97,14 +96,7 @@ export const SearchRepository = {
     const hasMemberFilter = memberIds && memberIds.length > 0
     const hasTypeFilter = streamTypes && streamTypes.length > 0
 
-    // Archive status filtering logic:
-    // - Default (undefined/empty) → active only
-    // - ["active"] → active only
-    // - ["archived"] → archived only
-    // - ["active", "archived"] → all streams (no filter)
-    const includeActive = !archiveStatus || archiveStatus.length === 0 || archiveStatus.includes("active")
-    const includeArchived = archiveStatus?.includes("archived") ?? false
-    const filterAll = includeActive && includeArchived
+    const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(archiveStatus)
 
     // If no member filter, simpler query
     if (!hasMemberFilter) {
