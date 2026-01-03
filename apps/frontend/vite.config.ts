@@ -3,8 +3,9 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import path from "path"
 
-// Backend port can be configured via env var for browser E2E tests
+// Ports can be configured via env vars for browser E2E tests
 const backendPort = process.env.VITE_BACKEND_PORT || "3001"
+const frontendPort = parseInt(process.env.VITE_PORT || "3000", 10)
 const backendTarget = `http://localhost:${backendPort}`
 
 // Disable HMR during E2E tests to avoid noisy WebSocket errors when Playwright closes tabs
@@ -24,7 +25,7 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
   },
   server: {
-    port: 3000,
+    port: frontendPort,
     hmr: isE2ETest ? false : undefined,
     proxy: {
       "/api": {

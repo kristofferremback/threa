@@ -17,7 +17,7 @@ export default defineConfig({
   timeout: 30000, // 30s per test
 
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3900",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -30,14 +30,15 @@ export default defineConfig({
   ],
 
   // Start both backend and frontend before running tests
+  // Uses 39xx ports to avoid conflicts with dev servers (3xxx)
   webServer: [
     {
       command: "bun run test:browser:backend",
-      url: "http://localhost:3002/health",
+      url: "http://localhost:3902/health",
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
-        PORT: "3002",
+        PORT: "3902",
         DATABASE_URL: "postgresql://threa:threa@localhost:5454/threa_browser_test",
         USE_STUB_AUTH: "true",
         USE_STUB_COMPANION: "true",
@@ -53,11 +54,12 @@ export default defineConfig({
     },
     {
       command: "bun run test:browser:frontend",
-      url: "http://localhost:3000",
+      url: "http://localhost:3900",
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
-        VITE_BACKEND_PORT: "3002",
+        VITE_BACKEND_PORT: "3902",
+        VITE_PORT: "3900",
       },
     },
   ],

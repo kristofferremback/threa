@@ -113,6 +113,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       className="z-50 rounded-md border bg-popover text-popover-foreground shadow-md pointer-events-auto w-[280px]"
       role="listbox"
       aria-label="Emoji picker"
+      data-emoji-grid
     >
       <ScrollArea className="max-h-64">
         <div className="grid grid-cols-8 gap-0.5 p-2">
@@ -126,6 +127,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
                   role="option"
                   aria-selected={index === selectedIndex}
                   aria-label={`:${item.shortcode}:`}
+                  data-selected={index === selectedIndex ? "true" : undefined}
                   className={cn(
                     "flex items-center justify-center w-8 h-8 rounded text-xl",
                     "cursor-pointer hover:bg-accent",
