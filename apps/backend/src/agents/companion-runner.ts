@@ -11,7 +11,7 @@ import {
   type SendMessageResult,
 } from "./tools"
 import { AgentToolNames } from "@threa/types"
-import type { ProviderRegistry } from "../lib/ai"
+import type { AI } from "../lib/ai/ai"
 import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
 
@@ -88,14 +88,14 @@ export interface ResponseGenerator {
 export class LangGraphResponseGenerator implements ResponseGenerator {
   constructor(
     private readonly deps: {
-      modelRegistry: ProviderRegistry
+      ai: AI
       checkpointer: PostgresSaver
       tavilyApiKey?: string
     }
   ) {}
 
   async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
-    const { modelRegistry, checkpointer, tavilyApiKey } = this.deps
+    const { ai, checkpointer, tavilyApiKey } = this.deps
     const {
       threadId,
       modelId,
@@ -134,8 +134,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       getMessagesSent: () => messagesSentCount,
     })
 
-    // Get LangChain model from registry
-    const model = modelRegistry.getLangChainModel(modelId)
+    // Get LangChain model from AI wrapper
+    const model = ai.getLangChainModel(modelId)
 
     // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]

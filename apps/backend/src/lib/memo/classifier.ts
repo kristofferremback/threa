@@ -1,8 +1,6 @@
-import { generateObject } from "ai"
 import { z } from "zod"
 import type { PoolClient } from "pg"
-import type { ProviderRegistry } from "../ai/provider-registry"
-import { stripMarkdownFences } from "../ai/text-utils"
+import type { AI } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
@@ -130,7 +128,7 @@ Should this memo be revised based on the conversation above?`
 
 export class MemoClassifier {
   constructor(
-    private providerRegistry: ProviderRegistry,
+    private ai: AI,
     private modelId: string,
     private messageFormatter: MessageFormatter
   ) {}
@@ -140,27 +138,26 @@ export class MemoClassifier {
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
       .replace("{{CONTENT}}", message.content)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
-      system: MESSAGE_SYSTEM_PROMPT,
-      prompt,
+    const { value } = await this.ai.generateObject({
+      model: this.modelId,
       schema: messageClassificationSchema,
-      maxOutputTokens: 200,
+      messages: [
+        { role: "system", content: MESSAGE_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 200,
       temperature: 0.1,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "memo-classify-message",
         metadata: { messageId: message.id },
       },
     })
 
     return {
-      isGem: result.object.isGem,
-      knowledgeType: result.object.knowledgeType,
-      confidence: result.object.confidence ?? 0.5,
-      reasoning: result.object.reasoning ?? "",
+      isGem: value.isGem,
+      knowledgeType: value.knowledgeType ?? null,
+      confidence: value.confidence ?? 0.5,
+      reasoning: value.reasoning ?? "",
     }
   }
 
@@ -185,17 +182,16 @@ export class MemoClassifier {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
 
-    const model = this.providerRegistry.getModel(this.modelId)
-    const result = await generateObject({
-      model,
-      system: CONVERSATION_SYSTEM_PROMPT,
-      prompt,
+    const { value } = await this.ai.generateObject({
+      model: this.modelId,
       schema: conversationClassificationSchema,
-      maxOutputTokens: 300,
+      messages: [
+        { role: "system", content: CONVERSATION_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 300,
       temperature: 0.1,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "memo-classify-conversation",
         metadata: {
           conversationId: conversation.id,
@@ -206,11 +202,11 @@ export class MemoClassifier {
     })
 
     return {
-      isKnowledgeWorthy: result.object.isKnowledgeWorthy,
-      knowledgeType: result.object.knowledgeType,
-      shouldReviseExisting: existingMemo ? (result.object.shouldReviseExisting ?? false) : false,
-      revisionReason: result.object.revisionReason,
-      confidence: result.object.confidence ?? 0.5,
+      isKnowledgeWorthy: value.isKnowledgeWorthy,
+      knowledgeType: value.knowledgeType ?? null,
+      shouldReviseExisting: existingMemo ? (value.shouldReviseExisting ?? false) : false,
+      revisionReason: value.revisionReason ?? null,
+      confidence: value.confidence ?? 0.5,
     }
   }
 }

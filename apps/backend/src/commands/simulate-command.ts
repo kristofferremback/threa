@@ -1,14 +1,13 @@
-import { generateObject } from "ai"
 import { z } from "zod"
 import type { Pool } from "pg"
 import type { Command, CommandContext, CommandResult } from "./index"
-import type { ProviderRegistry } from "../lib/ai/provider-registry"
+import type { AI } from "../lib/ai/ai"
 import type { SimulationAgentLike } from "../workers/simulation-worker"
-import { stripMarkdownFences } from "../lib/ai"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { withClient } from "../db"
 import { logger } from "../lib/logger"
 
+// Schema for LLM parsing - all fields required for OpenAI strict mode compatibility
 const SimulationParamsSchema = z.object({
   personas: z.array(z.string()).min(1).max(5).describe("List of persona names/slugs mentioned in the command"),
   topic: z.string().describe("The topic or theme of the conversation, inferred from context"),
@@ -17,9 +16,8 @@ const SimulationParamsSchema = z.object({
     .int()
     .min(1)
     .max(50)
-    .default(5)
     .describe("Number of conversation turns (each turn = one message from one persona)"),
-  thread: z.boolean().default(false).describe("Whether to run the simulation in a thread"),
+  thread: z.boolean().describe("Whether to run the simulation in a thread"),
 })
 
 type SimulationParams = z.infer<typeof SimulationParamsSchema>
@@ -63,7 +61,7 @@ Input:`
 
 interface SimulateCommandDeps {
   pool: Pool
-  providerRegistry: ProviderRegistry
+  ai: AI
   simulationAgent: SimulationAgentLike
   parsingModel: string
 }
@@ -161,22 +159,19 @@ export class SimulateCommand implements Command {
   }
 
   private async parseArgs(args: string, availablePersonas: string[]): Promise<SimulationParams> {
-    const model = this.deps.providerRegistry.getModel(this.deps.parsingModel)
     const prompt = buildParsingPrompt(availablePersonas)
 
-    const result = await generateObject({
-      model,
+    const { value } = await this.deps.ai.generateObject({
+      model: this.deps.parsingModel,
       schema: SimulationParamsSchema,
-      prompt: `${prompt} ${args}`,
+      messages: [{ role: "user", content: `${prompt} ${args}` }],
       temperature: 0,
-      experimental_repairText: stripMarkdownFences,
-      experimental_telemetry: {
-        isEnabled: true,
+      telemetry: {
         functionId: "simulate-parse-args",
       },
     })
 
-    return result.object
+    return value
   }
 
   private async getAvailablePersonaSlugs(workspaceId: string): Promise<string[]> {

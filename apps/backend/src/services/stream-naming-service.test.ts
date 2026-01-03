@@ -1,7 +1,7 @@
-import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
+import { describe, test, expect, mock, beforeEach } from "bun:test"
 import { StreamNamingService } from "./stream-naming-service"
 import { MessageFormatter } from "../lib/ai/message-formatter"
-import * as ai from "ai"
+import type { AI } from "../lib/ai/ai"
 
 // Mock message formatter
 const mockFormatMessages = mock(() => Promise.resolve("<messages></messages>"))
@@ -69,16 +69,16 @@ mock.module("../lib/display-name", () => ({
   needsAutoNaming: () => true,
 }))
 
-const mockGetModel = mock(() => ({}))
-const mockProviderRegistry = {
-  getModel: mockGetModel,
+// Mock AI instance
+const mockGenerateText = mock(async () => ({ value: "", response: {} }))
+const mockAI: Partial<AI> = {
+  generateText: mockGenerateText as AI["generateText"],
 }
 
 const mockPool = {} as any
 
 describe("StreamNamingService", () => {
   let service: StreamNamingService
-  let generateTextSpy: ReturnType<typeof spyOn>
 
   beforeEach(() => {
     mockFindByIdForUpdate.mockReset()
@@ -86,24 +86,21 @@ describe("StreamNamingService", () => {
     mockStreamList.mockReset()
     mockStreamUpdate.mockReset()
     mockOutboxInsert.mockReset()
-    mockGetModel.mockReset()
+    mockGenerateText.mockReset()
     mockFormatMessages.mockReset()
 
     mockFindByIdForUpdate.mockResolvedValue(mockStream)
     mockMessageList.mockResolvedValue(mockMessages)
-    mockGetModel.mockReturnValue({})
     mockFormatMessages.mockResolvedValue("<messages></messages>")
     // Don't set default for mockStreamList - each test that needs it will set it
 
-    service = new StreamNamingService(mockPool, mockProviderRegistry as any, "test-model", mockMessageFormatter)
-
-    generateTextSpy = spyOn(ai, "generateText")
+    service = new StreamNamingService(mockPool, mockAI as AI, "test-model", mockMessageFormatter)
   })
 
   describe("attemptAutoNaming with requireName=false (user message)", () => {
     test("should return false when LLM returns NOT_ENOUGH_CONTEXT", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "NOT_ENOUGH_CONTEXT" } as any)
+      mockGenerateText.mockResolvedValue({ value: "NOT_ENOUGH_CONTEXT", response: {} })
 
       const result = await service.attemptAutoNaming("stream_123", false)
 
@@ -113,7 +110,7 @@ describe("StreamNamingService", () => {
 
     test("should generate name when LLM returns valid title", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "Help Request" } as any)
+      mockGenerateText.mockResolvedValue({ value: "Help Request", response: {} })
 
       const result = await service.attemptAutoNaming("stream_123", false)
 
@@ -128,7 +125,7 @@ describe("StreamNamingService", () => {
   describe("attemptAutoNaming with requireName=true (agent message)", () => {
     test("should throw when LLM returns NOT_ENOUGH_CONTEXT", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "NOT_ENOUGH_CONTEXT" } as any)
+      mockGenerateText.mockResolvedValue({ value: "NOT_ENOUGH_CONTEXT", response: {} })
 
       await expect(service.attemptAutoNaming("stream_123", true)).rejects.toThrow(
         "Failed to generate required name: NOT_ENOUGH_CONTEXT returned"
@@ -139,7 +136,7 @@ describe("StreamNamingService", () => {
 
     test("should throw when LLM returns empty response", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "" } as any)
+      mockGenerateText.mockResolvedValue({ value: "", response: {} })
 
       await expect(service.attemptAutoNaming("stream_123", true)).rejects.toThrow(
         "Failed to generate required name: NOT_ENOUGH_CONTEXT returned"
@@ -148,7 +145,7 @@ describe("StreamNamingService", () => {
 
     test("should generate name when LLM returns valid title", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "Quick Question" } as any)
+      mockGenerateText.mockResolvedValue({ value: "Quick Question", response: {} })
 
       const result = await service.attemptAutoNaming("stream_123", true)
 
@@ -167,11 +164,11 @@ describe("StreamNamingService", () => {
         ])
       )
 
-      generateTextSpy.mockResolvedValue({ text: "New Topic" } as any)
+      mockGenerateText.mockResolvedValue({ value: "New Topic", response: {} })
 
       await service.attemptAutoNaming("stream_123", false)
 
-      const calls = generateTextSpy.mock.calls
+      const calls = mockGenerateText.mock.calls
       const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
       const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
@@ -187,11 +184,11 @@ describe("StreamNamingService", () => {
         ])
       )
 
-      generateTextSpy.mockResolvedValue({ text: "New Topic" } as any)
+      mockGenerateText.mockResolvedValue({ value: "New Topic", response: {} })
 
       await service.attemptAutoNaming("stream_123", false)
 
-      const calls = generateTextSpy.mock.calls
+      const calls = mockGenerateText.mock.calls
       const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
       const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
@@ -205,11 +202,11 @@ describe("StreamNamingService", () => {
   describe("prompt differences based on requireName", () => {
     test("should include NOT_ENOUGH_CONTEXT instruction when requireName=false", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "Title" } as any)
+      mockGenerateText.mockResolvedValue({ value: "Title", response: {} })
 
       await service.attemptAutoNaming("stream_123", false)
 
-      const calls = generateTextSpy.mock.calls
+      const calls = mockGenerateText.mock.calls
       const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
       const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
@@ -218,11 +215,11 @@ describe("StreamNamingService", () => {
 
     test("should require generating a name when requireName=true", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: "Title" } as any)
+      mockGenerateText.mockResolvedValue({ value: "Title", response: {} })
 
       await service.attemptAutoNaming("stream_123", true)
 
-      const calls = generateTextSpy.mock.calls
+      const calls = mockGenerateText.mock.calls
       const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
       const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
@@ -233,7 +230,7 @@ describe("StreamNamingService", () => {
   describe("edge cases", () => {
     test("should clean quotes from generated name", async () => {
       mockStreamList.mockResolvedValue([])
-      generateTextSpy.mockResolvedValue({ text: '"Quoted Title"' } as any)
+      mockGenerateText.mockResolvedValue({ value: '"Quoted Title"', response: {} })
 
       await service.attemptAutoNaming("stream_123", false)
 
@@ -246,7 +243,7 @@ describe("StreamNamingService", () => {
     test("should reject names that are too long", async () => {
       mockStreamList.mockResolvedValue([])
       const longName = "A".repeat(150)
-      generateTextSpy.mockResolvedValue({ text: longName } as any)
+      mockGenerateText.mockResolvedValue({ value: longName, response: {} })
 
       const result = await service.attemptAutoNaming("stream_123", false)
 
@@ -257,7 +254,7 @@ describe("StreamNamingService", () => {
     test("should throw for too-long names when requireName=true", async () => {
       mockStreamList.mockResolvedValue([])
       const longName = "A".repeat(150)
-      generateTextSpy.mockResolvedValue({ text: longName } as any)
+      mockGenerateText.mockResolvedValue({ value: longName, response: {} })
 
       await expect(service.attemptAutoNaming("stream_123", true)).rejects.toThrow("invalid response")
     })

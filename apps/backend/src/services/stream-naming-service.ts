@@ -1,10 +1,9 @@
 import { Pool } from "pg"
-import { generateText } from "ai"
 import { withTransaction } from "../db"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
-import { ProviderRegistry } from "../lib/ai"
+import type { AI } from "../lib/ai/ai"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
@@ -38,7 +37,7 @@ Return ONLY the title, no quotes or explanation. The next message from the user 
 export class StreamNamingService {
   constructor(
     private pool: Pool,
-    private providerRegistry: ProviderRegistry,
+    private ai: AI,
     private namingModel: string,
     private messageFormatter: MessageFormatter
   ) {}
@@ -85,28 +84,25 @@ export class StreamNamingService {
       // Build conversation context for LLM
       // Messages are already in chronological order (repository reverses the DESC query)
       const conversationText = await this.messageFormatter.formatMessages(client, messages)
-
-      const promptTemplate = buildSystemPrompt(existingNames, requireName)
+      const systemPrompt = buildSystemPrompt(existingNames, requireName)
 
       // Call LLM
       let generatedName: string | null = null
       try {
-        const model = this.providerRegistry.getModel(this.namingModel)
-        const result = await generateText({
-          model,
+        const { value } = await this.ai.generateText({
+          model: this.namingModel,
           messages: [
-            { role: "system", content: promptTemplate },
+            { role: "system", content: systemPrompt },
             { role: "user", content: conversationText },
           ],
-          maxOutputTokens: 2000,
+          maxTokens: 100,
           temperature: 0.3,
-          experimental_telemetry: {
-            isEnabled: true,
+          telemetry: {
             functionId: "stream-naming",
             metadata: { streamId, requireName },
           },
         })
-        generatedName = result.text?.trim() || null
+        generatedName = value?.trim() || null
       } catch (err) {
         logger.error({ err, streamId }, "Failed to generate stream name")
         throw err

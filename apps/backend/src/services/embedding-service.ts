@@ -1,43 +1,35 @@
-import { embed, embedMany, type EmbeddingModel } from "ai"
-import type { ProviderRegistry } from "../lib/ai"
+import type { AI } from "../lib/ai/ai"
 
 const DEFAULT_MODEL = "openrouter:openai/text-embedding-3-small"
 
 export interface EmbeddingServiceConfig {
-  providerRegistry: ProviderRegistry
+  ai: AI
   model?: string
 }
 
 /**
  * Service for generating embeddings using the configured provider.
- * Wraps ProviderRegistry with a configured default model.
- *
- * Uses lazy initialization to avoid failing at startup when API keys
- * aren't configured (e.g., in test environments).
+ * Wraps AI with a configured default model.
  */
 export class EmbeddingService {
-  private providerRegistry: ProviderRegistry
+  private ai: AI
   private modelId: string
-  private embeddingModel: EmbeddingModel<string> | null = null
 
   constructor(config: EmbeddingServiceConfig) {
-    this.providerRegistry = config.providerRegistry
+    this.ai = config.ai
     this.modelId = config.model ?? DEFAULT_MODEL
-  }
-
-  private getModel(): EmbeddingModel<string> {
-    if (!this.embeddingModel) {
-      this.embeddingModel = this.providerRegistry.getEmbeddingModel(this.modelId)
-    }
-    return this.embeddingModel
   }
 
   /**
    * Generate embedding for a single text.
    */
   async embed(text: string): Promise<number[]> {
-    const result = await embed({ model: this.getModel(), value: text })
-    return result.embedding
+    const { value } = await this.ai.embed({
+      model: this.modelId,
+      value: text,
+      telemetry: { functionId: "embedding-single" },
+    })
+    return value
   }
 
   /**
@@ -47,7 +39,11 @@ export class EmbeddingService {
     if (texts.length === 0) {
       return []
     }
-    const result = await embedMany({ model: this.getModel(), values: texts })
-    return result.embeddings
+    const { value } = await this.ai.embedMany({
+      model: this.modelId,
+      values: texts,
+      telemetry: { functionId: "embedding-batch", metadata: { count: texts.length } },
+    })
+    return value
   }
 }

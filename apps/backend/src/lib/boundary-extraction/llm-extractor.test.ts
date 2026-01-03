@@ -13,25 +13,23 @@ import { describe, test, expect, mock, beforeEach } from "bun:test"
 import { LLMBoundaryExtractor } from "./llm-extractor"
 import type { ExtractionContext, ConversationSummary } from "./types"
 import type { Message } from "../../repositories/message-repository"
+import type { AI } from "../ai/ai"
 
 import { NoObjectGeneratedError } from "ai"
 
-// Mock the ai module's generateObject function
+// Mock generateObject function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockGenerateObject = mock(
-  async (): Promise<{ object: any }> => ({
-    object: { conversationId: null, confidence: 0.5 },
+  async (): Promise<{ value: any; response: any }> => ({
+    value: { conversationId: null, confidence: 0.5 },
+    response: { usage: {} },
   })
 )
-mock.module("ai", () => ({
-  generateObject: mockGenerateObject,
-  NoObjectGeneratedError,
-}))
 
-// Mock provider registry
-const mockProviderRegistry = {
-  getModel: mock(() => ({})),
-} as any
+// Mock AI instance
+const mockAI: Partial<AI> = {
+  generateObject: mockGenerateObject as AI["generateObject"],
+}
 
 function createMockMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -78,7 +76,7 @@ describe("LLMBoundaryExtractor", () => {
 
   beforeEach(() => {
     mockGenerateObject.mockReset()
-    extractor = new LLMBoundaryExtractor(mockProviderRegistry, "openrouter:anthropic/claude-haiku-4.5")
+    extractor = new LLMBoundaryExtractor(mockAI as AI, "openrouter:anthropic/claude-haiku-4.5")
   })
 
   describe("thread handling", () => {
@@ -141,11 +139,12 @@ describe("LLMBoundaryExtractor", () => {
       })
 
       mockGenerateObject.mockResolvedValueOnce({
-        object: {
+        value: {
           conversationId: "conv_match123",
           confidence: 0.92,
           reasoning: "Topic matches existing conversation",
         },
+        response: { usage: {} },
       })
 
       const result = await extractor.extract(context)
@@ -158,11 +157,12 @@ describe("LLMBoundaryExtractor", () => {
       const context = createMockContext()
 
       mockGenerateObject.mockResolvedValueOnce({
-        object: {
+        value: {
           conversationId: null,
           newConversationTopic: "New topic from LLM",
           confidence: 0.88,
         },
+        response: { usage: {} },
       })
 
       const result = await extractor.extract(context)
@@ -179,11 +179,12 @@ describe("LLMBoundaryExtractor", () => {
       })
 
       mockGenerateObject.mockResolvedValueOnce({
-        object: {
+        value: {
           conversationId: "conv_update123",
           confidence: 0.95,
           completenessUpdates: [{ conversationId: "conv_update123", score: 6, status: "resolved" }],
         },
+        response: { usage: {} },
       })
 
       const result = await extractor.extract(context)
@@ -234,10 +235,11 @@ describe("LLMBoundaryExtractor", () => {
 
       // LLM returns an ID that doesn't exist in active conversations
       mockGenerateObject.mockResolvedValueOnce({
-        object: {
+        value: {
           conversationId: "conv_hallucinated_id",
           confidence: 0.8,
         },
+        response: { usage: {} },
       })
 
       const result = await extractor.extract(context)

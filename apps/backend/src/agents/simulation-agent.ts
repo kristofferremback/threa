@@ -3,7 +3,7 @@ import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import { AuthorTypes, type AuthorType } from "@threa/types"
 import { withClient } from "../db"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
-import type { ProviderRegistry } from "../lib/ai/provider-registry"
+import type { AI } from "../lib/ai/ai"
 import type { StreamService } from "../services/stream-service"
 import { logger } from "../lib/logger"
 import { createSimulationGraph, type SimulationGraphCallbacks, type SimulationStateType } from "./simulation-graph"
@@ -11,7 +11,7 @@ import { getLangfuseCallbacks } from "../lib/langfuse"
 
 export interface SimulationAgentDeps {
   pool: Pool
-  providerRegistry: ProviderRegistry
+  ai: AI
   streamService: StreamService
   checkpointer: PostgresSaver
   createMessage: (params: {
@@ -59,7 +59,7 @@ export class SimulationAgent {
   constructor(private readonly deps: SimulationAgentDeps) {}
 
   async run(input: SimulationAgentInput): Promise<SimulationAgentResult> {
-    const { pool, providerRegistry, streamService, checkpointer, createMessage, orchestratorModel } = this.deps
+    const { pool, ai, streamService, checkpointer, createMessage, orchestratorModel } = this.deps
     const { streamId, workspaceId, userId, personas: personaSlugs, topic, turns } = input
 
     logger.info({ streamId, personaSlugs, topic, turns }, "Starting simulation via LangGraph")
@@ -88,8 +88,8 @@ export class SimulationAgent {
 
     // Create callbacks for the graph
     const callbacks: SimulationGraphCallbacks = {
-      getOrchestratorModel: () => providerRegistry.getModel(orchestratorModel),
-      getPersonaModel: (persona) => providerRegistry.getModel(persona.model),
+      ai,
+      orchestratorModel,
       createThread: async (params) => {
         const thread = await streamService.createThread(params)
         logger.debug({ threadId: thread.id, parentMessageId: params.parentMessageId }, "Created thread for simulation")
