@@ -12,7 +12,15 @@ interface Dependencies {
   streamService: StreamService
 }
 
-export function createAuthStubHandlers(deps: Dependencies) {
+interface AuthStubHandlers {
+  getLoginPage: RequestHandler
+  handleLogin: RequestHandler
+  handleDevLogin: RequestHandler
+  handleWorkspaceJoin: RequestHandler
+  handleStreamJoin: RequestHandler
+}
+
+export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   const { authStubService, userService, workspaceService, streamService } = deps
 
   const getLoginPage: RequestHandler = (req, res) => {
