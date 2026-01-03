@@ -3,6 +3,8 @@
  *
  * Creates the test database before the backend server starts.
  * Uses docker exec to avoid needing pg module at root level.
+ *
+ * Note: MinIO bucket is created automatically by the backend on startup.
  */
 import { execSync } from "child_process"
 

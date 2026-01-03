@@ -43,6 +43,12 @@ export default defineConfig({
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
         USE_STUB_AI: "true",
+        // MinIO S3-compatible storage for file uploads
+        S3_BUCKET: "threa-browser-test",
+        S3_REGION: "us-east-1",
+        S3_ACCESS_KEY_ID: "minioadmin",
+        S3_SECRET_ACCESS_KEY: "minioadmin",
+        S3_ENDPOINT: "http://localhost:9000",
       },
     },
     {
