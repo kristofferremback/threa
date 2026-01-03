@@ -19,15 +19,18 @@ export interface SimulationMessage {
 
 /**
  * Decision schema for the orchestrator - who speaks next and where.
+ * Note: .strict() on nested object adds additionalProperties:false for OpenAI strict mode.
  */
 export const TurnDecisionSchema = z.object({
   nextSpeaker: z.string().describe("Slug of the persona who should speak next"),
   placement: z
     .union([
       z.literal("channel"),
-      z.object({
-        threadOf: z.number().describe("Turn number to create/reply in a thread of"),
-      }),
+      z
+        .object({
+          threadOf: z.number().describe("Turn number to create/reply in a thread of"),
+        })
+        .strict(),
     ])
     .describe("Where to post: 'channel' for main stream, or { threadOf: N } to thread off turn N"),
   reasoning: z.string().describe("Brief explanation of why this placement makes sense"),
