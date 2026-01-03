@@ -1,0 +1,164 @@
+import { Node, mergeAttributes } from "@tiptap/core"
+import { ReactNodeViewRenderer } from "@tiptap/react"
+import { AttachmentReferenceView } from "./attachment-reference-view"
+
+export type AttachmentStatus = "uploading" | "uploaded" | "error"
+
+export interface AttachmentReferenceAttrs {
+  /** Attachment ID (temp ID while uploading, real ID after) */
+  id: string
+  /** Original filename */
+  filename: string
+  /** MIME type for determining display (image vs file) */
+  mimeType: string
+  /** Size in bytes */
+  sizeBytes: number
+  /** Upload status */
+  status: AttachmentStatus
+  /** Image index (1, 2, 3...) - only for images */
+  imageIndex: number | null
+  /** Error message if status is "error" */
+  error: string | null
+}
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    attachmentReference: {
+      /**
+       * Insert an attachment reference at the current position
+       */
+      insertAttachmentReference: (attrs: AttachmentReferenceAttrs) => ReturnType
+      /**
+       * Update an attachment reference by its temp ID
+       */
+      updateAttachmentReference: (tempId: string, updates: Partial<AttachmentReferenceAttrs>) => ReturnType
+    }
+  }
+}
+
+export const AttachmentReferenceExtension = Node.create({
+  name: "attachmentReference",
+  group: "inline",
+  inline: true,
+  selectable: true,
+  atom: true,
+  marks: "_", // Allow all marks (bold, italic, etc.)
+
+  addAttributes() {
+    return {
+      id: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-id"),
+        renderHTML: (attrs) => ({ "data-id": attrs.id }),
+      },
+      filename: {
+        default: "",
+        parseHTML: (element) => element.getAttribute("data-filename"),
+        renderHTML: (attrs) => ({ "data-filename": attrs.filename }),
+      },
+      mimeType: {
+        default: "application/octet-stream",
+        parseHTML: (element) => element.getAttribute("data-mime-type"),
+        renderHTML: (attrs) => ({ "data-mime-type": attrs.mimeType }),
+      },
+      sizeBytes: {
+        default: 0,
+        parseHTML: (element) => parseInt(element.getAttribute("data-size-bytes") || "0", 10),
+        renderHTML: (attrs) => ({ "data-size-bytes": String(attrs.sizeBytes) }),
+      },
+      status: {
+        default: "uploading" as AttachmentStatus,
+        parseHTML: (element) => element.getAttribute("data-status") as AttachmentStatus,
+        renderHTML: (attrs) => ({ "data-status": attrs.status }),
+      },
+      imageIndex: {
+        default: null,
+        parseHTML: (element) => {
+          const val = element.getAttribute("data-image-index")
+          return val ? parseInt(val, 10) : null
+        },
+        renderHTML: (attrs) => (attrs.imageIndex ? { "data-image-index": String(attrs.imageIndex) } : {}),
+      },
+      error: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-error"),
+        renderHTML: (attrs) => (attrs.error ? { "data-error": attrs.error } : {}),
+      },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-type="attachment-reference"]' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes(HTMLAttributes, { "data-type": "attachment-reference" }), 0]
+  },
+
+  // Plain text rendering for copy/paste out of editor
+  renderText({ node }) {
+    const attrs = node.attrs as AttachmentReferenceAttrs
+    if (attrs.status === "uploading") {
+      return "[Uploading...]"
+    }
+    if (attrs.status === "error") {
+      return "[Upload failed]"
+    }
+    const isImage = attrs.mimeType.startsWith("image/")
+    if (isImage && attrs.imageIndex) {
+      return `[Image #${attrs.imageIndex}]`
+    }
+    return `[${attrs.filename}]`
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(AttachmentReferenceView)
+  },
+
+  addCommands() {
+    return {
+      insertAttachmentReference:
+        (attrs) =>
+        ({ chain, state }) => {
+          // Get marks at current position to preserve styling
+          const { $from } = state.selection
+          const { storedMarks } = state
+          const currentMarks = storedMarks || $from.marks()
+          const marks = currentMarks.map((mark: { type: { name: string }; attrs: Record<string, unknown> }) => ({
+            type: mark.type.name,
+            attrs: mark.attrs,
+          }))
+
+          return chain()
+            .insertContent([
+              { type: "attachmentReference", attrs, marks },
+              { type: "text", text: " ", marks },
+            ])
+            .run()
+        },
+
+      updateAttachmentReference:
+        (tempId, updates) =>
+        ({ tr, state, dispatch }) => {
+          if (!dispatch) return false
+
+          let found = false
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === "attachmentReference" && node.attrs.id === tempId) {
+              const newAttrs = { ...node.attrs, ...updates }
+              tr.setNodeMarkup(pos, undefined, newAttrs)
+              found = true
+              return false // Stop traversal
+            }
+            return true
+          })
+
+          if (found) {
+            dispatch(tr)
+            return true
+          }
+          return false
+        },
+    }
+  },
+})

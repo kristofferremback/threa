@@ -100,6 +100,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
         onRemoveAttachment={composer.handleRemoveAttachment}
         fileInputRef={composer.fileInputRef}
         onFileSelect={composer.handleFileSelect}
+        onFileUpload={composer.uploadFile}
         onSubmit={handleSubmit}
         canSubmit={composer.canSend}
         isSubmitting={composer.isSending}

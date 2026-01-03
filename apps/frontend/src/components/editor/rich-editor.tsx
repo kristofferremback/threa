@@ -7,11 +7,15 @@ import { EditorToolbar } from "./editor-toolbar"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { cn } from "@/lib/utils"
+import type { UploadResult } from "@/hooks/use-attachments"
+import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
 
 interface RichEditorProps {
   value: string
   onChange: (markdown: string) => void
   onSubmit: () => void
+  /** Called when files are pasted or dropped. Returns upload result for updating the node. */
+  onFileUpload?: (file: File) => Promise<UploadResult>
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -21,6 +25,7 @@ export function RichEditor({
   value,
   onChange,
   onSubmit,
+  onFileUpload,
   placeholder = "Type a message...",
   disabled = false,
   className,
@@ -56,6 +61,10 @@ export function RichEditor({
   // Ref to avoid stale closure in TipTap paste handler
   const getMentionTypeRef = useRef(getMentionType)
   getMentionTypeRef.current = getMentionType
+
+  // Ref to avoid stale closure for file upload callback
+  const onFileUploadRef = useRef(onFileUpload)
+  onFileUploadRef.current = onFileUpload
 
   // Track mentionables state to detect when data loads or currentUser becomes known
   const lastParsedState = useRef({ count: mentionables.length, hasCurrentUser: false })
@@ -93,6 +102,39 @@ export function RichEditor({
     }
   }, [shouldBeVisible])
 
+  // Helper to handle file insertion from paste or drop
+  const handleFileInsert = useCallback(async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
+    const uploadFn = onFileUploadRef.current
+    if (!uploadFn || !editorInstance) return
+
+    const isImage = file.type.startsWith("image/")
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
+
+    // Insert placeholder node
+    const placeholderAttrs: AttachmentReferenceAttrs = {
+      id: tempId,
+      filename: file.name,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      status: "uploading",
+      imageIndex: null, // Will be set after upload
+      error: null,
+    }
+
+    editorInstance.commands.insertAttachmentReference(placeholderAttrs)
+
+    // Start upload and update node when done
+    const result = await uploadFn(file)
+
+    // Update the placeholder node with real data
+    editorInstance.commands.updateAttachmentReference(tempId, {
+      id: result.attachment.id,
+      status: result.attachment.status,
+      imageIndex: isImage ? result.imageIndex : null,
+      error: result.attachment.error || null,
+    })
+  }, [])
+
   const editor = useEditor({
     extensions,
     content: parseMarkdown(value, getMentionType),
@@ -118,12 +160,37 @@ export function RichEditor({
         ),
       },
       handlePaste: (_view, event) => {
+        // Check for files first (images, documents, etc.)
+        const files = event.clipboardData?.files
+        if (files && files.length > 0 && onFileUploadRef.current) {
+          event.preventDefault()
+          for (const file of Array.from(files)) {
+            handleFileInsert(file, editor)
+          }
+          return true
+        }
+
         // Parse pasted text through markdown parser to convert @mentions, #channels
         const text = event.clipboardData?.getData("text/plain")
         if (text) {
           event.preventDefault()
           const parsed = parseMarkdown(text, getMentionTypeRef.current)
           editor?.commands.insertContent(parsed)
+          return true
+        }
+        return false
+      },
+      handleDrop: (_view, event, _slice, moved) => {
+        // Internal drag-and-drop (reordering) - let TipTap handle it
+        if (moved) return false
+
+        // Check for dropped files
+        const files = event.dataTransfer?.files
+        if (files && files.length > 0 && onFileUploadRef.current) {
+          event.preventDefault()
+          for (const file of Array.from(files)) {
+            handleFileInsert(file, editor)
+          }
           return true
         }
         return false

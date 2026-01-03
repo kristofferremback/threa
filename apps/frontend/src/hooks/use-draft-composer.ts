@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, type ChangeEvent, type RefObject } from "react"
 import { useDraftMessage } from "./use-draft-message"
-import { useAttachments, type PendingAttachment } from "./use-attachments"
+import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
@@ -25,6 +25,8 @@ export interface DraftComposerState {
   fileInputRef: RefObject<HTMLInputElement | null>
   handleFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
   handleRemoveAttachment: (id: string) => void
+  /** Upload a file programmatically (for paste/drop) */
+  uploadFile: (file: File) => Promise<UploadResult>
 
   // Submission
   canSend: boolean
@@ -61,6 +63,7 @@ export function useDraftComposer({
     pendingAttachments,
     fileInputRef,
     handleFileSelect,
+    uploadFile,
     removeAttachment,
     uploadedIds,
     isUploading,
@@ -159,6 +162,7 @@ export function useDraftComposer({
     fileInputRef,
     handleFileSelect,
     handleRemoveAttachment,
+    uploadFile,
 
     // Submission
     canSend,

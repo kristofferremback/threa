@@ -1008,4 +1008,224 @@ const x = 1
       expect(heading?.content?.some((n) => n.marks?.some((m) => m.type === "bold"))).toBe(true)
     })
   })
+
+  describe("attachment references", () => {
+    describe("serialization", () => {
+      it("should serialize image attachment reference", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Check this " },
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_123",
+                    filename: "screenshot.png",
+                    mimeType: "image/png",
+                    sizeBytes: 1024,
+                    status: "uploaded",
+                    imageIndex: 1,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Check this [Image #1](attachment:attach_123)")
+      })
+
+      it("should serialize file attachment reference", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_456",
+                    filename: "report.pdf",
+                    mimeType: "application/pdf",
+                    sizeBytes: 2048,
+                    status: "uploaded",
+                    imageIndex: null,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("[report.pdf](attachment:attach_456)")
+      })
+
+      it("should skip uploading attachments in serialization", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Text with " },
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "temp_123",
+                    filename: "uploading.png",
+                    mimeType: "image/png",
+                    sizeBytes: 1024,
+                    status: "uploading",
+                    imageIndex: 1,
+                    error: null,
+                  },
+                },
+                { type: "text", text: " in progress" },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("Text with  in progress")
+      })
+
+      it("should skip error attachments in serialization", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "temp_456",
+                    filename: "failed.png",
+                    mimeType: "image/png",
+                    sizeBytes: 1024,
+                    status: "error",
+                    imageIndex: 1,
+                    error: "Upload failed",
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        expect(serializeToMarkdown(doc)).toBe("")
+      })
+    })
+
+    describe("parsing", () => {
+      it("should parse image attachment reference", () => {
+        const result = parseMarkdown("See [Image #1](attachment:attach_123)")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(2)
+        expect(content?.[0]).toEqual({ type: "text", text: "See " })
+        expect(content?.[1]?.type).toBe("attachmentReference")
+        expect(content?.[1]?.attrs).toMatchObject({
+          id: "attach_123",
+          imageIndex: 1,
+          status: "uploaded",
+        })
+      })
+
+      it("should parse file attachment reference", () => {
+        const result = parseMarkdown("[report.pdf](attachment:attach_456)")
+        const content = result.content?.[0]?.content
+
+        expect(content).toHaveLength(1)
+        expect(content?.[0]?.type).toBe("attachmentReference")
+        expect(content?.[0]?.attrs).toMatchObject({
+          id: "attach_456",
+          filename: "report.pdf",
+          imageIndex: null,
+          status: "uploaded",
+        })
+      })
+
+      it("should not confuse regular links with attachment references", () => {
+        const result = parseMarkdown("[link](https://example.com)")
+        const content = result.content?.[0]?.content
+
+        expect(content?.[0]?.type).toBe("text")
+        expect(content?.[0]?.marks?.[0]?.type).toBe("link")
+        expect(content?.[0]?.marks?.[0]?.attrs?.href).toBe("https://example.com")
+      })
+    })
+
+    describe("round-trip", () => {
+      it("should preserve image attachment through round-trip", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_789",
+                    filename: "",
+                    mimeType: "image/png",
+                    sizeBytes: 0,
+                    status: "uploaded",
+                    imageIndex: 2,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        const md = serializeToMarkdown(doc)
+        expect(md).toBe("[Image #2](attachment:attach_789)")
+
+        const parsed = parseMarkdown(md)
+        expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
+        expect(parsed.content?.[0]?.content?.[0]?.attrs?.imageIndex).toBe(2)
+      })
+
+      it("should preserve file attachment through round-trip", () => {
+        const doc: JSONContent = {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "attachmentReference",
+                  attrs: {
+                    id: "attach_abc",
+                    filename: "document.docx",
+                    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    sizeBytes: 0,
+                    status: "uploaded",
+                    imageIndex: null,
+                    error: null,
+                  },
+                },
+              ],
+            },
+          ],
+        }
+
+        const md = serializeToMarkdown(doc)
+        expect(md).toBe("[document.docx](attachment:attach_abc)")
+
+        const parsed = parseMarkdown(md)
+        expect(parsed.content?.[0]?.content?.[0]?.type).toBe("attachmentReference")
+        expect(parsed.content?.[0]?.content?.[0]?.attrs?.filename).toBe("document.docx")
+      })
+    })
+  })
 })
