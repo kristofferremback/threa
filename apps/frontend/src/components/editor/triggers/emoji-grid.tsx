@@ -71,11 +71,23 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
     virtualizer.scrollToIndex(0)
   }, [items, virtualizer])
 
-  // Scroll to row - only called from keyboard navigation, not hover
+  // Scroll to row only if it's outside the visible range
+  const scrollToRowIfNeeded = (index: number) => {
+    const row = Math.floor(index / GRID_COLUMNS)
+    const range = virtualizer.range
+    if (range && (row < range.startIndex || row > range.endIndex)) {
+      virtualizer.scrollToIndex(row, { align: "auto" })
+    }
+  }
+
+  // Force scroll to row (for Home/End/PageUp/PageDown)
   const scrollToRow = (index: number) => {
     const row = Math.floor(index / GRID_COLUMNS)
-    virtualizer.scrollToIndex(row, { align: "auto" })
+    virtualizer.scrollToIndex(row, { align: "start" })
   }
+
+  // Calculate visible rows for page navigation
+  const visibleRowCount = Math.floor(CONTAINER_HEIGHT / ROW_HEIGHT)
 
   const { refs, floatingStyles } = useFloating({
     placement: "bottom-start",
@@ -104,42 +116,68 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       switch (event.key) {
         case "ArrowUp": {
           event.preventDefault()
-          let newIndex: number
           if (currentRow > 0) {
-            newIndex = selectedIndex - GRID_COLUMNS
-          } else {
-            // Wrap to last row, same column (or last item if column doesn't exist)
-            const targetIndex = (totalRows - 1) * GRID_COLUMNS + currentCol
-            newIndex = Math.min(targetIndex, items.length - 1)
+            const newIndex = selectedIndex - GRID_COLUMNS
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
           }
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
           return true
         }
         case "ArrowDown": {
           event.preventDefault()
           const nextRowIndex = selectedIndex + GRID_COLUMNS
-          let newIndex: number
           if (nextRowIndex < items.length) {
-            newIndex = nextRowIndex
-          } else {
-            // Wrap to first row, same column
-            newIndex = currentCol
+            setSelectedIndex(nextRowIndex)
+            scrollToRowIfNeeded(nextRowIndex)
           }
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
           return true
         }
         case "ArrowLeft": {
           event.preventDefault()
-          const newIndex = (selectedIndex - 1 + items.length) % items.length
-          setSelectedIndex(newIndex)
-          scrollToRow(newIndex)
+          if (selectedIndex > 0) {
+            const newIndex = selectedIndex - 1
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
+          }
           return true
         }
         case "ArrowRight": {
           event.preventDefault()
-          const newIndex = (selectedIndex + 1) % items.length
+          if (selectedIndex < items.length - 1) {
+            const newIndex = selectedIndex + 1
+            setSelectedIndex(newIndex)
+            scrollToRowIfNeeded(newIndex)
+          }
+          return true
+        }
+        case "Home": {
+          event.preventDefault()
+          setSelectedIndex(0)
+          scrollToRow(0)
+          return true
+        }
+        case "End": {
+          event.preventDefault()
+          const newIndex = items.length - 1
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
+          return true
+        }
+        case "PageUp": {
+          event.preventDefault()
+          const jumpRows = visibleRowCount
+          const newRow = Math.max(0, currentRow - jumpRows)
+          const newIndex = Math.min(newRow * GRID_COLUMNS + currentCol, items.length - 1)
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
+          return true
+        }
+        case "PageDown": {
+          event.preventDefault()
+          const jumpRows = visibleRowCount
+          const newRow = Math.min(totalRows - 1, currentRow + jumpRows)
+          const targetIndex = newRow * GRID_COLUMNS + currentCol
+          const newIndex = Math.min(targetIndex, items.length - 1)
           setSelectedIndex(newIndex)
           scrollToRow(newIndex)
           return true
