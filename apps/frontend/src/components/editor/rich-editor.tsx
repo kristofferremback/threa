@@ -66,6 +66,9 @@ export function RichEditor({
   const onFileUploadRef = useRef(onFileUpload)
   onFileUploadRef.current = onFileUpload
 
+  // Ref to access editor instance from callbacks defined before useEditor returns
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
+
   // Track mentionables state to detect when data loads or currentUser becomes known
   const lastParsedState = useRef({ count: mentionables.length, hasCurrentUser: false })
   const extensions = useMemo(
@@ -162,10 +165,10 @@ export function RichEditor({
       handlePaste: (_view, event) => {
         // Check for files first (images, documents, etc.)
         const files = event.clipboardData?.files
-        if (files && files.length > 0 && onFileUploadRef.current) {
+        if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
           event.preventDefault()
           for (const file of Array.from(files)) {
-            handleFileInsert(file, editor)
+            handleFileInsert(file, editorRef.current)
           }
           return true
         }
@@ -175,7 +178,7 @@ export function RichEditor({
         if (text) {
           event.preventDefault()
           const parsed = parseMarkdown(text, getMentionTypeRef.current)
-          editor?.commands.insertContent(parsed)
+          editorRef.current?.commands.insertContent(parsed)
           return true
         }
         return false
@@ -186,10 +189,10 @@ export function RichEditor({
 
         // Check for dropped files
         const files = event.dataTransfer?.files
-        if (files && files.length > 0 && onFileUploadRef.current) {
+        if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
           event.preventDefault()
           for (const file of Array.from(files)) {
-            handleFileInsert(file, editor)
+            handleFileInsert(file, editorRef.current)
           }
           return true
         }
@@ -208,7 +211,7 @@ export function RichEditor({
           navigator.clipboard
             .readText()
             .then((text) => {
-              editor?.commands.insertContent(text)
+              editorRef.current?.commands.insertContent(text)
             })
             .catch(() => {
               // Clipboard access denied or unavailable - silently fail
@@ -219,6 +222,9 @@ export function RichEditor({
       },
     },
   })
+
+  // Store editor in ref so callbacks defined inside useEditor options can access it
+  editorRef.current = editor
 
   // Sync external value changes (e.g., draft restoration, clearing after send)
   useEffect(() => {
