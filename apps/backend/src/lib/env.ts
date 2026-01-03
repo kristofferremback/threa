@@ -72,9 +72,9 @@ export function loadConfig(): Config {
     ai: {
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
       tavilyApiKey: process.env.TAVILY_API_KEY || "",
-      namingModel: process.env.AI_NAMING_MODEL || "openrouter:openai/gpt-5-mini",
-      extractionModel: process.env.AI_EXTRACTION_MODEL || "openrouter:openai/gpt-5-mini",
-      memoModel: process.env.AI_MEMO_MODEL || "openrouter:openai/gpt-5-mini",
+      namingModel: process.env.AI_NAMING_MODEL || "openrouter:openai/gpt-4o-mini",
+      extractionModel: process.env.AI_EXTRACTION_MODEL || "openrouter:openai/gpt-4o-mini",
+      memoModel: process.env.AI_MEMO_MODEL || "openrouter:openai/gpt-4o-mini",
     },
     s3: {
       bucket: process.env.S3_BUCKET || "threa-uploads",

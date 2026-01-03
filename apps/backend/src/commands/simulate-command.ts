@@ -7,6 +7,7 @@ import { PersonaRepository } from "../repositories/persona-repository"
 import { withClient } from "../db"
 import { logger } from "../lib/logger"
 
+// Schema for LLM parsing - all fields required for OpenAI strict mode compatibility
 const SimulationParamsSchema = z.object({
   personas: z.array(z.string()).min(1).max(5).describe("List of persona names/slugs mentioned in the command"),
   topic: z.string().describe("The topic or theme of the conversation, inferred from context"),
@@ -15,9 +16,8 @@ const SimulationParamsSchema = z.object({
     .int()
     .min(1)
     .max(50)
-    .default(5)
     .describe("Number of conversation turns (each turn = one message from one persona)"),
-  thread: z.boolean().default(false).describe("Whether to run the simulation in a thread"),
+  thread: z.boolean().describe("Whether to run the simulation in a thread"),
 })
 
 type SimulationParams = z.infer<typeof SimulationParamsSchema>
