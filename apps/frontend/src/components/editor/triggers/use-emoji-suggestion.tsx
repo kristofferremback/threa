@@ -82,9 +82,9 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
 
   // Filter emojis by query (any alias contains query)
   const filterItems = useCallback((items: EmojiEntry[], query: string): EmojiEntry[] => {
-    if (!query) return items.slice(0, 64) // Show first 64 when no query
+    if (!query) return items // Show all emojis when no query
     const lowerQuery = query.toLowerCase()
-    return items.filter((item) => item.aliases.some((alias) => alias.includes(lowerQuery))).slice(0, 64)
+    return items.filter((item) => item.aliases.some((alias) => alias.includes(lowerQuery)))
   }, [])
 
   // Stable callback that reads from ref
