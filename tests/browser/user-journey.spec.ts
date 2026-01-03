@@ -109,4 +109,57 @@ test.describe("User Journey", () => {
     // Should navigate to the scratchpad
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
   })
+
+  test("quick switcher can search and navigate to streams", async ({ page }) => {
+    // Login as Alice
+    await page.goto("/login")
+    await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
+    await page.getByRole("button", { name: /Alice Anderson/ }).click()
+
+    // Wait for workspace page
+    await expect(page.getByText(/Welcome|Select a stream/)).toBeVisible()
+
+    // Create workspace if needed
+    const workspaceInput = page.getByPlaceholder("New workspace name")
+    if (await workspaceInput.isVisible()) {
+      await workspaceInput.fill(`QuickSwitch Test ${testId}`)
+      await page.getByRole("button", { name: "Create Workspace" }).click()
+    }
+
+    // Wait for sidebar to be visible
+    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible()
+
+    // Create a channel with a unique name we can search for
+    const quickSwitchChannel = `qs-test-${testId}`
+    page.once("dialog", async (dialog) => {
+      await dialog.accept(quickSwitchChannel)
+    })
+    await page.getByRole("button", { name: "+ New Channel" }).click()
+
+    // Wait for channel to appear in sidebar
+    await expect(page.getByRole("link", { name: `#${quickSwitchChannel}` })).toBeVisible({ timeout: 5000 })
+
+    // Create a scratchpad to navigate away from the channel
+    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+
+    // Now test the quick switcher - open with Cmd+K (Meta+K on Mac)
+    await page.keyboard.press("Meta+k")
+
+    // Quick switcher dialog should appear - look for the mode tabs as indicator
+    await expect(page.getByText("Stream search")).toBeVisible({ timeout: 2000 })
+
+    // Type the channel name to search (focus should already be in the input)
+    await page.keyboard.type(quickSwitchChannel)
+
+    // Wait a moment for search results to appear, then press Enter to select
+    await page.waitForTimeout(500)
+    await page.keyboard.press("Enter")
+
+    // Should navigate to the channel (quick switcher closes)
+    await expect(page.getByText("Stream search")).not.toBeVisible({ timeout: 2000 })
+
+    // Verify we're in the channel by checking the URL or channel content
+    await expect(page.getByText("No messages yet")).toBeVisible({ timeout: 5000 })
+  })
 })
