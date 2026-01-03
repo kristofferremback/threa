@@ -31,6 +31,7 @@ export interface VirtualStream {
   parentStreamId: string | null
   parentMessageId: string | null
   rootStreamId: string | null
+  archivedAt: string | null
 }
 
 export interface SendMessageInput {
@@ -45,9 +46,11 @@ export interface UseStreamOrDraftReturn {
   stream: VirtualStream | undefined
   isLoading: boolean
   isDraft: boolean
+  error: Error | null
 
   rename: (newName: string) => Promise<void>
   archive: () => Promise<void>
+  unarchive?: () => Promise<void>
   sendMessage: (input: SendMessageInput) => Promise<{ navigateTo?: string; replace?: boolean }>
 }
 
@@ -73,6 +76,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         parentStreamId: null,
         parentMessageId: null,
         rootStreamId: null,
+        archivedAt: null,
       }
     : undefined
 
@@ -132,6 +136,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
     stream,
     isLoading: enabled && draft === undefined,
     isDraft: true,
+    error: null,
     rename,
     archive,
     sendMessage,
@@ -143,13 +148,12 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
  */
 function useRealStream(workspaceId: string, streamId: string, enabled: boolean): UseStreamOrDraftReturn {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   const streamService = useStreamService()
   const messageService = useMessageService()
   const { markPending, markFailed, markSent } = usePendingMessages()
   const user = useUser()
 
-  const { data: bootstrap, isLoading } = useStreamBootstrap(workspaceId, streamId, { enabled })
+  const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
 
   const stream: VirtualStream | undefined = bootstrap?.stream
     ? {
@@ -162,6 +166,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         parentStreamId: bootstrap.stream.parentStreamId,
         parentMessageId: bootstrap.stream.parentMessageId,
         rootStreamId: bootstrap.stream.rootStreamId,
+        archivedAt: bootstrap.stream.archivedAt,
       }
     : undefined
 
@@ -192,9 +197,10 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const archive = useCallback(async () => {
     await streamService.archive(workspaceId, streamId)
 
-    queryClient.removeQueries({ queryKey: streamKeys.detail(workspaceId, streamId) })
-    queryClient.removeQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+    // Invalidate to refetch with updated archivedAt
+    queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
 
+    // Remove from workspace sidebar (archived streams don't show there)
     queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
       if (!old || typeof old !== "object") return old
       const wsBootstrap = old as { streams?: Array<{ id: string }> }
@@ -204,9 +210,17 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         streams: wsBootstrap.streams.filter((s) => s.id !== streamId),
       }
     })
+  }, [streamId, workspaceId, streamService, queryClient])
 
-    navigate(`/w/${workspaceId}`)
-  }, [streamId, workspaceId, streamService, queryClient, navigate])
+  const unarchive = useCallback(async () => {
+    await streamService.unarchive(workspaceId, streamId)
+
+    // Invalidate to refetch with cleared archivedAt
+    queryClient.invalidateQueries({ queryKey: streamKeys.bootstrap(workspaceId, streamId) })
+
+    // Add back to workspace sidebar
+    queryClient.invalidateQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+  }, [streamId, workspaceId, streamService, queryClient])
 
   const sendMessage = useCallback(
     async (input: SendMessageInput): Promise<{ navigateTo?: string }> => {
@@ -301,8 +315,10 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
     stream,
     isLoading,
     isDraft: false,
+    error: error ?? null,
     rename,
     archive,
+    unarchive,
     sendMessage,
   }
 }

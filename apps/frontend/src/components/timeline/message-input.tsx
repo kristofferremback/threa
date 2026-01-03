@@ -8,9 +8,11 @@ import { isCommand } from "@/lib/commands"
 interface MessageInputProps {
   workspaceId: string
   streamId: string
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
+export function MessageInput({ workspaceId, streamId, disabled, disabledReason }: MessageInputProps) {
   const navigate = useNavigate()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
@@ -78,6 +80,16 @@ export function MessageInput({ workspaceId, streamId }: MessageInputProps) {
       composer.setIsSending(false)
     }
   }, [composer, sendMessage, navigate, workspaceId, streamId])
+
+  if (disabled && disabledReason) {
+    return (
+      <div className="border-t p-4">
+        <div className="flex items-center justify-center py-3 px-4 rounded-md bg-muted/50">
+          <p className="text-sm text-muted-foreground text-center">{disabledReason}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="border-t p-4">

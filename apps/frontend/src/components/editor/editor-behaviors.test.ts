@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
 import { Editor } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import { EditorBehaviors } from "./editor-behaviors"

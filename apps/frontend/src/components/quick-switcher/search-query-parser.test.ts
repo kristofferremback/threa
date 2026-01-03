@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   parseSearchQuery,
-  buildSearchQuery,
+  serializeSearchQuery,
   removeFilterFromQuery,
   addFilterToQuery,
   getFilterLabel,
@@ -47,13 +47,35 @@ describe("parseSearchQuery", () => {
     expect(result.text).toBe("hello")
   })
 
-  it("should parse is: filter", () => {
-    const result = parseSearchQuery("is:thread hello")
+  it("should parse status: filter", () => {
+    const result = parseSearchQuery("status:active hello")
     expect(result.filters).toHaveLength(1)
     expect(result.filters[0]).toEqual({
-      type: "is",
-      value: "thread",
-      raw: "is:thread",
+      type: "status",
+      value: "active",
+      raw: "status:active",
+    })
+    expect(result.text).toBe("hello")
+  })
+
+  it("should parse is: filter as type filter", () => {
+    const result = parseSearchQuery("is:scratchpad hello")
+    expect(result.filters).toHaveLength(1)
+    expect(result.filters[0]).toEqual({
+      type: "type",
+      value: "scratchpad",
+      raw: "is:scratchpad",
+    })
+    expect(result.text).toBe("hello")
+  })
+
+  it("should parse type: filter", () => {
+    const result = parseSearchQuery("type:channel hello")
+    expect(result.filters).toHaveLength(1)
+    expect(result.filters[0]).toEqual({
+      type: "type",
+      value: "channel",
+      raw: "type:channel",
     })
     expect(result.text).toBe("hello")
   })
@@ -81,12 +103,23 @@ describe("parseSearchQuery", () => {
   })
 
   it("should parse multiple filters", () => {
-    const result = parseSearchQuery("from:@martin in:#general is:thread hello world")
+    const result = parseSearchQuery("from:@martin in:#general is:channel hello world")
     expect(result.filters).toHaveLength(3)
     expect(result.filters[0].type).toBe("from")
     expect(result.filters[1].type).toBe("in")
-    expect(result.filters[2].type).toBe("is")
+    expect(result.filters[2].type).toBe("type")
     expect(result.text).toBe("hello world")
+  })
+
+  it("should parse type: as alias for is:", () => {
+    const result = parseSearchQuery("type:channel hello")
+    expect(result.filters).toHaveLength(1)
+    expect(result.filters[0]).toEqual({
+      type: "type",
+      value: "channel",
+      raw: "type:channel",
+    })
+    expect(result.text).toBe("hello")
   })
 
   it("should handle filters with no text", () => {
@@ -114,24 +147,24 @@ describe("parseSearchQuery", () => {
   })
 })
 
-describe("buildSearchQuery", () => {
+describe("serializeSearchQuery", () => {
   it("should build query from filters and text", () => {
     const filters = [
       { type: "from" as const, value: "martin", raw: "from:@martin" },
       { type: "in" as const, value: "general", raw: "in:#general" },
     ]
-    const result = buildSearchQuery(filters, "hello world")
+    const result = serializeSearchQuery(filters, "hello world")
     expect(result).toBe("from:@martin in:#general hello world")
   })
 
   it("should build query with filters only", () => {
     const filters = [{ type: "from" as const, value: "martin", raw: "from:@martin" }]
-    const result = buildSearchQuery(filters, "")
+    const result = serializeSearchQuery(filters, "")
     expect(result).toBe("from:@martin")
   })
 
   it("should build query with text only", () => {
-    const result = buildSearchQuery([], "hello world")
+    const result = serializeSearchQuery([], "hello world")
     expect(result).toBe("hello world")
   })
 })
@@ -144,9 +177,9 @@ describe("removeFilterFromQuery", () => {
   })
 
   it("should remove middle filter", () => {
-    const query = "from:@martin in:#general is:thread hello"
+    const query = "from:@martin in:#general type:channel hello"
     const result = removeFilterFromQuery(query, 1)
-    expect(result).toBe("from:@martin is:thread hello")
+    expect(result).toBe("from:@martin type:channel hello")
   })
 
   it("should remove last filter", () => {
@@ -162,9 +195,14 @@ describe("addFilterToQuery", () => {
     expect(result).toBe("from:@martin hello")
   })
 
-  it("should add is filter", () => {
-    const result = addFilterToQuery("hello", "is", "thread")
-    expect(result).toBe("is:thread hello")
+  it("should add status filter", () => {
+    const result = addFilterToQuery("hello", "status", "active")
+    expect(result).toBe("status:active hello")
+  })
+
+  it("should add type filter with is: prefix", () => {
+    const result = addFilterToQuery("hello", "type", "channel")
+    expect(result).toBe("is:channel hello")
   })
 
   it("should add after filter", () => {
@@ -199,9 +237,14 @@ describe("getFilterLabel", () => {
     expect(result).toBe("@martin")
   })
 
-  it("should return label for is filter", () => {
-    const result = getFilterLabel({ type: "is", value: "thread", raw: "is:thread" })
-    expect(result).toBe("thread")
+  it("should return label for status filter", () => {
+    const result = getFilterLabel({ type: "status", value: "active", raw: "status:active" })
+    expect(result).toBe("active")
+  })
+
+  it("should return label for type filter", () => {
+    const result = getFilterLabel({ type: "type", value: "channel", raw: "type:channel" })
+    expect(result).toBe("channel")
   })
 
   it("should return label for after filter", () => {

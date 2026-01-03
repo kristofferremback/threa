@@ -6,7 +6,7 @@ import { StreamMemberRepository, StreamMember } from "../repositories/stream-mem
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
-import { streamId } from "../lib/id"
+import { streamId, eventId } from "../lib/id"
 import { DuplicateSlugError, StreamNotFoundError, MessageNotFoundError } from "../lib/errors"
 import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"
 import { streamTypeSchema, visibilitySchema, companionModeSchema } from "../lib/schemas"
@@ -120,13 +120,18 @@ export class StreamService {
     return withClient(this.pool, (client) => StreamRepository.list(client, workspaceId))
   }
 
-  async list(workspaceId: string, userId: string, filters?: { types?: StreamType[] }): Promise<Stream[]> {
+  async list(
+    workspaceId: string,
+    userId: string,
+    filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
+  ): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
       const memberships = await StreamMemberRepository.list(client, { userId })
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.list(client, workspaceId, {
         types: filters?.types,
+        archiveStatus: filters?.archiveStatus,
         userMembershipStreamIds: memberStreamIds,
       })
     })
@@ -317,11 +322,51 @@ export class StreamService {
     })
   }
 
-  async archiveStream(streamId: string): Promise<Stream | null> {
+  async archiveStream(streamId: string, archivedBy: string): Promise<Stream | null> {
     return withTransaction(this.pool, async (client) => {
       const stream = await StreamRepository.update(client, streamId, { archivedAt: new Date() })
       if (stream) {
+        // Emit stream_archived event to the timeline
+        const evtId = eventId()
+        await StreamEventRepository.insert(client, {
+          id: evtId,
+          streamId: stream.id,
+          eventType: "stream_archived",
+          payload: {
+            archivedAt: stream.archivedAt,
+          },
+          actorId: archivedBy,
+          actorType: "user",
+        })
+
+        // Notify real-time subscribers
         await OutboxRepository.insert(client, "stream:archived", {
+          workspaceId: stream.workspaceId,
+          streamId: stream.id,
+          stream,
+        })
+      }
+      return stream
+    })
+  }
+
+  async unarchiveStream(streamId: string, unarchivedBy: string): Promise<Stream | null> {
+    return withTransaction(this.pool, async (client) => {
+      const stream = await StreamRepository.update(client, streamId, { archivedAt: null })
+      if (stream) {
+        // Emit stream_unarchived event to the timeline
+        const evtId = eventId()
+        await StreamEventRepository.insert(client, {
+          id: evtId,
+          streamId: stream.id,
+          eventType: "stream_unarchived",
+          payload: {},
+          actorId: unarchivedBy,
+          actorType: "user",
+        })
+
+        // Notify real-time subscribers
+        await OutboxRepository.insert(client, "stream:unarchived", {
           workspaceId: stream.workspaceId,
           streamId: stream.id,
           stream,

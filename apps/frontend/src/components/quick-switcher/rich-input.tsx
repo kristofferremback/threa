@@ -10,12 +10,14 @@ import { useFromFilterSuggestion } from "@/components/editor/triggers/use-from-f
 import { useWithFilterSuggestion } from "@/components/editor/triggers/use-with-filter-suggestion"
 import { useInUserFilterSuggestion } from "@/components/editor/triggers/use-in-user-filter-suggestion"
 import { useInChannelFilterSuggestion } from "@/components/editor/triggers/use-in-channel-filter-suggestion"
+import { useStatusFilterSuggestion } from "@/components/editor/triggers/use-status-filter-suggestion"
 import { FilterTypeExtension } from "@/components/editor/triggers/filter-type-extension"
 import { DateFilterExtension } from "@/components/editor/triggers/date-filter-extension"
 import { FromFilterExtension } from "@/components/editor/triggers/from-filter-extension"
 import { WithFilterExtension } from "@/components/editor/triggers/with-filter-extension"
 import { InUserFilterExtension } from "@/components/editor/triggers/in-user-filter-extension"
 import { InChannelFilterExtension } from "@/components/editor/triggers/in-channel-filter-extension"
+import { StatusFilterExtension } from "@/components/editor/triggers/status-filter-extension"
 import { SearchMentionExtension } from "@/components/editor/triggers/search-mention-extension"
 import { SearchChannelExtension } from "@/components/editor/triggers/search-channel-extension"
 import { cn, escapeHtml } from "@/lib/utils"
@@ -26,12 +28,13 @@ import { cn, escapeHtml } from "@/lib/utils"
 export type TriggerType =
   | "mention" // @user - inserts "@slug "
   | "channel" // #channel - inserts "#slug "
-  | "filterType" // is: - inserts "is:value "
+  | "filterType" // type: - inserts "type:value "
   | "dateFilter" // after:/before: - inserts date filter
   | "fromFilter" // from:@ - inserts "from:@slug "
   | "withFilter" // with:@ - inserts "with:@slug "
   | "inUserFilter" // in:@ - inserts "in:@slug " (DM filter)
   | "inChannelFilter" // in:# - inserts "in:#slug " (channel filter)
+  | "statusFilter" // status: - inserts "status:value "
 
 /**
  * Preset trigger configurations for common use cases.
@@ -45,7 +48,12 @@ export const SEARCH_TRIGGERS: TriggerType[] = [
   "withFilter",
   "inUserFilter",
   "inChannelFilter",
+  "statusFilter",
 ]
+
+export const COMMAND_TRIGGERS: TriggerType[] = []
+
+export const STREAM_TRIGGERS: TriggerType[] = ["statusFilter", "filterType"]
 
 export interface RichInputProps {
   value: string
@@ -86,7 +94,7 @@ export type SearchEditorRef = RichInputRef
  * When triggers are enabled, supports:
  * - @ for user/persona mentions (search terms)
  * - # for channel references (search terms)
- * - is: for stream type filters
+ * - type: for stream type filters
  * - after:/before: for date filters
  *
  * All triggers insert plain text - no styled nodes.
@@ -162,6 +170,12 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
     isActive: inChannelFilterActive,
     close: closeInChannelFilter,
   } = useInChannelFilterSuggestion()
+  const {
+    suggestionConfig: statusFilterConfig,
+    renderStatusFilterList,
+    isActive: statusFilterActive,
+    close: closeStatusFilter,
+  } = useStatusFilterSuggestion()
 
   // Track combined popover active state (only for enabled triggers)
   const isPopoverActive =
@@ -172,7 +186,8 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
     (hasTrigger("fromFilter") && fromFilterActive) ||
     (hasTrigger("withFilter") && withFilterActive) ||
     (hasTrigger("inUserFilter") && inUserFilterActive) ||
-    (hasTrigger("inChannelFilter") && inChannelFilterActive)
+    (hasTrigger("inChannelFilter") && inChannelFilterActive) ||
+    (hasTrigger("statusFilter") && statusFilterActive)
   isPopoverActiveRef.current = isPopoverActive
 
   // Notify parent when popover state changes
@@ -224,6 +239,7 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
       WithFilterExtension.configure({ suggestion: withFilterConfig }),
       InUserFilterExtension.configure({ suggestion: inUserFilterConfig }),
       InChannelFilterExtension.configure({ suggestion: inChannelFilterConfig }),
+      StatusFilterExtension.configure({ suggestion: statusFilterConfig }),
     ],
     // Note: We intentionally exclude suggestion configs from deps - they're stable refs
     // and including them causes unnecessary editor recreation
@@ -329,6 +345,7 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
     if (hasTrigger("withFilter")) closeWithFilter()
     if (hasTrigger("inUserFilter")) closeInUserFilter()
     if (hasTrigger("inChannelFilter")) closeInChannelFilter()
+    if (hasTrigger("statusFilter")) closeStatusFilter()
   }, [
     hasTrigger,
     closeMention,
@@ -339,6 +356,7 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
     closeWithFilter,
     closeInUserFilter,
     closeInChannelFilter,
+    closeStatusFilter,
   ])
 
   useImperativeHandle(ref, () => ({ focus, blur, closePopovers }), [focus, blur, closePopovers])
@@ -354,6 +372,7 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
       {hasTrigger("withFilter") && renderWithFilterList()}
       {hasTrigger("inUserFilter") && renderInUserFilterList()}
       {hasTrigger("inChannelFilter") && renderInChannelFilterList()}
+      {hasTrigger("statusFilter") && renderStatusFilterList()}
     </div>
   )
 })

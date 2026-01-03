@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
 import { formatISODate, formatDisplayDate } from "@/lib/dates"
@@ -9,45 +9,70 @@ interface StreamTypeOption {
   label: string
 }
 
+interface ArchiveStatusOption {
+  value: "active" | "archived"
+  label: string
+}
+
 interface FilterSelectProps {
-  type: "from" | "with" | "is" | "in" | "after" | "before"
+  type: "from" | "with" | "type" | "status" | "in" | "after" | "before"
   members: WorkspaceMember[]
   users: User[]
   streams: Stream[]
   streamTypes: StreamTypeOption[]
+  statusOptions?: ArchiveStatusOption[]
   onSelect: (value: string, label: string) => void
   onCancel: () => void
 }
 
-export function FilterSelect({ type, members, users, streams, streamTypes, onSelect, onCancel }: FilterSelectProps) {
+export function FilterSelect({
+  type,
+  members,
+  users,
+  streams,
+  streamTypes,
+  statusOptions,
+  onSelect,
+  onCancel,
+}: FilterSelectProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Handle click outside
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         onCancel()
       }
     }
 
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
+    // Use timeout to avoid catching the click that opened this
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside)
+    }, 0)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
   }, [onCancel])
 
+  let content: React.ReactNode = null
+
   if (type === "from" || type === "with") {
-    return <UserSelect members={members} users={users} onSelect={onSelect} />
+    content = <UserSelect members={members} users={users} onSelect={onSelect} />
+  } else if (type === "type") {
+    content = <StreamTypeSelect streamTypes={streamTypes} onSelect={onSelect} />
+  } else if (type === "status" && statusOptions) {
+    content = <StatusSelect statusOptions={statusOptions} onSelect={onSelect} />
+  } else if (type === "in") {
+    content = <StreamSelect streams={streams} onSelect={onSelect} />
+  } else if (type === "after" || type === "before") {
+    content = <DateSelect type={type} onSelect={onSelect} />
   }
 
-  if (type === "is") {
-    return <StreamTypeSelect streamTypes={streamTypes} onSelect={onSelect} />
-  }
+  if (!content) return null
 
-  if (type === "in") {
-    return <StreamSelect streams={streams} onSelect={onSelect} />
-  }
-
-  if (type === "after" || type === "before") {
-    return <DateSelect type={type} onSelect={onSelect} />
-  }
-
-  return null
+  return <div ref={containerRef}>{content}</div>
 }
 
 interface UserSelectProps {
@@ -116,6 +141,29 @@ function StreamTypeSelect({ streamTypes, onSelect }: StreamTypeSelectProps) {
             {streamTypes.map((st) => (
               <CommandItem key={st.value} value={st.value} onSelect={() => onSelect(st.value, st.label)}>
                 {st.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    </div>
+  )
+}
+
+interface StatusSelectProps {
+  statusOptions: ArchiveStatusOption[]
+  onSelect: (value: string, label: string) => void
+}
+
+function StatusSelect({ statusOptions, onSelect }: StatusSelectProps) {
+  return (
+    <div className="w-32">
+      <Command className="border rounded-md">
+        <CommandList>
+          <CommandGroup>
+            {statusOptions.map((opt) => (
+              <CommandItem key={opt.value} value={opt.value} onSelect={() => onSelect(opt.value, opt.label)}>
+                {opt.label}
               </CommandItem>
             ))}
           </CommandGroup>

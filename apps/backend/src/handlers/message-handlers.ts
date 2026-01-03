@@ -58,6 +58,10 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(404).json({ error: "Stream not found" })
       }
 
+      if (stream.archivedAt) {
+        return res.status(403).json({ error: "Cannot send messages to an archived stream" })
+      }
+
       if (!isStreamMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }

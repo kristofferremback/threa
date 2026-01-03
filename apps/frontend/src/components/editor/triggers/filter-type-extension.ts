@@ -3,6 +3,7 @@
  * Shows stream type options (scratchpad, channel, dm, thread) when user types `is:`.
  *
  * Unlike mention/channel extensions, this inserts plain text, not a node.
+ * Note: `type:` is kept as an alias in the parser but the primary trigger is `is:`.
  */
 import { Extension } from "@tiptap/core"
 import Suggestion from "@tiptap/suggestion"

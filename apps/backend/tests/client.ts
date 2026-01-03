@@ -317,6 +317,26 @@ export async function getStream(client: TestClient, workspaceId: string, streamI
   return data.stream
 }
 
+export async function archiveStream(client: TestClient, workspaceId: string, streamId: string): Promise<Stream> {
+  const { status, data } = await client.post<{ stream: Stream }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/archive`
+  )
+  if (status !== 200) {
+    throw new Error(`Archive stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
+export async function unarchiveStream(client: TestClient, workspaceId: string, streamId: string): Promise<Stream> {
+  const { status, data } = await client.post<{ stream: Stream }>(
+    `/api/workspaces/${workspaceId}/streams/${streamId}/unarchive`
+  )
+  if (status !== 200) {
+    throw new Error(`Unarchive stream failed: ${JSON.stringify(data)}`)
+  }
+  return data.stream
+}
+
 export async function updateCompanionMode(
   client: TestClient,
   workspaceId: string,
@@ -500,7 +520,8 @@ export interface SearchParams {
   from?: string // Single author ID
   with?: string[] // User IDs (AND logic)
   in?: string[] // Stream IDs
-  is?: ("scratchpad" | "channel" | "dm" | "thread")[] // Stream types (OR logic)
+  type?: ("scratchpad" | "channel" | "dm" | "thread")[] // Stream types (OR logic)
+  status?: ("active" | "archived")[] // Archive status filter
   before?: string // Exclusive (<)
   after?: string // Inclusive (>=)
   limit?: number
