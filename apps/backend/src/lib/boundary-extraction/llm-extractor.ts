@@ -81,8 +81,10 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       const { value } = await this.ai.generateObject({
         model: this.modelId,
         schema: extractionResponseSchema,
-        system: SYSTEM_PROMPT,
-        prompt,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
         maxTokens: 500,
         temperature: 0.2,
         telemetry: {

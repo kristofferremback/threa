@@ -91,8 +91,10 @@ export class StreamNamingService {
       try {
         const { value } = await this.ai.generateText({
           model: this.namingModel,
-          system: systemPrompt,
-          prompt: conversationText,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: conversationText },
+          ],
           maxTokens: 100,
           temperature: 0.3,
           telemetry: {

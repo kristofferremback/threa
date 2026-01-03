@@ -164,7 +164,7 @@ export class SimulateCommand implements Command {
     const { value } = await this.deps.ai.generateObject({
       model: this.deps.parsingModel,
       schema: SimulationParamsSchema,
-      prompt: `${prompt} ${args}`,
+      messages: [{ role: "user", content: `${prompt} ${args}` }],
       temperature: 0,
       telemetry: {
         functionId: "simulate-parse-args",

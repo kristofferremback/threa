@@ -51,10 +51,17 @@ export interface TelemetryConfig {
   metadata?: Record<string, string | number | boolean | undefined>
 }
 
+/** Message types matching Vercel AI SDK */
+export type MessageRole = "system" | "user" | "assistant"
+
+export interface Message {
+  role: MessageRole
+  content: string
+}
+
 export interface GenerateTextOptions {
   model: string
-  prompt: string
-  system?: string
+  messages: Message[]
   maxTokens?: number
   temperature?: number
   telemetry?: TelemetryConfig
@@ -63,8 +70,7 @@ export interface GenerateTextOptions {
 export interface GenerateObjectOptions<T extends z.ZodType> {
   model: string
   schema: T
-  prompt: string
-  system?: string
+  messages: Message[]
   maxTokens?: number
   temperature?: number
   /** Set to false to disable repair, or provide custom repair function */
@@ -270,8 +276,7 @@ export function createAI(config: AIConfig): AI {
       const model = getLanguageModel(options.model)
       const response = await aiGenerateText({
         model,
-        prompt: options.prompt,
-        system: options.system,
+        messages: options.messages,
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
@@ -292,8 +297,7 @@ export function createAI(config: AIConfig): AI {
       const response = await aiGenerateObject({
         model,
         schema: options.schema,
-        prompt: options.prompt,
-        system: options.system,
+        messages: options.messages,
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         experimental_repairText: repair,

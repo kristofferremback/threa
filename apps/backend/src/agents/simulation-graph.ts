@@ -236,7 +236,7 @@ function createOrchestrateNode() {
     const { value: decision } = await callbacks.ai.generateObject({
       model: callbacks.orchestratorModel,
       schema: TurnDecisionSchema,
-      prompt,
+      messages: [{ role: "user", content: prompt }],
       temperature: 0.3,
       telemetry: {
         functionId: "simulation-orchestrate",
@@ -332,11 +332,15 @@ function createGenerateNode() {
     }
 
     const prompt = buildPersonaPrompt(state, persona)
+    const messages: { role: "system" | "user"; content: string }[] = []
+    if (persona.systemPrompt) {
+      messages.push({ role: "system", content: persona.systemPrompt })
+    }
+    messages.push({ role: "user", content: prompt })
 
     const { value } = await callbacks.ai.generateText({
       model: persona.model,
-      system: persona.systemPrompt ?? undefined,
-      prompt,
+      messages,
       temperature: persona.temperature ?? 0.7,
       maxTokens: persona.maxTokens ?? 500,
       telemetry: {

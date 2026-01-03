@@ -126,8 +126,10 @@ export class Memorizer {
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
-      system: SYSTEM_PROMPT,
-      prompt,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
       maxTokens: 500,
       temperature: 0.3,
       telemetry: {
@@ -166,8 +168,10 @@ export class Memorizer {
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
-      system: SYSTEM_PROMPT,
-      prompt,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
       maxTokens: 700,
       temperature: 0.3,
       telemetry: {
@@ -214,8 +218,10 @@ export class Memorizer {
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
-      system: SYSTEM_PROMPT,
-      prompt,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
       maxTokens: 700,
       temperature: 0.3,
       telemetry: {

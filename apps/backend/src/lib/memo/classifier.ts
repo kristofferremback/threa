@@ -141,8 +141,10 @@ export class MemoClassifier {
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: messageClassificationSchema,
-      system: MESSAGE_SYSTEM_PROMPT,
-      prompt,
+      messages: [
+        { role: "system", content: MESSAGE_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
       maxTokens: 200,
       temperature: 0.1,
       telemetry: {
@@ -183,8 +185,10 @@ export class MemoClassifier {
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: conversationClassificationSchema,
-      system: CONVERSATION_SYSTEM_PROMPT,
-      prompt,
+      messages: [
+        { role: "system", content: CONVERSATION_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
       maxTokens: 300,
       temperature: 0.1,
       telemetry: {

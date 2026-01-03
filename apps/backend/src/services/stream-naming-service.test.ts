@@ -169,8 +169,8 @@ describe("StreamNamingService", () => {
       await service.attemptAutoNaming("stream_123", false)
 
       const calls = mockGenerateText.mock.calls
-      const lastCall = calls[calls.length - 1]?.[0] as { system: string }
-      const systemMessage = lastCall.system ?? ""
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
       expect(systemMessage).toContain("Project Planning")
       expect(systemMessage).toContain("Bug Fixes")
@@ -189,8 +189,8 @@ describe("StreamNamingService", () => {
       await service.attemptAutoNaming("stream_123", false)
 
       const calls = mockGenerateText.mock.calls
-      const lastCall = calls[calls.length - 1]?.[0] as { system: string }
-      const systemMessage = lastCall.system ?? ""
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
       // Should include the other stream's name
       expect(systemMessage).toContain("Another Scratchpad")
@@ -207,8 +207,8 @@ describe("StreamNamingService", () => {
       await service.attemptAutoNaming("stream_123", false)
 
       const calls = mockGenerateText.mock.calls
-      const lastCall = calls[calls.length - 1]?.[0] as { system: string }
-      const systemMessage = lastCall.system ?? ""
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
       expect(systemMessage).toContain("NOT_ENOUGH_CONTEXT")
     })
@@ -220,8 +220,8 @@ describe("StreamNamingService", () => {
       await service.attemptAutoNaming("stream_123", true)
 
       const calls = mockGenerateText.mock.calls
-      const lastCall = calls[calls.length - 1]?.[0] as { system: string }
-      const systemMessage = lastCall.system ?? ""
+      const lastCall = calls[calls.length - 1]?.[0] as { messages: Array<{ role: string; content: string }> }
+      const systemMessage = lastCall.messages.find((m) => m.role === "system")?.content ?? ""
 
       expect(systemMessage).toContain("You MUST generate a title")
     })
