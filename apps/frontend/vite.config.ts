@@ -39,7 +39,7 @@ export default defineConfig({
           // Silence expected WebSocket errors when browser tabs close during tests
           proxy.on("error", (err) => {
             if (err.message.includes("ECONNRESET") || err.message.includes("ended by the other party")) {
-              return // Ignore connection reset errors
+              return
             }
             console.error("[proxy error]", err)
           })
