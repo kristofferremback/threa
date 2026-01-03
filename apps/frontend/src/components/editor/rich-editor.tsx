@@ -1,11 +1,13 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
+import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors } from "./editor-behaviors"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { EditorToolbar } from "./editor-toolbar"
-import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion } from "./triggers"
+import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
+import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
@@ -44,11 +46,16 @@ export function RichEditor({
   const [, forceUpdate] = useState(0)
   const isInternalUpdate = useRef(false)
 
-  // Mention, channel, and command autocomplete
+  // Mention, channel, command, and emoji autocomplete
   const { mentionables } = useMentionables()
   const { suggestionConfig: mentionConfig, renderMentionList } = useMentionSuggestion()
   const { suggestionConfig: channelConfig, renderChannelList } = useChannelSuggestion()
   const { suggestionConfig: commandConfig, renderCommandList } = useCommandSuggestion()
+
+  // Emoji autocomplete
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { emojis, emojiWeights, toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
+  const { suggestionConfig: emojiConfig, renderEmojiGrid } = useEmojiSuggestion({ emojis, emojiWeights })
 
   // Create lookup for mention types from mentionables
   // Current user's slug maps to "me" for special highlighting
@@ -64,6 +71,8 @@ export function RichEditor({
   // Ref to avoid stale closure in TipTap paste handler
   const getMentionTypeRef = useRef(getMentionType)
   getMentionTypeRef.current = getMentionType
+  const toEmojiRef = useRef(toEmoji)
+  toEmojiRef.current = toEmoji
 
   // Ref to avoid stale closure for file upload callback
   const onFileUploadRef = useRef(onFileUpload)
@@ -85,10 +94,12 @@ export function RichEditor({
         mentionSuggestion: mentionConfig,
         channelSuggestion: channelConfig,
         commandSuggestion: commandConfig,
+        emojiSuggestion: emojiConfig,
+        toEmoji,
       }),
       EditorBehaviors,
     ],
-    [placeholder, mentionConfig, channelConfig, commandConfig]
+    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
   )
 
   // Debounced toolbar visibility - stays visible 150ms after conditions become false
@@ -147,7 +158,7 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions,
-    content: parseMarkdown(value, getMentionType),
+    content: parseMarkdown(value, getMentionType, toEmoji),
     editable: !disabled,
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current) return
@@ -191,11 +202,11 @@ export function RichEditor({
           return true
         }
 
-        // Parse pasted text through markdown parser to convert @mentions, #channels
+        // Parse pasted text through markdown parser to convert @mentions, #channels, :emoji:
         const text = event.clipboardData?.getData("text/plain")
         if (text) {
           event.preventDefault()
-          const parsed = parseMarkdown(text, getMentionTypeRef.current)
+          const parsed = parseMarkdown(text, getMentionTypeRef.current, toEmojiRef.current)
           editorRef.current?.commands.insertContent(parsed)
           return true
         }
@@ -251,10 +262,10 @@ export function RichEditor({
     const currentMarkdown = serializeToMarkdown(editor.getJSON())
     if (value !== currentMarkdown) {
       isInternalUpdate.current = true
-      editor.commands.setContent(parseMarkdown(value, getMentionType))
+      editor.commands.setContent(parseMarkdown(value, getMentionType, toEmoji))
       isInternalUpdate.current = false
     }
-  }, [value, editor, getMentionType])
+  }, [value, editor, getMentionType, toEmoji])
 
   // Re-parse content when mentionables load or currentUser becomes known (for correct mention type colors)
   useEffect(() => {
@@ -275,11 +286,11 @@ export function RichEditor({
       const markdown = serializeToMarkdown(editor.getJSON())
       if (markdown) {
         isInternalUpdate.current = true
-        editor.commands.setContent(parseMarkdown(markdown, getMentionType))
+        editor.commands.setContent(parseMarkdown(markdown, getMentionType, toEmoji))
         isInternalUpdate.current = false
       }
     }
-  }, [editor, mentionables, getMentionType])
+  }, [editor, mentionables, getMentionType, toEmoji])
 
   // Focus editor on mount
   useEffect(() => {
@@ -363,6 +374,7 @@ export function RichEditor({
       {renderMentionList()}
       {renderChannelList()}
       {renderCommandList()}
+      {renderEmojiGrid()}
     </div>
   )
 }

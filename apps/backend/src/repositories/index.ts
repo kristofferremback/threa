@@ -50,3 +50,6 @@ export type { PendingMemoItem, QueuePendingItemParams } from "./pending-item-rep
 
 export { StreamStateRepository } from "./stream-state-repository"
 export type { MemoStreamState, StreamReadyToProcess } from "./stream-state-repository"
+
+export { EmojiUsageRepository } from "./emoji-usage-repository"
+export type { EmojiUsage, InsertEmojiUsageParams } from "./emoji-usage-repository"

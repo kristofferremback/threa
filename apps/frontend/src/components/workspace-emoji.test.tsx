@@ -26,7 +26,7 @@ describe("WorkspaceEmoji", () => {
 
   it("should render emoji for known shortcode", () => {
     const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const }],
+      emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const, group: "people", order: 0 }],
     }
     queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -39,7 +39,7 @@ describe("WorkspaceEmoji", () => {
 
   it("should render emoji without colons in shortcode", () => {
     const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [{ shortcode: "fire", emoji: "🔥", type: "native" as const }],
+      emojis: [{ shortcode: "fire", emoji: "🔥", type: "native" as const, group: "smileys", order: 0 }],
     }
     queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -78,7 +78,7 @@ describe("WorkspaceEmoji", () => {
 
   it("should render thread emoji correctly", () => {
     const bootstrap: Partial<WorkspaceBootstrap> = {
-      emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const }],
+      emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0 }],
     }
     queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 

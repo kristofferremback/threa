@@ -121,7 +121,9 @@ export function normalizeMessage(message: string): string {
 export interface EmojiEntry {
   shortcode: string
   emoji: string
-  type: "native"
+  type: "native" | "custom"
+  group: string
+  order: number
 }
 
 /**
@@ -130,9 +132,11 @@ export interface EmojiEntry {
  * Type is "native" for built-in emojis (vs future "custom" for workspace emojis).
  */
 export function getEmojiList(): EmojiEntry[] {
-  return emojiData.emojis.map(({ emoji, shortcodes }) => ({
+  return emojiData.emojis.map(({ emoji, shortcodes, group, order }) => ({
     shortcode: shortcodes[0],
     emoji,
     type: "native" as const,
+    group: group ?? "symbols",
+    order: order ?? 9999,
   }))
 }

@@ -27,7 +27,7 @@ describe("useWorkspaceEmoji", () => {
   describe("toEmoji", () => {
     it("should return emoji for known shortcode", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const }],
+        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const, group: "people", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -40,7 +40,7 @@ describe("useWorkspaceEmoji", () => {
 
     it("should return emoji when shortcode has colons", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const }],
+        emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -53,7 +53,7 @@ describe("useWorkspaceEmoji", () => {
 
     it("should return null for unknown shortcode", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const }],
+        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const, group: "people", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -90,7 +90,7 @@ describe("useWorkspaceEmoji", () => {
 
   describe("getEmoji", () => {
     it("should return full emoji entry for known shortcode", () => {
-      const emojiEntry: EmojiEntry = { shortcode: "thumbsup", emoji: "👍", type: "native" }
+      const emojiEntry: EmojiEntry = { shortcode: "thumbsup", emoji: "👍", type: "native", group: "people", order: 0 }
       const bootstrap: Partial<WorkspaceBootstrap> = {
         emojis: [emojiEntry],
       }
@@ -108,7 +108,7 @@ describe("useWorkspaceEmoji", () => {
 
     it("should return undefined for unknown shortcode", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const }],
+        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native" as const, group: "people", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -121,7 +121,7 @@ describe("useWorkspaceEmoji", () => {
 
     it("should strip colons from shortcode when looking up", () => {
       const bootstrap: Partial<WorkspaceBootstrap> = {
-        emojis: [{ shortcode: "fire", emoji: "🔥", type: "native" as const }],
+        emojis: [{ shortcode: "fire", emoji: "🔥", type: "native" as const, group: "smileys", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
@@ -131,6 +131,53 @@ describe("useWorkspaceEmoji", () => {
 
       expect(result.current.getEmoji(":fire:")).toBeDefined()
       expect(result.current.getEmoji(":fire:")?.emoji).toBe("🔥")
+    })
+  })
+
+  describe("emojis and emojiWeights", () => {
+    it("should return emojis list from bootstrap", () => {
+      const emojiList: EmojiEntry[] = [
+        { shortcode: "thumbsup", emoji: "👍", type: "native", group: "people", order: 0 },
+        { shortcode: "fire", emoji: "🔥", type: "native", group: "smileys", order: 1 },
+      ]
+      const bootstrap: Partial<WorkspaceBootstrap> = {
+        emojis: emojiList,
+      }
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+
+      const { result } = renderHook(() => useWorkspaceEmoji(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.emojis).toHaveLength(2)
+      expect(result.current.emojis[0].shortcode).toBe("thumbsup")
+    })
+
+    it("should return emojiWeights from bootstrap", () => {
+      const bootstrap: Partial<WorkspaceBootstrap> = {
+        emojis: [{ shortcode: "thumbsup", emoji: "👍", type: "native", group: "people", order: 0 }],
+        emojiWeights: { thumbsup: 5, fire: 3 },
+      }
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+
+      const { result } = renderHook(() => useWorkspaceEmoji(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.emojiWeights).toEqual({ thumbsup: 5, fire: 3 })
+    })
+
+    it("should return empty object when emojiWeights not in bootstrap", () => {
+      const bootstrap: Partial<WorkspaceBootstrap> = {
+        emojis: [],
+      }
+      queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
+
+      const { result } = renderHook(() => useWorkspaceEmoji(workspaceId), {
+        wrapper: createTestWrapper(queryClient),
+      })
+
+      expect(result.current.emojiWeights).toEqual({})
     })
   })
 })

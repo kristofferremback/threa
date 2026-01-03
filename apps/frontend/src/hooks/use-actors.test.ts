@@ -154,7 +154,7 @@ describe("useActors", () => {
         users: [],
         // avatarEmoji is stored as shortcode format in the database
         personas: [createPersona({ id: "persona_123", slug: "ariadne", name: "Ariadne", avatarEmoji: ":thread:" })],
-        emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const }],
+        emojis: [{ shortcode: "thread", emoji: "🧵", type: "native" as const, group: "objects", order: 0 }],
       }
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), bootstrap)
 
