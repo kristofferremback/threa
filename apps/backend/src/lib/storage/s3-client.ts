@@ -1,18 +1,10 @@
-import {
-  S3Client,
-  GetObjectCommand,
-  DeleteObjectCommand,
-  CreateBucketCommand,
-  HeadBucketCommand,
-} from "@aws-sdk/client-s3"
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import type { S3Config } from "../env"
-import { logger } from "../logger"
 
 export interface StorageProvider {
   getSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
   delete(key: string): Promise<void>
-  ensureBucket(): Promise<void>
 }
 
 /**
@@ -48,20 +40,6 @@ export function createS3Storage(config: S3Config): StorageProvider {
           Key: key,
         })
       )
-    },
-
-    async ensureBucket(): Promise<void> {
-      try {
-        await client.send(new HeadBucketCommand({ Bucket: config.bucket }))
-        logger.debug({ bucket: config.bucket }, "S3 bucket exists")
-      } catch (error: unknown) {
-        if (error && typeof error === "object" && "name" in error && error.name === "NotFound") {
-          logger.info({ bucket: config.bucket }, "Creating S3 bucket")
-          await client.send(new CreateBucketCommand({ Bucket: config.bucket }))
-        } else {
-          throw error
-        }
-      }
     },
   }
 }

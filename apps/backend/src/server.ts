@@ -92,7 +92,6 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Storage and attachment service
   const storage = createS3Storage(config.s3)
-  await storage.ensureBucket()
   const attachmentService = new AttachmentService(pool, storage)
 
   const ai = createAI({
