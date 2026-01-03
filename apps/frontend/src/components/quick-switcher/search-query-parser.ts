@@ -1,7 +1,7 @@
 /**
  * Parse and serialize search queries with filter support.
  *
- * Supports filters: from:@user, with:@user, in:#channel, in:@user (DM), type:streamType, status:streamStatus, is:streamStatus, after:date, before:date
+ * Supports filters: from:@user, with:@user, in:#channel, in:@user (DM), is:streamType, type:streamType (alias), status:archiveStatus, after:date, before:date
  */
 
 export type FilterType = "from" | "with" | "in" | "type" | "status" | "after" | "before"
@@ -23,15 +23,15 @@ export interface ParsedQuery {
  *
  * Examples:
  * - "from:@martin hello" → { filters: [{type: "from", value: "martin"}], text: "hello" }
- * - "in:#general type:thread" → { filters: [{type: "in", value: "general"}, {type: "type", value: "thread"}], text: "" }
+ * - "in:#general is:thread" → { filters: [{type: "in", value: "general"}, {type: "type", value: "thread"}], text: "" }
  * - "status:archived bug" → { filters: [{type: "status", value: "archived"}], text: "bug" }
- * - "is:archived bug" → { filters: [{type: "status", value: "archived"}], text: "bug" }
+ * - "is:scratchpad bug" → { filters: [{type: "type", value: "scratchpad"}], text: "bug" }
  */
 export function parseSearchQuery(query: string): ParsedQuery {
   const filters: ParsedFilter[] = []
   const parts: string[] = []
 
-  // Match filter patterns: from:@slug, with:@slug, in:#slug, in:@slug, type:streamType, status:streamStatus, is:streamStatus, after:date, before:date
+  // Match filter patterns: from:@slug, with:@slug, in:#slug, in:@slug, is:streamType, type:streamType (alias), status:archiveStatus, after:date, before:date
   // Using regex to find all filters while preserving order
   const filterRegex = /\b(from:@|with:@|in:#|in:@|type:|status:|is:|after:|before:)(\S*)/g
 
@@ -80,8 +80,9 @@ function extractFilterType(prefix: string): FilterType | null {
     case "type:":
       return "type"
     case "status:":
-    case "is:":
       return "status"
+    case "is:":
+      return "type"
     case "after:":
       return "after"
     case "before:":
@@ -134,7 +135,7 @@ export function addFilterToQuery(query: string, type: FilterType, value: string)
       raw = value.startsWith("#") ? `in:${value}` : `in:@${value}`
       break
     case "type":
-      raw = `type:${value}`
+      raw = `is:${value}`
       break
     case "status":
       raw = `status:${value}`

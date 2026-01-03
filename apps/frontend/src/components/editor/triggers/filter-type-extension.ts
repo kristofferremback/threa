@@ -1,8 +1,9 @@
 /**
- * TipTap extension for `type:` filter trigger in search mode.
- * Shows stream type options (scratchpad, channel, dm, thread) when user types `type:`.
+ * TipTap extension for `is:` filter trigger in search mode.
+ * Shows stream type options (scratchpad, channel, dm, thread) when user types `is:`.
  *
  * Unlike mention/channel extensions, this inserts plain text, not a node.
+ * Note: `type:` is kept as an alias in the parser but the primary trigger is `is:`.
  */
 import { Extension } from "@tiptap/core"
 import Suggestion from "@tiptap/suggestion"
@@ -38,8 +39,8 @@ export interface FilterTypeOptions {
 }
 
 /**
- * Custom match function for `type:` trigger.
- * Detects when user types `type:` followed by optional characters.
+ * Custom match function for `is:` trigger.
+ * Detects when user types `is:` followed by optional characters.
  *
  * Uses TipTap's Trigger interface which provides $position for cursor context.
  */
@@ -55,14 +56,14 @@ function findFilterTypeMatch(config: {
   // Get text from start of text block to cursor
   const textBefore = $position.parent.textBetween(0, $position.parentOffset, undefined, "\ufffc")
 
-  // Match `type:` at word boundary (start of text or after whitespace)
+  // Match `is:` at word boundary (start of text or after whitespace)
   // Also match after `?` since search mode uses `?` prefix
-  const match = textBefore.match(/(?:^|\s|\?)(type:)(\S*)$/)
+  const match = textBefore.match(/(?:^|\s|\?)(is:)(\S*)$/)
   if (!match) return null
 
   const fullMatch = match[0]
-  const triggerPart = match[1] // "type:"
-  const query = match[2] || "" // characters after "type:"
+  const triggerPart = match[1] // "is:"
+  const query = match[2] || "" // characters after "is:"
 
   // Calculate positions relative to document
   const matchStart = $position.pos - fullMatch.length + (fullMatch.startsWith(" ") ? 1 : 0)
@@ -96,15 +97,15 @@ export const FilterTypeExtension = Extension.create<FilterTypeOptions>({
       Suggestion({
         editor: this.editor,
         pluginKey: FilterTypePluginKey,
-        char: "type:",
+        char: "is:",
         allowSpaces: false,
         // Custom matching function for multi-character trigger
         findSuggestionMatch: findFilterTypeMatch,
         ...this.options.suggestion,
         command: ({ editor, range, props }) => {
           const item = props as FilterTypeItem
-          // Insert plain text: "type:value "
-          editor.chain().focus().deleteRange(range).insertContent(`type:${item.value} `).run()
+          // Insert plain text: "is:value "
+          editor.chain().focus().deleteRange(range).insertContent(`is:${item.value} `).run()
         },
       }),
     ]

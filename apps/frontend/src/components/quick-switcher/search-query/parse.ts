@@ -10,8 +10,9 @@ const FILTER_TYPES: FilterType[] = ["from", "with", "in", "type", "status", "aft
  * - with:@user → filter node
  * - in:#channel → filter node
  * - in:@user → filter node (DM)
- * - type:type → filter node
- * - status:active → filter node
+ * - is:type → filter node (stream type)
+ * - type:type → filter node (alias for is:)
+ * - status:active → filter node (archive status)
  * - after:date → filter node
  * - before:date → filter node
  *
@@ -124,11 +125,11 @@ function parseToken(token: string): QueryNode | null {
     }
   }
 
-  // Handle aliases
+  // Handle is: as primary for type filter
   if (token.startsWith("is:")) {
     const value = token.slice(3)
     if (value) {
-      return { type: "filter", filterType: "status", value } as FilterNode
+      return { type: "filter", filterType: "type", value } as FilterNode
     }
   }
 

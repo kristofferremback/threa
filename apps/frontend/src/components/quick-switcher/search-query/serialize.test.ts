@@ -93,9 +93,9 @@ describe("parse", () => {
     expect(result).toEqual([{ type: "filter", filterType: "status", value: "active" }])
   })
 
-  it("should parse is: active into status filter node (alias)", () => {
-    const result = parse("is:active")
-    expect(result).toEqual([{ type: "filter", filterType: "status", value: "active" }])
+  it("should parse is:scratchpad into type filter node", () => {
+    const result = parse("is:scratchpad")
+    expect(result).toEqual([{ type: "filter", filterType: "type", value: "scratchpad" }])
   })
 
   it("should parse after:date into filter node", () => {

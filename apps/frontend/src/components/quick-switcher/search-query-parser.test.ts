@@ -58,13 +58,13 @@ describe("parseSearchQuery", () => {
     expect(result.text).toBe("hello")
   })
 
-  it("should parse is: filter as status alias", () => {
-    const result = parseSearchQuery("is:archived hello")
+  it("should parse is: filter as type filter", () => {
+    const result = parseSearchQuery("is:scratchpad hello")
     expect(result.filters).toHaveLength(1)
     expect(result.filters[0]).toEqual({
-      type: "status",
-      value: "archived",
-      raw: "is:archived",
+      type: "type",
+      value: "scratchpad",
+      raw: "is:scratchpad",
     })
     expect(result.text).toBe("hello")
   })
@@ -103,12 +103,23 @@ describe("parseSearchQuery", () => {
   })
 
   it("should parse multiple filters", () => {
-    const result = parseSearchQuery("from:@martin in:#general type:channel hello world")
+    const result = parseSearchQuery("from:@martin in:#general is:channel hello world")
     expect(result.filters).toHaveLength(3)
     expect(result.filters[0].type).toBe("from")
     expect(result.filters[1].type).toBe("in")
     expect(result.filters[2].type).toBe("type")
     expect(result.text).toBe("hello world")
+  })
+
+  it("should parse type: as alias for is:", () => {
+    const result = parseSearchQuery("type:channel hello")
+    expect(result.filters).toHaveLength(1)
+    expect(result.filters[0]).toEqual({
+      type: "type",
+      value: "channel",
+      raw: "type:channel",
+    })
+    expect(result.text).toBe("hello")
   })
 
   it("should handle filters with no text", () => {
@@ -189,9 +200,9 @@ describe("addFilterToQuery", () => {
     expect(result).toBe("status:active hello")
   })
 
-  it("should add type filter", () => {
+  it("should add type filter with is: prefix", () => {
     const result = addFilterToQuery("hello", "type", "channel")
-    expect(result).toBe("type:channel hello")
+    expect(result).toBe("is:channel hello")
   })
 
   it("should add after filter", () => {

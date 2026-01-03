@@ -1,7 +1,7 @@
 /**
  * Types for search query parsing and serialization.
  *
- * Query strings like "from:@martin in:#general is:thread restaurants"
+ * Query strings like "from:@martin in:#general is:scratchpad status:active restaurants"
  * are parsed into a sequence of nodes for display in TipTap editor,
  * and serialized back to strings for API calls.
  */
