@@ -124,11 +124,12 @@ export interface EmojiEntry {
   type: "native" | "custom"
   group: string
   order: number
+  aliases: string[]
 }
 
 /**
  * Get all emojis in API response format.
- * Returns a list with primary shortcode for each emoji.
+ * Returns a list with primary shortcode and all aliases for each emoji.
  * Type is "native" for built-in emojis (vs future "custom" for workspace emojis).
  */
 export function getEmojiList(): EmojiEntry[] {
@@ -138,5 +139,6 @@ export function getEmojiList(): EmojiEntry[] {
     type: "native" as const,
     group: group ?? "symbols",
     order: order ?? 9999,
+    aliases: shortcodes,
   }))
 }

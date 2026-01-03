@@ -74,6 +74,8 @@ export interface EmojiEntry {
   type: "native" | "custom"
   group: string
   order: number
+  /** All shortcodes including aliases (for search matching) */
+  aliases: string[]
 }
 
 export interface CommandInfo {

@@ -108,6 +108,42 @@ test.describe("Emoji Shortcuts", () => {
     await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
   })
 
+  test("should insert emoji when pressing Tab on selected item", async ({ page }) => {
+    const editor = await setupWorkspaceWithEditor(page)
+
+    // Type ":heart" to search
+    await page.keyboard.type(":heart")
+
+    // Wait for grid
+    await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
+
+    // Press Tab to select first item
+    await page.keyboard.press("Tab")
+
+    // Emoji should be inserted
+    await expect(editor.locator("[data-type='emoji']")).toBeVisible()
+
+    // Grid should close
+    await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
+  })
+
+  test("should match emojis by alias shortcodes", async ({ page }) => {
+    const editor = await setupWorkspaceWithEditor(page)
+
+    // Type ":thumbsup" - alias for 👍 (primary shortcode is "+1")
+    await page.keyboard.type(":thumbsup")
+
+    // Wait for grid to show the thumbs up emoji
+    await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
+    await expect(page.locator("[data-emoji-grid] button").first()).toBeVisible()
+
+    // Press Enter to select
+    await page.keyboard.press("Enter")
+
+    // Emoji should be inserted
+    await expect(editor.locator("[data-type='emoji']")).toBeVisible()
+  })
+
   test("should auto-convert :shortcode: when typing closing colon", async ({ page }) => {
     const editor = await setupWorkspaceWithEditor(page)
 

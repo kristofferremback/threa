@@ -4,6 +4,7 @@ import type { EditorState } from "@tiptap/pm/state"
 import { MentionPluginKey } from "./triggers/mention-extension"
 import { ChannelPluginKey } from "./triggers/channel-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
+import { EmojiPluginKey } from "./triggers/emoji-extension"
 
 /**
  * Check if any suggestion popup is currently active.
@@ -14,9 +15,10 @@ function isSuggestionActive(editor: Editor): boolean {
   const mentionState = MentionPluginKey.getState(state)
   const channelState = ChannelPluginKey.getState(state)
   const commandState = CommandPluginKey.getState(state)
+  const emojiState = EmojiPluginKey.getState(state)
 
   // The suggestion plugin stores state when active (has query, range, etc.)
-  return !!(mentionState?.active || channelState?.active || commandState?.active)
+  return !!(mentionState?.active || channelState?.active || commandState?.active || emojiState?.active)
 }
 
 /**

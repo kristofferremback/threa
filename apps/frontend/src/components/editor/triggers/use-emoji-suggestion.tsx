@@ -80,11 +80,11 @@ export function useEmojiSuggestion(config: UseEmojiSuggestionConfig): UseEmojiSu
   const sortedEmojisRef = useRef(sortedEmojis)
   sortedEmojisRef.current = sortedEmojis
 
-  // Filter emojis by query (shortcode contains query)
+  // Filter emojis by query (any alias contains query)
   const filterItems = useCallback((items: EmojiEntry[], query: string): EmojiEntry[] => {
     if (!query) return items.slice(0, 64) // Show first 64 when no query
     const lowerQuery = query.toLowerCase()
-    return items.filter((item) => item.shortcode.includes(lowerQuery)).slice(0, 64)
+    return items.filter((item) => item.aliases.some((alias) => alias.includes(lowerQuery))).slice(0, 64)
   }, [])
 
   // Stable callback that reads from ref

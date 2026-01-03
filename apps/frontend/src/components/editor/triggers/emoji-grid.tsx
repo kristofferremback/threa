@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
@@ -115,7 +114,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       aria-label="Emoji picker"
       data-emoji-grid
     >
-      <ScrollArea className="max-h-64">
+      <div className="max-h-64 overflow-y-auto">
         <div className="grid grid-cols-8 gap-0.5 p-2">
           {items.map((item, index) => (
             <Tooltip key={item.shortcode} delayDuration={300}>
@@ -145,7 +144,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
             </Tooltip>
           ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }
