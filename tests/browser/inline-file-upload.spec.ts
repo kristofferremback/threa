@@ -189,4 +189,109 @@ test.describe("Inline File Uploads", () => {
     await expect(editor.locator("span[data-type='attachment-reference']")).toHaveCount(2, { timeout: 10000 })
     await expect(page.getByText("pasted-image-2.png")).toBeVisible({ timeout: 5000 })
   })
+
+  test("should open lightbox when clicking image link in sent message", async ({ page }) => {
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+
+    // Paste an image
+    const imageBuffer = createTestImage()
+    await page.evaluate(async (imageData) => {
+      const editor = document.querySelector("[contenteditable='true']")
+      if (!editor) throw new Error("Editor not found")
+
+      const uint8Array = new Uint8Array(imageData)
+      const blob = new Blob([uint8Array], { type: "image/png" })
+      const file = new File([blob], "screenshot.png", { type: "image/png" })
+
+      const dataTransfer = new DataTransfer()
+      dataTransfer.items.add(file)
+
+      const pasteEvent = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer,
+      })
+
+      editor.dispatchEvent(pasteEvent)
+    }, Array.from(imageBuffer))
+
+    // Wait for upload
+    await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
+
+    // Type some text and send the message
+    await editor.type("Check out this image: ")
+    await page.getByRole("button", { name: "Send" }).click()
+
+    // Wait for message to appear in timeline (not in editor anymore)
+    const imageLink = page.locator(".markdown-content button:has-text('Image #1')")
+    await expect(imageLink).toBeVisible({ timeout: 10000 })
+
+    // Small delay to ensure React handlers are attached
+    await page.waitForTimeout(100)
+
+    // Click on the image link
+    await imageLink.click()
+
+    // Lightbox dialog should open
+    await expect(page.locator("[role='dialog'] img")).toBeVisible({ timeout: 5000 })
+  })
+
+  test("should highlight attachment pill when hovering inline reference", async ({ page }) => {
+    const editor = page.locator("[contenteditable='true']")
+    await editor.click()
+
+    // Paste an image
+    const imageBuffer = createTestImage()
+    await page.evaluate(async (imageData) => {
+      const editor = document.querySelector("[contenteditable='true']")
+      if (!editor) throw new Error("Editor not found")
+
+      const uint8Array = new Uint8Array(imageData)
+      const blob = new Blob([uint8Array], { type: "image/png" })
+      const file = new File([blob], "screenshot.png", { type: "image/png" })
+
+      const dataTransfer = new DataTransfer()
+      dataTransfer.items.add(file)
+
+      const pasteEvent = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer,
+      })
+
+      editor.dispatchEvent(pasteEvent)
+    }, Array.from(imageBuffer))
+
+    // Wait for upload
+    await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
+
+    // Type some text and send the message
+    await editor.type("Hover test: ")
+    await page.getByRole("button", { name: "Send" }).click()
+
+    // Wait for message to appear
+    const imageLink = page.locator(".markdown-content button:has-text('Image #1')")
+    await expect(imageLink).toBeVisible({ timeout: 10000 })
+    await page.waitForTimeout(100)
+
+    // Find the attachment pill (the image button with the filename)
+    const attachmentPill = page.locator("button:has(img[alt='pasted-image-1.png'])")
+    await expect(attachmentPill).toBeVisible({ timeout: 5000 })
+
+    // Before hover: pill should NOT be highlighted
+    await expect(attachmentPill).not.toHaveAttribute("data-highlighted", "true")
+
+    // Hover over the inline reference
+    await imageLink.hover()
+
+    // After hover: pill SHOULD be highlighted
+    await expect(attachmentPill).toHaveAttribute("data-highlighted", "true", { timeout: 1000 })
+
+    // Move mouse away
+    await page.mouse.move(0, 0)
+
+    // After unhover: pill should NOT be highlighted anymore
+    await expect(attachmentPill).not.toHaveAttribute("data-highlighted", "true", { timeout: 1000 })
+  })
 })
