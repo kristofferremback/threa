@@ -18,7 +18,7 @@ test.describe("User Journey", () => {
   const workspaceName = `E2E Workspace ${testId}`
   const channelName = `test-${testId}`
 
-  test("complete user journey: login, create workspace, create channel, send message", async ({ page }) => {
+  test("should allow new user to sign in, create workspace, create channel, and send message", async ({ page }) => {
     // Step 1: Navigate to login page
     await page.goto("/login")
     await expect(page.getByRole("heading", { name: "Threa" })).toBeVisible()
@@ -76,7 +76,7 @@ test.describe("User Journey", () => {
     await expect(page.getByText(testName)).toBeVisible() // Author name
   })
 
-  test("preset login buttons work", async ({ page }) => {
+  test("should authenticate user when clicking preset login button", async ({ page }) => {
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
 
@@ -87,7 +87,7 @@ test.describe("User Journey", () => {
     await expect(page.getByRole("heading", { name: "Welcome, Alice Anderson" })).toBeVisible()
   })
 
-  test("can navigate between scratchpads and channels", async ({ page }) => {
+  test("should create and navigate to new scratchpad", async ({ page }) => {
     // Login as Alice (who may already have workspaces from previous tests)
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
@@ -110,7 +110,7 @@ test.describe("User Journey", () => {
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
   })
 
-  test("quick switcher can search and navigate to streams", async ({ page }) => {
+  test("should navigate to channel when using quick switcher search", async ({ page }) => {
     // Login as Alice
     await page.goto("/login")
     await page.getByRole("button", { name: "Sign in with WorkOS" }).click()
