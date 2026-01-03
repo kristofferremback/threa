@@ -18,6 +18,8 @@ export interface MessageComposerProps {
   onFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
   /** Called when files are pasted or dropped into the editor */
   onFileUpload?: (file: File) => Promise<UploadResult>
+  /** Current count of images for sequential naming of pasted images */
+  imageCount?: number
 
   // Submit
   onSubmit: () => void
@@ -43,6 +45,7 @@ export function MessageComposer({
   fileInputRef,
   onFileSelect,
   onFileUpload,
+  imageCount = 0,
   onSubmit,
   canSubmit,
   submitLabel = "Send",
@@ -89,6 +92,7 @@ export function MessageComposer({
             onChange={onContentChange}
             onSubmit={onSubmit}
             onFileUpload={onFileUpload}
+            imageCount={imageCount}
             placeholder={placeholder}
             disabled={isDisabled}
           />

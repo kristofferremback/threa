@@ -62,7 +62,7 @@ test.describe("Inline File Uploads", () => {
     await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
   })
 
-  test("should insert [Image #1] reference when pasting an image", async ({ page }) => {
+  test("should insert [Image #1] reference when pasting an image with sequential name", async ({ page }) => {
     // Focus the editor
     const editor = page.locator("[contenteditable='true']")
     await editor.click()
@@ -70,7 +70,7 @@ test.describe("Inline File Uploads", () => {
     // Create a DataTransfer with an image file
     const imageBuffer = createTestImage()
 
-    // Use evaluate to simulate paste with file
+    // Use evaluate to simulate paste with file (original name will be renamed to pasted-image-1.png)
     await page.evaluate(async (imageData) => {
       const editor = document.querySelector("[contenteditable='true']")
       if (!editor) throw new Error("Editor not found")
@@ -78,7 +78,7 @@ test.describe("Inline File Uploads", () => {
       // Create a File from the image data
       const uint8Array = new Uint8Array(imageData)
       const blob = new Blob([uint8Array], { type: "image/png" })
-      const file = new File([blob], "test-image.png", { type: "image/png" })
+      const file = new File([blob], "screenshot.png", { type: "image/png" })
 
       // Create DataTransfer with the file
       const dataTransfer = new DataTransfer()
@@ -95,13 +95,11 @@ test.describe("Inline File Uploads", () => {
     }, Array.from(imageBuffer))
 
     // Wait for upload to complete and verify the reference appears
-    // Should show [Image #1] or similar
+    // Should show [Image #1]
     await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
 
-    // Verify attachment chip also appears
-    await expect(page.locator("[data-testid='attachment-chip']").or(page.getByText("test-image.png"))).toBeVisible({
-      timeout: 5000,
-    })
+    // Verify attachment chip shows the renamed filename (pasted-image-1.png)
+    await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 5000 })
   })
 
   test("should insert [filename] reference when pasting a non-image file", async ({ page }) => {
@@ -162,8 +160,9 @@ test.describe("Inline File Uploads", () => {
       editor.dispatchEvent(pasteEvent)
     }, Array.from(imageBuffer))
 
-    // Wait for first upload
+    // Wait for first upload and verify filename
     await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 5000 })
 
     // Paste second image
     await page.evaluate(async (imageData) => {
@@ -186,7 +185,8 @@ test.describe("Inline File Uploads", () => {
       editor.dispatchEvent(pasteEvent)
     }, Array.from(imageBuffer))
 
-    // Should have two references
+    // Should have two references with sequential naming
     await expect(editor.locator("span[data-type='attachment-reference']")).toHaveCount(2, { timeout: 10000 })
+    await expect(page.getByText("pasted-image-2.png")).toBeVisible({ timeout: 5000 })
   })
 })

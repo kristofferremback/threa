@@ -27,6 +27,8 @@ export interface DraftComposerState {
   handleRemoveAttachment: (id: string) => void
   /** Upload a file programmatically (for paste/drop) */
   uploadFile: (file: File) => Promise<UploadResult>
+  /** Current count of images (for sequential naming) */
+  imageCount: number
 
   // Submission
   canSend: boolean
@@ -70,6 +72,7 @@ export function useDraftComposer({
     hasFailed,
     clear: clearAttachments,
     restore: restoreAttachments,
+    imageCount,
   } = useAttachments(workspaceId)
 
   // Local state
@@ -163,6 +166,7 @@ export function useDraftComposer({
     handleFileSelect,
     handleRemoveAttachment,
     uploadFile,
+    imageCount,
 
     // Submission
     canSend,

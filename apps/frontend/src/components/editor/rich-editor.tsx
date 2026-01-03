@@ -16,6 +16,8 @@ interface RichEditorProps {
   onSubmit: () => void
   /** Called when files are pasted or dropped. Returns upload result for updating the node. */
   onFileUpload?: (file: File) => Promise<UploadResult>
+  /** Current count of images for sequential naming of pasted images */
+  imageCount?: number
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -26,6 +28,7 @@ export function RichEditor({
   onChange,
   onSubmit,
   onFileUpload,
+  imageCount = 0,
   placeholder = "Type a message...",
   disabled = false,
   className,
@@ -65,6 +68,10 @@ export function RichEditor({
   // Ref to avoid stale closure for file upload callback
   const onFileUploadRef = useRef(onFileUpload)
   onFileUploadRef.current = onFileUpload
+
+  // Ref to access current image count for paste renaming
+  const imageCountRef = useRef(imageCount)
+  imageCountRef.current = imageCount
 
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -167,8 +174,19 @@ export function RichEditor({
         const files = event.clipboardData?.files
         if (files && files.length > 0 && onFileUploadRef.current && editorRef.current) {
           event.preventDefault()
-          for (const file of Array.from(files)) {
-            handleFileInsert(file, editorRef.current)
+          const fileArray = Array.from(files)
+          let pasteImageOffset = 0
+          for (const file of fileArray) {
+            let fileToInsert = file
+            // Rename pasted images to sequential names (pasted-image-1.png, etc.)
+            if (file.type.startsWith("image/")) {
+              pasteImageOffset++
+              const nextIndex = imageCountRef.current + pasteImageOffset
+              const ext = file.name.split(".").pop() || "png"
+              const newName = `pasted-image-${nextIndex}.${ext}`
+              fileToInsert = new File([file], newName, { type: file.type })
+            }
+            handleFileInsert(fileToInsert, editorRef.current)
           }
           return true
         }
