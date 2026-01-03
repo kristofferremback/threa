@@ -74,7 +74,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
   // Fetch archived streams when needed
   const { data: archivedStreams, isLoading: isLoadingArchived } = useQuery({
     queryKey: ["streams", workspaceId, "archived"],
-    queryFn: () => streamsApi.list(workspaceId, { archiveStatus: ["archived"] }),
+    queryFn: () => streamsApi.list(workspaceId, { status: ["archived"] }),
     enabled: showArchived,
     staleTime: 30_000,
   })
@@ -190,7 +190,7 @@ export function useStreamItems(context: ModeContext): ModeResult {
               users={[]} // Not needed
               streams={[]} // Not needed
               streamTypes={STREAM_TYPE_OPTIONS}
-              archiveStatusOptions={ARCHIVE_STATUS_OPTIONS}
+              statusOptions={ARCHIVE_STATUS_OPTIONS}
               onSelect={handleFilterSelect}
               onCancel={() => setAddingFilter(null)}
             />

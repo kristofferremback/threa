@@ -20,7 +20,7 @@ interface FilterSelectProps {
   users: User[]
   streams: Stream[]
   streamTypes: StreamTypeOption[]
-  archiveStatusOptions?: ArchiveStatusOption[]
+  statusOptions?: ArchiveStatusOption[]
   onSelect: (value: string, label: string) => void
   onCancel: () => void
 }
@@ -31,7 +31,7 @@ export function FilterSelect({
   users,
   streams,
   streamTypes,
-  archiveStatusOptions,
+  statusOptions,
   onSelect,
   onCancel,
 }: FilterSelectProps) {
@@ -62,8 +62,8 @@ export function FilterSelect({
     content = <UserSelect members={members} users={users} onSelect={onSelect} />
   } else if (type === "type") {
     content = <StreamTypeSelect streamTypes={streamTypes} onSelect={onSelect} />
-  } else if (type === "status" && archiveStatusOptions) {
-    content = <ArchiveStatusSelect archiveStatusOptions={archiveStatusOptions} onSelect={onSelect} />
+  } else if (type === "status" && statusOptions) {
+    content = <StatusSelect statusOptions={statusOptions} onSelect={onSelect} />
   } else if (type === "in") {
     content = <StreamSelect streams={streams} onSelect={onSelect} />
   } else if (type === "after" || type === "before") {
@@ -150,18 +150,18 @@ function StreamTypeSelect({ streamTypes, onSelect }: StreamTypeSelectProps) {
   )
 }
 
-interface ArchiveStatusSelectProps {
-  archiveStatusOptions: ArchiveStatusOption[]
+interface StatusSelectProps {
+  statusOptions: ArchiveStatusOption[]
   onSelect: (value: string, label: string) => void
 }
 
-function ArchiveStatusSelect({ archiveStatusOptions, onSelect }: ArchiveStatusSelectProps) {
+function StatusSelect({ statusOptions, onSelect }: StatusSelectProps) {
   return (
     <div className="w-32">
       <Command className="border rounded-md">
         <CommandList>
           <CommandGroup>
-            {archiveStatusOptions.map((opt) => (
+            {statusOptions.map((opt) => (
               <CommandItem key={opt.value} value={opt.value} onSelect={() => onSelect(opt.value, opt.label)}>
                 {opt.label}
               </CommandItem>

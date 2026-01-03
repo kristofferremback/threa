@@ -93,7 +93,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
           filters.type = [...(filters.type ?? []), filter.value as StreamType]
           break
         case "status":
-          filters.archiveStatus = [...(filters.archiveStatus ?? []), filter.value as ArchiveStatus]
+          filters.status = [...(filters.status ?? []), filter.value as ArchiveStatus]
           break
         case "in": {
           // in: can be either a stream slug or user slug (for DMs)
@@ -205,7 +205,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
               users={users}
               streams={streams}
               streamTypes={STREAM_TYPE_OPTIONS}
-              archiveStatusOptions={ARCHIVE_STATUS_OPTIONS}
+              statusOptions={ARCHIVE_STATUS_OPTIONS}
               onSelect={handleFilterSelect}
               onCancel={() => setAddingFilter(null)}
             />

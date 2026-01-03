@@ -14,14 +14,11 @@ export type { StreamBootstrap, CreateStreamInput, UpdateStreamInput }
 export type StreamArchiveStatus = "active" | "archived"
 
 export const streamsApi = {
-  async list(
-    workspaceId: string,
-    params?: { type?: StreamType; archiveStatus?: StreamArchiveStatus[] }
-  ): Promise<Stream[]> {
+  async list(workspaceId: string, params?: { type?: StreamType; status?: StreamArchiveStatus[] }): Promise<Stream[]> {
     const searchParams = new URLSearchParams()
     if (params?.type) searchParams.set("stream_type", params.type)
-    if (params?.archiveStatus) {
-      params.archiveStatus.forEach((s) => searchParams.append("status", s))
+    if (params?.status) {
+      params.status.forEach((s) => searchParams.append("status", s))
     }
     const query = searchParams.toString()
     const res = await api.get<{ streams: Stream[] }>(
