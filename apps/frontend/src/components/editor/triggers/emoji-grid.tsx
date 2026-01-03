@@ -1,11 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react"
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, memo } from "react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@/lib/utils"
 import type { EmojiEntry } from "@threa/types"
 import type { SuggestionListRef } from "./suggestion-list"
 
 const GRID_COLUMNS = 8
+const ROW_HEIGHT = 32 // 8 (w-8) = 32px
+const CONTAINER_HEIGHT = 256 // max-h-64 = 256px
 
 export interface EmojiGridProps {
   items: EmojiEntry[]
@@ -13,25 +15,66 @@ export interface EmojiGridProps {
   command: (item: EmojiEntry) => void
 }
 
+interface EmojiButtonProps {
+  item: EmojiEntry
+  isSelected: boolean
+  onClick: () => void
+  onMouseEnter: () => void
+}
+
+const EmojiButton = memo(function EmojiButton({ item, isSelected, onClick, onMouseEnter }: EmojiButtonProps) {
+  return (
+    <button
+      role="option"
+      aria-selected={isSelected}
+      aria-label={`:${item.shortcode}:`}
+      title={`:${item.shortcode}:`}
+      data-selected={isSelected ? "true" : undefined}
+      className={cn(
+        "flex items-center justify-center w-8 h-8 rounded text-xl",
+        "cursor-pointer hover:bg-accent",
+        isSelected && "bg-accent ring-1 ring-ring"
+      )}
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+    >
+      {item.emoji}
+    </button>
+  )
+})
+
 /**
- * Grid-style emoji picker for the : trigger.
- * Shows emojis in an 8-column grid with tooltips for shortcodes.
+ * Virtualized grid-style emoji picker for the : trigger.
+ * Shows emojis in an 8-column grid with native title tooltips.
  * Arrow keys navigate the grid (up/down by row, left/right by cell).
  */
 function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: React.ForwardedRef<SuggestionListRef>) {
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Group items into rows for virtualization
+  const rows = []
+  for (let i = 0; i < items.length; i += GRID_COLUMNS) {
+    rows.push(items.slice(i, i + GRID_COLUMNS))
+  }
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 3,
+  })
 
   // Reset selection when items change
   useEffect(() => {
     setSelectedIndex(0)
   }, [items])
 
-  // Scroll selected item into view
+  // Scroll selected row into view
   useEffect(() => {
-    const selectedRef = itemRefs.current[selectedIndex]
-    selectedRef?.scrollIntoView({ block: "nearest" })
-  }, [selectedIndex])
+    const selectedRow = Math.floor(selectedIndex / GRID_COLUMNS)
+    virtualizer.scrollToIndex(selectedRow, { align: "auto" })
+  }, [selectedIndex, virtualizer])
 
   const { refs, floatingStyles } = useFloating({
     placement: "bottom-start",
@@ -53,7 +96,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
     onKeyDown: (event: KeyboardEvent) => {
       if (items.length === 0) return false
 
-      const rows = Math.ceil(items.length / GRID_COLUMNS)
+      const totalRows = Math.ceil(items.length / GRID_COLUMNS)
       const currentRow = Math.floor(selectedIndex / GRID_COLUMNS)
       const currentCol = selectedIndex % GRID_COLUMNS
 
@@ -64,7 +107,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
             setSelectedIndex(selectedIndex - GRID_COLUMNS)
           } else {
             // Wrap to last row, same column (or last item if column doesn't exist)
-            const targetIndex = (rows - 1) * GRID_COLUMNS + currentCol
+            const targetIndex = (totalRows - 1) * GRID_COLUMNS + currentCol
             setSelectedIndex(Math.min(targetIndex, items.length - 1))
           }
           return true
@@ -114,35 +157,46 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       aria-label="Emoji picker"
       data-emoji-grid
     >
-      <div className="max-h-64 overflow-y-auto">
-        <div className="grid grid-cols-8 gap-0.5 p-2">
-          {items.map((item, index) => (
-            <Tooltip key={item.shortcode} delayDuration={300}>
-              <TooltipTrigger asChild>
-                <button
-                  ref={(el) => {
-                    itemRefs.current[index] = el
-                  }}
-                  role="option"
-                  aria-selected={index === selectedIndex}
-                  aria-label={`:${item.shortcode}:`}
-                  data-selected={index === selectedIndex ? "true" : undefined}
-                  className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded text-xl",
-                    "cursor-pointer hover:bg-accent",
-                    index === selectedIndex && "bg-accent ring-1 ring-ring"
-                  )}
-                  onClick={() => command(item)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                >
-                  {item.emoji}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                :{item.shortcode}:
-              </TooltipContent>
-            </Tooltip>
-          ))}
+      <div ref={scrollContainerRef} className="overflow-y-auto p-2" style={{ height: CONTAINER_HEIGHT }}>
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const rowItems = rows[virtualRow.index]
+            const rowStartIndex = virtualRow.index * GRID_COLUMNS
+
+            return (
+              <div
+                key={virtualRow.key}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: ROW_HEIGHT,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="flex gap-0.5"
+              >
+                {rowItems.map((item, colIndex) => {
+                  const itemIndex = rowStartIndex + colIndex
+                  return (
+                    <EmojiButton
+                      key={item.shortcode}
+                      item={item}
+                      isSelected={itemIndex === selectedIndex}
+                      onClick={() => command(item)}
+                      onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
