@@ -2,12 +2,12 @@ import type { Pool } from "pg"
 import { withClient } from "../db"
 import type { EmbeddingJobData, JobHandler } from "../lib/job-queue"
 import { MessageRepository } from "../repositories/message-repository"
-import type { EmbeddingService } from "../services/embedding-service"
+import type { EmbeddingServiceLike } from "../services/embedding-service"
 import { logger } from "../lib/logger"
 
 export interface EmbeddingWorkerDeps {
   pool: Pool
-  embeddingService: EmbeddingService
+  embeddingService: EmbeddingServiceLike
 }
 
 /**

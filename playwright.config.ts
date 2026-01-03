@@ -42,6 +42,7 @@ export default defineConfig({
         USE_STUB_AUTH: "true",
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
+        USE_STUB_AI: "true",
       },
     },
     {

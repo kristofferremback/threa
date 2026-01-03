@@ -7,11 +7,17 @@ export interface EmbeddingServiceConfig {
   model?: string
 }
 
+/** Interface for embedding service implementations */
+export interface EmbeddingServiceLike {
+  embed(text: string): Promise<number[]>
+  embedBatch(texts: string[]): Promise<number[][]>
+}
+
 /**
  * Service for generating embeddings using the configured provider.
  * Wraps AI with a configured default model.
  */
-export class EmbeddingService {
+export class EmbeddingService implements EmbeddingServiceLike {
   private ai: AI
   private modelId: string
 

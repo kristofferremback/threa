@@ -16,9 +16,11 @@ import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
 import { AttachmentService } from "./services/attachment-service"
 import { StreamNamingService } from "./services/stream-naming-service"
+import { StubStreamNamingService } from "./services/stream-naming-service.stub"
 import { MessageFormatter } from "./lib/ai/message-formatter"
 import { SearchService } from "./services/search-service"
 import { EmbeddingService } from "./services/embedding-service"
+import { StubEmbeddingService } from "./services/embedding-service.stub"
 import { ConversationService } from "./services/conversation-service"
 import { BoundaryExtractionService } from "./services/boundary-extraction-service"
 import { createS3Storage } from "./lib/storage/s3-client"
@@ -31,6 +33,7 @@ import { createMemoAccumulator } from "./lib/memo-accumulator"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
+import { StubMemoService } from "./services/memo-service.stub"
 import { createCommandListener } from "./lib/command-listener"
 import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
 import { CommandRegistry } from "./commands"
@@ -95,11 +98,13 @@ export async function startServer(): Promise<ServerInstance> {
     openrouter: { apiKey: config.ai.openRouterApiKey },
   })
   const messageFormatter = new MessageFormatter()
-  const streamNamingService = new StreamNamingService(pool, ai, config.ai.namingModel, messageFormatter)
+  const streamNamingService = config.useStubAI
+    ? new StubStreamNamingService()
+    : new StreamNamingService(pool, ai, config.ai.namingModel, messageFormatter)
   const conversationService = new ConversationService(pool)
 
   // Search and embedding services
-  const embeddingService = new EmbeddingService({ ai })
+  const embeddingService = config.useStubAI ? new StubEmbeddingService() : new EmbeddingService({ ai })
   const searchService = new SearchService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.)
@@ -193,14 +198,14 @@ export async function startServer(): Promise<ServerInstance> {
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
 
   // Memo (GAM) processing
-  const memoClassifier = new MemoClassifier(ai, config.ai.memoModel, messageFormatter)
-  const memorizer = new Memorizer(ai, config.ai.memoModel, messageFormatter)
-  const memoService = new MemoService({
-    pool,
-    classifier: memoClassifier,
-    memorizer,
-    embeddingService,
-  })
+  const memoService = config.useStubAI
+    ? new StubMemoService()
+    : new MemoService({
+        pool,
+        classifier: new MemoClassifier(ai, config.ai.memoModel, messageFormatter),
+        memorizer: new Memorizer(ai, config.ai.memoModel, messageFormatter),
+        embeddingService,
+      })
   const memoBatchCheckWorker = createMemoBatchCheckWorker({ pool, memoService, jobQueue })
   const memoBatchProcessWorker = createMemoBatchProcessWorker({ pool, memoService, jobQueue })
   jobQueue.registerHandler(JobQueues.MEMO_BATCH_CHECK, memoBatchCheckWorker)

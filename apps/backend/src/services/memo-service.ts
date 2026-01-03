@@ -12,7 +12,7 @@ import {
 } from "../repositories"
 import { MemoClassifier } from "../lib/memo/classifier"
 import { Memorizer } from "../lib/memo/memorizer"
-import type { EmbeddingService } from "./embedding-service"
+import type { EmbeddingServiceLike } from "./embedding-service"
 import { memoId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { MemoTypes, MemoStatuses } from "@threa/types"
@@ -26,18 +26,23 @@ export interface ProcessResult {
   memosRevised: number
 }
 
+/** Interface for memo service implementations */
+export interface MemoServiceLike {
+  processBatch(workspaceId: string, streamId: string): Promise<ProcessResult>
+}
+
 export interface MemoServiceConfig {
   pool: Pool
   classifier: MemoClassifier
   memorizer: Memorizer
-  embeddingService: EmbeddingService
+  embeddingService: EmbeddingServiceLike
 }
 
-export class MemoService {
+export class MemoService implements MemoServiceLike {
   private pool: Pool
   private classifier: MemoClassifier
   private memorizer: Memorizer
-  private embeddingService: EmbeddingService
+  private embeddingService: EmbeddingServiceLike
 
   constructor(config: MemoServiceConfig) {
     this.pool = config.pool

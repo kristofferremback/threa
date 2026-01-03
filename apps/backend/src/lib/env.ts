@@ -34,6 +34,8 @@ export interface Config {
   useStubAuth: boolean
   useStubCompanion: boolean
   useStubBoundaryExtraction: boolean
+  /** Stub all AI features (naming, embedding, memo processing) */
+  useStubAI: boolean
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
@@ -56,6 +58,7 @@ export function loadConfig(): Config {
 
   const useStubCompanion = process.env.USE_STUB_COMPANION === "true"
   const useStubBoundaryExtraction = process.env.USE_STUB_BOUNDARY_EXTRACTION === "true"
+  const useStubAI = process.env.USE_STUB_AI === "true"
 
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
@@ -63,6 +66,7 @@ export function loadConfig(): Config {
     useStubAuth,
     useStubCompanion,
     useStubBoundaryExtraction,
+    useStubAI,
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",
@@ -95,6 +99,10 @@ export function loadConfig(): Config {
 
   if (useStubBoundaryExtraction) {
     logger.warn("Using stub boundary extraction - NOT FOR PRODUCTION")
+  }
+
+  if (useStubAI) {
+    logger.warn("Using stub AI services (naming, embedding, memo) - NOT FOR PRODUCTION")
   }
 
   return config
