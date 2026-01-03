@@ -8,7 +8,7 @@ import {
   type MemoBatchProcessJobData,
 } from "../lib/job-queue"
 import { StreamStateRepository } from "../repositories"
-import type { MemoService } from "../services/memo-service"
+import type { MemoServiceLike } from "../services/memo-service"
 import { logger } from "../lib/logger"
 
 const BATCH_CAP_INTERVAL_SECONDS = 300 // 5 minutes
@@ -16,7 +16,7 @@ const BATCH_QUIET_INTERVAL_SECONDS = 30 // 30 seconds
 
 export interface MemoBatchWorkerDeps {
   pool: Pool
-  memoService: MemoService
+  memoService: MemoServiceLike
   jobQueue: JobQueueManager
 }
 

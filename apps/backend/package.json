@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit",
     "test": "bun run test:unit && bun run test:e2e",
     "test:unit": "bun test src/",
     "test:integration": "bun test tests/integration/",

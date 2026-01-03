@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg"
 import { withClient } from "../db"
 import { SearchRepository, type SearchResult, type ResolvedFilters } from "../repositories/search-repository"
-import { EmbeddingService } from "./embedding-service"
+import type { EmbeddingServiceLike } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
 
@@ -28,14 +28,14 @@ export interface SearchParams {
 
 export interface SearchServiceDependencies {
   pool: Pool
-  embeddingService: EmbeddingService
+  embeddingService: EmbeddingServiceLike
 }
 
 const DEFAULT_LIMIT = 20
 
 export class SearchService {
   private pool: Pool
-  private embeddingService: EmbeddingService
+  private embeddingService: EmbeddingServiceLike
 
   constructor(deps: SearchServiceDependencies) {
     this.pool = deps.pool

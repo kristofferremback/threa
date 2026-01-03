@@ -5,3 +5,8 @@ dist/
 *.log
 .DS_Store
 .claude/settings.local.json
+
+# Playwright
+test-results/
+playwright-report/
+.playwright-mcp/

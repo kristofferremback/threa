@@ -11,6 +11,7 @@ import { createSearchHandlers } from "./handlers/search-handlers"
 import { createEmojiHandlers } from "./handlers/emoji-handlers"
 import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { createCommandHandlers } from "./handlers/command-handlers"
+import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -75,39 +76,23 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/auth/logout", authHandlers.logout)
 
   if (authService instanceof StubAuthService) {
-    app.post("/api/dev/login", async (req, res) => {
-      const { email, name } = req.body as { email?: string; name?: string }
-
-      const { user, session } = await authService.devLogin(userService, { email, name })
-
-      res.cookie("wos_session", session, {
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-        path: "/",
-      })
-
-      res.json({ user })
+    const authStub = createAuthStubHandlers({
+      authStubService: authService,
+      userService,
+      workspaceService,
+      streamService,
     })
 
-    // Dev endpoint for joining workspaces (for testing multi-user scenarios)
-    app.post("/api/dev/workspaces/:workspaceId/join", auth, async (req, res) => {
-      const userId = req.userId!
-      const { workspaceId } = req.params
-      const { role } = req.body as { role?: "member" | "admin" }
-
-      const member = await workspaceService.addMember(workspaceId, userId, role || "member")
-      res.json({ member })
-    })
-
-    // Dev endpoint for joining streams (for testing membership)
-    app.post("/api/dev/workspaces/:workspaceId/streams/:streamId/join", auth, workspaceMember, async (req, res) => {
-      const userId = req.userId!
-      const { streamId } = req.params
-
-      const member = await streamService.addMember(streamId, userId)
-      res.json({ member })
-    })
+    app.get("/test-auth-login", authStub.getLoginPage)
+    app.post("/test-auth-login", authStub.handleLogin)
+    app.post("/api/dev/login", authStub.handleDevLogin)
+    app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
+    app.post(
+      "/api/dev/workspaces/:workspaceId/streams/:streamId/join",
+      auth,
+      workspaceMember,
+      authStub.handleStreamJoin
+    )
   }
 
   app.get("/api/auth/me", auth, authHandlers.me)
