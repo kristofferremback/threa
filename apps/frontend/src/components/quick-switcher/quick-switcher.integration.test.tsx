@@ -2,10 +2,26 @@ import type React from "react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { QuickSwitcher } from "./quick-switcher"
 import { mockStreamsList } from "@/test/fixtures"
 import { mockUsersList, mockMembersList } from "@/test/fixtures/users"
 import { mockSearchResultsList } from "@/test/fixtures/messages"
+
+// Create a fresh QueryClient for each test to avoid shared state
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = createTestQueryClient()
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
 
 // Note: DOM polyfills (ResizeObserver, Range, Element.getClientRects, etc.)
 // are in src/test/setup.ts which runs before tests via vitest config
@@ -115,6 +131,13 @@ vi.mock("@/hooks/use-workspaces", () => ({
   }),
 }))
 
+// Mock streams API - called by useQuery in useStreamItems for archived streams
+vi.mock("@/api/streams", () => ({
+  streamsApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+}))
+
 describe("QuickSwitcher Integration Tests", () => {
   const defaultProps = {
     workspaceId: "workspace_1",
@@ -133,20 +156,20 @@ describe("QuickSwitcher Integration Tests", () => {
 
   describe("dialog lifecycle", () => {
     it("should render when open=true", () => {
-      render(<QuickSwitcher {...defaultProps} open={true} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} open={true} />)
 
       expect(screen.getByRole("dialog")).toBeInTheDocument()
       expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
     })
 
     it("should not render dialog content when open=false", () => {
-      render(<QuickSwitcher {...defaultProps} open={false} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} open={false} />)
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
 
     it("should focus input when dialog opens", async () => {
-      render(<QuickSwitcher {...defaultProps} open={true} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} open={true} />)
 
       await waitFor(() => {
         expect(screen.getByLabelText("Quick switcher input")).toHaveFocus()
@@ -155,17 +178,30 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should reset query when dialog closes and reopens", async () => {
       const user = userEvent.setup()
-      const { rerender } = render(<QuickSwitcher {...defaultProps} open={true} />)
+      const queryClient = createTestQueryClient()
+      const { rerender } = render(
+        <QueryClientProvider client={queryClient}>
+          <QuickSwitcher {...defaultProps} open={true} />
+        </QueryClientProvider>
+      )
 
       const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "test query")
       expect(input).toHaveTextContent("test query")
 
       // Close dialog
-      rerender(<QuickSwitcher {...defaultProps} open={false} />)
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <QuickSwitcher {...defaultProps} open={false} />
+        </QueryClientProvider>
+      )
 
       // Reopen dialog
-      rerender(<QuickSwitcher {...defaultProps} open={true} />)
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <QuickSwitcher {...defaultProps} open={true} />
+        </QueryClientProvider>
+      )
 
       await waitFor(() => {
         expect(screen.getByLabelText("Quick switcher input")).toHaveTextContent("")
@@ -175,7 +211,7 @@ describe("QuickSwitcher Integration Tests", () => {
     it("should call onOpenChange(false) when pressing Escape", async () => {
       const user = userEvent.setup()
       const onOpenChange = vi.fn()
-      render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
       await user.keyboard("{Escape}")
 
@@ -193,7 +229,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // Items are sorted alphabetically: #general, #random, Martin, My Notes
       it("should navigate down through results with ArrowDown", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         // Wait for items to render (sorted alphabetically)
         await waitFor(() => {
@@ -215,7 +251,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should navigate up through results with ArrowUp", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         await waitFor(() => {
           expect(screen.getByText("#general")).toBeInTheDocument()
@@ -239,7 +275,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should not go below last item with ArrowDown", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         await waitFor(() => {
           expect(screen.getByText("#general")).toBeInTheDocument()
@@ -263,7 +299,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should not go above first item with ArrowUp", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         await waitFor(() => {
           expect(screen.getByText("#general")).toBeInTheDocument()
@@ -282,7 +318,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should select current item with Enter", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         await waitFor(() => {
           expect(screen.getByText("#general")).toBeInTheDocument()
@@ -299,7 +335,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should close dialog with Escape", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         await user.keyboard("{Escape}")
 
@@ -309,7 +345,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should close dialog with Ctrl+[", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         // Focus the input first
         const input = screen.getByLabelText("Quick switcher input")
@@ -330,7 +366,7 @@ describe("QuickSwitcher Integration Tests", () => {
     describe("when popover is open", () => {
       it("should navigate popover items with ArrowDown", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         // Switch to search mode first
         const input = screen.getByLabelText("Quick switcher input")
@@ -359,7 +395,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should navigate popover items with ArrowUp", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
@@ -386,7 +422,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should select popover item with Enter", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
@@ -414,7 +450,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should select popover item with Tab", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
@@ -443,7 +479,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should close popover (not dialog) with Escape", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
@@ -469,7 +505,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should return focus to input after popover closes", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         const input = screen.getByLabelText("Quick switcher input")
         await user.type(input, "?")
@@ -499,7 +535,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
   describe("mode switching", () => {
     it("should start in stream mode by default", () => {
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
       // Stream tab should be active
@@ -508,7 +544,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should switch to command mode when typing >", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, ">")
@@ -521,7 +557,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should switch to search mode when typing ?", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "?")
@@ -536,7 +572,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should switch mode when clicking mode tabs", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Click on Commands tab
       const commandsTab = screen.getByRole("tab", { name: /command palette/i })
@@ -549,7 +585,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should reset selectedIndex when mode changes", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       await waitFor(() => {
         expect(screen.getByText("#general")).toBeInTheDocument()
@@ -579,7 +615,7 @@ describe("QuickSwitcher Integration Tests", () => {
   describe("mode prefix behavior", () => {
     it("should switch to search mode when typing ? and allow continued typing", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode
       const input = screen.getByLabelText("Quick switcher input")
@@ -606,7 +642,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should preserve > prefix when typing in stream mode", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
 
@@ -625,7 +661,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should not clear query when switching to search mode by typing ?", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
 
@@ -648,7 +684,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should handle paste with ? prefix correctly", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
 
@@ -668,7 +704,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should normalize redundant ? prefixes on paste", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
 
@@ -688,7 +724,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should normalize redundant > prefixes on paste", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
 
@@ -708,7 +744,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should allow switching from search mode to stream mode by clearing prefix", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode, switch to search mode
       const input = screen.getByLabelText("Quick switcher input")
@@ -735,7 +771,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should allow switching from search mode to command mode by changing prefix", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode, switch to search mode
       const input = screen.getByLabelText("Quick switcher input")
@@ -762,7 +798,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should switch from search mode to stream mode when pasting text without prefix", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // Start in search mode
       const searchEditor = screen.getByLabelText("Search query input")
@@ -785,7 +821,7 @@ describe("QuickSwitcher Integration Tests", () => {
   describe("mode tab keyboard navigation", () => {
     it("should allow clicking between tabs to change mode", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Start in stream mode
       expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
@@ -816,7 +852,7 @@ describe("QuickSwitcher Integration Tests", () => {
     })
 
     it("should have accessible tabs with proper ARIA attributes", () => {
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // All tabs should be present with proper roles
       const tabs = screen.getAllByRole("tab")
@@ -835,7 +871,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should refocus input when pressing ArrowDown while on tabs", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Focus a tab
       const streamsTab = screen.getByRole("tab", { name: /stream search/i })
@@ -852,7 +888,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should refocus input when pressing ArrowUp while on tabs", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       // Focus a tab
       const streamsTab = screen.getByRole("tab", { name: /stream search/i })
@@ -871,7 +907,7 @@ describe("QuickSwitcher Integration Tests", () => {
   describe("search mode", () => {
     it("should show filter badges when typing filter syntax", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // Get the TipTap editor (it has aria-label, not placeholder)
       const editor = screen.getByLabelText("Search query input")
@@ -888,7 +924,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should remove filter when clicking badge X", async () => {
       const user = userEvent.setup({ pointerEventsCheck: 0 })
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       const editor = screen.getByLabelText("Search query input")
       await user.click(editor)
@@ -911,7 +947,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should add filter via dropdown menu", async () => {
       const user = userEvent.setup({ pointerEventsCheck: 0 })
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // Wait for search mode to render
       await waitFor(() => {
@@ -943,7 +979,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // This test verifies that search is called when the component renders
       // with search content. Full debounce behavior testing with TipTap
       // requires browser-level DOM support not available in jsdom.
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // Search should not be called immediately with empty query
       expect(mockSearchState.search).not.toHaveBeenCalled()
@@ -957,7 +993,7 @@ describe("QuickSwitcher Integration Tests", () => {
       mockSearchState.results = mockSearchResultsList
 
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       const editor = screen.getByLabelText("Search query input")
       await user.click(editor)
@@ -975,7 +1011,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const onOpenChange = vi.fn()
 
       const user = userEvent.setup({ pointerEventsCheck: 0 })
-      render(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
 
       const editor = screen.getByLabelText("Search query input")
       await user.click(editor)
@@ -999,7 +1035,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const onOpenChange = vi.fn()
 
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
 
       const editor = screen.getByLabelText("Search query input")
       await user.click(editor)
@@ -1024,7 +1060,7 @@ describe("QuickSwitcher Integration Tests", () => {
       const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => null)
 
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" onOpenChange={onOpenChange} />)
 
       const editor = screen.getByLabelText("Search query input")
       await user.click(editor)
@@ -1050,7 +1086,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // Disable pointer-events check due to Radix Dialog overlay
       const user = userEvent.setup({ pointerEventsCheck: 0 })
       const onOpenChange = vi.fn()
-      render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
       await waitFor(() => {
         expect(screen.getByText("#general")).toBeInTheDocument()
@@ -1068,7 +1104,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should open in new tab with Cmd+click", async () => {
       const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => null)
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       await waitFor(() => {
         expect(screen.getByText("#general")).toBeInTheDocument()
@@ -1084,7 +1120,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should open in new tab with Ctrl+click", async () => {
       const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => null)
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       await waitFor(() => {
         expect(screen.getByText("#general")).toBeInTheDocument()
@@ -1101,7 +1137,7 @@ describe("QuickSwitcher Integration Tests", () => {
     it("should close dialog after selection via Enter", async () => {
       const user = userEvent.setup()
       const onOpenChange = vi.fn()
-      render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
       await waitFor(() => {
         expect(screen.getByText("My Notes")).toBeInTheDocument()
@@ -1117,7 +1153,7 @@ describe("QuickSwitcher Integration Tests", () => {
   describe("stream filtering", () => {
     it("should filter streams by name", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       await waitFor(() => {
         expect(screen.getByText("My Notes")).toBeInTheDocument()
@@ -1136,7 +1172,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
     it("should show empty message when no streams match", async () => {
       const user = userEvent.setup()
-      render(<QuickSwitcher {...defaultProps} />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
       const input = screen.getByLabelText("Quick switcher input")
       await user.type(input, "nonexistent")
@@ -1149,13 +1185,13 @@ describe("QuickSwitcher Integration Tests", () => {
 
   describe("initial mode", () => {
     it("should start in command mode when initialMode is command", () => {
-      render(<QuickSwitcher {...defaultProps} initialMode="command" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="command" />)
 
       expect(screen.getByLabelText("Quick switcher input")).toBeInTheDocument()
     })
 
     it("should start in search mode when initialMode is search", () => {
-      render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
       // RichInput uses TipTap which has aria-label instead of placeholder
       expect(screen.getByLabelText("Search query input")).toBeInTheDocument()
@@ -1170,7 +1206,7 @@ describe("QuickSwitcher Integration Tests", () => {
   describe("DIAGNOSTIC: test environment behavior", () => {
     describe("pointer-events behavior", () => {
       it("should show body has pointer-events:none when dialog is open", async () => {
-        render(<QuickSwitcher {...defaultProps} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         // Check what styles Radix Dialog applies to body
         const bodyStyle = window.getComputedStyle(document.body)
@@ -1184,7 +1220,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should verify where suggestion list renders in DOM", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1228,7 +1264,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should trace Escape key event flow", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1265,7 +1301,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should trace Enter key event flow", async () => {
         mockSearchState.results = mockSearchResultsList
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1300,7 +1336,7 @@ describe("QuickSwitcher Integration Tests", () => {
         // This test checks if the popover active state is properly communicated
         // We'll spy on console to see the state changes
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1340,7 +1376,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
 
@@ -1376,7 +1412,7 @@ describe("QuickSwitcher Integration Tests", () => {
       // "in:@stream_channel1" instead of "in:#general" or "in:General"
       it("should display in:#slug when selecting a channel from in: filter", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1408,7 +1444,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
       it("should display in:@slug when selecting a user from in: filter (DM)", async () => {
         const user = userEvent.setup()
-        render(<QuickSwitcher {...defaultProps} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1438,7 +1474,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should close dialog when pressing Escape in stream mode", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} />)
 
         // Verify dialog is open
         expect(screen.getByRole("dialog")).toBeInTheDocument()
@@ -1457,7 +1493,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should close dialog when pressing Escape in search mode with no popover", async () => {
         const user = userEvent.setup()
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1481,7 +1517,7 @@ describe("QuickSwitcher Integration Tests", () => {
         // The real fix is pointer-events-auto on suggestion-list.tsx:105
         const user = userEvent.setup({ pointerEventsCheck: 0 })
         const onOpenChange = vi.fn()
-        render(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} onOpenChange={onOpenChange} initialMode="search" />)
 
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
@@ -1518,7 +1554,7 @@ describe("QuickSwitcher Integration Tests", () => {
       it("should not respond to cmd+f keyboard shortcut", async () => {
         const onOpenChange = vi.fn()
         // Start with dialog closed
-        render(<QuickSwitcher {...defaultProps} open={false} onOpenChange={onOpenChange} />)
+        renderWithProviders(<QuickSwitcher {...defaultProps} open={false} onOpenChange={onOpenChange} />)
 
         // Simulate cmd+f at the document level
         const event = new KeyboardEvent("keydown", {
