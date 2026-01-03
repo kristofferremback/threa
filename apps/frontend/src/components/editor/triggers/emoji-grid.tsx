@@ -68,13 +68,14 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
   // Reset selection when items change
   useEffect(() => {
     setSelectedIndex(0)
-  }, [items])
+    virtualizer.scrollToIndex(0)
+  }, [items, virtualizer])
 
-  // Scroll selected row into view
-  useEffect(() => {
-    const selectedRow = Math.floor(selectedIndex / GRID_COLUMNS)
-    virtualizer.scrollToIndex(selectedRow, { align: "auto" })
-  }, [selectedIndex, virtualizer])
+  // Scroll to row - only called from keyboard navigation, not hover
+  const scrollToRow = (index: number) => {
+    const row = Math.floor(index / GRID_COLUMNS)
+    virtualizer.scrollToIndex(row, { align: "auto" })
+  }
 
   const { refs, floatingStyles } = useFloating({
     placement: "bottom-start",
@@ -103,34 +104,44 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
       switch (event.key) {
         case "ArrowUp": {
           event.preventDefault()
+          let newIndex: number
           if (currentRow > 0) {
-            setSelectedIndex(selectedIndex - GRID_COLUMNS)
+            newIndex = selectedIndex - GRID_COLUMNS
           } else {
             // Wrap to last row, same column (or last item if column doesn't exist)
             const targetIndex = (totalRows - 1) * GRID_COLUMNS + currentCol
-            setSelectedIndex(Math.min(targetIndex, items.length - 1))
+            newIndex = Math.min(targetIndex, items.length - 1)
           }
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
           return true
         }
         case "ArrowDown": {
           event.preventDefault()
           const nextRowIndex = selectedIndex + GRID_COLUMNS
+          let newIndex: number
           if (nextRowIndex < items.length) {
-            setSelectedIndex(nextRowIndex)
+            newIndex = nextRowIndex
           } else {
             // Wrap to first row, same column
-            setSelectedIndex(currentCol)
+            newIndex = currentCol
           }
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
           return true
         }
         case "ArrowLeft": {
           event.preventDefault()
-          setSelectedIndex((prev) => (prev - 1 + items.length) % items.length)
+          const newIndex = (selectedIndex - 1 + items.length) % items.length
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
           return true
         }
         case "ArrowRight": {
           event.preventDefault()
-          setSelectedIndex((prev) => (prev + 1) % items.length)
+          const newIndex = (selectedIndex + 1) % items.length
+          setSelectedIndex(newIndex)
+          scrollToRow(newIndex)
           return true
         }
         case "Tab":
