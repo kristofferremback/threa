@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { workspaceKeys } from "./use-workspaces"
 import type { WorkspaceBootstrap, EmojiEntry } from "@threa/types"
 
@@ -15,25 +15,31 @@ interface WorkspaceEmojiData {
 }
 
 /**
- * Hook to look up emojis from cached workspace data.
- * Uses React Query cache for synchronous lookups.
+ * Hook to look up emojis from workspace bootstrap data.
+ * Subscribes to React Query cache updates so it re-renders when data loads.
  */
 export function useWorkspaceEmoji(workspaceId: string): WorkspaceEmojiData {
   const queryClient = useQueryClient()
 
-  const getBootstrapData = useCallback(() => {
-    return queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId))
-  }, [queryClient, workspaceId])
+  // Subscribe to the bootstrap query cache - this will re-render when data changes
+  // We don't fetch, just read from cache (the bootstrap query is made elsewhere)
+  const { data: bootstrap } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    queryFn: () => queryClient.getQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId)) ?? null,
+    // Don't refetch - we just want to subscribe to cache updates
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
 
   const emojis = useMemo(() => {
-    const bootstrap = getBootstrapData()
     return bootstrap?.emojis ?? []
-  }, [getBootstrapData])
+  }, [bootstrap])
 
   const emojiWeights = useMemo(() => {
-    const bootstrap = getBootstrapData()
     return bootstrap?.emojiWeights ?? {}
-  }, [getBootstrapData])
+  }, [bootstrap])
 
   const emojiMap = useMemo(() => {
     const map = new Map<string, EmojiEntry>()
