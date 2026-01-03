@@ -37,6 +37,13 @@ async function ensureTestDatabase(): Promise<void> {
 
 export default async function globalSetup(): Promise<void> {
   console.log("\n=== Browser E2E Global Setup ===\n")
-  await ensureTestDatabase()
+
+  if (process.env.CI) {
+    // In CI, database is created by the workflow before tests run
+    console.log("CI environment detected - skipping local database setup")
+  } else {
+    await ensureTestDatabase()
+  }
+
   console.log("=== Setup Complete ===\n")
 }
