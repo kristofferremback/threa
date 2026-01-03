@@ -19,9 +19,15 @@
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",
     "test:e2e": "bun run --cwd apps/backend test:e2e",
+    "test:browser": "bunx playwright test",
+    "test:browser:ui": "bunx playwright test --ui",
+    "test:browser:headed": "bunx playwright test --headed",
+    "test:browser:backend": "bun apps/backend/src/index.ts",
+    "test:browser:frontend": "bun run --cwd apps/frontend dev",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/bun": "latest",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",

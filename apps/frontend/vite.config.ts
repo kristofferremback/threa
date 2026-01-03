@@ -3,6 +3,10 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import path from "path"
 
+// Backend port can be configured via env var for browser E2E tests
+const backendPort = process.env.VITE_BACKEND_PORT || "3001"
+const backendTarget = `http://localhost:${backendPort}`
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -20,16 +24,16 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/api": {
-        target: "http://localhost:3001",
+        target: backendTarget,
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "http://localhost:3001",
+        target: backendTarget,
         changeOrigin: true,
         ws: true,
       },
       "/test-auth-login": {
-        target: "http://localhost:3001",
+        target: backendTarget,
         changeOrigin: true,
       },
     },
