@@ -3,8 +3,8 @@ import { MessageFormatter } from "./message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { PoolClient } from "pg"
 
-const mockFindUsersByIds = mock(() => Promise.resolve([]))
-const mockFindPersonasByIds = mock(() => Promise.resolve([]))
+const mockFindUsersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
+const mockFindPersonasByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
 
 mock.module("../../repositories/user-repository", () => ({
   UserRepository: {

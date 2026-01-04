@@ -106,19 +106,24 @@ function getNodeText(node: JSONContent): string {
     const displayText = isImage && imageIndex ? `Image #${imageIndex}` : filename
     return `[${displayText}](attachment:${id})`
   }
+  if (node.type === "emoji") {
+    const shortcode = node.attrs?.shortcode as string
+    return shortcode ? `:${shortcode}:` : ""
+  }
   if (node.type === "text") return node.text ?? ""
   return ""
 }
 
 /**
- * Check if a node is an atom (mention, channel, command, attachment)
+ * Check if a node is an atom (mention, channel, command, attachment, emoji)
  */
 function isAtomNode(node: JSONContent): boolean {
   return (
     node.type === "mention" ||
     node.type === "channelLink" ||
     node.type === "slashCommand" ||
-    node.type === "attachmentReference"
+    node.type === "attachmentReference" ||
+    node.type === "emoji"
   )
 }
 
@@ -243,10 +248,26 @@ function serializeInline(nodes: JSONContent[] | undefined): string {
 export type MentionTypeLookup = (slug: string) => "user" | "persona" | "broadcast" | "me"
 
 /**
+ * Lookup function to get emoji character from shortcode.
+ * Returns null if shortcode is not a valid emoji.
+ */
+export type EmojiLookup = (shortcode: string) => string | null
+
+interface ParseOptions {
+  getMentionType?: MentionTypeLookup
+  getEmoji?: EmojiLookup
+}
+
+/**
  * Parse Markdown string to ProseMirror JSON
  * This is a simple parser for restoring drafts - Tiptap handles display
  */
-export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLookup): JSONContent {
+export function parseMarkdown(
+  markdown: string,
+  getMentionType?: MentionTypeLookup,
+  getEmoji?: EmojiLookup
+): JSONContent {
+  const options: ParseOptions = { getMentionType, getEmoji }
   if (!markdown.trim()) {
     return { type: "doc", content: [{ type: "paragraph" }] }
   }
@@ -282,7 +303,7 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
       content.push({
         type: "heading",
         attrs: { level: headingMatch[1].length },
-        content: parseInlineMarkdown(headingMatch[2], getMentionType),
+        content: parseInlineMarkdown(headingMatch[2], options),
       })
       i++
       continue
@@ -300,7 +321,7 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
         content: [
           {
             type: "paragraph",
-            content: parseInlineMarkdown(quoteLines.join("\n"), getMentionType),
+            content: parseInlineMarkdown(quoteLines.join("\n"), options),
           },
         ],
       })
@@ -316,7 +337,7 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
           content: [
             {
               type: "paragraph",
-              content: parseInlineMarkdown(lines[i].replace(/^[-*]\s/, ""), getMentionType),
+              content: parseInlineMarkdown(lines[i].replace(/^[-*]\s/, ""), options),
             },
           ],
         })
@@ -335,7 +356,7 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
           content: [
             {
               type: "paragraph",
-              content: parseInlineMarkdown(lines[i].replace(/^\d+\.\s/, ""), getMentionType),
+              content: parseInlineMarkdown(lines[i].replace(/^\d+\.\s/, ""), options),
             },
           ],
         })
@@ -361,7 +382,7 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
     // Regular paragraph
     content.push({
       type: "paragraph",
-      content: parseInlineMarkdown(line, getMentionType),
+      content: parseInlineMarkdown(line, options),
     })
     i++
   }
@@ -369,10 +390,11 @@ export function parseMarkdown(markdown: string, getMentionType?: MentionTypeLook
   return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] }
 }
 
-function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): JSONContent[] {
+function parseInlineMarkdown(text: string, options: ParseOptions = {}): JSONContent[] {
   if (!text) return []
 
   const result: JSONContent[] = []
+  const { getMentionType, getEmoji } = options
 
   // Default lookup for mention types (without context, can't determine "me")
   const lookupMentionType: MentionTypeLookup =
@@ -408,8 +430,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
   //   15-16: Code        `text`          → groups: full, text
   //   17-18: Mention     @slug           → groups: full, slug
   //   19-20: Channel     #slug           → groups: full, slug
+  //   21-22: Emoji       :shortcode:     → groups: full, shortcode
   const inlinePattern =
-    /(\[([^\]]+)\]\(attachment:([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
+    /(\[([^\]]+)\]\(attachment:([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))|(:([\w+-]+):)/g
 
   let lastIndex = 0
   let match
@@ -445,7 +468,7 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
       const linkText = match[5]
       const linkUrl = match[6]
       // Recursively parse the link text for nested formatting
-      const innerContent = parseInlineMarkdown(linkText, getMentionType)
+      const innerContent = parseInlineMarkdown(linkText, options)
       for (const node of innerContent) {
         // Add link mark to all nodes (text, mentions, channels, etc.)
         result.push({
@@ -456,7 +479,7 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
     } else if (match[7]) {
       // BoldItalic: ***text*** - apply both marks
       const boldItalicText = match[8]
-      const innerContent = parseInlineMarkdown(boldItalicText, getMentionType)
+      const innerContent = parseInlineMarkdown(boldItalicText, options)
       for (const node of innerContent) {
         // Add both bold and italic marks to all nodes
         result.push({
@@ -467,7 +490,7 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
     } else if (match[9]) {
       // Bold: **text**
       const boldText = match[10]
-      const innerContent = parseInlineMarkdown(boldText, getMentionType)
+      const innerContent = parseInlineMarkdown(boldText, options)
       for (const node of innerContent) {
         // Add bold mark to all nodes (text, mentions, channels, etc.)
         result.push({
@@ -478,7 +501,7 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
     } else if (match[11]) {
       // Italic: *text*
       const italicText = match[12]
-      const innerContent = parseInlineMarkdown(italicText, getMentionType)
+      const innerContent = parseInlineMarkdown(italicText, options)
       for (const node of innerContent) {
         // Add italic mark to all nodes (text, mentions, channels, etc.)
         result.push({
@@ -489,7 +512,7 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
     } else if (match[13]) {
       // Strike: ~~text~~
       const strikeText = match[14]
-      const innerContent = parseInlineMarkdown(strikeText, getMentionType)
+      const innerContent = parseInlineMarkdown(strikeText, options)
       for (const node of innerContent) {
         // Add strike mark to all nodes (text, mentions, channels, etc.)
         result.push({
@@ -518,6 +541,19 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
         type: "channelLink",
         attrs: { id: slug, slug, name: slug },
       })
+    } else if (match[21]) {
+      // Emoji: :shortcode:
+      const shortcode = match[22]
+      const emoji = getEmoji?.(shortcode)
+      if (emoji) {
+        result.push({
+          type: "emoji",
+          attrs: { shortcode, emoji },
+        })
+      } else {
+        // Unknown shortcode - keep as text
+        result.push({ type: "text", text: match[0] })
+      }
     }
 
     lastIndex = match.index + match[0].length

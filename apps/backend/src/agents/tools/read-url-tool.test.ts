@@ -40,7 +40,7 @@ describe("read-url-tool", () => {
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve(html),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com" })
@@ -63,7 +63,7 @@ describe("read-url-tool", () => {
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve("<html><head><title>Test</title></head><body></body></html>"),
       } as Response)
-    })
+    }) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     await tool.invoke({ url: "https://example.com" })
@@ -80,7 +80,7 @@ describe("read-url-tool", () => {
         headers: new Headers({ "content-type": "application/pdf" }),
         text: () => Promise.resolve("binary content"),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com/file.pdf" })
@@ -98,7 +98,7 @@ describe("read-url-tool", () => {
         statusText: "Not Found",
         headers: new Headers(),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com/missing" })
@@ -108,7 +108,7 @@ describe("read-url-tool", () => {
   })
 
   it("should return error on network failure", async () => {
-    globalThis.fetch = mock(() => Promise.reject(new Error("Connection refused")))
+    globalThis.fetch = mock(() => Promise.reject(new Error("Connection refused"))) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com" })
@@ -128,7 +128,7 @@ describe("read-url-tool", () => {
         headers: new Headers({ "content-type": "text/html" }),
         text: () => Promise.resolve(html),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com" })
@@ -146,7 +146,7 @@ describe("read-url-tool", () => {
         headers: new Headers({ "content-type": "text/plain" }),
         text: () => Promise.resolve("This is plain text content."),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com/file.txt" })
@@ -159,7 +159,7 @@ describe("read-url-tool", () => {
     const abortError = new Error("The operation was aborted")
     abortError.name = "AbortError"
 
-    globalThis.fetch = mock(() => Promise.reject(abortError))
+    globalThis.fetch = mock(() => Promise.reject(abortError)) as unknown as typeof fetch
 
     const tool = createReadUrlTool()
     const result = await tool.invoke({ url: "https://example.com" })
@@ -314,7 +314,7 @@ describe("read-url-tool", () => {
           headers: new Headers({ location: "http://169.254.169.254/metadata" }),
           text: () => Promise.resolve(""),
         } as Response)
-      )
+      ) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
       const result = await tool.invoke({ url: "https://example.com/redirect" })
@@ -341,7 +341,7 @@ describe("read-url-tool", () => {
           headers: new Headers({ "content-type": "text/html" }),
           text: () => Promise.resolve("<html><head><title>Final</title></head><body>Content</body></html>"),
         } as Response)
-      })
+      }) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
       const result = await tool.invoke({ url: "https://example.com/start" })
@@ -359,7 +359,7 @@ describe("read-url-tool", () => {
           headers: new Headers({ location: "https://example.com/next" }),
           text: () => Promise.resolve(""),
         } as Response)
-      )
+      ) as unknown as typeof fetch
 
       const tool = createReadUrlTool()
       const result = await tool.invoke({ url: "https://example.com/loop" })

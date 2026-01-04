@@ -3,7 +3,18 @@ import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 
 // Mock the database dependencies
-const mockFindById = mock(() => Promise.resolve(null))
+const mockFindById = mock(() =>
+  Promise.resolve(
+    null as {
+      id: string
+      authorType: string
+      authorId: string
+      sequence: bigint
+      content: string
+      contentFormat: string
+    } | null
+  )
+)
 
 mock.module("../repositories", () => ({
   MessageRepository: {

@@ -27,6 +27,7 @@ import { createS3Storage } from "./lib/storage/s3-client"
 import { createBroadcastListener } from "./lib/broadcast-listener"
 import { createCompanionListener } from "./lib/companion-listener"
 import { createNamingListener } from "./lib/naming-listener"
+import { createEmojiUsageListener } from "./lib/emoji-usage-listener"
 import { createEmbeddingListener } from "./lib/embedding-listener"
 import { createBoundaryExtractionListener } from "./lib/boundary-extraction-listener"
 import { createMemoAccumulator } from "./lib/memo-accumulator"
@@ -229,6 +230,7 @@ export async function startServer(): Promise<ServerInstance> {
   const broadcastListener = createBroadcastListener(pool, io, userSocketRegistry)
   const companionListener = createCompanionListener(pool, jobQueue)
   const namingListener = createNamingListener(pool, jobQueue)
+  const emojiUsageListener = createEmojiUsageListener(pool)
   const embeddingListener = createEmbeddingListener(pool, jobQueue)
   const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
   const memoAccumulator = createMemoAccumulator(pool)
@@ -238,6 +240,7 @@ export async function startServer(): Promise<ServerInstance> {
   await companionListener.start()
   await mentionInvokeListener.start()
   await namingListener.start()
+  await emojiUsageListener.start()
   await embeddingListener.start()
   await boundaryExtractionListener.start()
   await memoAccumulator.start()
@@ -256,6 +259,7 @@ export async function startServer(): Promise<ServerInstance> {
     await commandListener.stop()
     await embeddingListener.stop()
     await boundaryExtractionListener.stop()
+    await emojiUsageListener.stop()
     await namingListener.stop()
     await mentionInvokeListener.stop()
     await companionListener.stop()

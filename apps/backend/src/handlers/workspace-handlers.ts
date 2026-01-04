@@ -65,11 +65,12 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
-      const [workspace, members, streams, personas] = await Promise.all([
+      const [workspace, members, streams, personas, emojiWeights] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
         streamService.list(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
+        workspaceService.getEmojiWeights(workspaceId, userId),
       ])
 
       if (!workspace) {
@@ -107,6 +108,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
           users,
           personas,
           emojis: getEmojiList(),
+          emojiWeights,
           commands,
           unreadCounts,
         },

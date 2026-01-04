@@ -9,6 +9,7 @@ import { CodeBlockComponent } from "./code-block"
 import { MentionExtension, type MentionOptions } from "./triggers/mention-extension"
 import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extension"
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
+import { EmojiExtension, type EmojiExtensionOptions } from "./triggers/emoji-extension"
 import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode } from "./atom-aware-marks"
 import { AttachmentReferenceExtension } from "./attachment-reference-extension"
 
@@ -26,6 +27,9 @@ interface CreateEditorExtensionsOptions {
   mentionSuggestion?: MentionOptions["suggestion"]
   channelSuggestion?: ChannelOptions["suggestion"]
   commandSuggestion?: CommandOptions["suggestion"]
+  emojiSuggestion?: EmojiExtensionOptions["suggestion"]
+  /** Look up emoji by shortcode - used for input rule auto-convert */
+  toEmoji?: (shortcode: string) => string | null
 }
 
 export function createEditorExtensions(options: CreateEditorExtensionsOptions | string) {
@@ -125,6 +129,16 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
     extensions.push(
       CommandExtension.configure({
         suggestion: config.commandSuggestion,
+      })
+    )
+  }
+
+  // Add emoji extension if suggestion config provided
+  if (config.emojiSuggestion && config.toEmoji) {
+    extensions.push(
+      EmojiExtension.configure({
+        suggestion: config.emojiSuggestion,
+        toEmoji: config.toEmoji,
       })
     )
   }

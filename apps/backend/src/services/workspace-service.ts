@@ -1,6 +1,12 @@
 import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
-import { WorkspaceRepository, Workspace, WorkspaceMember, OutboxRepository } from "../repositories"
+import {
+  WorkspaceRepository,
+  Workspace,
+  WorkspaceMember,
+  OutboxRepository,
+  EmojiUsageRepository,
+} from "../repositories"
 import { UserRepository, User } from "../repositories/user-repository"
 import { PersonaRepository, Persona } from "../repositories/persona-repository"
 import { workspaceId } from "../lib/id"
@@ -93,5 +99,9 @@ export class WorkspaceService {
 
   async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
     return withClient(this.pool, (client) => PersonaRepository.listForWorkspace(client, workspaceId))
+  }
+
+  async getEmojiWeights(workspaceId: string, userId: string): Promise<Record<string, number>> {
+    return withClient(this.pool, (client) => EmojiUsageRepository.getWeights(client, workspaceId, userId))
   }
 }

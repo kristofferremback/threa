@@ -72,6 +72,10 @@ export interface EmojiEntry {
   shortcode: string
   emoji: string
   type: "native" | "custom"
+  group: string
+  order: number
+  /** All shortcodes including aliases (for search matching) */
+  aliases: string[]
 }
 
 export interface CommandInfo {
@@ -87,6 +91,7 @@ export interface WorkspaceBootstrap {
   users: User[]
   personas: Persona[]
   emojis: EmojiEntry[]
+  emojiWeights: Record<string, number>
   commands: CommandInfo[]
   unreadCounts: Record<string, number>
 }
