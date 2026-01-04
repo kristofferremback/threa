@@ -10,6 +10,15 @@ export interface PendingAttachment {
   error?: string
 }
 
+export interface UploadResult {
+  /** The uploaded attachment */
+  attachment: PendingAttachment
+  /** For images, the sequential index (1, 2, 3...). Null for non-images. */
+  imageIndex: number | null
+  /** Temporary ID used during upload - use this to track the node */
+  tempId: string
+}
+
 export interface UseAttachmentsReturn {
   /** Current pending attachments */
   pendingAttachments: PendingAttachment[]
@@ -17,6 +26,8 @@ export interface UseAttachmentsReturn {
   fileInputRef: RefObject<HTMLInputElement | null>
   /** Handler for file input change event */
   handleFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
+  /** Upload a file programmatically (for paste/drop). Returns temp ID for tracking. */
+  uploadFile: (file: File) => Promise<UploadResult>
   /** Remove an attachment by ID */
   removeAttachment: (id: string) => void
   /** IDs of successfully uploaded attachments */
@@ -29,10 +40,13 @@ export interface UseAttachmentsReturn {
   clear: () => void
   /** Restore attachments from saved state */
   restore: (attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>) => void
+  /** Current image count for numbering */
+  imageCount: number
 }
 
 export function useAttachments(workspaceId: string): UseAttachmentsReturn {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
+  const [imageCount, setImageCount] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = useCallback(
@@ -98,6 +112,78 @@ export function useAttachments(workspaceId: string): UseAttachmentsReturn {
     [workspaceId]
   )
 
+  // Use ref to track image count synchronously for proper indexing
+  const imageCountRef = useRef(imageCount)
+  imageCountRef.current = imageCount
+
+  const uploadFile = useCallback(
+    async (file: File): Promise<UploadResult> => {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      const isImage = file.type.startsWith("image/")
+      let assignedImageIndex: number | null = null
+
+      // Assign image index immediately if it's an image
+      // Use ref for synchronous access, then update state
+      if (isImage) {
+        assignedImageIndex = imageCountRef.current + 1
+        imageCountRef.current = assignedImageIndex
+        setImageCount(assignedImageIndex)
+      }
+
+      const pendingAttachment: PendingAttachment = {
+        id: tempId,
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        status: "uploading",
+      }
+
+      // Add as uploading
+      setPendingAttachments((prev) => [...prev, pendingAttachment])
+
+      try {
+        const attachment = await attachmentsApi.upload(workspaceId, file)
+
+        if (!attachment || !attachment.id) {
+          throw new Error("Invalid response: missing attachment data")
+        }
+
+        const uploadedAttachment: PendingAttachment = {
+          id: attachment.id,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          status: "uploaded",
+        }
+
+        // Replace temp with real attachment
+        setPendingAttachments((prev) => prev.map((a) => (a.id === tempId ? uploadedAttachment : a)))
+
+        return {
+          attachment: uploadedAttachment,
+          imageIndex: assignedImageIndex,
+          tempId,
+        }
+      } catch (err) {
+        const errorAttachment: PendingAttachment = {
+          ...pendingAttachment,
+          status: "error",
+          error: err instanceof Error ? err.message : "Upload failed",
+        }
+
+        // Mark as error
+        setPendingAttachments((prev) => prev.map((a) => (a.id === tempId ? errorAttachment : a)))
+
+        return {
+          attachment: errorAttachment,
+          imageIndex: assignedImageIndex,
+          tempId,
+        }
+      }
+    },
+    [workspaceId]
+  )
+
   const removeAttachment = useCallback(
     async (attachmentId: string) => {
       const attachment = pendingAttachments.find((a) => a.id === attachmentId)
@@ -120,6 +206,8 @@ export function useAttachments(workspaceId: string): UseAttachmentsReturn {
 
   const clear = useCallback(() => {
     setPendingAttachments([])
+    setImageCount(0)
+    imageCountRef.current = 0
   }, [])
 
   const restore = useCallback(
@@ -130,6 +218,10 @@ export function useAttachments(workspaceId: string): UseAttachmentsReturn {
           status: "uploaded" as const,
         }))
       )
+      // Count images for proper numbering
+      const restoredImageCount = attachments.filter((a) => a.mimeType.startsWith("image/")).length
+      setImageCount(restoredImageCount)
+      imageCountRef.current = restoredImageCount
     },
     []
   )
@@ -145,11 +237,13 @@ export function useAttachments(workspaceId: string): UseAttachmentsReturn {
     pendingAttachments,
     fileInputRef,
     handleFileSelect,
+    uploadFile,
     removeAttachment,
     uploadedIds,
     isUploading,
     hasFailed,
     clear,
     restore,
+    imageCount,
   }
 }

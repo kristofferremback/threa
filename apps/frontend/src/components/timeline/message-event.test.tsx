@@ -57,6 +57,7 @@ vi.mock("@/components/ui/markdown-content", () => ({
       {content}
     </div>
   ),
+  AttachmentProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
 vi.mock("@/components/relative-time", () => ({

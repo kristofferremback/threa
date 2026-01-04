@@ -158,6 +158,8 @@ export function DraftThreadPanel({
             onRemoveAttachment={composer.handleRemoveAttachment}
             fileInputRef={composer.fileInputRef}
             onFileSelect={composer.handleFileSelect}
+            onFileUpload={composer.uploadFile}
+            imageCount={composer.imageCount}
             onSubmit={handleSubmit}
             canSubmit={composer.canSend}
             isSubmitting={composer.isSending}

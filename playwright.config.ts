@@ -13,8 +13,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Single worker for sequential execution
-  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  timeout: 60000, // 60s per test (auth flows can be slow)
+  reporter: process.env.CI ? [["github"], ["line"], ["html", { open: "never" }]] : "list",
+  timeout: 30000, // 30s per test
 
   use: {
     baseURL: "http://localhost:3000",
@@ -43,6 +43,12 @@ export default defineConfig({
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
         USE_STUB_AI: "true",
+        // MinIO S3-compatible storage for file uploads
+        S3_BUCKET: "threa-browser-test",
+        S3_REGION: "us-east-1",
+        S3_ACCESS_KEY_ID: "minioadmin",
+        S3_SECRET_ACCESS_KEY: "minioadmin",
+        S3_ENDPOINT: "http://localhost:9000",
       },
     },
     {

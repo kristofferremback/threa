@@ -89,15 +89,37 @@ function getNodeText(node: JSONContent): string {
     const name = node.attrs?.name as string
     return name ? `/${name}` : ""
   }
+  if (node.type === "attachmentReference") {
+    const id = node.attrs?.id as string
+    const filename = node.attrs?.filename as string
+    const mimeType = node.attrs?.mimeType as string
+    const imageIndex = node.attrs?.imageIndex as number | null
+    const status = node.attrs?.status as string
+
+    // Skip uploading/error nodes in serialization
+    if (status === "uploading" || status === "error") {
+      return ""
+    }
+
+    // Format: [Image #1](attachment:id) or [filename](attachment:id)
+    const isImage = mimeType?.startsWith("image/")
+    const displayText = isImage && imageIndex ? `Image #${imageIndex}` : filename
+    return `[${displayText}](attachment:${id})`
+  }
   if (node.type === "text") return node.text ?? ""
   return ""
 }
 
 /**
- * Check if a node is an atom (mention, channel, command)
+ * Check if a node is an atom (mention, channel, command, attachment)
  */
 function isAtomNode(node: JSONContent): boolean {
-  return node.type === "mention" || node.type === "channelLink" || node.type === "slashCommand"
+  return (
+    node.type === "mention" ||
+    node.type === "channelLink" ||
+    node.type === "slashCommand" ||
+    node.type === "attachmentReference"
+  )
 }
 
 /**
@@ -377,16 +399,17 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
 
   // Inline markdown pattern - captures each format type in separate groups
   // Group layout (order matters for matching priority):
-  //   1-3:   Link        [text](url)     → groups: full, text, url
-  //   4-5:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
-  //   6-7:   Bold        **text**        → groups: full, text
-  //   8-9:   Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
-  //   10-11: Strike      ~~text~~        → groups: full, text
-  //   12-13: Code        `text`          → groups: full, text
-  //   14-15: Mention     @slug           → groups: full, slug
-  //   16-17: Channel     #slug           → groups: full, slug
+  //   1-3:   Attachment  [text](attachment:id) → groups: full, text, id (must come before general links)
+  //   4-6:   Link        [text](url)     → groups: full, text, url
+  //   7-8:   BoldItalic  ***text***      → groups: full, text (must come before ** and *)
+  //   9-10:  Bold        **text**        → groups: full, text
+  //   11-12: Italic      *text*          → groups: full, text (with negative lookahead/behind for **)
+  //   13-14: Strike      ~~text~~        → groups: full, text
+  //   15-16: Code        `text`          → groups: full, text
+  //   17-18: Mention     @slug           → groups: full, slug
+  //   19-20: Channel     #slug           → groups: full, slug
   const inlinePattern =
-    /(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
+    /(\[([^\]]+)\]\(attachment:([^)]+)\))|(\[([^\]]+)\]\(([^)]+)\))|(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(?<!\*)(\*([^*]+?)\*)(?!\*)|(\~\~(.+?)\~\~)|(`([^`]+)`)|(@([\w-]+))|(#([\w-]+))/g
 
   let lastIndex = 0
   let match
@@ -398,9 +421,29 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
     }
 
     if (match[1]) {
+      // Attachment: [text](attachment:id)
+      const displayText = match[2]
+      const attachmentId = match[3]
+      // Parse display text to extract image index if present
+      const imageMatch = displayText.match(/^Image #(\d+)$/)
+      const imageIndex = imageMatch ? parseInt(imageMatch[1], 10) : null
+      const isImage = imageIndex !== null
+      result.push({
+        type: "attachmentReference",
+        attrs: {
+          id: attachmentId,
+          filename: isImage ? "" : displayText,
+          mimeType: isImage ? "image/unknown" : "application/octet-stream",
+          sizeBytes: 0,
+          status: "uploaded",
+          imageIndex,
+          error: null,
+        },
+      })
+    } else if (match[4]) {
       // Link: [text](url)
-      const linkText = match[2]
-      const linkUrl = match[3]
+      const linkText = match[5]
+      const linkUrl = match[6]
       // Recursively parse the link text for nested formatting
       const innerContent = parseInlineMarkdown(linkText, getMentionType)
       for (const node of innerContent) {
@@ -410,9 +453,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "link", attrs: { href: linkUrl } }],
         })
       }
-    } else if (match[4]) {
+    } else if (match[7]) {
       // BoldItalic: ***text*** - apply both marks
-      const boldItalicText = match[5]
+      const boldItalicText = match[8]
       const innerContent = parseInlineMarkdown(boldItalicText, getMentionType)
       for (const node of innerContent) {
         // Add both bold and italic marks to all nodes
@@ -421,9 +464,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "bold" }, { type: "italic" }],
         })
       }
-    } else if (match[6]) {
+    } else if (match[9]) {
       // Bold: **text**
-      const boldText = match[7]
+      const boldText = match[10]
       const innerContent = parseInlineMarkdown(boldText, getMentionType)
       for (const node of innerContent) {
         // Add bold mark to all nodes (text, mentions, channels, etc.)
@@ -432,9 +475,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "bold" }],
         })
       }
-    } else if (match[8]) {
+    } else if (match[11]) {
       // Italic: *text*
-      const italicText = match[9]
+      const italicText = match[12]
       const innerContent = parseInlineMarkdown(italicText, getMentionType)
       for (const node of innerContent) {
         // Add italic mark to all nodes (text, mentions, channels, etc.)
@@ -443,9 +486,9 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "italic" }],
         })
       }
-    } else if (match[10]) {
+    } else if (match[13]) {
       // Strike: ~~text~~
-      const strikeText = match[11]
+      const strikeText = match[14]
       const innerContent = parseInlineMarkdown(strikeText, getMentionType)
       for (const node of innerContent) {
         // Add strike mark to all nodes (text, mentions, channels, etc.)
@@ -454,23 +497,23 @@ function parseInlineMarkdown(text: string, getMentionType?: MentionTypeLookup): 
           marks: [...(node.marks || []), { type: "strike" }],
         })
       }
-    } else if (match[12]) {
+    } else if (match[15]) {
       // Code: `text` (no nesting for code)
       result.push({
         type: "text",
-        text: match[13],
+        text: match[16],
         marks: [{ type: "code" }],
       })
-    } else if (match[14]) {
+    } else if (match[17]) {
       // Mention: @slug
-      const slug = match[15]
+      const slug = match[18]
       result.push({
         type: "mention",
         attrs: { id: slug, slug, name: slug, mentionType: lookupMentionType(slug) },
       })
-    } else if (match[16]) {
+    } else if (match[19]) {
       // Channel: #slug
-      const slug = match[17]
+      const slug = match[20]
       result.push({
         type: "channelLink",
         attrs: { id: slug, slug, name: slug },

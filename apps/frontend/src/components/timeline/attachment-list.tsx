@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { attachmentsApi } from "@/api"
 import { cn } from "@/lib/utils"
+import { useAttachmentContext } from "@/lib/markdown/attachment-context"
 import type { AttachmentSummary } from "@threa/types"
 
 interface AttachmentListProps {
@@ -16,6 +17,7 @@ interface AttachmentItemProps {
   attachment: AttachmentSummary
   workspaceId: string
   onImageClick?: (url: string, filename: string) => void
+  isHighlighted?: boolean
 }
 
 function getFileIcon(mimeType: string) {
@@ -31,7 +33,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function ImageAttachment({ attachment, workspaceId, onImageClick }: AttachmentItemProps) {
+function ImageAttachment({ attachment, workspaceId, onImageClick, isHighlighted }: AttachmentItemProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -78,11 +80,13 @@ function ImageAttachment({ attachment, workspaceId, onImageClick }: AttachmentIt
       type="button"
       onClick={handleClick}
       disabled={isLoading || !imageUrl}
+      data-highlighted={isHighlighted || undefined}
       className={cn(
         "relative overflow-hidden rounded-lg border bg-muted/30 transition-all",
         "hover:border-primary hover:shadow-sm",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        "disabled:cursor-wait"
+        "disabled:cursor-wait",
+        isHighlighted && "ring-2 ring-primary border-primary shadow-sm"
       )}
     >
       {isLoading ? (
@@ -99,7 +103,7 @@ function ImageAttachment({ attachment, workspaceId, onImageClick }: AttachmentIt
   )
 }
 
-function FileAttachment({ attachment, workspaceId }: AttachmentItemProps) {
+function FileAttachment({ attachment, workspaceId, isHighlighted }: AttachmentItemProps) {
   const [isDownloading, setIsDownloading] = useState(false)
   const Icon = getFileIcon(attachment.mimeType)
 
@@ -127,7 +131,13 @@ function FileAttachment({ attachment, workspaceId }: AttachmentItemProps) {
   }, [workspaceId, attachment])
 
   return (
-    <Button variant="outline" size="sm" className="h-8 gap-2 text-xs" onClick={handleDownload} disabled={isDownloading}>
+    <Button
+      variant="outline"
+      size="sm"
+      className={cn("h-8 gap-2 text-xs", isHighlighted && "ring-2 ring-primary border-primary shadow-sm")}
+      onClick={handleDownload}
+      disabled={isDownloading}
+    >
       {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
       <span className="max-w-[150px] truncate">{attachment.filename}</span>
       <span className="text-muted-foreground">{formatFileSize(attachment.sizeBytes)}</span>
@@ -171,6 +181,8 @@ function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLightboxPro
 
 export function AttachmentList({ attachments, workspaceId, className }: AttachmentListProps) {
   const [lightbox, setLightbox] = useState<{ url: string; filename: string } | null>(null)
+  const attachmentContext = useAttachmentContext()
+  const hoveredAttachmentId = attachmentContext?.hoveredAttachmentId ?? null
 
   if (!attachments || attachments.length === 0) {
     return null
@@ -198,6 +210,7 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
                 attachment={attachment}
                 workspaceId={workspaceId}
                 onImageClick={handleImageClick}
+                isHighlighted={attachment.id === hoveredAttachmentId}
               />
             ))}
           </div>
@@ -205,7 +218,12 @@ export function AttachmentList({ attachments, workspaceId, className }: Attachme
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {fileAttachments.map((attachment) => (
-              <FileAttachment key={attachment.id} attachment={attachment} workspaceId={workspaceId} />
+              <FileAttachment
+                key={attachment.id}
+                attachment={attachment}
+                workspaceId={workspaceId}
+                isHighlighted={attachment.id === hoveredAttachmentId}
+              />
             ))}
           </div>
         )}

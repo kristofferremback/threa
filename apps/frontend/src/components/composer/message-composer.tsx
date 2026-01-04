@@ -4,7 +4,7 @@ import { RichEditor } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
-import type { PendingAttachment } from "@/hooks/use-attachments"
+import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -16,6 +16,10 @@ export interface MessageComposerProps {
   onRemoveAttachment: (id: string) => void
   fileInputRef: RefObject<HTMLInputElement | null>
   onFileSelect: (e: ChangeEvent<HTMLInputElement>) => void
+  /** Called when files are pasted or dropped into the editor */
+  onFileUpload?: (file: File) => Promise<UploadResult>
+  /** Current count of images for sequential naming of pasted images */
+  imageCount?: number
 
   // Submit
   onSubmit: () => void
@@ -40,6 +44,8 @@ export function MessageComposer({
   onRemoveAttachment,
   fileInputRef,
   onFileSelect,
+  onFileUpload,
+  imageCount = 0,
   onSubmit,
   canSubmit,
   submitLabel = "Send",
@@ -85,6 +91,8 @@ export function MessageComposer({
             value={content}
             onChange={onContentChange}
             onSubmit={onSubmit}
+            onFileUpload={onFileUpload}
+            imageCount={imageCount}
             placeholder={placeholder}
             disabled={isDisabled}
           />

@@ -1,11 +1,61 @@
 import type { Components } from "react-markdown"
-import { Suspense, lazy, Component, type ReactNode } from "react"
+import { Suspense, lazy, Component, type ReactNode, type MouseEvent } from "react"
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { processChildrenForMentions } from "./mention-renderer"
+import { useAttachmentContext } from "./attachment-context"
 
 const CodeBlock = lazy(() => import("./code-block"))
+
+/**
+ * Link component that handles attachment:// URLs specially
+ */
+function MarkdownLink({ href, children }: { href?: string; children: ReactNode }) {
+  const attachmentContext = useAttachmentContext()
+
+  // Check if this is an attachment link
+  if (href?.startsWith("attachment:")) {
+    const attachmentId = href.replace("attachment:", "")
+
+    const handleClick = (e: MouseEvent) => {
+      e.preventDefault()
+      attachmentContext?.openAttachment(attachmentId, e.metaKey || e.ctrlKey)
+    }
+
+    const handleMouseEnter = () => {
+      attachmentContext?.setHoveredAttachmentId(attachmentId)
+    }
+
+    const handleMouseLeave = () => {
+      attachmentContext?.setHoveredAttachmentId(null)
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] cursor-pointer"
+      >
+        {processChildrenForMentions(children)}
+      </button>
+    )
+  }
+
+  // Regular link
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
+    >
+      {processChildrenForMentions(children)}
+    </a>
+  )
+}
 
 /**
  * Error boundary for lazy-loaded CodeBlock - falls back to plain code on load failure
@@ -54,18 +104,9 @@ export const markdownComponents: Components = {
   // Paragraphs - process @mentions and #channels
   p: ({ children }) => <p className="mb-2 last:mb-0">{processChildrenForMentions(children)}</p>,
 
-  // Links - open in new tab, process @mentions and #channels
+  // Links - handles both regular links and attachment:// URLs
   // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
-    >
-      {processChildrenForMentions(children)}
-    </a>
-  ),
+  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Code - inline and blocks
   code: ({ className, children }) => {

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom"
 import { MessageSquareReply } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { MarkdownContent } from "@/components/ui/markdown-content"
+import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { usePendingMessages, usePanel } from "@/contexts"
 import { useActors } from "@/hooks"
@@ -81,10 +81,12 @@ function MessageLayout({
           {statusIndicator}
           {actions}
         </div>
-        <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
-        {payload.attachments && payload.attachments.length > 0 && (
-          <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
-        )}
+        <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
+          <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
+          {payload.attachments && payload.attachments.length > 0 && (
+            <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
+          )}
+        </AttachmentProvider>
         {footer}
       </div>
     </div>

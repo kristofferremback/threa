@@ -10,6 +10,7 @@ import { MentionExtension, type MentionOptions } from "./triggers/mention-extens
 import { ChannelExtension, type ChannelOptions } from "./triggers/channel-extension"
 import { CommandExtension, type CommandOptions } from "./triggers/command-extension"
 import { AtomAwareBold, AtomAwareItalic, AtomAwareStrike, AtomAwareCode } from "./atom-aware-marks"
+import { AttachmentReferenceExtension } from "./attachment-reference-extension"
 
 // Lazy singleton - created on first editor mount, not at module load
 let lowlightInstance: ReturnType<typeof createLowlight> | null = null
@@ -97,6 +98,8 @@ export function createEditorExtensions(options: CreateEditorExtensionsOptions | 
         class: "bg-muted rounded-md p-4 font-mono text-sm overflow-x-auto",
       },
     }),
+    // Attachment references for inline file/image links
+    AttachmentReferenceExtension,
   ]
 
   // Add mention extension if suggestion config provided
