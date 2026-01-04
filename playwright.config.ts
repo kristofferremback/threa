@@ -14,7 +14,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Single worker for sequential execution
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  timeout: 60000, // 60s per test (auth flows can be slow)
+  timeout: 30000, // 30s per test
 
   use: {
     baseURL: "http://localhost:3000",

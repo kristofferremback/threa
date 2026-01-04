@@ -216,8 +216,9 @@ test.describe("Inline File Uploads", () => {
       editor.dispatchEvent(pasteEvent)
     }, Array.from(imageBuffer))
 
-    // Wait for upload
+    // Wait for upload to complete (reference visible AND filename chip appears)
     await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 5000 })
 
     // Type some text and send the message
     await editor.type("Check out this image: ")
@@ -263,8 +264,9 @@ test.describe("Inline File Uploads", () => {
       editor.dispatchEvent(pasteEvent)
     }, Array.from(imageBuffer))
 
-    // Wait for upload
+    // Wait for upload to complete (reference visible AND filename chip appears)
     await expect(editor.locator("span[data-type='attachment-reference']")).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText("pasted-image-1.png")).toBeVisible({ timeout: 5000 })
 
     // Type some text and send the message
     await editor.type("Hover test: ")
