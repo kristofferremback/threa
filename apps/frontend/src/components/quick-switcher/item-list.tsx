@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import type { QuickSwitcherItem } from "./types"
 
 interface ItemListProps {
@@ -10,6 +11,8 @@ interface ItemListProps {
   onSelectItem: (item: QuickSwitcherItem, withModifier: boolean) => void
   isLoading?: boolean
   emptyMessage?: string
+  /** Optional test ID for items (for testing) */
+  itemTestId?: string
 }
 
 export function ItemList({
@@ -19,6 +22,7 @@ export function ItemList({
   onSelectItem,
   isLoading,
   emptyMessage,
+  itemTestId,
 }: ItemListProps) {
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -72,6 +76,7 @@ export function ItemList({
           {groupName && <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{groupName}</div>}
           {groupItems.map(({ item, index }) => {
             const Icon = item.icon
+            const ActionIcon = item.actionIcon
             const isSelected = index === selectedIndex
 
             const itemContent = (
@@ -83,11 +88,26 @@ export function ItemList({
                     <span className="text-xs text-muted-foreground truncate">{item.description}</span>
                   )}
                 </div>
+                {item.onAction && ActionIcon && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      item.onAction?.()
+                    }}
+                    aria-label={item.actionLabel}
+                  >
+                    <ActionIcon className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                )}
               </>
             )
 
             const className = cn(
-              "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none",
+              "group relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none",
               isSelected && "bg-accent text-accent-foreground"
             )
 
@@ -97,6 +117,7 @@ export function ItemList({
                   key={item.id}
                   to={item.href}
                   data-index={index}
+                  data-testid={itemTestId}
                   className={className}
                   onMouseEnter={() => onSelectIndex(index)}
                   onClick={(e) => handleClick(e, item)}
@@ -110,6 +131,7 @@ export function ItemList({
               <div
                 key={item.id}
                 data-index={index}
+                data-testid={itemTestId}
                 className={className}
                 onMouseEnter={() => onSelectIndex(index)}
                 onClick={(e) => handleClick(e, item)}

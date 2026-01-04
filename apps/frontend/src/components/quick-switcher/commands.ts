@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom"
-import { FileText, Hash, Search } from "lucide-react"
+import { FileText, Hash, Search, FileEdit } from "lucide-react"
 import { toast } from "sonner"
 
 /**
@@ -21,6 +21,7 @@ export interface CommandContext {
   createChannel: (slug: string) => Promise<{ id: string }>
   setMode?: (mode: "stream" | "command" | "search") => void
   requestInput: (request: InputRequest) => void
+  openDraftsModal?: () => void
 }
 
 export interface Command {
@@ -87,6 +88,16 @@ export const commands: Command[] = [
     keywords: ["find", "query"],
     action: ({ setMode }) => {
       setMode?.("search")
+    },
+  },
+  {
+    id: "view-drafts",
+    label: "View Drafts",
+    icon: FileEdit,
+    keywords: ["draft", "unsent", "pending"],
+    action: ({ closeDialog, openDraftsModal }) => {
+      closeDialog()
+      openDraftsModal?.()
     },
   },
 ]

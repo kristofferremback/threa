@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, Search, CheckCheck } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,9 +20,10 @@ import {
   useDraftScratchpads,
   useStreamOrDraft,
   useUnreadCounts,
+  useAllDrafts,
   workspaceKeys,
 } from "@/hooks"
-import { useQuickSwitcher } from "@/contexts"
+import { useQuickSwitcher, useDraftsModal } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -35,12 +37,15 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { streamId: activeStreamId } = useParams<{ streamId: string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
-  const { drafts, createDraft } = useDraftScratchpads(workspaceId)
+  const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
   const { openSwitcher } = useQuickSwitcher()
+  const { openDraftsModal } = useDraftsModal()
+  const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const totalUnread = getTotalUnreadCount()
+  const draftCount = allDrafts.length
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")
@@ -63,15 +68,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   }
 
   const streams = bootstrap?.streams ?? []
-  const realScratchpads = streams.filter((s) => s.type === StreamTypes.SCRATCHPAD)
+  const scratchpads = streams.filter((s) => s.type === StreamTypes.SCRATCHPAD)
   const channels = streams.filter((s) => s.type === StreamTypes.CHANNEL)
-
-  // Combine drafts and real scratchpads, drafts first (newest first)
-  const sortedDrafts = [...drafts].sort((a, b) => b.createdAt - a.createdAt)
-  const allScratchpadIds: Array<{ id: string; isDraft: boolean }> = [
-    ...sortedDrafts.map((d) => ({ id: d.id, isDraft: true })),
-    ...realScratchpads.map((s) => ({ id: s.id, isDraft: false })),
-  ]
 
   return (
     <div className="flex h-full flex-col">
@@ -106,6 +104,26 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         </div>
       </div>
 
+      {/* Drafts button - only visible when drafts exist */}
+      {draftCount > 0 && (
+        <div className="border-b px-2 py-2">
+          <Button
+            variant="ghost"
+            className="w-full justify-between"
+            onClick={openDraftsModal}
+            data-testid="drafts-button"
+          >
+            <span className="flex items-center gap-2">
+              <FileEdit className="h-4 w-4" />
+              Drafts
+            </span>
+            <Badge variant="secondary" className="opacity-60">
+              {draftCount}
+            </Badge>
+          </Button>
+        </div>
+      )}
+
       <ScrollArea className="flex-1">
         <div className="p-2">
           {isLoading ? (
@@ -116,16 +134,16 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             <>
               {/* Scratchpads section - primary for solo users */}
               <SidebarSection title="Scratchpads">
-                {allScratchpadIds.length === 0 ? (
+                {scratchpads.length === 0 ? (
                   <p className="px-2 py-1 text-xs text-muted-foreground">No scratchpads yet</p>
                 ) : (
-                  allScratchpadIds.map((item) => (
+                  scratchpads.map((stream) => (
                     <ScratchpadItem
-                      key={item.id}
+                      key={stream.id}
                       workspaceId={workspaceId}
-                      streamId={item.id}
-                      isActive={item.id === activeStreamId}
-                      unreadCount={getUnreadCount(item.id)}
+                      streamId={stream.id}
+                      isActive={stream.id === activeStreamId}
+                      unreadCount={getUnreadCount(stream.id)}
                     />
                   ))
                 )}
