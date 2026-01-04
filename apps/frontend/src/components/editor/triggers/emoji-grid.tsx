@@ -53,7 +53,7 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Group items into rows for virtualization
-  const rows = []
+  const rows: EmojiEntry[][] = []
   for (let i = 0; i < items.length; i += GRID_COLUMNS) {
     rows.push(items.slice(i, i + GRID_COLUMNS))
   }
@@ -197,6 +197,9 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
 
   if (!clientRect || items.length === 0) return null
 
+  // Get currently selected emoji for the footer
+  const selectedEmoji = items[selectedIndex]
+
   return (
     <div
       ref={refs.setFloating}
@@ -248,6 +251,13 @@ function EmojiGridInner({ items, clientRect, command }: EmojiGridProps, ref: Rea
           })}
         </div>
       </div>
+      {/* Footer showing selected emoji shortcode */}
+      {selectedEmoji && (
+        <div className="border-t px-2 py-1.5 text-xs text-muted-foreground truncate">
+          <span className="mr-1.5">{selectedEmoji.emoji}</span>
+          <span className="font-mono">:{selectedEmoji.shortcode}:</span>
+        </div>
+      )}
     </div>
   )
 }

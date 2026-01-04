@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { useMentionType } from "./mention-context"
+import { useEmojiLookup } from "./emoji-context"
 import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
 /**
@@ -56,17 +57,23 @@ function TriggerChip({ type, text }: TriggerChipProps) {
  * - Commands: /command at start of text
  * - Channels: #channel-name (uses same rules as slugs)
  * - Mentions: @slug (uses shared MENTION_PATTERN from @threa/types)
+ * - Emojis: :shortcode: (converted to emoji character)
  */
 const COMMAND_PATTERN = /^(\s*)(\/)([\w-]+)/
 
 // Channel pattern uses same slug rules as mentions
 const CHANNEL_PATTERN = /(?<![a-z0-9])#([a-z][a-z0-9-]*[a-z0-9]|[a-z])(?![a-z0-9_.-])/g
 
+// Emoji shortcode pattern: :shortcode:
+const EMOJI_PATTERN = /:([a-z0-9_+-]+):/g
+
+type ToEmoji = (shortcode: string) => string | null
+
 /**
- * Parse text and render triggers as styled chips.
+ * Parse text and render triggers as styled chips, emojis as characters.
  * Returns an array of React nodes.
  */
-export function renderMentions(text: string): ReactNode[] {
+export function renderMentions(text: string, toEmoji: ToEmoji): ReactNode[] {
   const result: ReactNode[] = []
   let processText = text
   let keyIndex = 0
@@ -83,7 +90,9 @@ export function renderMentions(text: string): ReactNode[] {
   }
 
   // Collect all trigger matches with their positions
-  type TriggerMatch = { index: number; length: number; type: "mention" | "channel"; slug: string }
+  type TriggerMatch =
+    | { index: number; length: number; type: "mention" | "channel"; slug: string }
+    | { index: number; length: number; type: "emoji"; shortcode: string; emoji: string }
   const triggers: TriggerMatch[] = []
 
   // Find mentions using shared pattern
@@ -103,6 +112,16 @@ export function renderMentions(text: string): ReactNode[] {
     }
   }
 
+  // Find emoji shortcodes
+  const emojiPattern = new RegExp(EMOJI_PATTERN.source, EMOJI_PATTERN.flags)
+  while ((match = emojiPattern.exec(processText)) !== null) {
+    const shortcode = match[1]
+    const emoji = toEmoji(shortcode)
+    if (emoji) {
+      triggers.push({ index: match.index, length: match[0].length, type: "emoji", shortcode, emoji })
+    }
+  }
+
   // Sort by position
   triggers.sort((a, b) => a.index - b.index)
 
@@ -116,9 +135,18 @@ export function renderMentions(text: string): ReactNode[] {
       result.push(processText.slice(lastIndex, trigger.index))
     }
 
-    result.push(
-      <TriggerChip key={`${keyIndex++}-${trigger.type}-${trigger.slug}`} type={trigger.type} text={trigger.slug} />
-    )
+    if (trigger.type === "emoji") {
+      // Render emoji as character with tooltip
+      result.push(
+        <span key={`${keyIndex++}-emoji-${trigger.shortcode}`} title={`:${trigger.shortcode}:`}>
+          {trigger.emoji}
+        </span>
+      )
+    } else {
+      result.push(
+        <TriggerChip key={`${keyIndex++}-${trigger.type}-${trigger.slug}`} type={trigger.type} text={trigger.slug} />
+      )
+    }
     lastIndex = trigger.index + trigger.length
   }
 
@@ -130,17 +158,26 @@ export function renderMentions(text: string): ReactNode[] {
 }
 
 /**
- * Process React children and render mentions in text nodes.
+ * Hook-based component to process children with mentions and emojis.
+ * Must be used within a component (uses hooks).
+ */
+export function ProcessedChildren({ children }: { children: ReactNode }): ReactNode {
+  const toEmoji = useEmojiLookup()
+  return processChildrenForMentions(children, toEmoji)
+}
+
+/**
+ * Process React children and render mentions/emojis in text nodes.
  * Preserves non-text children (like <strong>, <em>, etc).
  */
-export function processChildrenForMentions(children: ReactNode): ReactNode {
+export function processChildrenForMentions(children: ReactNode, toEmoji: ToEmoji): ReactNode {
   if (typeof children === "string") {
-    const rendered = renderMentions(children)
+    const rendered = renderMentions(children, toEmoji)
     return rendered.length === 1 && typeof rendered[0] === "string" ? rendered[0] : <>{rendered}</>
   }
 
   if (Array.isArray(children)) {
-    return children.map((child, index) => <span key={index}>{processChildrenForMentions(child)}</span>)
+    return children.map((child, index) => <span key={index}>{processChildrenForMentions(child, toEmoji)}</span>)
   }
 
   return children

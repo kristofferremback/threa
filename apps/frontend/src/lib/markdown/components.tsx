@@ -3,7 +3,7 @@ import { Suspense, lazy, Component, type ReactNode, type MouseEvent } from "reac
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { processChildrenForMentions } from "./mention-renderer"
+import { ProcessedChildren } from "./mention-renderer"
 import { useAttachmentContext } from "./attachment-context"
 
 const CodeBlock = lazy(() => import("./code-block"))
@@ -39,7 +39,7 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
         onMouseLeave={handleMouseLeave}
         className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit] cursor-pointer"
       >
-        {processChildrenForMentions(children)}
+        <ProcessedChildren>{children}</ProcessedChildren>
       </button>
     )
   }
@@ -52,7 +52,7 @@ function MarkdownLink({ href, children }: { href?: string; children: ReactNode }
       rel="noopener noreferrer"
       className="text-primary underline underline-offset-4 hover:text-primary/80 [&_span]:[text-decoration:inherit]"
     >
-      {processChildrenForMentions(children)}
+      <ProcessedChildren>{children}</ProcessedChildren>
     </a>
   )
 }
@@ -79,30 +79,44 @@ class CodeBlockErrorBoundary extends Component<{ children: ReactNode; fallback: 
 }
 
 export const markdownComponents: Components = {
-  // Headers - scaled for message context, process @mentions and #channels
+  // Headers - scaled for message context, process @mentions, #channels, and :emoji:
   h1: ({ children }) => (
-    <h1 className="text-xl font-bold mt-4 mb-2 first:mt-0">{processChildrenForMentions(children)}</h1>
+    <h1 className="text-xl font-bold mt-4 mb-2 first:mt-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-lg font-bold mt-3 mb-2 first:mt-0">{processChildrenForMentions(children)}</h2>
+    <h2 className="text-lg font-bold mt-3 mb-2 first:mt-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-semibold mt-3 mb-1 first:mt-0">{processChildrenForMentions(children)}</h3>
+    <h3 className="text-base font-semibold mt-3 mb-1 first:mt-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{processChildrenForMentions(children)}</h4>
+    <h4 className="text-sm font-semibold mt-2 mb-1 first:mt-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </h4>
   ),
   h5: ({ children }) => (
-    <h5 className="text-sm font-medium mt-2 mb-1 first:mt-0">{processChildrenForMentions(children)}</h5>
+    <h5 className="text-sm font-medium mt-2 mb-1 first:mt-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </h5>
   ),
   h6: ({ children }) => (
     <h6 className="text-sm font-medium text-muted-foreground mt-2 mb-1 first:mt-0">
-      {processChildrenForMentions(children)}
+      <ProcessedChildren>{children}</ProcessedChildren>
     </h6>
   ),
 
-  // Paragraphs - process @mentions and #channels
-  p: ({ children }) => <p className="mb-2 last:mb-0">{processChildrenForMentions(children)}</p>,
+  // Paragraphs - process @mentions, #channels, and :emoji:
+  p: ({ children }) => (
+    <p className="mb-2 last:mb-0">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </p>
+  ),
 
   // Links - handles both regular links and attachment:// URLs
   // [&_span] ensures inline-flex elements like TriggerChips inherit underline decoration
@@ -136,15 +150,23 @@ export const markdownComponents: Components = {
   pre: ({ children }) => <>{children}</>,
 
   // Bold
-  strong: ({ children }) => <strong className="font-semibold">{processChildrenForMentions(children)}</strong>,
+  strong: ({ children }) => (
+    <strong className="font-semibold">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </strong>
+  ),
 
   // Italic
-  em: ({ children }) => <em className="italic">{processChildrenForMentions(children)}</em>,
+  em: ({ children }) => (
+    <em className="italic">
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </em>
+  ),
 
   // Strikethrough (GFM) - [&_span] ensures inline-flex elements like TriggerChips inherit decoration
   del: ({ children }) => (
     <del className="line-through text-muted-foreground [&_span]:[text-decoration:inherit]">
-      {processChildrenForMentions(children)}
+      <ProcessedChildren>{children}</ProcessedChildren>
     </del>
   ),
 
@@ -158,7 +180,11 @@ export const markdownComponents: Components = {
   ol: ({ children }) => <ol className="list-decimal pl-6 my-2">{children}</ol>,
   li: ({ children, className }) => {
     const isTaskItem = className?.includes("task-list-item")
-    return <li className={cn("mb-1", isTaskItem && "list-none -ml-6")}>{processChildrenForMentions(children)}</li>
+    return (
+      <li className={cn("mb-1", isTaskItem && "list-none -ml-6")}>
+        <ProcessedChildren>{children}</ProcessedChildren>
+      </li>
+    )
   },
 
   // Task list checkboxes (read-only)
@@ -178,8 +204,16 @@ export const markdownComponents: Components = {
   thead: ({ children }) => <TableHeader>{children}</TableHeader>,
   tbody: ({ children }) => <TableBody>{children}</TableBody>,
   tr: ({ children }) => <TableRow>{children}</TableRow>,
-  th: ({ children }) => <TableHead>{processChildrenForMentions(children)}</TableHead>,
-  td: ({ children }) => <TableCell>{processChildrenForMentions(children)}</TableCell>,
+  th: ({ children }) => (
+    <TableHead>
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </TableHead>
+  ),
+  td: ({ children }) => (
+    <TableCell>
+      <ProcessedChildren>{children}</ProcessedChildren>
+    </TableCell>
+  ),
 
   // Horizontal rule
   hr: () => <hr className="my-4 border-border" />,

@@ -213,7 +213,7 @@ test.describe("Emoji Shortcuts", () => {
     // Send the message
     await page.getByRole("button", { name: "Send" }).click()
 
-    // Message should appear (stored as :fire: shortcode format)
-    await expect(page.getByText(":fire: Great job!")).toBeVisible({ timeout: 5000 })
+    // Message should appear with emoji rendered (stored as :fire: but displayed as 🔥)
+    await expect(page.getByText("🔥 Great job!")).toBeVisible({ timeout: 5000 })
   })
 })

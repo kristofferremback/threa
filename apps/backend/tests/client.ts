@@ -549,6 +549,15 @@ export interface Persona {
   status: string
 }
 
+export interface EmojiEntry {
+  shortcode: string
+  emoji: string
+  type: "native" | "custom"
+  group: string
+  order: number
+  aliases: string[]
+}
+
 export interface WorkspaceBootstrapData {
   workspace: Workspace
   members: WorkspaceMember[]
@@ -556,6 +565,8 @@ export interface WorkspaceBootstrapData {
   streamMemberships: StreamMember[]
   users: User[]
   personas: Persona[]
+  emojis: EmojiEntry[]
+  emojiWeights: Record<string, number>
 }
 
 export async function getWorkspaceBootstrap(client: TestClient, workspaceId: string): Promise<WorkspaceBootstrapData> {
@@ -642,4 +653,12 @@ export async function dispatchCommand(
     throw new Error(`Dispatch command failed: ${JSON.stringify(data)}`)
   }
   return data
+}
+
+export async function getEmojis(client: TestClient, workspaceId: string): Promise<EmojiEntry[]> {
+  const { status, data } = await client.get<{ emojis: EmojiEntry[] }>(`/api/workspaces/${workspaceId}/emojis`)
+  if (status !== 200) {
+    throw new Error(`Get emojis failed: ${JSON.stringify(data)}`)
+  }
+  return data.emojis
 }
