@@ -9,7 +9,7 @@ import { execSync } from "child_process"
 const TEST_DB_NAME = "threa_browser_test"
 const POSTGRES_CONTAINER = "threa-postgres-1"
 const MINIO_CONTAINER = "threa-minio-1"
-const MINIO_BUCKET = "threa-attachments"
+const MINIO_BUCKET = "threa-browser-test"
 
 async function ensureTestDatabase(): Promise<void> {
   try {

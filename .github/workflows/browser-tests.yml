@@ -44,6 +44,10 @@ jobs:
             echo "Waiting for MinIO... ($i/30)"
             sleep 1
           done
+          # Create the test bucket using mc client
+          docker exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+          docker exec minio mc mb local/threa-browser-test
+          echo "Created bucket: threa-browser-test"
 
       - uses: oven-sh/setup-bun@v2
         with:
