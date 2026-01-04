@@ -216,6 +216,9 @@ describe("LLMBoundaryExtractor", () => {
       const parseError = new NoObjectGeneratedError({
         message: "No object generated",
         text: "```json\n{...}\n```",
+        response: { id: "test", modelId: "test", timestamp: new Date(), headers: {} },
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        finishReason: "stop",
       })
       mockGenerateObject.mockRejectedValueOnce(parseError)
 

@@ -24,7 +24,7 @@ describe("web-search-tool", () => {
         ok: true,
         json: () => Promise.resolve(mockResponse),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
     const result = await tool.invoke({ query: "test query" })
@@ -46,7 +46,7 @@ describe("web-search-tool", () => {
         ok: true,
         json: () => Promise.resolve({ query: "test", results: [], response_time: 0.1 }),
       } as Response)
-    })
+    }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-api-key" })
     await tool.invoke({ query: "test query" })
@@ -72,7 +72,7 @@ describe("web-search-tool", () => {
         status: 401,
         text: () => Promise.resolve("Unauthorized"),
       } as Response)
-    )
+    ) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "invalid-key" })
     const result = await tool.invoke({ query: "test" })
@@ -83,7 +83,7 @@ describe("web-search-tool", () => {
   })
 
   it("should return error on network failure", async () => {
-    globalThis.fetch = mock(() => Promise.reject(new Error("Network error")))
+    globalThis.fetch = mock(() => Promise.reject(new Error("Network error"))) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
     const result = await tool.invoke({ query: "test" })
@@ -101,7 +101,7 @@ describe("web-search-tool", () => {
         ok: true,
         json: () => Promise.resolve({ query: "test", results: [], response_time: 0.1 }),
       } as Response)
-    })
+    }) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key", maxResults: 10 })
     await tool.invoke({ query: "test" })
@@ -114,7 +114,7 @@ describe("web-search-tool", () => {
     const abortError = new Error("The operation was aborted")
     abortError.name = "AbortError"
 
-    globalThis.fetch = mock(() => Promise.reject(abortError))
+    globalThis.fetch = mock(() => Promise.reject(abortError)) as unknown as typeof fetch
 
     const tool = createWebSearchTool({ tavilyApiKey: "test-key" })
     const result = await tool.invoke({ query: "test" })

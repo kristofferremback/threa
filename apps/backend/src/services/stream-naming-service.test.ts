@@ -37,7 +37,7 @@ const mockMessages = [
 
 const mockFindByIdForUpdate = mock(() => Promise.resolve(mockStream))
 const mockMessageList = mock(() => Promise.resolve(mockMessages))
-const mockStreamList = mock(() => Promise.resolve([]))
+const mockStreamList = mock(() => Promise.resolve([] as { id: string; displayName: string | null }[]))
 const mockStreamUpdate = mock(() => Promise.resolve())
 const mockOutboxInsert = mock(() => Promise.resolve())
 
@@ -70,9 +70,9 @@ mock.module("../lib/display-name", () => ({
 }))
 
 // Mock AI instance
-const mockGenerateText = mock(async () => ({ value: "", response: {} }))
+const mockGenerateText = mock(async (_options: unknown) => ({ value: "", response: {} }))
 const mockAI: Partial<AI> = {
-  generateText: mockGenerateText as AI["generateText"],
+  generateText: mockGenerateText as unknown as AI["generateText"],
 }
 
 const mockPool = {} as any
