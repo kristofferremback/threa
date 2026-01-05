@@ -353,11 +353,9 @@ test.describe("Drafts Page", () => {
     await page.keyboard.press("Meta+a")
     await page.keyboard.press("Backspace")
 
-    // Wait for auto-delete to complete
-    await page.waitForTimeout(700)
-
-    // Drafts link should be greyed out since the only draft was deleted
-    await expect(draftsLink).toHaveClass(/text-muted-foreground/, { timeout: 2000 })
+    // Wait for auto-delete to complete (debounce + IndexedDB write + reactive update)
+    // Use longer timeout for CI where things are slower
+    await expect(draftsLink).toHaveClass(/text-muted-foreground/, { timeout: 5000 })
   })
 
   test("should show scratchpad draft on page", async ({ page }) => {
