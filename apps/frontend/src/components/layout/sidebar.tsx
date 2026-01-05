@@ -113,7 +113,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             isDraftsPage && "bg-accent text-accent-foreground",
             !isDraftsPage && draftCount === 0 && "text-muted-foreground"
           )}
-          data-testid="drafts-button"
         >
           <FileEdit className="h-4 w-4" />
           Drafts

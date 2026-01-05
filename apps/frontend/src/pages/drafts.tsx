@@ -138,7 +138,6 @@ export function DraftsPage() {
             onSelectIndex={setSelectedIndex}
             onSelectItem={handleSelectItem}
             emptyMessage="No drafts"
-            itemTestId="draft-item"
           />
         </main>
       </div>
@@ -154,9 +153,7 @@ export function DraftsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction data-testid="confirm-delete" onClick={handleConfirmDelete}>
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleConfirmDelete}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

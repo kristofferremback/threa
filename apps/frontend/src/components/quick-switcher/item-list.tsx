@@ -11,8 +11,6 @@ interface ItemListProps {
   onSelectItem: (item: QuickSwitcherItem, withModifier: boolean) => void
   isLoading?: boolean
   emptyMessage?: string
-  /** Optional test ID for items (for testing) */
-  itemTestId?: string
 }
 
 export function ItemList({
@@ -22,7 +20,6 @@ export function ItemList({
   onSelectItem,
   isLoading,
   emptyMessage,
-  itemTestId,
 }: ItemListProps) {
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -70,9 +67,9 @@ export function ItemList({
   }
 
   return (
-    <div ref={listRef} className="max-h-[400px] overflow-y-auto p-1">
+    <div ref={listRef} role="listbox" className="max-h-[400px] overflow-y-auto p-1">
       {Object.entries(groups).map(([groupName, groupItems]) => (
-        <div key={groupName || "_ungrouped"} className="mb-1">
+        <div key={groupName || "_ungrouped"} role="group" aria-label={groupName || undefined} className="mb-1">
           {groupName && <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{groupName}</div>}
           {groupItems.map(({ item, index }) => {
             const Icon = item.icon
@@ -116,8 +113,9 @@ export function ItemList({
                 <Link
                   key={item.id}
                   to={item.href}
+                  role="option"
+                  aria-selected={isSelected}
                   data-index={index}
-                  data-testid={itemTestId}
                   className={className}
                   onMouseEnter={() => onSelectIndex(index)}
                   onClick={(e) => handleClick(e, item)}
@@ -130,8 +128,9 @@ export function ItemList({
             return (
               <div
                 key={item.id}
+                role="option"
+                aria-selected={isSelected}
                 data-index={index}
-                data-testid={itemTestId}
                 className={className}
                 onMouseEnter={() => onSelectIndex(index)}
                 onClick={(e) => handleClick(e, item)}

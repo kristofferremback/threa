@@ -58,7 +58,7 @@ test.describe("Drafts Page", () => {
 
   test("should show greyed drafts link when no drafts exist", async ({ page }) => {
     // Verify Drafts link is visible but greyed out (has text-muted-foreground class)
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible()
     await expect(draftsLink).toHaveClass(/text-muted-foreground/)
   })
@@ -86,7 +86,7 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
     // Verify Drafts link is highlighted (no longer greyed out)
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
   })
@@ -112,13 +112,13 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
     // Click Drafts link to navigate to page
-    await page.getByTestId("drafts-button").click()
+    await page.getByRole("link", { name: "Drafts", exact: true }).click()
 
     // Verify we're on the drafts page
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Verify page shows the draft
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible()
     await expect(draftItem.getByText(draftContent.slice(0, 40))).toBeVisible()
     await expect(draftItem.getByText(`#${channelName}`)).toBeVisible()
@@ -141,11 +141,11 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByTestId("drafts-button").click()
+    await page.getByRole("link", { name: "Drafts", exact: true }).click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Click on the draft item to navigate
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await draftItem.click()
 
     // Should be back in the channel (URL contains the channel stream ID)
@@ -172,27 +172,28 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByTestId("drafts-button").click()
+    await page.getByRole("link", { name: "Drafts", exact: true }).click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover over draft item to reveal delete button
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await draftItem.hover()
 
-    // Click delete button
+    // Click delete button (the action button within the draft item)
     await draftItem.getByRole("button", { name: /delete/i }).click()
 
     // Confirmation dialog should appear
-    await expect(page.getByText(/delete this draft/i)).toBeVisible({ timeout: 2000 })
+    const dialog = page.getByRole("alertdialog")
+    await expect(dialog.getByText(/delete this draft/i)).toBeVisible({ timeout: 2000 })
 
-    // Confirm deletion
-    await page.getByTestId("confirm-delete").click()
+    // Confirm deletion (use the Delete button within the dialog)
+    await dialog.getByRole("button", { name: "Delete" }).click()
 
     // Wait for delete to complete and UI to update
     await page.waitForTimeout(500)
 
-    // Draft should be removed from page
-    await expect(page.getByTestId("draft-item")).not.toBeVisible({ timeout: 2000 })
+    // Draft should be removed from page (no options in listbox)
+    await expect(page.getByRole("option")).not.toBeVisible({ timeout: 2000 })
 
     // Page should show empty state
     await expect(page.getByText(/no drafts/i)).toBeVisible()
@@ -215,11 +216,11 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByTestId("drafts-button").click()
+    await page.getByRole("link", { name: "Drafts", exact: true }).click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover and click delete
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await draftItem.hover()
     await draftItem.getByRole("button", { name: /delete/i }).click()
 
@@ -313,14 +314,14 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed (attachment-only draft counts)
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
     // Navigate to page and verify draft shows attachment indicator
     await draftsLink.click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible()
     // The attachment count is shown as just a number with a paperclip icon
     await expect(draftItem.getByText("1")).toBeVisible()
@@ -343,7 +344,7 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Verify draft was saved by checking Drafts link is highlighted
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
@@ -380,14 +381,14 @@ test.describe("Drafts Page", () => {
     await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
     // Navigate to page and verify scratchpad draft is shown
     await draftsLink.click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible()
     await expect(draftItem.getByText(draftContent.slice(0, 30))).toBeVisible()
   })
@@ -440,7 +441,7 @@ test.describe("Drafts Page", () => {
     await expect(page.getByRole("link", { name: `#${otherChannelName}` })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed (has thread draft)
-    const draftsLink = page.getByTestId("drafts-button")
+    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
@@ -449,7 +450,7 @@ test.describe("Drafts Page", () => {
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Verify the thread draft is shown with "Thread in #channel" label
-    const draftItem = page.locator("[data-testid='draft-item']").first()
+    const draftItem = page.getByRole("option").first()
     await expect(draftItem).toBeVisible()
     await expect(draftItem.getByText(`Thread in #${channelName}`)).toBeVisible()
 
