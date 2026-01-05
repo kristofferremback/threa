@@ -11,6 +11,7 @@ import { createSearchHandlers } from "./handlers/search-handlers"
 import { createEmojiHandlers } from "./handlers/emoji-handlers"
 import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { createCommandHandlers } from "./handlers/command-handlers"
+import { createUserPreferencesHandlers } from "./handlers/user-preferences-handlers"
 import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
@@ -24,6 +25,7 @@ import type { SearchService } from "./services/search-service"
 import type { ConversationService } from "./services/conversation-service"
 import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./commands"
+import type { UserPreferencesService } from "./services/user-preferences-service"
 import type { Pool } from "pg"
 
 interface Dependencies {
@@ -36,6 +38,7 @@ interface Dependencies {
   attachmentService: AttachmentService
   searchService: SearchService
   conversationService: ConversationService
+  userPreferencesService: UserPreferencesService
   s3Config: S3Config
   commandRegistry: CommandRegistry
 }
@@ -51,6 +54,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     attachmentService,
     searchService,
     conversationService,
+    userPreferencesService,
     s3Config,
     commandRegistry,
   } = deps
@@ -62,7 +66,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const authed: RequestHandler[] = [auth, workspaceMember]
 
   const authHandlers = createAuthHandlers({ authService, userService })
-  const workspace = createWorkspaceHandlers({ workspaceService, streamService, commandRegistry })
+  const workspace = createWorkspaceHandlers({
+    workspaceService,
+    streamService,
+    userPreferencesService,
+    commandRegistry,
+  })
   const stream = createStreamHandlers({ streamService, eventService })
   const message = createMessageHandlers({ eventService, streamService })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
@@ -70,6 +79,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const emoji = createEmojiHandlers()
   const conversation = createConversationHandlers({ conversationService, streamService })
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
+  const preferences = createUserPreferencesHandlers({ userPreferencesService })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -103,6 +113,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
   app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
   app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
+
+  // User preferences
+  app.get("/api/workspaces/:workspaceId/preferences", ...authed, preferences.get)
+  app.patch("/api/workspaces/:workspaceId/preferences", ...authed, preferences.update)
 
   app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)

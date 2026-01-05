@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { formatRelativeTime, formatFullDateTime } from "@/lib/dates"
+import { useFormattedDate } from "@/hooks"
 
 interface RelativeTimeProps {
   date: Date | string | null | undefined
@@ -9,6 +9,13 @@ interface RelativeTimeProps {
 
 export function RelativeTime({ date, className }: RelativeTimeProps) {
   const [, setTick] = useState(0)
+  const { formatRelative, formatFull } = useFormattedDate()
+
+  // Update every minute to keep relative times fresh
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Handle null, undefined, or invalid values
   if (!date) {
@@ -18,18 +25,12 @@ export function RelativeTime({ date, className }: RelativeTimeProps) {
   const dateObj = date instanceof Date ? date : new Date(date)
   const isValid = dateObj instanceof Date && !isNaN(dateObj.getTime())
 
-  // Update every minute to keep relative times fresh
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 60_000)
-    return () => clearInterval(interval)
-  }, [])
-
   if (!isValid) {
     return <span className={className}>--</span>
   }
 
-  const relative = formatRelativeTime(dateObj)
-  const full = formatFullDateTime(dateObj)
+  const relative = formatRelative(dateObj)
+  const full = formatFull(dateObj)
 
   return (
     <TooltipProvider>

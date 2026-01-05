@@ -1,11 +1,45 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, type ReactNode } from "react"
 import { Outlet, useParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
-import { PanelProvider, QuickSwitcherProvider } from "@/contexts"
-import { useSocketEvents, useWorkspaceBootstrap } from "@/hooks"
+import { Toaster } from "@/components/ui/sonner"
+import { PanelProvider, QuickSwitcherProvider, PreferencesProvider, SettingsProvider, useSettings } from "@/contexts"
+import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
+import { SettingsDialog } from "@/components/settings"
 import { ApiError } from "@/api/client"
+
+interface WorkspaceKeyboardHandlerProps {
+  switcherOpen: boolean
+  onOpenSwitcher: (mode: QuickSwitcherMode) => void
+  onCloseSwitcher: () => void
+  children: ReactNode
+}
+
+function WorkspaceKeyboardHandler({
+  switcherOpen,
+  onOpenSwitcher,
+  onCloseSwitcher,
+  children,
+}: WorkspaceKeyboardHandlerProps) {
+  const { isOpen: settingsOpen, openSettings, closeSettings } = useSettings()
+
+  useKeyboardShortcuts({
+    openQuickSwitcher: () => onOpenSwitcher("stream"),
+    openSearch: () => onOpenSwitcher("search"),
+    openCommands: () => onOpenSwitcher("command"),
+    openSettings: () => openSettings(),
+    closeModal: () => {
+      if (settingsOpen) {
+        closeSettings()
+      } else if (switcherOpen) {
+        onCloseSwitcher()
+      }
+    },
+  })
+
+  return <>{children}</>
+}
 
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -32,60 +66,39 @@ export function WorkspaceLayout() {
     setSwitcherOpen(true)
   }, [])
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey
-
-      // Ctrl+[ as vim-style Escape alternative for closing quick switcher
-      if (e.ctrlKey && e.key === "[" && switcherOpen) {
-        e.preventDefault()
-        setSwitcherOpen(false)
-        return
-      }
-
-      // Cmd+Shift+K → Command mode
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        openSwitcher("command")
-        return
-      }
-
-      // Cmd+K → Stream mode (default)
-      if (isMod && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        openSwitcher("stream")
-        return
-      }
-
-      // Cmd+Shift+F → Search mode (leave Cmd+F for browser find)
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault()
-        openSwitcher("search")
-        return
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [openSwitcher, switcherOpen])
+  const closeSwitcher = useCallback(() => {
+    setSwitcherOpen(false)
+  }, [])
 
   if (!workspaceId) {
     return null
   }
 
   return (
-    <QuickSwitcherProvider openSwitcher={openSwitcher}>
-      <PanelProvider>
-        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-          <Outlet />
-        </AppShell>
-        <QuickSwitcher
-          workspaceId={workspaceId}
-          open={switcherOpen}
-          onOpenChange={setSwitcherOpen}
-          initialMode={switcherMode}
-        />
-      </PanelProvider>
-    </QuickSwitcherProvider>
+    <PreferencesProvider workspaceId={workspaceId}>
+      <SettingsProvider>
+        <WorkspaceKeyboardHandler
+          switcherOpen={switcherOpen}
+          onOpenSwitcher={openSwitcher}
+          onCloseSwitcher={closeSwitcher}
+        >
+          <QuickSwitcherProvider openSwitcher={openSwitcher}>
+            <PanelProvider>
+              <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                <Outlet />
+              </AppShell>
+              <QuickSwitcher
+                workspaceId={workspaceId}
+                open={switcherOpen}
+                onOpenChange={setSwitcherOpen}
+                initialMode={switcherMode}
+              />
+              <SettingsDialog />
+              <Toaster />
+            </PanelProvider>
+          </QuickSwitcherProvider>
+        </WorkspaceKeyboardHandler>
+      </SettingsProvider>
+    </PreferencesProvider>
   )
 }

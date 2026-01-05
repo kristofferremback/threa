@@ -6,6 +6,7 @@
 
 import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
 import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember, User, Persona } from "./domain"
+import type { UserPreferences } from "./preferences"
 
 // ============================================================================
 // Streams API
@@ -94,6 +95,7 @@ export interface WorkspaceBootstrap {
   emojiWeights: Record<string, number>
   commands: CommandInfo[]
   unreadCounts: Record<string, number>
+  userPreferences: UserPreferences
 }
 
 // ============================================================================

@@ -5,7 +5,7 @@ import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
 import type { User } from "./user-repository"
 import type { ConversationWithStaleness } from "../lib/conversation-staleness"
-import type { Memo as WireMemo } from "@threa/types"
+import type { Memo as WireMemo, UserPreferences } from "@threa/types"
 
 /**
  * Outbox event types and their payloads.
@@ -37,6 +37,7 @@ export type OutboxEventType =
   | "command:dispatched"
   | "command:completed"
   | "command:failed"
+  | "user_preferences:updated"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -212,6 +213,12 @@ export interface StreamsReadAllOutboxPayload extends WorkspaceScopedPayload {
   streamIds: string[]
 }
 
+// User preferences event payload (author-scoped - only visible to the user who updated)
+export interface UserPreferencesUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  preferences: UserPreferences
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -241,6 +248,7 @@ export interface OutboxEventPayloadMap {
   "command:dispatched": CommandDispatchedOutboxPayload
   "command:completed": CommandCompletedOutboxPayload
   "command:failed": CommandFailedOutboxPayload
+  "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
@@ -298,6 +306,7 @@ export type AuthorScopedEventType =
   | "command:failed"
   | "stream:read"
   | "stream:read_all"
+  | "user_preferences:updated"
 
 const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
   "command:dispatched",
@@ -305,6 +314,7 @@ const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
   "command:failed",
   "stream:read",
   "stream:read_all",
+  "user_preferences:updated",
 ]
 
 /**

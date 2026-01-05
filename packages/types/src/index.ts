@@ -113,3 +113,47 @@ export type {
   CommandCompletedPayload,
   CommandFailedPayload,
 } from "./api"
+
+// User Preferences
+export {
+  // Theme
+  THEME_OPTIONS,
+  type Theme,
+  Themes,
+  // Message display
+  MESSAGE_DISPLAY_OPTIONS,
+  type MessageDisplay,
+  MessageDisplays,
+  // Date format
+  DATE_FORMAT_OPTIONS,
+  type DateFormat,
+  DateFormats,
+  // Time format
+  TIME_FORMAT_OPTIONS,
+  type TimeFormat,
+  TimeFormats,
+  // Notification level
+  NOTIFICATION_LEVEL_OPTIONS,
+  type NotificationLevel,
+  NotificationLevels,
+  // Font size
+  FONT_SIZE_OPTIONS,
+  type FontSize,
+  FontSizes,
+  // Font family
+  FONT_FAMILY_OPTIONS,
+  type FontFamily,
+  FontFamilies,
+  // Settings tabs
+  SETTINGS_TAB_OPTIONS,
+  SETTINGS_TABS,
+  type SettingsTab,
+  // Domain types
+  type AccessibilityPreferences,
+  DEFAULT_ACCESSIBILITY,
+  type KeyboardShortcuts,
+  type UserPreferences,
+  DEFAULT_USER_PREFERENCES,
+  // API types
+  type UpdateUserPreferencesInput,
+} from "./preferences"

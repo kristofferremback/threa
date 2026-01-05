@@ -22,6 +22,7 @@ import { SearchService } from "./services/search-service"
 import { EmbeddingService } from "./services/embedding-service"
 import { StubEmbeddingService } from "./services/embedding-service.stub"
 import { ConversationService } from "./services/conversation-service"
+import { UserPreferencesService } from "./services/user-preferences-service"
 import { BoundaryExtractionService } from "./services/boundary-extraction-service"
 import { createS3Storage } from "./lib/storage/s3-client"
 import { createBroadcastListener } from "./lib/broadcast-listener"
@@ -103,6 +104,7 @@ export async function startServer(): Promise<ServerInstance> {
     ? new StubStreamNamingService()
     : new StreamNamingService(pool, ai, config.ai.namingModel, messageFormatter)
   const conversationService = new ConversationService(pool)
+  const userPreferencesService = new UserPreferencesService(pool)
 
   // Search and embedding services
   const embeddingService = config.useStubAI ? new StubEmbeddingService() : new EmbeddingService({ ai })
@@ -147,6 +149,7 @@ export async function startServer(): Promise<ServerInstance> {
     attachmentService,
     searchService,
     conversationService,
+    userPreferencesService,
     s3Config: config.s3,
     commandRegistry,
   })

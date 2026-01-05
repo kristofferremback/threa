@@ -1,15 +1,29 @@
-import { Moon, Sun, Monitor } from "lucide-react"
+import { Moon, Sun, Monitor, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useTheme } from "@/contexts"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { usePreferences, useSettings } from "@/contexts"
+import type { Theme } from "@threa/types"
 
 export function ThemeDropdown() {
-  const { theme, resolvedTheme, setTheme } = useTheme()
+  const { preferences, resolvedTheme, updatePreference } = usePreferences()
+  const { openSettings } = useSettings()
+
+  const theme = preferences?.theme ?? "system"
+
+  const setTheme = (newTheme: Theme) => {
+    updatePreference("theme", newTheme)
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Theme">
+        <Button variant="ghost" size="icon" className="h-8 w-8" title="Theme & Settings">
           {theme === "system" ? (
             <Monitor className="h-4 w-4" />
           ) : resolvedTheme === "dark" ? (
@@ -34,6 +48,11 @@ export function ThemeDropdown() {
           <Moon className="mr-2 h-4 w-4" />
           Dark
           {theme === "dark" && <span className="ml-auto text-xs text-muted-foreground">✓</span>}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => openSettings("appearance")}>
+          <Settings className="mr-2 h-4 w-4" />
+          All Settings...
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
