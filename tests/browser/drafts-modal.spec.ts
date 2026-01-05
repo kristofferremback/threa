@@ -349,8 +349,9 @@ test.describe("Drafts Page", () => {
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
     // Clear the editor by selecting all and deleting - this should auto-delete the draft
+    // Use ControlOrMeta modifier to work on both macOS and Linux (CI)
     await editor.click()
-    await page.keyboard.press("Meta+a")
+    await editor.press("ControlOrMeta+a")
     await page.keyboard.press("Backspace")
 
     // Wait for auto-delete to complete (debounce + IndexedDB write + reactive update)
