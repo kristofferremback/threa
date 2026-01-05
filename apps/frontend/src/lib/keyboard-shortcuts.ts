@@ -149,7 +149,8 @@ export function parseKeyBinding(key: string): {
  */
 export function matchesKeyBinding(event: KeyboardEvent, binding: string): boolean {
   const parsed = parseKeyBinding(binding)
-  const modPressed = isMac() ? event.metaKey : event.ctrlKey
+  // Accept either metaKey OR ctrlKey for "mod" - cross-platform compatibility
+  const modPressed = event.metaKey || event.ctrlKey
 
   // Handle special vim-style escape
   if (parsed.key === "[" && event.ctrlKey && event.key === "[") {
