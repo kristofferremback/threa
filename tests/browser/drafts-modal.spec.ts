@@ -4,15 +4,16 @@ import { test, expect } from "@playwright/test"
  * Tests for the Drafts modal feature.
  *
  * Tests:
- * 1. Draft in channel appears in modal
- * 2. Draft in scratchpad appears in modal
- * 3. Navigate to draft from modal
- * 4. Delete draft with confirmation
- * 5. Cancel delete keeps draft
- * 6. Drafts button visibility (only when drafts exist)
+ * 1. Drafts button greyed when empty, highlighted when drafts exist
+ * 2. Draft in channel appears in modal
+ * 3. Draft in scratchpad appears in modal
+ * 4. Navigate to draft from modal
+ * 5. Delete draft with confirmation
+ * 6. Cancel delete keeps draft
  * 7. Quick switcher command "> drafts" opens modal
  * 8. Attachment-only draft appears in modal
  * 9. Implicit clear (no confirmation) auto-deletes draft
+ * 10. Thread draft navigation with draft panel opening
  */
 
 test.describe("Drafts Modal", () => {
@@ -55,12 +56,14 @@ test.describe("Drafts Modal", () => {
     await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
   })
 
-  test("should not show drafts button when no drafts exist", async ({ page }) => {
-    // Verify Drafts button is NOT visible when there are no drafts
-    await expect(page.getByRole("button", { name: /Drafts/ })).not.toBeVisible()
+  test("should show greyed drafts button when no drafts exist", async ({ page }) => {
+    // Verify Drafts button is visible but greyed out (has text-muted-foreground class)
+    const draftsButton = page.getByTestId("drafts-button")
+    await expect(draftsButton).toBeVisible()
+    await expect(draftsButton).toHaveClass(/text-muted-foreground/)
   })
 
-  test("should show drafts button with count when draft exists in channel", async ({ page }) => {
+  test("should highlight drafts button when draft exists in channel", async ({ page }) => {
     // Create a channel
     const channelName = `draft-channel-${testId}`
     page.once("dialog", async (dialog) => {
@@ -82,10 +85,10 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
-    // Verify Drafts button appears with count badge
-    const draftsButton = page.getByRole("button", { name: /Drafts/ })
+    // Verify Drafts button is highlighted (no longer greyed out)
+    const draftsButton = page.getByTestId("drafts-button")
     await expect(draftsButton).toBeVisible({ timeout: 2000 })
-    await expect(draftsButton.locator("text=1")).toBeVisible()
+    await expect(draftsButton).not.toHaveClass(/text-muted-foreground/)
   })
 
   test("should open drafts modal and show draft content", async ({ page }) => {
@@ -364,8 +367,8 @@ test.describe("Drafts Modal", () => {
     // Wait for auto-delete to complete
     await page.waitForTimeout(700)
 
-    // Drafts button should disappear since the only draft was deleted
-    await expect(page.getByTestId("drafts-button")).not.toBeVisible({ timeout: 2000 })
+    // Drafts button should be greyed out since the only draft was deleted
+    await expect(page.getByTestId("drafts-button")).toHaveClass(/text-muted-foreground/, { timeout: 2000 })
   })
 
   test("should show scratchpad draft in modal", async ({ page }) => {

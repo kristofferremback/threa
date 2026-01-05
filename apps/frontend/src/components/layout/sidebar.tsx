@@ -5,7 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,25 +103,18 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         </div>
       </div>
 
-      {/* Drafts button - only visible when drafts exist */}
-      {draftCount > 0 && (
-        <div className="border-b px-2 py-2">
-          <Button
-            variant="ghost"
-            className="w-full justify-between"
-            onClick={openDraftsModal}
-            data-testid="drafts-button"
-          >
-            <span className="flex items-center gap-2">
-              <FileEdit className="h-4 w-4" />
-              Drafts
-            </span>
-            <Badge variant="secondary" className="opacity-60">
-              {draftCount}
-            </Badge>
-          </Button>
-        </div>
-      )}
+      {/* Drafts button - always visible, greyed when empty */}
+      <div className="border-b px-2 py-2">
+        <Button
+          variant="ghost"
+          className={cn("w-full justify-start gap-2", draftCount === 0 && "text-muted-foreground")}
+          onClick={openDraftsModal}
+          data-testid="drafts-button"
+        >
+          <FileEdit className="h-4 w-4" />
+          Drafts
+        </Button>
+      </div>
 
       <ScrollArea className="flex-1">
         <div className="p-2">
