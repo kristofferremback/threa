@@ -125,24 +125,4 @@ export const UserPreferencesRepository = {
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)
   },
-
-  /**
-   * List all overrides for a user across all workspaces.
-   */
-  async listByUser(
-    client: PoolClient,
-    userId: string
-  ): Promise<Array<{ workspaceId: string; key: string; value: unknown }>> {
-    const result = await client.query<PreferenceOverrideRow>(sql`
-      SELECT workspace_id, key, value
-      FROM user_preference_overrides
-      WHERE user_id = ${userId}
-      ORDER BY workspace_id, key
-    `)
-    return result.rows.map((row) => ({
-      workspaceId: row.workspace_id,
-      key: row.key,
-      value: row.value,
-    }))
-  },
 }
