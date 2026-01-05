@@ -165,3 +165,34 @@ export interface UpdateUserPreferencesInput {
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }
+
+// =============================================================================
+// Sparse Override Types
+// =============================================================================
+
+/**
+ * A single preference override stored in the database.
+ * Only non-default values are stored.
+ */
+export interface PreferenceOverride {
+  workspaceId: string
+  userId: string
+  key: string
+  value: unknown
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Valid top-level preference keys that can be overridden.
+ */
+export type PreferenceKey = keyof Omit<UserPreferences, "workspaceId" | "userId" | "createdAt" | "updatedAt">
+
+/**
+ * Valid nested preference keys (dot notation).
+ * e.g., "accessibility.fontSize", "accessibility.reducedMotion"
+ */
+export type NestedPreferenceKey =
+  | PreferenceKey
+  | `accessibility.${keyof AccessibilityPreferences}`
+  | `keyboardShortcuts.${string}`
