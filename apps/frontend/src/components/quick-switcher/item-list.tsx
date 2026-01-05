@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import type { QuickSwitcherItem } from "./types"
 
 interface ItemListProps {
@@ -66,12 +67,13 @@ export function ItemList({
   }
 
   return (
-    <div ref={listRef} className="max-h-[400px] overflow-y-auto p-1">
+    <div ref={listRef} role="listbox" className="max-h-[400px] overflow-y-auto p-1">
       {Object.entries(groups).map(([groupName, groupItems]) => (
-        <div key={groupName || "_ungrouped"} className="mb-1">
+        <div key={groupName || "_ungrouped"} role="group" aria-label={groupName || undefined} className="mb-1">
           {groupName && <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{groupName}</div>}
           {groupItems.map(({ item, index }) => {
             const Icon = item.icon
+            const ActionIcon = item.actionIcon
             const isSelected = index === selectedIndex
 
             const itemContent = (
@@ -83,11 +85,26 @@ export function ItemList({
                     <span className="text-xs text-muted-foreground truncate">{item.description}</span>
                   )}
                 </div>
+                {item.onAction && ActionIcon && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      item.onAction?.()
+                    }}
+                    aria-label={item.actionLabel}
+                  >
+                    <ActionIcon className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                )}
               </>
             )
 
             const className = cn(
-              "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none",
+              "group relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none",
               isSelected && "bg-accent text-accent-foreground"
             )
 
@@ -96,6 +113,8 @@ export function ItemList({
                 <Link
                   key={item.id}
                   to={item.href}
+                  role="option"
+                  aria-selected={isSelected}
                   data-index={index}
                   className={className}
                   onMouseEnter={() => onSelectIndex(index)}
@@ -109,6 +128,8 @@ export function ItemList({
             return (
               <div
                 key={item.id}
+                role="option"
+                aria-selected={isSelected}
                 data-index={index}
                 className={className}
                 onMouseEnter={() => onSelectIndex(index)}

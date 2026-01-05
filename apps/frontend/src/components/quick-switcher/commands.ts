@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom"
-import { FileText, Hash, Search } from "lucide-react"
+import { FileText, Hash, Search, FileEdit } from "lucide-react"
 import { toast } from "sonner"
 
 /**
@@ -87,6 +87,16 @@ export const commands: Command[] = [
     keywords: ["find", "query"],
     action: ({ setMode }) => {
       setMode?.("search")
+    },
+  },
+  {
+    id: "view-drafts",
+    label: "View Drafts",
+    icon: FileEdit,
+    keywords: ["draft", "unsent", "pending"],
+    action: ({ workspaceId, navigate, closeDialog }) => {
+      closeDialog()
+      navigate(`/w/${workspaceId}/drafts`)
     },
   },
 ]

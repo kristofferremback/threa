@@ -9,6 +9,12 @@ export interface QuickSwitcherItem {
   group?: string
   href?: string
   onSelect: () => void
+  /** Optional action button (e.g., delete) */
+  onAction?: () => void
+  /** Icon for the action button */
+  actionIcon?: React.ComponentType<{ className?: string }>
+  /** Aria label for the action button */
+  actionLabel?: string
 }
 
 export interface ModeContext {

@@ -1231,8 +1231,8 @@ describe("QuickSwitcher Integration Tests", () => {
           expect(screen.getByText("Martin")).toBeInTheDocument()
         })
 
-        // Find where the suggestion list actually rendered
-        const suggestionList = screen.getByRole("listbox")
+        // Find where the suggestion list actually rendered (use aria-label to distinguish from ItemList)
+        const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
         console.log("Suggestion list parent:", suggestionList.parentElement?.tagName)
         console.log("Is direct child of body:", suggestionList.parentElement === document.body)
 
@@ -1277,7 +1277,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
         // At this point, popover should be active
         // Let's check the DOM state before pressing Escape
-        const suggestionList = screen.getByRole("listbox")
+        const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
         console.log("Popover visible before Escape:", !!suggestionList)
 
         // Press Escape
@@ -1286,7 +1286,7 @@ describe("QuickSwitcher Integration Tests", () => {
         // What happened?
         console.log("onOpenChange calls:", onOpenChange.mock.calls)
         console.log("Dialog still exists:", !!screen.queryByRole("dialog"))
-        console.log("Popover still exists:", !!screen.queryByRole("listbox"))
+        console.log("Popover still exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // Expected in real browser with bug:
         // - Dialog closes (onOpenChange called with false)
@@ -1317,7 +1317,7 @@ describe("QuickSwitcher Integration Tests", () => {
 
         console.log("Before Enter:")
         console.log("- Search results visible:", !!screen.queryByText("Hello from the search results"))
-        console.log("- Popover visible:", !!screen.queryByRole("listbox"))
+        console.log("- Popover visible:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
         console.log("- Editor content:", editor.textContent)
 
         // Press Enter
@@ -1326,7 +1326,7 @@ describe("QuickSwitcher Integration Tests", () => {
         console.log("After Enter:")
         console.log("- mockNavigate calls:", mockNavigate.mock.calls)
         console.log("- Editor content:", editor.textContent)
-        console.log("- Popover still visible:", !!screen.queryByRole("listbox"))
+        console.log("- Popover still visible:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // If Enter was captured by popover: editor should contain @martin, navigate not called
         // If Enter was captured by list: navigate called, editor unchanged
@@ -1342,17 +1342,17 @@ describe("QuickSwitcher Integration Tests", () => {
         await user.click(editor)
 
         // Before typing @
-        console.log("Before @: popover listbox exists:", !!screen.queryByRole("listbox"))
+        console.log("Before @: popover listbox exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // Need to type text first, then @ - just @ after "? " doesn't trigger popover
         await user.type(editor, "test @")
 
         // After typing @, wait for popover
         await waitFor(() => {
-          expect(screen.getByRole("listbox")).toBeInTheDocument()
+          expect(screen.getByRole("listbox", { name: /suggestions/i })).toBeInTheDocument()
         })
 
-        console.log("After @: popover listbox exists:", !!screen.queryByRole("listbox"))
+        console.log("After @: popover listbox exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // The question is: does the parent QuickSwitcher know the popover is active?
         // We can't directly check isSuggestionPopoverActive state, but we can
@@ -1423,7 +1423,7 @@ describe("QuickSwitcher Integration Tests", () => {
         // Wait for channel suggestion popover to appear with "general" channel
         await waitFor(() => {
           // Suggestion popover should appear with listbox role
-          const listbox = screen.getByRole("listbox")
+          const listbox = screen.getByRole("listbox", { name: /suggestions/i })
           expect(listbox).toBeInTheDocument()
           // Should contain a channel option with "general" (case-insensitive)
           expect(screen.getByRole("option", { name: /general/i })).toBeInTheDocument()
