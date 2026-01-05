@@ -27,50 +27,57 @@ describe("dates", () => {
   })
 
   describe("formatDisplayDate", () => {
-    it("should format date as 'Mon D, YYYY'", () => {
+    it("should format date as ISO by default (YYYY-MM-DD)", () => {
       const date = new Date("2025-06-15T12:00:00Z")
-      expect(formatDisplayDate(date)).toBe("Jun 15, 2025")
+      expect(formatDisplayDate(date)).toBe("2025-06-15")
     })
 
-    it("should handle different months", () => {
-      const date = new Date("2025-01-01T12:00:00Z")
-      expect(formatDisplayDate(date)).toBe("Jan 1, 2025")
+    it("should format date as DD/MM/YYYY when EU format specified", () => {
+      const date = new Date("2025-06-15T12:00:00Z")
+      expect(formatDisplayDate(date, { dateFormat: "DD/MM/YYYY" })).toBe("15/06/2025")
+    })
+
+    it("should format date as MM/DD/YYYY when US format specified", () => {
+      const date = new Date("2025-01-05T12:00:00Z")
+      expect(formatDisplayDate(date, { dateFormat: "MM/DD/YYYY" })).toBe("01/05/2025")
     })
   })
 
   describe("formatTime24h", () => {
     it("should format time in 24-hour format", () => {
-      const date = new Date("2025-06-15T14:30:00Z")
+      // Use local time constructor to avoid timezone issues
+      const date = new Date(2025, 5, 15, 14, 30, 0)
       expect(formatTime24h(date)).toBe("14:30")
     })
 
     it("should pad single digit hours", () => {
-      const date = new Date("2025-06-15T09:05:00Z")
+      const date = new Date(2025, 5, 15, 9, 5, 0)
       expect(formatTime24h(date)).toBe("09:05")
     })
 
     it("should handle midnight", () => {
-      const date = new Date("2025-06-15T00:00:00Z")
+      const date = new Date(2025, 5, 15, 0, 0, 0)
       expect(formatTime24h(date)).toBe("00:00")
     })
   })
 
   describe("isSameDay", () => {
     it("should return true for same day", () => {
-      const a = new Date("2025-06-15T10:00:00Z")
-      const b = new Date("2025-06-15T22:00:00Z")
+      // Use local time constructor to avoid timezone issues
+      const a = new Date(2025, 5, 15, 10, 0, 0)
+      const b = new Date(2025, 5, 15, 22, 0, 0)
       expect(isSameDay(a, b)).toBe(true)
     })
 
     it("should return false for different days", () => {
-      const a = new Date("2025-06-15T10:00:00Z")
-      const b = new Date("2025-06-14T10:00:00Z")
+      const a = new Date(2025, 5, 15, 10, 0, 0)
+      const b = new Date(2025, 5, 14, 10, 0, 0)
       expect(isSameDay(a, b)).toBe(false)
     })
 
     it("should return false for same day different month", () => {
-      const a = new Date("2025-06-15T10:00:00Z")
-      const b = new Date("2025-07-15T10:00:00Z")
+      const a = new Date(2025, 5, 15, 10, 0, 0)
+      const b = new Date(2025, 6, 15, 10, 0, 0)
       expect(isSameDay(a, b)).toBe(false)
     })
   })
