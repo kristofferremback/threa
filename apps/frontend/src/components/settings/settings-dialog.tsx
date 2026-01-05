@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSettings } from "@/contexts"
@@ -18,6 +19,14 @@ const TAB_LABELS: Record<SettingsTab, string> = {
 
 export function SettingsDialog() {
   const { isOpen, activeTab, closeSettings, setActiveTab } = useSettings()
+  const [mounted, setMounted] = useState(false)
+
+  // Delay dialog render until after hydration to avoid scroll lock measurement issues
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>

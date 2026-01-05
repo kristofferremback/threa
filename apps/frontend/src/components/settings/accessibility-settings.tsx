@@ -58,17 +58,19 @@ export function AccessibilitySettings() {
       <Card>
         <CardHeader>
           <CardTitle>Contrast</CardTitle>
-          <CardDescription>Adjust visual contrast (coming soon)</CardDescription>
+          <CardDescription>Adjust visual contrast</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <Label htmlFor="high-contrast" className="text-muted-foreground">
-                High contrast
-              </Label>
+              <Label htmlFor="high-contrast">High contrast</Label>
               <p className="text-sm text-muted-foreground">Increase contrast for better visibility</p>
             </div>
-            <Switch id="high-contrast" checked={accessibility.highContrast} disabled />
+            <Switch
+              id="high-contrast"
+              checked={accessibility.highContrast}
+              onCheckedChange={(checked) => updateAccessibility({ highContrast: checked })}
+            />
           </div>
         </CardContent>
       </Card>
