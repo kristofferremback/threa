@@ -129,13 +129,14 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
                 e.preventDefault()
                 setSelectedIndex((prev) => Math.max(prev - 1, 0))
                 break
-              case "Enter":
+              case "Enter": {
                 e.preventDefault()
                 const item = items[selectedIndex]
                 if (item) {
                   handleSelectItem(item, isMod)
                 }
                 break
+              }
             }
           }}
         >

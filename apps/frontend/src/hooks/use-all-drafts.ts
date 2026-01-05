@@ -5,6 +5,12 @@ import { isDraftId } from "./use-draft-scratchpads"
 
 export type DraftType = "scratchpad" | "channel" | "dm" | "thread"
 
+const VALID_DRAFT_TYPES: readonly DraftType[] = ["scratchpad", "channel", "dm", "thread"] as const
+
+function isValidDraftType(type: string): type is DraftType {
+  return VALID_DRAFT_TYPES.includes(type as DraftType)
+}
+
 export interface UnifiedDraft {
   /** Original draft ID (e.g., "draft_xxx" or "stream:xxx" or "thread:xxx") */
   id: string
@@ -77,14 +83,19 @@ export function useAllDrafts(workspaceId: string) {
     []
   )
 
+  // Check if we have any thread drafts that need parent message resolution
+  const hasThreadDrafts = useMemo(() => (draftMessages ?? []).some((m) => m.id.startsWith("thread:")), [draftMessages])
+
   // Get cached events for looking up parent messages (for thread drafts)
+  // Only query events if we have thread drafts to avoid expensive query for common case
   const cachedEvents = useLiveQuery(
-    () =>
-      db.events
-        .where("streamId")
-        .anyOf((cachedStreams ?? []).map((s) => s.id))
-        .toArray(),
-    [cachedStreams],
+    () => {
+      if (!hasThreadDrafts) return []
+      const streamIds = (cachedStreams ?? []).map((s) => s.id)
+      if (streamIds.length === 0) return []
+      return db.events.where("streamId").anyOf(streamIds).toArray()
+    },
+    [cachedStreams, hasThreadDrafts],
     []
   )
 
@@ -192,7 +203,7 @@ export function useAllDrafts(workspaceId: string) {
             stream.type === "channel"
               ? `#${stream.slug || stream.displayName || "channel"}`
               : stream.displayName || "Message"
-          draftType = stream.type as DraftType
+          draftType = isValidDraftType(stream.type) ? stream.type : "channel"
         } else {
           // Stream not in cache - still show the draft with a generic name
           displayName = "Message"
