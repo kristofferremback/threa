@@ -1,22 +1,22 @@
 import { test, expect } from "@playwright/test"
 
 /**
- * Tests for the Drafts modal feature.
+ * Tests for the Drafts page feature.
  *
  * Tests:
- * 1. Drafts button greyed when empty, highlighted when drafts exist
- * 2. Draft in channel appears in modal
- * 3. Draft in scratchpad appears in modal
- * 4. Navigate to draft from modal
+ * 1. Drafts link greyed when empty, highlighted when drafts exist
+ * 2. Draft in channel appears on page
+ * 3. Draft in scratchpad appears on page
+ * 4. Navigate to draft from page
  * 5. Delete draft with confirmation
  * 6. Cancel delete keeps draft
- * 7. Quick switcher command "> drafts" opens modal
- * 8. Attachment-only draft appears in modal
+ * 7. Quick switcher command "> drafts" navigates to page
+ * 8. Attachment-only draft appears on page
  * 9. Implicit clear (no confirmation) auto-deletes draft
  * 10. Thread draft navigation with draft panel opening
  */
 
-test.describe("Drafts Modal", () => {
+test.describe("Drafts Page", () => {
   const testId = Date.now().toString(36)
   const testEmail = `drafts-test-${testId}@example.com`
   const testName = `Drafts Test ${testId}`
@@ -56,14 +56,14 @@ test.describe("Drafts Modal", () => {
     await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
   })
 
-  test("should show greyed drafts button when no drafts exist", async ({ page }) => {
-    // Verify Drafts button is visible but greyed out (has text-muted-foreground class)
-    const draftsButton = page.getByTestId("drafts-button")
-    await expect(draftsButton).toBeVisible()
-    await expect(draftsButton).toHaveClass(/text-muted-foreground/)
+  test("should show greyed drafts link when no drafts exist", async ({ page }) => {
+    // Verify Drafts link is visible but greyed out (has text-muted-foreground class)
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible()
+    await expect(draftsLink).toHaveClass(/text-muted-foreground/)
   })
 
-  test("should highlight drafts button when draft exists in channel", async ({ page }) => {
+  test("should highlight drafts link when draft exists in channel", async ({ page }) => {
     // Create a channel
     const channelName = `draft-channel-${testId}`
     page.once("dialog", async (dialog) => {
@@ -85,15 +85,15 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
-    // Verify Drafts button is highlighted (no longer greyed out)
-    const draftsButton = page.getByTestId("drafts-button")
-    await expect(draftsButton).toBeVisible({ timeout: 2000 })
-    await expect(draftsButton).not.toHaveClass(/text-muted-foreground/)
+    // Verify Drafts link is highlighted (no longer greyed out)
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible({ timeout: 2000 })
+    await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
   })
 
-  test("should open drafts modal and show draft content", async ({ page }) => {
+  test("should show draft content on drafts page", async ({ page }) => {
     // Create a channel and draft
-    const channelName = `modal-test-${testId}`
+    const channelName = `page-test-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)
     })
@@ -103,7 +103,7 @@ test.describe("Drafts Modal", () => {
     // Create draft
     const editor = page.locator("[contenteditable='true']")
     await editor.click()
-    const draftContent = `Test draft for modal ${testId}`
+    const draftContent = `Test draft for page ${testId}`
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
@@ -111,18 +111,20 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
-    // Click Drafts button to open modal
-    await page.getByRole("button", { name: /Drafts/ }).click()
+    // Click Drafts link to navigate to page
+    await page.getByTestId("drafts-button").click()
 
-    // Verify modal opens and shows the draft
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Verify we're on the drafts page
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
+
+    // Verify page shows the draft
     const draftItem = page.locator("[data-testid='draft-item']").first()
     await expect(draftItem).toBeVisible()
     await expect(draftItem.getByText(draftContent.slice(0, 40))).toBeVisible()
     await expect(draftItem.getByText(`#${channelName}`)).toBeVisible()
   })
 
-  test("should navigate to draft location when clicking draft in modal", async ({ page }) => {
+  test("should navigate to draft location when clicking draft on page", async ({ page }) => {
     // Create a channel and draft
     const channelName = `nav-test-${testId}`
     page.once("dialog", async (dialog) => {
@@ -138,26 +140,19 @@ test.describe("Drafts Modal", () => {
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
-    // Navigate away to scratchpad
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-    // Open drafts modal
-    await page.getByRole("button", { name: /Drafts/ }).click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to drafts page
+    await page.getByTestId("drafts-button").click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Click on the draft item to navigate
     const draftItem = page.locator("[data-testid='draft-item']").first()
     await draftItem.click()
 
-    // Modal should close
-    await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 2000 })
-
     // Should be back in the channel (URL contains the channel stream ID)
     await expect(page).toHaveURL(new RegExp(`/s/stream_`), { timeout: 5000 })
 
-    // Channel name should be visible in sidebar
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible()
+    // Channel name should be visible in sidebar (use exact to avoid matching draft item text)
+    await expect(page.getByRole("link", { name: `#${channelName}`, exact: true })).toBeVisible()
   })
 
   test("should delete draft with confirmation when clicking delete button", async ({ page }) => {
@@ -176,13 +171,9 @@ test.describe("Drafts Modal", () => {
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
-    // Navigate away
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-    // Open drafts modal
-    await page.getByRole("button", { name: /Drafts/ }).click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to drafts page
+    await page.getByTestId("drafts-button").click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover over draft item to reveal delete button
     const draftItem = page.locator("[data-testid='draft-item']").first()
@@ -200,12 +191,11 @@ test.describe("Drafts Modal", () => {
     // Wait for delete to complete and UI to update
     await page.waitForTimeout(500)
 
-    // Draft should be removed from modal (check within the dialog)
-    const dialog = page.getByRole("dialog")
-    await expect(dialog.getByTestId("draft-item")).not.toBeVisible({ timeout: 2000 })
+    // Draft should be removed from page
+    await expect(page.getByTestId("draft-item")).not.toBeVisible({ timeout: 2000 })
 
-    // Modal should show empty state
-    await expect(dialog.getByText(/no drafts/i)).toBeVisible()
+    // Page should show empty state
+    await expect(page.getByText(/no drafts/i)).toBeVisible()
   })
 
   test("should keep draft when canceling delete confirmation", async ({ page }) => {
@@ -224,13 +214,9 @@ test.describe("Drafts Modal", () => {
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
-    // Navigate away
-    await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
-
-    // Open drafts modal
-    await page.getByRole("button", { name: /Drafts/ }).click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to drafts page
+    await page.getByTestId("drafts-button").click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover and click delete
     const draftItem = page.locator("[data-testid='draft-item']").first()
@@ -240,11 +226,11 @@ test.describe("Drafts Modal", () => {
     // Cancel the confirmation
     await page.getByRole("button", { name: /cancel/i }).click()
 
-    // Draft should still be visible in modal
+    // Draft should still be visible on page
     await expect(draftItem.getByText(draftContent.slice(0, 30))).toBeVisible()
   })
 
-  test("should open drafts modal via quick switcher command", async ({ page }) => {
+  test("should navigate to drafts page via quick switcher command", async ({ page }) => {
     // Create a channel and draft first
     const channelName = `qs-drafts-${testId}`
     page.once("dialog", async (dialog) => {
@@ -277,12 +263,12 @@ test.describe("Drafts Modal", () => {
     // Select the command
     await page.keyboard.press("Enter")
 
-    // Quick switcher should close and drafts modal should open
+    // Quick switcher should close and we should be on the drafts page
     await expect(page.getByText("Stream search")).not.toBeVisible({ timeout: 2000 })
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
   })
 
-  test("should show attachment-only draft in modal", async ({ page }) => {
+  test("should show attachment-only draft on page", async ({ page }) => {
     // Create a channel
     const channelName = `attach-only-${testId}`
     page.once("dialog", async (dialog) => {
@@ -326,13 +312,14 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
-    // Drafts button should appear (attachment-only draft counts)
-    const draftsButton = page.getByRole("button", { name: /Drafts/ })
-    await expect(draftsButton).toBeVisible({ timeout: 2000 })
+    // Drafts link should not be greyed (attachment-only draft counts)
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible({ timeout: 2000 })
+    await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
-    // Open modal and verify draft shows attachment indicator (shows number next to paperclip icon)
-    await draftsButton.click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to page and verify draft shows attachment indicator
+    await draftsLink.click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
     const draftItem = page.locator("[data-testid='draft-item']").first()
     await expect(draftItem).toBeVisible()
     // The attachment count is shown as just a number with a paperclip icon
@@ -355,9 +342,10 @@ test.describe("Drafts Modal", () => {
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
-    // Verify draft was saved by checking Drafts button appears in sidebar
-    // (button only shows when there are drafts)
-    await expect(page.getByTestId("drafts-button")).toBeVisible({ timeout: 2000 })
+    // Verify draft was saved by checking Drafts link is highlighted
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible({ timeout: 2000 })
+    await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
     // Clear the editor by selecting all and deleting - this should auto-delete the draft
     await editor.click()
@@ -367,11 +355,11 @@ test.describe("Drafts Modal", () => {
     // Wait for auto-delete to complete
     await page.waitForTimeout(700)
 
-    // Drafts button should be greyed out since the only draft was deleted
-    await expect(page.getByTestId("drafts-button")).toHaveClass(/text-muted-foreground/, { timeout: 2000 })
+    // Drafts link should be greyed out since the only draft was deleted
+    await expect(draftsLink).toHaveClass(/text-muted-foreground/, { timeout: 2000 })
   })
 
-  test("should show scratchpad draft in modal", async ({ page }) => {
+  test("should show scratchpad draft on page", async ({ page }) => {
     // Create a scratchpad
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
     await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
@@ -391,13 +379,14 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Channel" }).click()
     await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
 
-    // Drafts button should appear
-    const draftsButton = page.getByRole("button", { name: /Drafts/ })
-    await expect(draftsButton).toBeVisible({ timeout: 2000 })
+    // Drafts link should not be greyed
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible({ timeout: 2000 })
+    await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
-    // Open modal and verify scratchpad draft is shown
-    await draftsButton.click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to page and verify scratchpad draft is shown
+    await draftsLink.click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
     const draftItem = page.locator("[data-testid='draft-item']").first()
     await expect(draftItem).toBeVisible()
     await expect(draftItem.getByText(draftContent.slice(0, 30))).toBeVisible()
@@ -450,13 +439,14 @@ test.describe("Drafts Modal", () => {
     await page.getByRole("button", { name: "+ New Channel" }).click()
     await expect(page.getByRole("link", { name: `#${otherChannelName}` })).toBeVisible({ timeout: 5000 })
 
-    // Drafts button should appear with the thread draft
-    const draftsButton = page.getByRole("button", { name: /Drafts/ })
-    await expect(draftsButton).toBeVisible({ timeout: 2000 })
+    // Drafts link should not be greyed (has thread draft)
+    const draftsLink = page.getByTestId("drafts-button")
+    await expect(draftsLink).toBeVisible({ timeout: 2000 })
+    await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
-    // Open modal
-    await draftsButton.click()
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 })
+    // Navigate to drafts page
+    await draftsLink.click()
+    await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Verify the thread draft is shown with "Thread in #channel" label
     const draftItem = page.locator("[data-testid='draft-item']").first()
@@ -465,9 +455,6 @@ test.describe("Drafts Modal", () => {
 
     // Click on the thread draft to navigate
     await draftItem.click()
-
-    // Modal should close
-    await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 2000 })
 
     // URL should have the draft parameter
     await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })

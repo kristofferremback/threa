@@ -21,7 +21,6 @@ export interface CommandContext {
   createChannel: (slug: string) => Promise<{ id: string }>
   setMode?: (mode: "stream" | "command" | "search") => void
   requestInput: (request: InputRequest) => void
-  openDraftsModal?: () => void
 }
 
 export interface Command {
@@ -95,9 +94,9 @@ export const commands: Command[] = [
     label: "View Drafts",
     icon: FileEdit,
     keywords: ["draft", "unsent", "pending"],
-    action: ({ closeDialog, openDraftsModal }) => {
+    action: ({ workspaceId, navigate, closeDialog }) => {
       closeDialog()
-      openDraftsModal?.()
+      navigate(`/w/${workspaceId}/drafts`)
     },
   },
 ]

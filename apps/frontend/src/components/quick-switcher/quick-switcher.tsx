@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom"
 import { Search, Terminal, FileText } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { useWorkspaceBootstrap, useDraftScratchpads, useCreateStream } from "@/hooks"
-import { useDraftsModal } from "@/contexts"
 import { StreamTypes } from "@threa/types"
 import { useStreamItems } from "./use-stream-items"
 import { useCommandItems } from "./use-command-items"
@@ -63,7 +62,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const createStream = useCreateStream(workspaceId)
-  const { openDraftsModal } = useDraftsModal()
 
   const [query, setQuery] = useState("")
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -131,9 +129,8 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
       createChannel,
       setMode,
       requestInput,
-      openDraftsModal,
     }),
-    [workspaceId, navigate, handleClose, createDraft, createChannel, setMode, requestInput, openDraftsModal]
+    [workspaceId, navigate, handleClose, createDraft, createChannel, setMode, requestInput]
   )
 
   // Get items based on current mode

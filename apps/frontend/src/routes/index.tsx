@@ -3,6 +3,7 @@ import { LoginPage } from "@/pages/login"
 import { WorkspaceSelectPage } from "@/pages/workspace-select"
 import { WorkspaceLayout } from "@/pages/workspace-layout"
 import { StreamPage } from "@/pages/stream"
+import { DraftsPage } from "@/pages/drafts"
 import { ErrorBoundary } from "@/components/error-boundary"
 
 export const router = createBrowserRouter([
@@ -29,6 +30,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <WorkspaceHome />,
+      },
+      {
+        path: "drafts",
+        element: <DraftsPage />,
       },
       {
         path: "s/:streamId",

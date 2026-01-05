@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
-import { FileText, Hash, MessageSquare, Trash2, FileEdit } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { useState, useCallback, useMemo } from "react"
+import { useParams, useNavigate, Link } from "react-router-dom"
+import { FileText, Hash, MessageSquare, Trash2, FileEdit, ArrowLeft } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,30 +22,20 @@ const TYPE_ICONS: Record<DraftType, React.ComponentType<{ className?: string }>>
   thread: MessageSquare,
 }
 
-interface DraftsModalProps {
-  workspaceId: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}
-
-export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProps) {
+export function DraftsPage() {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
-  const { drafts, deleteDraft } = useAllDrafts(workspaceId)
+  const { drafts, deleteDraft } = useAllDrafts(workspaceId ?? "")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [draftToDelete, setDraftToDelete] = useState<UnifiedDraft | null>(null)
-
-  const handleClose = useCallback(() => {
-    onOpenChange(false)
-  }, [onOpenChange])
 
   const handleSelectDraft = useCallback(
     (href: string | null) => {
       if (href) {
         navigate(href)
       }
-      handleClose()
     },
-    [navigate, handleClose]
+    [navigate]
   )
 
   const handleDeleteClick = useCallback((draft: UnifiedDraft) => {
@@ -54,7 +44,6 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
 
   const handleConfirmDelete = useCallback(async () => {
     if (draftToDelete) {
-      // Capture the ID before clearing state (onOpenChange may fire first)
       const idToDelete = draftToDelete.id
       setDraftToDelete(null)
       await deleteDraft(idToDelete)
@@ -68,7 +57,6 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
   // Convert drafts to QuickSwitcherItem format
   const items: QuickSwitcherItem[] = useMemo(() => {
     return drafts.map((draft) => {
-      // Build description with preview and attachment count
       let description = draft.preview
       if (draft.attachmentCount > 0) {
         const attachmentSuffix = ` [${draft.attachmentCount} 📎]`
@@ -98,23 +86,26 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
     }
   }, [])
 
-  // Reset selection when drafts change
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [drafts.length])
-
-  // Reset selection when dialog opens
-  useEffect(() => {
-    if (open) {
-      setSelectedIndex(0)
-    }
-  }, [open])
+  if (!workspaceId) {
+    return null
+  }
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="max-w-lg p-0 gap-0"
+      <div className="flex h-full flex-col">
+        <header className="flex h-14 items-center gap-3 border-b px-4">
+          <Link to={`/w/${workspaceId}`}>
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <FileEdit className="h-5 w-5 text-muted-foreground" />
+            <h1 className="font-semibold">Drafts</h1>
+          </div>
+        </header>
+        <main
+          className="flex-1 overflow-hidden"
           onKeyDown={(e) => {
             if (drafts.length === 0) return
 
@@ -139,15 +130,8 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
               }
             }
           }}
+          tabIndex={0}
         >
-          <DialogHeader className="px-4 py-3 border-b">
-            <div className="flex items-center gap-2">
-              <FileEdit className="h-5 w-5 text-muted-foreground" />
-              <DialogTitle>Drafts</DialogTitle>
-            </div>
-            <DialogDescription className="sr-only">Your unsent message drafts</DialogDescription>
-          </DialogHeader>
-
           <ItemList
             items={items}
             selectedIndex={selectedIndex}
@@ -156,8 +140,8 @@ export function DraftsModal({ workspaceId, open, onOpenChange }: DraftsModalProp
             emptyMessage="No drafts"
             itemTestId="draft-item"
           />
-        </DialogContent>
-      </Dialog>
+        </main>
+      </div>
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={!!draftToDelete} onOpenChange={(open) => !open && handleCancelDelete()}>

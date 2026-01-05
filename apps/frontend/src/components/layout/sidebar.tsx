@@ -22,7 +22,7 @@ import {
   useAllDrafts,
   workspaceKeys,
 } from "@/hooks"
-import { useQuickSwitcher, useDraftsModal } from "@/contexts"
+import { useQuickSwitcher } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -33,18 +33,18 @@ interface SidebarProps {
 }
 
 export function Sidebar({ workspaceId }: SidebarProps) {
-  const { streamId: activeStreamId } = useParams<{ streamId: string }>()
+  const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
   const { openSwitcher } = useQuickSwitcher()
-  const { openDraftsModal } = useDraftsModal()
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const totalUnread = getTotalUnreadCount()
   const draftCount = allDrafts.length
+  const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")
@@ -103,17 +103,21 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         </div>
       </div>
 
-      {/* Drafts button - always visible, greyed when empty */}
+      {/* Drafts link - always visible, greyed when empty */}
       <div className="border-b px-2 py-2">
-        <Button
-          variant="ghost"
-          className={cn("w-full justify-start gap-2", draftCount === 0 && "text-muted-foreground")}
-          onClick={openDraftsModal}
+        <Link
+          to={`/w/${workspaceId}/drafts`}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+            "hover:bg-accent hover:text-accent-foreground",
+            isDraftsPage && "bg-accent text-accent-foreground",
+            !isDraftsPage && draftCount === 0 && "text-muted-foreground"
+          )}
           data-testid="drafts-button"
         >
           <FileEdit className="h-4 w-4" />
           Drafts
-        </Button>
+        </Link>
       </div>
 
       <ScrollArea className="flex-1">

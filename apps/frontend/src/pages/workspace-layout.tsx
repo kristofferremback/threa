@@ -2,10 +2,9 @@ import { useState, useEffect, useCallback } from "react"
 import { Outlet, useParams, useNavigate } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
-import { PanelProvider, QuickSwitcherProvider, DraftsModalProvider } from "@/contexts"
+import { PanelProvider, QuickSwitcherProvider } from "@/contexts"
 import { useSocketEvents, useWorkspaceBootstrap } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
-import { DraftsModal } from "@/components/drafts-modal"
 import { ApiError } from "@/api/client"
 
 export function WorkspaceLayout() {
@@ -13,7 +12,6 @@ export function WorkspaceLayout() {
   const navigate = useNavigate()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
-  const [draftsModalOpen, setDraftsModalOpen] = useState(false)
 
   const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
 
@@ -32,10 +30,6 @@ export function WorkspaceLayout() {
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)
     setSwitcherOpen(true)
-  }, [])
-
-  const openDraftsModal = useCallback(() => {
-    setDraftsModalOpen(true)
   }, [])
 
   useEffect(() => {
@@ -80,21 +74,18 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <DraftsModalProvider openDraftsModal={openDraftsModal}>
-      <QuickSwitcherProvider openSwitcher={openSwitcher}>
-        <PanelProvider>
-          <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-            <Outlet />
-          </AppShell>
-          <QuickSwitcher
-            workspaceId={workspaceId}
-            open={switcherOpen}
-            onOpenChange={setSwitcherOpen}
-            initialMode={switcherMode}
-          />
-          <DraftsModal workspaceId={workspaceId} open={draftsModalOpen} onOpenChange={setDraftsModalOpen} />
-        </PanelProvider>
-      </QuickSwitcherProvider>
-    </DraftsModalProvider>
+    <QuickSwitcherProvider openSwitcher={openSwitcher}>
+      <PanelProvider>
+        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+          <Outlet />
+        </AppShell>
+        <QuickSwitcher
+          workspaceId={workspaceId}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          initialMode={switcherMode}
+        />
+      </PanelProvider>
+    </QuickSwitcherProvider>
   )
 }
