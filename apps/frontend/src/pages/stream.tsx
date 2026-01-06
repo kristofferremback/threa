@@ -43,6 +43,7 @@ export function StreamPage() {
   }
 
   const isThread = stream?.type === StreamTypes.THREAD
+  const isChannel = stream?.type === StreamTypes.CHANNEL
 
   const handleCloseDraft = () => {
     closeAllPanels() // This also clears draftReply
@@ -137,7 +138,7 @@ export function StreamPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          {!isDraft && (
+          {isChannel && (
             <Button
               variant="ghost"
               size="icon"
@@ -185,8 +186,8 @@ export function StreamPage() {
 
   const hasSidePanel = openPanels.length > 0 || draftReply !== null
 
-  // Conversation side panel (fixed position, no Radix animations)
-  const conversationPanel = !isDraft && (
+  // Conversation side panel - only shown for channels
+  const conversationPanel = isChannel && (
     <>
       {/* Backdrop */}
       <div

@@ -33,6 +33,12 @@ export class BoundaryExtractionService {
         return null
       }
 
+      // For scratchpads, treat the entire stream as one conversation
+      // Skip boundary detection entirely - all messages belong to the same conversation
+      if (stream.type === StreamTypes.SCRATCHPAD) {
+        return this.processScratchpadMessage(client, message, streamId, workspaceId)
+      }
+
       // Get messages surrounding the target message (not just recent)
       // This ensures correct behavior for queue catch-up, replays, and historic processing
       const surroundingMessages = await MessageRepository.findSurrounding(
@@ -163,6 +169,72 @@ export class BoundaryExtractionService {
 
       return conversation
     })
+  }
+
+  /**
+   * For scratchpads, all messages belong to a single conversation.
+   * Find or create the stream's conversation and add the message to it.
+   */
+  private async processScratchpadMessage(
+    client: PoolClient,
+    message: Message,
+    streamId: string,
+    workspaceId: string
+  ): Promise<Conversation> {
+    // Find existing conversation for this scratchpad
+    const existingConversations = await ConversationRepository.findByStream(client, streamId)
+    const existingConversation = existingConversations.find((c) => c.status === ConversationStatuses.ACTIVE)
+
+    let conversation: Conversation
+    let isNew = false
+
+    if (existingConversation) {
+      // Add message to existing conversation
+      const withMessage = await ConversationRepository.addMessage(client, existingConversation.id, message.id)
+      if (!withMessage) {
+        logger.warn({ conversationId: existingConversation.id }, "Failed to add message to scratchpad conversation")
+        return existingConversation
+      }
+      const withParticipant = await ConversationRepository.addParticipant(
+        client,
+        existingConversation.id,
+        message.authorId
+      )
+      conversation = withParticipant ?? withMessage
+    } else {
+      // Create new conversation for this scratchpad
+      conversation = await ConversationRepository.insert(client, {
+        id: conversationId(),
+        streamId,
+        workspaceId,
+        messageIds: [message.id],
+        participantIds: [message.authorId],
+        topicSummary: "Scratchpad",
+        confidence: 1.0,
+        status: ConversationStatuses.ACTIVE,
+      })
+      isNew = true
+    }
+
+    if (isNew) {
+      await OutboxRepository.insert(client, "conversation:created", {
+        workspaceId,
+        streamId,
+        conversationId: conversation.id,
+        conversation: addStalenessFields(conversation),
+      })
+    } else {
+      await OutboxRepository.insert(client, "conversation:updated", {
+        workspaceId,
+        streamId,
+        conversationId: conversation.id,
+        conversation: addStalenessFields(conversation),
+      })
+    }
+
+    logger.debug({ messageId: message.id, conversationId: conversation.id, isNew }, "Scratchpad message processed")
+
+    return conversation
   }
 
   private async buildConversationSummaries(
