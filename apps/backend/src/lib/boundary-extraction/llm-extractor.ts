@@ -85,7 +85,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
-        maxTokens: 500,
+        maxTokens: 1000,
         temperature: 0.2,
         telemetry: {
           functionId: "boundary-extraction",

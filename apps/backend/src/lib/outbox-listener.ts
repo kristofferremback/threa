@@ -13,6 +13,7 @@ export interface OutboxListenerConfig {
   debounceMs?: number
   maxWaitMs?: number
   fallbackPollMs?: number
+  keepaliveMs?: number
 }
 
 const DEFAULT_CONFIG = {
@@ -22,6 +23,7 @@ const DEFAULT_CONFIG = {
   debounceMs: 50,
   maxWaitMs: 200,
   fallbackPollMs: 500,
+  keepaliveMs: 30000,
 }
 
 /**
@@ -48,12 +50,14 @@ export class OutboxListener {
   private debounceMs: number
   private maxWaitMs: number
   private fallbackPollMs: number
+  private keepaliveMs: number
 
   private running: boolean = false
   private startPromise: Promise<void> | null = null
   private listenClient: PoolClient | null = null
   private debouncer: DebounceWithMaxWait | null = null
   private fallbackTimer: Timer | null = null
+  private keepaliveTimer: Timer | null = null
 
   constructor(pool: Pool, config: OutboxListenerConfig) {
     this.pool = pool
@@ -65,6 +69,7 @@ export class OutboxListener {
     this.debounceMs = config.debounceMs ?? DEFAULT_CONFIG.debounceMs
     this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
     this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
+    this.keepaliveMs = config.keepaliveMs ?? DEFAULT_CONFIG.keepaliveMs
   }
 
   async start(): Promise<void> {
@@ -131,6 +136,11 @@ export class OutboxListener {
       this.fallbackTimer = null
     }
 
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer)
+      this.keepaliveTimer = null
+    }
+
     if (this.listenClient) {
       try {
         this.listenClient.release()
@@ -173,6 +183,7 @@ export class OutboxListener {
       })
 
       await this.listenClient.query(`LISTEN ${OUTBOX_CHANNEL}`)
+      this.startKeepalive()
       logger.debug({ listenerId: this.listenerId }, "LISTEN connection established")
     } catch (err) {
       logger.error({ err, listenerId: this.listenerId }, "Failed to setup LISTEN connection")
@@ -180,7 +191,29 @@ export class OutboxListener {
     }
   }
 
+  private startKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer)
+    }
+
+    this.keepaliveTimer = setInterval(async () => {
+      if (!this.listenClient || !this.running) return
+
+      try {
+        await this.listenClient.query("SELECT 1")
+      } catch (err) {
+        // Error will trigger the client's error handler which calls reconnectListener
+        logger.debug({ err, listenerId: this.listenerId }, "Keepalive query failed")
+      }
+    }, this.keepaliveMs)
+  }
+
   private reconnectListener(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer)
+      this.keepaliveTimer = null
+    }
+
     if (this.listenClient) {
       try {
         this.listenClient.release()

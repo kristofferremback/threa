@@ -95,7 +95,7 @@ export class StreamNamingService {
             { role: "system", content: systemPrompt },
             { role: "user", content: conversationText },
           ],
-          maxTokens: 100,
+          maxTokens: 300,
           temperature: 0.3,
           telemetry: {
             functionId: "stream-naming",
