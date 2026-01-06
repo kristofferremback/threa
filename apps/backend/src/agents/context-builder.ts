@@ -182,13 +182,11 @@ async function buildChannelContext(
   ])
 
   const userIds = members.map((m) => m.userId)
-  const participants = await resolveParticipants(client, userIds)
-
-  // Build participant timezone info if we have temporal context
-  let participantTimezones: ParticipantTemporal[] | undefined
-  if (temporal) {
-    participantTimezones = await resolveParticipantTimezones(client, userIds, participants)
-  }
+  const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
+    client,
+    userIds,
+    temporal !== undefined
+  )
 
   return {
     streamType: stream.type,
@@ -214,13 +212,11 @@ async function buildDmContext(client: PoolClient, stream: Stream, temporal?: Tem
   ])
 
   const userIds = members.map((m) => m.userId)
-  const participants = await resolveParticipants(client, userIds)
-
-  // Build participant timezone info if we have temporal context
-  let participantTimezones: ParticipantTemporal[] | undefined
-  if (temporal) {
-    participantTimezones = await resolveParticipantTimezones(client, userIds, participants)
-  }
+  const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
+    client,
+    userIds,
+    temporal !== undefined
+  )
 
   return {
     streamType: stream.type,
@@ -307,53 +303,42 @@ async function buildThreadPath(client: PoolClient, stream: Stream): Promise<Thre
 }
 
 /**
- * Resolve user IDs to participant info.
+ * Resolve participants and their timezone info in a single batch query.
+ * Avoids N+1 queries by fetching all users at once.
  */
-async function resolveParticipants(client: PoolClient, userIds: string[]): Promise<Participant[]> {
-  const participants: Participant[] = []
-
-  for (const userId of userIds) {
-    const user = await UserRepository.findById(client, userId)
-    if (user) {
-      participants.push({
-        id: user.id,
-        name: user.name,
-      })
-    }
-  }
-
-  return participants
-}
-
-/**
- * Resolve timezone info for participants.
- * Uses the user's timezone from their profile if set, otherwise UTC.
- */
-async function resolveParticipantTimezones(
+async function resolveParticipantsWithTimezones(
   client: PoolClient,
   userIds: string[],
-  participants: Participant[]
-): Promise<ParticipantTemporal[]> {
-  const result: ParticipantTemporal[] = []
-  const now = new Date()
+  includeTimezones: boolean
+): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
+  if (userIds.length === 0) {
+    return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
+  }
 
-  for (const userId of userIds) {
-    const user = await UserRepository.findById(client, userId)
-    if (!user) continue
+  // Batch fetch all users in one query
+  const users = await UserRepository.findByIds(client, userIds)
 
-    const participant = participants.find((p) => p.id === userId)
-    if (!participant) continue
+  const participants: Participant[] = users.map((user) => ({
+    id: user.id,
+    name: user.name,
+  }))
 
-    const timezone = user.timezone ?? "UTC"
-    result.push({
-      id: user.id,
-      name: participant.name,
-      timezone,
-      utcOffset: getUtcOffset(timezone, now),
+  // Build timezone info from the same user data if needed
+  let participantTimezones: ParticipantTemporal[] | undefined
+  if (includeTimezones) {
+    const now = new Date()
+    participantTimezones = users.map((user) => {
+      const timezone = user.timezone ?? "UTC"
+      return {
+        id: user.id,
+        name: user.name,
+        timezone,
+        utcOffset: getUtcOffset(timezone, now),
+      }
     })
   }
 
-  return result
+  return { participants, participantTimezones }
 }
 
 /**

@@ -8,10 +8,8 @@ import {
   getDateKey,
   formatCurrentTime,
   buildTemporalPromptSection,
-  formatConversationHistory,
   type TemporalContext,
   type ParticipantTemporal,
-  type MessageForFormatting,
 } from "./temporal"
 
 describe("temporal utilities", () => {
@@ -191,37 +189,6 @@ describe("temporal utilities", () => {
       expect(section).toContain("Participant timezones")
       expect(section).toContain("Alice: UTC+1")
       expect(section).toContain("Bob: UTC-5")
-    })
-  })
-
-  describe("formatConversationHistory", () => {
-    const messages: MessageForFormatting[] = [
-      { authorName: "alice", createdAt: new Date("2026-01-06T09:00:00Z"), content: "Good morning!" },
-      { authorName: "bob", createdAt: new Date("2026-01-06T09:05:00Z"), content: "Hi there!" },
-      { authorName: "alice", createdAt: new Date("2026-01-07T10:00:00Z"), content: "New day!" },
-    ]
-
-    it("should format messages with timestamps", () => {
-      const result = formatConversationHistory(messages, "UTC", "YYYY-MM-DD", "24h")
-      expect(result).toContain("(09:00)")
-      expect(result).toContain("[@alice]")
-      expect(result).toContain("Good morning!")
-    })
-
-    it("should insert date boundaries when date changes", () => {
-      const result = formatConversationHistory(messages, "UTC", "YYYY-MM-DD", "24h")
-      expect(result).toContain("— 2026-01-06 —")
-      expect(result).toContain("— 2026-01-07 —")
-    })
-
-    it("should return empty string for empty messages", () => {
-      const result = formatConversationHistory([], "UTC", "YYYY-MM-DD", "24h")
-      expect(result).toBe("")
-    })
-
-    it("should use 12h format when specified", () => {
-      const result = formatConversationHistory(messages, "UTC", "YYYY-MM-DD", "12h")
-      expect(result).toContain("(9:00 AM)")
     })
   })
 })

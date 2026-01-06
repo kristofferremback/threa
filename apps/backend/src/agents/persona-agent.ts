@@ -596,7 +596,7 @@ function formatMessagesWithTemporal(
     }))
   }
 
-  // Build authorId -> name map from participants
+  // Build authorId -> name map from participants (users only)
   const authorNames = new Map<string, string>()
   if (context.participants) {
     for (const p of context.participants) {
@@ -610,14 +610,12 @@ function formatMessagesWithTemporal(
   for (const msg of messages) {
     const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
 
-    // Insert date boundary marker as a system-like user message if date changed
+    // Insert date boundary marker when date changes
+    // Prepend to the next message's content rather than inserting a fake message
+    let dateBoundaryPrefix = ""
     if (msgDateKey !== currentDateKey) {
       const dateStr = formatDate(msg.createdAt, temporal.timezone, temporal.dateFormat)
-      // Add date boundary as a contextual note within the conversation
-      result.push({
-        role: "user",
-        content: `--- ${dateStr} ---`,
-      })
+      dateBoundaryPrefix = `[Date: ${dateStr}]\n`
       currentDateKey = msgDateKey
     }
 
@@ -627,18 +625,18 @@ function formatMessagesWithTemporal(
 
     if (msg.authorType === AuthorTypes.USER) {
       // For user messages in multi-user contexts, include the name
-      const authorName = authorNames.get(msg.authorId) ?? "User"
+      const authorName = authorNames.get(msg.authorId) ?? "Unknown"
       const hasMultipleUsers = context.streamType === StreamTypes.CHANNEL || context.streamType === StreamTypes.DM
       const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
       result.push({
         role,
-        content: `(${time}) ${namePrefix}${msg.content}`,
+        content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.content}`,
       })
     } else {
-      // Assistant messages - just add timestamp
+      // Assistant/persona messages - just add timestamp
       result.push({
         role,
-        content: `(${time}) ${msg.content}`,
+        content: `${dateBoundaryPrefix}(${time}) ${msg.content}`,
       })
     }
   }
