@@ -1,11 +1,12 @@
 import type { PoolClient } from "pg"
-import type { StreamType } from "@threa/types"
+import type { StreamType, UserPreferences } from "@threa/types"
 import { StreamTypes } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
-import { UserRepository, type User } from "../repositories/user-repository"
+import { UserRepository } from "../repositories/user-repository"
+import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../lib/temporal"
 
 /**
  * A participant in a stream (user or persona).
@@ -54,37 +55,83 @@ export interface StreamContext {
     depth: number
     path: ThreadPathEntry[]
   }
+  /** Temporal context for the invoking user */
+  temporal?: TemporalContext
+  /** Participant timezone info (for multi-timezone awareness) */
+  participantTimezones?: ParticipantTemporal[]
 }
 
 const MAX_CONTEXT_MESSAGES = 20
 
 /**
+ * Options for building stream context with temporal information.
+ */
+export interface BuildStreamContextOptions {
+  /** User preferences (used for temporal context) */
+  preferences?: UserPreferences
+  /** Current time at invocation (for deterministic testing) */
+  currentTime?: Date
+}
+
+/**
  * Build stream context for the companion agent.
  * Returns stream-type-specific context for enriching the system prompt.
+ *
+ * When preferences are provided, includes temporal context
+ * with the invoking user's timezone and time preferences.
  */
-export async function buildStreamContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+export async function buildStreamContext(
+  client: PoolClient,
+  stream: Stream,
+  options?: BuildStreamContextOptions
+): Promise<StreamContext> {
+  // Build temporal context if we have user preferences
+  let temporal: TemporalContext | undefined
+  if (options?.preferences) {
+    temporal = buildTemporalContext(options.preferences, options.currentTime)
+  }
+
   switch (stream.type) {
     case StreamTypes.SCRATCHPAD:
-      return buildScratchpadContext(client, stream)
+      return buildScratchpadContext(client, stream, temporal)
 
     case StreamTypes.CHANNEL:
-      return buildChannelContext(client, stream)
+      return buildChannelContext(client, stream, temporal)
 
     case StreamTypes.THREAD:
-      return buildThreadContext(client, stream)
+      return buildThreadContext(client, stream, temporal)
 
     case StreamTypes.DM:
-      return buildDmContext(client, stream)
+      return buildDmContext(client, stream, temporal)
 
     default:
-      return buildScratchpadContext(client, stream)
+      return buildScratchpadContext(client, stream, temporal)
+  }
+}
+
+/**
+ * Build temporal context from user preferences.
+ */
+function buildTemporalContext(preferences: UserPreferences, currentTime?: Date): TemporalContext {
+  const now = currentTime ?? new Date()
+
+  return {
+    currentTime: now.toISOString(),
+    timezone: preferences.timezone,
+    utcOffset: getUtcOffset(preferences.timezone, now),
+    dateFormat: preferences.dateFormat,
+    timeFormat: preferences.timeFormat,
   }
 }
 
 /**
  * Scratchpad context: personal, solo-first. Conversation history is primary context.
  */
-async function buildScratchpadContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+async function buildScratchpadContext(
+  client: PoolClient,
+  stream: Stream,
+  temporal?: TemporalContext
+): Promise<StreamContext> {
   const messages = await MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES })
 
   return {
@@ -95,21 +142,28 @@ async function buildScratchpadContext(client: PoolClient, stream: Stream): Promi
       slug: stream.slug,
     },
     conversationHistory: messages,
+    temporal,
   }
 }
 
 /**
  * Channel context: collaborative. Includes members, slug, and conversation.
  */
-async function buildChannelContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+async function buildChannelContext(
+  client: PoolClient,
+  stream: Stream,
+  temporal?: TemporalContext
+): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(client, { streamId: stream.id }),
   ])
 
-  const participants = await resolveParticipants(
+  const userIds = members.map((m) => m.userId)
+  const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     client,
-    members.map((m) => m.userId)
+    userIds,
+    temporal !== undefined
   )
 
   return {
@@ -121,21 +175,25 @@ async function buildChannelContext(client: PoolClient, stream: Stream): Promise<
     },
     participants,
     conversationHistory: messages,
+    temporal,
+    participantTimezones,
   }
 }
 
 /**
  * DM context: two-party. Like channels but focused.
  */
-async function buildDmContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+async function buildDmContext(client: PoolClient, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
     MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
     StreamMemberRepository.list(client, { streamId: stream.id }),
   ])
 
-  const participants = await resolveParticipants(
+  const userIds = members.map((m) => m.userId)
+  const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     client,
-    members.map((m) => m.userId)
+    userIds,
+    temporal !== undefined
   )
 
   return {
@@ -147,13 +205,19 @@ async function buildDmContext(client: PoolClient, stream: Stream): Promise<Strea
     },
     participants,
     conversationHistory: messages,
+    temporal,
+    participantTimezones,
   }
 }
 
 /**
  * Thread context: nested discussions. Traverses hierarchy to root.
  */
-async function buildThreadContext(client: PoolClient, stream: Stream): Promise<StreamContext> {
+async function buildThreadContext(
+  client: PoolClient,
+  stream: Stream,
+  temporal?: TemporalContext
+): Promise<StreamContext> {
   const messages = await MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES })
 
   // Build thread path from current thread up to root
@@ -171,6 +235,7 @@ async function buildThreadContext(client: PoolClient, stream: Stream): Promise<S
       depth: threadPath.length,
       path: threadPath,
     },
+    temporal,
   }
 }
 
@@ -216,22 +281,42 @@ async function buildThreadPath(client: PoolClient, stream: Stream): Promise<Thre
 }
 
 /**
- * Resolve user IDs to participant info.
+ * Resolve participants and their timezone info in a single batch query.
+ * Avoids N+1 queries by fetching all users at once.
  */
-async function resolveParticipants(client: PoolClient, userIds: string[]): Promise<Participant[]> {
-  const participants: Participant[] = []
-
-  for (const userId of userIds) {
-    const user = await UserRepository.findById(client, userId)
-    if (user) {
-      participants.push({
-        id: user.id,
-        name: user.name,
-      })
-    }
+async function resolveParticipantsWithTimezones(
+  client: PoolClient,
+  userIds: string[],
+  includeTimezones: boolean
+): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
+  if (userIds.length === 0) {
+    return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
   }
 
-  return participants
+  // Batch fetch all users in one query
+  const users = await UserRepository.findByIds(client, userIds)
+
+  const participants: Participant[] = users.map((user) => ({
+    id: user.id,
+    name: user.name,
+  }))
+
+  // Build timezone info from the same user data if needed
+  let participantTimezones: ParticipantTemporal[] | undefined
+  if (includeTimezones) {
+    const now = new Date()
+    participantTimezones = users.map((user) => {
+      const timezone = user.timezone ?? "UTC"
+      return {
+        id: user.id,
+        name: user.name,
+        timezone,
+        utcOffset: getUtcOffset(timezone, now),
+      }
+    })
+  }
+
+  return { participants, participantTimezones }
 }
 
 /**

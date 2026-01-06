@@ -1,8 +1,9 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient } from "../db"
-import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType } from "@threa/types"
+import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType, type UserPreferences } from "@threa/types"
+import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
-import { MessageRepository } from "../repositories/message-repository"
+import { MessageRepository, type Message } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
@@ -12,6 +13,7 @@ import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
+import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
@@ -124,6 +126,7 @@ export async function withSession(
 export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
+  userPreferencesService: UserPreferencesService
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -178,7 +181,7 @@ export class PersonaAgent {
    * Run the persona agent for a given message.
    */
   async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
-    const { pool, responseGenerator, createMessage, createThread } = this.deps
+    const { pool, responseGenerator, userPreferencesService, createMessage, createThread } = this.deps
     const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
     // Step 1: Load and validate persona and stream
@@ -227,20 +230,27 @@ export class PersonaAgent {
         initialSequence,
       },
       async (client, session) => {
-        // Build stream context (includes conversation history)
-        const context = await buildStreamContext(client, stream)
+        // Fetch trigger message to get the invoking user
+        const triggerMessage = await MessageRepository.findById(client, messageId)
+        const invokingUserId = triggerMessage?.authorType === "user" ? triggerMessage.authorId : undefined
+
+        // Fetch user preferences if we have an invoking user
+        let preferences: UserPreferences | undefined
+        if (invokingUserId) {
+          preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
+        }
+
+        // Build stream context with temporal information
+        const context = await buildStreamContext(client, stream, { preferences })
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
-        if (trigger === "mention") {
-          const triggerMessage = await MessageRepository.findById(client, messageId)
-          if (triggerMessage && triggerMessage.authorType === "user") {
-            const mentioner = await UserRepository.findById(client, triggerMessage.authorId)
-            mentionerName = mentioner?.name ?? undefined
-          }
+        if (trigger === "mention" && triggerMessage?.authorType === "user") {
+          const mentioner = await UserRepository.findById(client, triggerMessage.authorId)
+          mentionerName = mentioner?.name ?? undefined
         }
 
-        // Build system prompt with stream context and trigger info
+        // Build system prompt with stream context, trigger info, and temporal context
         const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName)
 
         // Track target stream for responses - may change if we create a thread
@@ -295,16 +305,16 @@ export class PersonaAgent {
           },
         }
 
+        // Format messages with timestamps if temporal context is available
+        const formattedMessages = formatMessagesWithTemporal(context.conversationHistory, context)
+
         // Generate response
         const aiResult = await responseGenerator.run(
           {
             threadId: session.id,
             modelId: persona.model,
             systemPrompt,
-            messages: context.conversationHistory.map((m) => ({
-              role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-              content: m.content,
-            })),
+            messages: formattedMessages,
             streamId: targetStreamId,
             sessionId: session.id,
             personaId: persona.id,
@@ -445,6 +455,11 @@ When to use read_url:
 - To verify information or get complete context from a source`
   }
 
+  // Add temporal context at the end (for prompt cache efficiency)
+  if (context.temporal) {
+    prompt += buildTemporalPromptSection(context.temporal, context.participantTimezones)
+  }
+
   return prompt
 }
 
@@ -561,4 +576,75 @@ function buildDmPrompt(context: StreamContext): string {
   }
 
   return section
+}
+
+/**
+ * Format messages for the LLM with timestamps and author names.
+ * Includes date boundaries when messages cross dates.
+ *
+ * Returns messages in standard { role, content } format with enriched content:
+ * - User messages: `(14:30) [@name] content`
+ * - Assistant messages: `(14:30) content`
+ *
+ * When temporal context is unavailable, returns messages with original content.
+ */
+function formatMessagesWithTemporal(
+  messages: Message[],
+  context: StreamContext
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const temporal = context.temporal
+  if (!temporal) {
+    // No temporal context - return messages with original content
+    return messages.map((m) => ({
+      role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    }))
+  }
+
+  // Build authorId -> name map from participants (users only)
+  const authorNames = new Map<string, string>()
+  if (context.participants) {
+    for (const p of context.participants) {
+      authorNames.set(p.id, p.name)
+    }
+  }
+
+  const result: Array<{ role: "user" | "assistant"; content: string }> = []
+  let currentDateKey: string | null = null
+
+  for (const msg of messages) {
+    const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
+
+    // Insert date boundary marker when date changes
+    // Prepend to the next message's content rather than inserting a fake message
+    let dateBoundaryPrefix = ""
+    if (msgDateKey !== currentDateKey) {
+      const dateStr = formatDate(msg.createdAt, temporal.timezone, temporal.dateFormat)
+      dateBoundaryPrefix = `[Date: ${dateStr}]\n`
+      currentDateKey = msgDateKey
+    }
+
+    // Format message with timestamp
+    const time = formatTime(msg.createdAt, temporal.timezone, temporal.timeFormat)
+    const role = msg.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const)
+
+    if (msg.authorType === AuthorTypes.USER) {
+      // For user messages in multi-user contexts, include the name
+      const authorName = authorNames.get(msg.authorId) ?? "Unknown"
+      const hasMultipleUsers = context.streamType === StreamTypes.CHANNEL || context.streamType === StreamTypes.DM
+      const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
+      result.push({
+        role,
+        content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.content}`,
+      })
+    } else {
+      // Assistant/persona messages - just add timestamp
+      result.push({
+        role,
+        content: `${dateBoundaryPrefix}(${time}) ${msg.content}`,
+      })
+    }
+  }
+
+  return result
 }
