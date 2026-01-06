@@ -11,6 +11,8 @@ export interface ShortcutAction {
   description: string
   defaultKey: string
   category: "navigation" | "editing" | "view"
+  /** If true, shortcut works even when focus is in an input field */
+  global?: boolean
 }
 
 /**
@@ -45,6 +47,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Open settings",
     defaultKey: "mod+.",
     category: "view",
+    global: true,
   },
   {
     id: "closeModal",
@@ -52,6 +55,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Close current modal or popover",
     defaultKey: "escape",
     category: "navigation",
+    global: true,
   },
 ]
 

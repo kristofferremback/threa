@@ -30,7 +30,6 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs (unless it's Escape)
       const target = event.target as HTMLElement
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable
 
@@ -41,8 +40,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
         const binding = getEffectiveKeyBinding(action.id, customBindings)
         if (!binding) continue
 
-        // Allow Escape in inputs, block other shortcuts
-        if (isInput && !binding.includes("escape")) continue
+        // Skip non-global shortcuts when focus is in an input
+        if (isInput && !action.global) continue
 
         if (matchesKeyBinding(event, binding)) {
           event.preventDefault()
