@@ -6,10 +6,28 @@
     <title>Threa</title>
     <script>
       ;(function () {
-        var stored = localStorage.getItem("threa-theme")
+        var root = document.documentElement
+        var prefs
+        try {
+          prefs = JSON.parse(localStorage.getItem("threa-appearance")) || {}
+        } catch (e) {
+          prefs = {}
+        }
+
+        // Theme (with system preference fallback)
+        var theme = prefs.theme
         var prefersDark =
-          stored === "dark" || (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
-        if (prefersDark) document.documentElement.classList.add("dark")
+          theme === "dark" || (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        if (prefersDark) root.classList.add("dark")
+
+        // Accessibility
+        if (prefs.fontSize) root.dataset.fontSize = prefs.fontSize
+        if (prefs.fontFamily) root.dataset.fontFamily = prefs.fontFamily
+        if (prefs.reducedMotion) root.classList.add("reduced-motion")
+        if (prefs.highContrast) root.classList.add("high-contrast")
+
+        // Message display
+        if (prefs.messageDisplay) root.dataset.messageDisplay = prefs.messageDisplay
       })()
     </script>
   </head>

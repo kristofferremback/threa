@@ -11,6 +11,24 @@ import type {
   WorkspaceBootstrap,
 } from "@threa/types"
 
+const APPEARANCE_STORAGE_KEY = "threa-appearance"
+
+/**
+ * Caches appearance-related preferences to localStorage for early application
+ * before React mounts. See index.html inline script.
+ */
+function cacheAppearanceToLocalStorage(prefs: UserPreferences) {
+  const appearance = {
+    theme: prefs.theme,
+    fontSize: prefs.accessibility.fontSize,
+    fontFamily: prefs.accessibility.fontFamily,
+    reducedMotion: prefs.accessibility.reducedMotion,
+    highContrast: prefs.accessibility.highContrast,
+    messageDisplay: prefs.messageDisplay,
+  }
+  localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearance))
+}
+
 interface PreferencesContextValue {
   preferences: UserPreferences | null
   resolvedTheme: "light" | "dark"
@@ -42,10 +60,11 @@ export function PreferencesProvider({ workspaceId, children }: PreferencesProvid
     return getResolvedTheme(preferences.theme)
   }, [preferences])
 
-  // Apply preferences to DOM when they change
+  // Apply preferences to DOM and cache for early application on next load
   useEffect(() => {
     if (!preferences) return
     applyPreferencesToDOM(preferences)
+    cacheAppearanceToLocalStorage(preferences)
   }, [preferences])
 
   // Listen for system theme changes when in "system" mode

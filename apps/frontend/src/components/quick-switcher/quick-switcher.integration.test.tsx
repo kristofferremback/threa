@@ -83,7 +83,7 @@ vi.mock("@/hooks", () => ({
     formatDate: (date: Date) => date.toLocaleDateString(),
     formatTime: (date: Date) => date.toLocaleTimeString(),
     formatDateTime: (date: Date) => date.toLocaleString(),
-    formatRelative: (date: Date) => "just now",
+    formatRelative: (_date: Date) => "just now",
   }),
 }))
 
