@@ -1,9 +1,17 @@
-import { useState, useEffect, useCallback, type ReactNode } from "react"
-import { Outlet, useParams, useNavigate } from "react-router-dom"
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
-import { PanelProvider, QuickSwitcherProvider, PreferencesProvider, SettingsProvider, useSettings } from "@/contexts"
+import {
+  PanelProvider,
+  QuickSwitcherProvider,
+  PreferencesProvider,
+  SettingsProvider,
+  useSettings,
+  CoordinatedLoadingProvider,
+  CoordinatedLoadingGate,
+} from "@/contexts"
 import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
@@ -44,8 +52,19 @@ function WorkspaceKeyboardHandler({
 export function WorkspaceLayout() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherMode, setSwitcherMode] = useState<QuickSwitcherMode>("stream")
+
+  // Extract streamId from nested route (if on /s/:streamId)
+  const streamMatch = useMatch("/w/:workspaceId/s/:streamId")
+  const streamId = streamMatch?.params.streamId
+
+  // Collect all stream IDs: main stream + any open panels
+  const streamIds = useMemo(() => {
+    const panelIds = searchParams.getAll("panel")
+    return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
+  }, [streamId, searchParams])
 
   const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
 
@@ -75,30 +94,34 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <PreferencesProvider workspaceId={workspaceId}>
-      <SettingsProvider>
-        <WorkspaceKeyboardHandler
-          switcherOpen={switcherOpen}
-          onOpenSwitcher={openSwitcher}
-          onCloseSwitcher={closeSwitcher}
-        >
-          <QuickSwitcherProvider openSwitcher={openSwitcher}>
-            <PanelProvider>
-              <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                <Outlet />
-              </AppShell>
-              <QuickSwitcher
-                workspaceId={workspaceId}
-                open={switcherOpen}
-                onOpenChange={setSwitcherOpen}
-                initialMode={switcherMode}
-              />
-              <SettingsDialog />
-              <Toaster />
-            </PanelProvider>
-          </QuickSwitcherProvider>
-        </WorkspaceKeyboardHandler>
-      </SettingsProvider>
-    </PreferencesProvider>
+    <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
+      <PreferencesProvider workspaceId={workspaceId}>
+        <SettingsProvider>
+          <WorkspaceKeyboardHandler
+            switcherOpen={switcherOpen}
+            onOpenSwitcher={openSwitcher}
+            onCloseSwitcher={closeSwitcher}
+          >
+            <QuickSwitcherProvider openSwitcher={openSwitcher}>
+              <PanelProvider>
+                <CoordinatedLoadingGate>
+                  <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                    <Outlet />
+                  </AppShell>
+                </CoordinatedLoadingGate>
+                <QuickSwitcher
+                  workspaceId={workspaceId}
+                  open={switcherOpen}
+                  onOpenChange={setSwitcherOpen}
+                  initialMode={switcherMode}
+                />
+                <SettingsDialog />
+                <Toaster />
+              </PanelProvider>
+            </QuickSwitcherProvider>
+          </WorkspaceKeyboardHandler>
+        </SettingsProvider>
+      </PreferencesProvider>
+    </CoordinatedLoadingProvider>
   )
 }
