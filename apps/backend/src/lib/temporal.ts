@@ -164,6 +164,10 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
     participants.length > 0 &&
     !hasSameOffset([temporal.utcOffset, ...participants.map((p) => p.utcOffset)])
 
+  // Instruction about time format
+  const formatExample = temporal.timeFormat === "12h" ? "2:30 PM" : "14:30"
+  const formatInstruction = `When referencing times, use ${temporal.timeFormat === "12h" ? "12-hour" : "24-hour"} format (e.g., ${formatExample}).`
+
   if (hasMixedTimezones && participants) {
     // Different offsets: state offsets once in system prompt
     let section = `\n\n## Current Time\n\n`
@@ -177,11 +181,12 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
       }
     }
 
+    section += `\n${formatInstruction}`
     return section
   }
 
   // Same offset: simple format
-  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}`
+  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}\n\n${formatInstruction}`
 }
 
 /**

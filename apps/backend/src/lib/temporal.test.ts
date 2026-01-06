@@ -162,6 +162,17 @@ describe("temporal utilities", () => {
     it("should build simple time section without participants", () => {
       const section = buildTemporalPromptSection(baseContext)
       expect(section).toContain("Current time: 2026-01-06 14:30")
+      expect(section).toContain("use 24-hour format")
+    })
+
+    it("should include 12-hour format instruction when timeFormat is 12h", () => {
+      const context: TemporalContext = {
+        ...baseContext,
+        timeFormat: "12h",
+      }
+      const section = buildTemporalPromptSection(context)
+      expect(section).toContain("use 12-hour format")
+      expect(section).toContain("2:30 PM")
     })
 
     it("should build simple section when all participants have same offset", () => {
