@@ -1,8 +1,8 @@
 import type { Pool, PoolClient } from "pg"
-import { withTransaction } from "../db"
+import { sql, withTransaction } from "../db"
 import { ConversationRepository, type Conversation } from "../repositories/conversation-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
-import { StreamRepository } from "../repositories/stream-repository"
+import { StreamRepository, type Stream } from "../repositories/stream-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import type { BoundaryExtractor, ExtractionContext, ConversationSummary } from "../lib/boundary-extraction/types"
 import { addStalenessFields } from "../lib/conversation-staleness"
@@ -36,7 +36,7 @@ export class BoundaryExtractionService {
       // For scratchpads, treat the entire stream as one conversation
       // Skip boundary detection entirely - all messages belong to the same conversation
       if (stream.type === StreamTypes.SCRATCHPAD) {
-        return this.processScratchpadMessage(client, message, streamId, workspaceId)
+        return this.processScratchpadMessage(client, message, stream, workspaceId)
       }
 
       // Get messages surrounding the target message (not just recent)
@@ -178,11 +178,15 @@ export class BoundaryExtractionService {
   private async processScratchpadMessage(
     client: PoolClient,
     message: Message,
-    streamId: string,
+    stream: Stream,
     workspaceId: string
   ): Promise<Conversation> {
+    // Lock the stream row to prevent race conditions when multiple messages
+    // arrive simultaneously for the same scratchpad (INV-20)
+    await client.query(sql`SELECT id FROM streams WHERE id = ${stream.id} FOR UPDATE`)
+
     // Find existing conversation for this scratchpad
-    const existingConversations = await ConversationRepository.findByStream(client, streamId)
+    const existingConversations = await ConversationRepository.findByStream(client, stream.id)
     const existingConversation = existingConversations.find((c) => c.status === ConversationStatuses.ACTIVE)
 
     let conversation: Conversation
@@ -203,13 +207,14 @@ export class BoundaryExtractionService {
       conversation = withParticipant ?? withMessage
     } else {
       // Create new conversation for this scratchpad
+      const topic = stream.displayName ?? "Scratchpad"
       conversation = await ConversationRepository.insert(client, {
         id: conversationId(),
-        streamId,
+        streamId: stream.id,
         workspaceId,
         messageIds: [message.id],
         participantIds: [message.authorId],
-        topicSummary: "Scratchpad",
+        topicSummary: topic,
         confidence: 1.0,
         status: ConversationStatuses.ACTIVE,
       })
@@ -219,14 +224,14 @@ export class BoundaryExtractionService {
     if (isNew) {
       await OutboxRepository.insert(client, "conversation:created", {
         workspaceId,
-        streamId,
+        streamId: stream.id,
         conversationId: conversation.id,
         conversation: addStalenessFields(conversation),
       })
     } else {
       await OutboxRepository.insert(client, "conversation:updated", {
         workspaceId,
-        streamId,
+        streamId: stream.id,
         conversationId: conversation.id,
         conversation: addStalenessFields(conversation),
       })

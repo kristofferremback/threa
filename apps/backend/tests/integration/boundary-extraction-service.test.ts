@@ -25,7 +25,7 @@ import { ConversationStatuses } from "@threa/types"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "../../src/lib/boundary-extraction/types"
 
 /**
- * Stub extractor that returns configurable results.
+ * Stub extractor that returns configurable results and tracks calls.
  */
 class StubBoundaryExtractor implements BoundaryExtractor {
   private nextResult: ExtractionResult = {
@@ -34,11 +34,18 @@ class StubBoundaryExtractor implements BoundaryExtractor {
     confidence: 0.8,
   }
 
+  extractCallCount = 0
+
   setNextResult(result: ExtractionResult): void {
     this.nextResult = result
   }
 
+  resetCallCount(): void {
+    this.extractCallCount = 0
+  }
+
   async extract(_context: ExtractionContext): Promise<ExtractionResult> {
+    this.extractCallCount++
     return this.nextResult
   }
 }
@@ -76,7 +83,7 @@ describe("BoundaryExtractionService", () => {
       await StreamRepository.insert(client, {
         id: testStreamId,
         workspaceId: testWorkspaceId,
-        type: "scratchpad",
+        type: "channel",
         visibility: "private",
         companionMode: "off",
         createdBy: testUserId,
@@ -98,6 +105,7 @@ describe("BoundaryExtractionService", () => {
       newConversationTopic: "Default topic",
       confidence: 0.8,
     })
+    stubExtractor.resetCallCount()
   })
 
   describe("processMessage", () => {
@@ -435,6 +443,168 @@ describe("BoundaryExtractionService", () => {
 
       expect(result?.participantIds).toContain(testUserId)
       expect(result?.participantIds).toContain(user2Id)
+    })
+  })
+
+  describe("scratchpad handling", () => {
+    test("skips extractor for scratchpad streams", async () => {
+      const localStreamId = streamId()
+      const msgId = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Scratchpad message",
+        })
+      })
+
+      await service.processMessage(msgId, localStreamId, testWorkspaceId)
+
+      expect(stubExtractor.extractCallCount).toBe(0)
+    })
+
+    test("creates single conversation for scratchpad and adds all messages to it", async () => {
+      const localStreamId = streamId()
+      const msg1Id = messageId()
+      const msg2Id = messageId()
+      const msg3Id = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          displayName: "My Notes",
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg1Id,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "First note",
+        })
+      })
+
+      // Process first message - creates conversation
+      const result1 = await service.processMessage(msg1Id, localStreamId, testWorkspaceId)
+      expect(result1).not.toBeNull()
+      expect(result1?.messageIds).toContain(msg1Id)
+      const conversationId1 = result1?.id
+
+      // Add more messages
+      await withTransaction(pool, async (client) => {
+        await MessageRepository.insert(client, {
+          id: msg2Id,
+          streamId: localStreamId,
+          sequence: BigInt(2),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Second note",
+        })
+
+        await MessageRepository.insert(client, {
+          id: msg3Id,
+          streamId: localStreamId,
+          sequence: BigInt(3),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Third note",
+        })
+      })
+
+      // Process remaining messages - should add to same conversation
+      const result2 = await service.processMessage(msg2Id, localStreamId, testWorkspaceId)
+      const result3 = await service.processMessage(msg3Id, localStreamId, testWorkspaceId)
+
+      // All results should reference the same conversation
+      expect(result2?.id).toBe(conversationId1)
+      expect(result3?.id).toBe(conversationId1)
+
+      // Final conversation should contain all messages
+      expect(result3?.messageIds).toContain(msg1Id)
+      expect(result3?.messageIds).toContain(msg2Id)
+      expect(result3?.messageIds).toContain(msg3Id)
+
+      // Extractor should never have been called
+      expect(stubExtractor.extractCallCount).toBe(0)
+    })
+
+    test("uses stream display name as conversation topic", async () => {
+      const localStreamId = streamId()
+      const msgId = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          displayName: "Project Ideas",
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Some ideas",
+        })
+      })
+
+      const result = await service.processMessage(msgId, localStreamId, testWorkspaceId)
+
+      expect(result?.topicSummary).toBe("Project Ideas")
+    })
+
+    test("falls back to 'Scratchpad' when stream has no display name", async () => {
+      const localStreamId = streamId()
+      const msgId = messageId()
+
+      await withTransaction(pool, async (client) => {
+        await StreamRepository.insert(client, {
+          id: localStreamId,
+          workspaceId: testWorkspaceId,
+          type: "scratchpad",
+          // No displayName set
+          visibility: "private",
+          companionMode: "off",
+          createdBy: testUserId,
+        })
+
+        await MessageRepository.insert(client, {
+          id: msgId,
+          streamId: localStreamId,
+          sequence: BigInt(1),
+          authorId: testUserId,
+          authorType: "user",
+          content: "Test message",
+        })
+      })
+
+      const result = await service.processMessage(msgId, localStreamId, testWorkspaceId)
+
+      expect(result?.topicSummary).toBe("Scratchpad")
     })
   })
 })
