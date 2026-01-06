@@ -131,14 +131,14 @@ export function DateTimeSettings() {
         <CardHeader>
           <CardTitle>Home Timezone</CardTitle>
           <CardDescription>
-            Your home timezone is used by the AI to understand time references. Times in the UI are displayed in your
-            device's local timezone.
+            Your home timezone is shown to colleagues and used for time-aware features. Times in the UI are displayed in
+            your device's local timezone.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Timezone</Label>
-            <Popover open={timezoneOpen} onOpenChange={setTimezoneOpen}>
+            <Popover open={timezoneOpen} onOpenChange={setTimezoneOpen} modal={false}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -150,7 +150,7 @@ export function DateTimeSettings() {
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[400px] p-0" align="start">
+              <PopoverContent className="w-[400px] p-0" align="start" onWheel={(e) => e.stopPropagation()}>
                 <Command>
                   <CommandInput placeholder="Search timezone..." />
                   <CommandList>
