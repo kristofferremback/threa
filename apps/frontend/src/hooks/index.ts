@@ -56,3 +56,7 @@ export { useScrollToElement } from "./use-scroll-to-element"
 export { useMentionables, filterMentionables } from "./use-mentionables"
 
 export { useAllDrafts, type UnifiedDraft, type DraftType } from "./use-all-drafts"
+
+export { useFormattedDate } from "./use-formatted-date"
+
+export { useKeyboardShortcuts } from "./use-keyboard-shortcuts"

@@ -17,3 +17,5 @@ export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-
 export { PanelProvider, usePanel } from "./panel-context"
 export { ThemeProvider, useTheme, type Theme } from "./theme-context"
 export { QuickSwitcherProvider, useQuickSwitcher } from "./quick-switcher-context"
+export { PreferencesProvider, usePreferences, useResolvedTheme } from "./preferences-context"
+export { SettingsProvider, useSettings } from "./settings-context"

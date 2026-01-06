@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { RelativeTime } from "./relative-time"
+import { formatDisplayDate, formatTime, formatRelativeTime, formatFullDateTime } from "@/lib/dates"
+
+// Mock useFormattedDate to avoid needing PreferencesProvider
+vi.mock("@/hooks", () => ({
+  useFormattedDate: () => ({
+    formatDate: (date: Date) => formatDisplayDate(date),
+    formatTime: (date: Date) => formatTime(date),
+    formatRelative: (date: Date, now?: Date) => formatRelativeTime(date, now),
+    formatFull: (date: Date) => formatFullDateTime(date),
+  }),
+}))
 
 describe("RelativeTime", () => {
   // Fixed to Sunday, June 15, 2025 at 12:00:00 UTC

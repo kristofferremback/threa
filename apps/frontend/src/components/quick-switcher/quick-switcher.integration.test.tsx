@@ -79,6 +79,12 @@ vi.mock("@/hooks", () => ({
     search: mockSearchState.search,
     clear: mockSearchState.clear,
   }),
+  useFormattedDate: () => ({
+    formatDate: (date: Date) => date.toLocaleDateString(),
+    formatTime: (date: Date) => date.toLocaleTimeString(),
+    formatDateTime: (date: Date) => date.toLocaleString(),
+    formatRelative: (date: Date) => "just now",
+  }),
 }))
 
 // Mock use-mentionables - called by RichInput's useMentionSuggestion
@@ -136,6 +142,13 @@ vi.mock("@/api/streams", () => ({
   streamsApi: {
     list: vi.fn().mockResolvedValue([]),
   },
+}))
+
+// Mock contexts - useSettings is called by QuickSwitcher for openSettings command
+vi.mock("@/contexts", () => ({
+  useSettings: () => ({
+    openSettings: vi.fn(),
+  }),
 }))
 
 describe("QuickSwitcher Integration Tests", () => {

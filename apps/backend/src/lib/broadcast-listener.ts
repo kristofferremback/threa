@@ -12,6 +12,7 @@ import {
   type CommandFailedOutboxPayload,
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
+  type UserPreferencesUpdatedOutboxPayload,
 } from "../repositories/outbox-repository"
 import type { UserSocketRegistry } from "./user-socket-registry"
 import { logger } from "./logger"
@@ -46,6 +47,7 @@ export function createBroadcastListener(
           | CommandFailedOutboxPayload
           | StreamReadOutboxPayload
           | StreamsReadAllOutboxPayload
+          | UserPreferencesUpdatedOutboxPayload
         const { authorId } = payload
 
         // O(1) lookup via in-memory registry instead of filtering all sockets in room

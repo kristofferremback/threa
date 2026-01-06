@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
+import type { UserPreferencesService } from "../services/user-preferences-service"
 import type { CommandRegistry } from "../commands"
 import { getEmojiList } from "../lib/emoji"
 
@@ -14,10 +15,16 @@ export { createWorkspaceSchema }
 interface Dependencies {
   workspaceService: WorkspaceService
   streamService: StreamService
+  userPreferencesService: UserPreferencesService
   commandRegistry: CommandRegistry
 }
 
-export function createWorkspaceHandlers({ workspaceService, streamService, commandRegistry }: Dependencies) {
+export function createWorkspaceHandlers({
+  workspaceService,
+  streamService,
+  userPreferencesService,
+  commandRegistry,
+}: Dependencies) {
   return {
     async list(req: Request, res: Response) {
       const userId = req.userId!
@@ -65,12 +72,13 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
       const userId = req.userId!
       const workspaceId = req.workspaceId!
 
-      const [workspace, members, streams, personas, emojiWeights] = await Promise.all([
+      const [workspace, members, streams, personas, emojiWeights, userPreferences] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
         streamService.list(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
         workspaceService.getEmojiWeights(workspaceId, userId),
+        userPreferencesService.getPreferences(workspaceId, userId),
       ])
 
       if (!workspace) {
@@ -111,6 +119,7 @@ export function createWorkspaceHandlers({ workspaceService, streamService, comma
           emojiWeights,
           commands,
           unreadCounts,
+          userPreferences,
         },
       })
     },

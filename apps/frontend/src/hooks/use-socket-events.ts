@@ -6,7 +6,7 @@ import { useAuth } from "@/auth"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { Stream, User, WorkspaceMember, WorkspaceBootstrap, StreamMember } from "@threa/types"
+import type { Stream, User, WorkspaceMember, WorkspaceBootstrap, StreamMember, UserPreferences } from "@threa/types"
 
 interface StreamPayload {
   workspaceId: string
@@ -52,6 +52,12 @@ interface StreamDisplayNameUpdatedPayload {
   workspaceId: string
   streamId: string
   displayName: string
+}
+
+interface UserPreferencesUpdatedPayload {
+  workspaceId: string
+  authorId: string
+  preferences: UserPreferences
 }
 
 /**
@@ -330,6 +336,20 @@ export function useSocketEvents(workspaceId: string) {
       db.streams.update(payload.streamId, { displayName: payload.displayName, _cachedAt: Date.now() })
     })
 
+    // Handle user preferences updated (from other sessions of the same user)
+    socket.on("user_preferences:updated", (payload: UserPreferencesUpdatedPayload) => {
+      // Only update if it's for this workspace
+      if (payload.workspaceId !== workspaceId) return
+
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          userPreferences: payload.preferences,
+        }
+      })
+    })
+
     return () => {
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
@@ -343,6 +363,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:read")
       socket.off("stream:read_all")
       socket.off("unread:increment")
+      socket.off("user_preferences:updated")
     }
   }, [socket, workspaceId, queryClient, user])
 }

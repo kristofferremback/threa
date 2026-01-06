@@ -20,3 +20,4 @@ export {
   type ArchiveStatus,
 } from "./search"
 export { conversationsApi, type ListConversationsParams } from "./conversations"
+export { preferencesApi } from "./preferences"

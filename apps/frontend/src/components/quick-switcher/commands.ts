@@ -1,6 +1,7 @@
 import type { NavigateFunction } from "react-router-dom"
-import { FileText, Hash, Search, FileEdit } from "lucide-react"
+import { FileText, Hash, Search, FileEdit, Settings } from "lucide-react"
 import { toast } from "sonner"
+import type { SettingsTab } from "@threa/types"
 
 /**
  * Commands can request an input prompt via this interface.
@@ -21,6 +22,7 @@ export interface CommandContext {
   createChannel: (slug: string) => Promise<{ id: string }>
   setMode?: (mode: "stream" | "command" | "search") => void
   requestInput: (request: InputRequest) => void
+  openSettings: (tab?: SettingsTab) => void
 }
 
 export interface Command {
@@ -97,6 +99,16 @@ export const commands: Command[] = [
     action: ({ workspaceId, navigate, closeDialog }) => {
       closeDialog()
       navigate(`/w/${workspaceId}/drafts`)
+    },
+  },
+  {
+    id: "open-settings",
+    label: "Open Settings",
+    icon: Settings,
+    keywords: ["preferences", "config", "options", "theme", "appearance"],
+    action: ({ closeDialog, openSettings }) => {
+      closeDialog()
+      openSettings()
     },
   },
 ]

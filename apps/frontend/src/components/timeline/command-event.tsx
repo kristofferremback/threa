@@ -2,7 +2,7 @@ import { useState } from "react"
 import type { StreamEvent, CommandDispatchedPayload, CommandCompletedPayload, CommandFailedPayload } from "@threa/types"
 import { Loader2, CheckCircle, XCircle, ChevronRight } from "lucide-react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { formatTime24h } from "@/lib/dates"
+import { useFormattedDate } from "@/hooks"
 
 interface CommandEventProps {
   /** All events for this command, grouped by commandId */
@@ -19,6 +19,7 @@ type CommandStatus = "running" | "completed" | "failed"
  */
 export function CommandEvent({ events }: CommandEventProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const { formatTime } = useFormattedDate()
 
   // Find the dispatched event (always first) and terminal event (completed/failed)
   const dispatchedEvent = events.find((e) => e.eventType === "command_dispatched")
@@ -45,13 +46,13 @@ export function CommandEvent({ events }: CommandEventProps) {
             )}
             <StatusLabel status={status} failedPayload={failedEvent?.payload as CommandFailedPayload | undefined} />
           </span>
-          <span className="text-xs text-muted-foreground/50">{formatTime(dispatchedEvent.createdAt)}</span>
+          <span className="text-xs text-muted-foreground/50">{formatTime(new Date(dispatchedEvent.createdAt))}</span>
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="ml-8 border-l border-muted pl-3 py-1 space-y-1">
           {events.map((event) => (
-            <TimelineEntry key={event.id} event={event} />
+            <TimelineEntry key={event.id} event={event} formatTime={formatTime} />
           ))}
         </div>
       </CollapsibleContent>
@@ -81,8 +82,8 @@ function StatusLabel({ status, failedPayload }: { status: CommandStatus; failedP
   }
 }
 
-function TimelineEntry({ event }: { event: StreamEvent }) {
-  const time = formatTime(event.createdAt)
+function TimelineEntry({ event, formatTime }: { event: StreamEvent; formatTime: (date: Date) => string }) {
+  const time = formatTime(new Date(event.createdAt))
 
   switch (event.eventType) {
     case "command_dispatched": {
@@ -140,8 +141,4 @@ function formatResult(result: unknown): string {
     }
   }
   return ""
-}
-
-function formatTime(isoString: string): string {
-  return formatTime24h(new Date(isoString))
 }

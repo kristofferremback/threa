@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
-import { formatISODate, formatDisplayDate } from "@/lib/dates"
+import { formatISODate } from "@/lib/dates"
+import { useFormattedDate } from "@/hooks"
 import type { StreamType, WorkspaceMember, Stream, User } from "@threa/types"
 
 interface StreamTypeOption {
@@ -221,12 +222,13 @@ interface DateSelectProps {
 
 function DateSelect({ type, onSelect }: DateSelectProps) {
   const [date, setDate] = useState<Date | undefined>()
+  const { formatDate } = useFormattedDate()
 
   const handleSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       setDate(selectedDate)
       const isoDate = formatISODate(selectedDate)
-      const displayDate = formatDisplayDate(selectedDate)
+      const displayDate = formatDate(selectedDate)
       const label = `${type === "after" ? "After" : "Before"} ${displayDate}`
       onSelect(isoDate, label)
     }

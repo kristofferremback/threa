@@ -64,18 +64,18 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        "group flex gap-3 py-2",
+        "message-item group flex gap-3 py-2",
         isPersona && "bg-muted/30 -mx-4 px-4 rounded-lg",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
-      <Avatar className="h-8 w-8 shrink-0">
+      <Avatar className="message-avatar h-8 w-8 shrink-0">
         <AvatarFallback className={cn(isPersona && "bg-primary text-primary-foreground")}>
           {actorInitials}
         </AvatarFallback>
       </Avatar>
-      <div className="flex-1 min-w-0">
+      <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <span className="font-medium text-sm">{actorName}</span>
           {statusIndicator}

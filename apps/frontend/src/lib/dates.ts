@@ -2,7 +2,7 @@
  * Centralized date utilities using date-fns.
  *
  * All date formatting and manipulation should go through this module to:
- * 1. Enable future user preference support (locale, format preferences)
+ * 1. Support user preference for date/time formats
  * 2. Ensure consistent date handling across the app
  * 3. Avoid ad-hoc Date manipulation scattered throughout the codebase
  */
@@ -19,6 +19,22 @@ import {
   differenceInDays,
   startOfDay,
 } from "date-fns"
+import type { DateFormat, TimeFormat } from "@threa/types"
+
+// Map user preference format to date-fns format string
+const DATE_FORMAT_MAP: Record<DateFormat, string> = {
+  "YYYY-MM-DD": "yyyy-MM-dd",
+  "DD/MM/YYYY": "dd/MM/yyyy",
+  "MM/DD/YYYY": "MM/dd/yyyy",
+}
+
+interface DatePrefs {
+  dateFormat?: DateFormat
+}
+
+interface TimePrefs {
+  timeFormat?: TimeFormat
+}
 
 // ============================================================================
 // ISO Date Formatting (for API/filter values)
@@ -37,15 +53,28 @@ export function formatISODate(date: Date): string {
 // ============================================================================
 
 /**
- * Format a date for human-readable display.
- * Example: "Jan 15, 2025"
+ * Format a date according to user preferences.
+ * @param date - The date to format
+ * @param prefs - User preferences for date format
+ * @returns Formatted date string (e.g., "2025-01-15", "15/01/2025", or "01/15/2025")
  */
-export function formatDisplayDate(date: Date): string {
-  return format(date, "MMM d, yyyy")
+export function formatDisplayDate(date: Date, prefs?: DatePrefs): string {
+  const dateFormat = prefs?.dateFormat ?? "YYYY-MM-DD"
+  return format(date, DATE_FORMAT_MAP[dateFormat])
 }
 
 /**
- * Format time in 24-hour format.
+ * Format time according to user preferences.
+ * @param date - The date/time to format
+ * @param prefs - User preferences for time format
+ * @returns Formatted time string (e.g., "14:30" or "2:30 PM")
+ */
+export function formatTime(date: Date, prefs?: TimePrefs): string {
+  return format(date, prefs?.timeFormat === "12h" ? "h:mm a" : "HH:mm")
+}
+
+/**
+ * Format time in 24-hour format (legacy, prefer formatTime with prefs).
  * Example: "14:30"
  */
 export function formatTime24h(date: Date): string {
@@ -67,10 +96,10 @@ export function isSameDay(a: Date, b: Date): boolean {
 
 /**
  * Format a date relative to now (e.g., "yesterday 14:30", "Monday 09:00").
- * Uses locale-aware formatting for day names and dates.
+ * Uses user preferences for time format.
  */
-export function formatRelativeTime(date: Date, now: Date = new Date()): string {
-  const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+export function formatRelativeTime(date: Date, now: Date = new Date(), prefs?: TimePrefs): string {
+  const time = formatTime(date, prefs)
 
   // Same day: just show time
   if (isSameDay(date, now)) {
@@ -108,17 +137,18 @@ export function formatRelativeTime(date: Date, now: Date = new Date()): string {
 
 /**
  * Format a full date-time for tooltips.
- * Example: "Wednesday, January 15, 2025, 14:30"
+ * Uses user preferences for time format.
+ * Example: "Wednesday, January 15, 2025, 14:30" or "Wednesday, January 15, 2025, 2:30 PM"
  */
-export function formatFullDateTime(date: Date): string {
-  return date.toLocaleString(undefined, {
+export function formatFullDateTime(date: Date, prefs?: TimePrefs): string {
+  const datePart = date.toLocaleDateString(undefined, {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   })
+  const timePart = formatTime(date, prefs)
+  return `${datePart}, ${timePart}`
 }
 
 // ============================================================================

@@ -1,11 +1,10 @@
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { X, Plus, User, Calendar, Hash, MessageSquare, Archive } from "lucide-react"
-import { formatDisplayDate } from "@/lib/dates"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useSearch, useWorkspaceBootstrap } from "@/hooks"
+import { useSearch, useWorkspaceBootstrap, useFormattedDate } from "@/hooks"
 import type { SearchFilters, ArchiveStatus } from "@/api"
 import type { StreamType } from "@threa/types"
 import { FilterSelect } from "./filter-select"
@@ -45,6 +44,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
   const navigate = useNavigate()
   const { data: bootstrap } = useWorkspaceBootstrap(workspaceId)
   const { results, isLoading, search, clear } = useSearch({ workspaceId })
+  const { formatDate } = useFormattedDate()
 
   const [addingFilter, setAddingFilter] = useState<FilterType | null>(null)
 
@@ -169,7 +169,7 @@ export function useSearchItems(context: ModeContext): ModeResult {
       return {
         id: result.id,
         label: result.content,
-        description: formatDisplayDate(new Date(result.createdAt)),
+        description: formatDate(new Date(result.createdAt)),
         group: "Messages",
         href,
         onSelect: () => {
