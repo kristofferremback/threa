@@ -183,7 +183,13 @@ export async function startServer(): Promise<ServerInstance> {
         tavilyApiKey: config.ai.tavilyApiKey || undefined,
       })
 
-  const personaAgent = new PersonaAgent({ pool, responseGenerator, createMessage, createThread })
+  const personaAgent = new PersonaAgent({
+    pool,
+    responseGenerator,
+    userPreferencesService,
+    createMessage,
+    createThread,
+  })
   const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId })
   jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker)
 

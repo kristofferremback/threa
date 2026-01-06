@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient } from "../db"
-import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType } from "@threa/types"
+import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType, type UserPreferences } from "@threa/types"
+import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
@@ -12,7 +13,7 @@ import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
-import { formatTime, getDateKey, formatDate, buildTemporalPromptSection, type TemporalContext } from "../lib/temporal"
+import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
@@ -125,6 +126,7 @@ export async function withSession(
 export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
+  userPreferencesService: UserPreferencesService
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -179,7 +181,7 @@ export class PersonaAgent {
    * Run the persona agent for a given message.
    */
   async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
-    const { pool, responseGenerator, createMessage, createThread } = this.deps
+    const { pool, responseGenerator, userPreferencesService, createMessage, createThread } = this.deps
     const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
     // Step 1: Load and validate persona and stream
@@ -232,11 +234,14 @@ export class PersonaAgent {
         const triggerMessage = await MessageRepository.findById(client, messageId)
         const invokingUserId = triggerMessage?.authorType === "user" ? triggerMessage.authorId : undefined
 
+        // Fetch user preferences if we have an invoking user
+        let preferences: UserPreferences | undefined
+        if (invokingUserId) {
+          preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
+        }
+
         // Build stream context with temporal information
-        const context = await buildStreamContext(client, stream, {
-          workspaceId,
-          invokingUserId,
-        })
+        const context = await buildStreamContext(client, stream, { preferences })
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined

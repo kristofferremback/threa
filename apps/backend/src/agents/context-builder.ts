@@ -1,12 +1,11 @@
 import type { PoolClient } from "pg"
-import type { StreamType, DateFormat, TimeFormat } from "@threa/types"
-import { StreamTypes, DEFAULT_USER_PREFERENCES } from "@threa/types"
+import type { StreamType, UserPreferences } from "@threa/types"
+import { StreamTypes } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
-import { UserRepository, type User } from "../repositories/user-repository"
-import { UserPreferencesRepository } from "../repositories/user-preferences-repository"
+import { UserRepository } from "../repositories/user-repository"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../lib/temporal"
 
 /**
@@ -68,10 +67,8 @@ const MAX_CONTEXT_MESSAGES = 20
  * Options for building stream context with temporal information.
  */
 export interface BuildStreamContextOptions {
-  /** Workspace ID for fetching user preferences */
-  workspaceId?: string
-  /** ID of the user who triggered this invocation */
-  invokingUserId?: string
+  /** User preferences (used for temporal context) */
+  preferences?: UserPreferences
   /** Current time at invocation (for deterministic testing) */
   currentTime?: Date
 }
@@ -80,7 +77,7 @@ export interface BuildStreamContextOptions {
  * Build stream context for the companion agent.
  * Returns stream-type-specific context for enriching the system prompt.
  *
- * When workspaceId and invokingUserId are provided, includes temporal context
+ * When preferences are provided, includes temporal context
  * with the invoking user's timezone and time preferences.
  */
 export async function buildStreamContext(
@@ -88,10 +85,10 @@ export async function buildStreamContext(
   stream: Stream,
   options?: BuildStreamContextOptions
 ): Promise<StreamContext> {
-  // Build temporal context if we have the invoking user's info
+  // Build temporal context if we have user preferences
   let temporal: TemporalContext | undefined
-  if (options?.workspaceId && options?.invokingUserId) {
-    temporal = await buildTemporalContext(client, options.workspaceId, options.invokingUserId, options.currentTime)
+  if (options?.preferences) {
+    temporal = buildTemporalContext(options.preferences, options.currentTime)
   }
 
   switch (stream.type) {
@@ -113,36 +110,17 @@ export async function buildStreamContext(
 }
 
 /**
- * Build temporal context for the invoking user.
+ * Build temporal context from user preferences.
  */
-async function buildTemporalContext(
-  client: PoolClient,
-  workspaceId: string,
-  userId: string,
-  currentTime?: Date
-): Promise<TemporalContext> {
-  // Fetch user preferences - only timezone, dateFormat, timeFormat
-  const overrides = await UserPreferencesRepository.findOverrides(client, workspaceId, userId)
-
-  // Extract temporal preferences from overrides, falling back to defaults
-  let timezone = DEFAULT_USER_PREFERENCES.timezone
-  let dateFormat: DateFormat = DEFAULT_USER_PREFERENCES.dateFormat
-  let timeFormat: TimeFormat = DEFAULT_USER_PREFERENCES.timeFormat
-
-  for (const { key, value } of overrides) {
-    if (key === "timezone" && typeof value === "string") timezone = value
-    if (key === "dateFormat" && typeof value === "string") dateFormat = value as DateFormat
-    if (key === "timeFormat" && typeof value === "string") timeFormat = value as TimeFormat
-  }
-
+function buildTemporalContext(preferences: UserPreferences, currentTime?: Date): TemporalContext {
   const now = currentTime ?? new Date()
 
   return {
     currentTime: now.toISOString(),
-    timezone,
-    utcOffset: getUtcOffset(timezone, now),
-    dateFormat,
-    timeFormat,
+    timezone: preferences.timezone,
+    utcOffset: getUtcOffset(preferences.timezone, now),
+    dateFormat: preferences.dateFormat,
+    timeFormat: preferences.timeFormat,
   }
 }
 
