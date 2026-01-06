@@ -18,3 +18,9 @@ export { PanelProvider, usePanel } from "./panel-context"
 export { QuickSwitcherProvider, useQuickSwitcher } from "./quick-switcher-context"
 export { PreferencesProvider, usePreferences, useResolvedTheme } from "./preferences-context"
 export { SettingsProvider, useSettings } from "./settings-context"
+export {
+  CoordinatedLoadingProvider,
+  CoordinatedLoadingGate,
+  MainContentGate,
+  useCoordinatedLoading,
+} from "./coordinated-loading-context"

@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,17 +23,96 @@ import {
   useAllDrafts,
   workspaceKeys,
 } from "@/hooks"
-import { useQuickSwitcher } from "@/contexts"
+import { useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
+
+// ============================================================================
+// Shell - defines structural layout, receives content via slots
+// ============================================================================
+
+interface SidebarShellProps {
+  header: ReactNode
+  draftsLink: ReactNode
+  streamList: ReactNode
+}
+
+/**
+ * Sidebar structural shell - defines layout without content.
+ * Used by both real Sidebar and skeleton to ensure identical structure.
+ */
+export function SidebarShell({ header, draftsLink, streamList }: SidebarShellProps) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-14 items-center justify-between border-b px-4">{header}</div>
+      <div className="border-b px-2 py-2">{draftsLink}</div>
+      <ScrollArea className="flex-1">
+        <div className="p-2">{streamList}</div>
+      </ScrollArea>
+    </div>
+  )
+}
+
+// ============================================================================
+// Skeleton content for each slot
+// ============================================================================
+
+function HeaderSkeleton() {
+  return (
+    <>
+      <Skeleton className="h-5 w-32" />
+      <div className="flex items-center gap-1">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <Skeleton className="h-8 w-8 rounded-md" />
+      </div>
+    </>
+  )
+}
+
+function DraftsLinkSkeleton() {
+  return <Skeleton className="h-9 w-full rounded-md" />
+}
+
+function StreamListSkeleton() {
+  return (
+    <>
+      {/* Scratchpads section */}
+      <div className="mb-4">
+        <Skeleton className="mb-2 h-3 w-20 px-2" />
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div className="my-2 h-px bg-border" />
+
+      {/* Channels section */}
+      <div>
+        <Skeleton className="mb-2 h-3 w-16 px-2" />
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ============================================================================
+// Main Sidebar component
+// ============================================================================
 
 interface SidebarProps {
   workspaceId: string
 }
 
 export function Sidebar({ workspaceId }: SidebarProps) {
+  const { isLoading: coordinatedLoading } = useCoordinatedLoading()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
@@ -45,6 +125,17 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const totalUnread = getTotalUnreadCount()
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
+
+  // During coordinated loading, show skeleton using the same shell
+  if (coordinatedLoading) {
+    return (
+      <SidebarShell
+        header={<HeaderSkeleton />}
+        draftsLink={<DraftsLinkSkeleton />}
+        streamList={<StreamListSkeleton />}
+      />
+    )
+  }
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")
@@ -71,40 +162,39 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const channels = streams.filter((s) => s.type === StreamTypes.CHANNEL)
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Workspace header */}
-      <div className="flex h-14 items-center justify-between border-b px-4">
-        <Link to="/workspaces" className="font-semibold hover:underline truncate">
-          {bootstrap?.workspace.name ?? "Loading..."}
-        </Link>
-        <div className="flex items-center gap-1">
-          {totalUnread > 0 && (
+    <SidebarShell
+      header={
+        <>
+          <Link to="/workspaces" className="font-semibold hover:underline truncate">
+            {bootstrap?.workspace.name ?? "Loading..."}
+          </Link>
+          <div className="flex items-center gap-1">
+            {totalUnread > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => markAllAsRead()}
+                disabled={isMarkingAllAsRead}
+                title="Mark all as read"
+              >
+                <CheckCheck className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => markAllAsRead()}
-              disabled={isMarkingAllAsRead}
-              title="Mark all as read"
+              onClick={() => openSwitcher("search")}
+              title={`Search (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}F)`}
             >
-              <CheckCheck className="h-4 w-4" />
+              <Search className="h-4 w-4" />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => openSwitcher("search")}
-            title={`Search (${navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}F)`}
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          <ThemeDropdown />
-        </div>
-      </div>
-
-      {/* Drafts link - always visible, greyed when empty */}
-      <div className="border-b px-2 py-2">
+            <ThemeDropdown />
+          </div>
+        </>
+      }
+      draftsLink={
         <Link
           to={`/w/${workspaceId}/drafts`}
           className={cn(
@@ -117,76 +207,77 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           <FileEdit className="h-4 w-4" />
           Drafts
         </Link>
-      </div>
+      }
+      streamList={
+        isLoading ? (
+          <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
+        ) : error ? (
+          <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
+        ) : (
+          <>
+            {/* Scratchpads section - primary for solo users */}
+            <SidebarSection title="Scratchpads">
+              {scratchpads.length === 0 ? (
+                <p className="px-2 py-1 text-xs text-muted-foreground">No scratchpads yet</p>
+              ) : (
+                scratchpads.map((stream) => (
+                  <ScratchpadItem
+                    key={stream.id}
+                    workspaceId={workspaceId}
+                    streamId={stream.id}
+                    isActive={stream.id === activeStreamId}
+                    unreadCount={getUnreadCount(stream.id)}
+                  />
+                ))
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1 w-full justify-start text-xs"
+                onClick={handleCreateScratchpad}
+              >
+                + New Scratchpad
+              </Button>
+            </SidebarSection>
 
-      <ScrollArea className="flex-1">
-        <div className="p-2">
-          {isLoading ? (
-            <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
-          ) : error ? (
-            <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
-          ) : (
-            <>
-              {/* Scratchpads section - primary for solo users */}
-              <SidebarSection title="Scratchpads">
-                {scratchpads.length === 0 ? (
-                  <p className="px-2 py-1 text-xs text-muted-foreground">No scratchpads yet</p>
-                ) : (
-                  scratchpads.map((stream) => (
-                    <ScratchpadItem
-                      key={stream.id}
-                      workspaceId={workspaceId}
-                      streamId={stream.id}
-                      isActive={stream.id === activeStreamId}
-                      unreadCount={getUnreadCount(stream.id)}
-                    />
-                  ))
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 w-full justify-start text-xs"
-                  onClick={handleCreateScratchpad}
-                >
-                  + New Scratchpad
-                </Button>
-              </SidebarSection>
+            <Separator className="my-2" />
 
-              <Separator className="my-2" />
-
-              {/* Channels section */}
-              <SidebarSection title="Channels">
-                {channels.length === 0 ? (
-                  <p className="px-2 py-1 text-xs text-muted-foreground">No channels yet</p>
-                ) : (
-                  channels.map((stream) => (
-                    <StreamItem
-                      key={stream.id}
-                      workspaceId={workspaceId}
-                      streamId={stream.id}
-                      name={stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"}
-                      isActive={stream.id === activeStreamId}
-                      unreadCount={getUnreadCount(stream.id)}
-                    />
-                  ))
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 w-full justify-start text-xs"
-                  onClick={handleCreateChannel}
-                  disabled={createStream.isPending}
-                >
-                  + New Channel
-                </Button>
-              </SidebarSection>
-            </>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
+            {/* Channels section */}
+            <SidebarSection title="Channels">
+              {channels.length === 0 ? (
+                <p className="px-2 py-1 text-xs text-muted-foreground">No channels yet</p>
+              ) : (
+                channels.map((stream) => (
+                  <StreamItem
+                    key={stream.id}
+                    workspaceId={workspaceId}
+                    streamId={stream.id}
+                    name={stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"}
+                    isActive={stream.id === activeStreamId}
+                    unreadCount={getUnreadCount(stream.id)}
+                  />
+                ))
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-1 w-full justify-start text-xs"
+                onClick={handleCreateChannel}
+                disabled={createStream.isPending}
+              >
+                + New Channel
+              </Button>
+            </SidebarSection>
+          </>
+        )
+      }
+    />
   )
 }
+
+// ============================================================================
+// Helper components
+// ============================================================================
 
 function SidebarSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
