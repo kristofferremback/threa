@@ -145,7 +145,7 @@ export class MemoClassifier {
         { role: "system", content: MESSAGE_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      maxTokens: 200,
+      maxTokens: 500,
       temperature: 0.1,
       telemetry: {
         functionId: "memo-classify-message",
@@ -189,7 +189,7 @@ export class MemoClassifier {
         { role: "system", content: CONVERSATION_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      maxTokens: 300,
+      maxTokens: 600,
       temperature: 0.1,
       telemetry: {
         functionId: "memo-classify-conversation",
