@@ -146,6 +146,51 @@ describe("Unread Counts", () => {
       expect(counts.get(testStreamId)).toBe(3)
     })
 
+    test("should not count user's own message as unread", async () => {
+      const testStreamId = streamId()
+      const testWorkspaceId = workspaceId()
+      const authorId = userId()
+      const otherUserId = userId()
+
+      // Create a stream with two members
+      await withTransaction(pool, async (client) => {
+        await client.query(
+          `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'channel', 'private', $3)`,
+          [testStreamId, testWorkspaceId, authorId]
+        )
+        await StreamMemberRepository.insert(client, testStreamId, authorId)
+        await StreamMemberRepository.insert(client, testStreamId, otherUserId)
+      })
+
+      // Author sends a message
+      await eventService.createMessage({
+        workspaceId: testWorkspaceId,
+        streamId: testStreamId,
+        authorId: authorId,
+        authorType: "user",
+        content: "Hello from author",
+      })
+
+      // Author's lastReadEventId should have been updated to include their own message
+      const authorMembership = await streamService.getMembership(testStreamId, authorId)
+      expect(authorMembership?.lastReadEventId).not.toBeNull()
+
+      // Author should have 0 unread
+      const authorCounts = await streamService.getUnreadCounts([
+        { streamId: testStreamId, lastReadEventId: authorMembership!.lastReadEventId },
+      ])
+      expect(authorCounts.get(testStreamId)).toBe(0)
+
+      // Other user should have 1 unread (their lastReadEventId is still null)
+      const otherMembership = await streamService.getMembership(testStreamId, otherUserId)
+      expect(otherMembership?.lastReadEventId).toBeNull()
+
+      const otherCounts = await streamService.getUnreadCounts([
+        { streamId: testStreamId, lastReadEventId: otherMembership!.lastReadEventId },
+      ])
+      expect(otherCounts.get(testStreamId)).toBe(1)
+    })
+
     test("should handle multiple streams in batch", async () => {
       const stream1 = streamId()
       const stream2 = streamId()
@@ -212,6 +257,7 @@ describe("Unread Counts", () => {
       const stream2 = streamId()
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
+      const otherUserId = userId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -224,20 +270,22 @@ describe("Unread Counts", () => {
         )
         await StreamMemberRepository.insert(client, stream1, testUserId)
         await StreamMemberRepository.insert(client, stream2, testUserId)
+        await StreamMemberRepository.insert(client, stream1, otherUserId)
+        await StreamMemberRepository.insert(client, stream2, otherUserId)
       })
 
-      // Add messages to both streams
+      // Add messages from another user so testUserId has unread messages
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream1,
-        authorId: testUserId,
+        authorId: otherUserId,
         authorType: "user",
         content: "Stream 1 message",
       })
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream2,
-        authorId: testUserId,
+        authorId: otherUserId,
         authorType: "user",
         content: "Stream 2 message",
       })
@@ -310,6 +358,7 @@ describe("Unread Counts", () => {
       const workspace1 = workspaceId()
       const workspace2 = workspaceId()
       const testUserId = userId()
+      const otherUserId = userId()
 
       await withTransaction(pool, async (client) => {
         await client.query(
@@ -322,20 +371,22 @@ describe("Unread Counts", () => {
         )
         await StreamMemberRepository.insert(client, stream1, testUserId)
         await StreamMemberRepository.insert(client, stream2, testUserId)
+        await StreamMemberRepository.insert(client, stream1, otherUserId)
+        await StreamMemberRepository.insert(client, stream2, otherUserId)
       })
 
-      // Add messages to both streams
+      // Add messages from another user so testUserId has unread messages
       await eventService.createMessage({
         workspaceId: workspace1,
         streamId: stream1,
-        authorId: testUserId,
+        authorId: otherUserId,
         authorType: "user",
         content: "Workspace 1 message",
       })
       await eventService.createMessage({
         workspaceId: workspace2,
         streamId: stream2,
-        authorId: testUserId,
+        authorId: otherUserId,
         authorType: "user",
         content: "Workspace 2 message",
       })
@@ -347,7 +398,7 @@ describe("Unread Counts", () => {
       expect(updatedStreamIds).toContain(stream1)
       expect(updatedStreamIds).not.toContain(stream2)
 
-      // Stream2 should still have unread
+      // Stream2 should still have unread (otherUserId sent a message that testUserId hasn't read)
       const membership2 = await streamService.getMembership(stream2, testUserId)
       expect(membership2?.lastReadEventId).toBeNull()
     })

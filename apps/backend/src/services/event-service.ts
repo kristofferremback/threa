@@ -2,6 +2,7 @@ import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
 import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
 import { StreamRepository } from "../repositories/stream-repository"
+import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
@@ -154,12 +155,20 @@ export class EventService {
         contentFormat: params.contentFormat,
       })
 
-      // 4. Record persona participation (idempotent)
+      // 4. Update author's read position to include their own message
+      // This ensures the sender's own message is never counted as unread
+      if (params.authorType === "user") {
+        await StreamMemberRepository.update(client, params.streamId, params.authorId, {
+          lastReadEventId: evtId,
+        })
+      }
+
+      // 5. Record persona participation (idempotent)
       if (params.authorType === "persona") {
         await StreamPersonaParticipantRepository.recordParticipation(client, params.streamId, params.authorId)
       }
 
-      // 5. Link attachments to message (also sets streamId)
+      // 6. Link attachments to message (also sets streamId)
       if (params.attachmentIds && params.attachmentIds.length > 0) {
         const attached = await AttachmentRepository.attachToMessage(
           client,
@@ -172,14 +181,14 @@ export class EventService {
         }
       }
 
-      // 6. Publish to outbox for real-time delivery
+      // 7. Publish to outbox for real-time delivery
       await OutboxRepository.insert(client, "message:created", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
         event: serializeBigInt(event),
       })
 
-      // 7. Publish unread increment to workspace room for sidebar updates
+      // 8. Publish unread increment to workspace room for sidebar updates
       // This is workspace-scoped so all members receive it, then frontend filters
       // by stream membership and excludes the author's own messages
       await OutboxRepository.insert(client, "unread:increment", {
@@ -188,7 +197,7 @@ export class EventService {
         authorId: params.authorId,
       })
 
-      // 8. If this is a thread, update parent message's reply count
+      // 9. If this is a thread, update parent message's reply count
       const stream = await StreamRepository.findById(client, params.streamId)
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
