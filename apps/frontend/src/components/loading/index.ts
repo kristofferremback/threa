@@ -1,1 +1,1 @@
-export { WorkspaceSkeleton } from "./workspace-skeleton"
+export { SidebarSkeleton, StreamContentSkeleton } from "./workspace-skeleton"

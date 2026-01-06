@@ -22,7 +22,8 @@ import {
   useAllDrafts,
   workspaceKeys,
 } from "@/hooks"
-import { useQuickSwitcher } from "@/contexts"
+import { useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
+import { SidebarSkeleton } from "@/components/loading"
 import { UnreadBadge } from "@/components/unread-badge"
 import { StreamTypes } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
@@ -33,6 +34,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ workspaceId }: SidebarProps) {
+  const { isLoading: coordinatedLoading } = useCoordinatedLoading()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
@@ -45,6 +47,11 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const totalUnread = getTotalUnreadCount()
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
+
+  // During coordinated loading, show skeleton
+  if (coordinatedLoading) {
+    return <SidebarSkeleton />
+  }
 
   const handleCreateScratchpad = async () => {
     const draftId = await createDraft("on")

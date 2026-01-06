@@ -11,6 +11,7 @@ import {
   useSettings,
   CoordinatedLoadingProvider,
   CoordinatedLoadingGate,
+  MainContentGate,
 } from "@/contexts"
 import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
@@ -106,7 +107,9 @@ export function WorkspaceLayout() {
               <PanelProvider>
                 <CoordinatedLoadingGate>
                   <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                    <Outlet />
+                    <MainContentGate>
+                      <Outlet />
+                    </MainContentGate>
                   </AppShell>
                 </CoordinatedLoadingGate>
                 <QuickSwitcher

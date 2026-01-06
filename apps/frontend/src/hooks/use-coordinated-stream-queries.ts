@@ -39,6 +39,8 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
         return bootstrap
       },
       enabled: !!workspaceId,
+      // Match useStreamBootstrap: always refetch to ensure fresh data
+      // (socket events may be missed when not subscribed to a stream's room)
       staleTime: 0,
     })),
   })

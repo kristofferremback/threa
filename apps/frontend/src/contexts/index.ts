@@ -21,5 +21,6 @@ export { SettingsProvider, useSettings } from "./settings-context"
 export {
   CoordinatedLoadingProvider,
   CoordinatedLoadingGate,
+  MainContentGate,
   useCoordinatedLoading,
 } from "./coordinated-loading-context"

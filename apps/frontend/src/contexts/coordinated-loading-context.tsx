@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
-import { WorkspaceSkeleton } from "@/components/loading"
+import { StreamContentSkeleton } from "@/components/loading"
 
 interface CoordinatedLoadingContextValue {
   isLoading: boolean
@@ -65,14 +65,31 @@ interface CoordinatedLoadingGateProps {
 
 /**
  * Gate component that shows nothing while loading (for up to 1s),
- * then skeleton if still loading, then children when ready.
+ * then renders children. Children use useCoordinatedLoading() to
+ * determine if they should show skeleton or real content.
  */
 export function CoordinatedLoadingGate({ children }: CoordinatedLoadingGateProps) {
   const { isLoading, showSkeleton } = useCoordinatedLoading()
 
+  // First second of loading: show nothing
+  if (isLoading && !showSkeleton) {
+    return null
+  }
+
+  // After 1s (skeleton phase) or ready: render children
+  // Children check context to know if they should show skeleton
+  return <>{children}</>
+}
+
+/**
+ * Gate for the main content area (Outlet).
+ * Shows stream content skeleton during coordinated loading.
+ */
+export function MainContentGate({ children }: CoordinatedLoadingGateProps) {
+  const { isLoading } = useCoordinatedLoading()
+
   if (isLoading) {
-    // Show nothing for first second, then skeleton
-    return showSkeleton ? <WorkspaceSkeleton animated /> : null
+    return <StreamContentSkeleton />
   }
 
   return <>{children}</>
