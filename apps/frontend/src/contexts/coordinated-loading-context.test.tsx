@@ -28,7 +28,6 @@ vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
 }))
 
 vi.mock("@/components/loading", () => ({
-  SidebarSkeleton: () => <div data-testid="sidebar-skeleton">Sidebar Skeleton</div>,
   StreamContentSkeleton: () => <div data-testid="stream-content-skeleton">Stream Content Skeleton</div>,
 }))
 

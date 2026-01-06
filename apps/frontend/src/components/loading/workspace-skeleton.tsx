@@ -1,83 +1,54 @@
+import { type ReactNode } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 
+// ============================================================================
+// Stream Content Shell - defines structural layout for main content area
+// ============================================================================
+
+interface StreamContentShellProps {
+  header: ReactNode
+  content: ReactNode
+  footer: ReactNode
+}
+
 /**
- * Sidebar skeleton matching the structure of the real Sidebar component.
- * Used during coordinated loading when sidebar data is not yet available.
+ * Stream content structural shell - defines layout without content.
+ * Used by both real stream pages and skeleton to ensure identical structure.
  */
-export function SidebarSkeleton() {
+export function StreamContentShell({ header, content, footer }: StreamContentShellProps) {
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex h-14 items-center justify-between border-b px-4">
-        <Skeleton className="h-5 w-32" />
-        <div className="flex items-center gap-1">
-          <Skeleton className="h-8 w-8 rounded-md" />
-          <Skeleton className="h-8 w-8 rounded-md" />
-        </div>
-      </div>
-
-      {/* Drafts link */}
-      <div className="border-b px-2 py-2">
-        <Skeleton className="h-9 w-full rounded-md" />
-      </div>
-
-      {/* Stream list */}
-      <div className="flex-1 overflow-hidden p-2">
-        {/* Scratchpads section */}
-        <div className="mb-4">
-          <Skeleton className="mb-2 h-3 w-20 px-2" />
-          <div className="space-y-1">
-            <Skeleton className="h-8 w-full rounded-md" />
-            <Skeleton className="h-8 w-full rounded-md" />
-            <Skeleton className="h-8 w-full rounded-md" />
-          </div>
-        </div>
-
-        {/* Separator */}
-        <div className="my-2 h-px bg-border" />
-
-        {/* Channels section */}
-        <div>
-          <Skeleton className="mb-2 h-3 w-16 px-2" />
-          <div className="space-y-1">
-            <Skeleton className="h-8 w-full rounded-md" />
-            <Skeleton className="h-8 w-full rounded-md" />
-          </div>
-        </div>
-      </div>
+      <header className="flex h-14 items-center justify-between border-b px-4">{header}</header>
+      <main className="flex-1 overflow-hidden">{content}</main>
+      <div className="border-t p-4">{footer}</div>
     </div>
   )
 }
 
-/**
- * Stream content skeleton matching the structure of stream pages.
- * Used during coordinated loading for the main content area.
- */
-export function StreamContentSkeleton() {
+// ============================================================================
+// Skeleton content for each slot
+// ============================================================================
+
+function HeaderSkeleton() {
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="flex h-14 items-center justify-between border-b px-4">
-        <Skeleton className="h-6 w-40" />
-        <div className="flex items-center gap-1">
-          <Skeleton className="h-8 w-8 rounded-md" />
-          <Skeleton className="h-8 w-8 rounded-md" />
-        </div>
-      </header>
-
-      {/* Messages area */}
-      <div className="flex-1 overflow-hidden p-4">
-        <div className="space-y-4">
-          <MessageSkeleton />
-          <MessageSkeleton />
-          <MessageSkeleton />
-          <MessageSkeleton />
-        </div>
+    <>
+      <Skeleton className="h-6 w-40" />
+      <div className="flex items-center gap-1">
+        <Skeleton className="h-8 w-8 rounded-md" />
+        <Skeleton className="h-8 w-8 rounded-md" />
       </div>
+    </>
+  )
+}
 
-      {/* Composer area */}
-      <div className="border-t p-4">
-        <Skeleton className="h-24 w-full rounded-md" />
+function ContentSkeleton() {
+  return (
+    <div className="p-4">
+      <div className="space-y-4">
+        <MessageSkeleton />
+        <MessageSkeleton />
+        <MessageSkeleton />
+        <MessageSkeleton />
       </div>
     </div>
   )
@@ -104,3 +75,27 @@ function MessageSkeleton() {
     </div>
   )
 }
+
+function FooterSkeleton() {
+  return <Skeleton className="h-24 w-full rounded-md" />
+}
+
+// ============================================================================
+// Composed skeleton using the shell
+// ============================================================================
+
+/**
+ * Stream content skeleton using the shell pattern.
+ * Guaranteed to have identical structure to real stream content.
+ */
+export function StreamContentSkeleton() {
+  return <StreamContentShell header={<HeaderSkeleton />} content={<ContentSkeleton />} footer={<FooterSkeleton />} />
+}
+
+// ============================================================================
+// Legacy export for SidebarSkeleton (now defined in sidebar.tsx)
+// Re-export for backwards compatibility during transition
+// ============================================================================
+
+// Note: SidebarSkeleton is now co-located with Sidebar in sidebar.tsx
+// This file only exports StreamContentShell and StreamContentSkeleton

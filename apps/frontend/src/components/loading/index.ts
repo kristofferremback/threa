@@ -1,1 +1,1 @@
-export { SidebarSkeleton, StreamContentSkeleton } from "./workspace-skeleton"
+export { StreamContentShell, StreamContentSkeleton } from "./workspace-skeleton"
