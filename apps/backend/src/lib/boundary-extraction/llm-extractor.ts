@@ -94,6 +94,7 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
             activeConversationCount: context.activeConversations.length,
           },
         },
+        context: context.workspaceId ? { workspaceId: context.workspaceId } : undefined,
       })
 
       return this.validateResult(value, context)

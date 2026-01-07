@@ -320,6 +320,7 @@ export class PersonaAgent {
             personaId: persona.id,
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
             enabledTools: persona.enabledTools,
+            workspaceId, // For cost tracking
           },
           callbacks
         )

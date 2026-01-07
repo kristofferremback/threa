@@ -20,9 +20,9 @@ export function createEmbeddingWorker(deps: EmbeddingWorkerDeps): JobHandler<Emb
   const { pool, embeddingService } = deps
 
   return async (job) => {
-    const { messageId } = job.data
+    const { messageId, workspaceId } = job.data
 
-    logger.info({ jobId: job.id, messageId }, "Processing embedding job")
+    logger.info({ jobId: job.id, messageId, workspaceId }, "Processing embedding job")
 
     await withClient(pool, async (client) => {
       // Get the message content
@@ -45,8 +45,8 @@ export function createEmbeddingWorker(deps: EmbeddingWorkerDeps): JobHandler<Emb
         return
       }
 
-      // Generate embedding
-      const embedding = await embeddingService.embed(message.content)
+      // Generate embedding (with cost tracking context)
+      const embedding = await embeddingService.embed(message.content, { workspaceId })
 
       // Store embedding
       await MessageRepository.updateEmbedding(client, messageId, embedding)

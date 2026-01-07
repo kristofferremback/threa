@@ -20,6 +20,7 @@ import type { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
 import { stripMarkdownFences } from "./text-utils"
+import { createCostCapturingFetch } from "./openrouter-cost-interceptor"
 import { logger } from "../logger"
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -39,16 +40,39 @@ export interface ParsedModel {
   modelName: string
 }
 
+/** Interface for cost service to record AI usage */
+export interface CostRecorder {
+  recordUsage(params: {
+    workspaceId: string
+    userId?: string
+    sessionId?: string
+    functionId: string
+    model: string
+    provider: string
+    usage: UsageWithCost
+    metadata?: Record<string, unknown>
+  }): Promise<void>
+}
+
 export interface AIConfig {
   openrouter?: { apiKey: string }
   defaults?: {
     repair?: RepairFunction
   }
+  /** When provided, usage will be recorded after each AI call (requires context in options) */
+  costRecorder?: CostRecorder
 }
 
 export interface TelemetryConfig {
   functionId: string
   metadata?: Record<string, string | number | boolean | undefined>
+}
+
+/** Context for cost tracking - when provided, usage will be recorded */
+export interface CostContext {
+  workspaceId: string
+  userId?: string
+  sessionId?: string
 }
 
 /** Message types matching Vercel AI SDK */
@@ -65,6 +89,8 @@ export interface GenerateTextOptions {
   maxTokens?: number
   temperature?: number
   telemetry?: TelemetryConfig
+  /** When provided, usage will be recorded to the database */
+  context?: CostContext
 }
 
 export interface GenerateObjectOptions<T extends z.ZodType> {
@@ -76,18 +102,24 @@ export interface GenerateObjectOptions<T extends z.ZodType> {
   /** Set to false to disable repair, or provide custom repair function */
   repair?: RepairFunction | false
   telemetry?: TelemetryConfig
+  /** When provided, usage will be recorded to the database */
+  context?: CostContext
 }
 
 export interface EmbedOptions {
   model: string
   value: string
   telemetry?: TelemetryConfig
+  /** When provided, usage will be recorded to the database */
+  context?: CostContext
 }
 
 export interface EmbedManyOptions {
   model: string
   values: string[]
   telemetry?: TelemetryConfig
+  /** When provided, usage will be recorded to the database */
+  context?: CostContext
 }
 
 // Response types from AI SDK
@@ -95,9 +127,20 @@ type GenerateTextResponse = Awaited<ReturnType<typeof aiGenerateText>>
 type EmbedResponse = Awaited<ReturnType<typeof aiEmbed>>
 type EmbedManyResponse = Awaited<ReturnType<typeof aiEmbedMany>>
 
+/** Usage info with optional cost from provider */
+export interface UsageWithCost {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+  /** Cost in USD from OpenRouter, if available */
+  cost?: number
+}
+
 export interface TextResult {
   value: string
   response: GenerateTextResponse
+  /** Usage with cost extracted from provider metadata */
+  usage: UsageWithCost
 }
 
 export interface ObjectResult<T> {
@@ -109,16 +152,22 @@ export interface ObjectResult<T> {
       readonly totalTokens?: number
     }
   }
+  /** Usage with cost extracted from provider metadata */
+  usage: UsageWithCost
 }
 
 export interface SingleEmbedResult {
   value: Embedding
   response: EmbedResponse
+  /** Usage with cost extracted from provider metadata */
+  usage: UsageWithCost
 }
 
 export interface ManyEmbedResult {
   value: Embedding[]
   response: EmbedManyResponse
+  /** Usage with cost extracted from provider metadata */
+  usage: UsageWithCost
 }
 
 export type RepairFunction = (args: { text: string }) => Promise<string> | string
@@ -217,7 +266,8 @@ export function createAI(config: AIConfig): AI {
           throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId }, "Creating language model instance")
-        return providers.openrouter.chat(modelId)
+        // Enable usage tracking to get cost from OpenRouter response
+        return providers.openrouter.chat(modelId, { usage: { include: true } })
       default:
         throw new Error(`Unsupported provider: "${provider}". Currently supported: openrouter`)
     }
@@ -232,11 +282,15 @@ export function createAI(config: AIConfig): AI {
           throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId }, "Creating embedding model instance")
-        return providers.openrouter.textEmbeddingModel(modelId)
+        // Enable usage tracking to get cost from OpenRouter response
+        return providers.openrouter.textEmbeddingModel(modelId, { usage: { include: true } })
       default:
         throw new Error(`Unsupported embedding provider: "${provider}". Currently supported: openrouter`)
     }
   }
+
+  // Create cost-capturing fetch once for reuse
+  const costCapturingFetch = createCostCapturingFetch()
 
   function getLangChainModel(modelString: string): ChatOpenAI {
     const { provider, modelId } = parseModelId(modelString)
@@ -250,20 +304,121 @@ export function createAI(config: AIConfig): AI {
         return new ChatOpenAI({
           model: modelId,
           apiKey: apiKeys.openrouter,
-          configuration: { baseURL: OPENROUTER_BASE_URL },
+          configuration: {
+            baseURL: OPENROUTER_BASE_URL,
+            // Use cost-capturing fetch to intercept OpenRouter responses
+            fetch: costCapturingFetch,
+          },
         })
       default:
         throw new Error(`Unsupported LangChain provider: "${provider}". Currently supported: openrouter`)
     }
   }
 
-  function buildTelemetry(telemetry?: TelemetryConfig) {
+  function buildTelemetry(telemetry?: TelemetryConfig, modelString?: string) {
     if (!telemetry) return undefined
+
+    // Include parsed model info in metadata for Langfuse model matching
+    let modelMetadata: Record<string, string | number | boolean | undefined> = {}
+    if (modelString) {
+      const parsed = parseModelId(modelString)
+      modelMetadata = {
+        model_id: parsed.modelId,
+        model_provider: parsed.modelProvider,
+        model_name: parsed.modelName,
+      }
+    }
+
     return {
       isEnabled: true,
       functionId: telemetry.functionId,
-      metadata: telemetry.metadata,
+      metadata: {
+        ...modelMetadata,
+        ...telemetry.metadata,
+      },
     } as const
+  }
+
+  /**
+   * Extract usage with cost from AI SDK response.
+   * OpenRouter provides cost via providerMetadata.openrouter.usage.cost
+   *
+   * Handles two different usage shapes:
+   * - Language model: { promptTokens, completionTokens, totalTokens }
+   * - Embedding model: { tokens }
+   */
+  function extractUsageWithCost(response: {
+    // Language model usage shape
+    usage?:
+      | { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+      // Embedding model usage shape
+      | { tokens?: number }
+    // AI SDK v5 uses providerMetadata (not experimental_providerMetadata)
+    providerMetadata?: {
+      openrouter?: {
+        usage?: {
+          cost?: number
+          totalTokens?: number
+          promptTokens?: number
+          completionTokens?: number
+        }
+      }
+    }
+  }): UsageWithCost {
+    const usage = response.usage ?? {}
+    // OpenRouter provides detailed usage via providerMetadata
+    const openrouterUsage = response.providerMetadata?.openrouter?.usage
+
+    // Handle embedding model usage (only has 'tokens')
+    if ("tokens" in usage && usage.tokens !== undefined) {
+      return {
+        totalTokens: usage.tokens,
+        cost: openrouterUsage?.cost,
+      }
+    }
+
+    // Handle language model usage - prefer OpenRouter data if available
+    const langUsage = usage as { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+    return {
+      promptTokens: openrouterUsage?.promptTokens ?? langUsage.promptTokens,
+      completionTokens: openrouterUsage?.completionTokens ?? langUsage.completionTokens,
+      totalTokens: openrouterUsage?.totalTokens ?? langUsage.totalTokens,
+      cost: openrouterUsage?.cost,
+    }
+  }
+
+  /**
+   * Record usage to cost service if context is provided.
+   * Fire-and-forget to avoid blocking the AI call.
+   */
+  async function maybeRecordUsage(params: {
+    context?: CostContext
+    functionId: string
+    modelString: string
+    usage: UsageWithCost
+    metadata?: Record<string, unknown>
+  }): Promise<void> {
+    if (!config.costRecorder || !params.context) return
+
+    const parsed = parseModelId(params.modelString)
+
+    try {
+      await config.costRecorder.recordUsage({
+        workspaceId: params.context.workspaceId,
+        userId: params.context.userId,
+        sessionId: params.context.sessionId,
+        functionId: params.functionId,
+        model: parsed.modelId,
+        provider: parsed.provider,
+        usage: params.usage,
+        metadata: params.metadata,
+      })
+    } catch (error) {
+      logger.error(
+        { error, functionId: params.functionId, model: params.modelString },
+        "Failed to record AI usage cost"
+      )
+    }
   }
 
   return {
@@ -280,12 +435,24 @@ export function createAI(config: AIConfig): AI {
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry),
+        experimental_telemetry: buildTelemetry(options.telemetry, options.model),
+      })
+
+      const usage = extractUsageWithCost(response)
+      logger.debug({ usage, model: options.model }, "AI generateText completed with usage")
+
+      await maybeRecordUsage({
+        context: options.context,
+        functionId: options.telemetry?.functionId ?? "generateText",
+        modelString: options.model,
+        usage,
+        metadata: options.telemetry?.metadata as Record<string, unknown> | undefined,
       })
 
       return {
         value: response.text,
         response,
+        usage,
       }
     },
 
@@ -301,7 +468,18 @@ export function createAI(config: AIConfig): AI {
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         experimental_repairText: repair,
-        experimental_telemetry: buildTelemetry(options.telemetry),
+        experimental_telemetry: buildTelemetry(options.telemetry, options.model),
+      })
+
+      const usage = extractUsageWithCost(response)
+      logger.debug({ usage, model: options.model }, "AI generateObject completed with usage")
+
+      await maybeRecordUsage({
+        context: options.context,
+        functionId: options.telemetry?.functionId ?? "generateObject",
+        modelString: options.model,
+        usage,
+        metadata: options.telemetry?.metadata as Record<string, unknown> | undefined,
       })
 
       return {
@@ -309,6 +487,7 @@ export function createAI(config: AIConfig): AI {
         response: {
           usage: response.usage,
         },
+        usage,
       }
     },
 
@@ -318,12 +497,24 @@ export function createAI(config: AIConfig): AI {
         model,
         value: options.value,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry),
+        experimental_telemetry: buildTelemetry(options.telemetry, options.model),
+      })
+
+      const usage = extractUsageWithCost(response)
+      logger.debug({ usage, model: options.model }, "AI embed completed with usage")
+
+      await maybeRecordUsage({
+        context: options.context,
+        functionId: options.telemetry?.functionId ?? "embed",
+        modelString: options.model,
+        usage,
+        metadata: options.telemetry?.metadata as Record<string, unknown> | undefined,
       })
 
       return {
         value: response.embedding,
         response,
+        usage,
       }
     },
 
@@ -333,12 +524,26 @@ export function createAI(config: AIConfig): AI {
         model,
         values: options.values,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry),
+        experimental_telemetry: buildTelemetry(options.telemetry, options.model),
+      })
+
+      const usage = extractUsageWithCost(response)
+      logger.debug({ usage, model: options.model, count: options.values.length }, "AI embedMany completed with usage")
+
+      await maybeRecordUsage({
+        context: options.context,
+        functionId: options.telemetry?.functionId ?? "embedMany",
+        modelString: options.model,
+        usage,
+        metadata: { ...options.telemetry?.metadata, count: options.values.length } as
+          | Record<string, unknown>
+          | undefined,
       })
 
       return {
         value: response.embeddings,
         response,
+        usage,
       }
     },
   }

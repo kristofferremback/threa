@@ -48,6 +48,7 @@ export interface NamingJobData {
 
 export interface EmbeddingJobData {
   messageId: string
+  workspaceId: string
 }
 
 export interface BoundaryExtractionJobData {

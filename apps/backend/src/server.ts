@@ -36,6 +36,7 @@ import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
 import { StubMemoService } from "./services/memo-service.stub"
+import { AICostService } from "./services/ai-cost-service"
 import { createCommandListener } from "./lib/command-listener"
 import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
 import { CommandRegistry } from "./commands"
@@ -96,8 +97,12 @@ export async function startServer(): Promise<ServerInstance> {
   const storage = createS3Storage(config.s3)
   const attachmentService = new AttachmentService(pool, storage)
 
+  // Create cost tracking service for AI usage
+  const costService = new AICostService({ pool })
+
   const ai = createAI({
     openrouter: { apiKey: config.ai.openRouterApiKey },
+    costRecorder: costService,
   })
   const messageFormatter = new MessageFormatter()
   const streamNamingService = config.useStubAI
@@ -181,6 +186,7 @@ export async function startServer(): Promise<ServerInstance> {
         ai,
         checkpointer,
         tavilyApiKey: config.ai.tavilyApiKey || undefined,
+        costRecorder: costService,
       })
 
   const personaAgent = new PersonaAgent({

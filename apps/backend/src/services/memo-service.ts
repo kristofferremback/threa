@@ -140,7 +140,7 @@ export class MemoService implements MemoServiceLike {
       return null
     }
 
-    const classification = await this.classifier.classifyMessage(message)
+    const classification = await this.classifier.classifyMessage(message, { workspaceId })
     if (!classification.isGem || !classification.knowledgeType) {
       return null
     }
@@ -154,6 +154,7 @@ export class MemoService implements MemoServiceLike {
       memoryContext,
       content: message,
       existingTags,
+      workspaceId,
     })
 
     const memo = await MemoRepository.insert(client, {
@@ -171,7 +172,7 @@ export class MemoService implements MemoServiceLike {
       status: MemoStatuses.ACTIVE,
     })
 
-    const embedding = await this.embeddingService.embed(memo.abstract)
+    const embedding = await this.embeddingService.embed(memo.abstract, { workspaceId })
     await MemoRepository.updateEmbedding(client, memo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:created", {
@@ -214,7 +215,8 @@ export class MemoService implements MemoServiceLike {
       client,
       conversation,
       messagesArray,
-      existingMemo ?? undefined
+      existingMemo ?? undefined,
+      { workspaceId }
     )
 
     if (!classification.isKnowledgeWorthy || !classification.knowledgeType) {
@@ -262,6 +264,7 @@ export class MemoService implements MemoServiceLike {
       memoryContext,
       content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
       existingTags,
+      workspaceId,
     })
 
     const memo = await MemoRepository.insert(client, {
@@ -279,7 +282,7 @@ export class MemoService implements MemoServiceLike {
       status: MemoStatuses.ACTIVE,
     })
 
-    const embedding = await this.embeddingService.embed(memo.abstract)
+    const embedding = await this.embeddingService.embed(memo.abstract, { workspaceId })
     await MemoRepository.updateEmbedding(client, memo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:created", {
@@ -310,6 +313,7 @@ export class MemoService implements MemoServiceLike {
       content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
       existingMemo,
       existingTags,
+      workspaceId,
     })
 
     const newMemo = await MemoRepository.insert(client, {
@@ -328,7 +332,7 @@ export class MemoService implements MemoServiceLike {
       version: existingMemo.version + 1,
     })
 
-    const embedding = await this.embeddingService.embed(newMemo.abstract)
+    const embedding = await this.embeddingService.embed(newMemo.abstract, { workspaceId })
     await MemoRepository.updateEmbedding(client, newMemo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:revised", {

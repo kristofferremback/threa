@@ -38,6 +38,7 @@ export function createEmbeddingListener(
       // Dispatch job to pg-boss for durable processing
       await jobQueue.send(JobQueues.EMBEDDING_GENERATE, {
         messageId: payload.event.payload.messageId,
+        workspaceId: payload.workspaceId,
       })
 
       logger.debug({ messageId: payload.event.payload.messageId }, "Embedding job dispatched")

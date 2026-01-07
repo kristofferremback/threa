@@ -1,0 +1,208 @@
+/**
+ * AI Budget Service
+ *
+ * Manages workspace AI budgets with:
+ * - Budget checking before AI calls
+ * - Model degradation when over soft limit
+ * - Hard limit enforcement
+ */
+
+import type { Pool, PoolClient } from "pg"
+import { withClient } from "../db"
+import { AIBudgetRepository, AIUsageRepository } from "../repositories"
+import { aiBudgetId } from "../lib/id"
+import { logger } from "../lib/logger"
+
+/**
+ * Default budget settings for new workspaces.
+ * Generous defaults to avoid friction while still providing guardrails.
+ */
+const DEFAULT_MONTHLY_BUDGET_USD = 50.0
+
+/** Threshold percentages for alerts and degradation */
+const SOFT_LIMIT_THRESHOLD = 0.8 // 80% - start degrading models
+const HARD_LIMIT_THRESHOLD = 1.0 // 100% - block non-essential features
+
+/**
+ * Model degradation mappings.
+ * Maps expensive models to cheaper alternatives when over budget.
+ */
+const MODEL_DEGRADATION_MAP: Record<string, string> = {
+  // Claude models - degrade to Haiku
+  "anthropic/claude-sonnet-4-20250514": "anthropic/claude-haiku-4.5",
+  "anthropic/claude-sonnet-4.5": "anthropic/claude-haiku-4.5",
+  "anthropic/claude-sonnet-4": "anthropic/claude-haiku-4.5",
+
+  // OpenAI models - degrade to mini
+  "openai/gpt-4o": "openai/gpt-4o-mini",
+  "openai/gpt-5": "openai/gpt-5-mini",
+  "openai/gpt-5-turbo": "openai/gpt-5-mini",
+}
+
+export interface BudgetStatus {
+  allowed: boolean
+  reason?: "within_budget" | "soft_limit" | "hard_limit"
+  currentUsageUsd: number
+  budgetUsd: number
+  percentUsed: number
+  /** Recommended model if degradation is suggested */
+  recommendedModel?: string
+}
+
+export interface AIBudgetServiceConfig {
+  pool: Pool
+}
+
+export interface AIBudgetServiceLike {
+  /**
+   * Check if a workspace is within budget for AI usage.
+   * Returns budget status including whether the operation should proceed.
+   */
+  checkBudget(workspaceId: string, requestedModel?: string): Promise<BudgetStatus>
+
+  /**
+   * Get the recommended model based on current budget status.
+   * May return a cheaper model if over soft limit.
+   */
+  getRecommendedModel(workspaceId: string, requestedModel: string): Promise<string>
+
+  /**
+   * Ensure a budget exists for a workspace, creating default if needed.
+   */
+  ensureBudget(workspaceId: string): Promise<void>
+
+  /**
+   * Set the monthly budget for a workspace.
+   */
+  setMonthlyBudget(workspaceId: string, budgetUsd: number): Promise<void>
+}
+
+export class AIBudgetService implements AIBudgetServiceLike {
+  private pool: Pool
+
+  constructor(config: AIBudgetServiceConfig) {
+    this.pool = config.pool
+  }
+
+  async checkBudget(workspaceId: string, requestedModel?: string): Promise<BudgetStatus> {
+    return withClient(this.pool, async (client) => {
+      // Get or create budget
+      let budget = await AIBudgetRepository.findByWorkspace(client, workspaceId)
+      if (!budget) {
+        budget = await this.createDefaultBudget(client, workspaceId)
+      }
+
+      // Get current month usage
+      const { start, end } = getCurrentMonthRange()
+      const usage = await AIUsageRepository.getWorkspaceUsage(client, workspaceId, start, end)
+      const currentUsageUsd = Number(usage.totalCostUsd)
+      const budgetUsd = Number(budget.monthlyBudgetUsd)
+      const percentUsed = budgetUsd > 0 ? currentUsageUsd / budgetUsd : 0
+
+      // Check hard limit
+      if (budget.hardLimitEnabled && percentUsed >= HARD_LIMIT_THRESHOLD) {
+        logger.warn({ workspaceId, currentUsageUsd, budgetUsd, percentUsed }, "AI budget hard limit reached")
+        return {
+          allowed: false,
+          reason: "hard_limit",
+          currentUsageUsd,
+          budgetUsd,
+          percentUsed,
+        }
+      }
+
+      // Check soft limit (degradation)
+      if (budget.degradationEnabled && percentUsed >= SOFT_LIMIT_THRESHOLD) {
+        logger.info(
+          { workspaceId, currentUsageUsd, budgetUsd, percentUsed },
+          "AI budget soft limit reached, suggesting model degradation"
+        )
+        const recommendedModel = requestedModel ? this.getDegradedModel(requestedModel) : undefined
+
+        return {
+          allowed: true,
+          reason: "soft_limit",
+          currentUsageUsd,
+          budgetUsd,
+          percentUsed,
+          recommendedModel,
+        }
+      }
+
+      return {
+        allowed: true,
+        reason: "within_budget",
+        currentUsageUsd,
+        budgetUsd,
+        percentUsed,
+      }
+    })
+  }
+
+  async getRecommendedModel(workspaceId: string, requestedModel: string): Promise<string> {
+    const status = await this.checkBudget(workspaceId, requestedModel)
+
+    if (status.reason === "soft_limit" && status.recommendedModel) {
+      logger.debug(
+        { workspaceId, requestedModel, recommendedModel: status.recommendedModel, percentUsed: status.percentUsed },
+        "Recommending model degradation due to budget"
+      )
+      return status.recommendedModel
+    }
+
+    return requestedModel
+  }
+
+  async ensureBudget(workspaceId: string): Promise<void> {
+    await withClient(this.pool, async (client) => {
+      const existing = await AIBudgetRepository.findByWorkspace(client, workspaceId)
+      if (!existing) {
+        await this.createDefaultBudget(client, workspaceId)
+      }
+    })
+  }
+
+  async setMonthlyBudget(workspaceId: string, budgetUsd: number): Promise<void> {
+    await withClient(this.pool, async (client) => {
+      await AIBudgetRepository.upsert(client, {
+        id: aiBudgetId(),
+        workspaceId,
+        monthlyBudgetUsd: budgetUsd,
+      })
+    })
+  }
+
+  /**
+   * Get the degraded model for a given model ID.
+   * Returns the original model if no degradation mapping exists.
+   */
+  private getDegradedModel(modelId: string): string {
+    return MODEL_DEGRADATION_MAP[modelId] ?? modelId
+  }
+
+  /**
+   * Create a default budget for a workspace.
+   */
+  private async createDefaultBudget(client: PoolClient, workspaceId: string) {
+    return AIBudgetRepository.upsert(client, {
+      id: aiBudgetId(),
+      workspaceId,
+      monthlyBudgetUsd: DEFAULT_MONTHLY_BUDGET_USD,
+      alertThreshold50: true,
+      alertThreshold80: true,
+      alertThreshold100: true,
+      degradationEnabled: true,
+      hardLimitEnabled: false, // Don't block by default
+    })
+  }
+}
+
+/**
+ * Get the start and end dates for the current calendar month.
+ */
+function getCurrentMonthRange(): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+  return { start, end }
+}

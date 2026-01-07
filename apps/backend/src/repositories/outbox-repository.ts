@@ -38,6 +38,7 @@ export type OutboxEventType =
   | "command:completed"
   | "command:failed"
   | "user_preferences:updated"
+  | "budget:alert"
 
 /** Events that are scoped to a stream (have streamId) */
 export type StreamScopedEventType =
@@ -219,6 +220,15 @@ export interface UserPreferencesUpdatedOutboxPayload extends WorkspaceScopedPayl
   preferences: UserPreferences
 }
 
+// Budget alert event payload
+export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
+  alertType: string
+  thresholdPercent: number
+  currentUsageUsd: number
+  budgetUsd: number
+  percentUsed: number
+}
+
 /**
  * Maps event types to their payload types for type-safe event handling.
  */
@@ -249,6 +259,7 @@ export interface OutboxEventPayloadMap {
   "command:completed": CommandCompletedOutboxPayload
   "command:failed": CommandFailedOutboxPayload
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
+  "budget:alert": BudgetAlertOutboxPayload
 }
 
 export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]

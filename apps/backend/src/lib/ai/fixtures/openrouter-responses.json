@@ -1,0 +1,47 @@
+{
+  "generateText": {
+    "providerMetadata": {
+      "openrouter": {
+        "provider": "OpenAI",
+        "reasoning_details": [],
+        "usage": {
+          "promptTokens": 16,
+          "promptTokensDetails": { "cachedTokens": 0 },
+          "completionTokens": 2,
+          "completionTokensDetails": { "reasoningTokens": 0 },
+          "totalTokens": 18,
+          "cost": 0.0000036
+        }
+      }
+    }
+  },
+  "generateObject": {
+    "providerMetadata": {
+      "openrouter": {
+        "provider": "OpenAI",
+        "usage": {
+          "promptTokens": 59,
+          "completionTokens": 11,
+          "totalTokens": 70,
+          "cost": 0.00001545
+        }
+      }
+    }
+  },
+  "embed": {
+    "usage": { "tokens": 4 },
+    "providerMetadata": {
+      "openrouter": {
+        "usage": { "cost": 8e-8 }
+      }
+    }
+  },
+  "embedMany": {
+    "usage": { "tokens": 3 },
+    "providerMetadata": {
+      "openrouter": {
+        "usage": { "cost": 6e-8 }
+      }
+    }
+  }
+}
