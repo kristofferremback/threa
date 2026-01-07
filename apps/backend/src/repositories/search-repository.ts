@@ -2,6 +2,7 @@ import { PoolClient } from "pg"
 import { sql } from "../db"
 import { Visibilities, type StreamType } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../lib/sql-filters"
+import type { AgentAccessSpec } from "../agents/researcher/access-spec"
 
 export interface GetAccessibleStreamsParams {
   workspaceId: string
@@ -300,5 +301,103 @@ export const SearchRepository = {
     `)
 
     return result.rows.map(mapRowToSearchResult)
+  },
+
+  /**
+   * Get public stream IDs in a workspace.
+   * Used by agent access control for public_only access spec.
+   */
+  async getPublicStreams(
+    client: PoolClient,
+    workspaceId: string,
+    options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
+  ): Promise<string[]> {
+    const hasTypeFilter = options?.streamTypes && options.streamTypes.length > 0
+    const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(options?.archiveStatus)
+
+    const result = await client.query<{ id: string }>(sql`
+      SELECT id FROM streams
+      WHERE workspace_id = ${workspaceId}
+        AND visibility = ${Visibilities.PUBLIC}
+        AND (${!hasTypeFilter} OR type = ANY(${options?.streamTypes ?? []}))
+        AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
+    `)
+
+    return result.rows.map((r) => r.id)
+  },
+
+  /**
+   * Get a stream and all its thread descendants.
+   * Used by agent access control for public_plus_stream access spec.
+   */
+  async getStreamWithThreads(client: PoolClient, streamId: string): Promise<string[]> {
+    // Get the stream itself and any threads that have this stream as root
+    const result = await client.query<{ id: string }>(sql`
+      SELECT id FROM streams
+      WHERE id = ${streamId} OR root_stream_id = ${streamId}
+    `)
+
+    return result.rows.map((r) => r.id)
+  },
+
+  /**
+   * Get accessible streams for an agent based on its access spec.
+   *
+   * Unlike getAccessibleStreamsWithMembers (which determines what a USER can access),
+   * this determines what an AGENT can access based on invocation context.
+   *
+   * Access specs:
+   * - user_full_access: Everything the specified user can access
+   * - public_only: Only public streams
+   * - public_plus_stream: Public streams + a specific stream and its threads
+   * - user_union: Union of what multiple users can access (for DMs)
+   */
+  async getAccessibleStreamsForAgent(
+    client: PoolClient,
+    spec: AgentAccessSpec,
+    workspaceId: string,
+    options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
+  ): Promise<string[]> {
+    switch (spec.type) {
+      case "user_full_access":
+        // Delegate to existing user access method
+        return this.getAccessibleStreamsWithMembers(client, {
+          workspaceId,
+          userId: spec.userId,
+          streamTypes: options?.streamTypes,
+          archiveStatus: options?.archiveStatus,
+        })
+
+      case "public_only":
+        return this.getPublicStreams(client, workspaceId, options)
+
+      case "public_plus_stream": {
+        // Get public streams and the specific stream with its threads
+        const [publicIds, streamTreeIds] = await Promise.all([
+          this.getPublicStreams(client, workspaceId, options),
+          this.getStreamWithThreads(client, spec.streamId),
+        ])
+
+        // Combine and deduplicate
+        return [...new Set([...publicIds, ...streamTreeIds])]
+      }
+
+      case "user_union": {
+        // Get accessible streams for each user and union them
+        const allResults = await Promise.all(
+          spec.userIds.map((userId) =>
+            this.getAccessibleStreamsWithMembers(client, {
+              workspaceId,
+              userId,
+              streamTypes: options?.streamTypes,
+              archiveStatus: options?.archiveStatus,
+            })
+          )
+        )
+
+        // Union all results
+        return [...new Set(allResults.flat())]
+      }
+    }
   },
 }

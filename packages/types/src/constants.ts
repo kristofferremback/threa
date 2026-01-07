@@ -130,11 +130,21 @@ export const PENDING_ITEM_TYPES = ["message", "conversation"] as const
 export type PendingItemType = (typeof PENDING_ITEM_TYPES)[number]
 
 // Agent tool names
-export const AGENT_TOOL_NAMES = ["send_message", "web_search", "read_url"] as const
+export const AGENT_TOOL_NAMES = [
+  "send_message",
+  "web_search",
+  "read_url",
+  "search_messages",
+  "search_streams",
+  "search_users",
+] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
 export const AgentToolNames = {
   SEND_MESSAGE: "send_message",
   WEB_SEARCH: "web_search",
   READ_URL: "read_url",
+  SEARCH_MESSAGES: "search_messages",
+  SEARCH_STREAMS: "search_streams",
+  SEARCH_USERS: "search_users",
 } as const satisfies Record<string, AgentToolName>

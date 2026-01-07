@@ -210,4 +210,22 @@ export const UserRepository = {
 
     return mapRowToUser(result.rows[0])
   },
+
+  /**
+   * Search for users in a workspace by name or email.
+   * Uses case-insensitive ILIKE matching.
+   */
+  async searchByNameOrEmail(client: PoolClient, workspaceId: string, query: string, limit: number): Promise<User[]> {
+    const pattern = `%${query}%`
+    const result = await client.query<UserRow>(sql`
+      SELECT DISTINCT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at
+      FROM users u
+      INNER JOIN workspace_members wm ON wm.user_id = u.id
+      WHERE wm.workspace_id = ${workspaceId}
+        AND (u.name ILIKE ${pattern} OR u.email ILIKE ${pattern})
+      ORDER BY u.name
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToUser)
+  },
 }

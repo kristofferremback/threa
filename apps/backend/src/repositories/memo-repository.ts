@@ -78,6 +78,27 @@ export interface UpdateMemoParams {
   revisionReason?: string
 }
 
+/**
+ * Result from semantic memo search, including source stream info.
+ */
+export interface MemoSearchResult {
+  memo: Memo
+  distance: number
+  sourceStream: {
+    id: string
+    type: string
+    name: string | null
+  } | null
+}
+
+export interface SemanticSearchParams {
+  workspaceId: string
+  embedding: number[]
+  streamIds?: string[]
+  limit?: number
+  threshold?: number
+}
+
 function mapRowToMemo(row: MemoRow): Memo {
   return {
     id: row.id,
@@ -366,5 +387,63 @@ export const MemoRepository = {
       ORDER BY tag
     `)
     return result.rows.map((r) => r.tag)
+  },
+
+  /**
+   * Semantic search over memo abstracts using vector similarity.
+   *
+   * Finds memos whose abstract embedding is similar to the query embedding.
+   * Optionally filters to memos linked to specific streams.
+   * Returns memos with their source stream info for navigation.
+   */
+  async semanticSearch(client: PoolClient, params: SemanticSearchParams): Promise<MemoSearchResult[]> {
+    const { workspaceId, embedding, streamIds, limit = 10, threshold = 0.8 } = params
+    const hasStreamFilter = streamIds && streamIds.length > 0
+
+    const embeddingLiteral = `[${embedding.join(",")}]`
+
+    interface SearchResultRow extends MemoRow {
+      distance: number
+      stream_id: string | null
+      stream_type: string | null
+      stream_name: string | null
+    }
+
+    // Join through either source_message_id or source_conversation_id to get stream info
+    const result = await client.query<SearchResultRow>(sql`
+      WITH memo_with_stream AS (
+        SELECT
+          ${sql.raw(SELECT_FIELDS_PREFIXED)},
+          m.embedding <=> ${embeddingLiteral}::vector as distance,
+          COALESCE(msg_stream.id, conv_stream.id) as stream_id,
+          COALESCE(msg_stream.type, conv_stream.type) as stream_type,
+          COALESCE(msg_stream.display_name, conv_stream.display_name) as stream_name
+        FROM memos m
+        LEFT JOIN messages msg ON m.source_message_id = msg.id
+        LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
+        LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
+        LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.status = 'active'
+          AND m.embedding IS NOT NULL
+          AND m.embedding <=> ${embeddingLiteral}::vector < ${threshold}
+      )
+      SELECT * FROM memo_with_stream
+      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}))
+      ORDER BY distance ASC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map((row) => ({
+      memo: mapRowToMemo(row),
+      distance: row.distance,
+      sourceStream: row.stream_id
+        ? {
+            id: row.stream_id,
+            type: row.stream_type!,
+            name: row.stream_name,
+          }
+        : null,
+    }))
   },
 }

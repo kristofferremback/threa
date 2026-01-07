@@ -117,6 +117,14 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
+  async findByIds(client: PoolClient, ids: string[]): Promise<Stream[]> {
+    if (ids.length === 0) return []
+    const result = await client.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ANY(${ids})`
+    )
+    return result.rows.map(mapRowToStream)
+  },
+
   async list(
     db: Querier,
     workspaceId: string,

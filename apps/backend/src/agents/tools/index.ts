@@ -7,6 +7,18 @@ export {
 } from "./send-message-tool"
 export { createWebSearchTool, type WebSearchInput, type WebSearchResult } from "./web-search-tool"
 export { createReadUrlTool, type ReadUrlInput, type ReadUrlResult } from "./read-url-tool"
+export {
+  createSearchMessagesTool,
+  createSearchStreamsTool,
+  createSearchUsersTool,
+  type SearchMessagesInput,
+  type SearchStreamsInput,
+  type SearchUsersInput,
+  type SearchToolsCallbacks,
+  type MessageSearchResult,
+  type StreamSearchResult,
+  type UserSearchResult,
+} from "./search-workspace-tool"
 
 /**
  * Check if a tool is enabled for a persona.

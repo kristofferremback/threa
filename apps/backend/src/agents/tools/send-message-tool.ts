@@ -2,12 +2,20 @@ import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 
 /**
- * A source reference from web search results.
+ * A source reference for citation.
  * Stored with messages for later UI rendering.
+ *
+ * Sources can come from:
+ * - Web search results (type: "web")
+ * - Workspace knowledge (type: "workspace") - memos or messages
  */
 export interface SourceItem {
+  /** Source type: web for external, workspace for internal knowledge */
+  type?: "web" | "workspace"
   title: string
   url: string
+  /** Optional snippet/preview of the content */
+  snippet?: string
 }
 
 const SendMessageSchema = z.object({

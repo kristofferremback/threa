@@ -5,10 +5,15 @@ import {
   createSendMessageTool,
   createWebSearchTool,
   createReadUrlTool,
+  createSearchMessagesTool,
+  createSearchStreamsTool,
+  createSearchUsersTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
   type SendMessageResult,
+  type SourceItem,
+  type SearchToolsCallbacks,
 } from "./tools"
 import { AgentToolNames } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
@@ -44,6 +49,8 @@ export interface GenerateResponseParams {
   workspaceId: string
   /** User ID who invoked this response - for cost attribution to the human user */
   invokingUserId?: string
+  /** Initial sources from researcher (workspace knowledge) to attach to first message */
+  initialSources?: SourceItem[]
 }
 
 /**
@@ -76,6 +83,8 @@ export interface ResponseGeneratorCallbacks {
   ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
   /** Update the last seen sequence on the session */
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
+  /** Optional workspace search callbacks (required if search tools are enabled) */
+  search?: SearchToolsCallbacks
 }
 
 /**
@@ -115,6 +124,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       enabledTools,
       workspaceId,
       invokingUserId,
+      initialSources,
     } = params
 
     logger.debug(
@@ -155,6 +165,19 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
 
     if (isToolEnabled(enabledTools, AgentToolNames.READ_URL)) {
       tools.push(createReadUrlTool())
+    }
+
+    // Add workspace search tools if callbacks are provided
+    if (callbacks.search) {
+      if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_MESSAGES)) {
+        tools.push(createSearchMessagesTool(callbacks.search))
+      }
+      if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_STREAMS)) {
+        tools.push(createSearchStreamsTool(callbacks.search))
+      }
+      if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS)) {
+        tools.push(createSearchUsersTool(callbacks.search))
+      }
     }
 
     logger.debug(
@@ -199,7 +222,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
           iteration: 0,
           messagesSent: 0,
           hasNewMessages: false,
-          sources: [],
+          sources: initialSources ?? [],
         },
         {
           runName: "companion-agent",

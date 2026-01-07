@@ -8,9 +8,22 @@ import { PersonaRepository, type Persona } from "../repositories/persona-reposit
 import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
+import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
-import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult, type SourceItem } from "./tools"
+import {
+  isToolEnabled,
+  type SendMessageInputWithSources,
+  type SendMessageResult,
+  type SourceItem,
+  type SearchToolsCallbacks,
+  type MessageSearchResult,
+  type StreamSearchResult,
+  type UserSearchResult,
+} from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
+import { Researcher, type ResearcherResult, computeAgentAccessSpec } from "./researcher"
+import { SearchRepository } from "../repositories/search-repository"
+import type { SearchService } from "../services/search-service"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
@@ -159,6 +172,10 @@ export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
   userPreferencesService: UserPreferencesService
+  /** Optional researcher for workspace knowledge retrieval */
+  researcher?: Researcher
+  /** Optional search service for workspace search tools */
+  searchService?: SearchService
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -213,7 +230,8 @@ export class PersonaAgent {
    * Run the persona agent for a given message.
    */
   async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
-    const { pool, responseGenerator, userPreferencesService, createMessage, createThread } = this.deps
+    const { pool, responseGenerator, userPreferencesService, researcher, searchService, createMessage, createThread } =
+      this.deps
     const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
     // Step 1: Load and validate persona and stream
@@ -276,6 +294,26 @@ export class PersonaAgent {
         // Build stream context with temporal information
         const context = await buildStreamContext(db, stream, { preferences })
 
+        // Run researcher for workspace knowledge retrieval (if available)
+        let researcherResult: ResearcherResult | undefined
+        if (researcher && triggerMessage && invokingUserId) {
+          // For DMs, get participant IDs for access union
+          let dmParticipantIds: string[] | undefined
+          if (stream.type === StreamTypes.DM) {
+            const members = await StreamMemberRepository.list(client, { streamId })
+            dmParticipantIds = members.map((m) => m.userId)
+          }
+
+          researcherResult = await researcher.research({
+            workspaceId,
+            streamId,
+            triggerMessage,
+            conversationHistory: context.conversationHistory,
+            invokingUserId,
+            dmParticipantIds,
+          })
+        }
+
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
         if (trigger === "mention" && triggerMessage?.authorType === "user") {
@@ -283,8 +321,14 @@ export class PersonaAgent {
           mentionerName = mentioner?.name ?? undefined
         }
 
-        // Build system prompt with stream context, trigger info, and temporal context
-        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName)
+        // Build system prompt with stream context, trigger info, temporal context, and retrieved knowledge
+        const systemPrompt = buildSystemPrompt(
+          persona,
+          context,
+          trigger,
+          mentionerName,
+          researcherResult?.retrievedContext ?? null
+        )
 
         // Track target stream for responses - may change if we create a thread
         let targetStreamId = streamId
@@ -317,6 +361,69 @@ export class PersonaAgent {
           return { messageId: message.id, content: msgInput.content }
         }
 
+        // Build search callbacks if searchService is available
+        let searchCallbacks: SearchToolsCallbacks | undefined
+        if (searchService && invokingUserId) {
+          // Compute access spec for search context
+          const accessSpec = await computeAgentAccessSpec(client, {
+            stream,
+            invokingUserId,
+          })
+
+          // Get accessible stream IDs for the agent's context
+          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
+            client,
+            accessSpec,
+            workspaceId
+          )
+
+          searchCallbacks = {
+            searchMessages: async (input) => {
+              const results = await searchService.search({
+                workspaceId,
+                userId: invokingUserId,
+                query: input.exact ? `"${input.query}"` : input.query,
+                filters: { streamIds: accessibleStreamIds },
+                limit: 10,
+              })
+
+              // Enrich with author and stream names
+              return enrichMessageResults(client, results)
+            },
+
+            searchStreams: async (input) => {
+              // Filter accessible streams by name/description match
+              const streams = await StreamRepository.findByIds(client, accessibleStreamIds)
+              const query = input.query.toLowerCase()
+
+              return streams
+                .filter((s) => {
+                  const matchesName =
+                    s.displayName?.toLowerCase().includes(query) || s.slug?.toLowerCase().includes(query)
+                  const matchesDesc = s.description?.toLowerCase().includes(query)
+                  const matchesType = !input.types || input.types.includes(s.type as any)
+                  return (matchesName || matchesDesc) && matchesType
+                })
+                .slice(0, 10)
+                .map((s) => ({
+                  id: s.id,
+                  type: s.type,
+                  name: s.displayName ?? s.slug ?? null,
+                  description: s.description ?? null,
+                }))
+            },
+
+            searchUsers: async (input) => {
+              const users = await UserRepository.searchByNameOrEmail(client, workspaceId, input.query, 10)
+              return users.map((u) => ({
+                id: u.id,
+                name: u.name,
+                email: u.email,
+              }))
+            },
+          }
+        }
+
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
@@ -337,6 +444,8 @@ export class PersonaAgent {
           updateLastSeenSequence: async (updateSessionId: string, sequence: bigint) => {
             await AgentSessionRepository.updateLastSeenSequence(db, updateSessionId, sequence)
           },
+
+          search: searchCallbacks,
         }
 
         // Format messages with timestamps if temporal context is available
@@ -357,6 +466,7 @@ export class PersonaAgent {
             enabledTools: persona.enabledTools,
             workspaceId, // For cost tracking
             invokingUserId, // For cost attribution to the human user
+            initialSources: researcherResult?.sources,
           },
           callbacks
         )
@@ -406,7 +516,8 @@ function buildSystemPrompt(
   persona: Persona,
   context: StreamContext,
   trigger?: "mention",
-  mentionerName?: string
+  mentionerName?: string,
+  retrievedContext?: string | null
 ): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
@@ -448,6 +559,11 @@ You were explicitly @mentioned by ${mentionerDesc} who wants your assistance.`
 
     default:
       prompt += buildScratchpadPrompt(context)
+  }
+
+  // Add retrieved workspace knowledge if available
+  if (retrievedContext) {
+    prompt += "\n\n" + retrievedContext
   }
 
   // Add send_message tool instructions
@@ -681,4 +797,66 @@ function formatMessagesWithTemporal(
   }
 
   return result
+}
+
+/**
+ * Enrich message search results with author names and stream names.
+ */
+async function enrichMessageResults(
+  client: PoolClient,
+  results: Array<{
+    id: string
+    streamId: string
+    content: string
+    authorId: string
+    authorType: "user" | "persona"
+    createdAt: Date
+  }>
+): Promise<MessageSearchResult[]> {
+  if (results.length === 0) return []
+
+  // Collect unique IDs for batch lookup
+  const userIds = new Set<string>()
+  const personaIds = new Set<string>()
+  const streamIds = new Set<string>()
+
+  for (const r of results) {
+    if (r.authorType === "user") {
+      userIds.add(r.authorId)
+    } else {
+      personaIds.add(r.authorId)
+    }
+    streamIds.add(r.streamId)
+  }
+
+  // Batch fetch users, personas, streams
+  const [users, personas, streams] = await Promise.all([
+    userIds.size > 0 ? UserRepository.findByIds(client, [...userIds]) : Promise.resolve([]),
+    personaIds.size > 0 ? PersonaRepository.findByIds(client, [...personaIds]) : Promise.resolve([]),
+    StreamRepository.findByIds(client, [...streamIds]),
+  ])
+
+  // Build lookup maps
+  const userMap = new Map(users.map((u) => [u.id, u]))
+  const personaMap = new Map(personas.map((p) => [p.id, p]))
+  const streamMap = new Map(streams.map((s) => [s.id, s]))
+
+  // Enrich results
+  return results.map((r) => {
+    const authorName =
+      r.authorType === "user"
+        ? (userMap.get(r.authorId)?.name ?? "Unknown")
+        : (personaMap.get(r.authorId)?.name ?? "Assistant")
+
+    const stream = streamMap.get(r.streamId)
+    const streamName = stream?.displayName ?? stream?.slug ?? stream?.type ?? "Unknown"
+
+    return {
+      id: r.id,
+      content: r.content,
+      authorName,
+      streamName,
+      createdAt: r.createdAt.toISOString(),
+    }
+  })
 }
