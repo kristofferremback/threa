@@ -1,6 +1,8 @@
 import { PoolClient } from "pg"
 import { sql } from "../db"
 
+export type AIUsageOrigin = "system" | "user"
+
 interface AIUsageRecordRow {
   id: string
   workspace_id: string
@@ -13,6 +15,7 @@ interface AIUsageRecordRow {
   completion_tokens: number
   total_tokens: number
   cost_usd: string // NUMERIC comes as string from pg
+  origin: AIUsageOrigin
   metadata: Record<string, unknown> | null
   created_at: Date
 }
@@ -29,6 +32,7 @@ export interface AIUsageRecord {
   completionTokens: number
   totalTokens: number
   costUsd: number
+  origin: AIUsageOrigin
   metadata: Record<string, unknown> | null
   createdAt: Date
 }
@@ -45,6 +49,7 @@ export interface InsertAIUsageRecordParams {
   completionTokens: number
   totalTokens: number
   costUsd: number
+  origin: AIUsageOrigin
   metadata?: Record<string, unknown>
 }
 
@@ -77,6 +82,13 @@ export interface UserBreakdown {
   recordCount: number
 }
 
+export interface OriginBreakdown {
+  origin: AIUsageOrigin
+  totalCostUsd: number
+  totalTokens: number
+  recordCount: number
+}
+
 function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
   return {
     id: row.id,
@@ -90,6 +102,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
     completionTokens: row.completion_tokens,
     totalTokens: row.total_tokens,
     costUsd: parseFloat(row.cost_usd),
+    origin: row.origin,
     metadata: row.metadata,
     createdAt: row.created_at,
   }
@@ -98,7 +111,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
 const SELECT_FIELDS = `
   id, workspace_id, user_id, session_id, function_id,
   model, provider, prompt_tokens, completion_tokens,
-  total_tokens, cost_usd, metadata, created_at
+  total_tokens, cost_usd, origin, metadata, created_at
 `
 
 export const AIUsageRepository = {
@@ -107,7 +120,7 @@ export const AIUsageRepository = {
       INSERT INTO ai_usage_records (
         id, workspace_id, user_id, session_id, function_id,
         model, provider, prompt_tokens, completion_tokens,
-        total_tokens, cost_usd, metadata
+        total_tokens, cost_usd, origin, metadata
       )
       VALUES (
         ${params.id},
@@ -121,6 +134,7 @@ export const AIUsageRepository = {
         ${params.completionTokens},
         ${params.totalTokens},
         ${params.costUsd},
+        ${params.origin},
         ${params.metadata ? JSON.stringify(params.metadata) : null}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
@@ -334,5 +348,38 @@ export const AIUsageRepository = {
 
     const result = await client.query<AIUsageRecordRow>(query, values)
     return result.rows.map(mapRowToRecord)
+  },
+
+  async getUsageByOrigin(
+    client: PoolClient,
+    workspaceId: string,
+    periodStart: Date,
+    periodEnd: Date
+  ): Promise<OriginBreakdown[]> {
+    const result = await client.query<{
+      origin: AIUsageOrigin
+      total_cost_usd: string
+      total_tokens: string
+      record_count: string
+    }>(sql`
+      SELECT
+        origin,
+        SUM(cost_usd) as total_cost_usd,
+        SUM(total_tokens) as total_tokens,
+        COUNT(*) as record_count
+      FROM ai_usage_records
+      WHERE workspace_id = ${workspaceId}
+        AND created_at >= ${periodStart}
+        AND created_at < ${periodEnd}
+      GROUP BY origin
+      ORDER BY total_cost_usd DESC
+    `)
+
+    return result.rows.map((row) => ({
+      origin: row.origin,
+      totalCostUsd: parseFloat(row.total_cost_usd),
+      totalTokens: parseInt(row.total_tokens, 10),
+      recordCount: parseInt(row.record_count, 10),
+    }))
   },
 }

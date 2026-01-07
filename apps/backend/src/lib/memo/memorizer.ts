@@ -125,7 +125,9 @@ export class Memorizer {
       .replace("{{CONTENT}}", message.content)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const costContext: CostContext | undefined = context.workspaceId ? { workspaceId: context.workspaceId } : undefined
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,
@@ -170,7 +172,9 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const costContext: CostContext | undefined = context.workspaceId ? { workspaceId: context.workspaceId } : undefined
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,
@@ -223,7 +227,9 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
-    const costContext: CostContext | undefined = context.workspaceId ? { workspaceId: context.workspaceId } : undefined
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,

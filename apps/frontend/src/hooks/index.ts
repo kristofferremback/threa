@@ -62,3 +62,5 @@ export { useFormattedDate } from "./use-formatted-date"
 export { useKeyboardShortcuts } from "./use-keyboard-shortcuts"
 
 export { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
+
+export { useAIUsage, useAIRecentUsage, useAIBudget, useUpdateAIBudget, aiUsageKeys } from "./use-ai-usage"

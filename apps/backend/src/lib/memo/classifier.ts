@@ -143,7 +143,9 @@ export class MemoClassifier {
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
       .replace("{{CONTENT}}", message.content)
 
-    const costContext: CostContext | undefined = context ? { workspaceId: context.workspaceId } : undefined
+    const costContext: CostContext | undefined = context
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,
@@ -191,7 +193,9 @@ export class MemoClassifier {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
 
-    const costContext: CostContext | undefined = context ? { workspaceId: context.workspaceId } : undefined
+    const costContext: CostContext | undefined = context
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,

@@ -40,6 +40,9 @@ export interface ParsedModel {
   modelName: string
 }
 
+/** Origin of the AI call - system operations vs user-initiated */
+export type AIOrigin = "system" | "user"
+
 /** Interface for cost service to record AI usage */
 export interface CostRecorder {
   recordUsage(params: {
@@ -49,6 +52,7 @@ export interface CostRecorder {
     functionId: string
     model: string
     provider: string
+    origin: AIOrigin
     usage: UsageWithCost
     metadata?: Record<string, unknown>
   }): Promise<void>
@@ -73,6 +77,8 @@ export interface CostContext {
   workspaceId: string
   userId?: string
   sessionId?: string
+  /** Origin of the AI call - defaults to 'system' if not specified */
+  origin?: AIOrigin
 }
 
 /** Message types matching Vercel AI SDK */
@@ -410,6 +416,7 @@ export function createAI(config: AIConfig): AI {
         functionId: params.functionId,
         model: parsed.modelId,
         provider: parsed.provider,
+        origin: params.context.origin ?? "system",
         usage: params.usage,
         metadata: params.metadata,
       })

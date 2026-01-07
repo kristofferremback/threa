@@ -1,6 +1,12 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient, withTransaction } from "../db"
-import { AIUsageRepository, AIBudgetRepository, OutboxRepository, type UsageSummary } from "../repositories"
+import {
+  AIUsageRepository,
+  AIBudgetRepository,
+  OutboxRepository,
+  type UsageSummary,
+  type AIUsageOrigin,
+} from "../repositories"
 import { aiUsageId, aiAlertId } from "../lib/id"
 import { logger } from "../lib/logger"
 import type { UsageWithCost, ParsedModel } from "../lib/ai/ai"
@@ -19,6 +25,7 @@ export interface RecordUsageParams {
   functionId: string
   model: string
   provider: string
+  origin: AIUsageOrigin
   usage: UsageWithCost
   metadata?: Record<string, unknown>
 }
@@ -75,6 +82,7 @@ export class AICostService implements AICostServiceLike {
         completionTokens: params.usage.completionTokens ?? 0,
         totalTokens: params.usage.totalTokens ?? 0,
         costUsd: cost,
+        origin: params.origin,
         metadata: params.metadata,
       })
 
@@ -236,6 +244,17 @@ export class AICostService implements AICostServiceLike {
 
     return withClient(this.pool, (client) =>
       AIUsageRepository.getUsageByUser(client, workspaceId, periodStart, periodEnd)
+    )
+  }
+
+  /**
+   * Get usage breakdown by origin (system vs user) for current month.
+   */
+  async getUsageByOrigin(workspaceId: string) {
+    const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
+
+    return withClient(this.pool, (client) =>
+      AIUsageRepository.getUsageByOrigin(client, workspaceId, periodStart, periodEnd)
     )
   }
 

@@ -226,6 +226,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
           functionId: "companion-response",
           model: parsedModel.modelId,
           provider: parsedModel.provider,
+          origin: "user",
           usage: {
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,

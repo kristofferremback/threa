@@ -57,11 +57,13 @@ export type { EmojiUsage, InsertEmojiUsageParams } from "./emoji-usage-repositor
 export { AIUsageRepository } from "./ai-usage-repository"
 export type {
   AIUsageRecord,
+  AIUsageOrigin,
   InsertAIUsageRecordParams,
   UsageSummary,
   ModelBreakdown,
   FunctionBreakdown,
   UserBreakdown,
+  OriginBreakdown,
 } from "./ai-usage-repository"
 
 export { AIBudgetRepository } from "./ai-budget-repository"

@@ -37,7 +37,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
    */
   async embed(text: string, context?: EmbeddingContext): Promise<number[]> {
     const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, userId: context.userId }
+      ? { workspaceId: context.workspaceId, userId: context.userId, origin: "system" }
       : undefined
 
     const { value } = await this.ai.embed({
@@ -58,7 +58,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
     }
 
     const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, userId: context.userId }
+      ? { workspaceId: context.workspaceId, userId: context.userId, origin: "system" }
       : undefined
 
     const { value } = await this.ai.embedMany({
