@@ -212,18 +212,33 @@ export const UserRepository = {
   },
 
   /**
-   * Search for users in a workspace by name or email.
-   * Uses case-insensitive ILIKE matching.
+   * Search for users in a workspace by name, email, or slug.
+   * Uses pg_trgm trigram similarity for fuzzy matching (handles typos),
+   * combined with ILIKE for exact substring matches.
    */
   async searchByNameOrEmail(client: PoolClient, workspaceId: string, query: string, limit: number): Promise<User[]> {
     const pattern = `%${query}%`
     const result = await client.query<UserRow>(sql`
-      SELECT DISTINCT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at
+      SELECT DISTINCT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at,
+        GREATEST(
+          similarity(u.name, ${query}),
+          similarity(u.email, ${query}),
+          similarity(u.slug, ${query})
+        ) AS sim_score
       FROM users u
       INNER JOIN workspace_members wm ON wm.user_id = u.id
       WHERE wm.workspace_id = ${workspaceId}
-        AND (u.name ILIKE ${pattern} OR u.email ILIKE ${pattern})
-      ORDER BY u.name
+        AND (
+          -- Trigram similarity match (fuzzy, handles typos)
+          u.name % ${query}
+          OR u.email % ${query}
+          OR u.slug % ${query}
+          -- ILIKE fallback for exact substring matches
+          OR u.name ILIKE ${pattern}
+          OR u.email ILIKE ${pattern}
+          OR u.slug ILIKE ${pattern}
+        )
+      ORDER BY sim_score DESC, u.name
       LIMIT ${limit}
     `)
     return result.rows.map(mapRowToUser)
