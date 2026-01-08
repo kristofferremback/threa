@@ -379,4 +379,50 @@ export const StreamRepository = {
     }
     return map
   },
+
+  /**
+   * Search for streams by display name or slug.
+   * Uses pg_trgm trigram similarity for fuzzy matching (handles typos),
+   * combined with ILIKE for exact substring matches.
+   * Only searches within the provided stream IDs (for access control).
+   */
+  async searchByName(
+    client: PoolClient,
+    params: {
+      streamIds: string[]
+      query: string
+      types?: StreamType[]
+      limit?: number
+    }
+  ): Promise<Stream[]> {
+    const { streamIds, query, types, limit = 10 } = params
+    if (streamIds.length === 0) return []
+
+    const pattern = `%${query}%`
+
+    // Build type filter
+    const typeFilter = types && types.length > 0 ? sql`AND type = ANY(${types})` : sql``
+
+    const result = await client.query<StreamRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)},
+        GREATEST(
+          COALESCE(similarity(display_name, ${query}), 0),
+          COALESCE(similarity(slug, ${query}), 0)
+        ) AS sim_score
+      FROM streams
+      WHERE id = ANY(${streamIds})
+        AND (
+          -- Trigram similarity match (fuzzy, handles typos)
+          display_name % ${query}
+          OR slug % ${query}
+          -- ILIKE fallback for exact substring matches
+          OR display_name ILIKE ${pattern}
+          OR slug ILIKE ${pattern}
+        )
+        ${typeFilter}
+      ORDER BY sim_score DESC, display_name NULLS LAST
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToStream)
+  },
 }

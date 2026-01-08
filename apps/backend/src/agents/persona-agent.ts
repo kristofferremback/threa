@@ -398,25 +398,20 @@ export class PersonaAgent {
             },
 
             searchStreams: async (input) => {
-              // Filter accessible streams by name/description match
-              const streams = await StreamRepository.findByIds(client, accessibleStreamIds)
-              const query = input.query.toLowerCase()
+              // Use trigram search for fuzzy matching on stream names
+              const streams = await StreamRepository.searchByName(client, {
+                streamIds: accessibleStreamIds,
+                query: input.query,
+                types: input.types,
+                limit: 10,
+              })
 
-              return streams
-                .filter((s) => {
-                  const matchesName =
-                    s.displayName?.toLowerCase().includes(query) || s.slug?.toLowerCase().includes(query)
-                  const matchesDesc = s.description?.toLowerCase().includes(query)
-                  const matchesType = !input.types || input.types.includes(s.type as any)
-                  return (matchesName || matchesDesc) && matchesType
-                })
-                .slice(0, 10)
-                .map((s) => ({
-                  id: s.id,
-                  type: s.type,
-                  name: s.displayName ?? s.slug ?? null,
-                  description: s.description ?? null,
-                }))
+              return streams.map((s) => ({
+                id: s.id,
+                type: s.type,
+                name: s.displayName ?? s.slug ?? null,
+                description: s.description ?? null,
+              }))
             },
 
             searchUsers: async (input) => {
