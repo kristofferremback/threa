@@ -79,7 +79,7 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
     .map((msg) => {
       const relativeDate = formatRelativeDate(msg.createdAt)
       const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
-      const content = truncateContent(msg.content, 500)
+      const content = msg.content.replace(/\s+/g, " ").trim()
 
       return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
 > ${content}`
@@ -91,19 +91,6 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
 ${messageEntries}
 
 `
-}
-
-/**
- * Truncate content to a maximum length, adding ellipsis if truncated.
- */
-function truncateContent(content: string, maxLength: number): string {
-  const normalized = content.replace(/\s+/g, " ").trim()
-
-  if (normalized.length <= maxLength) {
-    return normalized
-  }
-
-  return normalized.slice(0, maxLength - 3) + "..."
 }
 
 /**

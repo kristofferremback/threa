@@ -631,7 +631,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
    */
   private buildContextSummary(triggerMessage: Message, conversationHistory: Message[]): string {
     const recentMessages = conversationHistory.slice(-5)
-    const historyText = recentMessages.map((m) => `${m.authorType}: ${m.content.slice(0, 200)}`).join("\n")
+    const historyText = recentMessages.map((m) => `${m.authorType}: ${m.content}`).join("\n")
 
     return `## Current Message
 ${triggerMessage.content}
@@ -649,16 +649,14 @@ ${historyText || "No recent messages."}`
     if (memos.length > 0) {
       parts.push("### Memos Found")
       for (const { memo } of memos) {
-        parts.push(`- **${memo.title}**: ${memo.abstract.slice(0, 500)}${memo.abstract.length > 500 ? "..." : ""}`)
+        parts.push(`- **${memo.title}**: ${memo.abstract}`)
       }
     }
 
     if (messages.length > 0) {
       parts.push("### Messages Found")
       for (const msg of messages) {
-        parts.push(
-          `- ${msg.authorName} in ${msg.streamName}: "${msg.content.slice(0, 400)}${msg.content.length > 400 ? "..." : ""}"`
-        )
+        parts.push(`- ${msg.authorName} in ${msg.streamName}: "${msg.content}"`)
       }
     }
 
