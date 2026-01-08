@@ -86,10 +86,9 @@ export class AICostService implements AICostServiceLike {
         metadata: params.metadata,
       })
 
-      // Check and fire alerts (fire-and-forget, don't block on errors)
-      this.checkAndFireAlerts(client, params.workspaceId).catch((error) => {
-        logger.error({ error, workspaceId: params.workspaceId }, "Failed to check budget alerts")
-      })
+      // Check and fire alerts within the same transaction
+      // Outbox pattern handles delivery - we just ensure the event is inserted atomically
+      await this.checkAndFireAlerts(client, params.workspaceId)
     })
 
     logger.debug(
@@ -263,20 +262,6 @@ export class AICostService implements AICostServiceLike {
    */
   async getRecentUsage(workspaceId: string, options?: { limit?: number; userId?: string }) {
     return withClient(this.pool, (client) => AIUsageRepository.listRecent(client, workspaceId, options))
-  }
-
-  /**
-   * Check if recording is possible (used for health checks).
-   */
-  async canRecord(): Promise<boolean> {
-    try {
-      await withClient(this.pool, async () => {
-        // Just verify connection works
-      })
-      return true
-    } catch {
-      return false
-    }
   }
 
   private getCurrentMonthPeriod(): { periodStart: Date; periodEnd: Date } {

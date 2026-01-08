@@ -177,20 +177,14 @@ export function createAIUsageHandlers({ pool }: Dependencies) {
       const { start, end } = getCurrentMonthRange()
 
       const [budget, usage] = await withClient(pool, async (client) => {
-        // Upsert budget with updates
-        const existingBudget = await AIBudgetRepository.findByWorkspace(client, workspaceId)
-
-        let updatedBudget
-        if (existingBudget) {
-          updatedBudget = await AIBudgetRepository.update(client, workspaceId, updates)
-        } else {
-          // Create new budget with provided values
-          updatedBudget = await AIBudgetRepository.upsert(client, {
-            id: aiBudgetId(),
-            workspaceId,
-            ...updates,
-          })
-        }
+        // Atomic upsert with partial update semantics:
+        // - Creates with defaults if budget doesn't exist
+        // - Only updates provided fields if budget exists
+        const updatedBudget = await AIBudgetRepository.upsertPartial(client, {
+          id: aiBudgetId(),
+          workspaceId,
+          ...updates,
+        })
 
         const currentUsage = await AIUsageRepository.getWorkspaceUsage(client, workspaceId, start, end)
         return [updatedBudget, currentUsage]

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import { useParams, Link } from "react-router-dom"
 import { ArrowLeft, DollarSign, Bot, Cog } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -253,6 +253,19 @@ function BudgetSettings({
   const updateBudget = useUpdateAIBudget(workspaceId)
   const [localBudget, setLocalBudget] = useState<string>(budget?.monthlyBudgetUsd?.toString() ?? "50")
   const [localHardLimit, setLocalHardLimit] = useState<string>(budget?.hardLimitPercent?.toString() ?? "100")
+
+  // Sync local state when server budget changes
+  useEffect(() => {
+    if (budget?.monthlyBudgetUsd !== undefined) {
+      setLocalBudget(budget.monthlyBudgetUsd.toString())
+    }
+  }, [budget?.monthlyBudgetUsd])
+
+  useEffect(() => {
+    if (budget?.hardLimitPercent !== undefined) {
+      setLocalHardLimit(budget.hardLimitPercent.toString())
+    }
+  }, [budget?.hardLimitPercent])
 
   const handleUpdate = useCallback(
     (updates: UpdateAIBudgetInput) => {

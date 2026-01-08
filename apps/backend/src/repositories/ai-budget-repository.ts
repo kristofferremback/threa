@@ -196,6 +196,54 @@ export const AIBudgetRepository = {
     return mapRowToBudget(result.rows[0])
   },
 
+  /**
+   * Upsert with partial update semantics.
+   * - On INSERT: uses defaults for unprovided fields
+   * - On UPDATE (conflict): preserves existing values for unprovided fields
+   *
+   * This is atomic and avoids race conditions from find-then-update patterns.
+   */
+  async upsertPartial(client: PoolClient, params: UpsertAIBudgetParams): Promise<AIBudget> {
+    // Use null-or-value to distinguish "not provided" from explicit values
+    const monthlyBudgetUsd = params.monthlyBudgetUsd ?? null
+    const alertThreshold50 = params.alertThreshold50 ?? null
+    const alertThreshold80 = params.alertThreshold80 ?? null
+    const alertThreshold100 = params.alertThreshold100 ?? null
+    const degradationEnabled = params.degradationEnabled ?? null
+    const hardLimitEnabled = params.hardLimitEnabled ?? null
+    const hardLimitPercent = params.hardLimitPercent ?? null
+
+    const result = await client.query<AIBudgetRow>(sql`
+      INSERT INTO ai_budgets (
+        id, workspace_id, monthly_budget_usd,
+        alert_threshold_50, alert_threshold_80, alert_threshold_100,
+        degradation_enabled, hard_limit_enabled, hard_limit_percent
+      )
+      VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        COALESCE(${monthlyBudgetUsd}, 50.0),
+        COALESCE(${alertThreshold50}, true),
+        COALESCE(${alertThreshold80}, true),
+        COALESCE(${alertThreshold100}, true),
+        COALESCE(${degradationEnabled}, true),
+        COALESCE(${hardLimitEnabled}, false),
+        COALESCE(${hardLimitPercent}, 150)
+      )
+      ON CONFLICT (workspace_id) DO UPDATE SET
+        monthly_budget_usd = COALESCE(${monthlyBudgetUsd}, ai_budgets.monthly_budget_usd),
+        alert_threshold_50 = COALESCE(${alertThreshold50}, ai_budgets.alert_threshold_50),
+        alert_threshold_80 = COALESCE(${alertThreshold80}, ai_budgets.alert_threshold_80),
+        alert_threshold_100 = COALESCE(${alertThreshold100}, ai_budgets.alert_threshold_100),
+        degradation_enabled = COALESCE(${degradationEnabled}, ai_budgets.degradation_enabled),
+        hard_limit_enabled = COALESCE(${hardLimitEnabled}, ai_budgets.hard_limit_enabled),
+        hard_limit_percent = COALESCE(${hardLimitPercent}, ai_budgets.hard_limit_percent),
+        updated_at = NOW()
+      RETURNING ${sql.raw(BUDGET_FIELDS)}
+    `)
+    return mapRowToBudget(result.rows[0])
+  },
+
   async update(client: PoolClient, workspaceId: string, params: UpdateAIBudgetParams): Promise<AIBudget | null> {
     const updates: string[] = []
     const values: unknown[] = []

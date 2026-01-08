@@ -26,17 +26,18 @@ const HARD_LIMIT_THRESHOLD = 1.0 // 100% - block non-essential features
 /**
  * Model degradation mappings.
  * Maps expensive models to cheaper alternatives when over budget.
+ * Uses full model IDs with provider prefix to match the format used in AI calls.
  */
 const MODEL_DEGRADATION_MAP: Record<string, string> = {
   // Claude models - degrade to Haiku
-  "anthropic/claude-sonnet-4-20250514": "anthropic/claude-haiku-4.5",
-  "anthropic/claude-sonnet-4.5": "anthropic/claude-haiku-4.5",
-  "anthropic/claude-sonnet-4": "anthropic/claude-haiku-4.5",
+  "openrouter:anthropic/claude-sonnet-4-20250514": "openrouter:anthropic/claude-haiku-4.5",
+  "openrouter:anthropic/claude-sonnet-4.5": "openrouter:anthropic/claude-haiku-4.5",
+  "openrouter:anthropic/claude-sonnet-4": "openrouter:anthropic/claude-haiku-4.5",
 
   // OpenAI models - degrade to mini
-  "openai/gpt-4o": "openai/gpt-4o-mini",
-  "openai/gpt-5": "openai/gpt-5-mini",
-  "openai/gpt-5-turbo": "openai/gpt-5-mini",
+  "openrouter:openai/gpt-4o": "openrouter:openai/gpt-4o-mini",
+  "openrouter:openai/gpt-5": "openrouter:openai/gpt-5-mini",
+  "openrouter:openai/gpt-5-turbo": "openrouter:openai/gpt-5-mini",
 }
 
 export interface BudgetStatus {

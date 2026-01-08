@@ -58,7 +58,7 @@ export class SearchService {
     let embedding: number[] = []
     if (query.trim()) {
       try {
-        embedding = await this.embeddingService.embed(query, { workspaceId })
+        embedding = await this.embeddingService.embed(query, { workspaceId, functionId: "search-query" })
       } catch (error) {
         logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
       }
