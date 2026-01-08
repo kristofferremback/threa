@@ -85,21 +85,20 @@ function getResearcherModel(ai: AI): ChatOpenAI {
   return ai.getLangChainModel(RESEARCHER_MODEL)
 }
 
-// Schema for researcher decision
-const decisionSchema = z.object({
+// Schema for combined decision + queries (single LLM call)
+const decisionWithQueriesSchema = z.object({
   needsSearch: z.boolean(),
   reasoning: z.string(),
-})
-
-// Schema for search queries
-const searchQueriesSchema = z.object({
-  queries: z.array(
-    z.object({
-      target: z.enum(["memos", "messages"]),
-      type: z.enum(["semantic", "exact"]),
-      query: z.string(),
-    })
-  ),
+  queries: z
+    .array(
+      z.object({
+        target: z.enum(["memos", "messages"]),
+        type: z.enum(["semantic", "exact"]),
+        query: z.string(),
+      })
+    )
+    .nullable()
+    .describe("Search queries to execute if needsSearch is true, null otherwise"),
 })
 
 // Schema for evaluation after seeing results
@@ -117,7 +116,7 @@ const evaluationSchema = z.object({
   reasoning: z.string(),
 })
 
-type SearchQuery = z.infer<typeof searchQueriesSchema>["queries"][number]
+type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
 
 const SYSTEM_PROMPT = `You analyze user messages to decide if workspace knowledge retrieval would help answer them.
 
@@ -213,11 +212,11 @@ export class Researcher {
     // Get LangChain model for structured output calls
     const model = getResearcherModel(ai)
 
-    // Step 1: Decide if search is needed
+    // Step 1: Decide if search is needed AND generate queries in one call
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const decision = await this.decideSearch(model, contextSummary, langchainConfig)
+    const decision = await this.decideAndGenerateQueries(model, contextSummary, langchainConfig)
 
-    if (!decision.needsSearch) {
+    if (!decision.needsSearch || !decision.queries?.length) {
       logger.debug(
         { messageId: triggerMessage.id, reasoning: decision.reasoning },
         "Researcher decided no search needed"
@@ -244,8 +243,7 @@ export class Researcher {
       return this.emptyResult()
     }
 
-    // Step 2: Generate initial queries
-    const initialQueries = await this.generateQueries(model, contextSummary, langchainConfig)
+    const initialQueries = decision.queries
 
     // Execute searches and collect results
     let allMemos: EnrichedMemoResult[] = []
@@ -336,27 +334,35 @@ export class Researcher {
   }
 
   /**
-   * Decide if search is needed for this message.
-   * Uses LangChain's structured output for proper trace integration.
+   * Combined decision + query generation in a single LLM call.
+   * Saves one round-trip compared to separate decide + generateQueries calls.
    */
-  private async decideSearch(
+  private async decideAndGenerateQueries(
     model: ChatOpenAI,
     contextSummary: string,
     langchainConfig?: RunnableConfig
-  ): Promise<z.infer<typeof decisionSchema>> {
+  ): Promise<z.infer<typeof decisionWithQueriesSchema>> {
     try {
-      const structuredModel = model.withStructuredOutput(decisionSchema, { name: "researcher-decide" })
+      const structuredModel = model.withStructuredOutput(decisionWithQueriesSchema, {
+        name: "researcher-decide-and-query",
+      })
 
       const result = await structuredModel.invoke(
         [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Decide if workspace search would help answer this message.
+            content: `Analyze this message and decide if workspace search would help answer it.
 
 ${contextSummary}
 
-Respond with whether search is needed and your reasoning.`,
+If search IS needed:
+- Generate 1-3 focused search queries
+- Start with memo search for summarized knowledge (decisions, context, discussions)
+- Use message search for specific quotes, recent activity, or exact terms
+- Use "semantic" for concepts/topics, "exact" for error messages, IDs, or quoted text
+
+If search is NOT needed, set needsSearch to false and queries to null.`,
           },
         ],
         langchainConfig
@@ -365,41 +371,7 @@ Respond with whether search is needed and your reasoning.`,
       return result
     } catch (error) {
       logger.warn({ error }, "Researcher decision failed, defaulting to no search")
-      return { needsSearch: false, reasoning: "Decision failed" }
-    }
-  }
-
-  /**
-   * Generate search queries for the message.
-   * Uses LangChain's structured output for proper trace integration.
-   */
-  private async generateQueries(
-    model: ChatOpenAI,
-    contextSummary: string,
-    langchainConfig?: RunnableConfig
-  ): Promise<SearchQuery[]> {
-    try {
-      const structuredModel = model.withStructuredOutput(searchQueriesSchema, { name: "researcher-queries" })
-
-      const result = await structuredModel.invoke(
-        [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `Generate 1-3 search queries to find relevant workspace knowledge.
-
-${contextSummary}
-
-Start with memo search for summarized knowledge. Use message search for specific quotes or recent activity.`,
-          },
-        ],
-        langchainConfig
-      )
-
-      return result.queries
-    } catch (error) {
-      logger.warn({ error }, "Researcher query generation failed")
-      return []
+      return { needsSearch: false, reasoning: "Decision failed", queries: null }
     }
   }
 
@@ -446,7 +418,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
   }
 
   /**
-   * Execute a set of search queries.
+   * Execute a set of search queries in parallel.
    */
   private async executeQueries(
     client: PoolClient,
@@ -460,30 +432,48 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     messages: EnrichedMessageResult[]
     searches: ResearcherCachedResult["searchesPerformed"]
   }> {
+    // Execute all queries in parallel
+    const results = await Promise.all(
+      queries.map(async (query) => {
+        if (query.target === "memos") {
+          const memoResults = await this.searchMemos(client, query, workspaceId, accessibleStreamIds, embeddingService)
+          return {
+            type: "memos" as const,
+            memos: memoResults,
+            messages: [] as EnrichedMessageResult[],
+            search: {
+              target: "memos" as const,
+              type: query.type,
+              query: query.query,
+              resultCount: memoResults.length,
+            },
+          }
+        } else {
+          const messageResults = await this.searchMessages(client, query, workspaceId, accessibleStreamIds)
+          return {
+            type: "messages" as const,
+            memos: [] as EnrichedMemoResult[],
+            messages: messageResults,
+            search: {
+              target: "messages" as const,
+              type: query.type,
+              query: query.query,
+              resultCount: messageResults.length,
+            },
+          }
+        }
+      })
+    )
+
+    // Aggregate results
     const memos: EnrichedMemoResult[] = []
     const messages: EnrichedMessageResult[] = []
     const searches: ResearcherCachedResult["searchesPerformed"] = []
 
-    for (const query of queries) {
-      if (query.target === "memos") {
-        const results = await this.searchMemos(client, query, workspaceId, accessibleStreamIds, embeddingService)
-        memos.push(...results)
-        searches.push({
-          target: "memos",
-          type: query.type,
-          query: query.query,
-          resultCount: results.length,
-        })
-      } else {
-        const results = await this.searchMessages(client, query, workspaceId, accessibleStreamIds)
-        messages.push(...results)
-        searches.push({
-          target: "messages",
-          type: query.type,
-          query: query.query,
-          resultCount: results.length,
-        })
-      }
+    for (const result of results) {
+      memos.push(...result.memos)
+      messages.push(...result.messages)
+      searches.push(result.search)
     }
 
     return { memos, messages, searches }
