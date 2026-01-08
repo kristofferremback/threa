@@ -5,7 +5,6 @@ import type { ChatOpenAI } from "@langchain/openai"
 import { withClient } from "../../db"
 import type { AI } from "../../lib/ai/ai"
 import type { EmbeddingServiceLike } from "../../services/embedding-service"
-import type { SearchService } from "../../services/search-service"
 import type { Message } from "../../repositories/message-repository"
 import { MemoRepository, type MemoSearchResult } from "../../repositories/memo-repository"
 import { SearchRepository } from "../../repositories/search-repository"
@@ -77,7 +76,6 @@ export interface ResearcherDeps {
   pool: Pool
   ai: AI
   embeddingService: EmbeddingServiceLike
-  searchService: SearchService
 }
 
 /**
@@ -477,7 +475,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
           resultCount: results.length,
         })
       } else {
-        const results = await this.searchMessages(client, query, workspaceId, accessibleStreamIds, invokingUserId)
+        const results = await this.searchMessages(client, query, workspaceId, accessibleStreamIds)
         messages.push(...results)
         searches.push({
           target: "messages",
@@ -550,24 +548,54 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     client: PoolClient,
     query: SearchQuery,
     workspaceId: string,
-    accessibleStreamIds: string[],
-    invokingUserId: string
+    accessibleStreamIds: string[]
   ): Promise<EnrichedMessageResult[]> {
-    const { searchService } = this.deps
+    const { embeddingService } = this.deps
 
     // Build query string - for exact, wrap in quotes
     const searchQuery = query.type === "exact" ? `"${query.query}"` : query.query
 
     try {
-      const results = await searchService.search({
-        workspaceId,
-        userId: invokingUserId,
-        query: searchQuery,
-        filters: {
+      // Generate embedding for semantic search (outside DB transaction)
+      let embedding: number[] = []
+      if (searchQuery.trim()) {
+        try {
+          embedding = await embeddingService.embed(searchQuery)
+        } catch (error) {
+          logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
+        }
+      }
+
+      // Use SearchRepository directly with existing client (avoids nested withClient)
+      const filters = {}
+      let results
+
+      if (!searchQuery.trim()) {
+        // No search terms - return recent messages
+        results = await SearchRepository.fullTextSearch(client, {
+          query: "",
           streamIds: accessibleStreamIds,
-        },
-        limit: MAX_RESULTS_PER_SEARCH,
-      })
+          filters,
+          limit: MAX_RESULTS_PER_SEARCH,
+        })
+      } else if (embedding.length === 0) {
+        // No embedding - keyword-only search
+        results = await SearchRepository.fullTextSearch(client, {
+          query: searchQuery,
+          streamIds: accessibleStreamIds,
+          filters,
+          limit: MAX_RESULTS_PER_SEARCH,
+        })
+      } else {
+        // Hybrid search with RRF ranking
+        results = await SearchRepository.hybridSearch(client, {
+          query: searchQuery,
+          embedding,
+          streamIds: accessibleStreamIds,
+          filters,
+          limit: MAX_RESULTS_PER_SEARCH,
+        })
+      }
 
       // Enrich results with author names and stream names
       return enrichMessageSearchResults(client, results)

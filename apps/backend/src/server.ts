@@ -196,7 +196,7 @@ export async function startServer(): Promise<ServerInstance> {
       })
 
   // Create researcher for workspace knowledge retrieval
-  const researcher = new Researcher({ pool, ai, embeddingService, searchService })
+  const researcher = new Researcher({ pool, ai, embeddingService })
 
   const personaAgent = new PersonaAgent({
     pool,
