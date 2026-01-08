@@ -101,6 +101,7 @@ export class StreamNamingService {
             functionId: "stream-naming",
             metadata: { streamId, requireName },
           },
+          context: { workspaceId: stream.workspaceId, origin: "system" },
         })
         generatedName = value?.trim() || null
       } catch (err) {

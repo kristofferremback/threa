@@ -200,6 +200,7 @@ export class BoundaryExtractionService {
         parentMessageConversations.length > 0
           ? await this.buildConversationSummaries(client, parentMessageConversations, [])
           : undefined,
+      workspaceId: stream.workspaceId,
     }
 
     const result = await this.extractor.extract(context)

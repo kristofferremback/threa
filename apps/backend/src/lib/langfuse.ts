@@ -77,13 +77,19 @@ export async function shutdownLangfuse(): Promise<void> {
  *
  * @example
  * const result = await graph.invoke(input, {
- *   callbacks: getLangfuseCallbacks({ sessionId, tags: ["companion"] }),
+ *   callbacks: getLangfuseCallbacks({
+ *     sessionId,
+ *     tags: ["companion"],
+ *     metadata: { model_id: "anthropic/claude-haiku-4.5" }
+ *   }),
  * })
  */
 export function getLangfuseCallbacks(params?: {
   sessionId?: string
   userId?: string
   tags?: string[]
+  /** Additional metadata to include in traces (e.g., model info for cost tracking) */
+  metadata?: Record<string, string | number | boolean>
 }): CallbackHandler[] {
   if (!isLangfuseEnabled()) {
     return []

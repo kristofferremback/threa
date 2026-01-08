@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { PoolClient } from "pg"
-import type { AI } from "../ai/ai"
+import type { AI, CostContext } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -26,6 +26,8 @@ export interface MemorizerContext {
   content: Message | Message[]
   existingMemo?: Memo
   existingTags?: string[]
+  /** Optional cost tracking context */
+  workspaceId?: string
 }
 
 const memoContentSchema = z.object({
@@ -123,6 +125,10 @@ export class Memorizer {
       .replace("{{CONTENT}}", message.content)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
+
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
@@ -136,6 +142,7 @@ export class Memorizer {
         functionId: "memorize-message",
         metadata: { messageId: message.id },
       },
+      context: costContext,
     })
 
     return {
@@ -165,6 +172,10 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
+
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
@@ -178,6 +189,7 @@ export class Memorizer {
         functionId: "memorize-conversation",
         metadata: { messageCount: messages.length },
       },
+      context: costContext,
     })
 
     const validSourceIds = value.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))
@@ -215,6 +227,10 @@ export class Memorizer {
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
+    const costContext: CostContext | undefined = context.workspaceId
+      ? { workspaceId: context.workspaceId, origin: "system" }
+      : undefined
+
     const { value } = await this.ai.generateObject({
       model: this.modelId,
       schema: memoContentSchema,
@@ -231,6 +247,7 @@ export class Memorizer {
           messageCount: messages.length,
         },
       },
+      context: costContext,
     })
 
     const validSourceIds = value.sourceMessageIds.filter((id) => messages.some((m) => m.id === id))

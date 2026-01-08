@@ -1,5 +1,8 @@
 import { describe, it, expect } from "bun:test"
-import { parseModelId, createAI } from "./ai"
+import { parseModelId, createAI, type UsageWithCost } from "./ai"
+
+// Import fixture data captured from real OpenRouter API calls (2026-01-06)
+import fixtures from "./fixtures/openrouter-responses.json"
 
 describe("parseModelId", () => {
   it("should parse openrouter model with nested path", () => {
@@ -119,5 +122,45 @@ describe("API behavior", () => {
     const ai = createAI({ openrouter: { apiKey: "test-key" } })
 
     expect(() => ai.getLanguageModel("unsupported:model")).toThrow(/Currently supported: openrouter/)
+  })
+})
+
+describe("OpenRouter response fixtures", () => {
+  // These fixtures were captured from real OpenRouter API calls on 2026-01-06
+  // They document the expected response structure for cost tracking
+
+  it("should have generateText fixture with cost data", () => {
+    const { providerMetadata } = fixtures.generateText
+
+    expect(providerMetadata.openrouter).toBeDefined()
+    expect(providerMetadata.openrouter.usage).toBeDefined()
+    expect(providerMetadata.openrouter.usage.cost).toBe(0.0000036)
+    expect(providerMetadata.openrouter.usage.promptTokens).toBe(16)
+    expect(providerMetadata.openrouter.usage.completionTokens).toBe(2)
+    expect(providerMetadata.openrouter.usage.totalTokens).toBe(18)
+  })
+
+  it("should have generateObject fixture with cost data", () => {
+    const { providerMetadata } = fixtures.generateObject
+
+    expect(providerMetadata.openrouter.usage.cost).toBe(0.00001545)
+    expect(providerMetadata.openrouter.usage.promptTokens).toBe(59)
+    expect(providerMetadata.openrouter.usage.completionTokens).toBe(11)
+    expect(providerMetadata.openrouter.usage.totalTokens).toBe(70)
+  })
+
+  it("should have embed fixture with tokens and cost", () => {
+    const { usage, providerMetadata } = fixtures.embed
+
+    // Embedding models have different usage shape (just 'tokens', no prompt/completion split)
+    expect(usage.tokens).toBe(4)
+    expect(providerMetadata.openrouter.usage.cost).toBe(8e-8)
+  })
+
+  it("should have embedMany fixture with tokens and cost", () => {
+    const { usage, providerMetadata } = fixtures.embedMany
+
+    expect(usage.tokens).toBe(3)
+    expect(providerMetadata.openrouter.usage.cost).toBe(6e-8)
   })
 })

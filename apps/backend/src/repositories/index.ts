@@ -53,3 +53,26 @@ export type { MemoStreamState, StreamReadyToProcess } from "./stream-state-repos
 
 export { EmojiUsageRepository } from "./emoji-usage-repository"
 export type { EmojiUsage, InsertEmojiUsageParams } from "./emoji-usage-repository"
+
+export { AIUsageRepository } from "./ai-usage-repository"
+export type {
+  AIUsageRecord,
+  AIUsageOrigin,
+  InsertAIUsageRecordParams,
+  UsageSummary,
+  ModelBreakdown,
+  FunctionBreakdown,
+  UserBreakdown,
+  OriginBreakdown,
+} from "./ai-usage-repository"
+
+export { AIBudgetRepository } from "./ai-budget-repository"
+export type {
+  AIBudget,
+  AIUserQuota,
+  AIAlert,
+  UpsertAIBudgetParams,
+  UpdateAIBudgetParams,
+  UpsertAIUserQuotaParams,
+  InsertAIAlertParams,
+} from "./ai-budget-repository"

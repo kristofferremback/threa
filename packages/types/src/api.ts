@@ -153,3 +153,86 @@ export interface CommandFailedPayload {
   commandId: string
   error: string
 }
+
+// ============================================================================
+// AI Usage API
+// ============================================================================
+
+export interface AIUsageSummary {
+  totalCostUsd: number
+  totalPromptTokens: number
+  totalCompletionTokens: number
+  totalTokens: number
+  recordCount: number
+}
+
+export type AIUsageOrigin = "system" | "user"
+
+export interface AIUsageByOrigin {
+  origin: AIUsageOrigin
+  totalCostUsd: number
+  totalTokens: number
+  recordCount: number
+}
+
+export interface AIUsageByUser {
+  userId: string | null
+  totalCostUsd: number
+  totalTokens: number
+  recordCount: number
+}
+
+export interface AIUsageRecord {
+  id: string
+  functionId: string
+  model: string
+  provider: string
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  costUsd: number
+  userId: string | null
+  sessionId: string | null
+  createdAt: string
+}
+
+export interface AIUsageResponse {
+  period: {
+    start: string
+    end: string
+  }
+  total: AIUsageSummary
+  byOrigin: AIUsageByOrigin[]
+  byUser: AIUsageByUser[]
+}
+
+export interface AIRecentUsageResponse {
+  records: AIUsageRecord[]
+}
+
+export interface AIBudgetConfig {
+  monthlyBudgetUsd: number
+  alertThreshold50: boolean
+  alertThreshold80: boolean
+  alertThreshold100: boolean
+  degradationEnabled: boolean
+  hardLimitEnabled: boolean
+  hardLimitPercent: number
+}
+
+export interface AIBudgetResponse {
+  budget: AIBudgetConfig | null
+  currentUsage: AIUsageSummary
+  percentUsed: number
+  nextReset: string
+}
+
+export interface UpdateAIBudgetInput {
+  monthlyBudgetUsd?: number
+  alertThreshold50?: boolean
+  alertThreshold80?: boolean
+  alertThreshold100?: boolean
+  degradationEnabled?: boolean
+  hardLimitEnabled?: boolean
+  hardLimitPercent?: number
+}

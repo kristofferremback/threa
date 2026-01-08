@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit, DollarSign } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -37,13 +37,14 @@ interface SidebarShellProps {
   header: ReactNode
   draftsLink: ReactNode
   streamList: ReactNode
+  footer?: ReactNode
 }
 
 /**
  * Sidebar structural shell - defines layout without content.
  * Used by both real Sidebar and skeleton to ensure identical structure.
  */
-export function SidebarShell({ header, draftsLink, streamList }: SidebarShellProps) {
+export function SidebarShell({ header, draftsLink, streamList, footer }: SidebarShellProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center justify-between border-b px-4">{header}</div>
@@ -51,6 +52,7 @@ export function SidebarShell({ header, draftsLink, streamList }: SidebarShellPro
       <ScrollArea className="flex-1">
         <div className="p-2">{streamList}</div>
       </ScrollArea>
+      {footer && <div className="border-t px-2 py-2">{footer}</div>}
     </div>
   )
 }
@@ -270,6 +272,18 @@ export function Sidebar({ workspaceId }: SidebarProps) {
             </SidebarSection>
           </>
         )
+      }
+      footer={
+        <Link
+          to={`/w/${workspaceId}/admin/ai-usage`}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+            "hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+          )}
+        >
+          <DollarSign className="h-4 w-4" />
+          AI Usage
+        </Link>
       }
     />
   )

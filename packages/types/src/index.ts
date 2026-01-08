@@ -112,6 +112,17 @@ export type {
   CommandDispatchedPayload,
   CommandCompletedPayload,
   CommandFailedPayload,
+  // AI Usage
+  AIUsageSummary,
+  AIUsageOrigin,
+  AIUsageByOrigin,
+  AIUsageByUser,
+  AIUsageRecord,
+  AIUsageResponse,
+  AIRecentUsageResponse,
+  AIBudgetConfig,
+  AIBudgetResponse,
+  UpdateAIBudgetInput,
 } from "./api"
 
 // User Preferences

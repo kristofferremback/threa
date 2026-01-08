@@ -20,9 +20,10 @@ import { NoObjectGeneratedError } from "ai"
 // Mock generateObject function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockGenerateObject = mock(
-  async (): Promise<{ value: any; response: any }> => ({
+  async (): Promise<{ value: any; response: any; usage: any }> => ({
     value: { conversationId: null, confidence: 0.5 },
     response: { usage: {} },
+    usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
   })
 )
 
@@ -145,6 +146,7 @@ describe("LLMBoundaryExtractor", () => {
           reasoning: "Topic matches existing conversation",
         },
         response: { usage: {} },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
       })
 
       const result = await extractor.extract(context)
@@ -163,6 +165,7 @@ describe("LLMBoundaryExtractor", () => {
           confidence: 0.88,
         },
         response: { usage: {} },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
       })
 
       const result = await extractor.extract(context)
@@ -185,6 +188,7 @@ describe("LLMBoundaryExtractor", () => {
           completenessUpdates: [{ conversationId: "conv_update123", score: 6, status: "resolved" }],
         },
         response: { usage: {} },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
       })
 
       const result = await extractor.extract(context)
@@ -243,6 +247,7 @@ describe("LLMBoundaryExtractor", () => {
           confidence: 0.8,
         },
         response: { usage: {} },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
       })
 
       const result = await extractor.extract(context)

@@ -11,7 +11,8 @@ import {
   type SendMessageResult,
 } from "./tools"
 import { AgentToolNames } from "@threa/types"
-import type { AI } from "../lib/ai/ai"
+import type { AI, CostRecorder } from "../lib/ai/ai"
+import { withCostTracking } from "../lib/ai/openrouter-cost-interceptor"
 import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
 
@@ -39,6 +40,8 @@ export interface GenerateResponseParams {
   lastProcessedSequence: bigint
   /** Enabled tools for this persona (null means all tools enabled) */
   enabledTools: string[] | null
+  /** Workspace ID for cost tracking */
+  workspaceId?: string
 }
 
 /**
@@ -91,11 +94,13 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       ai: AI
       checkpointer: PostgresSaver
       tavilyApiKey?: string
+      /** Optional cost recorder for tracking AI usage costs */
+      costRecorder?: CostRecorder
     }
   ) {}
 
   async run(params: GenerateResponseParams, callbacks: ResponseGeneratorCallbacks): Promise<GenerateResponseResult> {
-    const { ai, checkpointer, tavilyApiKey } = this.deps
+    const { ai, checkpointer, tavilyApiKey, costRecorder } = this.deps
     const {
       threadId,
       modelId,
@@ -106,6 +111,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       personaId,
       lastProcessedSequence,
       enabledTools,
+      workspaceId,
     } = params
 
     logger.debug(
@@ -172,30 +178,70 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
     }
 
-    // Invoke the graph
-    const result = await compiledGraph.invoke(
-      {
-        messages: langchainMessages,
-        systemPrompt,
-        streamId,
-        sessionId,
-        personaId,
-        lastProcessedSequence,
-        finalResponse: null,
-        iteration: 0,
-        messagesSent: 0,
-        hasNewMessages: false,
-        sources: [],
-      },
-      {
-        runName: "companion-agent",
-        callbacks: getLangfuseCallbacks({ sessionId, userId: personaId, tags: ["companion"] }),
-        configurable: {
-          thread_id: threadId,
-          callbacks: graphCallbacks,
+    // Parse model for metadata
+    const parsedModel = ai.parseModel(modelId)
+
+    // Invoke the graph with cost tracking
+    const { result, usage } = await withCostTracking(async () => {
+      return compiledGraph.invoke(
+        {
+          messages: langchainMessages,
+          systemPrompt,
+          streamId,
+          sessionId,
+          personaId,
+          lastProcessedSequence,
+          finalResponse: null,
+          iteration: 0,
+          messagesSent: 0,
+          hasNewMessages: false,
+          sources: [],
         },
+        {
+          runName: "companion-agent",
+          callbacks: getLangfuseCallbacks({
+            sessionId,
+            userId: personaId,
+            tags: ["companion"],
+            metadata: {
+              model_id: parsedModel.modelId,
+              model_provider: parsedModel.modelProvider,
+              model_name: parsedModel.modelName,
+            },
+          }),
+          configurable: {
+            thread_id: threadId,
+            callbacks: graphCallbacks,
+          },
+        }
+      )
+    })
+
+    // Record captured cost if we have a cost recorder and workspaceId
+    if (costRecorder && workspaceId && usage.cost > 0) {
+      try {
+        await costRecorder.recordUsage({
+          workspaceId,
+          sessionId,
+          functionId: "companion-response",
+          model: parsedModel.modelId,
+          provider: parsedModel.provider,
+          origin: "user",
+          usage: {
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+            cost: usage.cost,
+          },
+        })
+        logger.debug(
+          { workspaceId, sessionId, cost: usage.cost, totalTokens: usage.totalTokens },
+          "Recorded companion response cost"
+        )
+      } catch (error) {
+        logger.error({ error, workspaceId, sessionId }, "Failed to record companion response cost")
       }
-    )
+    }
 
     // Update tracked count from result
     messagesSentCount = result.messagesSent ?? 0
@@ -209,6 +255,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         messagesSent: messagesSentCount,
         sentMessageIds,
         lastProcessedSequence: result.lastProcessedSequence?.toString(),
+        cost: usage.cost,
+        totalTokens: usage.totalTokens,
       },
       "Companion graph completed"
     )

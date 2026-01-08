@@ -21,3 +21,4 @@ export {
 } from "./search"
 export { conversationsApi, type ListConversationsParams } from "./conversations"
 export { preferencesApi } from "./preferences"
+export { aiUsageApi } from "./ai-usage"

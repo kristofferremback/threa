@@ -12,6 +12,7 @@ import { createEmojiHandlers } from "./handlers/emoji-handlers"
 import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { createCommandHandlers } from "./handlers/command-handlers"
 import { createUserPreferencesHandlers } from "./handlers/user-preferences-handlers"
+import { createAIUsageHandlers } from "./handlers/ai-usage-handlers"
 import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
@@ -80,6 +81,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const conversation = createConversationHandlers({ conversationService, streamService })
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
   const preferences = createUserPreferencesHandlers({ userPreferencesService })
+  const aiUsage = createAIUsageHandlers({ pool })
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -154,6 +156,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Commands
   app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
+
+  // AI Usage and Budget
+  app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
+  app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
+  app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
+  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
 
   app.use(errorHandler)
 }
