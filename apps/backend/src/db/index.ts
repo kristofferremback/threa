@@ -68,9 +68,18 @@ export interface DatabasePools {
  *
  * This separation ensures that long-held LISTEN connections don't compete
  * with transactional work for pool slots.
+ *
+ * Pool sizing rationale:
+ * - main (30): Handles concurrent HTTP requests, workers, and pg-boss jobs
+ * - listen (12): Currently 9 OutboxListeners + 3 headroom for reconnects
+ *   If adding more listeners, increase this accordingly.
  */
 export function createDatabasePools(connectionString: string): DatabasePools {
+  // Main pool for transactional work
   const main = createDatabasePool(connectionString, { max: 30 })
+
+  // Listen pool for long-held NOTIFY/LISTEN connections
+  // Size: 9 listeners + headroom for reconnection overlap
   const listen = createDatabasePool(connectionString, {
     max: 12,
     // LISTEN connections are held indefinitely - longer idle timeout
