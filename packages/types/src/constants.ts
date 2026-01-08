@@ -137,6 +137,7 @@ export const AGENT_TOOL_NAMES = [
   "search_messages",
   "search_streams",
   "search_users",
+  "get_stream_messages",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -147,4 +148,5 @@ export const AgentToolNames = {
   SEARCH_MESSAGES: "search_messages",
   SEARCH_STREAMS: "search_streams",
   SEARCH_USERS: "search_users",
+  GET_STREAM_MESSAGES: "get_stream_messages",
 } as const satisfies Record<string, AgentToolName>

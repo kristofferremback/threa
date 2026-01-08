@@ -43,6 +43,7 @@ import { createOrphanSessionCleanup } from "./lib/orphan-session-cleanup"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
 import { createPersonaAgentWorker } from "./workers/persona-agent-worker"
+import { Researcher } from "./agents/researcher"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
@@ -194,10 +195,15 @@ export async function startServer(): Promise<ServerInstance> {
         costRecorder: costService,
       })
 
+  // Create researcher for workspace knowledge retrieval
+  const researcher = new Researcher({ pool, ai, embeddingService, searchService })
+
   const personaAgent = new PersonaAgent({
     pool,
     responseGenerator,
     userPreferencesService,
+    researcher,
+    searchService,
     createMessage,
     createThread,
   })

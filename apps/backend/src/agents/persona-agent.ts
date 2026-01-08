@@ -21,7 +21,7 @@ import {
   type UserSearchResult,
 } from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
-import { Researcher, type ResearcherResult, computeAgentAccessSpec } from "./researcher"
+import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
 import { SearchRepository } from "../repositories/search-repository"
 import type { SearchService } from "../services/search-service"
 import { sessionId } from "../lib/id"
@@ -172,10 +172,10 @@ export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
   userPreferencesService: UserPreferencesService
-  /** Optional researcher for workspace knowledge retrieval */
-  researcher?: Researcher
-  /** Optional search service for workspace search tools */
-  searchService?: SearchService
+  /** Researcher for workspace knowledge retrieval */
+  researcher: Researcher
+  /** Search service for workspace search tools */
+  searchService: SearchService
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -294,26 +294,6 @@ export class PersonaAgent {
         // Build stream context with temporal information
         const context = await buildStreamContext(db, stream, { preferences })
 
-        // Run researcher for workspace knowledge retrieval (if available)
-        let researcherResult: ResearcherResult | undefined
-        if (researcher && triggerMessage && invokingUserId) {
-          // For DMs, get participant IDs for access union
-          let dmParticipantIds: string[] | undefined
-          if (stream.type === StreamTypes.DM) {
-            const members = await StreamMemberRepository.list(client, { streamId })
-            dmParticipantIds = members.map((m) => m.userId)
-          }
-
-          researcherResult = await researcher.research({
-            workspaceId,
-            streamId,
-            triggerMessage,
-            conversationHistory: context.conversationHistory,
-            invokingUserId,
-            dmParticipantIds,
-          })
-        }
-
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
         if (trigger === "mention" && triggerMessage?.authorType === "user") {
@@ -321,14 +301,33 @@ export class PersonaAgent {
           mentionerName = mentioner?.name ?? undefined
         }
 
-        // Build system prompt with stream context, trigger info, temporal context, and retrieved knowledge
-        const systemPrompt = buildSystemPrompt(
-          persona,
-          context,
-          trigger,
-          mentionerName,
-          researcherResult?.retrievedContext ?? null
-        )
+        // Build system prompt with stream context and trigger info
+        // Retrieved knowledge will be injected by the research node in the graph
+        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName, null)
+
+        // Create researcher callback for the graph's research node
+        let runResearcher:
+          | ((config: import("@langchain/core/runnables").RunnableConfig) => Promise<ResearcherResult>)
+          | undefined
+        if (triggerMessage && invokingUserId) {
+          // Capture DM participant IDs if needed
+          let dmParticipantIds: string[] | undefined
+          if (stream.type === StreamTypes.DM) {
+            const members = await StreamMemberRepository.list(client, { streamId })
+            dmParticipantIds = members.map((m) => m.userId)
+          }
+
+          runResearcher = (langchainConfig) =>
+            researcher.research({
+              workspaceId,
+              streamId,
+              triggerMessage,
+              conversationHistory: context.conversationHistory,
+              invokingUserId,
+              dmParticipantIds,
+              langchainConfig,
+            })
+        }
 
         // Track target stream for responses - may change if we create a thread
         let targetStreamId = streamId
@@ -361,9 +360,9 @@ export class PersonaAgent {
           return { messageId: message.id, content: msgInput.content }
         }
 
-        // Build search callbacks if searchService is available
+        // Build search callbacks for workspace search tools
         let searchCallbacks: SearchToolsCallbacks | undefined
-        if (searchService && invokingUserId) {
+        if (invokingUserId) {
           // Compute access spec for search context
           const accessSpec = await computeAgentAccessSpec(client, {
             stream,
@@ -387,8 +386,15 @@ export class PersonaAgent {
                 limit: 10,
               })
 
-              // Enrich with author and stream names
-              return enrichMessageResults(client, results)
+              // Enrich with author and stream names, then map to MessageSearchResult
+              const enriched = await enrichMessageSearchResults(client, results)
+              return enriched.map((r) => ({
+                id: r.id,
+                content: r.content,
+                authorName: r.authorName,
+                streamName: r.streamName,
+                createdAt: r.createdAt.toISOString(),
+              }))
             },
 
             searchStreams: async (input) => {
@@ -419,6 +425,44 @@ export class PersonaAgent {
                 id: u.id,
                 name: u.name,
                 email: u.email,
+              }))
+            },
+
+            getStreamMessages: async (input) => {
+              // Verify the requested stream is accessible
+              if (!accessibleStreamIds.includes(input.streamId)) {
+                return []
+              }
+
+              // Get recent messages from the stream (returns newest first)
+              const messages = await MessageRepository.list(client, input.streamId, {
+                limit: input.limit ?? 10,
+              })
+
+              // Reverse to get chronological order (oldest first)
+              messages.reverse()
+
+              // Enrich with author names
+              const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+              const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+
+              const [users, personas] = await Promise.all([
+                userIds.length > 0 ? UserRepository.findByIds(client, userIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(client, personaIds) : Promise.resolve([]),
+              ])
+
+              const userMap = new Map(users.map((u) => [u.id, u.name]))
+              const personaMap = new Map(personas.map((p) => [p.id, p.name]))
+
+              return messages.map((m) => ({
+                id: m.id,
+                content: m.content,
+                authorName:
+                  m.authorType === "user"
+                    ? (userMap.get(m.authorId) ?? "Unknown User")
+                    : (personaMap.get(m.authorId) ?? "Unknown Persona"),
+                authorType: m.authorType,
+                createdAt: m.createdAt.toISOString(),
               }))
             },
           }
@@ -466,7 +510,7 @@ export class PersonaAgent {
             enabledTools: persona.enabledTools,
             workspaceId, // For cost tracking
             invokingUserId, // For cost attribution to the human user
-            initialSources: researcherResult?.sources,
+            runResearcher,
           },
           callbacks
         )
@@ -627,12 +671,23 @@ function buildScratchpadPrompt(context: StreamContext): string {
   if (context.streamInfo.name) {
     section += ` called "${context.streamInfo.name}"`
   }
-  section += ". This is a private, personal space for notes and thinking. "
-  section += "The conversation history is your primary context."
+  section += ". This is a private, personal space for notes and thinking."
 
   if (context.streamInfo.description) {
     section += `\n\nDescription: ${context.streamInfo.description}`
   }
+
+  section += `
+
+## Workspace Knowledge Access
+
+You have access to the user's workspace knowledge through the GAM (General Agentic Memory) system:
+- Their other scratchpads and notes
+- Channels they're a member of
+- DMs they're participating in
+- Memos (summarized knowledge) from past conversations
+
+Relevant context is automatically retrieved before you respond. If a "Retrieved Workspace Knowledge" section appears below, it contains information found relevant to this conversation. You can reference this knowledge naturally without explicitly citing sources unless the user asks where information came from.`
 
   return section
 }
@@ -797,66 +852,4 @@ function formatMessagesWithTemporal(
   }
 
   return result
-}
-
-/**
- * Enrich message search results with author names and stream names.
- */
-async function enrichMessageResults(
-  client: PoolClient,
-  results: Array<{
-    id: string
-    streamId: string
-    content: string
-    authorId: string
-    authorType: "user" | "persona"
-    createdAt: Date
-  }>
-): Promise<MessageSearchResult[]> {
-  if (results.length === 0) return []
-
-  // Collect unique IDs for batch lookup
-  const userIds = new Set<string>()
-  const personaIds = new Set<string>()
-  const streamIds = new Set<string>()
-
-  for (const r of results) {
-    if (r.authorType === "user") {
-      userIds.add(r.authorId)
-    } else {
-      personaIds.add(r.authorId)
-    }
-    streamIds.add(r.streamId)
-  }
-
-  // Batch fetch users, personas, streams
-  const [users, personas, streams] = await Promise.all([
-    userIds.size > 0 ? UserRepository.findByIds(client, [...userIds]) : Promise.resolve([]),
-    personaIds.size > 0 ? PersonaRepository.findByIds(client, [...personaIds]) : Promise.resolve([]),
-    StreamRepository.findByIds(client, [...streamIds]),
-  ])
-
-  // Build lookup maps
-  const userMap = new Map(users.map((u) => [u.id, u]))
-  const personaMap = new Map(personas.map((p) => [p.id, p]))
-  const streamMap = new Map(streams.map((s) => [s.id, s]))
-
-  // Enrich results
-  return results.map((r) => {
-    const authorName =
-      r.authorType === "user"
-        ? (userMap.get(r.authorId)?.name ?? "Unknown")
-        : (personaMap.get(r.authorId)?.name ?? "Assistant")
-
-    const stream = streamMap.get(r.streamId)
-    const streamName = stream?.displayName ?? stream?.slug ?? stream?.type ?? "Unknown"
-
-    return {
-      id: r.id,
-      content: r.content,
-      authorName,
-      streamName,
-      createdAt: r.createdAt.toISOString(),
-    }
-  })
 }

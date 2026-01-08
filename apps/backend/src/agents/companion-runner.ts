@@ -8,6 +8,7 @@ import {
   createSearchMessagesTool,
   createSearchStreamsTool,
   createSearchUsersTool,
+  createGetStreamMessagesTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
@@ -49,8 +50,10 @@ export interface GenerateResponseParams {
   workspaceId: string
   /** User ID who invoked this response - for cost attribution to the human user */
   invokingUserId?: string
-  /** Initial sources from researcher (workspace knowledge) to attach to first message */
-  initialSources?: SourceItem[]
+  /** Callback to run the researcher for workspace knowledge retrieval */
+  runResearcher?: (
+    config: import("@langchain/core/runnables").RunnableConfig
+  ) => Promise<import("./researcher").ResearcherResult>
 }
 
 /**
@@ -124,7 +127,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       enabledTools,
       workspaceId,
       invokingUserId,
-      initialSources,
+      runResearcher,
     } = params
 
     logger.debug(
@@ -178,6 +181,9 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_USERS)) {
         tools.push(createSearchUsersTool(callbacks.search))
       }
+      if (isToolEnabled(enabledTools, AgentToolNames.GET_STREAM_MESSAGES)) {
+        tools.push(createGetStreamMessagesTool(callbacks.search))
+      }
     }
 
     logger.debug(
@@ -202,6 +208,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         messagesSentCount++
         return result
       },
+      runResearcher,
     }
 
     // Parse model for metadata
@@ -222,7 +229,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
           iteration: 0,
           messagesSent: 0,
           hasNewMessages: false,
-          sources: initialSources ?? [],
+          sources: [],
+          retrievedContext: null,
         },
         {
           runName: "companion-agent",

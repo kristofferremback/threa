@@ -11,13 +11,16 @@ export {
   createSearchMessagesTool,
   createSearchStreamsTool,
   createSearchUsersTool,
+  createGetStreamMessagesTool,
   type SearchMessagesInput,
   type SearchStreamsInput,
   type SearchUsersInput,
+  type GetStreamMessagesInput,
   type SearchToolsCallbacks,
   type MessageSearchResult,
   type StreamSearchResult,
   type UserSearchResult,
+  type StreamMessagesResult,
 } from "./search-workspace-tool"
 
 /**

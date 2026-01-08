@@ -1,4 +1,9 @@
+import type { PoolClient } from "pg"
 import type { Memo } from "../../repositories/memo-repository"
+import { UserRepository } from "../../repositories/user-repository"
+import { PersonaRepository } from "../../repositories/persona-repository"
+import { StreamRepository } from "../../repositories/stream-repository"
+import { formatRelativeDate } from "../../lib/temporal"
 
 /**
  * Enriched memo result with source stream info.
@@ -39,60 +44,59 @@ export function formatRetrievedContext(memos: EnrichedMemoResult[], messages: En
     return null
   }
 
-  const parts: string[] = []
+  const memosSection = memos.length > 0 ? formatMemosSection(memos) : ""
+  const messagesSection = messages.length > 0 ? formatMessagesSection(messages) : ""
 
-  parts.push("## Retrieved Knowledge")
-  parts.push("")
-  parts.push("The following relevant information was found in the workspace:")
-  parts.push("")
+  return `## Retrieved Knowledge
 
-  // Memos first (higher quality, summarized knowledge)
-  if (memos.length > 0) {
-    parts.push("### Memos")
-    parts.push("")
+The following relevant information was found in the workspace:
 
-    for (const { memo, sourceStream } of memos) {
+${memosSection}${messagesSection}Use this knowledge to inform your response. Cite sources when relevant.`
+}
+
+function formatMemosSection(memos: EnrichedMemoResult[]): string {
+  const memoEntries = memos
+    .map(({ memo, sourceStream }) => {
       const location = sourceStream?.name ?? sourceStream?.type ?? "workspace"
-      parts.push(`**${memo.title}** _(from ${location})_`)
-      parts.push("")
-      parts.push(memo.abstract)
-      parts.push("")
+      const keyPointsList =
+        memo.keyPoints.length > 0 ? `\nKey points:\n${memo.keyPoints.map((kp) => `- ${kp}`).join("\n")}\n` : ""
 
-      if (memo.keyPoints.length > 0) {
-        parts.push("Key points:")
-        for (const kp of memo.keyPoints) {
-          parts.push(`- ${kp}`)
-        }
-        parts.push("")
-      }
-    }
-  }
+      return `**${memo.title}** _(from ${location})_
 
-  // Messages as supplement/fallback
-  if (messages.length > 0) {
-    parts.push("### Related Messages")
-    parts.push("")
+${memo.abstract}
+${keyPointsList}`
+    })
+    .join("\n")
 
-    for (const msg of messages) {
+  return `### Memos
+
+${memoEntries}
+`
+}
+
+function formatMessagesSection(messages: EnrichedMessageResult[]): string {
+  const messageEntries = messages
+    .map((msg) => {
       const relativeDate = formatRelativeDate(msg.createdAt)
       const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
+      const content = truncateContent(msg.content, 300)
 
-      parts.push(`> **${author}** in _${msg.streamName}_ (${relativeDate}):`)
-      parts.push(`> ${truncateContent(msg.content, 300)}`)
-      parts.push("")
-    }
-  }
+      return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
+> ${content}`
+    })
+    .join("\n\n")
 
-  parts.push("Use this knowledge to inform your response. Cite sources when relevant.")
+  return `### Related Messages
 
-  return parts.join("\n")
+${messageEntries}
+
+`
 }
 
 /**
  * Truncate content to a maximum length, adding ellipsis if truncated.
  */
 function truncateContent(content: string, maxLength: number): string {
-  // Normalize whitespace
   const normalized = content.replace(/\s+/g, " ").trim()
 
   if (normalized.length <= maxLength) {
@@ -103,31 +107,73 @@ function truncateContent(content: string, maxLength: number): string {
 }
 
 /**
- * Format a date as a relative time string.
+ * Raw message search result from the search service.
  */
-function formatRelativeDate(date: Date): string {
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffSeconds = Math.floor(diffMs / 1000)
-  const diffMinutes = Math.floor(diffSeconds / 60)
-  const diffHours = Math.floor(diffMinutes / 60)
-  const diffDays = Math.floor(diffHours / 24)
+export interface RawMessageSearchResult {
+  id: string
+  streamId: string
+  content: string
+  authorId: string
+  authorType: "user" | "persona"
+  createdAt: Date
+}
 
-  if (diffDays > 30) {
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+/**
+ * Enrich raw message search results with author names and stream names.
+ * This is a shared utility used by both the Researcher and PersonaAgent search callbacks.
+ */
+export async function enrichMessageSearchResults(
+  client: PoolClient,
+  results: RawMessageSearchResult[]
+): Promise<EnrichedMessageResult[]> {
+  if (results.length === 0) return []
+
+  // Collect unique IDs for batch lookup
+  const userIds = new Set<string>()
+  const personaIds = new Set<string>()
+  const streamIds = new Set<string>()
+
+  for (const r of results) {
+    if (r.authorType === "user") {
+      userIds.add(r.authorId)
+    } else {
+      personaIds.add(r.authorId)
+    }
+    streamIds.add(r.streamId)
   }
 
-  if (diffDays > 0) {
-    return diffDays === 1 ? "yesterday" : `${diffDays} days ago`
-  }
+  // Batch fetch users, personas, streams
+  const [users, personas, streams] = await Promise.all([
+    userIds.size > 0 ? UserRepository.findByIds(client, [...userIds]) : Promise.resolve([]),
+    personaIds.size > 0 ? PersonaRepository.findByIds(client, [...personaIds]) : Promise.resolve([]),
+    StreamRepository.findByIds(client, [...streamIds]),
+  ])
 
-  if (diffHours > 0) {
-    return diffHours === 1 ? "1 hour ago" : `${diffHours} hours ago`
-  }
+  // Build lookup maps
+  const userMap = new Map(users.map((u) => [u.id, u]))
+  const personaMap = new Map(personas.map((p) => [p.id, p]))
+  const streamMap = new Map(streams.map((s) => [s.id, s]))
 
-  if (diffMinutes > 0) {
-    return diffMinutes === 1 ? "1 minute ago" : `${diffMinutes} minutes ago`
-  }
+  // Enrich results
+  return results.map((r) => {
+    const authorName =
+      r.authorType === "user"
+        ? (userMap.get(r.authorId)?.name ?? "Unknown")
+        : (personaMap.get(r.authorId)?.name ?? "Assistant")
 
-  return "just now"
+    const stream = streamMap.get(r.streamId)
+    const streamName = stream?.displayName ?? stream?.slug ?? stream?.type ?? "Unknown"
+
+    return {
+      id: r.id,
+      streamId: r.streamId,
+      content: r.content,
+      authorId: r.authorId,
+      authorType: r.authorType,
+      authorName,
+      streamName,
+      streamType: stream?.type ?? "unknown",
+      createdAt: r.createdAt,
+    }
+  })
 }

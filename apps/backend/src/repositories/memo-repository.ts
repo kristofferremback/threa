@@ -99,6 +99,13 @@ export interface SemanticSearchParams {
   threshold?: number
 }
 
+export interface FullTextSearchParams {
+  workspaceId: string
+  query: string
+  streamIds?: string[]
+  limit?: number
+}
+
 function mapRowToMemo(row: MemoRow): Memo {
   return {
     id: row.id,
@@ -437,6 +444,66 @@ export const MemoRepository = {
     return result.rows.map((row) => ({
       memo: mapRowToMemo(row),
       distance: row.distance,
+      sourceStream: row.stream_id
+        ? {
+            id: row.stream_id,
+            type: row.stream_type!,
+            name: row.stream_name,
+          }
+        : null,
+    }))
+  },
+
+  /**
+   * Full-text search over memo title, abstract, and key points.
+   *
+   * Uses PostgreSQL full-text search for exact phrase matching.
+   * Optionally filters to memos linked to specific streams.
+   * Returns memos with their source stream info for navigation.
+   */
+  async fullTextSearch(client: PoolClient, params: FullTextSearchParams): Promise<MemoSearchResult[]> {
+    const { workspaceId, query, streamIds, limit = 10 } = params
+    const hasStreamFilter = streamIds && streamIds.length > 0
+
+    interface SearchResultRow extends MemoRow {
+      rank: number
+      stream_id: string | null
+      stream_type: string | null
+      stream_name: string | null
+    }
+
+    // Convert query to tsquery - plainto_tsquery handles most cases,
+    // but we use websearch_to_tsquery for phrase support
+    const result = await client.query<SearchResultRow>(sql`
+      WITH memo_with_stream AS (
+        SELECT
+          ${sql.raw(SELECT_FIELDS_PREFIXED)},
+          ts_rank(
+            to_tsvector('english', m.title || ' ' || m.abstract || ' ' || array_to_string(m.key_points, ' ')),
+            websearch_to_tsquery('english', ${query})
+          ) as rank,
+          COALESCE(msg_stream.id, conv_stream.id) as stream_id,
+          COALESCE(msg_stream.type, conv_stream.type) as stream_type,
+          COALESCE(msg_stream.display_name, conv_stream.display_name) as stream_name
+        FROM memos m
+        LEFT JOIN messages msg ON m.source_message_id = msg.id
+        LEFT JOIN streams msg_stream ON msg.stream_id = msg_stream.id
+        LEFT JOIN conversations conv ON m.source_conversation_id = conv.id
+        LEFT JOIN streams conv_stream ON conv.stream_id = conv_stream.id
+        WHERE m.workspace_id = ${workspaceId}
+          AND m.status = 'active'
+          AND to_tsvector('english', m.title || ' ' || m.abstract || ' ' || array_to_string(m.key_points, ' '))
+              @@ websearch_to_tsquery('english', ${query})
+      )
+      SELECT * FROM memo_with_stream
+      WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}))
+      ORDER BY rank DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map((row) => ({
+      memo: mapRowToMemo(row),
+      distance: 1 - row.rank, // Convert rank to distance (lower = better match)
       sourceStream: row.stream_id
         ? {
             id: row.stream_id,

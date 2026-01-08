@@ -209,3 +209,33 @@ function getOffsetDifference(canonicalOffset: string, otherOffset: string): stri
   // Handle half-hour offsets
   return `${hours.toFixed(1)}h ${direction}`
 }
+
+/**
+ * Format a date as a relative time string (e.g., "2 hours ago", "yesterday").
+ * Used for displaying message timestamps in a human-friendly way.
+ */
+export function formatRelativeDate(date: Date, now: Date = new Date()): string {
+  const diffMs = now.getTime() - date.getTime()
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffDays > 30) {
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  }
+
+  if (diffDays > 0) {
+    return diffDays === 1 ? "yesterday" : `${diffDays} days ago`
+  }
+
+  if (diffHours > 0) {
+    return diffHours === 1 ? "1 hour ago" : `${diffHours} hours ago`
+  }
+
+  if (diffMinutes > 0) {
+    return diffMinutes === 1 ? "1 minute ago" : `${diffMinutes} minutes ago`
+  }
+
+  return "just now"
+}

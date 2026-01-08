@@ -42,7 +42,7 @@ export interface StreamSearchResult {
 
 // Schema for search_users tool
 const SearchUsersSchema = z.object({
-  query: z.string().describe("The search query to find users by name or email"),
+  query: z.string().describe("The search query to find users by slug, name, or email"),
 })
 
 export type SearchUsersInput = z.infer<typeof SearchUsersSchema>
@@ -53,6 +53,26 @@ export interface UserSearchResult {
   email: string
 }
 
+// Schema for get_stream_messages tool
+const GetStreamMessagesSchema = z.object({
+  streamId: z.string().describe("The ID of the stream to get messages from (use search_streams to find stream IDs)"),
+  limit: z
+    .number()
+    .optional()
+    .default(10)
+    .describe("Maximum number of recent messages to retrieve (default: 10, max: 20)"),
+})
+
+export type GetStreamMessagesInput = z.infer<typeof GetStreamMessagesSchema>
+
+export interface StreamMessagesResult {
+  id: string
+  content: string
+  authorName: string
+  authorType: string
+  createdAt: string
+}
+
 /**
  * Callbacks for workspace search tools.
  * These are provided by the PersonaAgent which has access to the session context.
@@ -61,6 +81,7 @@ export interface SearchToolsCallbacks {
   searchMessages: (input: SearchMessagesInput) => Promise<MessageSearchResult[]>
   searchStreams: (input: SearchStreamsInput) => Promise<StreamSearchResult[]>
   searchUsers: (input: SearchUsersInput) => Promise<UserSearchResult[]>
+  getStreamMessages: (input: GetStreamMessagesInput) => Promise<StreamMessagesResult[]>
 }
 
 const MAX_RESULTS = 10
@@ -202,6 +223,56 @@ export function createSearchUsersTool(callbacks: SearchToolsCallbacks) {
         return JSON.stringify({
           error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
           query: input.query,
+        })
+      }
+    },
+  })
+}
+
+const MAX_STREAM_MESSAGES = 20
+
+/**
+ * Creates a get_stream_messages tool to retrieve recent messages from a stream.
+ */
+export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
+  return new DynamicStructuredTool({
+    name: "get_stream_messages",
+    description: `Get recent messages from a specific stream (channel, scratchpad, DM, or thread). Use this to:
+- See what's being discussed in another stream
+- Get context from a related conversation
+- Check recent activity in a channel
+First use search_streams to find the stream ID, then use this tool to get its messages.`,
+    schema: GetStreamMessagesSchema,
+    func: async (input: GetStreamMessagesInput) => {
+      try {
+        const limit = Math.min(input.limit ?? 10, MAX_STREAM_MESSAGES)
+        const results = await callbacks.getStreamMessages({ ...input, limit })
+
+        if (results.length === 0) {
+          return JSON.stringify({
+            streamId: input.streamId,
+            messages: [],
+            message: "No messages found in this stream (it may be empty or you may not have access)",
+          })
+        }
+
+        logger.debug({ streamId: input.streamId, messageCount: results.length }, "Stream messages retrieved")
+
+        return JSON.stringify({
+          streamId: input.streamId,
+          messages: results.map((r) => ({
+            id: r.id,
+            content: truncate(r.content, 500),
+            author: r.authorName,
+            authorType: r.authorType,
+            date: r.createdAt,
+          })),
+        })
+      } catch (error) {
+        logger.error({ error, streamId: input.streamId }, "Get stream messages failed")
+        return JSON.stringify({
+          error: `Failed to get messages: ${error instanceof Error ? error.message : "Unknown error"}`,
+          streamId: input.streamId,
         })
       }
     },

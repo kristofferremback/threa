@@ -1,5 +1,7 @@
 import type { Pool, PoolClient } from "pg"
 import { z } from "zod"
+import type { RunnableConfig } from "@langchain/core/runnables"
+import type { ChatOpenAI } from "@langchain/openai"
 import { withClient } from "../../db"
 import type { AI } from "../../lib/ai/ai"
 import type { EmbeddingServiceLike } from "../../services/embedding-service"
@@ -8,14 +10,17 @@ import type { Message } from "../../repositories/message-repository"
 import { MemoRepository, type MemoSearchResult } from "../../repositories/memo-repository"
 import { SearchRepository } from "../../repositories/search-repository"
 import { StreamRepository } from "../../repositories/stream-repository"
-import { UserRepository } from "../../repositories/user-repository"
-import { PersonaRepository } from "../../repositories/persona-repository"
 import { ResearcherCache, type ResearcherCachedResult } from "./cache"
 import { computeAgentAccessSpec, type AgentAccessSpec } from "./access-spec"
-import { formatRetrievedContext, type EnrichedMemoResult, type EnrichedMessageResult } from "./context-formatter"
+import {
+  formatRetrievedContext,
+  enrichMessageSearchResults,
+  type EnrichedMemoResult,
+  type EnrichedMessageResult,
+} from "./context-formatter"
 import { logger } from "../../lib/logger"
 
-// Model for researcher decisions
+// Model for researcher decisions. Could be worth it testing out "openrouter:minimax/minimax-m2.1" in the future.
 const RESEARCHER_MODEL = "openrouter:openai/gpt-5-mini"
 
 // Maximum iterations for additional queries
@@ -61,6 +66,8 @@ export interface ResearcherInput {
   invokingUserId: string
   /** For DMs: all participant user IDs */
   dmParticipantIds?: string[]
+  /** LangChain config for trace context propagation */
+  langchainConfig?: RunnableConfig
 }
 
 /**
@@ -71,6 +78,13 @@ export interface ResearcherDeps {
   ai: AI
   embeddingService: EmbeddingServiceLike
   searchService: SearchService
+}
+
+/**
+ * Get a LangChain model configured for the researcher's lightweight decision calls.
+ */
+function getResearcherModel(ai: AI): ChatOpenAI {
+  return ai.getLangChainModel(RESEARCHER_MODEL)
 }
 
 // Schema for researcher decision
@@ -196,11 +210,14 @@ export class Researcher {
     accessSpec: AgentAccessSpec
   ): Promise<ResearcherResult> {
     const { ai, embeddingService } = this.deps
-    const { workspaceId, triggerMessage, conversationHistory } = input
+    const { workspaceId, triggerMessage, conversationHistory, langchainConfig } = input
+
+    // Get LangChain model for structured output calls
+    const model = getResearcherModel(ai)
 
     // Step 1: Decide if search is needed
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const decision = await this.decideSearch(contextSummary)
+    const decision = await this.decideSearch(model, contextSummary, langchainConfig)
 
     if (!decision.needsSearch) {
       logger.debug(
@@ -213,13 +230,24 @@ export class Researcher {
     // Get accessible streams for searches
     const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(client, accessSpec, workspaceId)
 
+    logger.info(
+      {
+        messageId: triggerMessage.id,
+        accessSpecType: accessSpec.type,
+        accessSpec,
+        accessibleStreamCount: accessibleStreamIds.length,
+        accessibleStreamIds: accessibleStreamIds.slice(0, 10), // Log first 10
+      },
+      "Researcher computed access"
+    )
+
     if (accessibleStreamIds.length === 0) {
-      logger.debug({ messageId: triggerMessage.id }, "No accessible streams for researcher")
+      logger.warn({ messageId: triggerMessage.id, accessSpec }, "No accessible streams for researcher")
       return this.emptyResult()
     }
 
     // Step 2: Generate initial queries
-    const initialQueries = await this.generateQueries(contextSummary)
+    const initialQueries = await this.generateQueries(model, contextSummary, langchainConfig)
 
     // Execute searches and collect results
     let allMemos: EnrichedMemoResult[] = []
@@ -232,7 +260,8 @@ export class Researcher {
       initialQueries,
       workspaceId,
       accessibleStreamIds,
-      embeddingService
+      embeddingService,
+      input.invokingUserId
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
@@ -241,7 +270,7 @@ export class Researcher {
     // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
     let iteration = 0
     while (iteration < MAX_ITERATIONS) {
-      const evaluation = await this.evaluateResults(contextSummary, allMemos, allMessages)
+      const evaluation = await this.evaluateResults(model, contextSummary, allMemos, allMessages, langchainConfig)
 
       if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
         logger.debug(
@@ -257,7 +286,8 @@ export class Researcher {
         evaluation.additionalQueries,
         workspaceId,
         accessibleStreamIds,
-        embeddingService
+        embeddingService,
+        input.invokingUserId
       )
 
       // Deduplicate results
@@ -309,15 +339,18 @@ export class Researcher {
 
   /**
    * Decide if search is needed for this message.
+   * Uses LangChain's structured output for proper trace integration.
    */
-  private async decideSearch(contextSummary: string): Promise<z.infer<typeof decisionSchema>> {
-    const { ai } = this.deps
-
+  private async decideSearch(
+    model: ChatOpenAI,
+    contextSummary: string,
+    langchainConfig?: RunnableConfig
+  ): Promise<z.infer<typeof decisionSchema>> {
     try {
-      const { value } = await ai.generateObject({
-        model: RESEARCHER_MODEL,
-        schema: decisionSchema,
-        messages: [
+      const structuredModel = model.withStructuredOutput(decisionSchema, { name: "researcher-decide" })
+
+      const result = await structuredModel.invoke(
+        [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
@@ -328,14 +361,10 @@ ${contextSummary}
 Respond with whether search is needed and your reasoning.`,
           },
         ],
-        maxTokens: 200,
-        temperature: 0,
-        telemetry: {
-          functionId: "researcher-decide",
-        },
-      })
+        langchainConfig
+      )
 
-      return value
+      return result
     } catch (error) {
       logger.warn({ error }, "Researcher decision failed, defaulting to no search")
       return { needsSearch: false, reasoning: "Decision failed" }
@@ -344,15 +373,18 @@ Respond with whether search is needed and your reasoning.`,
 
   /**
    * Generate search queries for the message.
+   * Uses LangChain's structured output for proper trace integration.
    */
-  private async generateQueries(contextSummary: string): Promise<SearchQuery[]> {
-    const { ai } = this.deps
-
+  private async generateQueries(
+    model: ChatOpenAI,
+    contextSummary: string,
+    langchainConfig?: RunnableConfig
+  ): Promise<SearchQuery[]> {
     try {
-      const { value } = await ai.generateObject({
-        model: RESEARCHER_MODEL,
-        schema: searchQueriesSchema,
-        messages: [
+      const structuredModel = model.withStructuredOutput(searchQueriesSchema, { name: "researcher-queries" })
+
+      const result = await structuredModel.invoke(
+        [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
@@ -363,14 +395,10 @@ ${contextSummary}
 Start with memo search for summarized knowledge. Use message search for specific quotes or recent activity.`,
           },
         ],
-        maxTokens: 300,
-        temperature: 0,
-        telemetry: {
-          functionId: "researcher-queries",
-        },
-      })
+        langchainConfig
+      )
 
-      return value.queries
+      return result.queries
     } catch (error) {
       logger.warn({ error }, "Researcher query generation failed")
       return []
@@ -379,21 +407,22 @@ Start with memo search for summarized knowledge. Use message search for specific
 
   /**
    * Evaluate if current results are sufficient.
+   * Uses LangChain's structured output for proper trace integration.
    */
   private async evaluateResults(
+    model: ChatOpenAI,
     contextSummary: string,
     memos: EnrichedMemoResult[],
-    messages: EnrichedMessageResult[]
+    messages: EnrichedMessageResult[],
+    langchainConfig?: RunnableConfig
   ): Promise<z.infer<typeof evaluationSchema>> {
-    const { ai } = this.deps
-
     const resultsText = this.formatResultsForEvaluation(memos, messages)
 
     try {
-      const { value } = await ai.generateObject({
-        model: RESEARCHER_MODEL,
-        schema: evaluationSchema,
-        messages: [
+      const structuredModel = model.withStructuredOutput(evaluationSchema, { name: "researcher-evaluate" })
+
+      const result = await structuredModel.invoke(
+        [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
@@ -408,14 +437,10 @@ ${resultsText || "No results found yet."}
 If results are insufficient, suggest additional queries. Otherwise, mark as sufficient.`,
           },
         ],
-        maxTokens: 400,
-        temperature: 0,
-        telemetry: {
-          functionId: "researcher-evaluate",
-        },
-      })
+        langchainConfig
+      )
 
-      return value
+      return result
     } catch (error) {
       logger.warn({ error }, "Researcher evaluation failed, treating as sufficient")
       return { sufficient: true, additionalQueries: null, reasoning: "Evaluation failed" }
@@ -430,7 +455,8 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     queries: SearchQuery[],
     workspaceId: string,
     accessibleStreamIds: string[],
-    embeddingService: EmbeddingServiceLike
+    embeddingService: EmbeddingServiceLike,
+    invokingUserId: string
   ): Promise<{
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]
@@ -451,7 +477,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
           resultCount: results.length,
         })
       } else {
-        const results = await this.searchMessages(client, query, workspaceId, accessibleStreamIds, embeddingService)
+        const results = await this.searchMessages(client, query, workspaceId, accessibleStreamIds, invokingUserId)
         messages.push(...results)
         searches.push({
           target: "messages",
@@ -497,14 +523,11 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       }
     }
 
-    // For exact search, we'd need full-text search on memos
-    // For now, fall back to semantic with the exact phrase
-    // TODO: Add full-text search to memo repository
+    // For exact search, use full-text search
     try {
-      const embedding = await embeddingService.embed(query.query)
-      const results = await MemoRepository.semanticSearch(client, {
+      const results = await MemoRepository.fullTextSearch(client, {
         workspaceId,
-        embedding,
+        query: query.query,
         streamIds: accessibleStreamIds,
         limit: MAX_RESULTS_PER_SEARCH,
       })
@@ -515,7 +538,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
         sourceStream: r.sourceStream,
       }))
     } catch (error) {
-      logger.warn({ error, query: query.query }, "Memo exact search failed")
+      logger.warn({ error, query: query.query }, "Memo full-text search failed")
       return []
     }
   }
@@ -528,7 +551,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     query: SearchQuery,
     workspaceId: string,
     accessibleStreamIds: string[],
-    embeddingService: EmbeddingServiceLike
+    invokingUserId: string
   ): Promise<EnrichedMessageResult[]> {
     const { searchService } = this.deps
 
@@ -538,7 +561,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     try {
       const results = await searchService.search({
         workspaceId,
-        userId: "researcher", // Special case - access already validated via accessibleStreamIds
+        userId: invokingUserId,
         query: searchQuery,
         filters: {
           streamIds: accessibleStreamIds,
@@ -547,77 +570,11 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       })
 
       // Enrich results with author names and stream names
-      return this.enrichMessageResults(client, results)
+      return enrichMessageSearchResults(client, results)
     } catch (error) {
       logger.warn({ error, query: query.query }, "Message search failed")
       return []
     }
-  }
-
-  /**
-   * Enrich search results with author names and stream names.
-   */
-  private async enrichMessageResults(
-    client: PoolClient,
-    results: Array<{
-      id: string
-      streamId: string
-      content: string
-      authorId: string
-      authorType: "user" | "persona"
-      createdAt: Date
-    }>
-  ): Promise<EnrichedMessageResult[]> {
-    if (results.length === 0) return []
-
-    // Collect unique IDs for batch lookup
-    const userIds = new Set<string>()
-    const personaIds = new Set<string>()
-    const streamIds = new Set<string>()
-
-    for (const r of results) {
-      if (r.authorType === "user") {
-        userIds.add(r.authorId)
-      } else {
-        personaIds.add(r.authorId)
-      }
-      streamIds.add(r.streamId)
-    }
-
-    // Batch fetch users, personas, streams
-    const [users, personas, streams] = await Promise.all([
-      userIds.size > 0 ? UserRepository.findByIds(client, [...userIds]) : Promise.resolve([]),
-      personaIds.size > 0 ? PersonaRepository.findByIds(client, [...personaIds]) : Promise.resolve([]),
-      StreamRepository.findByIds(client, [...streamIds]),
-    ])
-
-    // Build lookup maps
-    const userMap = new Map(users.map((u) => [u.id, u]))
-    const personaMap = new Map(personas.map((p) => [p.id, p]))
-    const streamMap = new Map(streams.map((s) => [s.id, s]))
-
-    // Enrich results
-    return results.map((r) => {
-      const authorName =
-        r.authorType === "user"
-          ? (userMap.get(r.authorId)?.name ?? "Unknown")
-          : (personaMap.get(r.authorId)?.name ?? "Assistant")
-
-      const stream = streamMap.get(r.streamId)
-      const streamName = stream?.displayName ?? stream?.slug ?? stream?.type ?? "Unknown"
-
-      return {
-        id: r.id,
-        streamId: r.streamId,
-        content: r.content,
-        authorId: r.authorId,
-        authorType: r.authorType,
-        authorName,
-        streamName,
-        streamType: stream?.type ?? "unknown",
-        createdAt: r.createdAt,
-      }
-    })
   }
 
   /**

@@ -7,6 +7,7 @@ import type { RunnableConfig } from "@langchain/core/runnables"
 import { AgentToolNames } from "@threa/types"
 import { logger } from "../lib/logger"
 import type { SourceItem, SendMessageInputWithSources, SendMessageResult } from "./tools"
+import type { ResearcherResult } from "./researcher"
 
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
@@ -26,6 +27,8 @@ export interface CompanionGraphCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
+  /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
+  runResearcher?: (config: RunnableConfig) => Promise<ResearcherResult>
 }
 
 /**
@@ -72,6 +75,12 @@ export const CompanionState = Annotation.Root({
     default: () => [],
     reducer: (_, next) => next,
   }),
+
+  // Retrieved context from researcher (injected into system prompt)
+  retrievedContext: Annotation<string | null>({
+    default: () => null,
+    reducer: (_, next) => next,
+  }),
 })
 
 export type CompanionStateType = typeof CompanionState.State
@@ -85,6 +94,54 @@ function getCallbacks(config: RunnableConfig): CompanionGraphCallbacks {
     throw new Error("CompanionGraphCallbacks must be provided in config.configurable.callbacks")
   }
   return callbacks
+}
+
+/**
+ * Create the research node that retrieves workspace knowledge.
+ * This node runs at the start of the graph to gather context before the agent responds.
+ */
+function createResearchNode() {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+
+    // Skip if no researcher callback provided
+    if (!callbacks.runResearcher) {
+      logger.info("Research node skipped - no researcher callback")
+      return {}
+    }
+
+    logger.info("Research node starting")
+
+    try {
+      const result = await callbacks.runResearcher(config)
+
+      logger.debug(
+        {
+          shouldSearch: result.shouldSearch,
+          memoCount: result.memos.length,
+          messageCount: result.messages.length,
+          sourceCount: result.sources.length,
+        },
+        "Research node completed"
+      )
+
+      // If researcher found sources, add them to the initial sources
+      const newSources: SourceItem[] = result.sources.map((s) => ({
+        title: s.title,
+        url: s.url,
+        type: s.type,
+        snippet: s.snippet,
+      }))
+
+      return {
+        retrievedContext: result.retrievedContext,
+        sources: [...state.sources, ...newSources],
+      }
+    } catch (error) {
+      logger.warn({ error }, "Research node failed, continuing without workspace context")
+      return {}
+    }
+  }
 }
 
 /**
@@ -102,7 +159,12 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       }
     }
 
-    const systemMessage = new SystemMessage(state.systemPrompt)
+    // Build system prompt with retrieved context if available
+    const fullSystemPrompt = state.retrievedContext
+      ? `${state.systemPrompt}\n\n${state.retrievedContext}`
+      : state.systemPrompt
+
+    const systemMessage = new SystemMessage(fullSystemPrompt)
     const response = await modelWithTools.invoke([systemMessage, ...state.messages])
 
     // Extract text content
@@ -453,27 +515,30 @@ function createEnsureResponseNode() {
  * Create the companion agent graph.
  *
  * Graph structure:
- *   START → agent → (has tool calls?)
- *                     → yes → check_new_messages → (new messages?)
- *                                                    → yes → agent
- *                                                    → no → tools → agent
- *                     → no → check_final_messages → (new messages?)
- *                                                    → yes → agent
- *                                                    → (used web_search?) → yes → synthesize → ensure_response → END
- *                                                                         → no → ensure_response → END
+ *   START → research → agent → (has tool calls?)
+ *                                → yes → check_new_messages → (new messages?)
+ *                                                               → yes → agent
+ *                                                               → no → tools → agent
+ *                                → no → check_final_messages → (new messages?)
+ *                                                               → yes → agent
+ *                                                               → (used web_search?) → yes → synthesize → ensure_response → END
+ *                                                                                    → no → ensure_response → END
  *
+ * The research node retrieves workspace knowledge before the agent responds.
  * The synthesize node formats responses with proper source citations when web search was used.
  * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
+    .addNode("research", createResearchNode())
     .addNode("agent", createAgentNode(model, tools))
     .addNode("check_new_messages", createCheckNewMessagesNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
     .addNode("synthesize", createSynthesizeNode(model))
     .addNode("ensure_response", createEnsureResponseNode())
-    .addEdge("__start__", "agent")
+    .addEdge("__start__", "research")
+    .addEdge("research", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
     .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
     .addConditionalEdges("check_final_messages", routeAfterFinalCheck)
