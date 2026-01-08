@@ -7,10 +7,12 @@ export interface EmbeddingServiceConfig {
   model?: string
 }
 
-/** Optional context for cost tracking */
+/** Context for cost tracking and telemetry */
 export interface EmbeddingContext {
   workspaceId: string
   userId?: string
+  /** Custom function ID for telemetry (e.g., "search-query", "message-embedding") */
+  functionId?: string
 }
 
 /** Interface for embedding service implementations */
@@ -43,7 +45,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
     const { value } = await this.ai.embed({
       model: this.modelId,
       value: text,
-      telemetry: { functionId: "embedding-single" },
+      telemetry: { functionId: context?.functionId ?? "embedding-single" },
       context: costContext,
     })
     return value
@@ -64,7 +66,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
     const { value } = await this.ai.embedMany({
       model: this.modelId,
       values: texts,
-      telemetry: { functionId: "embedding-batch", metadata: { count: texts.length } },
+      telemetry: { functionId: context?.functionId ?? "embedding-batch", metadata: { count: texts.length } },
       context: costContext,
     })
     return value

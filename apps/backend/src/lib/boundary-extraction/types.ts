@@ -17,8 +17,8 @@ export interface ExtractionContext {
   streamType: string
   /** For threads: conversations containing the parent message (in the parent channel) */
   parentMessageConversations?: ConversationSummary[]
-  /** Optional workspaceId for cost tracking */
-  workspaceId?: string
+  /** Workspace ID for cost tracking - required for cost attribution */
+  workspaceId: string
 }
 
 export interface CompletenessUpdate {

@@ -172,7 +172,10 @@ export class MemoService implements MemoServiceLike {
       status: MemoStatuses.ACTIVE,
     })
 
-    const embedding = await this.embeddingService.embed(memo.abstract, { workspaceId })
+    const embedding = await this.embeddingService.embed(memo.abstract, {
+      workspaceId,
+      functionId: "memo-embedding",
+    })
     await MemoRepository.updateEmbedding(client, memo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:created", {
@@ -282,7 +285,10 @@ export class MemoService implements MemoServiceLike {
       status: MemoStatuses.ACTIVE,
     })
 
-    const embedding = await this.embeddingService.embed(memo.abstract, { workspaceId })
+    const embedding = await this.embeddingService.embed(memo.abstract, {
+      workspaceId,
+      functionId: "memo-embedding",
+    })
     await MemoRepository.updateEmbedding(client, memo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:created", {
@@ -332,7 +338,10 @@ export class MemoService implements MemoServiceLike {
       version: existingMemo.version + 1,
     })
 
-    const embedding = await this.embeddingService.embed(newMemo.abstract, { workspaceId })
+    const embedding = await this.embeddingService.embed(newMemo.abstract, {
+      workspaceId,
+      functionId: "memo-embedding",
+    })
     await MemoRepository.updateEmbedding(client, newMemo.id, embedding)
 
     await OutboxRepository.insert(client, "memo:revised", {

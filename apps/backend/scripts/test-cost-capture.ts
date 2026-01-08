@@ -1,11 +1,11 @@
 /**
  * Test script to verify OpenRouter cost capture is working.
- * Run with: bun src/lib/ai/test-cost-capture.ts
+ * Run with: bun scripts/test-cost-capture.ts
  *
  * This makes real API calls to OpenRouter and logs the cost data.
  */
 
-import { createAI } from "./ai"
+import { createAI } from "../src/lib/ai/ai"
 import { z } from "zod"
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY

@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { PoolClient } from "pg"
-import type { AI, CostContext } from "../ai/ai"
+import type { AI } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
@@ -138,14 +138,10 @@ export class MemoClassifier {
     private messageFormatter: MessageFormatter
   ) {}
 
-  async classifyMessage(message: Message, context?: ClassifierContext): Promise<MessageClassification> {
+  async classifyMessage(message: Message, context: ClassifierContext): Promise<MessageClassification> {
     const prompt = MESSAGE_PROMPT.replace("{{AUTHOR_TYPE}}", message.authorType)
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
       .replace("{{CONTENT}}", message.content)
-
-    const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, origin: "system" }
-      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,
@@ -160,7 +156,7 @@ export class MemoClassifier {
         functionId: "memo-classify-message",
         metadata: { messageId: message.id },
       },
-      context: costContext,
+      context: { workspaceId: context.workspaceId, origin: "system" },
     })
 
     return {
@@ -175,8 +171,8 @@ export class MemoClassifier {
     client: PoolClient,
     conversation: Conversation,
     messages: Message[],
-    existingMemo?: Memo,
-    context?: ClassifierContext
+    existingMemo: Memo | undefined,
+    context: ClassifierContext
   ): Promise<ConversationClassification> {
     const messagesText = await this.messageFormatter.formatMessagesInline(client, messages)
 
@@ -192,10 +188,6 @@ export class MemoClassifier {
       .replace("{{MESSAGE_COUNT}}", String(messages.length))
       .replace("{{MESSAGES}}", messagesText)
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
-
-    const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, origin: "system" }
-      : undefined
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,
@@ -214,7 +206,7 @@ export class MemoClassifier {
           hasExistingMemo: !!existingMemo,
         },
       },
-      context: costContext,
+      context: { workspaceId: context.workspaceId, origin: "system" },
     })
 
     return {
