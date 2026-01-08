@@ -79,7 +79,7 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
     .map((msg) => {
       const relativeDate = formatRelativeDate(msg.createdAt)
       const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
-      const content = truncateContent(msg.content, 300)
+      const content = truncateContent(msg.content, 500)
 
       return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
 > ${content}`

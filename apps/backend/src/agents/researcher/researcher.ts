@@ -649,14 +649,16 @@ ${historyText || "No recent messages."}`
     if (memos.length > 0) {
       parts.push("### Memos Found")
       for (const { memo } of memos) {
-        parts.push(`- **${memo.title}**: ${memo.abstract.slice(0, 150)}...`)
+        parts.push(`- **${memo.title}**: ${memo.abstract.slice(0, 500)}${memo.abstract.length > 500 ? "..." : ""}`)
       }
     }
 
     if (messages.length > 0) {
       parts.push("### Messages Found")
       for (const msg of messages) {
-        parts.push(`- ${msg.authorName} in ${msg.streamName}: "${msg.content.slice(0, 100)}..."`)
+        parts.push(
+          `- ${msg.authorName} in ${msg.streamName}: "${msg.content.slice(0, 400)}${msg.content.length > 400 ? "..." : ""}"`
+        )
       }
     }
 
