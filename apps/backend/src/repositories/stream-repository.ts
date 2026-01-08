@@ -400,8 +400,28 @@ export const StreamRepository = {
 
     const pattern = `%${query}%`
 
-    // Build type filter
-    const typeFilter = types && types.length > 0 ? sql`AND type = ANY(${types})` : sql``
+    // Use separate queries for type-filtered vs unfiltered to avoid nested sql fragments
+    if (types && types.length > 0) {
+      const result = await client.query<StreamRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)},
+          GREATEST(
+            COALESCE(similarity(display_name, ${query}), 0),
+            COALESCE(similarity(slug, ${query}), 0)
+          ) AS sim_score
+        FROM streams
+        WHERE id = ANY(${streamIds})
+          AND type = ANY(${types})
+          AND (
+            display_name % ${query}
+            OR slug % ${query}
+            OR display_name ILIKE ${pattern}
+            OR slug ILIKE ${pattern}
+          )
+        ORDER BY sim_score DESC, display_name NULLS LAST
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToStream)
+    }
 
     const result = await client.query<StreamRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)},
@@ -412,14 +432,11 @@ export const StreamRepository = {
       FROM streams
       WHERE id = ANY(${streamIds})
         AND (
-          -- Trigram similarity match (fuzzy, handles typos)
           display_name % ${query}
           OR slug % ${query}
-          -- ILIKE fallback for exact substring matches
           OR display_name ILIKE ${pattern}
           OR slug ILIKE ${pattern}
         )
-        ${typeFilter}
       ORDER BY sim_score DESC, display_name NULLS LAST
       LIMIT ${limit}
     `)
