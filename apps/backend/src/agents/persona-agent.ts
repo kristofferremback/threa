@@ -321,6 +321,7 @@ export class PersonaAgent {
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
             enabledTools: persona.enabledTools,
             workspaceId, // For cost tracking
+            invokingUserId, // For cost attribution to the human user
           },
           callbacks
         )

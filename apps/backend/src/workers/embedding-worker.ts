@@ -46,7 +46,10 @@ export function createEmbeddingWorker(deps: EmbeddingWorkerDeps): JobHandler<Emb
       }
 
       // Generate embedding (with cost tracking context)
-      const embedding = await embeddingService.embed(message.content, { workspaceId })
+      const embedding = await embeddingService.embed(message.content, {
+        workspaceId,
+        functionId: "message-embedding",
+      })
 
       // Store embedding
       await MessageRepository.updateEmbedding(client, messageId, embedding)

@@ -68,6 +68,7 @@ function createMockContext(overrides: Partial<ExtractionContext> = {}): Extracti
     recentMessages: [createMockMessage()],
     activeConversations: [],
     streamType: "scratchpad",
+    workspaceId: "wsp_test123",
     ...overrides,
   }
 }

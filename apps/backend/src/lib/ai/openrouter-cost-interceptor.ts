@@ -3,6 +3,9 @@
  *
  * Captures cost and token usage from OpenRouter API responses for LangChain calls.
  * Uses AsyncLocalStorage to track costs per-request in a thread-safe manner.
+ *
+ * The CostTracker class owns its AsyncLocalStorage instance to avoid singleton
+ * violations (INV-9). Each AI wrapper instance creates its own CostTracker.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -24,114 +27,167 @@ interface CostStore {
   }
 }
 
-const costStorage = new AsyncLocalStorage<CostStore>()
-
 type FetchFunction = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /**
- * Create a fetch wrapper that captures OpenRouter cost from responses.
- * This can be passed to LangChain's ChatOpenAI configuration.
- */
-export function createCostCapturingFetch(originalFetch: FetchFunction = fetch): FetchFunction {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const response = await originalFetch(input, init)
-
-    // Only process OpenRouter responses
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-    if (!url.includes("openrouter.ai")) {
-      return response
-    }
-
-    // Check if we're in a tracking context
-    const store = costStorage.getStore()
-    if (!store) {
-      return response
-    }
-
-    try {
-      // Clone response to read body without consuming it
-      const cloned = response.clone()
-      const text = await cloned.text()
-
-      // Handle streaming responses (SSE format)
-      if (text.startsWith("data:")) {
-        // For streaming, we need to find the final chunk with usage info
-        const lines = text.split("\n")
-        for (const line of lines.reverse()) {
-          if (line.startsWith("data:") && line !== "data: [DONE]") {
-            try {
-              const data = JSON.parse(line.slice(5).trim())
-              if (data.usage) {
-                store.cost += data.usage.cost ?? 0
-                store.tokens.prompt += data.usage.prompt_tokens ?? 0
-                store.tokens.completion += data.usage.completion_tokens ?? 0
-                store.tokens.total += data.usage.total_tokens ?? 0
-                break
-              }
-            } catch {
-              // Not valid JSON, skip
-            }
-          }
-        }
-      } else {
-        // Non-streaming response
-        const body = JSON.parse(text)
-        if (body.usage) {
-          store.cost += body.usage.cost ?? 0
-          store.tokens.prompt += body.usage.prompt_tokens ?? 0
-          store.tokens.completion += body.usage.completion_tokens ?? 0
-          store.tokens.total += body.usage.total_tokens ?? 0
-        }
-      }
-    } catch (error) {
-      logger.warn({ error }, "Failed to extract cost from OpenRouter response")
-    }
-
-    return response
-  }
-}
-
-/**
- * Run a function with cost tracking enabled.
- * Returns the result along with captured usage data.
+ * CostTracker provides thread-safe cost tracking for OpenRouter API calls.
+ *
+ * Each instance owns its own AsyncLocalStorage, avoiding singleton violations.
+ * Use runWithTracking() to establish a tracking context, then getCapturedUsage()
+ * to read accumulated costs (e.g., from a LangChain callback).
  *
  * @example
- * const { result, usage } = await withCostTracking(async () => {
- *   return compiledGraph.invoke(input, config)
+ * const tracker = new CostTracker()
+ * const result = await tracker.runWithTracking(async () => {
+ *   return compiledGraph.invoke(input, {
+ *     callbacks: [
+ *       ...getCostTrackingCallbacks({
+ *         getCapturedUsage: () => tracker.getCapturedUsage(),
+ *         // ... other params
+ *       }),
+ *     ],
+ *   })
  * })
- * console.log(`Cost: $${usage.cost}`)
  */
-export async function withCostTracking<T>(fn: () => Promise<T>): Promise<{ result: T; usage: CapturedUsage }> {
-  const store: CostStore = {
-    cost: 0,
-    tokens: { prompt: 0, completion: 0, total: 0 },
+export class CostTracker {
+  private storage = new AsyncLocalStorage<CostStore>()
+
+  /**
+   * Create a fetch wrapper that captures OpenRouter cost from responses.
+   * Pass this to LangChain's ChatOpenAI configuration.
+   */
+  createInterceptingFetch(originalFetch: FetchFunction = fetch): FetchFunction {
+    return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const response = await originalFetch(input, init)
+
+      // Only process OpenRouter responses
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (!url.includes("openrouter.ai")) {
+        return response
+      }
+
+      // Check if we're in a tracking context
+      const store = this.storage.getStore()
+      if (!store) {
+        return response
+      }
+
+      try {
+        // Clone response to read body without consuming it
+        const cloned = response.clone()
+        const text = await cloned.text()
+
+        // Handle streaming responses (SSE format)
+        if (text.startsWith("data:")) {
+          // For streaming, we need to find the final chunk with usage info
+          const lines = text.split("\n")
+          for (const line of lines.reverse()) {
+            if (line.startsWith("data:") && line !== "data: [DONE]") {
+              try {
+                const data = JSON.parse(line.slice(5).trim())
+                if (data.usage) {
+                  store.cost += data.usage.cost ?? 0
+                  store.tokens.prompt += data.usage.prompt_tokens ?? 0
+                  store.tokens.completion += data.usage.completion_tokens ?? 0
+                  store.tokens.total += data.usage.total_tokens ?? 0
+                  break
+                }
+              } catch {
+                // Not valid JSON, skip
+              }
+            }
+          }
+        } else {
+          // Non-streaming response
+          const body = JSON.parse(text)
+          if (body.usage) {
+            store.cost += body.usage.cost ?? 0
+            store.tokens.prompt += body.usage.prompt_tokens ?? 0
+            store.tokens.completion += body.usage.completion_tokens ?? 0
+            store.tokens.total += body.usage.total_tokens ?? 0
+          }
+        }
+      } catch (error) {
+        logger.warn({ error }, "Failed to extract cost from OpenRouter response")
+      }
+
+      return response
+    }
   }
 
-  const result = await costStorage.run(store, fn)
+  /**
+   * Run a function with cost tracking enabled.
+   * The tracking context is available to getCapturedUsage() and the intercepting fetch.
+   */
+  async runWithTracking<T>(fn: () => Promise<T>): Promise<T> {
+    const store: CostStore = {
+      cost: 0,
+      tokens: { prompt: 0, completion: 0, total: 0 },
+    }
 
-  return {
-    result,
-    usage: {
+    return this.storage.run(store, fn)
+  }
+
+  /**
+   * Get the current accumulated usage, if in a tracking context.
+   * Returns zeros if not in a tracking context.
+   *
+   * This is designed to be passed to CostTrackingCallback via getCapturedUsage.
+   */
+  getCapturedUsage(): CapturedUsage {
+    const store = this.storage.getStore()
+    if (!store) {
+      return { cost: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    }
+
+    return {
       cost: store.cost,
       promptTokens: store.tokens.prompt,
       completionTokens: store.tokens.completion,
       totalTokens: store.tokens.total,
+    }
+  }
+}
+
+/**
+ * Legacy singleton for backward compatibility.
+ * @deprecated Will be removed once all callers migrate to CostTracker class.
+ */
+const legacyTracker = new CostTracker()
+
+/**
+ * @deprecated Use CostTracker.createInterceptingFetch() instead.
+ * This function exists for backward compatibility during migration.
+ */
+export function createCostCapturingFetch(originalFetch: FetchFunction = fetch): FetchFunction {
+  return legacyTracker.createInterceptingFetch(originalFetch)
+}
+
+/**
+ * @deprecated Use CostTracker.runWithTracking() instead.
+ * This function exists for backward compatibility during migration.
+ */
+export async function withCostTracking<T>(fn: () => Promise<T>): Promise<{ result: T; usage: CapturedUsage }> {
+  const usageBefore = legacyTracker.getCapturedUsage()
+  const result = await legacyTracker.runWithTracking(fn)
+  const usageAfter = legacyTracker.getCapturedUsage()
+
+  return {
+    result,
+    usage: {
+      cost: usageAfter.cost - usageBefore.cost,
+      promptTokens: usageAfter.promptTokens - usageBefore.promptTokens,
+      completionTokens: usageAfter.completionTokens - usageBefore.completionTokens,
+      totalTokens: usageAfter.totalTokens - usageBefore.totalTokens,
     },
   }
 }
 
 /**
- * Get the current cost tracking store, if in a tracking context.
- * Useful for checking accumulated costs mid-execution.
+ * @deprecated Use CostTracker.getCapturedUsage() instead.
  */
 export function getCurrentUsage(): CapturedUsage | null {
-  const store = costStorage.getStore()
-  if (!store) return null
-
-  return {
-    cost: store.cost,
-    promptTokens: store.tokens.prompt,
-    completionTokens: store.tokens.completion,
-    totalTokens: store.tokens.total,
-  }
+  const usage = legacyTracker.getCapturedUsage()
+  if (usage.cost === 0 && usage.totalTokens === 0) return null
+  return usage
 }

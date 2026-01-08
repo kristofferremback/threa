@@ -20,8 +20,12 @@ import type { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
 import { stripMarkdownFences } from "./text-utils"
-import { createCostCapturingFetch } from "./openrouter-cost-interceptor"
+import { CostTracker, createCostCapturingFetch } from "./openrouter-cost-interceptor"
 import { logger } from "../logger"
+
+// Re-export cost tracking utilities for consumers
+export { CostTracker, type CapturedUsage } from "./openrouter-cost-interceptor"
+export { getCostTrackingCallbacks, CostTrackingCallback } from "./cost-tracking-callback"
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -192,6 +196,10 @@ export interface AI {
   getEmbeddingModel(modelString: string): EmbeddingModel<string>
   getLangChainModel(modelString: string): ChatOpenAI
 
+  // Cost tracking for LangChain/LangGraph calls
+  /** CostTracker instance for this AI wrapper - use with getCostTrackingCallbacks */
+  costTracker: CostTracker
+
   // Parsing
   parseModel(modelString: string): ParsedModel
 }
@@ -263,6 +271,10 @@ export function createAI(config: AIConfig): AI {
 
   const defaultRepair = config.defaults?.repair ?? stripMarkdownFences
 
+  // Create CostTracker instance for this AI wrapper
+  // This is used for LangChain/LangGraph calls via getCostTrackingCallbacks
+  const costTracker = new CostTracker()
+
   function getLanguageModel(modelString: string): LanguageModel {
     const { provider, modelId } = parseModelId(modelString)
 
@@ -295,8 +307,8 @@ export function createAI(config: AIConfig): AI {
     }
   }
 
-  // Create cost-capturing fetch once for reuse
-  const costCapturingFetch = createCostCapturingFetch()
+  // Create cost-capturing fetch from our CostTracker instance
+  const costCapturingFetch = costTracker.createInterceptingFetch()
 
   function getLangChainModel(modelString: string): ChatOpenAI {
     const { provider, modelId } = parseModelId(modelString)
@@ -312,7 +324,7 @@ export function createAI(config: AIConfig): AI {
           apiKey: apiKeys.openrouter,
           configuration: {
             baseURL: OPENROUTER_BASE_URL,
-            // Use cost-capturing fetch to intercept OpenRouter responses
+            // Use cost-capturing fetch from our CostTracker to intercept OpenRouter responses
             fetch: costCapturingFetch,
           },
         })
@@ -433,6 +445,7 @@ export function createAI(config: AIConfig): AI {
     getLanguageModel,
     getEmbeddingModel,
     getLangChainModel,
+    costTracker,
 
     async generateText(options) {
       const model = getLanguageModel(options.model)

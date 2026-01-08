@@ -130,37 +130,50 @@ describe("OpenRouter response fixtures", () => {
   // They document the expected response structure for cost tracking
 
   it("should have generateText fixture with cost data", () => {
-    const { providerMetadata } = fixtures.generateText
-
-    expect(providerMetadata.openrouter).toBeDefined()
-    expect(providerMetadata.openrouter.usage).toBeDefined()
-    expect(providerMetadata.openrouter.usage.cost).toBe(0.0000036)
-    expect(providerMetadata.openrouter.usage.promptTokens).toBe(16)
-    expect(providerMetadata.openrouter.usage.completionTokens).toBe(2)
-    expect(providerMetadata.openrouter.usage.totalTokens).toBe(18)
+    expect(fixtures.generateText.providerMetadata).toMatchObject({
+      openrouter: {
+        usage: {
+          cost: 0.0000036,
+          promptTokens: 16,
+          completionTokens: 2,
+          totalTokens: 18,
+        },
+      },
+    })
   })
 
   it("should have generateObject fixture with cost data", () => {
-    const { providerMetadata } = fixtures.generateObject
-
-    expect(providerMetadata.openrouter.usage.cost).toBe(0.00001545)
-    expect(providerMetadata.openrouter.usage.promptTokens).toBe(59)
-    expect(providerMetadata.openrouter.usage.completionTokens).toBe(11)
-    expect(providerMetadata.openrouter.usage.totalTokens).toBe(70)
+    expect(fixtures.generateObject.providerMetadata).toMatchObject({
+      openrouter: {
+        usage: {
+          cost: 0.00001545,
+          promptTokens: 59,
+          completionTokens: 11,
+          totalTokens: 70,
+        },
+      },
+    })
   })
 
   it("should have embed fixture with tokens and cost", () => {
-    const { usage, providerMetadata } = fixtures.embed
-
-    // Embedding models have different usage shape (just 'tokens', no prompt/completion split)
-    expect(usage.tokens).toBe(4)
-    expect(providerMetadata.openrouter.usage.cost).toBe(8e-8)
+    expect(fixtures.embed).toMatchObject({
+      usage: { tokens: 4 },
+      providerMetadata: {
+        openrouter: {
+          usage: { cost: 8e-8 },
+        },
+      },
+    })
   })
 
   it("should have embedMany fixture with tokens and cost", () => {
-    const { usage, providerMetadata } = fixtures.embedMany
-
-    expect(usage.tokens).toBe(3)
-    expect(providerMetadata.openrouter.usage.cost).toBe(6e-8)
+    expect(fixtures.embedMany).toMatchObject({
+      usage: { tokens: 3 },
+      providerMetadata: {
+        openrouter: {
+          usage: { cost: 6e-8 },
+        },
+      },
+    })
   })
 })

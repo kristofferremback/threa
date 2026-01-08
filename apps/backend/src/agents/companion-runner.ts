@@ -12,7 +12,7 @@ import {
 } from "./tools"
 import { AgentToolNames } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
-import { withCostTracking } from "../lib/ai/openrouter-cost-interceptor"
+import { getCostTrackingCallbacks } from "../lib/ai/ai"
 import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
 
@@ -40,8 +40,10 @@ export interface GenerateResponseParams {
   lastProcessedSequence: bigint
   /** Enabled tools for this persona (null means all tools enabled) */
   enabledTools: string[] | null
-  /** Workspace ID for cost tracking */
-  workspaceId?: string
+  /** Workspace ID for cost tracking - required for cost attribution */
+  workspaceId: string
+  /** User ID who invoked this response - for cost attribution to the human user */
+  invokingUserId?: string
 }
 
 /**
@@ -112,6 +114,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       lastProcessedSequence,
       enabledTools,
       workspaceId,
+      invokingUserId,
     } = params
 
     logger.debug(
@@ -181,8 +184,9 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     // Parse model for metadata
     const parsedModel = ai.parseModel(modelId)
 
-    // Invoke the graph with cost tracking
-    const { result, usage } = await withCostTracking(async () => {
+    // Invoke the graph with cost tracking via callbacks
+    // Cost recording happens automatically via CostTrackingCallback when LLM calls complete
+    const result = await ai.costTracker.runWithTracking(async () => {
       return compiledGraph.invoke(
         {
           messages: langchainMessages,
@@ -199,16 +203,28 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         },
         {
           runName: "companion-agent",
-          callbacks: getLangfuseCallbacks({
-            sessionId,
-            userId: personaId,
-            tags: ["companion"],
-            metadata: {
-              model_id: parsedModel.modelId,
-              model_provider: parsedModel.modelProvider,
-              model_name: parsedModel.modelName,
-            },
-          }),
+          callbacks: [
+            ...getLangfuseCallbacks({
+              sessionId,
+              userId: personaId,
+              tags: ["companion"],
+              metadata: {
+                model_id: parsedModel.modelId,
+                model_provider: parsedModel.modelProvider,
+                model_name: parsedModel.modelName,
+              },
+            }),
+            // Cost tracking callback records usage automatically when handleLLMEnd fires
+            ...getCostTrackingCallbacks({
+              costRecorder,
+              workspaceId,
+              userId: invokingUserId,
+              sessionId,
+              functionId: "companion-response",
+              origin: "user",
+              getCapturedUsage: () => ai.costTracker.getCapturedUsage(),
+            }),
+          ],
           configurable: {
             thread_id: threadId,
             callbacks: graphCallbacks,
@@ -217,31 +233,8 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       )
     })
 
-    // Record captured cost if we have a cost recorder and workspaceId
-    if (costRecorder && workspaceId && usage.cost > 0) {
-      try {
-        await costRecorder.recordUsage({
-          workspaceId,
-          sessionId,
-          functionId: "companion-response",
-          model: parsedModel.modelId,
-          provider: parsedModel.provider,
-          origin: "user",
-          usage: {
-            promptTokens: usage.promptTokens,
-            completionTokens: usage.completionTokens,
-            totalTokens: usage.totalTokens,
-            cost: usage.cost,
-          },
-        })
-        logger.debug(
-          { workspaceId, sessionId, cost: usage.cost, totalTokens: usage.totalTokens },
-          "Recorded companion response cost"
-        )
-      } catch (error) {
-        logger.error({ error, workspaceId, sessionId }, "Failed to record companion response cost")
-      }
-    }
+    // Get final usage for logging
+    const usage = ai.costTracker.getCapturedUsage()
 
     // Update tracked count from result
     messagesSentCount = result.messagesSent ?? 0
