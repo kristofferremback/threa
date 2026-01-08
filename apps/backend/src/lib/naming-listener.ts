@@ -1,5 +1,4 @@
-import type { Pool } from "pg"
-import { withClient } from "../db"
+import { withClient, type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -19,19 +18,21 @@ import { AuthorTypes } from "@threa/types"
  * 3. Dispatch durable job to pg-boss for LLM processing
  */
 export function createNamingListener(
-  pool: Pool,
+  pools: DatabasePools,
   jobQueue: JobQueueManager,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "naming",
     handler: async (outboxEvent: OutboxEvent) => {
       if (outboxEvent.eventType !== "message:created") {
         return
       }
 
-      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pools.main)
       if (!payload) {
         logger.debug({ eventId: outboxEvent.id }, "Naming listener: malformed event, skipping")
         return
@@ -40,7 +41,7 @@ export function createNamingListener(
       const { streamId, event } = payload
       const isAgentMessage = event.actorType !== AuthorTypes.USER
 
-      await withClient(pool, async (client) => {
+      await withClient(pools.main, async (client) => {
         const stream = await StreamRepository.findById(client, streamId)
         if (!stream) {
           logger.warn({ streamId }, "Naming listener: stream not found")

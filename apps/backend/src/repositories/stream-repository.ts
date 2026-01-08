@@ -1,4 +1,4 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 import type { StreamType, Visibility, CompanionMode } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../lib/sql-filters"
@@ -101,8 +101,8 @@ const SELECT_FIELDS = `
 `
 
 export const StreamRepository = {
-  async findById(client: PoolClient, id: string): Promise<Stream | null> {
-    const result = await client.query<StreamRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`)
+  async findById(db: Querier, id: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id}`)
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
@@ -110,15 +110,15 @@ export const StreamRepository = {
    * Locks the stream row for update, skipping if already locked.
    * Returns null if not found or already locked by another transaction.
    */
-  async findByIdForUpdate(client: PoolClient, id: string): Promise<Stream | null> {
-    const result = await client.query<StreamRow>(
+  async findByIdForUpdate(db: Querier, id: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ${id} FOR UPDATE SKIP LOCKED`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
   async list(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     filters?: {
       types?: StreamType[]
@@ -135,7 +135,7 @@ export const StreamRepository = {
     const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(archiveStatus)
 
     if (parentStreamId) {
-      const result = await client.query<StreamRow>(
+      const result = await db.query<StreamRow>(
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND parent_stream_id = ${parentStreamId}
@@ -148,7 +148,7 @@ export const StreamRepository = {
     // Build query with visibility filter if user's membership stream IDs provided
     if (userMembershipStreamIds !== undefined) {
       if (types && types.length > 0) {
-        const result = await client.query<StreamRow>(
+        const result = await db.query<StreamRow>(
           sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
               WHERE workspace_id = ${workspaceId}
                 AND type = ANY(${types})
@@ -159,7 +159,7 @@ export const StreamRepository = {
         return result.rows.map(mapRowToStream)
       }
 
-      const result = await client.query<StreamRow>(
+      const result = await db.query<StreamRow>(
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
@@ -170,7 +170,7 @@ export const StreamRepository = {
     }
 
     if (types && types.length > 0) {
-      const result = await client.query<StreamRow>(
+      const result = await db.query<StreamRow>(
         sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
             WHERE workspace_id = ${workspaceId}
               AND type = ANY(${types})
@@ -180,7 +180,7 @@ export const StreamRepository = {
       return result.rows.map(mapRowToStream)
     }
 
-    const result = await client.query<StreamRow>(
+    const result = await db.query<StreamRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
           WHERE workspace_id = ${workspaceId}
             AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
@@ -189,8 +189,8 @@ export const StreamRepository = {
     return result.rows.map(mapRowToStream)
   },
 
-  async insert(client: PoolClient, params: InsertStreamParams): Promise<Stream> {
-    const result = await client.query<StreamRow>(sql`
+  async insert(db: Querier, params: InsertStreamParams): Promise<Stream> {
+    const result = await db.query<StreamRow>(sql`
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
@@ -222,12 +222,9 @@ export const StreamRepository = {
    *
    * @returns { stream, created } - The stream and whether it was newly created
    */
-  async insertThreadOrFind(
-    client: PoolClient,
-    params: InsertStreamParams
-  ): Promise<{ stream: Stream; created: boolean }> {
+  async insertThreadOrFind(db: Querier, params: InsertStreamParams): Promise<{ stream: Stream; created: boolean }> {
     // Try to insert with ON CONFLICT DO NOTHING
-    const insertResult = await client.query<StreamRow>(sql`
+    const insertResult = await db.query<StreamRow>(sql`
       INSERT INTO streams (
         id, workspace_id, type, display_name, slug, description, visibility,
         parent_stream_id, parent_message_id, root_stream_id,
@@ -259,7 +256,7 @@ export const StreamRepository = {
     }
 
     // Insert was no-op due to conflict - find the existing thread
-    const existing = await this.findByParentMessage(client, params.parentStreamId!, params.parentMessageId!)
+    const existing = await this.findByParentMessage(db, params.parentStreamId!, params.parentMessageId!)
     if (!existing) {
       // This shouldn't happen - if ON CONFLICT triggered, the row exists
       throw new Error("Thread creation conflict but existing thread not found")
@@ -267,7 +264,7 @@ export const StreamRepository = {
     return { stream: existing, created: false }
   },
 
-  async update(client: PoolClient, id: string, params: UpdateStreamParams): Promise<Stream | null> {
+  async update(db: Querier, id: string, params: UpdateStreamParams): Promise<Stream | null> {
     const sets: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -297,7 +294,7 @@ export const StreamRepository = {
       values.push(params.displayNameGeneratedAt)
     }
 
-    if (sets.length === 0) return this.findById(client, id)
+    if (sets.length === 0) return this.findById(db, id)
 
     sets.push(`updated_at = NOW()`)
     values.push(id)
@@ -307,24 +304,20 @@ export const StreamRepository = {
       WHERE id = $${paramIndex}
       RETURNING ${SELECT_FIELDS}
     `
-    const result = await client.query<StreamRow>(query, values)
+    const result = await db.query<StreamRow>(query, values)
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
-  async slugExistsInWorkspace(client: PoolClient, workspaceId: string, slug: string): Promise<boolean> {
-    const result = await client.query(sql`
+  async slugExistsInWorkspace(db: Querier, workspaceId: string, slug: string): Promise<boolean> {
+    const result = await db.query(sql`
       SELECT 1 FROM streams
       WHERE workspace_id = ${workspaceId} AND slug = ${slug}
     `)
     return result.rows.length > 0
   },
 
-  async findByParentMessage(
-    client: PoolClient,
-    parentStreamId: string,
-    parentMessageId: string
-  ): Promise<Stream | null> {
-    const result = await client.query<StreamRow>(sql`
+  async findByParentMessage(db: Querier, parentStreamId: string, parentMessageId: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
       WHERE parent_stream_id = ${parentStreamId}
         AND parent_message_id = ${parentMessageId}
@@ -336,8 +329,8 @@ export const StreamRepository = {
    * Find all threads for messages in a given parent stream.
    * Returns a map of parentMessageId -> threadStreamId
    */
-  async findThreadsForMessages(client: PoolClient, parentStreamId: string): Promise<Map<string, string>> {
-    const result = await client.query<{ parent_message_id: string; id: string }>(sql`
+  async findThreadsForMessages(db: Querier, parentStreamId: string): Promise<Map<string, string>> {
+    const result = await db.query<{ parent_message_id: string; id: string }>(sql`
       SELECT parent_message_id, id FROM streams
       WHERE parent_stream_id = ${parentStreamId}
         AND parent_message_id IS NOT NULL
@@ -355,10 +348,10 @@ export const StreamRepository = {
    * This combines findThreadsForMessages + countMessagesByStreams in a single query.
    */
   async findThreadsWithReplyCounts(
-    client: PoolClient,
+    db: Querier,
     parentStreamId: string
   ): Promise<Map<string, { threadId: string; replyCount: number }>> {
-    const result = await client.query<{ parent_message_id: string; id: string; reply_count: string }>(sql`
+    const result = await db.query<{ parent_message_id: string; id: string; reply_count: string }>(sql`
       SELECT
         s.parent_message_id,
         s.id,

@@ -6,7 +6,7 @@ import { createApp } from "./app"
 import { registerRoutes } from "./routes"
 import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
-import { createDatabasePool } from "./db"
+import { createDatabasePools, type DatabasePools } from "./db"
 import { createMigrator } from "./db/migrations"
 import { WorkosAuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -69,7 +69,7 @@ import { UserSocketRegistry } from "./lib/user-socket-registry"
 export interface ServerInstance {
   server: Server
   io: SocketIOServer
-  pool: Pool
+  pools: DatabasePools
   jobQueue: JobQueueManager
   port: number
   stop: () => Promise<void>
@@ -78,7 +78,11 @@ export interface ServerInstance {
 export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
-  const pool = createDatabasePool(config.databaseUrl)
+  // Create separated connection pools:
+  // - main: services, workers, pg-boss, HTTP handlers (30 connections)
+  // - listen: OutboxListener LISTEN connections (12 connections)
+  const pools = createDatabasePools(config.databaseUrl)
+  const pool = pools.main // Alias for backwards compatibility during transition
 
   const migrator = createMigrator(pool)
   await migrator.up()
@@ -242,15 +246,16 @@ export async function startServer(): Promise<ServerInstance> {
   await scheduleMemoBatchCheck(jobQueue)
 
   // Outbox listeners
-  const broadcastListener = createBroadcastListener(pool, io, userSocketRegistry)
-  const companionListener = createCompanionListener(pool, jobQueue)
-  const namingListener = createNamingListener(pool, jobQueue)
-  const emojiUsageListener = createEmojiUsageListener(pool)
-  const embeddingListener = createEmbeddingListener(pool, jobQueue)
-  const boundaryExtractionListener = createBoundaryExtractionListener(pool, jobQueue)
-  const memoAccumulator = createMemoAccumulator(pool)
-  const commandListener = createCommandListener(pool, jobQueue)
-  const mentionInvokeListener = createMentionInvokeListener({ pool, jobQueue })
+  // Each listener uses pools.listen for LISTEN connections and pools.main for queries
+  const broadcastListener = createBroadcastListener(pools, io, userSocketRegistry)
+  const companionListener = createCompanionListener(pools, jobQueue)
+  const namingListener = createNamingListener(pools, jobQueue)
+  const emojiUsageListener = createEmojiUsageListener(pools)
+  const embeddingListener = createEmbeddingListener(pools, jobQueue)
+  const boundaryExtractionListener = createBoundaryExtractionListener(pools, jobQueue)
+  const memoAccumulator = createMemoAccumulator(pools)
+  const commandListener = createCommandListener(pools, jobQueue)
+  const mentionInvokeListener = createMentionInvokeListener({ pools, jobQueue })
   await broadcastListener.start()
   await companionListener.start()
   await mentionInvokeListener.start()
@@ -299,10 +304,11 @@ export async function startServer(): Promise<ServerInstance> {
         server.close((err) => (err ? reject(err) : resolve()))
       })
     }
-    logger.info("Closing database pool...")
-    await pool.end()
+    logger.info("Closing database pools...")
+    await pools.main.end()
+    await pools.listen.end()
     logger.info("Server stopped")
   }
 
-  return { server, io, pool, jobQueue, port: config.port, stop }
+  return { server, io, pools, jobQueue, port: config.port, stop }
 }

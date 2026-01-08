@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../db"
 import type { StreamType, UserPreferences } from "@threa/types"
 import { StreamTypes } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
@@ -81,7 +81,7 @@ export interface BuildStreamContextOptions {
  * with the invoking user's timezone and time preferences.
  */
 export async function buildStreamContext(
-  client: PoolClient,
+  db: Querier,
   stream: Stream,
   options?: BuildStreamContextOptions
 ): Promise<StreamContext> {
@@ -93,19 +93,19 @@ export async function buildStreamContext(
 
   switch (stream.type) {
     case StreamTypes.SCRATCHPAD:
-      return buildScratchpadContext(client, stream, temporal)
+      return buildScratchpadContext(db, stream, temporal)
 
     case StreamTypes.CHANNEL:
-      return buildChannelContext(client, stream, temporal)
+      return buildChannelContext(db, stream, temporal)
 
     case StreamTypes.THREAD:
-      return buildThreadContext(client, stream, temporal)
+      return buildThreadContext(db, stream, temporal)
 
     case StreamTypes.DM:
-      return buildDmContext(client, stream, temporal)
+      return buildDmContext(db, stream, temporal)
 
     default:
-      return buildScratchpadContext(client, stream, temporal)
+      return buildScratchpadContext(db, stream, temporal)
   }
 }
 
@@ -127,12 +127,8 @@ function buildTemporalContext(preferences: UserPreferences, currentTime?: Date):
 /**
  * Scratchpad context: personal, solo-first. Conversation history is primary context.
  */
-async function buildScratchpadContext(
-  client: PoolClient,
-  stream: Stream,
-  temporal?: TemporalContext
-): Promise<StreamContext> {
-  const messages = await MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES })
+async function buildScratchpadContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+  const messages = await MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES })
 
   return {
     streamType: stream.type,
@@ -149,19 +145,15 @@ async function buildScratchpadContext(
 /**
  * Channel context: collaborative. Includes members, slug, and conversation.
  */
-async function buildChannelContext(
-  client: PoolClient,
-  stream: Stream,
-  temporal?: TemporalContext
-): Promise<StreamContext> {
+async function buildChannelContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
-    MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
-    StreamMemberRepository.list(client, { streamId: stream.id }),
+    MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
+    StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
   const userIds = members.map((m) => m.userId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
-    client,
+    db,
     userIds,
     temporal !== undefined
   )
@@ -183,15 +175,15 @@ async function buildChannelContext(
 /**
  * DM context: two-party. Like channels but focused.
  */
-async function buildDmContext(client: PoolClient, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
   const [messages, members] = await Promise.all([
-    MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
-    StreamMemberRepository.list(client, { streamId: stream.id }),
+    MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES }),
+    StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
   const userIds = members.map((m) => m.userId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
-    client,
+    db,
     userIds,
     temporal !== undefined
   )
@@ -213,15 +205,11 @@ async function buildDmContext(client: PoolClient, stream: Stream, temporal?: Tem
 /**
  * Thread context: nested discussions. Traverses hierarchy to root.
  */
-async function buildThreadContext(
-  client: PoolClient,
-  stream: Stream,
-  temporal?: TemporalContext
-): Promise<StreamContext> {
-  const messages = await MessageRepository.list(client, stream.id, { limit: MAX_CONTEXT_MESSAGES })
+async function buildThreadContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
+  const messages = await MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES })
 
   // Build thread path from current thread up to root
-  const threadPath = await buildThreadPath(client, stream)
+  const threadPath = await buildThreadPath(db, stream)
 
   return {
     streamType: stream.type,
@@ -243,7 +231,7 @@ async function buildThreadContext(
  * Build the path from a thread up to its root (channel/scratchpad).
  * Returns entries in order from root to current thread.
  */
-async function buildThreadPath(client: PoolClient, stream: Stream): Promise<ThreadPathEntry[]> {
+async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathEntry[]> {
   const path: ThreadPathEntry[] = []
   let current: Stream | null = stream
 
@@ -252,9 +240,9 @@ async function buildThreadPath(client: PoolClient, stream: Stream): Promise<Thre
 
     // If this is a thread spawned from a message, get that message
     if (current.parentMessageId) {
-      const message = await MessageRepository.findById(client, current.parentMessageId)
+      const message = await MessageRepository.findById(db, current.parentMessageId)
       if (message) {
-        const authorName = await resolveAuthorName(client, message.authorId, message.authorType)
+        const authorName = await resolveAuthorName(db, message.authorId, message.authorType)
         anchorMessage = {
           id: message.id,
           content: message.content.slice(0, 200), // Truncate for context
@@ -271,7 +259,7 @@ async function buildThreadPath(client: PoolClient, stream: Stream): Promise<Thre
 
     // Traverse up
     if (current.parentStreamId) {
-      current = await StreamRepository.findById(client, current.parentStreamId)
+      current = await StreamRepository.findById(db, current.parentStreamId)
     } else {
       current = null
     }
@@ -285,7 +273,7 @@ async function buildThreadPath(client: PoolClient, stream: Stream): Promise<Thre
  * Avoids N+1 queries by fetching all users at once.
  */
 async function resolveParticipantsWithTimezones(
-  client: PoolClient,
+  db: Querier,
   userIds: string[],
   includeTimezones: boolean
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
@@ -294,7 +282,7 @@ async function resolveParticipantsWithTimezones(
   }
 
   // Batch fetch all users in one query
-  const users = await UserRepository.findByIds(client, userIds)
+  const users = await UserRepository.findByIds(db, userIds)
 
   const participants: Participant[] = users.map((user) => ({
     id: user.id,
@@ -322,13 +310,9 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(
-  client: PoolClient,
-  authorId: string,
-  authorType: "user" | "persona"
-): Promise<string> {
+async function resolveAuthorName(db: Querier, authorId: string, authorType: "user" | "persona"): Promise<string> {
   if (authorType === "user") {
-    const user = await UserRepository.findById(client, authorId)
+    const user = await UserRepository.findById(db, authorId)
     return user?.name ?? "Unknown"
   }
 

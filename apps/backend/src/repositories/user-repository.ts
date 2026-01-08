@@ -1,4 +1,4 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case, not exported)
@@ -69,14 +69,14 @@ function generateBaseSlug(name: string): string {
  * Generate a candidate slug, appending a number suffix if needed based on existing slugs.
  * This is best-effort - the insert may still fail due to race conditions, which is handled by retry logic.
  */
-async function generateCandidateSlug(client: PoolClient, name: string): Promise<string> {
+async function generateCandidateSlug(db: Querier, name: string): Promise<string> {
   const baseSlug = generateBaseSlug(name)
   if (!baseSlug) {
     return `user-${Date.now()}`
   }
 
   // Check existing slugs with this prefix
-  const existing = await client.query<{ slug: string }>(sql`
+  const existing = await db.query<{ slug: string }>(sql`
     SELECT slug FROM users WHERE slug LIKE ${baseSlug + "%"}
   `)
 
@@ -105,7 +105,7 @@ async function generateCandidateSlug(client: PoolClient, name: string): Promise<
  * Handles race conditions where concurrent inserts claim the same slug.
  */
 async function insertUserWithUniqueSlug(
-  client: PoolClient,
+  db: Querier,
   params: InsertUserParams,
   candidateSlug: string,
   maxRetries = 3
@@ -115,7 +115,7 @@ async function insertUserWithUniqueSlug(
 
   while (attempts < maxRetries) {
     try {
-      const result = await client.query<UserRow>(sql`
+      const result = await db.query<UserRow>(sql`
         INSERT INTO users (id, email, name, slug, workos_user_id)
         VALUES (${params.id}, ${params.email}, ${params.name}, ${slug}, ${params.workosUserId ?? null})
         RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
@@ -135,7 +135,7 @@ async function insertUserWithUniqueSlug(
   }
 
   // Final attempt with guaranteed unique suffix
-  const result = await client.query<UserRow>(sql`
+  const result = await db.query<UserRow>(sql`
     INSERT INTO users (id, email, name, slug, workos_user_id)
     VALUES (${params.id}, ${params.email}, ${params.name}, ${`user-${params.id}`}, ${params.workosUserId ?? null})
     RETURNING id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
@@ -144,61 +144,61 @@ async function insertUserWithUniqueSlug(
 }
 
 export const UserRepository = {
-  async findById(client: PoolClient, id: string): Promise<User | null> {
-    const result = await client.query<UserRow>(sql`
+  async findById(db: Querier, id: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE id = ${id}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findByEmail(client: PoolClient, email: string): Promise<User | null> {
-    const result = await client.query<UserRow>(sql`
+  async findByEmail(db: Querier, email: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE email = ${email}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findBySlug(client: PoolClient, slug: string): Promise<User | null> {
-    const result = await client.query<UserRow>(sql`
+  async findBySlug(db: Querier, slug: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE slug = ${slug}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findByWorkosUserId(client: PoolClient, workosUserId: string): Promise<User | null> {
-    const result = await client.query<UserRow>(sql`
+  async findByWorkosUserId(db: Querier, workosUserId: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE workos_user_id = ${workosUserId}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findByIds(client: PoolClient, ids: string[]): Promise<User[]> {
+  async findByIds(db: Querier, ids: string[]): Promise<User[]> {
     if (ids.length === 0) return []
 
-    const result = await client.query<UserRow>(sql`
+    const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
       FROM users WHERE id = ANY(${ids})
     `)
     return result.rows.map(mapRowToUser)
   },
 
-  async insert(client: PoolClient, params: InsertUserParams): Promise<User> {
-    const candidateSlug = await generateCandidateSlug(client, params.name)
-    return insertUserWithUniqueSlug(client, params, candidateSlug)
+  async insert(db: Querier, params: InsertUserParams): Promise<User> {
+    const candidateSlug = await generateCandidateSlug(db, params.name)
+    return insertUserWithUniqueSlug(db, params, candidateSlug)
   },
 
-  async upsertByEmail(client: PoolClient, params: InsertUserParams): Promise<User> {
+  async upsertByEmail(db: Querier, params: InsertUserParams): Promise<User> {
     // Generate candidate slug for potential new user
     // The slug is only used on INSERT, not on UPDATE (existing users keep their slug)
-    const candidateSlug = await generateCandidateSlug(client, params.name)
+    const candidateSlug = await generateCandidateSlug(db, params.name)
 
     // Atomic upsert - no race condition between concurrent requests
     // ON CONFLICT updates existing users; INSERT uses the candidate slug for new users
-    const result = await client.query<UserRow>(sql`
+    const result = await db.query<UserRow>(sql`
       INSERT INTO users (id, email, name, slug, workos_user_id)
       VALUES (${params.id}, ${params.email}, ${params.name}, ${candidateSlug}, ${params.workosUserId ?? null})
       ON CONFLICT (email) DO UPDATE SET

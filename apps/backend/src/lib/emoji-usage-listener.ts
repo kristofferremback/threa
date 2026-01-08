@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { withClient } from "../db"
+import { withClient, type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import type { OutboxEvent, ReactionOutboxPayload } from "../repositories/outbox-repository"
 import { EmojiUsageRepository } from "../repositories/emoji-usage-repository"
@@ -50,17 +50,19 @@ function stripColons(shortcode: string): string {
  * 3. Insert usage records for personalized emoji ordering
  */
 export function createEmojiUsageListener(
-  pool: Pool,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  pools: DatabasePools,
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "emoji-usage",
     handler: async (outboxEvent: OutboxEvent) => {
       if (outboxEvent.eventType === "message:created") {
-        await handleMessageCreated(pool, outboxEvent)
+        await handleMessageCreated(pools.main, outboxEvent)
       } else if (outboxEvent.eventType === "reaction:added") {
-        await handleReactionAdded(pool, outboxEvent)
+        await handleReactionAdded(pools.main, outboxEvent)
       }
     },
   })

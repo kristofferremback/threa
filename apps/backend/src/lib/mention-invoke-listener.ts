@@ -1,5 +1,4 @@
-import type { Pool } from "pg"
-import { withClient } from "../db"
+import { withClient, type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { PersonaRepository } from "../repositories/persona-repository"
@@ -10,7 +9,7 @@ import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "./logger"
 
 export interface MentionInvokeListenerDeps {
-  pool: Pool
+  pools: DatabasePools
   jobQueue: JobQueueManager
 }
 
@@ -27,12 +26,14 @@ export interface MentionInvokeListenerDeps {
  */
 export function createMentionInvokeListener(
   deps: MentionInvokeListenerDeps,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  const { pool, jobQueue } = deps
+  const { pools, jobQueue } = deps
 
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "mention-invoke",
     handler: async (outboxEvent: OutboxEvent) => {
       // Only process message:created events
@@ -40,7 +41,7 @@ export function createMentionInvokeListener(
         return
       }
 
-      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pools.main)
       if (!payload) {
         logger.debug({ eventId: outboxEvent.id }, "Mention invoke: malformed event, skipping")
         return
@@ -68,7 +69,7 @@ export function createMentionInvokeListener(
         return
       }
 
-      await withClient(pool, async (client) => {
+      await withClient(pools.main, async (client) => {
         // Look up each mention to find persona matches
         for (const slug of mentionSlugs) {
           const persona = await PersonaRepository.findBySlug(client, slug, workspaceId)

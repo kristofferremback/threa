@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Session status values
@@ -146,9 +146,9 @@ const STEP_SELECT_FIELDS = `
 export const AgentSessionRepository = {
   // ----- Sessions -----
 
-  async insert(client: PoolClient, params: InsertSessionParams): Promise<AgentSession> {
+  async insert(db: Querier, params: InsertSessionParams): Promise<AgentSession> {
     const status = params.status ?? SessionStatuses.PENDING
-    const result = await client.query<SessionRow>(
+    const result = await db.query<SessionRow>(
       sql`
         INSERT INTO agent_sessions (
           id, stream_id, persona_id, trigger_message_id,
@@ -168,8 +168,8 @@ export const AgentSessionRepository = {
     return mapRowToSession(result.rows[0])
   },
 
-  async findById(client: PoolClient, id: string): Promise<AgentSession | null> {
-    const result = await client.query<SessionRow>(
+  async findById(db: Querier, id: string): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
@@ -179,8 +179,8 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
-  async findByTriggerMessage(client: PoolClient, triggerMessageId: string): Promise<AgentSession | null> {
-    const result = await client.query<SessionRow>(
+  async findByTriggerMessage(db: Querier, triggerMessageId: string): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
@@ -193,7 +193,7 @@ export const AgentSessionRepository = {
   },
 
   async updateStatus(
-    client: PoolClient,
+    db: Querier,
     id: string,
     status: SessionStatus,
     extras?: {
@@ -206,7 +206,7 @@ export const AgentSessionRepository = {
     const now = new Date()
     const completedAt = status === SessionStatuses.COMPLETED || status === SessionStatuses.FAILED ? now : null
 
-    const result = await client.query<SessionRow>(
+    const result = await db.query<SessionRow>(
       sql`
         UPDATE agent_sessions
         SET
@@ -224,8 +224,8 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
-  async updateHeartbeat(client: PoolClient, id: string): Promise<void> {
-    await client.query(
+  async updateHeartbeat(db: Querier, id: string): Promise<void> {
+    await db.query(
       sql`
         UPDATE agent_sessions
         SET heartbeat_at = NOW()
@@ -234,8 +234,8 @@ export const AgentSessionRepository = {
     )
   },
 
-  async updateCurrentStep(client: PoolClient, id: string, stepNumber: number): Promise<void> {
-    await client.query(
+  async updateCurrentStep(db: Querier, id: string, stepNumber: number): Promise<void> {
+    await db.query(
       sql`
         UPDATE agent_sessions
         SET current_step = ${stepNumber}, heartbeat_at = NOW()
@@ -248,8 +248,8 @@ export const AgentSessionRepository = {
    * Find sessions that are running but have stale heartbeats.
    * These are candidates for recovery/retry.
    */
-  async findOrphaned(client: PoolClient, staleThresholdSeconds: number = 60): Promise<AgentSession[]> {
-    const result = await client.query<SessionRow>(
+  async findOrphaned(db: Querier, staleThresholdSeconds: number = 60): Promise<AgentSession[]> {
+    const result = await db.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
@@ -265,8 +265,8 @@ export const AgentSessionRepository = {
    * Uses FOR UPDATE SKIP LOCKED so concurrent calls don't block.
    * Returns null if no running session exists (or all are locked by other transactions).
    */
-  async findRunningByStream(client: PoolClient, streamId: string): Promise<AgentSession | null> {
-    const result = await client.query<SessionRow>(
+  async findRunningByStream(db: Querier, streamId: string): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
@@ -283,8 +283,8 @@ export const AgentSessionRepository = {
    * Find the most recent session for a stream (regardless of status).
    * Used to check lastSeenSequence when deciding whether to dispatch a new job.
    */
-  async findLatestByStream(client: PoolClient, streamId: string): Promise<AgentSession | null> {
-    const result = await client.query<SessionRow>(
+  async findLatestByStream(db: Querier, streamId: string): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
       sql`
         SELECT ${sql.raw(SESSION_SELECT_FIELDS)}
         FROM agent_sessions
@@ -300,8 +300,8 @@ export const AgentSessionRepository = {
    * Update the last seen sequence for a session.
    * Called during agent loop when new messages are processed.
    */
-  async updateLastSeenSequence(client: PoolClient, id: string, sequence: bigint): Promise<void> {
-    await client.query(
+  async updateLastSeenSequence(db: Querier, id: string, sequence: bigint): Promise<void> {
+    await db.query(
       sql`
         UPDATE agent_sessions
         SET last_seen_sequence = ${sequence.toString()}, heartbeat_at = NOW()
@@ -312,8 +312,8 @@ export const AgentSessionRepository = {
 
   // ----- Steps -----
 
-  async insertStep(client: PoolClient, params: InsertStepParams): Promise<AgentSessionStep> {
-    const result = await client.query<StepRow>(
+  async insertStep(db: Querier, params: InsertStepParams): Promise<AgentSessionStep> {
+    const result = await db.query<StepRow>(
       sql`
         INSERT INTO agent_session_steps (
           id, session_id, step_number, step_type, content, tokens_used
@@ -331,8 +331,8 @@ export const AgentSessionRepository = {
     return mapRowToStep(result.rows[0])
   },
 
-  async completeStep(client: PoolClient, stepId: string, tokensUsed?: number): Promise<AgentSessionStep | null> {
-    const result = await client.query<StepRow>(
+  async completeStep(db: Querier, stepId: string, tokensUsed?: number): Promise<AgentSessionStep | null> {
+    const result = await db.query<StepRow>(
       sql`
         UPDATE agent_session_steps
         SET
@@ -345,8 +345,8 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToStep(result.rows[0]) : null
   },
 
-  async findStepsBySession(client: PoolClient, sessionId: string): Promise<AgentSessionStep[]> {
-    const result = await client.query<StepRow>(
+  async findStepsBySession(db: Querier, sessionId: string): Promise<AgentSessionStep[]> {
+    const result = await db.query<StepRow>(
       sql`
         SELECT ${sql.raw(STEP_SELECT_FIELDS)}
         FROM agent_session_steps
@@ -357,8 +357,8 @@ export const AgentSessionRepository = {
     return result.rows.map(mapRowToStep)
   },
 
-  async findLatestStep(client: PoolClient, sessionId: string): Promise<AgentSessionStep | null> {
-    const result = await client.query<StepRow>(
+  async findLatestStep(db: Querier, sessionId: string): Promise<AgentSessionStep | null> {
+    const result = await db.query<StepRow>(
       sql`
         SELECT ${sql.raw(STEP_SELECT_FIELDS)}
         FROM agent_session_steps
