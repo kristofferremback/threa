@@ -29,9 +29,14 @@ export type WithSessionResult =
  * AI operations.
  *
  * The connection lifecycle is:
- * 1. Phase 1: Acquire connection → concurrency check → create/find session → release
+ * 1. Phase 1: Acquire connection → atomically create/find session → release
  * 2. Phase 2: Run work (AI call) WITHOUT holding connection
- * 3. Phase 3: Acquire connection → update session status → release
+ * 3. Phase 3: Acquire connection → atomically complete session → release
+ *
+ * Race condition prevention:
+ * - Uses a partial unique index (stream_id WHERE status='running') to ensure
+ *   only one running session per stream
+ * - INSERT with ON CONFLICT DO NOTHING atomically checks and creates
  */
 export async function withSession(
   params: {
@@ -50,23 +55,13 @@ export async function withSession(
   const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
 
   // Phase 1: Session setup (short-lived connection)
+  // Uses atomic insert with ON CONFLICT to prevent race conditions
   const setupResult = await withClient(pool, async (db) => {
-    // Check for already running session on this stream (concurrency control)
-    const runningSession = await AgentSessionRepository.findRunningByStream(db, streamId)
-    if (runningSession) {
-      logger.info({ streamId, existingSessionId: runningSession.id }, "Agent already running for stream, skipping")
-      return {
-        status: "skipped" as const,
-        sessionId: null,
-        reason: "agent already running for stream",
-      }
-    }
+    // Check if we already have a session for this trigger message
+    const existingSession = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
 
-    // Find or create session
-    let session = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
-
-    if (session?.status === SessionStatuses.COMPLETED) {
-      logger.info({ sessionId: session.id }, "Session already completed")
+    if (existingSession?.status === SessionStatuses.COMPLETED) {
+      logger.info({ sessionId: existingSession.id }, "Session already completed")
       return {
         status: "skipped" as const,
         sessionId: null,
@@ -74,28 +69,39 @@ export async function withSession(
       }
     }
 
-    if (!session) {
-      session = await AgentSessionRepository.insert(db, {
-        id: sessionId(),
-        streamId,
-        personaId,
-        triggerMessageId,
-        status: SessionStatuses.RUNNING,
+    // If there's an existing session (retry scenario), try to resume it
+    if (existingSession) {
+      const session = await AgentSessionRepository.updateStatus(db, existingSession.id, SessionStatuses.RUNNING, {
         serverId,
       })
-      // Set initial last seen sequence
-      await AgentSessionRepository.updateLastSeenSequence(db, session.id, initialSequence)
-    } else {
-      session = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.RUNNING, {
-        serverId,
-      })
+      if (!session) {
+        return {
+          status: "skipped" as const,
+          sessionId: null,
+          reason: "failed to resume session",
+        }
+      }
+      return { status: "ready" as const, session }
     }
 
+    // No existing session - atomically create one with RUNNING status
+    // ON CONFLICT handles the case where another request created a session concurrently
+    const session = await AgentSessionRepository.insertRunningOrSkip(db, {
+      id: sessionId(),
+      streamId,
+      personaId,
+      triggerMessageId,
+      serverId,
+      initialSequence,
+    })
+
     if (!session) {
+      // Another request won the race and created a session first
+      logger.info({ streamId }, "Agent already running for stream (concurrent insert), skipping")
       return {
         status: "skipped" as const,
         sessionId: null,
-        reason: "failed to create session",
+        reason: "agent already running for stream",
       }
     }
 
@@ -114,9 +120,9 @@ export async function withSession(
   try {
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
-    // Phase 3: Update session status (short-lived connection)
-    await AgentSessionRepository.updateLastSeenSequence(pool, session.id, lastSeenSequence)
-    await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.COMPLETED, {
+    // Phase 3: Complete session atomically (single query updates both sequence and status)
+    await AgentSessionRepository.completeSession(pool, session.id, {
+      lastSeenSequence,
       responseMessageId: sentMessageIds[0] ?? null,
       sentMessageIds,
     })

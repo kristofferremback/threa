@@ -168,6 +168,38 @@ export const AgentSessionRepository = {
     return mapRowToSession(result.rows[0])
   },
 
+  /**
+   * Atomically insert a RUNNING session, failing if one already exists for the stream.
+   * Uses ON CONFLICT with the partial unique index to prevent race conditions.
+   *
+   * @returns The created session, or null if a running session already exists
+   */
+  async insertRunningOrSkip(
+    db: Querier,
+    params: Omit<InsertSessionParams, "status"> & { initialSequence: bigint }
+  ): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
+      sql`
+        INSERT INTO agent_sessions (
+          id, stream_id, persona_id, trigger_message_id,
+          status, server_id, heartbeat_at, last_seen_sequence
+        ) VALUES (
+          ${params.id},
+          ${params.streamId},
+          ${params.personaId},
+          ${params.triggerMessageId},
+          ${SessionStatuses.RUNNING},
+          ${params.serverId ?? null},
+          ${params.serverId ? new Date() : null},
+          ${params.initialSequence.toString()}
+        )
+        ON CONFLICT (stream_id) WHERE status = 'running' DO NOTHING
+        RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
+      `
+    )
+    return result.rows[0] ? mapRowToSession(result.rows[0]) : null
+  },
+
   async findById(db: Querier, id: string): Promise<AgentSession | null> {
     const result = await db.query<SessionRow>(
       sql`
@@ -308,6 +340,35 @@ export const AgentSessionRepository = {
         WHERE id = ${id}
       `
     )
+  },
+
+  /**
+   * Complete a session atomically - updates last seen sequence and status in one query.
+   * This prevents partial updates if the process crashes between separate calls.
+   */
+  async completeSession(
+    db: Querier,
+    id: string,
+    params: {
+      lastSeenSequence: bigint
+      responseMessageId?: string | null
+      sentMessageIds?: string[]
+    }
+  ): Promise<AgentSession | null> {
+    const result = await db.query<SessionRow>(
+      sql`
+        UPDATE agent_sessions
+        SET
+          status = ${SessionStatuses.COMPLETED},
+          last_seen_sequence = ${params.lastSeenSequence.toString()},
+          response_message_id = ${params.responseMessageId ?? null},
+          sent_message_ids = ${params.sentMessageIds ?? null},
+          completed_at = NOW()
+        WHERE id = ${id}
+        RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
+      `
+    )
+    return result.rows[0] ? mapRowToSession(result.rows[0]) : null
   },
 
   // ----- Steps -----
