@@ -809,25 +809,105 @@ describe("QuickSwitcher Integration Tests", () => {
       expect(commandInput).toHaveTextContent("> new")
     })
 
-    it("should switch from search mode to stream mode when pasting text without prefix", async () => {
+    it("should stay in search mode when pasting text without prefix", async () => {
       const user = userEvent.setup()
       renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
 
-      // Start in search mode
+      // Start in search mode - query is "? "
       const searchEditor = screen.getByLabelText("Search query input")
 
-      // Paste plain text without prefix - should switch to stream mode
+      // Paste plain text without prefix - should stay in search mode
       await user.click(searchEditor)
-      await user.paste("general")
+      await user.paste("Hello world")
 
-      // Should switch to stream mode
+      // Should stay in search mode
       await waitFor(() => {
-        expect(screen.getByRole("tab", { name: /stream search/i })).toHaveAttribute("aria-selected", "true")
+        expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
       })
 
-      // Input should show "general"
+      // Input should show "? Hello world" (prefix preserved)
+      expect(searchEditor.textContent).toBe("? Hello world")
+    })
+
+    it("should stay in command mode when pasting text without prefix", async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="command" />)
+
+      // Start in command mode - query is "> "
       const input = screen.getByLabelText("Quick switcher input")
-      expect(input).toHaveTextContent("general")
+
+      // Paste plain text without prefix - should stay in command mode
+      await user.click(input)
+      await user.paste("new scratchpad")
+
+      // Should stay in command mode
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: /command palette/i })).toHaveAttribute("aria-selected", "true")
+      })
+
+      // Input should show "> new scratchpad" (prefix preserved)
+      expect(input).toHaveTextContent("> new scratchpad")
+    })
+
+    it("should switch to search mode when pasting text with ? prefix from empty state", async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<QuickSwitcher {...defaultProps} />)
+
+      // Start in stream mode (empty query)
+      const input = screen.getByLabelText("Quick switcher input")
+
+      // Paste text with ? prefix - should switch to search mode
+      await user.click(input)
+      await user.paste("? hello")
+
+      // Should switch to search mode
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
+      })
+
+      // Input should show "? hello"
+      const searchEditor = screen.getByLabelText("Search query input")
+      expect(searchEditor.textContent).toBe("? hello")
+    })
+
+    it("should keep pasted prefix as content when in different mode (command -> search prefix)", async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="command" />)
+
+      // Start in command mode - query is "> "
+      const input = screen.getByLabelText("Quick switcher input")
+
+      // Paste text with ? prefix - should stay in command mode, ? becomes content
+      await user.click(input)
+      await user.paste("? hello")
+
+      // Should stay in command mode
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: /command palette/i })).toHaveAttribute("aria-selected", "true")
+      })
+
+      // Input should show "> ? hello" (pasted ? is content, not mode switch)
+      expect(input).toHaveTextContent("> ? hello")
+    })
+
+    it("should keep pasted prefix as content when in different mode (search -> command prefix)", async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<QuickSwitcher {...defaultProps} initialMode="search" />)
+
+      // Start in search mode - query is "? "
+      const searchEditor = screen.getByLabelText("Search query input")
+
+      // Paste text with > prefix - should stay in search mode, > becomes content
+      await user.click(searchEditor)
+      await user.paste("> hello")
+
+      // Should stay in search mode
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: /message search/i })).toHaveAttribute("aria-selected", "true")
+      })
+
+      // Input should show "? > hello" (pasted > is content, not mode switch)
+      expect(searchEditor.textContent).toBe("? > hello")
     })
   })
 

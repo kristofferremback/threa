@@ -58,8 +58,6 @@ export const STREAM_TRIGGERS: TriggerType[] = ["statusFilter", "filterType"]
 export interface RichInputProps {
   value: string
   onChange: (value: string) => void
-  /** Called when text is pasted, with the normalized pasted text */
-  onPaste?: (text: string) => void
   /** Called when Enter is pressed and no suggestion popover is open.
    *  withModifier is true if Cmd/Ctrl was held (for "open in new tab" behavior).
    */
@@ -103,7 +101,6 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
   {
     value,
     onChange,
-    onPaste,
     onSubmit,
     onPopoverActiveChange,
     triggers = [],
@@ -276,26 +273,6 @@ export const RichInput = forwardRef<RichInputRef, RichInputProps>(function RichI
           }
           // No onSubmit handler - let event bubble to parent for handling
           return false
-        }
-        return false
-      },
-      handlePaste: (_view, event) => {
-        // Paste as plain text with prefix normalization
-        const text = event.clipboardData?.getData("text/plain")
-        if (text && onPaste) {
-          event.preventDefault()
-          // Normalize multiple mode prefixes to one: "?? food" → "? food", "> > cmd" → "> cmd"
-          // But keep the prefix so mode detection works (pasting "food" should switch to stream mode)
-          const normalized = text
-            .replace(/^([?>][\s?>]*)+/, (match) => {
-              const prefix = match.trim()[0]
-              return prefix ? `${prefix} ` : ""
-            })
-            .trimEnd()
-          // Call onPaste with full normalized text (including any prefix)
-          // Parent handles mode switching based on prefix
-          onPaste(normalized)
-          return true
         }
         return false
       },
