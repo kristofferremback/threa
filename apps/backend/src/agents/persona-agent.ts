@@ -30,7 +30,7 @@ import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
-  | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[] }
+  | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }
   | { status: "failed"; sessionId: string }
 
 /**
@@ -152,6 +152,7 @@ export async function withSession(
       sessionId: session.id,
       messagesSent,
       sentMessageIds,
+      lastSeenSequence,
     }
   } catch (err) {
     logger.error({ err, sessionId: session.id }, "Session failed")
@@ -213,6 +214,12 @@ export interface PersonaAgentResult {
   sentMessageIds: string[]
   status: "completed" | "failed" | "skipped"
   skipReason?: string
+  /** Last sequence processed - used to check for unseen messages after completion */
+  lastSeenSequence?: bigint
+  /** Stream ID - needed for follow-up job dispatch */
+  streamId?: string
+  /** Persona ID - needed for follow-up job dispatch */
+  personaId?: string
 }
 
 /**
@@ -538,6 +545,9 @@ export class PersonaAgent {
           messagesSent: result.messagesSent,
           sentMessageIds: result.sentMessageIds,
           status: "completed",
+          lastSeenSequence: result.lastSeenSequence,
+          streamId,
+          personaId,
         }
     }
   }

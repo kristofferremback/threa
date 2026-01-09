@@ -207,7 +207,7 @@ export async function startServer(): Promise<ServerInstance> {
     createMessage,
     createThread,
   })
-  const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId })
+  const personaAgentWorker = createPersonaAgentWorker({ agent: personaAgent, serverId, pool, jobQueue })
   jobQueue.registerHandler(JobQueues.PERSONA_AGENT, personaAgentWorker)
 
   const namingWorker = createNamingWorker({ streamNamingService })
