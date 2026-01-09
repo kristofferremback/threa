@@ -13,24 +13,22 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft } from "@/hooks"
-import { usePanel, useCoordinatedLoading } from "@/contexts"
+import { useStreamOrDraft, useStreamError } from "@/hooks"
+import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
+import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes } from "@threa/types"
-import { ApiError } from "@/api/client"
-import { StreamErrorPage } from "./stream-not-found"
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { getStreamError } = useCoordinatedLoading()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
 
-  // Check for errors from coordinated loading first (already fetched)
-  const coordinatedError = streamId ? getStreamError(streamId) : undefined
+  // Unified error checking - checks both coordinated loading and direct query errors
+  const streamError = useStreamError(streamId, error)
 
   const isConversationViewOpen = searchParams.get("convView") === "open"
 
@@ -65,24 +63,9 @@ export function StreamPage() {
     return null
   }
 
-  // Check coordinated loading errors first (faster path, already fetched)
-  if (coordinatedError) {
-    if (coordinatedError.status === 404) {
-      return <StreamErrorPage workspaceId={workspaceId} type="not-found" />
-    }
-    if (coordinatedError.status === 403) {
-      return <StreamErrorPage workspaceId={workspaceId} type="forbidden" />
-    }
-  }
-
-  // Fallback to query error (for cases not covered by coordinated loading)
-  if (error && ApiError.isApiError(error)) {
-    if (error.status === 404) {
-      return <StreamErrorPage workspaceId={workspaceId} type="not-found" />
-    }
-    if (error.status === 403) {
-      return <StreamErrorPage workspaceId={workspaceId} type="forbidden" />
-    }
+  // Show error page if stream has error (404/403)
+  if (streamError) {
+    return <StreamErrorView type={streamError.type} workspaceId={workspaceId} />
   }
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD

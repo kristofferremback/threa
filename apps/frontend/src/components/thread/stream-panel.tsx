@@ -8,10 +8,9 @@ import {
 } from "@/components/ui/side-panel"
 import { useStreamBootstrap } from "@/hooks"
 import { StreamContent } from "@/components/timeline"
-import { StreamErrorView } from "@/components/stream-error-view"
+import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { ThreadHeader } from "./thread-header"
 import { StreamTypes } from "@threa/types"
-import { ApiError } from "@/api/client"
 
 interface StreamPanelProps {
   workspaceId: string
@@ -27,14 +26,6 @@ export function StreamPanel({ workspaceId, streamId, onClose }: StreamPanelProps
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
 
-  const errorType = ApiError.isApiError(error)
-    ? error.status === 404
-      ? "not-found"
-      : error.status === 403
-        ? "forbidden"
-        : null
-    : null
-
   return (
     <SidePanel>
       <SidePanelHeader>
@@ -46,16 +37,14 @@ export function StreamPanel({ workspaceId, streamId, onClose }: StreamPanelProps
         <SidePanelClose onClose={onClose} />
       </SidePanelHeader>
       <SidePanelContent className="flex flex-col">
-        {errorType ? (
-          <StreamErrorView type={errorType} />
-        ) : (
+        <StreamErrorBoundary streamId={streamId} queryError={error}>
           <StreamContent
             workspaceId={workspaceId}
             streamId={streamId}
             highlightMessageId={highlightMessageId}
             stream={stream}
           />
-        )}
+        </StreamErrorBoundary>
       </SidePanelContent>
     </SidePanel>
   )

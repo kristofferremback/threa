@@ -1,38 +1,55 @@
+import { Link } from "react-router-dom"
 import { Unlink, ShieldX } from "lucide-react"
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
+import { Button } from "@/components/ui/button"
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "@/components/ui/empty"
+import type { StreamErrorType } from "@/hooks/use-stream-error"
+
+const ERROR_CONFIG = {
+  "not-found": {
+    icon: Unlink,
+    title: "The Thread Has Broken",
+    description:
+      "The path you seek has faded into the labyrinth. Perhaps the stream was archived, or the thread was never spun.",
+  },
+  forbidden: {
+    icon: ShieldX,
+    title: "Access Denied",
+    description: "You don't have permission to view this stream. The path exists, but the gates are closed to you.",
+  },
+} as const
 
 interface StreamErrorViewProps {
-  type: "not-found" | "forbidden"
+  type: StreamErrorType
+  /** If provided, shows navigation buttons to return to workspace */
+  workspaceId?: string
 }
 
-export function StreamErrorView({ type }: StreamErrorViewProps) {
-  if (type === "forbidden") {
-    return (
-      <Empty className="h-full border-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <ShieldX />
-          </EmptyMedia>
-          <EmptyTitle>Access Denied</EmptyTitle>
-          <EmptyDescription>
-            You don&apos;t have permission to view this stream. The path exists, but the gates are closed to you.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
+/**
+ * Displays a stream error (404/403) with optional navigation back to workspace.
+ * Used both for embedded contexts (side panels) and full-page errors.
+ */
+export function StreamErrorView({ type, workspaceId }: StreamErrorViewProps) {
+  const { icon: Icon, title, description } = ERROR_CONFIG[type]
 
   return (
     <Empty className="h-full border-0">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <Unlink />
+          <Icon />
         </EmptyMedia>
-        <EmptyTitle>The Thread Has Broken</EmptyTitle>
-        <EmptyDescription>
-          The path you seek has faded into the labyrinth. Perhaps the stream was archived, or the thread was never spun.
-        </EmptyDescription>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
+      {workspaceId && (
+        <EmptyContent>
+          <Button asChild>
+            <Link to={`/w/${workspaceId}`}>Return to Workspace</Link>
+          </Button>
+          <Link to="/workspaces" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Back to all workspaces
+          </Link>
+        </EmptyContent>
+      )}
     </Empty>
   )
 }
