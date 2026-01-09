@@ -185,17 +185,6 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     setSelectedIndex(0)
   }, [items.length, mode])
 
-  // Refocus appropriate input when mode changes (e.g., typing "?" switches to SearchEditor)
-  const prevModeRef = useRef(mode)
-  useEffect(() => {
-    if (prevModeRef.current !== mode && open && !inputRequest) {
-      requestAnimationFrame(() => {
-        richInputRef.current?.focus()
-      })
-    }
-    prevModeRef.current = mode
-  }, [mode, open, inputRequest])
-
   // Reset query and focus input when dialog opens
   useEffect(() => {
     if (open) {
@@ -387,14 +376,12 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
               ref={richInputRef}
               value={query}
               onChange={(value) => {
-                // Let mode be derived from the query - allows switching modes by typing prefix
-                setQuery(value)
-                setSelectedIndex(0)
-              }}
-              onPaste={(text) => {
-                // Paste: use text directly so mode is determined by prefix (or lack thereof)
-                // "? food" → search mode, "> cmd" → command mode, "food" → stream mode
-                setQuery(text)
+                // Normalize the query in two steps:
+                // 1. Remove redundant prefixes: "? ? foo" → "? foo", "> > bar" → "> bar"
+                // 2. Ensure space after prefix: "?foo" → "? foo" (TipTap strips trailing whitespace)
+                const withoutRedundant = value.replace(/^([?>])\s*\1/, "$1")
+                const normalized = withoutRedundant.replace(/^([?>])(?=\S)/, "$1 ")
+                setQuery(normalized)
                 setSelectedIndex(0)
               }}
               onSubmit={(withModifier) => {
