@@ -11,6 +11,7 @@ import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
+import type { MessageSendMode } from "@threa/types"
 
 interface RichEditorProps {
   value: string
@@ -23,6 +24,8 @@ interface RichEditorProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+  /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
+  messageSendMode?: MessageSendMode
 }
 
 export function RichEditor({
@@ -34,6 +37,7 @@ export function RichEditor({
   placeholder = "Type a message...",
   disabled = false,
   className,
+  messageSendMode = "cmdEnter",
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -97,9 +101,12 @@ export function RichEditor({
         emojiSuggestion: emojiConfig,
         toEmoji,
       }),
-      EditorBehaviors,
+      EditorBehaviors.configure({
+        sendMode: messageSendMode,
+        onSubmit,
+      }),
     ],
-    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
+    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji, messageSendMode, onSubmit]
   )
 
   // Debounced toolbar visibility - stays visible 150ms after conditions become false
@@ -228,12 +235,6 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
-        // Cmd/Ctrl+Enter to submit
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault()
-          onSubmit()
-          return true
-        }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()

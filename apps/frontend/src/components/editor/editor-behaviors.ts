@@ -5,6 +5,12 @@ import { MentionPluginKey } from "./triggers/mention-extension"
 import { ChannelPluginKey } from "./triggers/channel-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
+import type { MessageSendMode } from "@threa/types"
+
+export interface EditorBehaviorsOptions {
+  sendMode: MessageSendMode
+  onSubmit: () => void
+}
 
 /**
  * Check if any suggestion popup is currently active.
@@ -259,15 +265,108 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
 }
 
 /**
+ * Handle block creation: lists, blockquotes, code blocks, default paragraphs.
+ * Returns true if handled, false to let TipTap handle it.
+ */
+function handleBlockCreation(editor: Editor): boolean {
+  // In lists: exit on empty item, otherwise create new item
+  if (editor.isActive("listItem")) {
+    const { $from } = editor.state.selection
+    const listItem = $from.node($from.depth - 1)
+
+    if (listItem?.type.name === "listItem") {
+      const isEmpty =
+        listItem.childCount === 1 &&
+        listItem.firstChild?.type.name === "paragraph" &&
+        listItem.firstChild.content.size === 0
+
+      if (isEmpty) {
+        return editor.chain().focus().liftListItem("listItem").run()
+      }
+    }
+  }
+
+  // In blockquotes: exit on empty line
+  if (editor.isActive("blockquote")) {
+    const { $from } = editor.state.selection
+    const paragraph = $from.parent
+
+    if (paragraph.type.name === "paragraph" && paragraph.content.size === 0) {
+      return editor.chain().focus().lift("blockquote").run()
+    }
+  }
+
+  // In code blocks: exit on double empty line at end
+  if (editor.isActive("codeBlock")) {
+    const { $from } = editor.state.selection
+    const codeBlock = $from.parent
+    const text = codeBlock.textContent
+    const atEnd = $from.pos === $from.end()
+
+    if (atEnd && text.endsWith("\n\n")) {
+      return editor
+        .chain()
+        .focus()
+        .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
+          const pos = state.selection.$from.pos
+          tr.delete(pos - 2, pos)
+          return true
+        })
+        .exitCode()
+        .run()
+    }
+
+    // Otherwise, just insert newline in code block
+    return editor.chain().focus().insertContent("\n").run()
+  }
+
+  // Default: let TipTap handle it (creates new paragraph)
+  return false
+}
+
+/**
+ * Check if we're in a context that requires block creation instead of sending.
+ * Used in "enter" mode to determine if Enter should create a block or send.
+ */
+function shouldCreateBlockInsteadOfSend(editor: Editor): boolean {
+  // Lists: always handle via block creation (exit on empty, new item otherwise)
+  if (editor.isActive("listItem")) {
+    return true
+  }
+
+  // Blockquotes: always handle via block creation (exit on empty line)
+  if (editor.isActive("blockquote")) {
+    return true
+  }
+
+  // Code blocks: always handle via block creation (has its own exit mechanism)
+  if (editor.isActive("codeBlock")) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Custom keyboard behaviors for the editor:
  * - Tab/Shift+Tab for indent/dedent (VS Code-like behavior)
  * - Smart list exit on empty item
  * - Smart code block exit on double empty line
+ * - Configurable send behavior (Enter vs Cmd+Enter)
  */
-export const EditorBehaviors = Extension.create({
+export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
   name: "editorBehaviors",
 
+  addOptions() {
+    return {
+      sendMode: "cmdEnter" as MessageSendMode,
+      onSubmit: () => {},
+    }
+  },
+
   addKeyboardShortcuts() {
+    const { sendMode, onSubmit } = this.options
+
     return {
       // Tab for indent - handle unless a suggestion popup is active
       Tab: () => {
@@ -323,73 +422,43 @@ export const EditorBehaviors = Extension.create({
         return false
       },
 
-      // Shift+Enter: always insert soft line break within the block
+      // Cmd/Ctrl+Enter: send in cmdEnter mode, no-op in enter mode
+      "Mod-Enter": () => {
+        if (sendMode === "cmdEnter") {
+          onSubmit()
+          return true
+        }
+        return false
+      },
+
+      // Shift+Enter behavior depends on mode
       "Shift-Enter": () => {
-        // In code blocks, insert actual newline character (not hardBreak)
+        if (sendMode === "enter") {
+          // In "enter" mode, Shift+Enter does what Enter normally does (create blocks)
+          return handleBlockCreation(this.editor)
+        }
+
+        // In "cmdEnter" mode, insert soft break
         if (this.editor.isActive("codeBlock")) {
           return this.editor.chain().focus().insertContent("\n").run()
         }
-        // Elsewhere, insert hardBreak node
         return this.editor.chain().focus().setHardBreak().run()
       },
 
-      // Enter key handling for smart behaviors
+      // Enter key behavior depends on mode
       Enter: () => {
-        // In lists: exit on empty item
-        if (this.editor.isActive("listItem")) {
-          const { $from } = this.editor.state.selection
-          const listItem = $from.node($from.depth - 1)
-
-          // Check if current list item is empty (only has empty paragraph)
-          if (listItem?.type.name === "listItem") {
-            const isEmpty =
-              listItem.childCount === 1 &&
-              listItem.firstChild?.type.name === "paragraph" &&
-              listItem.firstChild.content.size === 0
-
-            if (isEmpty) {
-              // Exit the list
-              return this.editor.chain().focus().liftListItem("listItem").run()
-            }
+        if (sendMode === "enter") {
+          // In "enter" mode, check if we should create a block instead of send
+          if (shouldCreateBlockInsteadOfSend(this.editor)) {
+            return handleBlockCreation(this.editor)
           }
+          // Otherwise, send the message
+          onSubmit()
+          return true
         }
 
-        // In blockquotes: exit on empty line
-        if (this.editor.isActive("blockquote")) {
-          const { $from } = this.editor.state.selection
-          const paragraph = $from.parent
-
-          if (paragraph.type.name === "paragraph" && paragraph.content.size === 0) {
-            // Exit blockquote
-            return this.editor.chain().focus().lift("blockquote").run()
-          }
-        }
-
-        // In code blocks: exit on double empty line at end
-        if (this.editor.isActive("codeBlock")) {
-          const { $from } = this.editor.state.selection
-          const codeBlock = $from.parent
-          const text = codeBlock.textContent
-          const atEnd = $from.pos === $from.end()
-
-          // Check if we're at the end and text ends with double newline
-          if (atEnd && text.endsWith("\n\n")) {
-            // Remove trailing newlines and exit
-            return this.editor
-              .chain()
-              .focus()
-              .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
-                const pos = state.selection.$from.pos
-                tr.delete(pos - 2, pos)
-                return true
-              })
-              .exitCode()
-              .run()
-          }
-        }
-
-        // Default: let Tiptap handle it
-        return false
+        // In "cmdEnter" mode, Enter creates blocks (original behavior)
+        return handleBlockCreation(this.editor)
       },
     }
   },

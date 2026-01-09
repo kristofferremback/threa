@@ -1,6 +1,8 @@
 import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 import { usePreferences } from "@/contexts"
 import {
   SHORTCUT_ACTIONS,
@@ -9,15 +11,28 @@ import {
   formatKeyBinding,
   detectConflicts,
 } from "@/lib/keyboard-shortcuts"
+import { MESSAGE_SEND_MODE_OPTIONS, type MessageSendMode } from "@threa/types"
+
+const SEND_MODE_CONFIG: Record<MessageSendMode, { label: string; description: string }> = {
+  enter: {
+    label: "Enter to send",
+    description: "Press Enter to send, Shift+Enter for new line",
+  },
+  cmdEnter: {
+    label: "⌘/Ctrl + Enter to send",
+    description: "Press ⌘+Enter (Mac) or Ctrl+Enter (Windows) to send",
+  },
+}
 
 export function KeyboardSettings() {
-  const { preferences } = usePreferences()
+  const { preferences, updatePreference } = usePreferences()
 
   const customBindings = preferences?.keyboardShortcuts ?? {}
   const shortcuts = useMemo(() => getShortcutsByCategory(), [])
   const conflicts = useMemo(() => detectConflicts(customBindings), [customBindings])
 
   const hasConflicts = conflicts.size > 0
+  const messageSendMode = preferences?.messageSendMode ?? "cmdEnter"
 
   return (
     <div className="space-y-6">
@@ -46,6 +61,32 @@ export function KeyboardSettings() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Send Messages</CardTitle>
+          <CardDescription>Choose how to send messages in the composer</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={messageSendMode}
+            onValueChange={(value) => updatePreference("messageSendMode", value as MessageSendMode)}
+            className="space-y-3"
+          >
+            {MESSAGE_SEND_MODE_OPTIONS.map((option) => (
+              <div key={option} className="flex items-start space-x-3">
+                <RadioGroupItem value={option} id={`send-mode-${option}`} className="mt-1" />
+                <div className="grid gap-0.5">
+                  <Label htmlFor={`send-mode-${option}`} className="cursor-pointer font-medium">
+                    {SEND_MODE_CONFIG[option].label}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">{SEND_MODE_CONFIG[option].description}</p>
+                </div>
+              </div>
+            ))}
+          </RadioGroup>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
