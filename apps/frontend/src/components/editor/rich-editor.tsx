@@ -86,6 +86,12 @@ export function RichEditor({
   const imageCountRef = useRef(imageCount)
   imageCountRef.current = imageCount
 
+  // Refs for editor behaviors to avoid stale closures in keyboard shortcuts
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
+  const messageSendModeRef = useRef(messageSendMode)
+  messageSendModeRef.current = messageSendMode
+
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -102,8 +108,8 @@ export function RichEditor({
         toEmoji,
       }),
       EditorBehaviors.configure({
-        sendMode: messageSendMode,
-        onSubmit,
+        sendModeRef: messageSendModeRef,
+        onSubmitRef: onSubmitRef,
       }),
     ],
     [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji, messageSendMode, onSubmit]
@@ -235,6 +241,24 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
+        // Cmd/Ctrl+Enter: send in cmdEnter mode
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+          if (messageSendModeRef.current === "cmdEnter") {
+            event.preventDefault()
+            onSubmitRef.current()
+            return true
+          }
+        }
+        // Plain Enter: send in enter mode (except in lists, blockquotes, code blocks)
+        if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+          if (messageSendModeRef.current === "enter") {
+            // Let EditorBehaviors handle block creation in special contexts
+            // This handler only fires if EditorBehaviors doesn't handle it
+            event.preventDefault()
+            onSubmitRef.current()
+            return true
+          }
+        }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()

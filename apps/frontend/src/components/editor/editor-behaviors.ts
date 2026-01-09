@@ -8,8 +8,10 @@ import { EmojiPluginKey } from "./triggers/emoji-extension"
 import type { MessageSendMode } from "@threa/types"
 
 export interface EditorBehaviorsOptions {
-  sendMode: MessageSendMode
-  onSubmit: () => void
+  /** Ref to current send mode - using ref avoids stale closure in keyboard shortcuts */
+  sendModeRef: { current: MessageSendMode }
+  /** Ref to submit callback - using ref avoids stale closure in keyboard shortcuts */
+  onSubmitRef: { current: () => void }
 }
 
 /**
@@ -359,13 +361,14 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
   addOptions() {
     return {
-      sendMode: "cmdEnter" as MessageSendMode,
-      onSubmit: () => {},
+      sendModeRef: { current: "cmdEnter" as MessageSendMode },
+      onSubmitRef: { current: () => {} },
     }
   },
 
   addKeyboardShortcuts() {
-    const { sendMode, onSubmit } = this.options
+    // Note: We access this.options inside each handler (not destructured here)
+    // to ensure we always use current values when options change dynamically.
 
     return {
       // Tab for indent - handle unless a suggestion popup is active
@@ -422,10 +425,12 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
         return false
       },
 
-      // Cmd/Ctrl+Enter: send in cmdEnter mode, no-op in enter mode
+      // Cmd/Ctrl+Enter: handled by RichEditor's handleKeyDown
+      // This handler is kept for completeness but will rarely run
+      // because handleKeyDown handles it first
       "Mod-Enter": () => {
-        if (sendMode === "cmdEnter") {
-          onSubmit()
+        if (this.options.sendModeRef.current === "cmdEnter") {
+          this.options.onSubmitRef.current()
           return true
         }
         return false
@@ -433,7 +438,7 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
       // Shift+Enter behavior depends on mode
       "Shift-Enter": () => {
-        if (sendMode === "enter") {
+        if (this.options.sendModeRef.current === "enter") {
           // In "enter" mode, Shift+Enter does what Enter normally does (create blocks)
           return handleBlockCreation(this.editor)
         }
@@ -447,13 +452,13 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
 
       // Enter key behavior depends on mode
       Enter: () => {
-        if (sendMode === "enter") {
+        if (this.options.sendModeRef.current === "enter") {
           // In "enter" mode, check if we should create a block instead of send
           if (shouldCreateBlockInsteadOfSend(this.editor)) {
             return handleBlockCreation(this.editor)
           }
           // Otherwise, send the message
-          onSubmit()
+          this.options.onSubmitRef.current()
           return true
         }
 
