@@ -363,10 +363,10 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
 /**
  * Determine routing after agent node.
- * - If tool calls present → check_new_messages
+ * - If tool calls present → tools (always execute tool calls first)
  * - If no tool calls → check_final_messages
  */
-function routeAfterAgent(state: CompanionStateType): "check_new_messages" | "check_final_messages" {
+function routeAfterAgent(state: CompanionStateType): "tools" | "check_final_messages" {
   // Check iteration limit - force end
   if (state.iteration >= MAX_ITERATIONS) {
     return "check_final_messages"
@@ -375,19 +375,30 @@ function routeAfterAgent(state: CompanionStateType): "check_new_messages" | "che
   const lastMessage = state.messages[state.messages.length - 1]
 
   if (lastMessage instanceof AIMessage && lastMessage.tool_calls?.length) {
-    return "check_new_messages"
+    // Always execute tools first - never skip them
+    return "tools"
   }
 
   return "check_final_messages"
 }
 
 /**
- * Determine routing after check_new_messages node.
- * - If new messages found → agent (re-evaluate)
- * - If no new messages → tools (execute pending tools)
+ * Determine routing after tools node.
+ * Always check for new messages after tool execution.
  */
-function routeAfterNewMessageCheck(state: CompanionStateType): "agent" | "tools" {
-  return state.hasNewMessages ? "agent" : "tools"
+function routeAfterTools(): "check_new_messages" {
+  return "check_new_messages"
+}
+
+/**
+ * Determine routing after check_new_messages node.
+ * - If new messages found → agent (handle them)
+ * - If no new messages → agent (continue processing)
+ */
+function routeAfterNewMessageCheck(): "agent" {
+  // Always return to agent after checking for messages
+  // The agent will decide whether to continue or end
+  return "agent"
 }
 
 /**
@@ -516,13 +527,15 @@ function createEnsureResponseNode() {
  *
  * Graph structure:
  *   START → research → agent → (has tool calls?)
- *                                → yes → check_new_messages → (new messages?)
- *                                                               → yes → agent
- *                                                               → no → tools → agent
+ *                                → yes → tools → check_new_messages → agent (loop)
  *                                → no → check_final_messages → (new messages?)
  *                                                               → yes → agent
  *                                                               → (used web_search?) → yes → synthesize → ensure_response → END
  *                                                                                    → no → ensure_response → END
+ *
+ * CRITICAL: Tool calls are ALWAYS executed before checking for new messages.
+ * This prevents tool calls from being dropped when users send additional messages
+ * while the agent is processing.
  *
  * The research node retrieves workspace knowledge before the agent responds.
  * The synthesize node formats responses with proper source citations when web search was used.
@@ -540,9 +553,10 @@ export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInt
     .addEdge("__start__", "research")
     .addEdge("research", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
+    // Tools always execute, then check for new messages, then back to agent
+    .addConditionalEdges("tools", routeAfterTools)
     .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
     .addConditionalEdges("check_final_messages", routeAfterFinalCheck)
-    .addEdge("tools", "agent")
     .addEdge("synthesize", "ensure_response")
     .addEdge("ensure_response", END)
 

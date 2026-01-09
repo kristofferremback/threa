@@ -19,6 +19,7 @@ import {
 import { AgentToolNames } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
 import { getCostTrackingCallbacks } from "../lib/ai/ai"
+import { getDebugCallbacks } from "../lib/ai/debug-callback"
 import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
 
@@ -235,6 +236,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         {
           runName: "companion-agent",
           callbacks: [
+            ...getDebugCallbacks(),
             ...getLangfuseCallbacks({
               sessionId,
               userId: personaId,
