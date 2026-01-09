@@ -44,15 +44,6 @@ test.describe("Message Send Mode", () => {
     await expect(page.getByRole("dialog")).not.toBeVisible()
   }
 
-  /**
-   * Helper to get messages from timeline (excluding editor area).
-   * Uses the message list container, not the whole main area.
-   */
-  function getMessageArea(page: import("@playwright/test").Page) {
-    // Target the message list specifically, not the editor
-    return page.locator("[data-testid='message-list'], .message-list, [role='log']").first()
-  }
-
   test.beforeEach(async ({ page }) => {
     // Login as Alice
     await page.goto("/login")
@@ -192,14 +183,11 @@ test.describe("Message Send Mode", () => {
       // Cmd+Enter should NOT send in this mode
       await page.keyboard.press("Meta+Enter")
 
-      // Small wait to ensure nothing happens
-      await page.waitForTimeout(500)
-
-      // Message should still be in editor
+      // Verify nothing was sent by checking both conditions:
+      // 1. Editor still contains the message (would be cleared on send)
+      // 2. "Start a conversation" still visible (would be hidden if message appeared)
       const editor = page.locator("[contenteditable='true']")
       await expect(editor).toContainText(messageContent)
-
-      // "Start a conversation" should still be visible (nothing sent)
       await expect(page.getByText("Start a conversation")).toBeVisible()
     })
   })
