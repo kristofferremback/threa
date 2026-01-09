@@ -167,6 +167,7 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
   // Instruction about time format
   const formatExample = temporal.timeFormat === "12h" ? "2:30 PM" : "14:30"
   const formatInstruction = `When referencing times, use ${temporal.timeFormat === "12h" ? "12-hour" : "24-hour"} format (e.g., ${formatExample}).`
+  const timestampInstruction = `User messages are prefixed with their send time, e.g., (${formatExample}). Do not include timestamps in your responses.`
 
   if (hasMixedTimezones && participants) {
     // Different offsets: state offsets once in system prompt
@@ -181,12 +182,12 @@ export function buildTemporalPromptSection(temporal: TemporalContext, participan
       }
     }
 
-    section += `\n${formatInstruction}`
+    section += `\n${formatInstruction}\n${timestampInstruction}`
     return section
   }
 
   // Same offset: simple format
-  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}\n\n${formatInstruction}`
+  return `\n\n## Current Time\n\nCurrent time: ${currentTimeFormatted}\n\n${formatInstruction}\n${timestampInstruction}`
 }
 
 /**

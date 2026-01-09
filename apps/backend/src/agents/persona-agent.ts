@@ -640,10 +640,10 @@ function formatMessagesWithTemporal(
         content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.content}`,
       })
     } else {
-      // Assistant/persona messages - just add timestamp
+      // Assistant/persona messages - no timestamp to avoid model mimicking the format
       result.push({
         role,
-        content: `${dateBoundaryPrefix}(${time}) ${msg.content}`,
+        content: `${dateBoundaryPrefix}${msg.content}`,
       })
     }
   }
