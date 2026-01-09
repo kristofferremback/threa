@@ -615,23 +615,20 @@ function formatMessagesWithTemporal(
   let currentDateKey: string | null = null
 
   for (const msg of messages) {
-    const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
-
-    // Insert date boundary marker when date changes
-    // Prepend to the next message's content rather than inserting a fake message
-    let dateBoundaryPrefix = ""
-    if (msgDateKey !== currentDateKey) {
-      const dateStr = formatDate(msg.createdAt, temporal.timezone, temporal.dateFormat)
-      dateBoundaryPrefix = `[Date: ${dateStr}]\n`
-      currentDateKey = msgDateKey
-    }
-
-    // Format message with timestamp
-    const time = formatTime(msg.createdAt, temporal.timezone, temporal.timeFormat)
     const role = msg.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const)
 
     if (msg.authorType === AuthorTypes.USER) {
-      // For user messages in multi-user contexts, include the name
+      // Check for date boundary - only on user messages to avoid model mimicking the format
+      const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
+      let dateBoundaryPrefix = ""
+      if (msgDateKey !== currentDateKey) {
+        const dateStr = formatDate(msg.createdAt, temporal.timezone, temporal.dateFormat)
+        dateBoundaryPrefix = `[Date: ${dateStr}]\n`
+        currentDateKey = msgDateKey
+      }
+
+      // Format with timestamp and optional author name for multi-user contexts
+      const time = formatTime(msg.createdAt, temporal.timezone, temporal.timeFormat)
       const authorName = authorNames.get(msg.authorId) ?? "Unknown"
       const hasMultipleUsers = context.streamType === StreamTypes.CHANNEL || context.streamType === StreamTypes.DM
       const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
@@ -640,10 +637,10 @@ function formatMessagesWithTemporal(
         content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.content}`,
       })
     } else {
-      // Assistant/persona messages - just add timestamp
+      // Assistant/persona messages - no timestamp or date markers to avoid model mimicking
       result.push({
         role,
-        content: `${dateBoundaryPrefix}(${time}) ${msg.content}`,
+        content: msg.content,
       })
     }
   }
