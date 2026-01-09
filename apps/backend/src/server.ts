@@ -39,6 +39,7 @@ import { StubMemoService } from "./services/memo-service.stub"
 import { AICostService } from "./services/ai-cost-service"
 import { createCommandListener } from "./lib/command-listener"
 import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
+import { createOrphanSessionCleanup } from "./lib/orphan-session-cleanup"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
 import { createPersonaAgentWorker } from "./workers/persona-agent-worker"
@@ -256,6 +257,7 @@ export async function startServer(): Promise<ServerInstance> {
   const memoAccumulator = createMemoAccumulator(pools)
   const commandListener = createCommandListener(pools, jobQueue)
   const mentionInvokeListener = createMentionInvokeListener({ pools, jobQueue })
+  const orphanSessionCleanup = createOrphanSessionCleanup(pools.main)
   await broadcastListener.start()
   await companionListener.start()
   await mentionInvokeListener.start()
@@ -265,6 +267,7 @@ export async function startServer(): Promise<ServerInstance> {
   await boundaryExtractionListener.start()
   await memoAccumulator.start()
   await commandListener.start()
+  orphanSessionCleanup.start()
 
   await new Promise<void>((resolve) => {
     server.listen(config.port, () => {
@@ -275,6 +278,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   const stop = async () => {
     logger.info("Shutting down server...")
+    orphanSessionCleanup.stop()
     await memoAccumulator.stop()
     await commandListener.stop()
     await embeddingListener.stop()
