@@ -1,4 +1,4 @@
-import type { Pool } from "pg"
+import { type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import type { OutboxEvent, CommandDispatchedOutboxPayload } from "../repositories/outbox-repository"
@@ -19,12 +19,14 @@ interface CommandDispatchedEventPayload {
  * command_dispatched event is committed to the database.
  */
 export function createCommandListener(
-  pool: Pool,
+  pools: DatabasePools,
   jobQueue: JobQueueManager,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "command",
     handler: async (outboxEvent: OutboxEvent) => {
       if (outboxEvent.eventType !== "command:dispatched") {

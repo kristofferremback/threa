@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case)
@@ -66,8 +66,8 @@ const SELECT_FIELDS = `
 `
 
 export const PersonaRepository = {
-  async findById(client: PoolClient, id: string): Promise<Persona | null> {
-    const result = await client.query<PersonaRow>(
+  async findById(db: Querier, id: string): Promise<Persona | null> {
+    const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
@@ -77,10 +77,10 @@ export const PersonaRepository = {
     return result.rows[0] ? mapRowToPersona(result.rows[0]) : null
   },
 
-  async findByIds(client: PoolClient, ids: string[]): Promise<Persona[]> {
+  async findByIds(db: Querier, ids: string[]): Promise<Persona[]> {
     if (ids.length === 0) return []
 
-    const result = await client.query<PersonaRow>(
+    const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
@@ -90,10 +90,10 @@ export const PersonaRepository = {
     return result.rows.map(mapRowToPersona)
   },
 
-  async findBySlug(client: PoolClient, slug: string, workspaceId?: string | null): Promise<Persona | null> {
+  async findBySlug(db: Querier, slug: string, workspaceId?: string | null): Promise<Persona | null> {
     // System personas have null workspace_id
     if (workspaceId === null || workspaceId === undefined) {
-      const result = await client.query<PersonaRow>(
+      const result = await db.query<PersonaRow>(
         sql`
           SELECT ${sql.raw(SELECT_FIELDS)}
           FROM personas
@@ -104,7 +104,7 @@ export const PersonaRepository = {
     }
 
     // Look for workspace-specific first, fall back to system
-    const result = await client.query<PersonaRow>(
+    const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
@@ -119,8 +119,8 @@ export const PersonaRepository = {
   /**
    * Get the default system persona (Ariadne).
    */
-  async getSystemDefault(client: PoolClient): Promise<Persona | null> {
-    const result = await client.query<PersonaRow>(
+  async getSystemDefault(db: Querier): Promise<Persona | null> {
+    const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas
@@ -135,8 +135,8 @@ export const PersonaRepository = {
   /**
    * List all personas available to a workspace (system + workspace-specific).
    */
-  async listForWorkspace(client: PoolClient, workspaceId: string): Promise<Persona[]> {
-    const result = await client.query<PersonaRow>(
+  async listForWorkspace(db: Querier, workspaceId: string): Promise<Persona[]> {
+    const result = await db.query<PersonaRow>(
       sql`
         SELECT ${sql.raw(SELECT_FIELDS)}
         FROM personas

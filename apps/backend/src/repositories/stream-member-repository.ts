@@ -1,4 +1,4 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case, not exported)
@@ -45,8 +45,8 @@ function mapRowToMember(row: StreamMemberRow): StreamMember {
 }
 
 export const StreamMemberRepository = {
-  async findByStreamAndUser(client: PoolClient, streamId: string, userId: string): Promise<StreamMember | null> {
-    const result = await client.query<StreamMemberRow>(sql`
+  async findByStreamAndUser(db: Querier, streamId: string, userId: string): Promise<StreamMember | null> {
+    const result = await db.query<StreamMemberRow>(sql`
       SELECT stream_id, user_id, pinned, pinned_at, muted,
              last_read_event_id, last_read_at, joined_at
       FROM stream_members
@@ -55,10 +55,10 @@ export const StreamMemberRepository = {
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
-  async findByStreamsAndUser(client: PoolClient, streamIds: string[], userId: string): Promise<StreamMember[]> {
+  async findByStreamsAndUser(db: Querier, streamIds: string[], userId: string): Promise<StreamMember[]> {
     if (streamIds.length === 0) return []
 
-    const result = await client.query<StreamMemberRow>(sql`
+    const result = await db.query<StreamMemberRow>(sql`
       SELECT stream_id, user_id, pinned, pinned_at, muted,
              last_read_event_id, last_read_at, joined_at
       FROM stream_members
@@ -67,9 +67,9 @@ export const StreamMemberRepository = {
     return result.rows.map(mapRowToMember)
   },
 
-  async list(client: PoolClient, filters: { userId?: string; streamId?: string }): Promise<StreamMember[]> {
+  async list(db: Querier, filters: { userId?: string; streamId?: string }): Promise<StreamMember[]> {
     if (filters.userId && !filters.streamId) {
-      const result = await client.query<StreamMemberRow>(sql`
+      const result = await db.query<StreamMemberRow>(sql`
         SELECT stream_id, user_id, pinned, pinned_at, muted,
                last_read_event_id, last_read_at, joined_at
         FROM stream_members
@@ -80,7 +80,7 @@ export const StreamMemberRepository = {
     }
 
     if (filters.streamId && !filters.userId) {
-      const result = await client.query<StreamMemberRow>(sql`
+      const result = await db.query<StreamMemberRow>(sql`
         SELECT stream_id, user_id, pinned, pinned_at, muted,
                last_read_event_id, last_read_at, joined_at
         FROM stream_members
@@ -93,8 +93,8 @@ export const StreamMemberRepository = {
     throw new Error("StreamMemberRepository.list requires either userId or streamId filter")
   },
 
-  async insert(client: PoolClient, streamId: string, userId: string): Promise<StreamMember> {
-    const result = await client.query<StreamMemberRow>(sql`
+  async insert(db: Querier, streamId: string, userId: string): Promise<StreamMember> {
+    const result = await db.query<StreamMemberRow>(sql`
       INSERT INTO stream_members (stream_id, user_id)
       VALUES (${streamId}, ${userId})
       ON CONFLICT (stream_id, user_id) DO NOTHING
@@ -103,7 +103,7 @@ export const StreamMemberRepository = {
     `)
     // If conflict, fetch existing
     if (result.rows.length === 0) {
-      const existing = await this.findByStreamAndUser(client, streamId, userId)
+      const existing = await this.findByStreamAndUser(db, streamId, userId)
       if (!existing) throw new Error("Failed to insert or find stream member")
       return existing
     }
@@ -111,7 +111,7 @@ export const StreamMemberRepository = {
   },
 
   async update(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     userId: string,
     params: UpdateStreamMemberParams
@@ -139,7 +139,7 @@ export const StreamMemberRepository = {
       sets.push(`last_read_at = NOW()`)
     }
 
-    if (sets.length === 0) return this.findByStreamAndUser(client, streamId, userId)
+    if (sets.length === 0) return this.findByStreamAndUser(db, streamId, userId)
 
     values.push(streamId, userId)
 
@@ -149,20 +149,20 @@ export const StreamMemberRepository = {
       RETURNING stream_id, user_id, pinned, pinned_at, muted,
                 last_read_event_id, last_read_at, joined_at
     `
-    const result = await client.query<StreamMemberRow>(query, values)
+    const result = await db.query<StreamMemberRow>(query, values)
     return result.rows[0] ? mapRowToMember(result.rows[0]) : null
   },
 
-  async delete(client: PoolClient, streamId: string, userId: string): Promise<boolean> {
-    const result = await client.query(sql`
+  async delete(db: Querier, streamId: string, userId: string): Promise<boolean> {
+    const result = await db.query(sql`
       DELETE FROM stream_members
       WHERE stream_id = ${streamId} AND user_id = ${userId}
     `)
     return result.rowCount !== null && result.rowCount > 0
   },
 
-  async isMember(client: PoolClient, streamId: string, userId: string): Promise<boolean> {
-    const result = await client.query(sql`
+  async isMember(db: Querier, streamId: string, userId: string): Promise<boolean> {
+    const result = await db.query(sql`
       SELECT 1 FROM stream_members
       WHERE stream_id = ${streamId} AND user_id = ${userId}
     `)
@@ -173,13 +173,13 @@ export const StreamMemberRepository = {
    * Batch update lastReadEventId for multiple streams for a single user.
    * Uses a single UPDATE query with unnest for efficiency.
    */
-  async batchUpdateLastReadEventId(client: PoolClient, userId: string, updates: Map<string, string>): Promise<void> {
+  async batchUpdateLastReadEventId(db: Querier, userId: string, updates: Map<string, string>): Promise<void> {
     if (updates.size === 0) return
 
     const streamIds = Array.from(updates.keys())
     const eventIds = Array.from(updates.values())
 
-    await client.query(
+    await db.query(
       `
       UPDATE stream_members sm
       SET last_read_event_id = u.event_id, last_read_at = NOW()
@@ -194,12 +194,12 @@ export const StreamMemberRepository = {
    * Check which streams have ALL of the specified users as members.
    * Returns the set of stream IDs where every user is a member.
    */
-  async filterStreamsWithAllUsers(client: PoolClient, streamIds: string[], userIds: string[]): Promise<Set<string>> {
+  async filterStreamsWithAllUsers(db: Querier, streamIds: string[], userIds: string[]): Promise<Set<string>> {
     if (streamIds.length === 0 || userIds.length === 0) {
       return new Set(streamIds)
     }
 
-    const result = await client.query<{ stream_id: string }>(sql`
+    const result = await db.query<{ stream_id: string }>(sql`
       SELECT stream_id
       FROM stream_members
       WHERE stream_id = ANY(${streamIds})

@@ -1,4 +1,4 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case, not exported)
@@ -64,9 +64,9 @@ function mapRowToEvent(row: StreamEventRow): StreamEvent {
 }
 
 export const StreamEventRepository = {
-  async getNextSequence(client: PoolClient, streamId: string): Promise<bigint> {
+  async getNextSequence(db: Querier, streamId: string): Promise<bigint> {
     // Upsert and return next sequence atomically
-    const result = await client.query<{ next_sequence: string }>(sql`
+    const result = await db.query<{ next_sequence: string }>(sql`
       INSERT INTO stream_sequences (stream_id, next_sequence)
       VALUES (${streamId}, 2)
       ON CONFLICT (stream_id) DO UPDATE
@@ -76,10 +76,10 @@ export const StreamEventRepository = {
     return BigInt(result.rows[0].next_sequence)
   },
 
-  async insert(client: PoolClient, params: InsertEventParams): Promise<StreamEvent> {
-    const sequence = await this.getNextSequence(client, params.streamId)
+  async insert(db: Querier, params: InsertEventParams): Promise<StreamEvent> {
+    const sequence = await this.getNextSequence(db, params.streamId)
 
-    const result = await client.query<StreamEventRow>(sql`
+    const result = await db.query<StreamEventRow>(sql`
       INSERT INTO stream_events (id, stream_id, sequence, event_type, payload, actor_id, actor_type)
       VALUES (
         ${params.id},
@@ -96,7 +96,7 @@ export const StreamEventRepository = {
   },
 
   async list(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     filters?: { types?: EventType[]; afterSequence?: bigint; limit?: number; viewerId?: string }
   ): Promise<StreamEvent[]> {
@@ -147,15 +147,15 @@ export const StreamEventRepository = {
     `
     params.push(limit)
 
-    const result = await client.query<StreamEventRow>(query, params)
+    const result = await db.query<StreamEventRow>(query, params)
     const events = result.rows.map(mapRowToEvent)
 
     // When fetching most recent (DESC), reverse to return in chronological order
     return afterSequence !== undefined ? events : events.reverse()
   },
 
-  async findById(client: PoolClient, id: string): Promise<StreamEvent | null> {
-    const result = await client.query<StreamEventRow>(sql`
+  async findById(db: Querier, id: string): Promise<StreamEvent | null> {
+    const result = await db.query<StreamEventRow>(sql`
       SELECT id, stream_id, sequence, event_type, payload, actor_id, actor_type, created_at
       FROM stream_events
       WHERE id = ${id}
@@ -163,8 +163,8 @@ export const StreamEventRepository = {
     return result.rows[0] ? mapRowToEvent(result.rows[0]) : null
   },
 
-  async getLatestSequence(client: PoolClient, streamId: string): Promise<bigint | null> {
-    const result = await client.query<{ sequence: string }>(sql`
+  async getLatestSequence(db: Querier, streamId: string): Promise<bigint | null> {
+    const result = await db.query<{ sequence: string }>(sql`
       SELECT sequence FROM stream_events
       WHERE stream_id = ${streamId}
       ORDER BY sequence DESC
@@ -177,10 +177,10 @@ export const StreamEventRepository = {
    * Count message_created events for multiple streams.
    * Returns a map of streamId -> message count
    */
-  async countMessagesByStreamBatch(client: PoolClient, streamIds: string[]): Promise<Map<string, number>> {
+  async countMessagesByStreamBatch(db: Querier, streamIds: string[]): Promise<Map<string, number>> {
     if (streamIds.length === 0) return new Map()
 
-    const result = await client.query<{ stream_id: string; count: string }>(sql`
+    const result = await db.query<{ stream_id: string; count: string }>(sql`
       SELECT stream_id, COUNT(*)::text AS count
       FROM stream_events
       WHERE stream_id = ANY(${streamIds})
@@ -201,7 +201,7 @@ export const StreamEventRepository = {
    * If lastReadEventId is null, all messages in that stream are unread.
    */
   async countUnreadByStreamBatch(
-    client: PoolClient,
+    db: Querier,
     memberships: Array<{ streamId: string; lastReadEventId: string | null }>
   ): Promise<Map<string, number>> {
     if (memberships.length === 0) return new Map()
@@ -209,7 +209,7 @@ export const StreamEventRepository = {
     const streamIds = memberships.map((m) => m.streamId)
     const lastReadEventIds = memberships.map((m) => m.lastReadEventId)
 
-    const result = await client.query<{ stream_id: string; unread_count: string }>(
+    const result = await db.query<{ stream_id: string; unread_count: string }>(
       `
       WITH memberships AS (
         SELECT
@@ -241,10 +241,10 @@ export const StreamEventRepository = {
    * Get the latest event ID for multiple streams.
    * Returns a map of streamId -> latestEventId
    */
-  async getLatestEventIdByStreamBatch(client: PoolClient, streamIds: string[]): Promise<Map<string, string>> {
+  async getLatestEventIdByStreamBatch(db: Querier, streamIds: string[]): Promise<Map<string, string>> {
     if (streamIds.length === 0) return new Map()
 
-    const result = await client.query<{ stream_id: string; latest_event_id: string }>(sql`
+    const result = await db.query<{ stream_id: string; latest_event_id: string }>(sql`
       SELECT DISTINCT ON (stream_id) stream_id, id as latest_event_id
       FROM stream_events
       WHERE stream_id = ANY(${streamIds})

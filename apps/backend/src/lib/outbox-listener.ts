@@ -5,8 +5,24 @@ import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
 
 export interface OutboxListenerConfig {
+  /**
+   * Unique identifier for this listener (used for cursor tracking).
+   */
   listenerId: string
+  /**
+   * Handler called for each event.
+   */
   handler: (event: OutboxEvent) => Promise<void>
+  /**
+   * Pool for LISTEN connections (held indefinitely).
+   * Should be a dedicated pool to avoid starving transactional work.
+   */
+  listenPool: Pool
+  /**
+   * Pool for transactional work (event fetching, cursor updates).
+   * Should be the main application pool.
+   */
+  queryPool: Pool
   batchSize?: number
   maxRetries?: number
   baseBackoffMs?: number
@@ -29,10 +45,15 @@ const DEFAULT_CONFIG = {
 /**
  * Processes outbox events with NOTIFY/LISTEN for real-time delivery.
  *
+ * Uses separate pools for LISTEN connections (held indefinitely) and
+ * transactional queries (short-lived) to prevent connection starvation.
+ *
  * @example
  * ```ts
- * const listener = new OutboxListener(pool, {
+ * const listener = new OutboxListener({
  *   listenerId: "broadcast",
+ *   listenPool: pools.listen,  // Dedicated pool for LISTEN connections
+ *   queryPool: pools.main,     // Main pool for transactional work
  *   handler: async (event) => {
  *     io.to(`stream:${event.payload.streamId}`).emit(event.eventType, event.payload)
  *   },
@@ -41,7 +62,8 @@ const DEFAULT_CONFIG = {
  * ```
  */
 export class OutboxListener {
-  private pool: Pool
+  private listenPool: Pool
+  private queryPool: Pool
   private listenerId: string
   private handler: (event: OutboxEvent) => Promise<void>
   private batchSize: number
@@ -59,8 +81,9 @@ export class OutboxListener {
   private fallbackTimer: Timer | null = null
   private keepaliveTimer: Timer | null = null
 
-  constructor(pool: Pool, config: OutboxListenerConfig) {
-    this.pool = pool
+  constructor(config: OutboxListenerConfig) {
+    this.listenPool = config.listenPool
+    this.queryPool = config.queryPool
     this.listenerId = config.listenerId
     this.handler = config.handler
     this.batchSize = config.batchSize ?? DEFAULT_CONFIG.batchSize
@@ -92,7 +115,7 @@ export class OutboxListener {
 
   private async doStart(): Promise<void> {
     // Ensure listener exists in the database
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.queryPool, async (client) => {
       await OutboxListenerRepository.ensureListener(client, this.listenerId)
     })
 
@@ -169,7 +192,7 @@ export class OutboxListener {
 
   private async setupListener(): Promise<void> {
     try {
-      this.listenClient = await this.pool.connect()
+      this.listenClient = await this.listenPool.connect()
 
       this.listenClient.on("notification", () => {
         if (this.debouncer) {
@@ -178,6 +201,8 @@ export class OutboxListener {
       })
 
       this.listenClient.on("error", (err) => {
+        // Ignore errors during shutdown - pool close triggers connection termination
+        if (!this.running) return
         logger.error({ err, listenerId: this.listenerId }, "LISTEN client error, reconnecting...")
         this.reconnectListener()
       })
@@ -257,7 +282,7 @@ export class OutboxListener {
     if (!this.running) return
 
     await withClaim(
-      this.pool,
+      this.queryPool,
       this.listenerId,
       async (ctx) => {
         while (true) {

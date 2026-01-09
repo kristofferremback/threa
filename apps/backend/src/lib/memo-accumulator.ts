@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { withClient } from "../db"
+import { withClient, type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { PendingItemRepository, StreamStateRepository, StreamRepository } from "../repositories"
 import type { OutboxEvent } from "../repositories/outbox-repository"
@@ -22,20 +22,22 @@ import { logger } from "./logger"
  * - Quick: process after 30s quiet per stream
  */
 export function createMemoAccumulator(
-  pool: Pool,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  pools: DatabasePools,
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "memo-accumulator",
     handler: async (outboxEvent: OutboxEvent) => {
       switch (outboxEvent.eventType) {
         case "message:created":
-          await handleMessageCreated(pool, outboxEvent)
+          await handleMessageCreated(pools.main, outboxEvent)
           break
         case "conversation:created":
         case "conversation:updated":
-          await handleConversationEvent(pool, outboxEvent)
+          await handleConversationEvent(pools.main, outboxEvent)
           break
       }
     },

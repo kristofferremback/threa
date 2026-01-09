@@ -1,4 +1,4 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case, not exported)
@@ -104,11 +104,11 @@ const SELECT_FIELDS = `
 `
 
 export const MessageRepository = {
-  async findById(client: PoolClient, id: string): Promise<Message | null> {
-    const result = await client.query<MessageRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`)
+  async findById(db: Querier, id: string): Promise<Message | null> {
+    const result = await db.query<MessageRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM messages WHERE id = ${id}`)
     if (!result.rows[0]) return null
 
-    const reactionsResult = await client.query<ReactionRow>(
+    const reactionsResult = await db.query<ReactionRow>(
       sql`SELECT message_id, user_id, emoji FROM reactions WHERE message_id = ${id}`
     )
     const reactions = aggregateReactions(reactionsResult.rows)
@@ -116,17 +116,17 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0], reactions)
   },
 
-  async findByIds(client: PoolClient, ids: string[]): Promise<Map<string, Message>> {
+  async findByIds(db: Querier, ids: string[]): Promise<Map<string, Message>> {
     if (ids.length === 0) return new Map()
 
-    const result = await client.query<MessageRow>(sql`
+    const result = await db.query<MessageRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
       WHERE id = ANY(${ids})
     `)
 
     if (result.rows.length === 0) return new Map()
 
-    const reactionsResult = await client.query<ReactionRow>(sql`
+    const reactionsResult = await db.query<ReactionRow>(sql`
       SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${ids})
     `)
@@ -139,16 +139,12 @@ export const MessageRepository = {
     return map
   },
 
-  async list(
-    client: PoolClient,
-    streamId: string,
-    filters?: { limit?: number; beforeSequence?: bigint }
-  ): Promise<Message[]> {
+  async list(db: Querier, streamId: string, filters?: { limit?: number; beforeSequence?: bigint }): Promise<Message[]> {
     const limit = filters?.limit ?? 50
 
     let messageRows: MessageRow[]
     if (filters?.beforeSequence) {
-      const result = await client.query<MessageRow>(sql`
+      const result = await db.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
           AND sequence < ${filters.beforeSequence.toString()}
@@ -158,7 +154,7 @@ export const MessageRepository = {
       `)
       messageRows = result.rows
     } else {
-      const result = await client.query<MessageRow>(sql`
+      const result = await db.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
           AND deleted_at IS NULL
@@ -171,7 +167,7 @@ export const MessageRepository = {
     if (messageRows.length === 0) return []
 
     const messageIds = messageRows.map((r) => r.id)
-    const reactionsResult = await client.query<ReactionRow>(sql`
+    const reactionsResult = await db.query<ReactionRow>(sql`
       SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
@@ -180,8 +176,8 @@ export const MessageRepository = {
     return messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {})).reverse()
   },
 
-  async insert(client: PoolClient, params: InsertMessageParams): Promise<Message> {
-    const result = await client.query<MessageRow>(sql`
+  async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
+    const result = await db.query<MessageRow>(sql`
       INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content, content_format)
       VALUES (
         ${params.id},
@@ -197,58 +193,58 @@ export const MessageRepository = {
     return mapRowToMessage(result.rows[0])
   },
 
-  async updateContent(client: PoolClient, id: string, content: string): Promise<Message | null> {
-    const result = await client.query<MessageRow>(sql`
+  async updateContent(db: Querier, id: string, content: string): Promise<Message | null> {
+    const result = await db.query<MessageRow>(sql`
       UPDATE messages
       SET content = ${content}, edited_at = NOW()
       WHERE id = ${id}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     if (!result.rows[0]) return null
-    return this.findById(client, id)
+    return this.findById(db, id)
   },
 
-  async softDelete(client: PoolClient, id: string): Promise<Message | null> {
-    const result = await client.query<MessageRow>(sql`
+  async softDelete(db: Querier, id: string): Promise<Message | null> {
+    const result = await db.query<MessageRow>(sql`
       UPDATE messages
       SET deleted_at = NOW()
       WHERE id = ${id}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     if (!result.rows[0]) return null
-    return this.findById(client, id)
+    return this.findById(db, id)
   },
 
-  async addReaction(client: PoolClient, messageId: string, emoji: string, userId: string): Promise<Message | null> {
+  async addReaction(db: Querier, messageId: string, emoji: string, userId: string): Promise<Message | null> {
     // Insert into reactions table (ON CONFLICT DO NOTHING handles duplicates)
-    await client.query(sql`
+    await db.query(sql`
       INSERT INTO reactions (message_id, user_id, emoji)
       VALUES (${messageId}, ${userId}, ${emoji})
       ON CONFLICT DO NOTHING
     `)
-    return this.findById(client, messageId)
+    return this.findById(db, messageId)
   },
 
-  async removeReaction(client: PoolClient, messageId: string, emoji: string, userId: string): Promise<Message | null> {
-    await client.query(sql`
+  async removeReaction(db: Querier, messageId: string, emoji: string, userId: string): Promise<Message | null> {
+    await db.query(sql`
       DELETE FROM reactions
       WHERE message_id = ${messageId}
         AND user_id = ${userId}
         AND emoji = ${emoji}
     `)
-    return this.findById(client, messageId)
+    return this.findById(db, messageId)
   },
 
-  async incrementReplyCount(client: PoolClient, id: string): Promise<void> {
-    await client.query(sql`
+  async incrementReplyCount(db: Querier, id: string): Promise<void> {
+    await db.query(sql`
       UPDATE messages
       SET reply_count = reply_count + 1
       WHERE id = ${id}
     `)
   },
 
-  async decrementReplyCount(client: PoolClient, id: string): Promise<void> {
-    await client.query(sql`
+  async decrementReplyCount(db: Querier, id: string): Promise<void> {
+    await db.query(sql`
       UPDATE messages
       SET reply_count = GREATEST(reply_count - 1, 0)
       WHERE id = ${id}
@@ -259,10 +255,10 @@ export const MessageRepository = {
    * Get reply counts for multiple messages.
    * Returns a map of messageId -> replyCount
    */
-  async getReplyCountsBatch(client: PoolClient, messageIds: string[]): Promise<Map<string, number>> {
+  async getReplyCountsBatch(db: Querier, messageIds: string[]): Promise<Map<string, number>> {
     if (messageIds.length === 0) return new Map()
 
-    const result = await client.query<{ id: string; reply_count: number }>(sql`
+    const result = await db.query<{ id: string; reply_count: number }>(sql`
       SELECT id, reply_count FROM messages
       WHERE id = ANY(${messageIds})
     `)
@@ -278,9 +274,9 @@ export const MessageRepository = {
    * Update the embedding for a message.
    * Used by the embedding worker after generating embeddings.
    */
-  async updateEmbedding(client: PoolClient, id: string, embedding: number[]): Promise<void> {
+  async updateEmbedding(db: Querier, id: string, embedding: number[]): Promise<void> {
     const embeddingLiteral = `[${embedding.join(",")}]`
-    await client.query(sql`
+    await db.query(sql`
       UPDATE messages
       SET embedding = ${embeddingLiteral}::vector
       WHERE id = ${id}
@@ -291,11 +287,11 @@ export const MessageRepository = {
    * Find messages from threads rooted at the given parent messages.
    * Returns a map of parentMessageId -> thread messages (in chronological order).
    */
-  async findThreadMessages(client: PoolClient, parentMessageIds: string[]): Promise<Map<string, Message[]>> {
+  async findThreadMessages(db: Querier, parentMessageIds: string[]): Promise<Map<string, Message[]>> {
     if (parentMessageIds.length === 0) return new Map()
 
     // Find thread streams for these parent messages and get their messages
-    const result = await client.query<MessageRow & { parent_message_id: string }>(sql`
+    const result = await db.query<MessageRow & { parent_message_id: string }>(sql`
       SELECT
         m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
         m.content, m.content_format, m.reply_count,
@@ -313,7 +309,7 @@ export const MessageRepository = {
 
     // Fetch reactions for all messages
     const messageIds = result.rows.map((r) => r.id)
-    const reactionsResult = await client.query<ReactionRow>(sql`
+    const reactionsResult = await db.query<ReactionRow>(sql`
       SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
@@ -338,21 +334,21 @@ export const MessageRepository = {
    * Messages are returned in chronological order (ascending sequence).
    */
   async findSurrounding(
-    client: PoolClient,
+    db: Querier,
     messageId: string,
     streamId: string,
     messagesBefore: number,
     messagesAfter: number
   ): Promise<Message[]> {
     // Get the target message's sequence number
-    const targetResult = await client.query<{ sequence: string }>(
+    const targetResult = await db.query<{ sequence: string }>(
       sql`SELECT sequence FROM messages WHERE id = ${messageId} AND stream_id = ${streamId}`
     )
     if (!targetResult.rows[0]) return []
     const targetSequence = targetResult.rows[0].sequence
 
     // Get messages before and after (including the target)
-    const result = await client.query<MessageRow>(sql`
+    const result = await db.query<MessageRow>(sql`
       (
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
@@ -376,7 +372,7 @@ export const MessageRepository = {
     if (result.rows.length === 0) return []
 
     const messageIds = result.rows.map((r) => r.id)
-    const reactionsResult = await client.query<ReactionRow>(sql`
+    const reactionsResult = await db.query<ReactionRow>(sql`
       SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)
@@ -390,7 +386,7 @@ export const MessageRepository = {
    * Used by agents to check for new messages during their loop.
    */
   async listSince(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     sinceSequence: bigint,
     options?: { excludeAuthorId?: string; limit?: number }
@@ -400,7 +396,7 @@ export const MessageRepository = {
 
     let messageRows: MessageRow[]
     if (excludeAuthorId) {
-      const result = await client.query<MessageRow>(sql`
+      const result = await db.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
           AND sequence > ${sinceSequence.toString()}
@@ -411,7 +407,7 @@ export const MessageRepository = {
       `)
       messageRows = result.rows
     } else {
-      const result = await client.query<MessageRow>(sql`
+      const result = await db.query<MessageRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
         WHERE stream_id = ${streamId}
           AND sequence > ${sinceSequence.toString()}
@@ -425,7 +421,7 @@ export const MessageRepository = {
     if (messageRows.length === 0) return []
 
     const messageIds = messageRows.map((r) => r.id)
-    const reactionsResult = await client.query<ReactionRow>(sql`
+    const reactionsResult = await db.query<ReactionRow>(sql`
       SELECT message_id, user_id, emoji FROM reactions
       WHERE message_id = ANY(${messageIds})
     `)

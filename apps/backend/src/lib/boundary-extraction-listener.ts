@@ -1,4 +1,4 @@
-import type { Pool } from "pg"
+import { type DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import type { OutboxEvent } from "../repositories/outbox-repository"
@@ -16,19 +16,21 @@ import { logger } from "./logger"
  * 3. Dispatch durable job to pg-boss for LLM processing
  */
 export function createBoundaryExtractionListener(
-  pool: Pool,
+  pools: DatabasePools,
   jobQueue: JobQueueManager,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "boundary-extraction",
     handler: async (outboxEvent: OutboxEvent) => {
       if (outboxEvent.eventType !== "message:created") {
         return
       }
 
-      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pool)
+      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pools.main)
       if (!payload) {
         logger.debug({ eventId: outboxEvent.id }, "Boundary extraction: malformed event, skipping")
         return

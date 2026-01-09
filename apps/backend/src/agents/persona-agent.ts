@@ -1,5 +1,5 @@
-import type { Pool, PoolClient } from "pg"
-import { withClient } from "../db"
+import type { Pool } from "pg"
+import { withClient, type Querier } from "../db"
 import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType, type UserPreferences } from "@threa/types"
 import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -22,6 +22,21 @@ export type WithSessionResult =
 
 /**
  * Manages the complete lifecycle of an agent session.
+ *
+ * IMPORTANT: This function does NOT hold a database connection during the work callback.
+ * The work callback receives the pool (not a client) so it can acquire short-lived
+ * connections as needed. This prevents connection pool exhaustion during long-running
+ * AI operations.
+ *
+ * The connection lifecycle is:
+ * 1. Phase 1: Acquire connection → atomically create/find session → release
+ * 2. Phase 2: Run work (AI call) WITHOUT holding connection
+ * 3. Phase 3: Acquire connection → atomically complete session → release
+ *
+ * Race condition prevention:
+ * - Uses a partial unique index (stream_id WHERE status='running') to ensure
+ *   only one running session per stream
+ * - INSERT with ON CONFLICT DO NOTHING atomically checks and creates
  */
 export async function withSession(
   params: {
@@ -33,29 +48,20 @@ export async function withSession(
     initialSequence: bigint
   },
   work: (
-    client: PoolClient,
-    session: AgentSession
+    session: AgentSession,
+    pool: Pool
   ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
 ): Promise<WithSessionResult> {
   const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
 
-  return withClient(pool, async (client) => {
-    // Check for already running session on this stream (concurrency control)
-    const runningSession = await AgentSessionRepository.findRunningByStream(client, streamId)
-    if (runningSession) {
-      logger.info({ streamId, existingSessionId: runningSession.id }, "Agent already running for stream, skipping")
-      return {
-        status: "skipped" as const,
-        sessionId: null,
-        reason: "agent already running for stream",
-      }
-    }
+  // Phase 1: Session setup (short-lived connection)
+  // Uses atomic insert with ON CONFLICT to prevent race conditions
+  const setupResult = await withClient(pool, async (db) => {
+    // Check if we already have a session for this trigger message
+    const existingSession = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
 
-    // Find or create session
-    let session = await AgentSessionRepository.findByTriggerMessage(client, triggerMessageId)
-
-    if (session?.status === SessionStatuses.COMPLETED) {
-      logger.info({ sessionId: session.id }, "Session already completed")
+    if (existingSession?.status === SessionStatuses.COMPLETED) {
+      logger.info({ sessionId: existingSession.id }, "Session already completed")
       return {
         status: "skipped" as const,
         sessionId: null,
@@ -63,61 +69,87 @@ export async function withSession(
       }
     }
 
-    if (!session) {
-      session = await AgentSessionRepository.insert(client, {
-        id: sessionId(),
-        streamId,
-        personaId,
-        triggerMessageId,
-        status: SessionStatuses.RUNNING,
+    // If there's an existing session (retry scenario), try to resume it
+    if (existingSession) {
+      const session = await AgentSessionRepository.updateStatus(db, existingSession.id, SessionStatuses.RUNNING, {
         serverId,
       })
-      // Set initial last seen sequence
-      await AgentSessionRepository.updateLastSeenSequence(client, session.id, initialSequence)
-    } else {
-      session = await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.RUNNING, {
-        serverId,
-      })
+      if (!session) {
+        return {
+          status: "skipped" as const,
+          sessionId: null,
+          reason: "failed to resume session",
+        }
+      }
+      return { status: "ready" as const, session }
     }
 
+    // No existing session - atomically create one with RUNNING status
+    // ON CONFLICT handles the case where another request created a session concurrently
+    const session = await AgentSessionRepository.insertRunningOrSkip(db, {
+      id: sessionId(),
+      streamId,
+      personaId,
+      triggerMessageId,
+      serverId,
+      initialSequence,
+    })
+
     if (!session) {
+      // Another request won the race and created a session first
+      logger.info({ streamId }, "Agent already running for stream (concurrent insert), skipping")
       return {
         status: "skipped" as const,
         sessionId: null,
-        reason: "failed to create session",
+        reason: "agent already running for stream",
       }
     }
 
-    // Run work and track status
+    return { status: "ready" as const, session }
+  })
+
+  // If setup resulted in skip, return early
+  if (setupResult.status === "skipped") {
+    return setupResult
+  }
+
+  const { session } = setupResult
+
+  // Phase 2: Run work WITHOUT holding connection
+  // The work callback can use pool directly for short-lived queries
+  try {
+    const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
+
+    // Phase 3: Complete session atomically (single query updates both sequence and status)
     try {
-      const { messagesSent, sentMessageIds, lastSeenSequence } = await work(client, session)
-
-      // Update last seen sequence before completing
-      await AgentSessionRepository.updateLastSeenSequence(client, session.id, lastSeenSequence)
-
-      await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.COMPLETED, {
+      await AgentSessionRepository.completeSession(pool, session.id, {
+        lastSeenSequence,
         responseMessageId: sentMessageIds[0] ?? null,
         sentMessageIds,
       })
-
-      logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
-
-      return {
-        status: "completed" as const,
-        sessionId: session.id,
-        messagesSent,
-        sentMessageIds,
-      }
     } catch (err) {
-      logger.error({ err, sessionId: session.id }, "Session failed")
-
-      await AgentSessionRepository.updateStatus(client, session.id, SessionStatuses.FAILED, {
-        error: String(err),
-      }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
-
-      return { status: "failed" as const, sessionId: session.id }
+      logger.error({ err, sessionId: session.id }, "Failed to complete session, orphan cleanup will recover")
+      throw err
     }
-  })
+
+    logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
+
+    return {
+      status: "completed" as const,
+      sessionId: session.id,
+      messagesSent,
+      sentMessageIds,
+    }
+  } catch (err) {
+    logger.error({ err, sessionId: session.id }, "Session failed")
+
+    // Phase 3 (error): Mark session as failed (short-lived connection)
+    await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.FAILED, {
+      error: String(err),
+    }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
+
+    return { status: "failed" as const, sessionId: session.id }
+  }
 }
 
 /**
@@ -229,9 +261,10 @@ export class PersonaAgent {
         serverId,
         initialSequence,
       },
-      async (client, session) => {
+      async (session, db) => {
         // Fetch trigger message to get the invoking user
-        const triggerMessage = await MessageRepository.findById(client, messageId)
+        // Note: db is Pool here - repos accept Querier which Pool satisfies
+        const triggerMessage = await MessageRepository.findById(db, messageId)
         const invokingUserId = triggerMessage?.authorType === "user" ? triggerMessage.authorId : undefined
 
         // Fetch user preferences if we have an invoking user
@@ -241,12 +274,12 @@ export class PersonaAgent {
         }
 
         // Build stream context with temporal information
-        const context = await buildStreamContext(client, stream, { preferences })
+        const context = await buildStreamContext(db, stream, { preferences })
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
         if (trigger === "mention" && triggerMessage?.authorType === "user") {
-          const mentioner = await UserRepository.findById(client, triggerMessage.authorId)
+          const mentioner = await UserRepository.findById(db, triggerMessage.authorId)
           mentionerName = mentioner?.name ?? undefined
         }
 
@@ -285,12 +318,13 @@ export class PersonaAgent {
         }
 
         // Create callbacks for the response generator
+        // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
           sendMessage: doSendMessage,
           sendMessageWithSources: doSendMessage,
 
           checkNewMessages: async (checkStreamId: string, sinceSequence: bigint, excludeAuthorId: string) => {
-            const messages = await MessageRepository.listSince(client, checkStreamId, sinceSequence, {
+            const messages = await MessageRepository.listSince(db, checkStreamId, sinceSequence, {
               excludeAuthorId,
             })
             return messages.map((m) => ({
@@ -301,14 +335,15 @@ export class PersonaAgent {
           },
 
           updateLastSeenSequence: async (updateSessionId: string, sequence: bigint) => {
-            await AgentSessionRepository.updateLastSeenSequence(client, updateSessionId, sequence)
+            await AgentSessionRepository.updateLastSeenSequence(db, updateSessionId, sequence)
           },
         }
 
         // Format messages with timestamps if temporal context is available
         const formattedMessages = formatMessagesWithTemporal(context.conversationHistory, context)
 
-        // Generate response
+        // Generate response - this is the long-running AI call
+        // No database connection is held during this operation
         const aiResult = await responseGenerator.run(
           {
             threadId: session.id,

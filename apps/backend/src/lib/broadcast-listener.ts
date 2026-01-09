@@ -1,4 +1,3 @@
-import { Pool } from "pg"
 import { Server } from "socket.io"
 import { OutboxListener, OutboxListenerConfig } from "./outbox-listener"
 import {
@@ -15,6 +14,7 @@ import {
   type UserPreferencesUpdatedOutboxPayload,
 } from "../repositories/outbox-repository"
 import type { UserSocketRegistry } from "./user-socket-registry"
+import type { DatabasePools } from "../db"
 import { logger } from "./logger"
 
 /**
@@ -28,13 +28,15 @@ import { logger } from "./logger"
  * while non-thread stream:created events go to the workspace room (so all clients see new channels/scratchpads).
  */
 export function createBroadcastListener(
-  pool: Pool,
+  pools: DatabasePools,
   io: Server,
   userSocketRegistry: UserSocketRegistry,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
 ): OutboxListener {
-  return new OutboxListener(pool, {
+  return new OutboxListener({
     ...config,
+    listenPool: pools.listen,
+    queryPool: pools.main,
     listenerId: "broadcast",
     handler: async (event) => {
       const { workspaceId } = event.payload
