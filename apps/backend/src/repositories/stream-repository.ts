@@ -117,11 +117,9 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
-  async findByIds(client: PoolClient, ids: string[]): Promise<Stream[]> {
+  async findByIds(db: Querier, ids: string[]): Promise<Stream[]> {
     if (ids.length === 0) return []
-    const result = await client.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ANY(${ids})`
-    )
+    const result = await db.query<StreamRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ANY(${ids})`)
     return result.rows.map(mapRowToStream)
   },
 
@@ -387,7 +385,7 @@ export const StreamRepository = {
    * Only searches within the provided stream IDs (for access control).
    */
   async searchByName(
-    client: PoolClient,
+    db: Querier,
     params: {
       streamIds: string[]
       query: string
@@ -402,7 +400,7 @@ export const StreamRepository = {
 
     // Use separate queries for type-filtered vs unfiltered to avoid nested sql fragments
     if (types && types.length > 0) {
-      const result = await client.query<StreamRow>(sql`
+      const result = await db.query<StreamRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)},
           GREATEST(
             COALESCE(similarity(display_name, ${query}), 0),
@@ -423,7 +421,7 @@ export const StreamRepository = {
       return result.rows.map(mapRowToStream)
     }
 
-    const result = await client.query<StreamRow>(sql`
+    const result = await db.query<StreamRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)},
         GREATEST(
           COALESCE(similarity(display_name, ${query}), 0),

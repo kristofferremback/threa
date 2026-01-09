@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../../db"
 import type { StreamType } from "@threa/types"
 import { StreamTypes, Visibilities } from "@threa/types"
 import { StreamRepository, type Stream } from "../../repositories/stream-repository"
@@ -38,14 +38,11 @@ export interface ComputeAccessSpecParams {
  * - DM: Union of all DM participants' access
  * - Thread: Inherits from root stream
  */
-export async function computeAgentAccessSpec(
-  client: PoolClient,
-  params: ComputeAccessSpecParams
-): Promise<AgentAccessSpec> {
+export async function computeAgentAccessSpec(db: Querier, params: ComputeAccessSpecParams): Promise<AgentAccessSpec> {
   const { stream, invokingUserId } = params
 
   // For threads, compute based on root stream
-  const effectiveStream = stream.rootStreamId ? await StreamRepository.findById(client, stream.rootStreamId) : stream
+  const effectiveStream = stream.rootStreamId ? await StreamRepository.findById(db, stream.rootStreamId) : stream
 
   if (!effectiveStream) {
     // Orphaned thread - fall back to public only
@@ -69,7 +66,7 @@ export async function computeAgentAccessSpec(
 
     case StreamTypes.DM: {
       // DM: Union of all participants' access
-      const members = await StreamMemberRepository.list(client, { streamId: effectiveStream.id })
+      const members = await StreamMemberRepository.list(db, { streamId: effectiveStream.id })
       const userIds = members.map((m) => m.userId)
       return { type: "user_union", userIds }
     }

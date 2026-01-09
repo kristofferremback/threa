@@ -216,9 +216,9 @@ export const UserRepository = {
    * Uses pg_trgm trigram similarity for fuzzy matching (handles typos),
    * combined with ILIKE for exact substring matches.
    */
-  async searchByNameOrEmail(client: PoolClient, workspaceId: string, query: string, limit: number): Promise<User[]> {
+  async searchByNameOrEmail(db: Querier, workspaceId: string, query: string, limit: number): Promise<User[]> {
     const pattern = `%${query}%`
-    const result = await client.query<UserRow>(sql`
+    const result = await db.query<UserRow>(sql`
       SELECT DISTINCT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at,
         GREATEST(
           similarity(u.name, ${query}),

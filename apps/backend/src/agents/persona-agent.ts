@@ -313,7 +313,7 @@ export class PersonaAgent {
           // Capture DM participant IDs if needed
           let dmParticipantIds: string[] | undefined
           if (stream.type === StreamTypes.DM) {
-            const members = await StreamMemberRepository.list(client, { streamId })
+            const members = await StreamMemberRepository.list(db, { streamId })
             dmParticipantIds = members.map((m) => m.userId)
           }
 
@@ -364,17 +364,13 @@ export class PersonaAgent {
         let searchCallbacks: SearchToolsCallbacks | undefined
         if (invokingUserId) {
           // Compute access spec for search context
-          const accessSpec = await computeAgentAccessSpec(client, {
+          const accessSpec = await computeAgentAccessSpec(db, {
             stream,
             invokingUserId,
           })
 
           // Get accessible stream IDs for the agent's context
-          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
-            client,
-            accessSpec,
-            workspaceId
-          )
+          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
 
           searchCallbacks = {
             searchMessages: async (input) => {
@@ -387,7 +383,7 @@ export class PersonaAgent {
               })
 
               // Enrich with author and stream names, then map to MessageSearchResult
-              const enriched = await enrichMessageSearchResults(client, results)
+              const enriched = await enrichMessageSearchResults(db, results)
               return enriched.map((r) => ({
                 id: r.id,
                 content: r.content,
@@ -399,7 +395,7 @@ export class PersonaAgent {
 
             searchStreams: async (input) => {
               // Use trigram search for fuzzy matching on stream names
-              const streams = await StreamRepository.searchByName(client, {
+              const streams = await StreamRepository.searchByName(db, {
                 streamIds: accessibleStreamIds,
                 query: input.query,
                 types: input.types,
@@ -415,7 +411,7 @@ export class PersonaAgent {
             },
 
             searchUsers: async (input) => {
-              const users = await UserRepository.searchByNameOrEmail(client, workspaceId, input.query, 10)
+              const users = await UserRepository.searchByNameOrEmail(db, workspaceId, input.query, 10)
               return users.map((u) => ({
                 id: u.id,
                 name: u.name,
@@ -430,7 +426,7 @@ export class PersonaAgent {
               }
 
               // Get recent messages from the stream (returns newest first)
-              const messages = await MessageRepository.list(client, input.streamId, {
+              const messages = await MessageRepository.list(db, input.streamId, {
                 limit: input.limit ?? 10,
               })
 
@@ -442,8 +438,8 @@ export class PersonaAgent {
               const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
 
               const [users, personas] = await Promise.all([
-                userIds.length > 0 ? UserRepository.findByIds(client, userIds) : Promise.resolve([]),
-                personaIds.length > 0 ? PersonaRepository.findByIds(client, personaIds) : Promise.resolve([]),
+                userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
               ])
 
               const userMap = new Map(users.map((u) => [u.id, u.name]))

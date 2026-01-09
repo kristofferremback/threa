@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../../db"
 import type { Memo } from "../../repositories/memo-repository"
 import { UserRepository } from "../../repositories/user-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
@@ -110,7 +110,7 @@ export interface RawMessageSearchResult {
  * This is a shared utility used by both the Researcher and PersonaAgent search callbacks.
  */
 export async function enrichMessageSearchResults(
-  client: PoolClient,
+  db: Querier,
   results: RawMessageSearchResult[]
 ): Promise<EnrichedMessageResult[]> {
   if (results.length === 0) return []
@@ -131,9 +131,9 @@ export async function enrichMessageSearchResults(
 
   // Batch fetch users, personas, streams
   const [users, personas, streams] = await Promise.all([
-    userIds.size > 0 ? UserRepository.findByIds(client, [...userIds]) : Promise.resolve([]),
-    personaIds.size > 0 ? PersonaRepository.findByIds(client, [...personaIds]) : Promise.resolve([]),
-    StreamRepository.findByIds(client, [...streamIds]),
+    userIds.size > 0 ? UserRepository.findByIds(db, [...userIds]) : Promise.resolve([]),
+    personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
+    StreamRepository.findByIds(db, [...streamIds]),
   ])
 
   // Build lookup maps
