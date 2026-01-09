@@ -1,10 +1,33 @@
-import { useQueries } from "@tanstack/react-query"
-import { useStreamService } from "@/contexts"
+import { useMemo } from "react"
+import { useQueries, useQueryClient } from "@tanstack/react-query"
+import { useStreamService, type StreamService } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 
 function isDraftId(id: string): boolean {
   return id.startsWith("draft_")
+}
+
+// Create a stable query function factory
+function createBootstrapQueryFn(streamService: StreamService, workspaceId: string, streamId: string) {
+  return async () => {
+    const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+    const now = Date.now()
+
+    // Cache stream and events to IndexedDB (same as useStreamBootstrap)
+    await Promise.all([
+      db.streams.put({
+        ...bootstrap.stream,
+        pinned: bootstrap.membership?.pinned,
+        muted: bootstrap.membership?.muted,
+        lastReadEventId: bootstrap.membership?.lastReadEventId,
+        _cachedAt: now,
+      }),
+      db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
+    ])
+
+    return bootstrap
+  }
 }
 
 /**
@@ -13,39 +36,55 @@ function isDraftId(id: string): boolean {
  */
 export function useCoordinatedStreamQueries(workspaceId: string, streamIds: string[]) {
   const streamService = useStreamService()
+  const queryClient = useQueryClient()
 
   // Filter out draft IDs - they don't need server fetches
-  const serverStreamIds = streamIds.filter((id) => !isDraftId(id))
+  const serverStreamIds = useMemo(() => streamIds.filter((id) => !isDraftId(id)), [streamIds])
 
-  const results = useQueries({
-    queries: serverStreamIds.map((streamId) => ({
-      queryKey: streamKeys.bootstrap(workspaceId, streamId),
-      queryFn: async () => {
-        const bootstrap = await streamService.bootstrap(workspaceId, streamId)
-        const now = Date.now()
+  // Check which queries have already errored - don't re-enable them.
+  // Note: queryClient is stable (never changes reference), so this memo only re-runs
+  // when serverStreamIds or workspaceId change. This is intentional - we want to check
+  // cached query state when the stream list changes, but not re-check on every render.
+  // Queries that error after mount will still be caught because useQueries tracks them.
+  const erroredStreamIds = useMemo(() => {
+    const errored = new Set<string>()
+    for (const streamId of serverStreamIds) {
+      const state = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
+      if (state?.status === "error") {
+        errored.add(streamId)
+      }
+    }
+    return errored
+  }, [serverStreamIds, workspaceId, queryClient])
 
-        // Cache stream and events to IndexedDB (same as useStreamBootstrap)
-        await Promise.all([
-          db.streams.put({
-            ...bootstrap.stream,
-            pinned: bootstrap.membership?.pinned,
-            muted: bootstrap.membership?.muted,
-            lastReadEventId: bootstrap.membership?.lastReadEventId,
-            _cachedAt: now,
-          }),
-          db.events.bulkPut(bootstrap.events.map((e) => ({ ...e, _cachedAt: now }))),
-        ])
+  // Memoize the queries array to prevent unnecessary re-renders
+  const queries = useMemo(
+    () =>
+      serverStreamIds.map((streamId) => ({
+        queryKey: streamKeys.bootstrap(workspaceId, streamId),
+        queryFn: createBootstrapQueryFn(streamService, workspaceId, streamId),
+        // Don't enable queries that have already errored to prevent continuous refetch loops
+        enabled: !!workspaceId && !erroredStreamIds.has(streamId),
+        staleTime: Infinity, // Never consider data stale
+        gcTime: Infinity, // Never garbage collect
+        // Prevent ALL automatic refetching
+        retry: false,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        // Disable structural sharing to avoid issues with the dynamic queries array.
+        // Since we create new query objects when the stream list changes, structural
+        // sharing can cause stale references. Worth the extra re-renders for correctness.
+        structuralSharing: false,
+      })),
+    [serverStreamIds, workspaceId, streamService, erroredStreamIds]
+  )
 
-        return bootstrap
-      },
-      enabled: !!workspaceId,
-      // Match useStreamBootstrap: always refetch to ensure fresh data
-      // (socket events may be missed when not subscribed to a stream's room)
-      staleTime: 0,
-    })),
-  })
+  const results = useQueries({ queries })
 
-  const isLoading = results.some((r) => r.isLoading)
+  // A query is considered "loading" only if it's fetching AND hasn't errored.
+  // Errored queries should not block the UI - let components handle the error.
+  const isLoading = results.some((r) => r.isLoading && !r.isError)
   const isError = results.some((r) => r.isError)
   const errors = results.filter((r) => r.error).map((r) => r.error)
 

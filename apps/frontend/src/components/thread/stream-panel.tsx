@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/side-panel"
 import { useStreamBootstrap } from "@/hooks"
 import { StreamContent } from "@/components/timeline"
+import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { ThreadHeader } from "./thread-header"
 import { StreamTypes } from "@threa/types"
 
@@ -21,7 +22,7 @@ export function StreamPanel({ workspaceId, streamId, onClose }: StreamPanelProps
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
 
-  const { data: bootstrap } = useStreamBootstrap(workspaceId, streamId)
+  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, streamId)
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
 
@@ -36,12 +37,14 @@ export function StreamPanel({ workspaceId, streamId, onClose }: StreamPanelProps
         <SidePanelClose onClose={onClose} />
       </SidePanelHeader>
       <SidePanelContent className="flex flex-col">
-        <StreamContent
-          workspaceId={workspaceId}
-          streamId={streamId}
-          highlightMessageId={highlightMessageId}
-          stream={stream}
-        />
+        <StreamErrorBoundary streamId={streamId} queryError={error}>
+          <StreamContent
+            workspaceId={workspaceId}
+            streamId={streamId}
+            highlightMessageId={highlightMessageId}
+            stream={stream}
+          />
+        </StreamErrorBoundary>
       </SidePanelContent>
     </SidePanel>
   )

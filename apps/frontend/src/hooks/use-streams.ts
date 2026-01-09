@@ -55,6 +55,12 @@ export function useStream(workspaceId: string, streamId: string) {
 
 export function useStreamBootstrap(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
   const streamService = useStreamService()
+  const queryClient = useQueryClient()
+
+  // Check if this query has already errored - don't re-enable if so
+  // This prevents continuous refetching when a stream doesn't exist
+  const existingQueryState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
+  const hasExistingError = existingQueryState?.status === "error"
 
   return useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId),
@@ -76,11 +82,18 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 
       return bootstrap
     },
-    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId,
-    // Always refetch on mount to ensure fresh data when switching streams
-    // This overrides the global 30s staleTime since we may miss socket events
-    // when not subscribed to a stream's room
-    staleTime: 0,
+    // Don't enable if the query has already errored to prevent continuous refetch loops
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !hasExistingError,
+    // Match coordinated loading options to share cache correctly and prevent
+    // multiple observers from conflicting. Coordinated loading handles initial
+    // fetch, and socket events handle updates.
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    structuralSharing: false,
   })
 }
 

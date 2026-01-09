@@ -12,6 +12,7 @@ import {
 } from "@/hooks"
 import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
+import { ErrorView } from "@/components/error-view"
 import { MentionableMarkdownWrapper } from "@/components/ui/markdown-content"
 import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { StreamTypes, type Stream } from "@threa/types"
@@ -113,9 +114,11 @@ export function StreamContent({
 
   if (error && !isDraft) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-destructive">Failed to load timeline</p>
-      </div>
+      <ErrorView
+        className="h-full border-0"
+        title="Failed to Load Messages"
+        description="We couldn't load the messages for this stream. Please refresh the page or try again later."
+      />
     )
   }
 

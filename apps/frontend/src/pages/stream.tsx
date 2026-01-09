@@ -13,20 +13,22 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { cn } from "@/lib/utils"
-import { useStreamOrDraft } from "@/hooks"
+import { useStreamOrDraft, useStreamError } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
+import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes } from "@threa/types"
-import { ApiError } from "@/api/client"
-import { StreamNotFoundPage } from "./stream-not-found"
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
+
+  // Unified error checking - checks both coordinated loading and direct query errors
+  const streamError = useStreamError(streamId, error)
 
   const isConversationViewOpen = searchParams.get("convView") === "open"
 
@@ -61,8 +63,9 @@ export function StreamPage() {
     return null
   }
 
-  if (error && ApiError.isApiError(error) && error.status === 404) {
-    return <StreamNotFoundPage workspaceId={workspaceId} />
+  // Show error page if stream has error (404/403)
+  if (streamError) {
+    return <StreamErrorView type={streamError.type} workspaceId={workspaceId} />
   }
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
