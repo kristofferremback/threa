@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
+import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
@@ -14,11 +15,13 @@ interface MessageInputProps {
 
 export function MessageInput({ workspaceId, streamId, disabled, disabledReason }: MessageInputProps) {
   const navigate = useNavigate()
+  const { preferences } = usePreferences()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
   const draftKey = getDraftMessageKey({ type: "stream", streamId })
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
+  const messageSendMode = preferences?.messageSendMode ?? "cmdEnter"
 
   const handleSubmit = useCallback(async () => {
     if (!composer.canSend) return
@@ -106,7 +109,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
         canSubmit={composer.canSend}
         isSubmitting={composer.isSending}
         hasFailed={composer.hasFailed}
-        placeholder="Type a message... (Cmd+Enter to send)"
+        messageSendMode={messageSendMode}
       />
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
     </div>

@@ -4,12 +4,57 @@
  * Creates the test database (worktree-specific) and MinIO bucket before servers start.
  * Port allocation is handled in playwright.config.ts.
  * Uses docker exec to avoid needing pg/s3 modules at root level.
+ *
+ * Local: Uses docker-compose.test.yml (ports 5455/9002) to avoid dev conflicts
+ * CI: Uses GitHub Actions services (ports 5454/9000)
  */
-import { execSync } from "child_process"
+import { execSync, spawnSync } from "child_process"
 import * as path from "path"
 
-const MINIO_CONTAINER = "threa-minio-1"
+const isCI = !!process.env.CI
+
 const MINIO_BUCKET = "threa-browser-test"
+const DB_PORT = isCI ? 5454 : 5455
+const MINIO_PORT = isCI ? 9000 : 9002
+
+/**
+ * Find a running container by name pattern.
+ * Returns the full container name or null if not found.
+ */
+function findContainer(pattern: string): string | null {
+  try {
+    const result = execSync(`docker ps --format '{{.Names}}' --filter 'name=${pattern}'`, {
+      encoding: "utf-8",
+    }).trim()
+    const containers = result.split("\n").filter(Boolean)
+    return containers[0] || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Get the container names for test infrastructure.
+ * In CI, uses the container names from GitHub Actions workflow.
+ * Locally, finds containers by the service name pattern from docker-compose.test.yml.
+ */
+function getContainerNames(): { postgres: string; minio: string } {
+  if (isCI) {
+    return { postgres: "postgres", minio: "minio" }
+  }
+
+  const postgres = findContainer("postgres-test")
+  const minio = findContainer("minio-test")
+
+  if (!postgres) {
+    throw new Error("No postgres-test container found. Run 'bun run test:db:start' first.")
+  }
+  if (!minio) {
+    throw new Error("No minio-test container found. Run 'bun run test:db:start' first.")
+  }
+
+  return { postgres, minio }
+}
 
 /**
  * Derive a unique database name from the current directory.
@@ -28,18 +73,31 @@ function deriveTestDatabaseName(): string {
 }
 
 /**
- * Find a running postgres container by name pattern.
+ * Start test containers from docker-compose.test.yml if not already running.
  */
-function findPostgresContainer(): string | null {
-  try {
-    const result = execSync("docker ps --format '{{.Names}}' --filter 'name=postgres'", {
-      encoding: "utf-8",
-    }).trim()
-    const containers = result.split("\n").filter(Boolean)
-    return containers.find((c) => c.startsWith("threa-postgres")) || containers[0] || null
-  } catch {
-    return null
+function startTestContainers(): void {
+  console.log("Starting test containers from docker-compose.test.yml...")
+
+  // Start containers (will be no-op if already running)
+  const result = spawnSync("docker", ["compose", "-f", "docker-compose.test.yml", "up", "-d", "--wait"], {
+    encoding: "utf-8",
+    stdio: "inherit",
+  })
+
+  if (result.status !== 0) {
+    throw new Error("Failed to start test containers")
   }
+
+  console.log("Test containers ready")
+}
+
+/**
+ * Check if test containers are running.
+ */
+function areTestContainersRunning(): boolean {
+  const postgres = findContainer("postgres-test")
+  const minio = findContainer("minio-test")
+  return postgres !== null && minio !== null
 }
 
 async function ensureTestDatabase(dbName: string, container: string): Promise<void> {
@@ -68,16 +126,21 @@ async function ensureTestDatabase(dbName: string, container: string): Promise<vo
   }
 }
 
-async function ensureMinioBucket(): Promise<void> {
+async function ensureMinioBucket(container: string): Promise<void> {
   try {
+    // Set up mc alias to point to the local minio server (inside the container, localhost:9000 is where minio listens)
+    execSync(`docker exec ${container} mc alias set local http://localhost:9000 minioadmin minioadmin`, {
+      encoding: "utf-8",
+    })
+
     // Check if bucket exists using mc (MinIO client) inside the container
-    const result = execSync(`docker exec ${MINIO_CONTAINER} mc ls local/${MINIO_BUCKET} 2>&1 || true`, {
+    const result = execSync(`docker exec ${container} mc ls local/${MINIO_BUCKET} 2>&1 || true`, {
       encoding: "utf-8",
     })
 
     if (result.includes("does not exist")) {
       console.log(`Creating MinIO bucket: ${MINIO_BUCKET}`)
-      execSync(`docker exec ${MINIO_CONTAINER} mc mb local/${MINIO_BUCKET}`, { encoding: "utf-8" })
+      execSync(`docker exec ${container} mc mb local/${MINIO_BUCKET}`, { encoding: "utf-8" })
     } else {
       console.log(`MinIO bucket exists: ${MINIO_BUCKET}`)
     }
@@ -97,18 +160,25 @@ export default async function globalSetup(): Promise<void> {
   // Derive worktree-specific database name
   const dbName = deriveTestDatabaseName()
   console.log(`Test database name: ${dbName}`)
+  console.log(`Environment: ${isCI ? "CI" : "Local"}`)
+  console.log(`Ports: postgres=${DB_PORT}, minio=${MINIO_PORT}`)
 
-  if (process.env.CI) {
+  if (isCI) {
     // In CI, database and bucket are created by the workflow before tests run
     console.log("CI environment detected - skipping local setup")
   } else {
-    const container = findPostgresContainer()
-    if (!container) {
-      throw new Error("No running postgres container found. Run 'bun run db:start' first.")
+    // Start test containers if not already running
+    if (!areTestContainersRunning()) {
+      startTestContainers()
+    } else {
+      console.log("Test containers already running")
     }
-    console.log(`Using postgres container: ${container}`)
-    await ensureTestDatabase(dbName, container)
-    await ensureMinioBucket()
+
+    const containers = getContainerNames()
+    console.log(`Using postgres container: ${containers.postgres}`)
+    console.log(`Using minio container: ${containers.minio}`)
+    await ensureTestDatabase(dbName, containers.postgres)
+    await ensureMinioBucket(containers.minio)
   }
 
   console.log("=== Setup Complete ===\n")
