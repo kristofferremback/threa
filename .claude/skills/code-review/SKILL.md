@@ -26,13 +26,19 @@ If a PR number was provided as an argument, use that. Otherwise, find the open P
 gh pr view --json number,title,url
 ```
 
-If no PR exists for the current branch and no number was provided, stop and tell the user.
+If no PR exists for the current branch and no number was provided, stop and tell the user:
+
+```
+No open PR found for current branch. Please provide a PR number: /code-review <number>
+```
 
 ### Step 2: Spawn Both Review Agents
 
 Use the Task tool to spawn TWO agents in parallel. Both calls should be in the SAME message to run concurrently.
 
 **CRITICAL**: Set `run_in_background: true` for both agents.
+
+**Note**: In the prompts below, replace `<NUMBER>`, `<TITLE>`, and `<URL>` with actual values from the `gh pr view` output.
 
 **Agent 1 - Code Review:**
 
@@ -45,7 +51,11 @@ prompt: |
 
   1. Run the /review slash command to review PR #<NUMBER>
   2. Format your findings as a well-structured markdown comment
-  3. Post the review as a PR comment using: gh pr comment <NUMBER> --body "<your review>"
+  3. Post the review as a PR comment using a heredoc to handle special characters:
+     gh pr comment <NUMBER> --body "$(cat <<'EOF'
+     <your review>
+     EOF
+     )"
   4. If posting fails, retry up to 3 times total before giving up
 
   PR Details:
@@ -73,7 +83,11 @@ prompt: |
 
   1. Run the /security-review slash command to review PR #<NUMBER>
   2. Format your findings as a well-structured markdown comment
-  3. Post the review as a PR comment using: gh pr comment <NUMBER> --body "<your review>"
+  3. Post the review as a PR comment using a heredoc to handle special characters:
+     gh pr comment <NUMBER> --body "$(cat <<'EOF'
+     <your review>
+     EOF
+     )"
   4. If posting fails, retry up to 3 times total before giving up
 
   PR Details:
@@ -101,6 +115,8 @@ TaskOutput(task_id: "<agent2_task_id>", block: true, timeout: 300000)
 ```
 
 The 5-minute timeout accounts for large PRs. Both TaskOutput calls can be made in parallel.
+
+**If a timeout occurs**: Report the agent as `TIMEOUT` rather than `FAILED`, and note that the review may still be in progress. The user can check the PR comments manually or re-run the skill.
 
 ### Step 4: Report Results
 
@@ -146,3 +162,4 @@ Review results for PR #<NUMBER>:
 - Both agents run to completion independently (no fail-fast)
 - Reviews are posted as separate comments, not inline review comments
 - The agents have full context of the PR diff via the native slash commands
+- **Duplicate runs**: Running `/code-review` multiple times on the same PR will post duplicate comments. There is no deduplication mechanism.
