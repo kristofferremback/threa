@@ -2,10 +2,19 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { StreamContentSkeleton } from "@/components/loading"
+import { ApiError } from "@/api/client"
+
+interface StreamError {
+  streamId: string
+  status: number
+  error: Error
+}
 
 interface CoordinatedLoadingContextValue {
   isLoading: boolean
   showSkeleton: boolean
+  streamErrors: StreamError[]
+  getStreamError: (streamId: string) => StreamError | undefined
 }
 
 const CoordinatedLoadingContext = createContext<CoordinatedLoadingContextValue | null>(null)
@@ -22,9 +31,28 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const [showSkeleton, setShowSkeleton] = useState(false)
 
   const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
-  const { isLoading: streamsLoading } = useCoordinatedStreamQueries(workspaceId, streamIds)
+  const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
 
   const isLoading = workspaceLoading || streamsLoading
+
+  // Extract errors from stream query results
+  const streamErrors = useMemo<StreamError[]>(() => {
+    // Filter out draft IDs from streamIds to match the results array
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_"))
+    return results
+      .map((result, index) => {
+        if (!result.error) return null
+        const streamId = serverStreamIds[index]
+        const status = ApiError.isApiError(result.error) ? result.error.status : 500
+        return { streamId, status, error: result.error }
+      })
+      .filter((e): e is StreamError => e !== null)
+  }, [results, streamIds])
+
+  const getStreamError = useMemo(
+    () => (streamId: string) => streamErrors.find((e) => e.streamId === streamId),
+    [streamErrors]
+  )
 
   // Show skeleton after delay if still loading
   useEffect(() => {
@@ -44,8 +72,10 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     () => ({
       isLoading,
       showSkeleton: isLoading && showSkeleton,
+      streamErrors,
+      getStreamError,
     }),
-    [isLoading, showSkeleton]
+    [isLoading, showSkeleton, streamErrors, getStreamError]
   )
 
   return <CoordinatedLoadingContext.Provider value={value}>{children}</CoordinatedLoadingContext.Provider>
@@ -84,11 +114,16 @@ export function CoordinatedLoadingGate({ children }: CoordinatedLoadingGateProps
 /**
  * Gate for the main content area (Outlet).
  * Shows stream content skeleton during coordinated loading.
+ * When there are stream errors, render children so error pages can show.
  */
 export function MainContentGate({ children }: CoordinatedLoadingGateProps) {
-  const { isLoading } = useCoordinatedLoading()
+  const { isLoading, streamErrors } = useCoordinatedLoading()
 
-  if (isLoading) {
+  // If there are stream errors, render children so error pages can display
+  // This prevents infinite loading when a stream returns 404/403
+  const hasStreamErrors = streamErrors.length > 0
+
+  if (isLoading && !hasStreamErrors) {
     return <StreamContentSkeleton />
   }
 
