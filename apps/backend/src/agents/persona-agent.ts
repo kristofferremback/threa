@@ -121,11 +121,16 @@ export async function withSession(
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
     // Phase 3: Complete session atomically (single query updates both sequence and status)
-    await AgentSessionRepository.completeSession(pool, session.id, {
-      lastSeenSequence,
-      responseMessageId: sentMessageIds[0] ?? null,
-      sentMessageIds,
-    })
+    try {
+      await AgentSessionRepository.completeSession(pool, session.id, {
+        lastSeenSequence,
+        responseMessageId: sentMessageIds[0] ?? null,
+        sentMessageIds,
+      })
+    } catch (err) {
+      logger.error({ err, sessionId: session.id }, "Failed to complete session, orphan cleanup will recover")
+      throw err
+    }
 
     logger.info({ sessionId: session.id, messagesSent, sentMessageIds }, "Session completed")
 

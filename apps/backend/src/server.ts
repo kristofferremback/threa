@@ -309,8 +309,8 @@ export async function startServer(): Promise<ServerInstance> {
       })
     }
     logger.info("Closing database pools...")
-    await pools.main.end()
     await pools.listen.end()
+    await pools.main.end()
     logger.info("Server stopped")
   }
 

@@ -695,4 +695,79 @@ describe("Agent Session - Concurrency", () => {
     expect(results[1]).not.toBeNull()
     expect(results[1]!.id).toBe(session2Id)
   })
+
+  describe("insertRunningOrSkip", () => {
+    test("concurrent inserts for same stream result in exactly one session", async () => {
+      const testStreamId = streamId()
+      const testPersonaId = personaId()
+      const testMessageId1 = messageId()
+      const testMessageId2 = messageId()
+
+      // Fire two concurrent insertRunningOrSkip calls for the same stream
+      const [result1, result2] = await Promise.all([
+        AgentSessionRepository.insertRunningOrSkip(pool, {
+          id: sessionId(),
+          streamId: testStreamId,
+          personaId: testPersonaId,
+          triggerMessageId: testMessageId1,
+          serverId: "server-1",
+          initialSequence: BigInt(0),
+        }),
+        AgentSessionRepository.insertRunningOrSkip(pool, {
+          id: sessionId(),
+          streamId: testStreamId,
+          personaId: testPersonaId,
+          triggerMessageId: testMessageId2,
+          serverId: "server-2",
+          initialSequence: BigInt(0),
+        }),
+      ])
+
+      // Exactly one should succeed, the other should return null
+      const successCount = [result1, result2].filter((r) => r !== null).length
+      expect(successCount).toBe(1)
+
+      // Verify only one running session exists for this stream
+      const runningSessions = await pool.query(
+        `SELECT * FROM agent_sessions WHERE stream_id = $1 AND status = 'running'`,
+        [testStreamId]
+      )
+      expect(runningSessions.rows.length).toBe(1)
+    })
+
+    test("allows insert after previous session completed", async () => {
+      const testStreamId = streamId()
+      const testPersonaId = personaId()
+      const testMessageId1 = messageId()
+      const testMessageId2 = messageId()
+
+      // Create first session
+      const session1 = await AgentSessionRepository.insertRunningOrSkip(pool, {
+        id: sessionId(),
+        streamId: testStreamId,
+        personaId: testPersonaId,
+        triggerMessageId: testMessageId1,
+        serverId: "server-1",
+        initialSequence: BigInt(0),
+      })
+      expect(session1).not.toBeNull()
+
+      // Complete the first session
+      await AgentSessionRepository.completeSession(pool, session1!.id, {
+        lastSeenSequence: BigInt(10),
+      })
+
+      // Now a second session should be allowed
+      const session2 = await AgentSessionRepository.insertRunningOrSkip(pool, {
+        id: sessionId(),
+        streamId: testStreamId,
+        personaId: testPersonaId,
+        triggerMessageId: testMessageId2,
+        serverId: "server-2",
+        initialSequence: BigInt(10),
+      })
+      expect(session2).not.toBeNull()
+      expect(session2!.id).not.toBe(session1!.id)
+    })
+  })
 })
