@@ -152,6 +152,20 @@ export const UserRepository = {
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
+  /**
+   * Find a user by ID within a workspace.
+   * Only returns the user if they are a member of the specified workspace.
+   */
+  async findByIdInWorkspace(db: Querier, workspaceId: string, id: string): Promise<User | null> {
+    const result = await db.query<UserRow>(sql`
+      SELECT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at
+      FROM users u
+      INNER JOIN workspace_members wm ON wm.user_id = u.id
+      WHERE wm.workspace_id = ${workspaceId} AND u.id = ${id}
+    `)
+    return result.rows[0] ? mapRowToUser(result.rows[0]) : null
+  },
+
   async findByEmail(db: Querier, email: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
       SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
@@ -160,10 +174,16 @@ export const UserRepository = {
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },
 
-  async findBySlug(db: Querier, slug: string): Promise<User | null> {
+  /**
+   * Find a user by slug within a workspace.
+   * Only returns users who are members of the specified workspace.
+   */
+  async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<User | null> {
     const result = await db.query<UserRow>(sql`
-      SELECT id, email, name, slug, workos_user_id, timezone, locale, created_at, updated_at
-      FROM users WHERE slug = ${slug}
+      SELECT u.id, u.email, u.name, u.slug, u.workos_user_id, u.timezone, u.locale, u.created_at, u.updated_at
+      FROM users u
+      INNER JOIN workspace_members wm ON wm.user_id = u.id
+      WHERE wm.workspace_id = ${workspaceId} AND u.slug = ${slug}
     `)
     return result.rows[0] ? mapRowToUser(result.rows[0]) : null
   },

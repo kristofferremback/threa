@@ -124,12 +124,14 @@ export const StreamRepository = {
   },
 
   /**
-   * Find a stream by its slug.
+   * Find a stream by its slug within a workspace.
    * Slugs are case-insensitive for matching.
    */
-  async findBySlug(db: Querier, slug: string): Promise<Stream | null> {
+  async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<Stream | null> {
     const result = await db.query<StreamRow>(
-      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE LOWER(slug) = LOWER(${slug}) LIMIT 1`
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+          WHERE workspace_id = ${workspaceId} AND LOWER(slug) = LOWER(${slug})
+          LIMIT 1`
     )
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },

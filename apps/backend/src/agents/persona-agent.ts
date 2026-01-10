@@ -385,7 +385,7 @@ export class PersonaAgent {
               // Resolve optional stream filter
               let filterStreamIds = accessibleStreamIds
               if (input.stream) {
-                const resolved = await resolveStreamIdentifier(db, input.stream, accessibleStreamIds)
+                const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
                 if (!resolved.resolved) {
                   // Stream not found or not accessible - return empty results
                   return []
@@ -441,7 +441,7 @@ export class PersonaAgent {
 
             getStreamMessages: async (input) => {
               // Resolve the stream identifier (ID, slug, or #slug)
-              const resolved = await resolveStreamIdentifier(db, input.stream, accessibleStreamIds)
+              const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
               if (!resolved.resolved) {
                 // Stream not found or not accessible
                 return []

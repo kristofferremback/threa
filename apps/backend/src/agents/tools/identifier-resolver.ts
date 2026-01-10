@@ -53,18 +53,20 @@ function normalizeUserRef(value: string): string {
  * Resolve a stream identifier to its ID.
  *
  * @param db - Database client
+ * @param workspaceId - Workspace to scope the lookup to
  * @param identifier - Stream ID, slug, or #slug
  * @param accessibleStreamIds - Optional list of streams the agent can access (for validation)
  * @returns The resolved stream ID or an error reason
  *
  * @example
  * // All of these should resolve to the same stream:
- * resolveStreamIdentifier(db, "stream_01KEM8751NC7E01NTKF00A47BM")
- * resolveStreamIdentifier(db, "general")
- * resolveStreamIdentifier(db, "#general")
+ * resolveStreamIdentifier(db, workspaceId, "stream_01KEM8751NC7E01NTKF00A47BM")
+ * resolveStreamIdentifier(db, workspaceId, "general")
+ * resolveStreamIdentifier(db, workspaceId, "#general")
  */
 export async function resolveStreamIdentifier(
   db: Querier,
+  workspaceId: string,
   identifier: string,
   accessibleStreamIds?: string[]
 ): Promise<ResolveResult> {
@@ -86,7 +88,7 @@ export async function resolveStreamIdentifier(
   // Otherwise, treat as slug (strip # prefix if present)
   const slug = normalizeStreamRef(trimmed)
 
-  const stream = await StreamRepository.findBySlug(db, slug)
+  const stream = await StreamRepository.findBySlug(db, workspaceId, slug)
 
   if (!stream) {
     return { resolved: false, reason: `No stream found with slug: ${slug}` }
@@ -106,26 +108,37 @@ export async function resolveStreamIdentifier(
  * Resolve a user identifier to their ID.
  *
  * @param db - Database client
+ * @param workspaceId - Workspace to scope the lookup to
  * @param identifier - User ID, slug, or @slug
  * @returns The resolved user ID or an error reason
  *
  * @example
  * // All of these should resolve to the same user:
- * resolveUserIdentifier(db, "usr_01KEM8751NC7E01NTKF00A47BM")
- * resolveUserIdentifier(db, "kristoffer-remback")
- * resolveUserIdentifier(db, "@kristoffer-remback")
+ * resolveUserIdentifier(db, workspaceId, "usr_01KEM8751NC7E01NTKF00A47BM")
+ * resolveUserIdentifier(db, workspaceId, "kristoffer-remback")
+ * resolveUserIdentifier(db, workspaceId, "@kristoffer-remback")
  */
-export async function resolveUserIdentifier(db: Querier, identifier: string): Promise<ResolveResult> {
+export async function resolveUserIdentifier(
+  db: Querier,
+  workspaceId: string,
+  identifier: string
+): Promise<ResolveResult> {
   const trimmed = identifier.trim()
 
   if (!trimmed) {
     return { resolved: false, reason: "Empty identifier" }
   }
 
-  // If it looks like an ID, validate it exists
+  // If it looks like an ID, validate it exists in this workspace
   if (isUserId(trimmed)) {
-    const user = await UserRepository.findById(db, trimmed)
+    // For ID lookups, verify workspace membership
+    const user = await UserRepository.findByIdInWorkspace(db, workspaceId, trimmed)
     if (!user) {
+      // Try global lookup to give better error message
+      const globalUser = await UserRepository.findById(db, trimmed)
+      if (globalUser) {
+        return { resolved: false, reason: `User exists but is not a member of this workspace: ${trimmed}` }
+      }
       return { resolved: false, reason: `No user found with ID: ${trimmed}` }
     }
     return { resolved: true, id: trimmed }
@@ -134,7 +147,7 @@ export async function resolveUserIdentifier(db: Querier, identifier: string): Pr
   // Otherwise, treat as slug (strip @ prefix if present)
   const slug = normalizeUserRef(trimmed)
 
-  const user = await UserRepository.findBySlug(db, slug)
+  const user = await UserRepository.findBySlug(db, workspaceId, slug)
 
   if (!user) {
     return { resolved: false, reason: `No user found with slug: ${slug}` }
