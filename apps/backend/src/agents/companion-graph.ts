@@ -93,10 +93,11 @@ export const CompanionState = Annotation.Root({
     reducer: (_, next) => next,
   }),
 
-  // Pending message awaiting confirmation (prep-then-send pattern)
+  // Pending messages awaiting confirmation (prep-then-send pattern)
   // Allows reconsidering response if new messages arrive before sending
-  pendingMessage: Annotation<PendingMessage | null>({
-    default: () => null,
+  // Multiple messages can be staged if agent calls send_message multiple times in parallel
+  pendingMessages: Annotation<PendingMessage[]>({
+    default: () => [],
     reducer: (_, next) => next,
   }),
 })
@@ -275,8 +276,8 @@ function createFinalizeOrReconsiderNode() {
       await callbacks.updateLastSeenSequence(state.sessionId, maxSequence)
     }
 
-    // Case 1: No pending message - just report new messages status
-    if (!state.pendingMessage) {
+    // Case 1: No pending messages - just report new messages status
+    if (state.pendingMessages.length === 0) {
       if (!hasNewMessages) {
         return { hasNewMessages: false }
       }
@@ -289,52 +290,55 @@ function createFinalizeOrReconsiderNode() {
       }
     }
 
-    // Case 2: Pending message exists
-    const pending = state.pendingMessage
+    // Case 2: Pending messages exist
+    const pendingMessages = state.pendingMessages
 
-    // Case 2a: No new messages - commit the pending message
+    // Case 2a: No new messages - commit all pending messages
     if (!hasNewMessages) {
-      logger.info(
-        { contentLength: pending.content.length, sourceCount: pending.sources?.length ?? 0 },
-        "No new messages, committing pending message"
-      )
+      logger.info({ pendingCount: pendingMessages.length }, "No new messages, committing pending messages")
 
-      const result = await callbacks.sendMessageWithSources({
-        content: pending.content,
-        sources: pending.sources,
-      })
-
-      logger.debug({ messageId: result.messageId }, "Pending message committed")
+      for (const pending of pendingMessages) {
+        const result = await callbacks.sendMessageWithSources({
+          content: pending.content,
+          sources: pending.sources,
+        })
+        logger.debug(
+          { messageId: result.messageId, contentLength: pending.content.length },
+          "Pending message committed"
+        )
+      }
 
       return {
-        pendingMessage: null,
-        messagesSent: state.messagesSent + 1,
+        pendingMessages: [],
+        messagesSent: state.messagesSent + pendingMessages.length,
         hasNewMessages: false,
       }
     }
 
     // Case 2b: New messages arrived - let the agent reconsider
+    // Combine all pending messages into the reconsideration context
+    const pendingContents = pendingMessages.map((p) => p.content).join("\n---\n")
     logger.info(
       {
         newMessageCount: newMessages.length,
-        pendingContentPreview: pending.content.slice(0, 50),
+        pendingCount: pendingMessages.length,
       },
-      "New messages arrived while response pending - agent will reconsider"
+      "New messages arrived while responses pending - agent will reconsider"
     )
 
     // Build reconsideration context
     const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
     const reconsiderPrompt = new SystemMessage(
       `[New context arrived while you were responding]\n\n` +
-        `Your draft response was:\n"${pending.content}"\n\n` +
+        `Your draft response${pendingMessages.length > 1 ? "s were" : " was"}:\n"${pendingContents}"\n\n` +
         `Please respond to all messages, incorporating the new context. ` +
-        `You may send the same response if still appropriate, or revise based on the new information.`
+        `You may send the same response${pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`
     )
 
     return {
       messages: [...humanMessages, reconsiderPrompt],
       lastProcessedSequence: maxSequence,
-      pendingMessage: null, // Clear pending - agent will re-stage if it wants to send
+      pendingMessages: [], // Clear pending - agent will re-stage if it wants to send
       hasNewMessages: true,
     }
   }
@@ -383,7 +387,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
     const toolMessages: ToolMessage[] = []
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
-    let pendingMessage: PendingMessage | null = null
+    const pendingMessages: PendingMessage[] = []
 
     // Execute web_search calls first and collect sources
     for (const toolCall of webSearchCalls) {
@@ -438,15 +442,19 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         const args = toolCall.args as { content: string }
 
         // Stage the message - it will be sent in finalize_or_reconsider node
-        // If multiple send_message calls, the last one wins
-        pendingMessage = {
+        // Multiple send_message calls are all collected and sent in order
+        pendingMessages.push({
           content: args.content,
           sources: collectedSources.length > 0 ? collectedSources : undefined,
           preparedAt: Date.now(),
-        }
+        })
 
         logger.debug(
-          { contentLength: args.content.length, sourceCount: collectedSources.length },
+          {
+            contentLength: args.content.length,
+            sourceCount: collectedSources.length,
+            totalPending: pendingMessages.length,
+          },
           "send_message staged as pending (prep-then-send)"
         )
 
@@ -470,7 +478,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     return {
       messages: toolMessages,
       sources: collectedSources,
-      pendingMessage,
+      pendingMessages,
     }
   }
 }
@@ -602,7 +610,7 @@ function createEnsureResponseNode() {
       {
         messagesSent: state.messagesSent,
         hasFinalResponse: !!state.finalResponse?.trim(),
-        hasPendingMessage: !!state.pendingMessage,
+        pendingCount: state.pendingMessages.length,
         sourceCount: state.sources.length,
       },
       "ensure_response node triggered"
@@ -610,21 +618,22 @@ function createEnsureResponseNode() {
 
     let currentMessagesSent = state.messagesSent
 
-    // Edge case: If there's a pending message that wasn't committed, commit it now
+    // Edge case: If there are pending messages that weren't committed, commit them now
     // This shouldn't happen in normal flow but provides a safety net
-    if (state.pendingMessage) {
+    if (state.pendingMessages.length > 0) {
       logger.warn(
-        { contentLength: state.pendingMessage.content.length },
-        "Found uncommitted pending message in ensure_response - committing"
+        { pendingCount: state.pendingMessages.length },
+        "Found uncommitted pending messages in ensure_response - committing"
       )
 
-      const result = await callbacks.sendMessageWithSources({
-        content: state.pendingMessage.content,
-        sources: state.pendingMessage.sources,
-      })
-
-      logger.debug({ messageId: result.messageId }, "Pending message committed in ensure_response")
-      currentMessagesSent++
+      for (const pending of state.pendingMessages) {
+        const result = await callbacks.sendMessageWithSources({
+          content: pending.content,
+          sources: pending.sources,
+        })
+        logger.debug({ messageId: result.messageId }, "Pending message committed in ensure_response")
+        currentMessagesSent++
+      }
     }
 
     // Already sent messages - nothing more to do
@@ -632,14 +641,14 @@ function createEnsureResponseNode() {
       logger.debug("Messages already sent, skipping ensure_response")
       return {
         messagesSent: currentMessagesSent,
-        pendingMessage: null,
+        pendingMessages: [],
       }
     }
 
     // No response content to send - edge case, nothing we can do
     if (!state.finalResponse?.trim()) {
       logger.warn("No final response to send")
-      return { pendingMessage: null }
+      return { pendingMessages: [] }
     }
 
     // Send the final response with sources via callback
@@ -657,7 +666,7 @@ function createEnsureResponseNode() {
 
     return {
       messagesSent: currentMessagesSent + 1,
-      pendingMessage: null,
+      pendingMessages: [],
     }
   }
 }
