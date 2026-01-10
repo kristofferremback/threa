@@ -102,6 +102,46 @@ async function testEmbedMany() {
   return result.usage
 }
 
+async function testLangChainMinimaxM2() {
+  console.log("\n=== Testing LangChain with minimax/minimax-m2.1 ===")
+
+  const model = ai.getLangChainModel("openrouter:minimax/minimax-m2.1")
+
+  // Run within cost tracking context
+  const usage = await ai.costTracker.runWithTracking(async () => {
+    const result = await model.invoke([{ role: "user", content: "Say 'hello' and nothing else." }])
+
+    console.log("Response:", result.content)
+
+    const captured = ai.costTracker.getCapturedUsage()
+    console.log("Captured usage:", JSON.stringify(captured, null, 2))
+
+    return captured
+  })
+
+  return usage
+}
+
+async function testLangChainGpt4oMini() {
+  console.log("\n=== Testing LangChain with openai/gpt-4o-mini ===")
+
+  const model = ai.getLangChainModel("openrouter:openai/gpt-4o-mini")
+
+  // Run within cost tracking context
+  const usage = await ai.costTracker.runWithTracking(async () => {
+    const result = await model.invoke([{ role: "user", content: "Say 'hello' and nothing else." }])
+
+    console.log("Response:", result.content)
+
+    const captured = ai.costTracker.getCapturedUsage()
+    console.log("Captured usage:", JSON.stringify(captured, null, 2))
+
+    return captured
+  })
+
+  return usage
+}
+
 async function main() {
   console.log("Testing OpenRouter cost capture...")
   console.log("API Key present:", !!OPENROUTER_API_KEY)
@@ -111,6 +151,8 @@ async function main() {
     generateObject: await testGenerateObject(),
     embed: await testEmbed(),
     embedMany: await testEmbedMany(),
+    langchainGpt4oMini: await testLangChainGpt4oMini(),
+    langchainMinimaxM2: await testLangChainMinimaxM2(),
   }
 
   console.log("\n=== Summary ===")

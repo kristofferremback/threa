@@ -86,6 +86,7 @@ export class CostTracker {
               try {
                 const data = JSON.parse(line.slice(5).trim())
                 if (data.usage) {
+                  logger.debug({ usage: data.usage, model: data.model }, "OpenRouter streaming response usage")
                   store.cost += data.usage.cost ?? 0
                   store.tokens.prompt += data.usage.prompt_tokens ?? 0
                   store.tokens.completion += data.usage.completion_tokens ?? 0
@@ -101,10 +102,13 @@ export class CostTracker {
           // Non-streaming response
           const body = JSON.parse(text)
           if (body.usage) {
+            logger.debug({ usage: body.usage, model: body.model }, "OpenRouter non-streaming response usage")
             store.cost += body.usage.cost ?? 0
             store.tokens.prompt += body.usage.prompt_tokens ?? 0
             store.tokens.completion += body.usage.completion_tokens ?? 0
             store.tokens.total += body.usage.total_tokens ?? 0
+          } else {
+            logger.debug({ model: body.model }, "OpenRouter response has no usage field")
           }
         }
       } catch (error) {
