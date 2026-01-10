@@ -304,6 +304,48 @@ export const SearchRepository = {
   },
 
   /**
+   * Exact substring search using ILIKE.
+   * Finds messages containing the query as a literal substring.
+   * Results are ordered by recency (most recent first).
+   *
+   * Use this for error messages, IDs, or other literal text matching.
+   */
+  async exactSearch(db: Querier, params: FullTextSearchParams): Promise<SearchResult[]> {
+    const { query, streamIds, filters, limit } = params
+
+    if (streamIds.length === 0 || !query.trim()) {
+      return []
+    }
+
+    // Escape special LIKE characters (%, _, \) in the query
+    const escapedQuery = query.replace(/[%_\\]/g, "\\$&")
+
+    const result = await db.query<SearchResultRow>(sql`
+      SELECT
+        m.id,
+        m.stream_id,
+        m.content,
+        m.author_id,
+        m.author_type,
+        m.created_at,
+        0 as rank
+      FROM messages m
+      JOIN streams s ON m.stream_id = s.id
+      WHERE m.stream_id = ANY(${streamIds})
+        AND m.deleted_at IS NULL
+        AND m.content ILIKE '%' || ${escapedQuery} || '%'
+        AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
+        AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
+        AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
+        AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
+      ORDER BY m.created_at DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map(mapRowToSearchResult)
+  },
+
+  /**
    * Get public stream IDs in a workspace.
    * Used by agent access control for public_only access spec.
    */
