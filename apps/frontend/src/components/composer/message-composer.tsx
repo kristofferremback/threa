@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
+import type { MessageSendMode } from "@threa/types"
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -35,6 +36,9 @@ export interface MessageComposerProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+
+  /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
+  messageSendMode?: MessageSendMode
 }
 
 export function MessageComposer({
@@ -52,11 +56,16 @@ export function MessageComposer({
   submittingLabel = "Sending...",
   isSubmitting = false,
   hasFailed = false,
-  placeholder = "Type a message... (Cmd+Enter to send)",
+  placeholder,
   disabled = false,
   className,
+  messageSendMode = "cmdEnter",
 }: MessageComposerProps) {
   const isDisabled = disabled || isSubmitting
+
+  const defaultPlaceholder =
+    messageSendMode === "enter" ? "Type a message... (Enter to send)" : "Type a message... (Cmd+Enter to send)"
+  const finalPlaceholder = placeholder ?? defaultPlaceholder
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -93,8 +102,9 @@ export function MessageComposer({
             onSubmit={onSubmit}
             onFileUpload={onFileUpload}
             imageCount={imageCount}
-            placeholder={placeholder}
+            placeholder={finalPlaceholder}
             disabled={isDisabled}
+            messageSendMode={messageSendMode}
           />
 
           {hasFailed ? (

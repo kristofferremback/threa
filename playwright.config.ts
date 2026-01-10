@@ -3,6 +3,15 @@ import * as path from "path"
 import * as net from "net"
 
 /**
+ * Test infrastructure ports.
+ * - CI: Uses ports 5454/9000 (configured in GitHub Actions workflow)
+ * - Local: Uses docker-compose.test.yml with separate ports to avoid dev conflicts
+ */
+const isCI = !!process.env.CI
+const DB_PORT = isCI ? 5454 : 5455
+const MINIO_PORT = isCI ? 9000 : 9002
+
+/**
  * Derive a unique database name from the current directory.
  * Same logic as setup-worktree.ts for consistency.
  */
@@ -52,7 +61,9 @@ const dbName = deriveTestDatabaseName()
 
 // Only log once (when ports are first allocated)
 if (!process.env.PLAYWRIGHT_PORTS_LOGGED) {
-  console.log(`Playwright config: backend=${backendPort}, frontend=${frontendPort}, db=${dbName}`)
+  console.log(
+    `Playwright config: backend=${backendPort}, frontend=${frontendPort}, db=${dbName}, postgres=${DB_PORT}, minio=${MINIO_PORT}`
+  )
   process.env.PLAYWRIGHT_PORTS_LOGGED = "true"
 }
 
@@ -97,7 +108,7 @@ export default defineConfig({
       timeout: 30000,
       env: {
         PORT: String(backendPort),
-        DATABASE_URL: `postgresql://threa:threa@localhost:5454/${dbName}`,
+        DATABASE_URL: `postgresql://threa:threa@localhost:${DB_PORT}/${dbName}`,
         USE_STUB_AUTH: "true",
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
@@ -107,7 +118,7 @@ export default defineConfig({
         S3_REGION: "us-east-1",
         S3_ACCESS_KEY_ID: "minioadmin",
         S3_SECRET_ACCESS_KEY: "minioadmin",
-        S3_ENDPOINT: "http://localhost:9000",
+        S3_ENDPOINT: `http://localhost:${MINIO_PORT}`,
       },
     },
     {

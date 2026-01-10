@@ -11,6 +11,7 @@ import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
+import type { MessageSendMode } from "@threa/types"
 
 interface RichEditorProps {
   value: string
@@ -23,6 +24,8 @@ interface RichEditorProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+  /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
+  messageSendMode?: MessageSendMode
 }
 
 export function RichEditor({
@@ -34,6 +37,7 @@ export function RichEditor({
   placeholder = "Type a message...",
   disabled = false,
   className,
+  messageSendMode = "cmdEnter",
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -82,6 +86,12 @@ export function RichEditor({
   const imageCountRef = useRef(imageCount)
   imageCountRef.current = imageCount
 
+  // Refs for editor behaviors to avoid stale closures in keyboard shortcuts
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
+  const messageSendModeRef = useRef(messageSendMode)
+  messageSendModeRef.current = messageSendMode
+
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -97,9 +107,12 @@ export function RichEditor({
         emojiSuggestion: emojiConfig,
         toEmoji,
       }),
-      EditorBehaviors,
+      EditorBehaviors.configure({
+        sendModeRef: messageSendModeRef,
+        onSubmitRef: onSubmitRef,
+      }),
     ],
-    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
+    [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji, messageSendMode, onSubmit]
   )
 
   // Debounced toolbar visibility - stays visible 150ms after conditions become false
@@ -228,11 +241,23 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
-        // Cmd/Ctrl+Enter to submit
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault()
-          onSubmit()
-          return true
+        // Cmd/Ctrl+Enter: send in cmdEnter mode
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+          if (messageSendModeRef.current === "cmdEnter") {
+            event.preventDefault()
+            onSubmitRef.current()
+            return true
+          }
+        }
+        // Plain Enter: send in enter mode (except in lists, blockquotes, code blocks)
+        if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+          if (messageSendModeRef.current === "enter") {
+            // Let EditorBehaviors handle block creation in special contexts
+            // This handler only fires if EditorBehaviors doesn't handle it
+            event.preventDefault()
+            onSubmitRef.current()
+            return true
+          }
         }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {

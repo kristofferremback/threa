@@ -9,6 +9,13 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
 }))
 
+// Mock preferences context
+vi.mock("@/contexts", () => ({
+  usePreferences: () => ({
+    preferences: { messageSendMode: "cmdEnter" },
+  }),
+}))
+
 // Mock hooks
 const mockSendMessage = vi.fn()
 const mockClearDraft = vi.fn()
