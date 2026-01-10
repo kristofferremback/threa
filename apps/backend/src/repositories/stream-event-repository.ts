@@ -174,6 +174,21 @@ export const StreamEventRepository = {
   },
 
   /**
+   * Get the latest sequence number for USER messages only.
+   * Used to check if new user messages arrived while excluding persona responses.
+   */
+  async getLatestUserMessageSequence(db: Querier, streamId: string): Promise<bigint | null> {
+    const result = await db.query<{ sequence: string }>(sql`
+      SELECT sequence FROM stream_events
+      WHERE stream_id = ${streamId}
+        AND actor_type = 'user'
+      ORDER BY sequence DESC
+      LIMIT 1
+    `)
+    return result.rows[0] ? BigInt(result.rows[0].sequence) : null
+  },
+
+  /**
    * Count message_created events for multiple streams.
    * Returns a map of streamId -> message count
    */

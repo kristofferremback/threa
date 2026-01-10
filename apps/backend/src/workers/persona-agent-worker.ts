@@ -74,8 +74,11 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
 }
 
 /**
- * Check if there are messages that arrived after lastSeenSequence and dispatch
+ * Check if there are USER messages that arrived after lastSeenSequence and dispatch
  * a follow-up job if needed.
+ *
+ * IMPORTANT: We only check for USER messages, not all messages. Otherwise the
+ * agent's own responses would trigger follow-up jobs in an infinite loop.
  */
 async function checkForUnseenMessages(params: {
   pool: Pool
@@ -89,12 +92,13 @@ async function checkForUnseenMessages(params: {
 }): Promise<void> {
   const { pool, jobQueue, workspaceId, streamId, personaId, lastSeenSequence, trigger, previousJobId } = params
 
-  const currentMaxSequence = await withClient(pool, async (client) => {
-    return StreamEventRepository.getLatestSequence(client, streamId)
+  // Only check for USER messages - ignore persona responses to avoid infinite loops
+  const latestUserMessageSequence = await withClient(pool, async (client) => {
+    return StreamEventRepository.getLatestUserMessageSequence(client, streamId)
   })
 
-  // No messages at all, or no new messages since we last checked
-  if (!currentMaxSequence || currentMaxSequence <= lastSeenSequence) {
+  // No user messages at all, or no new user messages since we last checked
+  if (!latestUserMessageSequence || latestUserMessageSequence <= lastSeenSequence) {
     return
   }
 
@@ -102,10 +106,10 @@ async function checkForUnseenMessages(params: {
     {
       streamId,
       lastSeenSequence: lastSeenSequence.toString(),
-      currentMaxSequence: currentMaxSequence.toString(),
+      latestUserMessageSequence: latestUserMessageSequence.toString(),
       previousJobId,
     },
-    "Found unseen messages after session completion, dispatching follow-up job"
+    "Found unseen user messages after session completion, dispatching follow-up job"
   )
 
   // Dispatch a follow-up job to process the unseen messages
