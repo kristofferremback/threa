@@ -217,54 +217,72 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
 
     // Invoke the graph with cost tracking via callbacks
     // Cost recording happens automatically via CostTrackingCallback when LLM calls complete
-    const result = await ai.costTracker.runWithTracking(async () => {
-      return compiledGraph.invoke(
-        {
-          messages: langchainMessages,
-          systemPrompt,
-          streamId,
-          sessionId,
-          personaId,
-          lastProcessedSequence,
-          finalResponse: null,
-          iteration: 0,
-          messagesSent: 0,
-          hasNewMessages: false,
-          sources: [],
-          retrievedContext: null,
-        },
-        {
-          runName: "companion-agent",
-          callbacks: [
-            ...getDebugCallbacks(),
-            ...getLangfuseCallbacks({
-              sessionId,
-              userId: personaId,
-              tags: ["companion"],
-              metadata: {
-                model_id: parsedModel.modelId,
-                model_provider: parsedModel.modelProvider,
-                model_name: parsedModel.modelName,
-              },
-            }),
-            // Cost tracking callback records usage automatically when handleLLMEnd fires
-            ...getCostTrackingCallbacks({
-              costRecorder,
-              workspaceId,
-              userId: invokingUserId,
-              sessionId,
-              functionId: "companion-response",
-              origin: "user",
-              getCapturedUsage: () => ai.costTracker.getCapturedUsage(),
-            }),
-          ],
-          configurable: {
-            thread_id: threadId,
-            callbacks: graphCallbacks,
+    let result
+    try {
+      result = await ai.costTracker.runWithTracking(async () => {
+        return compiledGraph.invoke(
+          {
+            messages: langchainMessages,
+            systemPrompt,
+            streamId,
+            sessionId,
+            personaId,
+            lastProcessedSequence,
+            finalResponse: null,
+            iteration: 0,
+            messagesSent: 0,
+            hasNewMessages: false,
+            sources: [],
+            retrievedContext: null,
           },
-        }
+          {
+            runName: "companion-agent",
+            callbacks: [
+              ...getDebugCallbacks(),
+              ...getLangfuseCallbacks({
+                sessionId,
+                userId: personaId,
+                tags: ["companion"],
+                metadata: {
+                  model_id: parsedModel.modelId,
+                  model_provider: parsedModel.modelProvider,
+                  model_name: parsedModel.modelName,
+                },
+              }),
+              // Cost tracking callback records usage automatically when handleLLMEnd fires
+              ...getCostTrackingCallbacks({
+                costRecorder,
+                workspaceId,
+                userId: invokingUserId,
+                sessionId,
+                functionId: "companion-response",
+                origin: "user",
+                getCapturedUsage: () => ai.costTracker.getCapturedUsage(),
+              }),
+            ],
+            configurable: {
+              thread_id: threadId,
+              callbacks: graphCallbacks,
+            },
+          }
+        )
+      })
+    } catch (err) {
+      // Log error with full details so it appears in Langfuse and logs
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      const errorStack = err instanceof Error ? err.stack : undefined
+      logger.error(
+        {
+          threadId,
+          sessionId,
+          streamId,
+          error: errorMessage,
+          stack: errorStack,
+        },
+        `Companion graph failed: ${errorMessage}`
       )
-    })
+      throw err
+    }
 
     // Get final usage for logging
     const usage = ai.costTracker.getCapturedUsage()
