@@ -64,8 +64,19 @@ export class CostTrackingCallback extends BaseCallbackHandler {
   async handleLLMEnd(output: LLMResult): Promise<void> {
     const usage = this.params.getCapturedUsage()
 
+    logger.debug(
+      {
+        functionId: this.params.functionId,
+        usage,
+        llmOutputModel: output.llmOutput?.model,
+        llmOutputModelName: output.llmOutput?.modelName,
+      },
+      "CostTrackingCallback handleLLMEnd fired"
+    )
+
     // Only record if there's actual cost or usage
     if (usage.cost === 0 && usage.totalTokens === 0) {
+      logger.debug({ functionId: this.params.functionId }, "Skipping cost recording - no usage")
       return
     }
 

@@ -7,6 +7,7 @@ import type { RunnableConfig } from "@langchain/core/runnables"
 import { AgentToolNames } from "@threa/types"
 import { logger } from "../lib/logger"
 import type { SourceItem, SendMessageInputWithSources, SendMessageResult } from "./tools"
+import type { ResearcherResult } from "./researcher"
 
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
@@ -26,6 +27,19 @@ export interface CompanionGraphCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
+  /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
+  runResearcher?: (config: RunnableConfig) => Promise<ResearcherResult>
+}
+
+/**
+ * A message that has been prepared but not yet sent.
+ * Used for the prep-then-send pattern that allows reconsidering
+ * if new messages arrive before the response is committed.
+ */
+export interface PendingMessage {
+  content: string
+  sources?: SourceItem[]
+  preparedAt: number
 }
 
 /**
@@ -72,6 +86,20 @@ export const CompanionState = Annotation.Root({
     default: () => [],
     reducer: (_, next) => next,
   }),
+
+  // Retrieved context from researcher (injected into system prompt)
+  retrievedContext: Annotation<string | null>({
+    default: () => null,
+    reducer: (_, next) => next,
+  }),
+
+  // Pending messages awaiting confirmation (prep-then-send pattern)
+  // Allows reconsidering response if new messages arrive before sending
+  // Multiple messages can be staged if agent calls send_message multiple times in parallel
+  pendingMessages: Annotation<PendingMessage[]>({
+    default: () => [],
+    reducer: (_, next) => next,
+  }),
 })
 
 export type CompanionStateType = typeof CompanionState.State
@@ -85,6 +113,54 @@ function getCallbacks(config: RunnableConfig): CompanionGraphCallbacks {
     throw new Error("CompanionGraphCallbacks must be provided in config.configurable.callbacks")
   }
   return callbacks
+}
+
+/**
+ * Create the research node that retrieves workspace knowledge.
+ * This node runs at the start of the graph to gather context before the agent responds.
+ */
+function createResearchNode() {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+
+    // Skip if no researcher callback provided
+    if (!callbacks.runResearcher) {
+      logger.info("Research node skipped - no researcher callback")
+      return {}
+    }
+
+    logger.info("Research node starting")
+
+    try {
+      const result = await callbacks.runResearcher(config)
+
+      logger.debug(
+        {
+          shouldSearch: result.shouldSearch,
+          memoCount: result.memos.length,
+          messageCount: result.messages.length,
+          sourceCount: result.sources.length,
+        },
+        "Research node completed"
+      )
+
+      // If researcher found sources, add them to the initial sources
+      const newSources: SourceItem[] = result.sources.map((s) => ({
+        title: s.title,
+        url: s.url,
+        type: s.type,
+        snippet: s.snippet,
+      }))
+
+      return {
+        retrievedContext: result.retrievedContext,
+        sources: [...state.sources, ...newSources],
+      }
+    } catch (error) {
+      logger.warn({ error }, "Research node failed, continuing without workspace context")
+      return {}
+    }
+  }
 }
 
 /**
@@ -102,7 +178,12 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       }
     }
 
-    const systemMessage = new SystemMessage(state.systemPrompt)
+    // Build system prompt with retrieved context if available
+    const fullSystemPrompt = state.retrievedContext
+      ? `${state.systemPrompt}\n\n${state.retrievedContext}`
+      : state.systemPrompt
+
+    const systemMessage = new SystemMessage(fullSystemPrompt)
     const response = await modelWithTools.invoke([systemMessage, ...state.messages])
 
     // Extract text content
@@ -170,6 +251,100 @@ function createCheckNewMessagesNode() {
 }
 
 /**
+ * Create the finalize_or_reconsider node.
+ *
+ * This implements the prep-then-send pattern that mimics human reconsideration:
+ * - If a message is pending and new messages arrived, give the agent a chance to reconsider
+ * - If no new messages, commit the pending message
+ * - If no pending message, just check for new messages as usual
+ *
+ * This allows the agent to "change its mind" if the user adds context before
+ * the response is actually sent.
+ */
+function createFinalizeOrReconsiderNode() {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+
+    // Check for new messages
+    const newMessages = await callbacks.checkNewMessages(state.streamId, state.lastProcessedSequence, state.personaId)
+    const hasNewMessages = newMessages.length > 0
+
+    // Update last seen sequence if we found new messages
+    let maxSequence = state.lastProcessedSequence
+    if (hasNewMessages) {
+      maxSequence = newMessages.reduce((max, m) => (m.sequence > max ? m.sequence : max), state.lastProcessedSequence)
+      await callbacks.updateLastSeenSequence(state.sessionId, maxSequence)
+    }
+
+    // Case 1: No pending messages - just report new messages status
+    if (state.pendingMessages.length === 0) {
+      if (!hasNewMessages) {
+        return { hasNewMessages: false }
+      }
+
+      const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
+      return {
+        messages: humanMessages,
+        lastProcessedSequence: maxSequence,
+        hasNewMessages: true,
+      }
+    }
+
+    // Case 2: Pending messages exist
+    const pendingMessages = state.pendingMessages
+
+    // Case 2a: No new messages - commit all pending messages
+    if (!hasNewMessages) {
+      logger.info({ pendingCount: pendingMessages.length }, "No new messages, committing pending messages")
+
+      for (const pending of pendingMessages) {
+        const result = await callbacks.sendMessageWithSources({
+          content: pending.content,
+          sources: pending.sources,
+        })
+        logger.debug(
+          { messageId: result.messageId, contentLength: pending.content.length },
+          "Pending message committed"
+        )
+      }
+
+      return {
+        pendingMessages: [],
+        messagesSent: state.messagesSent + pendingMessages.length,
+        hasNewMessages: false,
+      }
+    }
+
+    // Case 2b: New messages arrived - let the agent reconsider
+    // Combine all pending messages into the reconsideration context
+    const pendingContents = pendingMessages.map((p) => p.content).join("\n---\n")
+    logger.info(
+      {
+        newMessageCount: newMessages.length,
+        pendingCount: pendingMessages.length,
+      },
+      "New messages arrived while responses pending - agent will reconsider"
+    )
+
+    // Build reconsideration context
+    const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
+    const reconsiderPrompt = new SystemMessage(
+      `[New context arrived while you were responding]\n\n` +
+        `Your draft response${pendingMessages.length > 1 ? "s were" : " was"}:\n"${pendingContents}"\n\n` +
+        `Please respond to all messages, incorporating the new context. ` +
+        `You may send the same response${pendingMessages.length > 1 ? "s" : ""} if still appropriate, or revise based on the new information.`
+    )
+
+    return {
+      messages: [...humanMessages, reconsiderPrompt],
+      lastProcessedSequence: maxSequence,
+      pendingMessages: [], // Clear pending - agent will re-stage if it wants to send
+      hasNewMessages: true,
+    }
+  }
+}
+
+/**
  * Extract sources from a web_search tool result.
  */
 function extractSourcesFromWebSearch(resultJson: string): SourceItem[] {
@@ -188,13 +363,17 @@ function extractSourcesFromWebSearch(resultJson: string): SourceItem[] {
 
 /**
  * Create the tools node that executes tool calls.
+ *
+ * IMPORTANT: send_message calls are STAGED, not sent immediately.
+ * This enables the prep-then-send pattern where we can reconsider
+ * the message if new user messages arrive before we commit.
+ *
  * Uses sendMessageWithSources callback for send_message to attach sources from web_search.
  */
 function createToolsNode(tools: StructuredToolInterface[]) {
   const toolMap = new Map(tools.map((t) => [t.name, t]))
 
-  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
-    const callbacks = getCallbacks(config)
+  return async (state: CompanionStateType, _config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
     const lastMessage = state.messages[state.messages.length - 1]
 
     if (!(lastMessage instanceof AIMessage) || !lastMessage.tool_calls?.length) {
@@ -207,8 +386,8 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     const otherCalls = lastMessage.tool_calls.filter((tc) => tc.name !== "web_search" && tc.name !== "send_message")
 
     const toolMessages: ToolMessage[] = []
-    let newMessagesSent = state.messagesSent
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
+    const pendingMessages: PendingMessage[] = []
 
     // Execute web_search calls first and collect sources
     for (const toolCall of webSearchCalls) {
@@ -256,31 +435,36 @@ function createToolsNode(tools: StructuredToolInterface[]) {
       }
     }
 
-    // Execute send_message calls with collected sources
+    // Stage send_message calls instead of sending immediately
+    // This allows reconsidering if new messages arrive before we commit
     for (const toolCall of sendMessageCalls) {
       try {
         const args = toolCall.args as { content: string }
 
-        // Use callback to send message with sources
-        const result = await callbacks.sendMessageWithSources({
+        // Stage the message - it will be sent in finalize_or_reconsider node
+        // Multiple send_message calls are all collected and sent in order
+        pendingMessages.push({
           content: args.content,
           sources: collectedSources.length > 0 ? collectedSources : undefined,
+          preparedAt: Date.now(),
         })
 
-        newMessagesSent++
         logger.debug(
-          { messageId: result.messageId, sourceCount: collectedSources.length },
-          "send_message executed with sources via callback"
+          {
+            contentLength: args.content.length,
+            sourceCount: collectedSources.length,
+            totalPending: pendingMessages.length,
+          },
+          "send_message staged as pending (prep-then-send)"
         )
 
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
             content: JSON.stringify({
-              success: true,
-              messageId: result.messageId,
-              content: result.content,
-              messagesSent: newMessagesSent,
+              status: "pending",
+              message: "Message staged. Will be sent after checking for new context.",
+              contentPreview: args.content.slice(0, 100) + (args.content.length > 100 ? "..." : ""),
             }),
           })
         )
@@ -293,18 +477,18 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
     return {
       messages: toolMessages,
-      messagesSent: newMessagesSent,
       sources: collectedSources,
+      pendingMessages,
     }
   }
 }
 
 /**
  * Determine routing after agent node.
- * - If tool calls present → check_new_messages
+ * - If tool calls present → tools (always execute tool calls first)
  * - If no tool calls → check_final_messages
  */
-function routeAfterAgent(state: CompanionStateType): "check_new_messages" | "check_final_messages" {
+function routeAfterAgent(state: CompanionStateType): "tools" | "check_final_messages" {
   // Check iteration limit - force end
   if (state.iteration >= MAX_ITERATIONS) {
     return "check_final_messages"
@@ -313,19 +497,27 @@ function routeAfterAgent(state: CompanionStateType): "check_new_messages" | "che
   const lastMessage = state.messages[state.messages.length - 1]
 
   if (lastMessage instanceof AIMessage && lastMessage.tool_calls?.length) {
-    return "check_new_messages"
+    // Always execute tools first - never skip them
+    return "tools"
   }
 
   return "check_final_messages"
 }
 
 /**
- * Determine routing after check_new_messages node.
- * - If new messages found → agent (re-evaluate)
- * - If no new messages → tools (execute pending tools)
+ * Determine routing after tools node.
+ * Always go to finalize_or_reconsider to handle pending messages and check for new context.
  */
-function routeAfterNewMessageCheck(state: CompanionStateType): "agent" | "tools" {
-  return state.hasNewMessages ? "agent" : "tools"
+function routeAfterTools(): "finalize_or_reconsider" {
+  return "finalize_or_reconsider"
+}
+
+/**
+ * Determine routing after finalize_or_reconsider node.
+ * Always returns to agent - the agent will decide whether to continue or end.
+ */
+function routeAfterFinalizeOrReconsider(): "agent" {
+  return "agent"
 }
 
 /**
@@ -406,6 +598,9 @@ function createSynthesizeNode(_model: ChatOpenAI) {
  * If we're about to end without sending any messages, force send the final response.
  * This handles cases where the model uses tools but forgets to call send_message.
  * Uses the sendMessageWithSources callback to pass sources for storage.
+ *
+ * Also handles edge case where a pending message exists but wasn't committed
+ * (shouldn't happen in normal flow, but defensive programming).
  */
 function createEnsureResponseNode() {
   return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
@@ -415,21 +610,45 @@ function createEnsureResponseNode() {
       {
         messagesSent: state.messagesSent,
         hasFinalResponse: !!state.finalResponse?.trim(),
+        pendingCount: state.pendingMessages.length,
         sourceCount: state.sources.length,
       },
       "ensure_response node triggered"
     )
 
-    // Already sent messages - nothing to do
-    if (state.messagesSent > 0) {
+    let currentMessagesSent = state.messagesSent
+
+    // Edge case: If there are pending messages that weren't committed, commit them now
+    // This shouldn't happen in normal flow but provides a safety net
+    if (state.pendingMessages.length > 0) {
+      logger.warn(
+        { pendingCount: state.pendingMessages.length },
+        "Found uncommitted pending messages in ensure_response - committing"
+      )
+
+      for (const pending of state.pendingMessages) {
+        const result = await callbacks.sendMessageWithSources({
+          content: pending.content,
+          sources: pending.sources,
+        })
+        logger.debug({ messageId: result.messageId }, "Pending message committed in ensure_response")
+        currentMessagesSent++
+      }
+    }
+
+    // Already sent messages - nothing more to do
+    if (currentMessagesSent > 0) {
       logger.debug("Messages already sent, skipping ensure_response")
-      return {}
+      return {
+        messagesSent: currentMessagesSent,
+        pendingMessages: [],
+      }
     }
 
     // No response content to send - edge case, nothing we can do
     if (!state.finalResponse?.trim()) {
       logger.warn("No final response to send")
-      return {}
+      return { pendingMessages: [] }
     }
 
     // Send the final response with sources via callback
@@ -445,7 +664,10 @@ function createEnsureResponseNode() {
 
     logger.info({ messageId: result.messageId, sourceCount: state.sources.length }, "ensure_response sent message")
 
-    return { messagesSent: state.messagesSent + 1 }
+    return {
+      messagesSent: currentMessagesSent + 1,
+      pendingMessages: [],
+    }
   }
 }
 
@@ -453,31 +675,43 @@ function createEnsureResponseNode() {
  * Create the companion agent graph.
  *
  * Graph structure:
- *   START → agent → (has tool calls?)
- *                     → yes → check_new_messages → (new messages?)
- *                                                    → yes → agent
- *                                                    → no → tools → agent
- *                     → no → check_final_messages → (new messages?)
- *                                                    → yes → agent
- *                                                    → (used web_search?) → yes → synthesize → ensure_response → END
- *                                                                         → no → ensure_response → END
+ *   START → research → agent → (has tool calls?)
+ *                                → yes → tools → finalize_or_reconsider → agent (loop)
+ *                                → no → check_final_messages → (new messages?)
+ *                                                               → yes → agent
+ *                                                               → (used web_search?) → yes → synthesize → ensure_response → END
+ *                                                                                    → no → ensure_response → END
  *
+ * CRITICAL: Tool calls are ALWAYS executed before checking for new messages.
+ * This prevents tool calls from being dropped when users send additional messages
+ * while the agent is processing.
+ *
+ * PREP-THEN-SEND: The send_message tool stages messages instead of sending immediately.
+ * The finalize_or_reconsider node checks for new messages before committing:
+ * - If no new messages: commits the pending message
+ * - If new messages arrived: gives the agent a chance to reconsider its response
+ * This mimics human reconsideration behavior when new context arrives.
+ *
+ * The research node retrieves workspace knowledge before the agent responds.
  * The synthesize node formats responses with proper source citations when web search was used.
  * The ensure_response node guarantees we always send at least one message.
  */
 export function createCompanionGraph(model: ChatOpenAI, tools: StructuredToolInterface[] = []) {
   const graph = new StateGraph(CompanionState)
+    .addNode("research", createResearchNode())
     .addNode("agent", createAgentNode(model, tools))
-    .addNode("check_new_messages", createCheckNewMessagesNode())
+    .addNode("finalize_or_reconsider", createFinalizeOrReconsiderNode())
     .addNode("check_final_messages", createCheckNewMessagesNode()) // Same logic, different routing
     .addNode("tools", createToolsNode(tools))
     .addNode("synthesize", createSynthesizeNode(model))
     .addNode("ensure_response", createEnsureResponseNode())
-    .addEdge("__start__", "agent")
+    .addEdge("__start__", "research")
+    .addEdge("research", "agent")
     .addConditionalEdges("agent", routeAfterAgent)
-    .addConditionalEdges("check_new_messages", routeAfterNewMessageCheck)
+    // Tools execute, then finalize_or_reconsider handles pending messages and new context
+    .addConditionalEdges("tools", routeAfterTools)
+    .addConditionalEdges("finalize_or_reconsider", routeAfterFinalizeOrReconsider)
     .addConditionalEdges("check_final_messages", routeAfterFinalCheck)
-    .addEdge("tools", "agent")
     .addEdge("synthesize", "ensure_response")
     .addEdge("ensure_response", END)
 

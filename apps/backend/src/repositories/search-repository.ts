@@ -1,7 +1,8 @@
-import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 import { Visibilities, type StreamType } from "@threa/types"
 import { parseArchiveStatusFilter, type ArchiveStatus } from "../lib/sql-filters"
+import type { AgentAccessSpec } from "../agents/researcher/access-spec"
 
 export interface GetAccessibleStreamsParams {
   workspaceId: string
@@ -91,7 +92,7 @@ export const SearchRepository = {
    * - ["archived"] → only archived streams
    * - ["active", "archived"] → all streams
    */
-  async getAccessibleStreamsWithMembers(client: PoolClient, params: GetAccessibleStreamsParams): Promise<string[]> {
+  async getAccessibleStreamsWithMembers(db: Querier, params: GetAccessibleStreamsParams): Promise<string[]> {
     const { workspaceId, userId, memberIds, streamTypes, archiveStatus } = params
     const hasMemberFilter = memberIds && memberIds.length > 0
     const hasTypeFilter = streamTypes && streamTypes.length > 0
@@ -100,7 +101,7 @@ export const SearchRepository = {
 
     // If no member filter, simpler query
     if (!hasMemberFilter) {
-      const result = await client.query<{ id: string }>(sql`
+      const result = await db.query<{ id: string }>(sql`
         SELECT DISTINCT s.id
         FROM streams s
         LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
@@ -119,7 +120,7 @@ export const SearchRepository = {
     }
 
     // With member filter: combined query using UNION for users + personas
-    const result = await client.query<{ id: string }>(sql`
+    const result = await db.query<{ id: string }>(sql`
       WITH accessible AS (
         SELECT DISTINCT s.id
         FROM streams s
@@ -163,7 +164,7 @@ export const SearchRepository = {
    * Results are ranked by ts_rank.
    * If query is empty, returns recent messages matching filters.
    */
-  async fullTextSearch(client: PoolClient, params: FullTextSearchParams): Promise<SearchResult[]> {
+  async fullTextSearch(db: Querier, params: FullTextSearchParams): Promise<SearchResult[]> {
     const { query, streamIds, filters, limit } = params
 
     if (streamIds.length === 0) {
@@ -172,7 +173,7 @@ export const SearchRepository = {
 
     // If no search terms, return recent messages matching filters
     if (!query.trim()) {
-      const result = await client.query<SearchResultRow>(sql`
+      const result = await db.query<SearchResultRow>(sql`
         SELECT
           m.id,
           m.stream_id,
@@ -195,7 +196,7 @@ export const SearchRepository = {
       return result.rows.map(mapRowToSearchResult)
     }
 
-    const result = await client.query<SearchResultRow>(sql`
+    const result = await db.query<SearchResultRow>(sql`
       SELECT
         m.id,
         m.stream_id,
@@ -227,7 +228,7 @@ export const SearchRepository = {
    *
    * RRF formula: score(d) = Σ(weight / (k + rank(d)))
    */
-  async hybridSearch(client: PoolClient, params: HybridSearchParams): Promise<SearchResult[]> {
+  async hybridSearch(db: Querier, params: HybridSearchParams): Promise<SearchResult[]> {
     const { query, embedding, streamIds, filters, limit, keywordWeight = 0.6, semanticWeight = 0.4, k = 60 } = params
 
     if (streamIds.length === 0) {
@@ -240,7 +241,7 @@ export const SearchRepository = {
     // Internal limit for each search type before RRF combination
     const internalLimit = 50
 
-    const result = await client.query<SearchResultRow>(sql`
+    const result = await db.query<SearchResultRow>(sql`
       WITH keyword_ranked AS (
         SELECT
           m.id,
@@ -300,5 +301,145 @@ export const SearchRepository = {
     `)
 
     return result.rows.map(mapRowToSearchResult)
+  },
+
+  /**
+   * Exact substring search using ILIKE.
+   * Finds messages containing the query as a literal substring.
+   * Results are ordered by recency (most recent first).
+   *
+   * Use this for error messages, IDs, or other literal text matching.
+   */
+  async exactSearch(db: Querier, params: FullTextSearchParams): Promise<SearchResult[]> {
+    const { query, streamIds, filters, limit } = params
+
+    if (streamIds.length === 0 || !query.trim()) {
+      return []
+    }
+
+    // Escape special LIKE characters (%, _, \) in the query
+    const escapedQuery = query.replace(/[%_\\]/g, "\\$&")
+
+    const result = await db.query<SearchResultRow>(sql`
+      SELECT
+        m.id,
+        m.stream_id,
+        m.content,
+        m.author_id,
+        m.author_type,
+        m.created_at,
+        0 as rank
+      FROM messages m
+      JOIN streams s ON m.stream_id = s.id
+      WHERE m.stream_id = ANY(${streamIds})
+        AND m.deleted_at IS NULL
+        AND m.content ILIKE '%' || ${escapedQuery} || '%'
+        AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
+        AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
+        AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
+        AND (${filters.after === undefined} OR m.created_at >= ${filters.after ?? new Date(0)})
+      ORDER BY m.created_at DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map(mapRowToSearchResult)
+  },
+
+  /**
+   * Get public stream IDs in a workspace.
+   * Used by agent access control for public_only access spec.
+   */
+  async getPublicStreams(
+    db: Querier,
+    workspaceId: string,
+    options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
+  ): Promise<string[]> {
+    const hasTypeFilter = options?.streamTypes && options.streamTypes.length > 0
+    const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(options?.archiveStatus)
+
+    const result = await db.query<{ id: string }>(sql`
+      SELECT id FROM streams
+      WHERE workspace_id = ${workspaceId}
+        AND visibility = ${Visibilities.PUBLIC}
+        AND (${!hasTypeFilter} OR type = ANY(${options?.streamTypes ?? []}))
+        AND (${filterAll} OR (${includeArchived} AND archived_at IS NOT NULL) OR (${!includeArchived} AND archived_at IS NULL))
+    `)
+
+    return result.rows.map((r) => r.id)
+  },
+
+  /**
+   * Get a stream and all its thread descendants.
+   * Used by agent access control for public_plus_stream access spec.
+   */
+  async getStreamWithThreads(db: Querier, streamId: string): Promise<string[]> {
+    // Get the stream itself and any threads that have this stream as root
+    const result = await db.query<{ id: string }>(sql`
+      SELECT id FROM streams
+      WHERE id = ${streamId} OR root_stream_id = ${streamId}
+    `)
+
+    return result.rows.map((r) => r.id)
+  },
+
+  /**
+   * Get accessible streams for an agent based on its access spec.
+   *
+   * Unlike getAccessibleStreamsWithMembers (which determines what a USER can access),
+   * this determines what an AGENT can access based on invocation context.
+   *
+   * Access specs:
+   * - user_full_access: Everything the specified user can access
+   * - public_only: Only public streams
+   * - public_plus_stream: Public streams + a specific stream and its threads
+   * - user_union: Union of what multiple users can access (for DMs)
+   */
+  async getAccessibleStreamsForAgent(
+    db: Querier,
+    spec: AgentAccessSpec,
+    workspaceId: string,
+    options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
+  ): Promise<string[]> {
+    switch (spec.type) {
+      case "user_full_access":
+        // Delegate to existing user access method
+        return this.getAccessibleStreamsWithMembers(db, {
+          workspaceId,
+          userId: spec.userId,
+          streamTypes: options?.streamTypes,
+          archiveStatus: options?.archiveStatus,
+        })
+
+      case "public_only":
+        return this.getPublicStreams(db, workspaceId, options)
+
+      case "public_plus_stream": {
+        // Get public streams and the specific stream with its threads
+        const [publicIds, streamTreeIds] = await Promise.all([
+          this.getPublicStreams(db, workspaceId, options),
+          this.getStreamWithThreads(db, spec.streamId),
+        ])
+
+        // Combine and deduplicate
+        return [...new Set([...publicIds, ...streamTreeIds])]
+      }
+
+      case "user_union": {
+        // Get accessible streams for each user and union them
+        const allResults = await Promise.all(
+          spec.userIds.map((userId) =>
+            this.getAccessibleStreamsWithMembers(db, {
+              workspaceId,
+              userId,
+              streamTypes: options?.streamTypes,
+              archiveStatus: options?.archiveStatus,
+            })
+          )
+        )
+
+        // Union all results
+        return [...new Set(allResults.flat())]
+      }
+    }
   },
 }

@@ -8,16 +8,30 @@ import { PersonaRepository, type Persona } from "../repositories/persona-reposit
 import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
+import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
-import { isToolEnabled, type SendMessageInputWithSources, type SendMessageResult, type SourceItem } from "./tools"
+import {
+  isToolEnabled,
+  type SendMessageInputWithSources,
+  type SendMessageResult,
+  type SourceItem,
+  type SearchToolsCallbacks,
+  type MessageSearchResult,
+  type StreamSearchResult,
+  type UserSearchResult,
+} from "./tools"
 import { buildStreamContext, type StreamContext } from "./context-builder"
+import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
+import { SearchRepository } from "../repositories/search-repository"
+import { resolveStreamIdentifier } from "./tools/identifier-resolver"
+import type { SearchService } from "../services/search-service"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
 
 export type WithSessionResult =
   | { status: "skipped"; sessionId: null; reason: string }
-  | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[] }
+  | { status: "completed"; sessionId: string; messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }
   | { status: "failed"; sessionId: string }
 
 /**
@@ -139,6 +153,7 @@ export async function withSession(
       sessionId: session.id,
       messagesSent,
       sentMessageIds,
+      lastSeenSequence,
     }
   } catch (err) {
     logger.error({ err, sessionId: session.id }, "Session failed")
@@ -159,6 +174,10 @@ export interface PersonaAgentDeps {
   pool: Pool
   responseGenerator: ResponseGenerator
   userPreferencesService: UserPreferencesService
+  /** Researcher for workspace knowledge retrieval */
+  researcher: Researcher
+  /** Search service for workspace search tools */
+  searchService: SearchService
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -196,6 +215,12 @@ export interface PersonaAgentResult {
   sentMessageIds: string[]
   status: "completed" | "failed" | "skipped"
   skipReason?: string
+  /** Last sequence processed - used to check for unseen messages after completion */
+  lastSeenSequence?: bigint
+  /** Stream ID - needed for follow-up job dispatch */
+  streamId?: string
+  /** Persona ID - needed for follow-up job dispatch */
+  personaId?: string
 }
 
 /**
@@ -213,7 +238,8 @@ export class PersonaAgent {
    * Run the persona agent for a given message.
    */
   async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
-    const { pool, responseGenerator, userPreferencesService, createMessage, createThread } = this.deps
+    const { pool, responseGenerator, userPreferencesService, researcher, searchService, createMessage, createThread } =
+      this.deps
     const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
     // Step 1: Load and validate persona and stream
@@ -283,8 +309,33 @@ export class PersonaAgent {
           mentionerName = mentioner?.name ?? undefined
         }
 
-        // Build system prompt with stream context, trigger info, and temporal context
-        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName)
+        // Build system prompt with stream context and trigger info
+        // Retrieved knowledge will be injected by the research node in the graph
+        const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName, null)
+
+        // Create researcher callback for the graph's research node
+        let runResearcher:
+          | ((config: import("@langchain/core/runnables").RunnableConfig) => Promise<ResearcherResult>)
+          | undefined
+        if (triggerMessage && invokingUserId) {
+          // Capture DM participant IDs if needed
+          let dmParticipantIds: string[] | undefined
+          if (stream.type === StreamTypes.DM) {
+            const members = await StreamMemberRepository.list(db, { streamId })
+            dmParticipantIds = members.map((m) => m.userId)
+          }
+
+          runResearcher = (langchainConfig) =>
+            researcher.research({
+              workspaceId,
+              streamId,
+              triggerMessage,
+              conversationHistory: context.conversationHistory,
+              invokingUserId,
+              dmParticipantIds,
+              langchainConfig,
+            })
+        }
 
         // Track target stream for responses - may change if we create a thread
         let targetStreamId = streamId
@@ -317,6 +368,119 @@ export class PersonaAgent {
           return { messageId: message.id, content: msgInput.content }
         }
 
+        // Build search callbacks for workspace search tools
+        let searchCallbacks: SearchToolsCallbacks | undefined
+        if (invokingUserId) {
+          // Compute access spec for search context
+          const accessSpec = await computeAgentAccessSpec(db, {
+            stream,
+            invokingUserId,
+          })
+
+          // Get accessible stream IDs for the agent's context
+          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+
+          searchCallbacks = {
+            searchMessages: async (input) => {
+              // Resolve optional stream filter
+              let filterStreamIds = accessibleStreamIds
+              if (input.stream) {
+                const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+                if (!resolved.resolved) {
+                  // Stream not found or not accessible - return empty results
+                  return []
+                }
+                filterStreamIds = [resolved.id]
+              }
+
+              const results = await searchService.search({
+                workspaceId,
+                userId: invokingUserId,
+                query: input.query,
+                filters: { streamIds: filterStreamIds },
+                limit: 10,
+                exact: input.exact,
+              })
+
+              // Enrich with author and stream names, then map to MessageSearchResult
+              const enriched = await enrichMessageSearchResults(db, results)
+              return enriched.map((r) => ({
+                id: r.id,
+                content: r.content,
+                authorName: r.authorName,
+                streamName: r.streamName,
+                createdAt: r.createdAt.toISOString(),
+              }))
+            },
+
+            searchStreams: async (input) => {
+              // Use trigram search for fuzzy matching on stream names
+              const streams = await StreamRepository.searchByName(db, {
+                streamIds: accessibleStreamIds,
+                query: input.query,
+                types: input.types,
+                limit: 10,
+              })
+
+              return streams.map((s) => ({
+                id: s.id,
+                type: s.type,
+                name: s.displayName ?? s.slug ?? null,
+                description: s.description ?? null,
+              }))
+            },
+
+            searchUsers: async (input) => {
+              const users = await UserRepository.searchByNameOrEmail(db, workspaceId, input.query, 10)
+              return users.map((u) => ({
+                id: u.id,
+                name: u.name,
+                email: u.email,
+              }))
+            },
+
+            getStreamMessages: async (input) => {
+              // Resolve the stream identifier (ID, slug, or #slug)
+              const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+              if (!resolved.resolved) {
+                // Stream not found or not accessible
+                return []
+              }
+
+              // Get recent messages from the stream (returns newest first)
+              const messages = await MessageRepository.list(db, resolved.id, {
+                limit: input.limit ?? 10,
+              })
+
+              // Reverse to get chronological order (oldest first)
+              messages.reverse()
+
+              // Enrich with author names
+              const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+              const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+
+              const [users, personas] = await Promise.all([
+                userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+                personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+              ])
+
+              const userMap = new Map(users.map((u) => [u.id, u.name]))
+              const personaMap = new Map(personas.map((p) => [p.id, p.name]))
+
+              return messages.map((m) => ({
+                id: m.id,
+                content: m.content,
+                authorName:
+                  m.authorType === "user"
+                    ? (userMap.get(m.authorId) ?? "Unknown User")
+                    : (personaMap.get(m.authorId) ?? "Unknown Persona"),
+                authorType: m.authorType,
+                createdAt: m.createdAt.toISOString(),
+              }))
+            },
+          }
+        }
+
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
@@ -337,6 +501,8 @@ export class PersonaAgent {
           updateLastSeenSequence: async (updateSessionId: string, sequence: bigint) => {
             await AgentSessionRepository.updateLastSeenSequence(db, updateSessionId, sequence)
           },
+
+          search: searchCallbacks,
         }
 
         // Format messages with timestamps if temporal context is available
@@ -357,6 +523,7 @@ export class PersonaAgent {
             enabledTools: persona.enabledTools,
             workspaceId, // For cost tracking
             invokingUserId, // For cost attribution to the human user
+            runResearcher,
           },
           callbacks
         )
@@ -393,6 +560,9 @@ export class PersonaAgent {
           messagesSent: result.messagesSent,
           sentMessageIds: result.sentMessageIds,
           status: "completed",
+          lastSeenSequence: result.lastSeenSequence,
+          streamId,
+          personaId,
         }
     }
   }
@@ -406,7 +576,8 @@ function buildSystemPrompt(
   persona: Persona,
   context: StreamContext,
   trigger?: "mention",
-  mentionerName?: string
+  mentionerName?: string,
+  retrievedContext?: string | null
 ): string {
   if (!persona.systemPrompt) {
     throw new Error(`Persona "${persona.name}" (${persona.id}) has no system prompt configured`)
@@ -448,6 +619,11 @@ You were explicitly @mentioned by ${mentionerDesc} who wants your assistance.`
 
     default:
       prompt += buildScratchpadPrompt(context)
+  }
+
+  // Add retrieved workspace knowledge if available
+  if (retrievedContext) {
+    prompt += "\n\n" + retrievedContext
   }
 
   // Add send_message tool instructions
@@ -511,12 +687,23 @@ function buildScratchpadPrompt(context: StreamContext): string {
   if (context.streamInfo.name) {
     section += ` called "${context.streamInfo.name}"`
   }
-  section += ". This is a private, personal space for notes and thinking. "
-  section += "The conversation history is your primary context."
+  section += ". This is a private, personal space for notes and thinking."
 
   if (context.streamInfo.description) {
     section += `\n\nDescription: ${context.streamInfo.description}`
   }
+
+  section += `
+
+## Workspace Knowledge Access
+
+You have access to the user's workspace knowledge through the GAM (General Agentic Memory) system:
+- Their other scratchpads and notes
+- Channels they're a member of
+- DMs they're participating in
+- Memos (summarized knowledge) from past conversations
+
+Relevant context is automatically retrieved before you respond. If a "Retrieved Workspace Knowledge" section appears below, it contains information found relevant to this conversation. You can reference this knowledge naturally without explicitly citing sources unless the user asks where information came from.`
 
   return section
 }

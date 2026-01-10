@@ -84,22 +84,41 @@ export function createCompanionListener(
           return
         }
 
-        // Check if this message was already seen by a previous session
-        // This prevents re-triggering for messages that an agent decided not to respond to
+        // Check if there's an existing session that will handle this message
         const lastSession = await AgentSessionRepository.findLatestByStream(client, streamId)
-        if (lastSession?.status === SessionStatuses.COMPLETED && lastSession.lastSeenSequence) {
+        if (lastSession) {
           const messageSequence = BigInt(event.sequence)
-          if (messageSequence <= lastSession.lastSeenSequence) {
+
+          // If a session is still running or pending, it will pick up new messages
+          // via check_new_messages node in the graph - don't dispatch duplicate jobs
+          if (lastSession.status === SessionStatuses.PENDING || lastSession.status === SessionStatuses.RUNNING) {
             logger.debug(
               {
                 streamId,
                 messageId: event.payload.messageId,
-                messageSequence: messageSequence.toString(),
-                lastSeenSequence: lastSession.lastSeenSequence.toString(),
+                sessionId: lastSession.id,
+                sessionStatus: lastSession.status,
               },
-              "Message already seen by previous session, skipping"
+              "Session already active for stream, new message will be handled in-flight"
             )
             return
+          }
+
+          // If session completed, check if it already saw this message
+          // This prevents re-triggering for messages that an agent decided not to respond to
+          if (lastSession.status === SessionStatuses.COMPLETED && lastSession.lastSeenSequence) {
+            if (messageSequence <= lastSession.lastSeenSequence) {
+              logger.debug(
+                {
+                  streamId,
+                  messageId: event.payload.messageId,
+                  messageSequence: messageSequence.toString(),
+                  lastSeenSequence: lastSession.lastSeenSequence.toString(),
+                },
+                "Message already seen by previous session, skipping"
+              )
+              return
+            }
           }
         }
 

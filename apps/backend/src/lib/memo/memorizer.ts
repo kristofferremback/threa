@@ -132,7 +132,6 @@ export class Memorizer {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      maxTokens: 8000,
       temperature: 0.3,
       telemetry: {
         functionId: "memorize-message",
@@ -175,7 +174,6 @@ export class Memorizer {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      maxTokens: 12000,
       temperature: 0.3,
       telemetry: {
         functionId: "memorize-conversation",
@@ -226,7 +224,6 @@ export class Memorizer {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      maxTokens: 12000,
       temperature: 0.3,
       telemetry: {
         functionId: "revise-memo",

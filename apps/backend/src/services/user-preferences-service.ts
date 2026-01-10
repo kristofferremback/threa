@@ -31,12 +31,12 @@ function mergeOverrides(
   for (const { key, value } of overrides) {
     if (key.startsWith("accessibility.")) {
       const accessibilityKey = key.slice("accessibility.".length) as keyof AccessibilityPreferences
-      ;(result.accessibility as Record<string, unknown>)[accessibilityKey] = value
+      ;(result.accessibility as unknown as Record<string, unknown>)[accessibilityKey] = value
     } else if (key.startsWith("keyboardShortcuts.")) {
       const shortcutKey = key.slice("keyboardShortcuts.".length)
       result.keyboardShortcuts[shortcutKey] = value as string
     } else {
-      ;(result as Record<string, unknown>)[key] = value
+      ;(result as unknown as Record<string, unknown>)[key] = value
     }
   }
 

@@ -38,7 +38,9 @@ const DEFAULT_CONFIG = {
   baseBackoffMs: 1000,
   debounceMs: 50,
   maxWaitMs: 200,
-  fallbackPollMs: 500,
+  // Fallback poll is a safety net for missed NOTIFY events - 2s is sufficient
+  // since real-time delivery uses LISTEN/NOTIFY. Lower values cause connection pressure.
+  fallbackPollMs: 2000,
   keepaliveMs: 30000,
 }
 
@@ -274,7 +276,11 @@ export class OutboxListener {
       } catch (err) {
         logger.error({ err, listenerId: this.listenerId }, "OutboxListener fallback poll error")
       }
-      this.startFallbackPoll()
+
+      // Only schedule next poll if still running - prevents orphaned timers after stop()
+      if (this.running) {
+        this.startFallbackPoll()
+      }
     }, this.fallbackPollMs)
   }
 

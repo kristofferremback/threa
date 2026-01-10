@@ -117,6 +117,25 @@ export const StreamRepository = {
     return result.rows[0] ? mapRowToStream(result.rows[0]) : null
   },
 
+  async findByIds(db: Querier, ids: string[]): Promise<Stream[]> {
+    if (ids.length === 0) return []
+    const result = await db.query<StreamRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams WHERE id = ANY(${ids})`)
+    return result.rows.map(mapRowToStream)
+  },
+
+  /**
+   * Find a stream by its slug within a workspace.
+   * Slugs are case-insensitive for matching.
+   */
+  async findBySlug(db: Querier, workspaceId: string, slug: string): Promise<Stream | null> {
+    const result = await db.query<StreamRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM streams
+          WHERE workspace_id = ${workspaceId} AND LOWER(slug) = LOWER(${slug})
+          LIMIT 1`
+    )
+    return result.rows[0] ? mapRowToStream(result.rows[0]) : null
+  },
+
   async list(
     db: Querier,
     workspaceId: string,
@@ -370,5 +389,68 @@ export const StreamRepository = {
       })
     }
     return map
+  },
+
+  /**
+   * Search for streams by display name or slug.
+   * Uses pg_trgm trigram similarity for fuzzy matching (handles typos),
+   * combined with ILIKE for exact substring matches.
+   * Only searches within the provided stream IDs (for access control).
+   */
+  async searchByName(
+    db: Querier,
+    params: {
+      streamIds: string[]
+      query: string
+      types?: StreamType[]
+      limit?: number
+    }
+  ): Promise<Stream[]> {
+    const { streamIds, query, types, limit = 10 } = params
+    if (streamIds.length === 0) return []
+
+    const pattern = `%${query}%`
+
+    // Use separate queries for type-filtered vs unfiltered to avoid nested sql fragments
+    if (types && types.length > 0) {
+      const result = await db.query<StreamRow>(sql`
+        SELECT ${sql.raw(SELECT_FIELDS)},
+          GREATEST(
+            COALESCE(similarity(display_name, ${query}), 0),
+            COALESCE(similarity(slug, ${query}), 0)
+          ) AS sim_score
+        FROM streams
+        WHERE id = ANY(${streamIds})
+          AND type = ANY(${types})
+          AND (
+            display_name % ${query}
+            OR slug % ${query}
+            OR display_name ILIKE ${pattern}
+            OR slug ILIKE ${pattern}
+          )
+        ORDER BY sim_score DESC, display_name NULLS LAST
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToStream)
+    }
+
+    const result = await db.query<StreamRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)},
+        GREATEST(
+          COALESCE(similarity(display_name, ${query}), 0),
+          COALESCE(similarity(slug, ${query}), 0)
+        ) AS sim_score
+      FROM streams
+      WHERE id = ANY(${streamIds})
+        AND (
+          display_name % ${query}
+          OR slug % ${query}
+          OR display_name ILIKE ${pattern}
+          OR slug ILIKE ${pattern}
+        )
+      ORDER BY sim_score DESC, display_name NULLS LAST
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToStream)
   },
 }

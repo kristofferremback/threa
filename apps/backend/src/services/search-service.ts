@@ -27,6 +27,8 @@ export interface SearchParams {
   query: string
   filters?: SearchFilters
   limit?: number
+  /** If true, use exact substring matching (ILIKE) instead of full-text search */
+  exact?: boolean
 }
 
 export interface SearchServiceDependencies {
@@ -48,11 +50,40 @@ export class SearchService {
   /**
    * Perform hybrid search combining full-text and semantic search.
    * Uses a single SQL query with RRF ranking.
+   *
+   * When exact=true, uses ILIKE for true substring matching instead of full-text search.
+   * This is useful for error messages, IDs, or other literal text.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT } = params
+    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
 
-    logger.debug({ query, filters, workspaceId, userId }, "Search request")
+    logger.debug({ query, filters, workspaceId, userId, exact }, "Search request")
+
+    // For exact matching, skip embedding generation - use ILIKE directly
+    if (exact) {
+      return withClient(this.pool, async (client) => {
+        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
+
+        if (streamIds.length === 0) {
+          logger.debug({ workspaceId, userId }, "No accessible streams for user")
+          return []
+        }
+
+        const repoFilters: ResolvedFilters = {
+          authorId: filters.authorId,
+          streamTypes: filters.streamTypes,
+          before: filters.before,
+          after: filters.after,
+        }
+
+        return SearchRepository.exactSearch(client, {
+          query,
+          streamIds,
+          filters: repoFilters,
+          limit,
+        })
+      })
+    }
 
     // Generate embedding for search query (do this before DB connection)
     let embedding: number[] = []
