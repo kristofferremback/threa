@@ -5,6 +5,12 @@ import { logger } from "../../lib/logger"
 // Schema for search_messages tool
 const SearchMessagesSchema = z.object({
   query: z.string().describe("The search query to find relevant messages in the workspace"),
+  stream: z
+    .string()
+    .optional()
+    .describe(
+      "Optional: limit search to a specific stream. Can be an ID (stream_xxx), a slug (general), or a prefixed slug (#general)"
+    ),
   exact: z
     .boolean()
     .optional()
@@ -55,7 +61,11 @@ export interface UserSearchResult {
 
 // Schema for get_stream_messages tool
 const GetStreamMessagesSchema = z.object({
-  streamId: z.string().describe("The ID of the stream to get messages from (use search_streams to find stream IDs)"),
+  stream: z
+    .string()
+    .describe(
+      "The stream to get messages from. Can be an ID (stream_xxx), a slug (general), or a prefixed slug (#general)"
+    ),
   limit: z
     .number()
     .optional()
@@ -76,6 +86,9 @@ export interface StreamMessagesResult {
 /**
  * Callbacks for workspace search tools.
  * These are provided by the PersonaAgent which has access to the session context.
+ *
+ * Note: The `stream` field in inputs may be an ID, slug, or prefixed slug (#general).
+ * The callback implementation is responsible for resolving these to actual stream IDs.
  */
 export interface SearchToolsCallbacks {
   searchMessages: (input: SearchMessagesInput) => Promise<MessageSearchResult[]>
@@ -96,7 +109,9 @@ export function createSearchMessagesTool(callbacks: SearchToolsCallbacks) {
 - Previous discussions about a topic
 - Specific information mentioned in past conversations
 - Context about decisions or plans
-Set exact=true to find literal phrase matches (useful for error messages, IDs, or quoted text).`,
+
+Set exact=true to find literal phrase matches (useful for error messages, IDs, or quoted text).
+Optionally filter by stream using ID (stream_xxx), slug (general), or prefixed slug (#general).`,
     schema: SearchMessagesSchema,
     func: async (input: SearchMessagesInput) => {
       try {
@@ -105,6 +120,7 @@ Set exact=true to find literal phrase matches (useful for error messages, IDs, o
         if (results.length === 0) {
           return JSON.stringify({
             query: input.query,
+            stream: input.stream,
             exact: input.exact,
             results: [],
             message: "No matching messages found",
@@ -112,12 +128,13 @@ Set exact=true to find literal phrase matches (useful for error messages, IDs, o
         }
 
         logger.debug(
-          { query: input.query, exact: input.exact, resultCount: results.length },
+          { query: input.query, stream: input.stream, exact: input.exact, resultCount: results.length },
           "Message search completed"
         )
 
         return JSON.stringify({
           query: input.query,
+          stream: input.stream,
           exact: input.exact,
           results: results.slice(0, MAX_RESULTS).map((r) => ({
             id: r.id,
@@ -241,7 +258,8 @@ export function createGetStreamMessagesTool(callbacks: SearchToolsCallbacks) {
 - See what's being discussed in another stream
 - Get context from a related conversation
 - Check recent activity in a channel
-First use search_streams to find the stream ID, then use this tool to get its messages.`,
+
+You can reference streams by their ID (stream_xxx), slug (general), or prefixed slug (#general).`,
     schema: GetStreamMessagesSchema,
     func: async (input: GetStreamMessagesInput) => {
       try {
@@ -250,16 +268,16 @@ First use search_streams to find the stream ID, then use this tool to get its me
 
         if (results.length === 0) {
           return JSON.stringify({
-            streamId: input.streamId,
+            stream: input.stream,
             messages: [],
             message: "No messages found in this stream (it may be empty or you may not have access)",
           })
         }
 
-        logger.debug({ streamId: input.streamId, messageCount: results.length }, "Stream messages retrieved")
+        logger.debug({ stream: input.stream, messageCount: results.length }, "Stream messages retrieved")
 
         return JSON.stringify({
-          streamId: input.streamId,
+          stream: input.stream,
           messages: results.map((r) => ({
             id: r.id,
             content: truncate(r.content, 500),
@@ -269,10 +287,10 @@ First use search_streams to find the stream ID, then use this tool to get its me
           })),
         })
       } catch (error) {
-        logger.error({ error, streamId: input.streamId }, "Get stream messages failed")
+        logger.error({ error, stream: input.stream }, "Get stream messages failed")
         return JSON.stringify({
           error: `Failed to get messages: ${error instanceof Error ? error.message : "Unknown error"}`,
-          streamId: input.streamId,
+          stream: input.stream,
         })
       }
     },

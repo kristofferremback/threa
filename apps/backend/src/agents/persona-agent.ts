@@ -23,6 +23,7 @@ import {
 import { buildStreamContext, type StreamContext } from "./context-builder"
 import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
 import { SearchRepository } from "../repositories/search-repository"
+import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import type { SearchService } from "../services/search-service"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -381,12 +382,24 @@ export class PersonaAgent {
 
           searchCallbacks = {
             searchMessages: async (input) => {
+              // Resolve optional stream filter
+              let filterStreamIds = accessibleStreamIds
+              if (input.stream) {
+                const resolved = await resolveStreamIdentifier(db, input.stream, accessibleStreamIds)
+                if (!resolved.resolved) {
+                  // Stream not found or not accessible - return empty results
+                  return []
+                }
+                filterStreamIds = [resolved.id]
+              }
+
               const results = await searchService.search({
                 workspaceId,
                 userId: invokingUserId,
-                query: input.exact ? `"${input.query}"` : input.query,
-                filters: { streamIds: accessibleStreamIds },
+                query: input.query,
+                filters: { streamIds: filterStreamIds },
                 limit: 10,
+                exact: input.exact,
               })
 
               // Enrich with author and stream names, then map to MessageSearchResult
@@ -427,13 +440,15 @@ export class PersonaAgent {
             },
 
             getStreamMessages: async (input) => {
-              // Verify the requested stream is accessible
-              if (!accessibleStreamIds.includes(input.streamId)) {
+              // Resolve the stream identifier (ID, slug, or #slug)
+              const resolved = await resolveStreamIdentifier(db, input.stream, accessibleStreamIds)
+              if (!resolved.resolved) {
+                // Stream not found or not accessible
                 return []
               }
 
               // Get recent messages from the stream (returns newest first)
-              const messages = await MessageRepository.list(db, input.streamId, {
+              const messages = await MessageRepository.list(db, resolved.id, {
                 limit: input.limit ?? 10,
               })
 
