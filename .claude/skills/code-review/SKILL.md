@@ -18,18 +18,32 @@ This skill orchestrates two parallel review agents that analyze a PR and post th
 
 ## Instructions
 
-### Step 1: Identify the PR
+### Step 1: Identify and Validate the PR
 
 If a PR number was provided as an argument, use that. Otherwise, find the open PR for the current branch:
 
 ```bash
-gh pr view --json number,title,url
+gh pr view --json number,title,url -q '"\(.number)|\(.title)|\(.url)"'
 ```
+
+This outputs `number|title|url` format. Parse the values from the output.
 
 If no PR exists for the current branch and no number was provided, stop and tell the user:
 
 ```
 No open PR found for current branch. Please provide a PR number: /code-review <number>
+```
+
+**Validate the PR exists** before proceeding. If a PR number was provided as an argument, verify it:
+
+```bash
+gh pr view <NUMBER> --json number -q '.number'
+```
+
+If this fails, stop and tell the user:
+
+```
+PR #<NUMBER> not found. Please check the PR number and try again.
 ```
 
 ### Step 2: Spawn Both Review Agents
@@ -39,6 +53,8 @@ Use the Task tool to spawn TWO agents in parallel. Both calls should be in the S
 **CRITICAL**: Set `run_in_background: true` for both agents.
 
 **Note**: In the prompts below, replace `<NUMBER>`, `<TITLE>`, and `<URL>` with actual values from the `gh pr view` output.
+
+**Task IDs**: The Task tool returns a `task_id` for each spawned agent. Capture these IDs from the tool responses - you'll need them in Step 3 to wait for completion.
 
 **Agent 1 - Code Review:**
 
