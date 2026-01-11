@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
-import { Pool, PoolClient } from "pg"
+import { Pool } from "pg"
 import { withTransaction } from "../../src/db"
-import { OutboxRepository, OutboxListenerRepository } from "../../src/repositories"
+import { OutboxRepository, OutboxListenerRepository, claimAndFetchEvents, CLAIM_STATUS } from "../../src/repositories"
 import { setupTestDatabase } from "./setup"
 
 describe("Outbox Multi-Listener", () => {
@@ -88,107 +88,6 @@ describe("Outbox Multi-Listener", () => {
         const state = await OutboxListenerRepository.claimListener(client, "test_update_cursor")
         expect(state!.lastProcessedId).toBe(42n)
         expect(state!.lastProcessedAt).not.toBeNull()
-      })
-    })
-
-    test("should reset retry state on success", async () => {
-      await withTransaction(pool, async (client) => {
-        await OutboxListenerRepository.ensureListener(client, "test_reset_retry")
-
-        // Simulate a failure first
-        await OutboxListenerRepository.recordError(client, "test_reset_retry", "test error", 5, 1000)
-
-        // Now update cursor (success)
-        await OutboxListenerRepository.updateCursor(client, "test_reset_retry", 10n)
-
-        const state = await OutboxListenerRepository.claimListener(client, "test_reset_retry")
-        expect(state).toMatchObject({
-          retryCount: 0,
-          retryAfter: null,
-          lastError: null,
-        })
-      })
-    })
-  })
-
-  describe("OutboxListenerRepository.recordError", () => {
-    test("should increment retry count and set retry_after", async () => {
-      await withTransaction(pool, async (client) => {
-        await OutboxListenerRepository.ensureListener(client, "test_error")
-
-        const retryAfter = await OutboxListenerRepository.recordError(
-          client,
-          "test_error",
-          "Something went wrong",
-          5,
-          1000
-        )
-
-        expect(retryAfter).not.toBeNull()
-        expect(retryAfter!.getTime()).toBeGreaterThan(Date.now())
-
-        const state = await OutboxListenerRepository.claimListener(client, "test_error")
-        expect(state).toMatchObject({
-          retryCount: 1,
-          lastError: "Something went wrong",
-        })
-      })
-    })
-
-    test("should return null when max retries exceeded", async () => {
-      await withTransaction(pool, async (client) => {
-        await OutboxListenerRepository.ensureListener(client, "test_max_retry")
-
-        // Record 5 errors (max retries)
-        for (let i = 0; i < 5; i++) {
-          await OutboxListenerRepository.recordError(client, "test_max_retry", `Error ${i + 1}`, 5, 1000)
-        }
-
-        // 6th error should return null (exceeded)
-        const retryAfter = await OutboxListenerRepository.recordError(client, "test_max_retry", "Error 6", 5, 1000)
-
-        expect(retryAfter).toBeNull()
-      })
-    })
-  })
-
-  describe("OutboxListenerRepository.moveToDeadLetter", () => {
-    test("should move event to dead letter table", async () => {
-      await withTransaction(pool, async (client) => {
-        await OutboxListenerRepository.ensureListener(client, "test_dead_letter")
-
-        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_letter", 123n, "Max retries exceeded")
-
-        const result = await client.query(
-          "SELECT listener_id, outbox_event_id, error FROM outbox_dead_letters WHERE listener_id = $1",
-          ["test_dead_letter"]
-        )
-        expect(result.rows).toMatchObject([
-          {
-            listener_id: "test_dead_letter",
-            outbox_event_id: "123",
-            error: "Max retries exceeded",
-          },
-        ])
-      })
-    })
-
-    test("should reset retry state after dead lettering", async () => {
-      await withTransaction(pool, async (client) => {
-        await OutboxListenerRepository.ensureListener(client, "test_dead_reset")
-
-        // Simulate retries
-        await OutboxListenerRepository.recordError(client, "test_dead_reset", "Error", 5, 1000)
-
-        // Move to dead letter
-        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_reset", 999n, "Final error")
-
-        const state = await OutboxListenerRepository.claimListener(client, "test_dead_reset")
-        expect(state).toMatchObject({
-          retryCount: 0,
-          retryAfter: null,
-          lastError: null,
-        })
       })
     })
   })
@@ -436,6 +335,145 @@ describe("Outbox Multi-Listener", () => {
 
       // tx2 should get null because row was locked (SKIP LOCKED behavior)
       expect(state2).toBeNull()
+    })
+  })
+
+  describe("claimAndFetchEvents", () => {
+    const testMessagePayload = (streamId: string) => ({
+      workspaceId: "ws_test",
+      streamId,
+      event: {
+        id: `evt_test_${Date.now()}_${Math.random()}`,
+        streamId,
+        sequence: 1n,
+        actorId: "usr_test",
+        actorType: "user" as const,
+        type: "message" as const,
+        payload: {
+          messageId: `msg_test_${Date.now()}`,
+          content: "test",
+          contentFormat: "markdown" as const,
+        },
+        createdAt: new Date(),
+      },
+    })
+
+    test("should return CLAIMED with events when events exist", async () => {
+      // Set up listener at baseline
+      const baselineId = await withTransaction(pool, async (client) => {
+        const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
+        const baseline = BigInt(maxResult.rows[0].max_id)
+        await OutboxListenerRepository.ensureListener(client, "test_claim_fetch", baseline)
+        return baseline
+      })
+
+      // Insert events outside the setup transaction
+      await withTransaction(pool, async (client) => {
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
+      })
+
+      const result = await claimAndFetchEvents(pool, "test_claim_fetch", 100)
+
+      expect(result.status).toBe(CLAIM_STATUS.CLAIMED)
+      if (result.status === CLAIM_STATUS.CLAIMED) {
+        expect(result.events.length).toBe(2)
+        expect(result.lastEventId).toBeGreaterThan(baselineId)
+      }
+    })
+
+    test("should return NO_EVENTS when cursor is caught up", async () => {
+      // Set up listener at current max
+      await withTransaction(pool, async (client) => {
+        const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
+        const currentMax = BigInt(maxResult.rows[0].max_id)
+        await OutboxListenerRepository.ensureListener(client, "test_no_events", currentMax)
+      })
+
+      const result = await claimAndFetchEvents(pool, "test_no_events", 100)
+
+      expect(result.status).toBe(CLAIM_STATUS.NO_EVENTS)
+    })
+
+    test("should return NOT_READY when listener does not exist", async () => {
+      const result = await claimAndFetchEvents(pool, "test_nonexistent_listener", 100)
+
+      expect(result.status).toBe(CLAIM_STATUS.NOT_READY)
+    })
+
+    test("should return NOT_READY when in retry backoff", async () => {
+      // Set up listener with retry_after in the future
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_backoff")
+        await client.query(
+          "UPDATE outbox_listeners SET retry_after = NOW() + interval '1 hour' WHERE listener_id = $1",
+          ["test_backoff"]
+        )
+      })
+
+      const result = await claimAndFetchEvents(pool, "test_backoff", 100)
+
+      expect(result.status).toBe(CLAIM_STATUS.NOT_READY)
+    })
+
+    test("should advance cursor after claiming events", async () => {
+      // Set up listener at baseline
+      await withTransaction(pool, async (client) => {
+        const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
+        const baseline = BigInt(maxResult.rows[0].max_id)
+        await OutboxListenerRepository.ensureListener(client, "test_cursor_advance", baseline)
+      })
+
+      // Insert an event
+      await withTransaction(pool, async (client) => {
+        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
+      })
+
+      // Claim it
+      const result = await claimAndFetchEvents(pool, "test_cursor_advance", 100)
+      expect(result.status).toBe(CLAIM_STATUS.CLAIMED)
+
+      // Second call should return NO_EVENTS (cursor advanced)
+      const result2 = await claimAndFetchEvents(pool, "test_cursor_advance", 100)
+      expect(result2.status).toBe(CLAIM_STATUS.NO_EVENTS)
+    })
+
+    test("should respect batch size limit", async () => {
+      // Set up listener at baseline
+      await withTransaction(pool, async (client) => {
+        const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
+        const baseline = BigInt(maxResult.rows[0].max_id)
+        await OutboxListenerRepository.ensureListener(client, "test_batch_limit", baseline)
+      })
+
+      // Insert 5 events
+      await withTransaction(pool, async (client) => {
+        for (let i = 0; i < 5; i++) {
+          await OutboxRepository.insert(client, "message:created", testMessagePayload(`stream_${i}`))
+        }
+      })
+
+      // Claim with batch size 2
+      const result = await claimAndFetchEvents(pool, "test_batch_limit", 2)
+
+      expect(result.status).toBe(CLAIM_STATUS.CLAIMED)
+      if (result.status === CLAIM_STATUS.CLAIMED) {
+        expect(result.events.length).toBe(2)
+      }
+
+      // Second call should get next 2
+      const result2 = await claimAndFetchEvents(pool, "test_batch_limit", 2)
+      expect(result2.status).toBe(CLAIM_STATUS.CLAIMED)
+      if (result2.status === CLAIM_STATUS.CLAIMED) {
+        expect(result2.events.length).toBe(2)
+      }
+
+      // Third call should get the last 1
+      const result3 = await claimAndFetchEvents(pool, "test_batch_limit", 2)
+      expect(result3.status).toBe(CLAIM_STATUS.CLAIMED)
+      if (result3.status === CLAIM_STATUS.CLAIMED) {
+        expect(result3.events.length).toBe(1)
+      }
     })
   })
 })
