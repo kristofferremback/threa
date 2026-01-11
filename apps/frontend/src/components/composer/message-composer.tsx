@@ -7,10 +7,8 @@ import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode } from "@threa/types"
 
-/** Returns the platform-appropriate modifier key symbol */
-function getModifierSymbol(): string {
-  return navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
-}
+/** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
+const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -70,11 +68,10 @@ export function MessageComposer({
 
   // Build the send mode hint text (reactive to preference changes)
   const sendHint = useMemo(() => {
-    const mod = getModifierSymbol()
     if (messageSendMode === "enter") {
       return `Enter to send · Shift+Enter for new line`
     }
-    return `${mod}Enter to send`
+    return `${MOD_SYMBOL}Enter to send`
   }, [messageSendMode])
 
   return (

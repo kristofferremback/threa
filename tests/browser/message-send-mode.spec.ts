@@ -302,11 +302,11 @@ test.describe("Message Send Mode", () => {
       // Trigger mention suggestion (causes re-renders)
       await page.keyboard.type("@")
       // Wait for suggestion popup to appear
-      await page.waitForTimeout(300)
+      await expect(page.locator('[role="listbox"]')).toBeVisible()
 
       // Close suggestion with Escape
       await page.keyboard.press("Escape")
-      await page.waitForTimeout(100)
+      await expect(page.locator('[role="listbox"]')).not.toBeVisible()
 
       // Continue typing
       await page.keyboard.press("Backspace") // Remove the @
@@ -331,15 +331,15 @@ test.describe("Message Send Mode", () => {
 
       // Blur and refocus multiple times (causes re-renders)
       await page.keyboard.press("Tab") // Blur editor
-      await page.waitForTimeout(50)
+      await expect(editor).not.toBeFocused()
       await editor.click() // Refocus
 
       await page.keyboard.press("Tab")
-      await page.waitForTimeout(50)
+      await expect(editor).not.toBeFocused()
       await editor.click()
 
       await page.keyboard.press("Tab")
-      await page.waitForTimeout(50)
+      await expect(editor).not.toBeFocused()
       await editor.click()
 
       // Continue typing
@@ -387,11 +387,11 @@ test.describe("Message Send Mode", () => {
 
       // Trigger emoji suggestion
       await page.keyboard.type(":thu")
-      await page.waitForTimeout(300)
+      await expect(page.locator('[role="listbox"]')).toBeVisible()
 
       // Escape without selecting
       await page.keyboard.press("Escape")
-      await page.waitForTimeout(100)
+      await expect(page.locator('[role="listbox"]')).not.toBeVisible()
 
       // Delete the partial emoji and continue
       await page.keyboard.press("Backspace")
