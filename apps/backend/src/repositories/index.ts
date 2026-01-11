@@ -36,8 +36,8 @@ export type {
   AttachmentUploadedOutboxPayload,
 } from "./outbox-repository"
 
-export { OutboxListenerRepository, withClaim, CLAIM_STATUS } from "./outbox-listener-repository"
-export type { ListenerState, ClaimContext, WithClaimConfig, WithClaimResult } from "./outbox-listener-repository"
+export { OutboxListenerRepository, claimAndFetchEvents, CLAIM_STATUS } from "./outbox-listener-repository"
+export type { ListenerState, ClaimAndFetchResult } from "./outbox-listener-repository"
 
 export { ConversationRepository } from "./conversation-repository"
 export type { Conversation, InsertConversationParams, UpdateConversationParams } from "./conversation-repository"

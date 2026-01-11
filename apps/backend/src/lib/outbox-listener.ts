@@ -1,6 +1,12 @@
 import { Pool, PoolClient } from "pg"
+import {
+  OutboxListenerRepository,
+  OUTBOX_CHANNEL,
+  OutboxEvent,
+  claimAndFetchEvents,
+  CLAIM_STATUS,
+} from "../repositories"
 import { withTransaction } from "../db"
-import { OutboxListenerRepository, OUTBOX_CHANNEL, OutboxEvent, withClaim } from "../repositories"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
 
@@ -11,6 +17,11 @@ export interface OutboxListenerConfig {
   listenerId: string
   /**
    * Handler called for each event.
+   *
+   * IMPORTANT: Handlers run OUTSIDE the claim transaction, so they can safely
+   * use withClient() for nested DB queries. However, if a handler fails, the
+   * event is skipped (cursor already advanced). For critical processing that
+   * needs retry semantics, dispatch to pg-boss instead of doing work inline.
    */
   handler: (event: OutboxEvent) => Promise<void>
   /**
@@ -24,8 +35,6 @@ export interface OutboxListenerConfig {
    */
   queryPool: Pool
   batchSize?: number
-  maxRetries?: number
-  baseBackoffMs?: number
   debounceMs?: number
   maxWaitMs?: number
   fallbackPollMs?: number
@@ -34,8 +43,6 @@ export interface OutboxListenerConfig {
 
 const DEFAULT_CONFIG = {
   batchSize: 100,
-  maxRetries: 5,
-  baseBackoffMs: 1000,
   debounceMs: 50,
   maxWaitMs: 200,
   // Fallback poll is a safety net for missed NOTIFY events - 2s is sufficient
@@ -69,8 +76,6 @@ export class OutboxListener {
   private listenerId: string
   private handler: (event: OutboxEvent) => Promise<void>
   private batchSize: number
-  private maxRetries: number
-  private baseBackoffMs: number
   private debounceMs: number
   private maxWaitMs: number
   private fallbackPollMs: number
@@ -89,8 +94,6 @@ export class OutboxListener {
     this.listenerId = config.listenerId
     this.handler = config.handler
     this.batchSize = config.batchSize ?? DEFAULT_CONFIG.batchSize
-    this.maxRetries = config.maxRetries ?? DEFAULT_CONFIG.maxRetries
-    this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
     this.debounceMs = config.debounceMs ?? DEFAULT_CONFIG.debounceMs
     this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
     this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
@@ -202,7 +205,7 @@ export class OutboxListener {
         }
       })
 
-      this.listenClient.on("error", (err) => {
+      this.listenClient.on("error", (err: Error) => {
         // Ignore errors during shutdown - pool close triggers connection termination
         if (!this.running) return
         logger.error({ err, listenerId: this.listenerId }, "LISTEN client error, reconnecting...")
@@ -284,29 +287,64 @@ export class OutboxListener {
     }, this.fallbackPollMs)
   }
 
+  /**
+   * Process events in batches, releasing the connection between batches.
+   *
+   * This two-phase approach prevents connection pool exhaustion:
+   * 1. Short transaction: claim events and advance cursor
+   * 2. Process events outside transaction (handlers can safely use withClient)
+   *
+   * The cursor is advanced BEFORE processing (optimistic). If a handler fails,
+   * that event is effectively "skipped" by this listener. Critical processing
+   * should dispatch to pg-boss for durability rather than doing work inline.
+   */
   private async processEvents(): Promise<void> {
     if (!this.running) return
 
-    await withClaim(
-      this.queryPool,
-      this.listenerId,
-      async (ctx) => {
-        while (true) {
-          const events = await ctx.fetchEvents(this.batchSize)
-          if (events.length === 0) break
+    // Process batches until no more events
+    while (true) {
+      if (!this.running) return
 
-          for (const event of events) {
-            await this.handler(event)
-          }
+      // Phase 1: Claim events (short transaction, releases connection on return)
+      const result = await claimAndFetchEvents(this.queryPool, this.listenerId, this.batchSize)
 
-          // Update cursor after processing the batch
-          const lastEvent = events[events.length - 1]
-          await ctx.updateCursor(lastEvent.id)
+      if (result.status === CLAIM_STATUS.NOT_READY) {
+        // In backoff or locked by another processor
+        return
+      }
 
-          logger.debug({ listenerId: this.listenerId, count: events.length }, "Processed outbox events")
+      if (result.status === CLAIM_STATUS.NO_EVENTS) {
+        // No more events to process
+        return
+      }
+
+      // Phase 2: Process events (no connection held)
+      // Handlers can safely call withClient() without competing with our claim
+      const { events } = result
+      for (const event of events) {
+        try {
+          await this.handler(event)
+        } catch (err) {
+          // Log but continue - cursor already advanced past this event
+          // Critical processing should dispatch to pg-boss for durability
+          logger.error(
+            {
+              err,
+              listenerId: this.listenerId,
+              eventId: event.id.toString(),
+              eventType: event.eventType,
+            },
+            "Handler error (event skipped - use pg-boss for durability)"
+          )
         }
-      },
-      { maxRetries: this.maxRetries, baseBackoffMs: this.baseBackoffMs }
-    )
+      }
+
+      logger.debug({ listenerId: this.listenerId, count: events.length }, "Processed outbox events")
+
+      // Continue to next batch if we got a full batch (more events likely)
+      if (events.length < this.batchSize) {
+        return
+      }
+    }
   }
 }
