@@ -182,6 +182,53 @@ test.describe("Message Send Mode", () => {
     })
   })
 
+  test.describe("list behavior in enter mode", () => {
+    test("should send after exiting list with Enter on empty item", async ({ page }) => {
+      // This test reproduces the reported issue:
+      // Type "- item 1", Shift+Enter, "- item 2", Enter
+      // Expected: list exits and message sends
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      await page.locator("[contenteditable='true']").click()
+
+      // Create a bullet list
+      await page.keyboard.type("- item 1")
+      // Shift+Enter in list creates a new list item
+      await page.keyboard.press("Shift+Enter")
+      // Type second item (we're already in a list, so no need for "- ")
+      await page.keyboard.type("item 2")
+      // Enter on non-empty item should create new item
+      await page.keyboard.press("Enter")
+      // Now we're on an empty list item, Enter should exit list AND send
+      await page.keyboard.press("Enter")
+
+      // Message should be sent - look for list items in the timeline
+      await expect(page.locator("li").filter({ hasText: "item 1" }).first()).toBeVisible({ timeout: 5000 })
+      await expect(page.locator("li").filter({ hasText: "item 2" }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("Enter on plain text should send immediately", async ({ page }) => {
+      // This tests the basic case: plain text + Enter = send
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      const messageContent = `Plain text enter test ${Date.now()}`
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(messageContent)
+
+      // Verify message is in editor before sending
+      const editor = page.locator("[contenteditable='true']")
+      await expect(editor).toContainText(messageContent)
+
+      // Enter should send immediately for plain text
+      await page.keyboard.press("Enter")
+
+      // Message should appear in the timeline (sent successfully)
+      await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+    })
+  })
+
   test.describe("multi-line content in enter mode", () => {
     test("should create multi-line content with Shift+Enter", async ({ page }) => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()

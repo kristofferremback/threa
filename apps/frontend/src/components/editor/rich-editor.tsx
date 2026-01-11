@@ -257,6 +257,12 @@ export function RichEditor({
           onSubmitRef.current()
           return true
         }
+        // Enter in "enter" send mode: always send (use Shift+Enter for newlines)
+        if (event.key === "Enter" && !event.shiftKey && messageSendModeRef.current === "enter") {
+          event.preventDefault()
+          onSubmitRef.current()
+          return true
+        }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
         if (event.key === "v" && event.shiftKey && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()

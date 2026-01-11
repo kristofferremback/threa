@@ -316,6 +316,9 @@ function handleEnterTextBehavior(editor: Editor): boolean {
 export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
   name: "editorBehaviors",
 
+  // High priority ensures our keyboard shortcuts run before list/block extensions
+  priority: 1000,
+
   addOptions() {
     return {
       sendModeRef: { current: "enter" as MessageSendMode },
@@ -332,31 +335,31 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
       "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
       "Mod-Shift-c": () => this.editor.chain().focus().toggleCodeBlock().run(),
 
-      // Tab: VS Code-style indent
+      // Tab: VS Code-style indent (always trapped to prevent focus escape)
       Tab: () => {
         if (isSuggestionActive(this.editor)) {
           return false
         }
 
         if (this.editor.isActive("codeBlock")) {
-          return handleCodeBlockTab(this.editor, false)
+          handleCodeBlockTab(this.editor, false)
+        } else if (this.editor.isActive("listItem")) {
+          this.editor.chain().focus().sinkListItem("listItem").run()
+        } else {
+          handleTextTab(this.editor, false)
         }
-        if (this.editor.isActive("listItem")) {
-          return this.editor.chain().focus().sinkListItem("listItem").run()
-        }
-        handleTextTab(this.editor, false)
         return true
       },
 
-      // Shift+Tab: VS Code-style dedent
+      // Shift+Tab: VS Code-style dedent (always trapped to prevent focus escape)
       "Shift-Tab": () => {
         if (this.editor.isActive("codeBlock")) {
-          return handleCodeBlockTab(this.editor, true)
+          handleCodeBlockTab(this.editor, true)
+        } else if (this.editor.isActive("listItem")) {
+          this.editor.chain().focus().liftListItem("listItem").run()
+        } else {
+          handleTextTab(this.editor, true)
         }
-        if (this.editor.isActive("listItem")) {
-          return this.editor.chain().focus().liftListItem("listItem").run()
-        }
-        handleTextTab(this.editor, true)
         return true
       },
 
@@ -392,103 +395,13 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
         return handleEnterTextBehavior(this.editor)
       },
 
-      // Enter: text behavior + send mode logic
+      // Enter: in cmdEnter mode, creates newlines (same as Shift+Enter)
+      // Note: "enter" send mode is handled in handleKeyDown (rich-editor.tsx) for fresh refs
       Enter: () => {
         if (isSuggestionActive(this.editor)) {
           return false
         }
-
-        // In "enter" send mode, Enter sends the message (unless in a block that needs continuation)
-        if (this.options.sendModeRef.current === "enter") {
-          // Check if we're in a context where Enter should create newlines, not send
-          const isInCodeBlock = this.editor.isActive("codeBlock")
-          const isInList = this.editor.isActive("listItem")
-          const isInBlockquote = this.editor.isActive("blockquote")
-
-          // For lists: only send if on empty item (which would exit the list)
-          if (isInList) {
-            const { $from } = this.editor.state.selection
-            const listItem = $from.node($from.depth - 1)
-            if (listItem?.type.name === "listItem") {
-              const isEmpty =
-                listItem.childCount === 1 &&
-                listItem.firstChild?.type.name === "paragraph" &&
-                listItem.firstChild.content.size === 0
-
-              if (isEmpty) {
-                // Exit list then send
-                this.editor.chain().focus().liftListItem("listItem").run()
-                this.options.onSubmitRef.current()
-                return true
-              }
-              // Continue list (add new item)
-              return false
-            }
-          }
-
-          // For blockquotes: only send if on empty line (which would exit)
-          if (isInBlockquote) {
-            const { $from } = this.editor.state.selection
-            if ($from.parent.content.size === 0) {
-              this.editor.chain().focus().lift("blockquote").run()
-              this.options.onSubmitRef.current()
-              return true
-            }
-            return false
-          }
-
-          // For code blocks: continue in code block (newlines needed for code)
-          if (isInCodeBlock) {
-            // Check for exit condition (double empty line at end)
-            const { $from } = this.editor.state.selection
-            const text = $from.parent.textContent
-            const atEnd = $from.pos === $from.end()
-
-            if (atEnd && text.endsWith("\n\n")) {
-              // Exit code block then send
-              this.editor
-                .chain()
-                .focus()
-                .command(({ tr, state }) => {
-                  const pos = state.selection.$from.pos
-                  tr.delete(pos - 2, pos)
-                  return true
-                })
-                .exitCode()
-                .run()
-              this.options.onSubmitRef.current()
-              return true
-            }
-            return false // Insert newline in code block
-          }
-
-          // Check for ``` code block trigger before sending
-          const { $from } = this.editor.state.selection
-          if ($from.parent.isTextblock) {
-            const lineText = $from.parent.textContent
-            const match = lineText.match(/^```(\w*)$/)
-            if (match) {
-              const language = match[1] || "plaintext"
-              const start = $from.start()
-              const end = $from.end()
-              return this.editor
-                .chain()
-                .focus()
-                .command(({ tr }) => {
-                  tr.delete(start, end)
-                  return true
-                })
-                .setCodeBlock({ language })
-                .run()
-            }
-          }
-
-          // Regular text: send the message
-          this.options.onSubmitRef.current()
-          return true
-        }
-
-        // cmdEnter mode: Enter creates newlines (same as Shift+Enter)
+        // cmdEnter mode: Enter creates newlines
         return handleEnterTextBehavior(this.editor)
       },
     }
