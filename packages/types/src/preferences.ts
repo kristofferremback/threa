@@ -152,7 +152,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   language: "en",
   notificationLevel: "all",
   sidebarCollapsed: false,
-  messageSendMode: "cmdEnter",
+  messageSendMode: "enter",
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }

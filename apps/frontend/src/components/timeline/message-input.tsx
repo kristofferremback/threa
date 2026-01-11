@@ -21,7 +21,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
-  const messageSendMode = preferences?.messageSendMode ?? "cmdEnter"
+  const messageSendMode = preferences?.messageSendMode ?? "enter"
 
   const handleSubmit = useCallback(async () => {
     if (!composer.canSend) return

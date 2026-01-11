@@ -32,7 +32,7 @@ export function KeyboardSettings() {
   const conflicts = useMemo(() => detectConflicts(customBindings), [customBindings])
 
   const hasConflicts = conflicts.size > 0
-  const messageSendMode = preferences?.messageSendMode ?? "cmdEnter"
+  const messageSendMode = preferences?.messageSendMode ?? "enter"
 
   return (
     <div className="space-y-6">

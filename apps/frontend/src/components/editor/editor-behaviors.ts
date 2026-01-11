@@ -1,11 +1,11 @@
 import { Extension, type Editor } from "@tiptap/react"
 import { TextSelection, type Transaction } from "@tiptap/pm/state"
 import type { EditorState } from "@tiptap/pm/state"
+import type { MessageSendMode } from "@threa/types"
 import { MentionPluginKey } from "./triggers/mention-extension"
 import { ChannelPluginKey } from "./triggers/channel-extension"
 import { CommandPluginKey } from "./triggers/command-extension"
 import { EmojiPluginKey } from "./triggers/emoji-extension"
-import type { MessageSendMode } from "@threa/types"
 
 export interface EditorBehaviorsOptions {
   /** Ref to current send mode - using ref avoids stale closure in keyboard shortcuts */
@@ -25,15 +25,7 @@ function isSuggestionActive(editor: Editor): boolean {
   const commandState = CommandPluginKey.getState(state)
   const emojiState = EmojiPluginKey.getState(state)
 
-  // The suggestion plugin stores state when active (has query, range, etc.)
   return !!(mentionState?.active || channelState?.active || commandState?.active || emojiState?.active)
-}
-
-/**
- * Calculate how many characters were removed from a line when dedenting
- */
-function getRemoved(original: string, modified: string): number {
-  return original.length - modified.length
 }
 
 /**
@@ -60,7 +52,6 @@ function handleCodeBlockTab(editor: Editor, dedent: boolean): boolean {
   const { selection } = state
   const { from, to, empty } = selection
 
-  // Get the code block node and its position
   const $from = selection.$from
   const codeBlockDepth = $from.depth
   const codeBlockStart = $from.start(codeBlockDepth)
@@ -68,11 +59,9 @@ function handleCodeBlockTab(editor: Editor, dedent: boolean): boolean {
   const codeBlock = $from.parent
   const text = codeBlock.textContent
 
-  // Calculate offsets within the code block text
   const startOffset = from - codeBlockStart
   const endOffset = to - codeBlockStart
 
-  // Find which lines are affected and their positions
   const originalLines = text.split("\n")
   const lines = [...originalLines]
   let charCount = 0
@@ -90,10 +79,9 @@ function handleCodeBlockTab(editor: Editor, dedent: boolean): boolean {
     if (endOffset >= charCount && endOffset <= lineEnd) {
       endLine = i
     }
-    charCount = lineEnd + 1 // +1 for newline
+    charCount = lineEnd + 1
   }
 
-  // Track total changes for selection end adjustment
   let totalDelta = 0
 
   if (empty) {
@@ -101,23 +89,20 @@ function handleCodeBlockTab(editor: Editor, dedent: boolean): boolean {
       const original = lines[startLine]
       lines[startLine] = dedentLine(original)
       if (lines[startLine] === original) {
-        return true // Nothing to dedent
+        return true
       }
       totalDelta = -(original.length - lines[startLine].length)
     } else {
-      // Insert tab at cursor position
       return editor.chain().focus().insertContent("\t").run()
     }
   } else {
-    // With selection - modify all affected lines
     for (let i = startLine; i <= endLine; i++) {
       const original = lines[i]
       if (dedent) {
         lines[i] = dedentLine(original)
-        const removed = getRemoved(original, lines[i])
+        const removed = original.length - lines[i].length
         totalDelta -= removed
       } else {
-        // Add tab to non-empty lines
         if (original.length > 0) {
           lines[i] = "\t" + original
           totalDelta += 1
@@ -127,26 +112,17 @@ function handleCodeBlockTab(editor: Editor, dedent: boolean): boolean {
   }
 
   const newText = lines.join("\n")
-
-  // Calculate the start of the first affected line (for selection)
   const firstLineStart = codeBlockStart + lineStarts[startLine]
 
-  // Replace code block content and restore selection
   return editor
     .chain()
     .focus()
-    .command(({ tr, state }: { tr: Transaction; state: EditorState }) => {
-      const schema = state.schema
-
-      // Create new code block with updated text
+    .command(({ tr, state: cmdState }: { tr: Transaction; state: EditorState }) => {
+      const schema = cmdState.schema
       const newCodeBlock = schema.nodes.codeBlock.create(codeBlock.attrs, newText ? schema.text(newText) : null)
 
-      // Replace the code block content
       tr.replaceWith(codeBlockStart - 1, codeBlockEnd + 1, newCodeBlock)
 
-      // Restore selection:
-      // - For empty selection (cursor only), adjust cursor position
-      // - For range selection, start from beginning of first line to include indent
       if (empty) {
         const newPos = Math.max(codeBlockStart, from + totalDelta)
         tr.setSelection(TextSelection.create(tr.doc, newPos))
@@ -173,7 +149,6 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
   const $from = selection.$from
 
   if (empty) {
-    // No selection - work with current text block
     const textBlock = $from.parent
     if (!textBlock.isTextblock) {
       return false
@@ -183,10 +158,9 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
     const text = textBlock.textContent
 
     if (dedent) {
-      // Dedent current block - remove leading whitespace
       const newText = dedentLine(text)
       if (newText === text) {
-        return true // Nothing to dedent
+        return true
       }
       const removed = text.length - newText.length
 
@@ -194,32 +168,27 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
         .chain()
         .focus()
         .command(({ tr }: { tr: Transaction }) => {
-          // Delete the leading whitespace
           tr.delete(blockStart, blockStart + removed)
-          // Adjust cursor position
           const newPos = Math.max(blockStart, from - removed)
           tr.setSelection(TextSelection.create(tr.doc, newPos))
           return true
         })
         .run()
     } else {
-      // Insert tab at cursor
       return editor.chain().focus().insertContent("\t").run()
     }
   }
 
-  // With selection - handle all blocks in the selection range
   return editor
     .chain()
     .focus()
     .command(({ tr, state: cmdState }: { tr: Transaction; state: EditorState }) => {
       const { doc } = cmdState
 
-      // Collect all text blocks in selection with their positions
       const blocks: { start: number; text: string }[] = []
       doc.nodesBetween(from, to, (node, pos) => {
         if (node.isTextblock) {
-          const start = pos + 1 // +1 to get inside the node content
+          const start = pos + 1
           blocks.push({ start, text: node.textContent })
         }
       })
@@ -228,13 +197,9 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
         return true
       }
 
-      // Remember first block start for selection (before any modifications)
       const firstBlockStart = blocks[0].start
-
-      // Track cumulative position changes for selection adjustment
       let totalDelta = 0
 
-      // Process in reverse order to maintain positions
       for (let i = blocks.length - 1; i >= 0; i--) {
         const { start, text: blockText } = blocks[i]
 
@@ -246,7 +211,6 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
             totalDelta -= removed
           }
         } else {
-          // Only indent non-empty blocks (or single block selection)
           if (blockText.length > 0 || blocks.length === 1) {
             tr.insertText("\t", start)
             totalDelta += 1
@@ -254,9 +218,6 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
         }
       }
 
-      // Restore selection:
-      // - Start from beginning of first block (to include added indent)
-      // - End adjusted by total changes
       const newFrom = firstBlockStart
       const newTo = Math.max(newFrom, to + totalDelta)
       tr.setSelection(TextSelection.create(tr.doc, newFrom, newTo))
@@ -267,15 +228,36 @@ function handleTextTab(editor: Editor, dedent: boolean): boolean {
 }
 
 /**
- * Handle block creation: lists, blockquotes, code blocks, default paragraphs.
- * Returns true if handled, false to let TipTap handle it.
+ * Handle Enter key press for creating newlines / smart block exits.
+ * This is the shared text manipulation behavior for both Enter and Shift+Enter.
+ * Returns true if handled, false to let default behavior proceed.
  */
-function handleBlockCreation(editor: Editor): boolean {
-  // In lists: exit on empty item, otherwise create new item
-  if (editor.isActive("listItem")) {
-    const { $from } = editor.state.selection
-    const listItem = $from.node($from.depth - 1)
+function handleEnterTextBehavior(editor: Editor): boolean {
+  const { $from } = editor.state.selection
 
+  // Check for ``` code block trigger
+  if ($from.parent.isTextblock && !editor.isActive("codeBlock")) {
+    const lineText = $from.parent.textContent
+    const match = lineText.match(/^```(\w*)$/)
+    if (match) {
+      const language = match[1] || "plaintext"
+      const start = $from.start()
+      const end = $from.end()
+      return editor
+        .chain()
+        .focus()
+        .command(({ tr }) => {
+          tr.delete(start, end)
+          return true
+        })
+        .setCodeBlock({ language })
+        .run()
+    }
+  }
+
+  // In lists: exit on empty item, otherwise split to create new item
+  if (editor.isActive("listItem")) {
+    const listItem = $from.node($from.depth - 1)
     if (listItem?.type.name === "listItem") {
       const isEmpty =
         listItem.childCount === 1 &&
@@ -286,21 +268,21 @@ function handleBlockCreation(editor: Editor): boolean {
         return editor.chain().focus().liftListItem("listItem").run()
       }
     }
+    // Split list item to create new one (same as Enter default)
+    return editor.chain().focus().splitListItem("listItem").run()
   }
 
   // In blockquotes: exit on empty line
   if (editor.isActive("blockquote")) {
-    const { $from } = editor.state.selection
     const paragraph = $from.parent
-
     if (paragraph.type.name === "paragraph" && paragraph.content.size === 0) {
       return editor.chain().focus().lift("blockquote").run()
     }
+    return false
   }
 
   // In code blocks: exit on double empty line at end
   if (editor.isActive("codeBlock")) {
-    const { $from } = editor.state.selection
     const codeBlock = $from.parent
     const text = codeBlock.textContent
     const atEnd = $from.pos === $from.end()
@@ -317,63 +299,41 @@ function handleBlockCreation(editor: Editor): boolean {
         .exitCode()
         .run()
     }
-
-    // Otherwise, just insert newline in code block
-    return editor.chain().focus().insertContent("\n").run()
+    return false // Let default code block behavior handle
   }
 
-  // Default: let TipTap handle it (creates new paragraph)
-  return false
+  // Regular text: create new paragraph
+  return editor.chain().focus().splitBlock().run()
 }
 
 /**
- * Check if we're in a context that requires block creation instead of sending.
- * Used in "enter" mode to determine if Enter should create a block or send.
- */
-function shouldCreateBlockInsteadOfSend(editor: Editor): boolean {
-  // Lists: always handle via block creation (exit on empty, new item otherwise)
-  if (editor.isActive("listItem")) {
-    return true
-  }
-
-  // Blockquotes: always handle via block creation (exit on empty line)
-  if (editor.isActive("blockquote")) {
-    return true
-  }
-
-  // Code blocks: always handle via block creation (has its own exit mechanism)
-  if (editor.isActive("codeBlock")) {
-    return true
-  }
-
-  return false
-}
-
-/**
- * Custom keyboard behaviors for the editor:
- * - Tab/Shift+Tab for indent/dedent (VS Code-like behavior)
- * - Smart list exit on empty item
- * - Smart code block exit on double empty line
- * - Configurable send behavior (Enter vs Cmd+Enter)
+ * Keyboard behaviors for the rich text editor:
+ * - Formatting shortcuts (Mod-B/I/E/etc) toggle marks
+ * - Tab/Shift-Tab indent/dedent (VS Code-like with selection support)
+ * - Enter handles list continuation, block exit, and send modes
+ * - Shift+Enter has identical text behavior to Enter, but never sends
  */
 export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
   name: "editorBehaviors",
 
   addOptions() {
     return {
-      sendModeRef: { current: "cmdEnter" as MessageSendMode },
+      sendModeRef: { current: "enter" as MessageSendMode },
       onSubmitRef: { current: () => {} },
     }
   },
 
   addKeyboardShortcuts() {
-    // Note: We access this.options inside each handler (not destructured here)
-    // to ensure we always use current values when options change dynamically.
-
     return {
-      // Tab for indent - handle unless a suggestion popup is active
+      // Formatting shortcuts
+      "Mod-b": () => this.editor.chain().focus().toggleBold().run(),
+      "Mod-i": () => this.editor.chain().focus().toggleItalic().run(),
+      "Mod-Shift-s": () => this.editor.chain().focus().toggleStrike().run(),
+      "Mod-e": () => this.editor.chain().focus().toggleCode().run(),
+      "Mod-Shift-c": () => this.editor.chain().focus().toggleCodeBlock().run(),
+
+      // Tab: VS Code-style indent
       Tab: () => {
-        // If a suggestion popup is active, let the suggestion plugin handle Tab
         if (isSuggestionActive(this.editor)) {
           return false
         }
@@ -381,17 +341,14 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
         if (this.editor.isActive("codeBlock")) {
           return handleCodeBlockTab(this.editor, false)
         }
-        // In lists, use Tiptap's list commands
         if (this.editor.isActive("listItem")) {
           return this.editor.chain().focus().sinkListItem("listItem").run()
         }
-        // Regular text - handle tab with selection support
-        // Always return true to prevent browser default (focus change)
         handleTextTab(this.editor, false)
         return true
       },
 
-      // Shift+Tab for dedent - always handle to prevent browser focus change
+      // Shift+Tab: VS Code-style dedent
       "Shift-Tab": () => {
         if (this.editor.isActive("codeBlock")) {
           return handleCodeBlockTab(this.editor, true)
@@ -399,8 +356,6 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
         if (this.editor.isActive("listItem")) {
           return this.editor.chain().focus().liftListItem("listItem").run()
         }
-        // Regular text - handle dedent
-        // Always return true to prevent browser default (focus change)
         handleTextTab(this.editor, true)
         return true
       },
@@ -413,7 +368,6 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
           const codeBlockStart = $from.start($from.depth)
           const codeBlockEnd = $from.end($from.depth)
 
-          // Only intercept if not already selecting the whole code block
           const alreadySelectingAll = selection.from === codeBlockStart && selection.to === codeBlockEnd
 
           if (!alreadySelectingAll) {
@@ -421,49 +375,121 @@ export const EditorBehaviors = Extension.create<EditorBehaviorsOptions>({
             return true
           }
         }
-        // Let default select-all happen
         return false
       },
 
-      // Cmd/Ctrl+Enter: handled by RichEditor's handleKeyDown
-      // This handler is kept for completeness but will rarely run
-      // because handleKeyDown handles it first
+      // Cmd/Ctrl+Enter: always send
       "Mod-Enter": () => {
-        if (this.options.sendModeRef.current === "cmdEnter") {
-          this.options.onSubmitRef.current()
-          return true
-        }
-        return false
+        this.options.onSubmitRef.current()
+        return true
       },
 
-      // Shift+Enter behavior depends on mode
+      // Shift+Enter: same text behavior as Enter, but never sends
       "Shift-Enter": () => {
-        if (this.options.sendModeRef.current === "enter") {
-          // In "enter" mode, Shift+Enter does what Enter normally does (create blocks)
-          return handleBlockCreation(this.editor)
+        if (isSuggestionActive(this.editor)) {
+          return false
         }
-
-        // In "cmdEnter" mode, insert soft break
-        if (this.editor.isActive("codeBlock")) {
-          return this.editor.chain().focus().insertContent("\n").run()
-        }
-        return this.editor.chain().focus().setHardBreak().run()
+        return handleEnterTextBehavior(this.editor)
       },
 
-      // Enter key behavior depends on mode
+      // Enter: text behavior + send mode logic
       Enter: () => {
+        if (isSuggestionActive(this.editor)) {
+          return false
+        }
+
+        // In "enter" send mode, Enter sends the message (unless in a block that needs continuation)
         if (this.options.sendModeRef.current === "enter") {
-          // In "enter" mode, check if we should create a block instead of send
-          if (shouldCreateBlockInsteadOfSend(this.editor)) {
-            return handleBlockCreation(this.editor)
+          // Check if we're in a context where Enter should create newlines, not send
+          const isInCodeBlock = this.editor.isActive("codeBlock")
+          const isInList = this.editor.isActive("listItem")
+          const isInBlockquote = this.editor.isActive("blockquote")
+
+          // For lists: only send if on empty item (which would exit the list)
+          if (isInList) {
+            const { $from } = this.editor.state.selection
+            const listItem = $from.node($from.depth - 1)
+            if (listItem?.type.name === "listItem") {
+              const isEmpty =
+                listItem.childCount === 1 &&
+                listItem.firstChild?.type.name === "paragraph" &&
+                listItem.firstChild.content.size === 0
+
+              if (isEmpty) {
+                // Exit list then send
+                this.editor.chain().focus().liftListItem("listItem").run()
+                this.options.onSubmitRef.current()
+                return true
+              }
+              // Continue list (add new item)
+              return false
+            }
           }
-          // Otherwise, send the message
+
+          // For blockquotes: only send if on empty line (which would exit)
+          if (isInBlockquote) {
+            const { $from } = this.editor.state.selection
+            if ($from.parent.content.size === 0) {
+              this.editor.chain().focus().lift("blockquote").run()
+              this.options.onSubmitRef.current()
+              return true
+            }
+            return false
+          }
+
+          // For code blocks: continue in code block (newlines needed for code)
+          if (isInCodeBlock) {
+            // Check for exit condition (double empty line at end)
+            const { $from } = this.editor.state.selection
+            const text = $from.parent.textContent
+            const atEnd = $from.pos === $from.end()
+
+            if (atEnd && text.endsWith("\n\n")) {
+              // Exit code block then send
+              this.editor
+                .chain()
+                .focus()
+                .command(({ tr, state }) => {
+                  const pos = state.selection.$from.pos
+                  tr.delete(pos - 2, pos)
+                  return true
+                })
+                .exitCode()
+                .run()
+              this.options.onSubmitRef.current()
+              return true
+            }
+            return false // Insert newline in code block
+          }
+
+          // Check for ``` code block trigger before sending
+          const { $from } = this.editor.state.selection
+          if ($from.parent.isTextblock) {
+            const lineText = $from.parent.textContent
+            const match = lineText.match(/^```(\w*)$/)
+            if (match) {
+              const language = match[1] || "plaintext"
+              const start = $from.start()
+              const end = $from.end()
+              return this.editor
+                .chain()
+                .focus()
+                .command(({ tr }) => {
+                  tr.delete(start, end)
+                  return true
+                })
+                .setCodeBlock({ language })
+                .run()
+            }
+          }
+
+          // Regular text: send the message
           this.options.onSubmitRef.current()
           return true
         }
 
-        // In "cmdEnter" mode, Enter creates blocks (original behavior)
-        return handleBlockCreation(this.editor)
+        // cmdEnter mode: Enter creates newlines (same as Shift+Enter)
+        return handleEnterTextBehavior(this.editor)
       },
     }
   },

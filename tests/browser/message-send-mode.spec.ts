@@ -4,8 +4,10 @@ import { test, expect } from "@playwright/test"
  * Tests for configurable message send mode feature.
  *
  * Two modes:
- * - "cmdEnter" (default): Cmd/Ctrl+Enter sends, Enter creates newlines
- * - "enter": Enter sends, Shift+Enter creates newlines
+ * - "enter" (default): Enter sends, Shift+Enter creates newlines
+ * - "cmdEnter": Cmd/Ctrl+Enter sends, Enter creates newlines
+ *
+ * Note: Cmd+Enter ALWAYS sends regardless of mode.
  */
 
 test.describe("Message Send Mode", () => {
@@ -64,77 +66,20 @@ test.describe("Message Send Mode", () => {
     await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
   })
 
-  test.describe("default cmdEnter mode", () => {
-    test("should send message with Cmd+Enter", async ({ page }) => {
+  test.describe("default enter mode", () => {
+    test("should send message with Enter", async ({ page }) => {
       // Create a scratchpad to test in
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      const messageContent = `CmdEnter test ${testId}`
+      const messageContent = `Enter test ${testId}`
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(messageContent)
 
-      // Cmd+Enter should send
-      await page.keyboard.press("Meta+Enter")
+      // Enter should send in default mode
+      await page.keyboard.press("Enter")
 
       // Message should appear in the page (sent successfully)
-      // Wait for it to appear outside the editor
-      await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
-    })
-
-    test("should create newline with Enter (not send)", async ({ page }) => {
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
-
-      const line1 = `Line1 ${testId}`
-      const line2 = `Line2 ${testId}`
-
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type(line1)
-      await page.keyboard.press("Enter")
-      await page.keyboard.type(line2)
-
-      // Both lines should be in the editor
-      const editor = page.locator("[contenteditable='true']")
-      await expect(editor).toContainText(line1)
-      await expect(editor).toContainText(line2)
-
-      // Verify message is still in editor (not sent) by checking editor still has content
-      // and "Start a conversation" text is still visible (no messages sent yet)
-      await expect(page.getByText("Start a conversation")).toBeVisible()
-    })
-
-    test("should show correct placeholder in cmdEnter mode", async ({ page }) => {
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
-
-      // TipTap placeholder is rendered via CSS ::before with attr(data-placeholder)
-      // Find any element with data-placeholder attribute in the editor area
-      const placeholderText = await page.locator("[data-placeholder]").first().getAttribute("data-placeholder")
-
-      // Should mention Cmd+Enter (the default mode)
-      expect(placeholderText).toContain("Cmd+Enter")
-    })
-  })
-
-  test.describe("enter mode (via settings)", () => {
-    test.beforeEach(async ({ page }) => {
-      // Change to enter mode
-      await setSendMode(page, "enter")
-    })
-
-    test("should send message with Enter", async ({ page }) => {
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
-
-      const messageContent = `Enter send test ${testId}-${Date.now()}`
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type(messageContent)
-
-      // Enter should send in this mode
-      await page.keyboard.press("Enter")
-
-      // Message should appear (sent successfully)
       await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
     })
 
@@ -142,8 +87,8 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      const line1 = `ShiftEnter Line1 ${testId}`
-      const line2 = `ShiftEnter Line2 ${testId}`
+      const line1 = `Line1 ${testId}`
+      const line2 = `Line2 ${testId}`
 
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(line1)
@@ -155,49 +100,89 @@ test.describe("Message Send Mode", () => {
       await expect(editor).toContainText(line1)
       await expect(editor).toContainText(line2)
 
+      // Verify message is still in editor (not sent)
+      await expect(page.getByText("Start a conversation")).toBeVisible()
+    })
+
+    test("should show correct hint in enter mode", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      // The hint is shown as a separate element, not in the placeholder
+      // Look for the hint text about Enter to send
+      await expect(page.getByText("Enter to send")).toBeVisible()
+      await expect(page.getByText("Shift+Enter for new line")).toBeVisible()
+    })
+
+    test("Cmd+Enter should also send in enter mode", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      const messageContent = `CmdEnter also sends ${testId}`
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(messageContent)
+
+      // Cmd+Enter should ALWAYS send regardless of mode
+      await page.keyboard.press("Meta+Enter")
+
+      // Message should appear (sent successfully)
+      await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+    })
+  })
+
+  test.describe("cmdEnter mode (via settings)", () => {
+    test.beforeEach(async ({ page }) => {
+      // Change to cmdEnter mode
+      await setSendMode(page, "cmdEnter")
+    })
+
+    test("should send message with Cmd+Enter", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      const messageContent = `CmdEnter send test ${testId}-${Date.now()}`
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(messageContent)
+
+      // Cmd+Enter should send in this mode
+      await page.keyboard.press("Meta+Enter")
+
+      // Message should appear (sent successfully)
+      await expect(page.locator("p").filter({ hasText: messageContent }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("should create newline with Enter (not send)", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      const line1 = `CmdMode Line1 ${testId}`
+      const line2 = `CmdMode Line2 ${testId}`
+
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(line1)
+      await page.keyboard.press("Enter")
+      await page.keyboard.type(line2)
+
+      // Both lines should be in the editor
+      const editor = page.locator("[contenteditable='true']")
+      await expect(editor).toContainText(line1)
+      await expect(editor).toContainText(line2)
+
       // Verify message not sent - "Start a conversation" still visible
       await expect(page.getByText("Start a conversation")).toBeVisible()
     })
 
-    test("should show correct placeholder in enter mode", async ({ page }) => {
+    test("should show correct hint in cmdEnter mode", async ({ page }) => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // TipTap placeholder is rendered via CSS ::before with attr(data-placeholder)
-      // Find any element with data-placeholder attribute in the editor area
-      const placeholderText = await page.locator("[data-placeholder]").first().getAttribute("data-placeholder")
-
-      // Should mention "Enter to send" but NOT "Cmd+Enter"
-      expect(placeholderText).toContain("Enter to send")
-      expect(placeholderText).not.toContain("Cmd+Enter")
-    })
-
-    test("Cmd+Enter should NOT send in enter mode", async ({ page }) => {
-      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
-
-      const messageContent = `CmdEnter should not send ${testId}`
-      await page.locator("[contenteditable='true']").click()
-      await page.keyboard.type(messageContent)
-
-      // Cmd+Enter should NOT send in this mode
-      await page.keyboard.press("Meta+Enter")
-
-      // Verify nothing was sent by checking both conditions:
-      // 1. Editor still contains the message (would be cleared on send)
-      // 2. "Start a conversation" still visible (would be hidden if message appeared)
-      const editor = page.locator("[contenteditable='true']")
-      await expect(editor).toContainText(messageContent)
-      await expect(page.getByText("Start a conversation")).toBeVisible()
+      // The hint should show Cmd+Enter (or ⌘Enter on Mac)
+      // Look for text containing "Enter to send" with the modifier
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
     })
   })
 
   test.describe("multi-line content in enter mode", () => {
-    test.beforeEach(async ({ page }) => {
-      // Change to enter mode
-      await setSendMode(page, "enter")
-    })
-
     test("should create multi-line content with Shift+Enter", async ({ page }) => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
@@ -245,17 +230,15 @@ test.describe("Message Send Mode", () => {
 
   test.describe("preference persistence", () => {
     test("should persist send mode preference across page reload", async ({ page }) => {
-      // Change to enter mode
-      await setSendMode(page, "enter")
+      // Change to cmdEnter mode (non-default)
+      await setSendMode(page, "cmdEnter")
 
-      // Create scratchpad and verify placeholder shows enter mode
+      // Create scratchpad and verify hint shows cmdEnter mode
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // Verify placeholder shows "Enter to send"
-      await expect(page.locator("[data-placeholder]").first()).toHaveAttribute("data-placeholder", /Enter to send/, {
-        timeout: 3000,
-      })
+      // Verify hint shows Cmd+Enter
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
 
       // Reload page
       await page.reload()
@@ -267,10 +250,8 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // Verify placeholder still shows "Enter to send" after reload (preference persisted)
-      await expect(page.locator("[data-placeholder]").first()).toHaveAttribute("data-placeholder", /Enter to send/, {
-        timeout: 5000,
-      })
+      // Verify hint still shows Cmd+Enter after reload (preference persisted)
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
     })
   })
 })

@@ -12,7 +12,7 @@ vi.mock("react-router-dom", () => ({
 // Mock preferences context
 vi.mock("@/contexts", () => ({
   usePreferences: () => ({
-    preferences: { messageSendMode: "cmdEnter" },
+    preferences: { messageSendMode: "enter" },
   }),
 }))
 

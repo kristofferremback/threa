@@ -1,4 +1,4 @@
-import { type ChangeEvent, type RefObject } from "react"
+import { type ChangeEvent, type RefObject, useMemo } from "react"
 import { Paperclip } from "lucide-react"
 import { RichEditor } from "@/components/editor"
 import { Button } from "@/components/ui/button"
@@ -6,6 +6,11 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
 import type { MessageSendMode } from "@threa/types"
+
+/** Returns the platform-appropriate modifier key symbol */
+function getModifierSymbol(): string {
+  return navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
+}
 
 export interface MessageComposerProps {
   // Content (controlled)
@@ -56,16 +61,21 @@ export function MessageComposer({
   submittingLabel = "Sending...",
   isSubmitting = false,
   hasFailed = false,
-  placeholder,
+  placeholder = "Type a message...",
   disabled = false,
   className,
-  messageSendMode = "cmdEnter",
+  messageSendMode = "enter",
 }: MessageComposerProps) {
   const isDisabled = disabled || isSubmitting
 
-  const defaultPlaceholder =
-    messageSendMode === "enter" ? "Type a message... (Enter to send)" : "Type a message... (Cmd+Enter to send)"
-  const finalPlaceholder = placeholder ?? defaultPlaceholder
+  // Build the send mode hint text (reactive to preference changes)
+  const sendHint = useMemo(() => {
+    const mod = getModifierSymbol()
+    if (messageSendMode === "enter") {
+      return `Enter to send · Shift+Enter for new line`
+    }
+    return `${mod}Enter to send`
+  }, [messageSendMode])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -96,16 +106,22 @@ export function MessageComposer({
             <Paperclip className="h-4 w-4" />
           </Button>
 
-          <RichEditor
-            value={content}
-            onChange={onContentChange}
-            onSubmit={onSubmit}
-            onFileUpload={onFileUpload}
-            imageCount={imageCount}
-            placeholder={finalPlaceholder}
-            disabled={isDisabled}
-            messageSendMode={messageSendMode}
-          />
+          <div className="relative flex-1">
+            <RichEditor
+              value={content}
+              onChange={onContentChange}
+              onSubmit={onSubmit}
+              onFileUpload={onFileUpload}
+              imageCount={imageCount}
+              placeholder={placeholder}
+              disabled={isDisabled}
+              messageSendMode={messageSendMode}
+            />
+            {/* Send mode hint - positioned absolutely to avoid layout shift */}
+            <div className="absolute right-2 bottom-1 text-[11px] text-muted-foreground/60 pointer-events-none select-none">
+              {sendHint}
+            </div>
+          </div>
 
           {hasFailed ? (
             <Tooltip>
