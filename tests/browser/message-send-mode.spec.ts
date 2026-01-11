@@ -275,6 +275,139 @@ test.describe("Message Send Mode", () => {
     })
   })
 
+  test.describe("stale closure regression", () => {
+    /**
+     * These tests verify that keyboard handlers remain functional after
+     * various interactions that trigger re-renders.
+     *
+     * NOTE: These tests don't actually catch the stale closure bug that was
+     * fixed. The bug required conditions we couldn't reproduce in tests
+     * (possibly related to data volume causing more re-renders). The tests
+     * still have value as regression tests for "Enter-to-send works after
+     * complex interactions".
+     *
+     * The fix: Enter handling moved to handleKeyDown (fresh refs per keypress)
+     * instead of TipTap extension shortcuts (refs captured at initialization).
+     */
+
+    test("should send after opening and closing mention suggestion", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      await page.locator("[contenteditable='true']").click()
+
+      // Type something
+      await page.keyboard.type("Hello ")
+
+      // Trigger mention suggestion (causes re-renders)
+      await page.keyboard.type("@")
+      // Wait for suggestion popup to appear
+      await page.waitForTimeout(300)
+
+      // Close suggestion with Escape
+      await page.keyboard.press("Escape")
+      await page.waitForTimeout(100)
+
+      // Continue typing
+      await page.keyboard.press("Backspace") // Remove the @
+      await page.keyboard.type("world")
+
+      // Now try to send - this is where stale closures would fail
+      await page.keyboard.press("Enter")
+
+      // Message should be sent
+      await expect(page.locator("p").filter({ hasText: "Hello world" }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("should send after multiple focus/blur cycles", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      const editor = page.locator("[contenteditable='true']")
+      await editor.click()
+
+      // Type something
+      await page.keyboard.type("Focus test")
+
+      // Blur and refocus multiple times (causes re-renders)
+      await page.keyboard.press("Tab") // Blur editor
+      await page.waitForTimeout(50)
+      await editor.click() // Refocus
+
+      await page.keyboard.press("Tab")
+      await page.waitForTimeout(50)
+      await editor.click()
+
+      await page.keyboard.press("Tab")
+      await page.waitForTimeout(50)
+      await editor.click()
+
+      // Continue typing
+      await page.keyboard.type(" message")
+
+      // Try to send
+      await page.keyboard.press("Enter")
+
+      // Message should be sent
+      await expect(page.locator("p").filter({ hasText: "Focus test message" }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("should send after clearing and retyping content", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      await page.locator("[contenteditable='true']").click()
+
+      // Type, select all, delete, type again (multiple re-renders)
+      await page.keyboard.type("First attempt")
+      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("Backspace")
+
+      await page.keyboard.type("Second attempt")
+      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("Backspace")
+
+      await page.keyboard.type("Final message")
+
+      // Try to send
+      await page.keyboard.press("Enter")
+
+      // Message should be sent
+      await expect(page.locator("p").filter({ hasText: "Final message" }).first()).toBeVisible({ timeout: 5000 })
+    })
+
+    test("should send after extended interaction with emoji suggestion", async ({ page }) => {
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+
+      await page.locator("[contenteditable='true']").click()
+
+      // Type something
+      await page.keyboard.type("Great job ")
+
+      // Trigger emoji suggestion
+      await page.keyboard.type(":thu")
+      await page.waitForTimeout(300)
+
+      // Escape without selecting
+      await page.keyboard.press("Escape")
+      await page.waitForTimeout(100)
+
+      // Delete the partial emoji and continue
+      await page.keyboard.press("Backspace")
+      await page.keyboard.press("Backspace")
+      await page.keyboard.press("Backspace")
+      await page.keyboard.press("Backspace")
+      await page.keyboard.type("everyone!")
+
+      // Try to send
+      await page.keyboard.press("Enter")
+
+      // Message should be sent
+      await expect(page.locator("p").filter({ hasText: "Great job everyone!" }).first()).toBeVisible({ timeout: 5000 })
+    })
+  })
+
   test.describe("preference persistence", () => {
     test("should persist send mode preference across page reload", async ({ page }) => {
       // Change to cmdEnter mode (non-default)
