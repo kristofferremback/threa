@@ -1,29 +1,26 @@
 import { Pool, PoolClient } from "pg"
+import type { Server } from "socket.io"
 import {
   OutboxListenerRepository,
   OUTBOX_CHANNEL,
   OutboxEvent,
   claimAndFetchEvents,
+  claimAndProcessEvents,
   CLAIM_STATUS,
+  PROCESS_STATUS,
+  type PureHandler,
 } from "../repositories"
 import { withTransaction } from "../db"
 import { DebounceWithMaxWait } from "./debounce"
 import { logger } from "./logger"
+import type { JobQueueManager } from "./job-queue"
+import type { UserSocketRegistry } from "./user-socket-registry"
 
 export interface OutboxListenerConfig {
   /**
    * Unique identifier for this listener (used for cursor tracking).
    */
   listenerId: string
-  /**
-   * Handler called for each event.
-   *
-   * IMPORTANT: Handlers run OUTSIDE the claim transaction, so they can safely
-   * use withClient() for nested DB queries. However, if a handler fails, the
-   * event is skipped (cursor already advanced). For critical processing that
-   * needs retry semantics, dispatch to pg-boss instead of doing work inline.
-   */
-  handler: (event: OutboxEvent) => Promise<void>
   /**
    * Pool for LISTEN connections (held indefinitely).
    * Should be a dedicated pool to avoid starving transactional work.
@@ -39,6 +36,42 @@ export interface OutboxListenerConfig {
   maxWaitMs?: number
   fallbackPollMs?: number
   keepaliveMs?: number
+
+  /**
+   * Simple handler mode: handler runs outside the claim transaction.
+   *
+   * IMPORTANT: If handler fails, event is skipped (cursor already advanced).
+   * For critical processing that needs guaranteed delivery, use pureHandler instead.
+   *
+   * Mutually exclusive with pureHandler.
+   */
+  handler?: (event: OutboxEvent) => Promise<void>
+
+  /**
+   * Pure handler mode: handler returns effects executed transactionally.
+   *
+   * Durable effects (pg-boss jobs) are committed atomically with the cursor,
+   * guaranteeing at-least-once delivery. Ephemeral effects (Socket.io) run after commit.
+   *
+   * Requires jobQueue. Mutually exclusive with handler.
+   */
+  pureHandler?: PureHandler
+
+  /**
+   * Job queue manager for executing durable job effects.
+   * Required when using pureHandler.
+   */
+  jobQueue?: JobQueueManager
+
+  /**
+   * Socket.io server for executing emit effects in pure handler mode.
+   */
+  io?: Server
+
+  /**
+   * User socket registry for emitToUser effects in pure handler mode.
+   */
+  userSocketRegistry?: UserSocketRegistry
 }
 
 const DEFAULT_CONFIG = {
@@ -54,32 +87,60 @@ const DEFAULT_CONFIG = {
 /**
  * Processes outbox events with NOTIFY/LISTEN for real-time delivery.
  *
- * Uses separate pools for LISTEN connections (held indefinitely) and
- * transactional queries (short-lived) to prevent connection starvation.
+ * Supports two processing modes:
  *
- * @example
+ * **Simple handler mode** (handler): For ephemeral work like Socket.io emits.
+ * Events are claimed optimistically and handler runs outside the transaction.
+ * If handler fails, event is skipped.
+ *
+ * **Pure handler mode** (pureHandler + jobQueue): For durable work like pg-boss dispatch.
+ * Handler returns effects which are executed transactionally. Durable effects (pg-boss jobs)
+ * are committed atomically with the cursor update, guaranteeing at-least-once delivery.
+ *
+ * @example Simple handler (ephemeral)
  * ```ts
  * const listener = new OutboxListener({
  *   listenerId: "broadcast",
- *   listenPool: pools.listen,  // Dedicated pool for LISTEN connections
- *   queryPool: pools.main,     // Main pool for transactional work
+ *   listenPool: pools.listen,
+ *   queryPool: pools.main,
  *   handler: async (event) => {
  *     io.to(`stream:${event.payload.streamId}`).emit(event.eventType, event.payload)
  *   },
  * })
- * await listener.start()
+ * ```
+ *
+ * @example Pure handler (durable)
+ * ```ts
+ * const listener = new OutboxListener({
+ *   listenerId: "companion",
+ *   listenPool: pools.listen,
+ *   queryPool: pools.main,
+ *   jobQueue,
+ *   pureHandler: async (event, client) => {
+ *     if (event.eventType !== "message:created") return []
+ *     const stream = await StreamRepository.findById(client, event.payload.streamId)
+ *     if (!stream || stream.companionMode !== "on") return []
+ *     return [job(JobQueues.PERSONA_AGENT, { ... })]
+ *   },
+ * })
  * ```
  */
 export class OutboxListener {
   private listenPool: Pool
   private queryPool: Pool
   private listenerId: string
-  private handler: (event: OutboxEvent) => Promise<void>
   private batchSize: number
   private debounceMs: number
   private maxWaitMs: number
   private fallbackPollMs: number
   private keepaliveMs: number
+
+  // Handler mode fields (mutually exclusive)
+  private handler: ((event: OutboxEvent) => Promise<void>) | null = null
+  private pureHandler: PureHandler | null = null
+  private jobQueue: JobQueueManager | null = null
+  private io: Server | null = null
+  private userSocketRegistry: UserSocketRegistry | null = null
 
   private running: boolean = false
   private startPromise: Promise<void> | null = null
@@ -92,12 +153,31 @@ export class OutboxListener {
     this.listenPool = config.listenPool
     this.queryPool = config.queryPool
     this.listenerId = config.listenerId
-    this.handler = config.handler
     this.batchSize = config.batchSize ?? DEFAULT_CONFIG.batchSize
     this.debounceMs = config.debounceMs ?? DEFAULT_CONFIG.debounceMs
     this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
     this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
     this.keepaliveMs = config.keepaliveMs ?? DEFAULT_CONFIG.keepaliveMs
+
+    // Validate and set handler mode
+    if (config.handler && config.pureHandler) {
+      throw new Error("OutboxListener: cannot specify both handler and pureHandler")
+    }
+
+    if (config.pureHandler && !config.jobQueue) {
+      throw new Error("OutboxListener: pureHandler requires jobQueue")
+    }
+
+    if (config.handler) {
+      this.handler = config.handler
+    } else if (config.pureHandler) {
+      this.pureHandler = config.pureHandler
+      this.jobQueue = config.jobQueue!
+      this.io = config.io ?? null
+      this.userSocketRegistry = config.userSocketRegistry ?? null
+    } else {
+      throw new Error("OutboxListener requires either handler or pureHandler")
+    }
   }
 
   async start(): Promise<void> {
@@ -288,45 +368,45 @@ export class OutboxListener {
   }
 
   /**
-   * Process events in batches, releasing the connection between batches.
+   * Process events in batches.
    *
-   * This two-phase approach prevents connection pool exhaustion:
-   * 1. Short transaction: claim events and advance cursor
-   * 2. Process events outside transaction (handlers can safely use withClient)
-   *
-   * The cursor is advanced BEFORE processing (optimistic). If a handler fails,
-   * that event is effectively "skipped" by this listener. Critical processing
-   * should dispatch to pg-boss for durability rather than doing work inline.
+   * Behavior depends on handler mode:
+   * - Simple handler: optimistic claim, handler runs outside transaction
+   * - Pure handler: transactional claim, durable effects in transaction, ephemeral after
    */
   private async processEvents(): Promise<void> {
     if (!this.running) return
 
-    // Process batches until no more events
+    if (this.pureHandler && this.jobQueue) {
+      await this.processEventsWithPureHandler()
+    } else if (this.handler) {
+      await this.processEventsWithSimpleHandler()
+    }
+  }
+
+  /**
+   * Simple handler mode: optimistic claim, handler runs outside transaction.
+   * If handler fails, event is skipped (acceptable for ephemeral work).
+   */
+  private async processEventsWithSimpleHandler(): Promise<void> {
     while (true) {
       if (!this.running) return
 
-      // Phase 1: Claim events (short transaction, releases connection on return)
       const result = await claimAndFetchEvents(this.queryPool, this.listenerId, this.batchSize)
 
       if (result.status === CLAIM_STATUS.NOT_READY) {
-        // In backoff or locked by another processor
         return
       }
 
       if (result.status === CLAIM_STATUS.NO_EVENTS) {
-        // No more events to process
         return
       }
 
-      // Phase 2: Process events (no connection held)
-      // Handlers can safely call withClient() without competing with our claim
       const { events } = result
       for (const event of events) {
         try {
-          await this.handler(event)
+          await this.handler!(event)
         } catch (err) {
-          // Log but continue - cursor already advanced past this event
-          // Critical processing should dispatch to pg-boss for durability
           logger.error(
             {
               err,
@@ -334,15 +414,69 @@ export class OutboxListener {
               eventId: event.id.toString(),
               eventType: event.eventType,
             },
-            "Handler error (event skipped - use pg-boss for durability)"
+            "Handler error (event skipped)"
           )
         }
       }
 
       logger.debug({ listenerId: this.listenerId, count: events.length }, "Processed outbox events")
 
-      // Continue to next batch if we got a full batch (more events likely)
       if (events.length < this.batchSize) {
+        return
+      }
+    }
+  }
+
+  /**
+   * Pure handler mode: transactional effect execution with guaranteed delivery.
+   *
+   * Flow:
+   * 1. Transaction: claim events, run handler (returns effects), execute pg-boss jobs, commit
+   * 2. After commit: execute ephemeral effects (Socket.io)
+   *
+   * If crash before commit: events will be reprocessed (at-least-once guarantee)
+   * If crash after commit: pg-boss jobs are durable, ephemeral effects may be lost (acceptable)
+   */
+  private async processEventsWithPureHandler(): Promise<void> {
+    while (true) {
+      if (!this.running) return
+
+      const result = await claimAndProcessEvents(
+        this.queryPool,
+        this.jobQueue!,
+        this.listenerId,
+        this.batchSize,
+        this.pureHandler!
+      )
+
+      if (result.status === PROCESS_STATUS.NOT_READY) {
+        return
+      }
+
+      if (result.status === PROCESS_STATUS.NO_EVENTS) {
+        return
+      }
+
+      // Execute ephemeral effects after transaction commit
+      for (const effect of result.ephemeralEffects) {
+        try {
+          if (effect.type === "emit" && this.io) {
+            this.io.to(effect.room).emit(effect.event, effect.data)
+          } else if (effect.type === "emitToUser" && this.userSocketRegistry) {
+            const sockets = this.userSocketRegistry.getSockets(effect.userId)
+            for (const socket of sockets) {
+              socket.emit(effect.event, effect.data)
+            }
+          }
+        } catch (err) {
+          // Log but continue - ephemeral effects are best-effort
+          logger.error({ err, listenerId: this.listenerId, effectType: effect.type }, "Ephemeral effect error")
+        }
+      }
+
+      logger.debug({ listenerId: this.listenerId, count: result.processedCount }, "Processed outbox events")
+
+      if (result.processedCount < this.batchSize) {
         return
       }
     }

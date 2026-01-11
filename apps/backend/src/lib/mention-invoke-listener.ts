@@ -1,12 +1,14 @@
-import { withClient, type DatabasePools } from "../db"
+import type { PoolClient } from "pg"
+import type { DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import { PersonaRepository } from "../repositories/persona-repository"
 import type { OutboxEvent } from "../repositories/outbox-repository"
-import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
+import { parseMessageCreatedPayloadWithClient } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "./logger"
+import { job, type HandlerEffect } from "./handler-effects"
 
 export interface MentionInvokeListenerDeps {
   pools: DatabasePools
@@ -15,6 +17,8 @@ export interface MentionInvokeListenerDeps {
 
 /**
  * Creates a listener that invokes personas when @mentioned in messages.
+ *
+ * Uses pure handler mode for guaranteed at-least-once delivery of pg-boss jobs.
  *
  * Behavior by stream type:
  * - Channel: Agent creates a thread on the message, persona responds there
@@ -26,7 +30,7 @@ export interface MentionInvokeListenerDeps {
  */
 export function createMentionInvokeListener(
   deps: MentionInvokeListenerDeps,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "pureHandler" | "jobQueue" | "listenPool" | "queryPool">
 ): OutboxListener {
   const { pools, jobQueue } = deps
 
@@ -35,53 +39,64 @@ export function createMentionInvokeListener(
     listenPool: pools.listen,
     queryPool: pools.main,
     listenerId: "mention-invoke",
-    handler: async (outboxEvent: OutboxEvent) => {
+    jobQueue,
+    pureHandler: async (outboxEvent: OutboxEvent, client: PoolClient): Promise<HandlerEffect[]> => {
       // Only process message:created events
       if (outboxEvent.eventType !== "message:created") {
-        return
+        return []
       }
 
-      const payload = await parseMessageCreatedPayload(outboxEvent.payload, pools.main)
+      const payload = await parseMessageCreatedPayloadWithClient(outboxEvent.payload, client)
       if (!payload) {
         logger.debug({ eventId: outboxEvent.id }, "Mention invoke: malformed event, skipping")
-        return
+        return []
       }
 
       const { streamId, workspaceId, event } = payload
 
       // Ignore persona messages (avoid infinite loops)
       if (event.actorType !== AuthorTypes.USER) {
-        return
+        return []
       }
 
       // Guard against missing actorId (should always exist for USER messages)
       if (!event.actorId) {
         logger.warn({ streamId }, "Mention invoke: USER message has no actorId, skipping")
-        return
+        return []
       }
 
-      // Capture actorId after null check for type narrowing in async closure
       const triggeredBy = event.actorId
 
       // Extract @mentions from message content
       const mentionSlugs = extractMentionSlugs(event.payload.content)
       if (mentionSlugs.length === 0) {
-        return
+        return []
       }
 
-      await withClient(pools.main, async (client) => {
-        // Look up each mention to find persona matches
-        for (const slug of mentionSlugs) {
-          const persona = await PersonaRepository.findBySlug(client, slug, workspaceId)
+      // Collect job effects for each mentioned persona
+      const effects: HandlerEffect[] = []
 
-          // Skip if not a persona (could be a user mention) or if inactive
-          if (!persona || persona.status !== "active") {
-            continue
-          }
+      for (const slug of mentionSlugs) {
+        const persona = await PersonaRepository.findBySlug(client, slug, workspaceId)
 
-          // Dispatch job to invoke the persona
-          // Note: Agent handles thread creation for channels
-          await jobQueue.send(JobQueues.PERSONA_AGENT, {
+        // Skip if not a persona (could be a user mention) or if inactive
+        if (!persona || persona.status !== "active") {
+          continue
+        }
+
+        logger.info(
+          {
+            streamId,
+            messageId: event.payload.messageId,
+            personaId: persona.id,
+            personaSlug: persona.slug,
+          },
+          "Persona agent job will be dispatched (mention trigger)"
+        )
+
+        // Add job effect - will be executed atomically with cursor update
+        effects.push(
+          job(JobQueues.PERSONA_AGENT, {
             workspaceId,
             streamId,
             messageId: event.payload.messageId,
@@ -89,18 +104,10 @@ export function createMentionInvokeListener(
             triggeredBy,
             trigger: "mention",
           })
+        )
+      }
 
-          logger.info(
-            {
-              streamId,
-              messageId: event.payload.messageId,
-              personaId: persona.id,
-              personaSlug: persona.slug,
-            },
-            "Persona agent job dispatched (mention trigger)"
-          )
-        }
-      })
+      return effects
     },
   })
 }

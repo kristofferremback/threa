@@ -1,8 +1,10 @@
-import { type DatabasePools } from "../db"
+import type { PoolClient } from "pg"
+import type { DatabasePools } from "../db"
 import { OutboxListener, type OutboxListenerConfig } from "./outbox-listener"
 import { JobQueueManager, JobQueues } from "./job-queue"
 import type { OutboxEvent, CommandDispatchedOutboxPayload } from "../repositories/outbox-repository"
 import { logger } from "./logger"
+import { job, type HandlerEffect } from "./handler-effects"
 
 interface CommandDispatchedEventPayload {
   commandId: string
@@ -15,22 +17,24 @@ interface CommandDispatchedEventPayload {
  * Creates a command listener that dispatches command execution jobs
  * when `command:dispatched` events appear in the outbox.
  *
+ * Uses pure handler mode for guaranteed at-least-once delivery of pg-boss jobs.
  * This ensures durability: the job is only dispatched after the
  * command_dispatched event is committed to the database.
  */
 export function createCommandListener(
   pools: DatabasePools,
   jobQueue: JobQueueManager,
-  config?: Omit<OutboxListenerConfig, "listenerId" | "handler" | "listenPool" | "queryPool">
+  config?: Omit<OutboxListenerConfig, "listenerId" | "pureHandler" | "jobQueue" | "listenPool" | "queryPool">
 ): OutboxListener {
   return new OutboxListener({
     ...config,
     listenPool: pools.listen,
     queryPool: pools.main,
     listenerId: "command",
-    handler: async (outboxEvent: OutboxEvent) => {
+    jobQueue,
+    pureHandler: async (outboxEvent: OutboxEvent, _client: PoolClient): Promise<HandlerEffect[]> => {
       if (outboxEvent.eventType !== "command:dispatched") {
-        return
+        return []
       }
 
       const payload = outboxEvent.payload as CommandDispatchedOutboxPayload
@@ -39,19 +43,20 @@ export function createCommandListener(
 
       logger.info(
         { commandId: eventPayload.commandId, commandName: eventPayload.name, streamId },
-        "Command listener: dispatching job"
+        "Command job will be dispatched"
       )
 
-      await jobQueue.send(JobQueues.COMMAND_EXECUTE, {
-        commandId: eventPayload.commandId,
-        commandName: eventPayload.name,
-        args: eventPayload.args,
-        workspaceId,
-        streamId,
-        userId: authorId,
-      })
-
-      logger.info({ commandId: eventPayload.commandId }, "Command listener: job dispatched")
+      // Return job effect - will be executed atomically with cursor update
+      return [
+        job(JobQueues.COMMAND_EXECUTE, {
+          commandId: eventPayload.commandId,
+          commandName: eventPayload.name,
+          args: eventPayload.args,
+          workspaceId,
+          streamId,
+          userId: authorId,
+        }),
+      ]
     },
   })
 }
