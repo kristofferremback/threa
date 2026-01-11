@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type RefObject, type ReactNode } from "react"
+import { useState, useCallback, useMemo, useRef, type RefObject, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion"
 import type { SuggestionListRef } from "./suggestion-list"
@@ -95,15 +95,18 @@ export function useSuggestion<T>(config: UseSuggestionConfig<T>): UseSuggestionR
     return listRef.current?.onKeyDown(props.event) ?? false
   }, [])
 
-  const suggestionConfig = {
-    items: getSuggestionItems,
-    render: () => ({
-      onStart,
-      onUpdate,
-      onExit,
-      onKeyDown,
+  const suggestionConfig = useMemo(
+    () => ({
+      items: getSuggestionItems,
+      render: () => ({
+        onStart,
+        onUpdate,
+        onExit,
+        onKeyDown,
+      }),
     }),
-  }
+    [getSuggestionItems, onStart, onUpdate, onExit, onKeyDown]
+  )
 
   const renderSuggestionList = useCallback(() => {
     if (!state || !state.command) return null
