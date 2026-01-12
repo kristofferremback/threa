@@ -329,16 +329,16 @@ test.describe("Message Send Mode", () => {
       // Type something
       await page.keyboard.type("Focus test")
 
-      // Blur and refocus multiple times (causes re-renders)
-      await page.keyboard.press("Tab") // Blur editor
+      // Blur by clicking outside editor (Tab is trapped for indentation)
+      await page.locator("body").click({ position: { x: 10, y: 10 } })
       await expect(editor).not.toBeFocused()
       await editor.click() // Refocus
 
-      await page.keyboard.press("Tab")
+      await page.locator("body").click({ position: { x: 10, y: 10 } })
       await expect(editor).not.toBeFocused()
       await editor.click()
 
-      await page.keyboard.press("Tab")
+      await page.locator("body").click({ position: { x: 10, y: 10 } })
       await expect(editor).not.toBeFocused()
       await editor.click()
 

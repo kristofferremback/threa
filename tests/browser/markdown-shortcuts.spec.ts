@@ -1,22 +1,22 @@
 import { test, expect } from "@playwright/test"
 
 /**
- * Tests for markdown formatting keyboard shortcuts.
+ * Tests for formatting keyboard shortcuts.
  *
- * These shortcuts insert markdown syntax rather than toggling rich text marks,
- * since the editor uses plain text with markdown rendering on send.
+ * The editor displays rich text formatting visually (bold, italic, etc.)
+ * but exports as markdown when copying or sending.
  *
  * Shortcuts:
- * - Cmd+B → **bold**
- * - Cmd+I → *italic*
- * - Cmd+Shift+S → ~~strikethrough~~
- * - Cmd+E → `inline code`
- * - Cmd+Shift+C → ```code block```
+ * - Cmd+B → bold (visually styled, exports as **text**)
+ * - Cmd+I → italic (visually styled, exports as *text*)
+ * - Cmd+Shift+S → strikethrough (visually styled, exports as ~~text~~)
+ * - Cmd+E → inline code (visually styled, exports as `text`)
+ * - Cmd+Shift+C → code block
  */
 
-test.describe("Markdown Formatting Shortcuts", () => {
+test.describe("Formatting Shortcuts", () => {
   const testId = Date.now().toString(36)
-  const workspaceName = `Markdown Test ${testId}`
+  const workspaceName = `Formatting Test ${testId}`
 
   test.beforeEach(async ({ page }) => {
     // Login as Alice
@@ -43,81 +43,85 @@ test.describe("Markdown Formatting Shortcuts", () => {
   })
 
   test.describe("without selection (cursor only)", () => {
-    test("Cmd+B should insert bold markers and place cursor between them", async ({ page }) => {
+    test("Cmd+B should toggle bold and allow typing bold text", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       // Type some text first
       await page.keyboard.type("hello ")
 
-      // Press Cmd+B
+      // Press Cmd+B to enter bold mode
       await page.keyboard.press("Meta+b")
 
-      // Type inside the markers
+      // Type inside bold
       await page.keyboard.type("bold")
 
-      // Continue typing outside
-      await page.keyboard.press("End")
+      // Press Cmd+B again to exit bold mode
+      await page.keyboard.press("Meta+b")
       await page.keyboard.type(" world")
 
-      // Editor should contain the markdown
-      await expect(editor).toContainText("hello **bold** world")
+      // Editor should show styled text with bold element
+      await expect(editor.locator("strong")).toContainText("bold")
+      await expect(editor).toContainText("hello bold world")
     })
 
-    test("Cmd+I should insert italic markers and place cursor between them", async ({ page }) => {
+    test("Cmd+I should toggle italic and allow typing italic text", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("hello ")
       await page.keyboard.press("Meta+i")
       await page.keyboard.type("italic")
-      await page.keyboard.press("End")
+      await page.keyboard.press("Meta+i")
       await page.keyboard.type(" world")
 
-      await expect(editor).toContainText("hello *italic* world")
+      await expect(editor.locator("em")).toContainText("italic")
+      await expect(editor).toContainText("hello italic world")
     })
 
-    test("Cmd+Shift+S should insert strikethrough markers", async ({ page }) => {
+    test("Cmd+Shift+S should toggle strikethrough", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("hello ")
       await page.keyboard.press("Meta+Shift+s")
       await page.keyboard.type("struck")
-      await page.keyboard.press("End")
+      await page.keyboard.press("Meta+Shift+s")
       await page.keyboard.type(" world")
 
-      await expect(editor).toContainText("hello ~~struck~~ world")
+      await expect(editor.locator("s")).toContainText("struck")
+      await expect(editor).toContainText("hello struck world")
     })
 
-    test("Cmd+E should insert inline code markers", async ({ page }) => {
+    test("Cmd+E should toggle inline code", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("run ")
       await page.keyboard.press("Meta+e")
       await page.keyboard.type("npm install")
-      await page.keyboard.press("End")
+      await page.keyboard.press("Meta+e")
       await page.keyboard.type(" to install")
 
-      await expect(editor).toContainText("run `npm install` to install")
+      await expect(editor.locator("code")).toContainText("npm install")
+      await expect(editor).toContainText("run npm install to install")
     })
 
-    test("Cmd+Shift+C should insert code block markers", async ({ page }) => {
+    test("Cmd+Shift+C should create code block", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.press("Meta+Shift+c")
       await page.keyboard.type("const x = 1")
 
-      // Should have code block syntax
-      await expect(editor).toContainText("```")
-      await expect(editor).toContainText("const x = 1")
+      // Should have a code block (pre element)
+      await expect(editor.locator("pre")).toBeVisible()
+      await expect(editor.locator("pre")).toContainText("const x = 1")
     })
   })
 
   test.describe("with text selection", () => {
-    test("Cmd+B should wrap selected text with bold markers", async ({ page }) => {
+    test("Cmd+B should make selected text bold", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
@@ -128,11 +132,11 @@ test.describe("Markdown Formatting Shortcuts", () => {
       // Apply bold
       await page.keyboard.press("Meta+b")
 
-      // Should wrap the selection
-      await expect(editor).toContainText("**world**")
+      // Should wrap the selection in strong
+      await expect(editor.locator("strong")).toContainText("world")
     })
 
-    test("Cmd+I should wrap selected text with italic markers", async ({ page }) => {
+    test("Cmd+I should make selected text italic", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
@@ -141,10 +145,10 @@ test.describe("Markdown Formatting Shortcuts", () => {
 
       await page.keyboard.press("Meta+i")
 
-      await expect(editor).toContainText("*italic*")
+      await expect(editor.locator("em")).toContainText("italic")
     })
 
-    test("Cmd+Shift+S should wrap selected text with strikethrough markers", async ({ page }) => {
+    test("Cmd+Shift+S should strikethrough selected text", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
@@ -153,10 +157,10 @@ test.describe("Markdown Formatting Shortcuts", () => {
 
       await page.keyboard.press("Meta+Shift+s")
 
-      await expect(editor).toContainText("~~text~~")
+      await expect(editor.locator("s")).toContainText("text")
     })
 
-    test("Cmd+E should wrap selected text with code markers", async ({ page }) => {
+    test("Cmd+E should make selected text inline code", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
@@ -165,7 +169,7 @@ test.describe("Markdown Formatting Shortcuts", () => {
 
       await page.keyboard.press("Meta+e")
 
-      await expect(editor).toContainText("`myVar`")
+      await expect(editor.locator("code")).toContainText("myVar")
     })
   })
 
@@ -186,48 +190,48 @@ test.describe("Markdown Formatting Shortcuts", () => {
       await page.keyboard.press("Meta+b")
       await page.keyboard.type("bold text")
 
-      await expect(editor).toContainText("**bold text**")
+      await expect(editor.locator("strong")).toContainText("bold text")
     })
   })
 
   test.describe("toolbar buttons produce same result as shortcuts", () => {
-    test("bold toolbar button should insert same markers as Cmd+B", async ({ page }) => {
+    test("bold toolbar button should apply bold formatting", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("hello ")
 
-      // Click bold button in toolbar (aria-label="Bold")
+      // Click bold button in toolbar
       await page.getByRole("button", { name: "Bold" }).click()
       await page.keyboard.type("toolbar")
 
-      await expect(editor).toContainText("hello **toolbar**")
+      await expect(editor.locator("strong")).toContainText("toolbar")
     })
 
-    test("italic toolbar button should insert same markers as Cmd+I", async ({ page }) => {
+    test("italic toolbar button should apply italic formatting", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("hello ")
 
-      // Click italic button in toolbar (aria-label="Italic")
+      // Click italic button in toolbar
       await page.getByRole("button", { name: "Italic" }).click()
       await page.keyboard.type("toolbar")
 
-      await expect(editor).toContainText("hello *toolbar*")
+      await expect(editor.locator("em")).toContainText("toolbar")
     })
 
-    test("code toolbar button should insert same markers as Cmd+E", async ({ page }) => {
+    test("code toolbar button should apply code formatting", async ({ page }) => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
       await page.keyboard.type("run ")
 
-      // Click code button in toolbar (aria-label="Inline code")
+      // Click code button in toolbar
       await page.getByRole("button", { name: "Inline code" }).click()
       await page.keyboard.type("npm")
 
-      await expect(editor).toContainText("run `npm`")
+      await expect(editor.locator("code")).toContainText("npm")
     })
   })
 })
