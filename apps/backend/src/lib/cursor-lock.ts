@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from "pg"
+import { ulid } from "ulid"
 import { sql, withClient } from "../db"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
@@ -49,7 +50,7 @@ function mapRowToState(row: ListenerLockRow): ListenerLockState {
 }
 
 function generateRunId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+  return ulid()
 }
 
 /**
