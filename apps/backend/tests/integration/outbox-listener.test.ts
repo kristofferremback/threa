@@ -99,6 +99,108 @@ describe("Outbox Multi-Listener", () => {
         expect(state!.lastProcessedAt).not.toBeNull()
       })
     })
+
+    test("should reset retry state on success", async () => {
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_reset_retry")
+
+        // Simulate a failure first
+        await OutboxListenerRepository.recordError(client, "test_reset_retry", "test error", 5, 1000)
+
+        // Now update cursor (success)
+        await OutboxListenerRepository.updateCursor(client, "test_reset_retry", 10n)
+
+        const state = await OutboxListenerRepository.claimListener(client, "test_reset_retry")
+        expect(state).toMatchObject({
+          retryCount: 0,
+          retryAfter: null,
+          lastError: null,
+        })
+      })
+    })
+  })
+
+  describe("OutboxListenerRepository.recordError", () => {
+    test("should increment retry count and set retry_after", async () => {
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_error")
+
+        const retryAfter = await OutboxListenerRepository.recordError(
+          client,
+          "test_error",
+          "Something went wrong",
+          5,
+          1000
+        )
+
+        expect(retryAfter).not.toBeNull()
+        expect(retryAfter!.getTime()).toBeGreaterThan(Date.now())
+
+        const state = await OutboxListenerRepository.claimListener(client, "test_error")
+        expect(state).toMatchObject({
+          retryCount: 1,
+          lastError: "Something went wrong",
+        })
+      })
+    })
+
+    test("should return null when max retries exceeded", async () => {
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_max_retry")
+
+        // Record 5 errors (max retries)
+        for (let i = 0; i < 5; i++) {
+          await OutboxListenerRepository.recordError(client, "test_max_retry", `Error ${i + 1}`, 5, 1000)
+        }
+
+        // 6th error should return null (exceeded)
+        const retryAfter = await OutboxListenerRepository.recordError(client, "test_max_retry", "Error 6", 5, 1000)
+
+        expect(retryAfter).toBeNull()
+      })
+    })
+  })
+
+  describe("OutboxListenerRepository.moveToDeadLetter", () => {
+    test("should move event to dead letter table", async () => {
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_dead_letter")
+
+        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_letter", 123n, "Max retries exceeded")
+
+        const result = await client.query(
+          "SELECT listener_id, outbox_event_id, error FROM outbox_dead_letters WHERE listener_id = $1",
+          ["test_dead_letter"]
+        )
+        expect(result.rows).toMatchObject([
+          {
+            listener_id: "test_dead_letter",
+            outbox_event_id: "123",
+            error: "Max retries exceeded",
+          },
+        ])
+      })
+    })
+
+    test("should reset retry state and advance cursor after dead lettering", async () => {
+      await withTransaction(pool, async (client) => {
+        await OutboxListenerRepository.ensureListener(client, "test_dead_reset")
+
+        // Simulate retries
+        await OutboxListenerRepository.recordError(client, "test_dead_reset", "Error", 5, 1000)
+
+        // Move to dead letter
+        await OutboxListenerRepository.moveToDeadLetter(client, "test_dead_reset", 999n, "Final error")
+
+        const state = await OutboxListenerRepository.claimListener(client, "test_dead_reset")
+        expect(state).toMatchObject({
+          lastProcessedId: 999n,
+          retryCount: 0,
+          retryAfter: null,
+          lastError: null,
+        })
+      })
+    })
   })
 
   describe("OutboxListenerRepository.isReadyToProcess", () => {
