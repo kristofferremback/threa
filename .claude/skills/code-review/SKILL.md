@@ -141,9 +141,24 @@ Repo: \<OWNER\>/\<REPO\>
 
 **Supersede Old Comment** (if previous unified-review exists):
 
+First, fetch the old comment body:
+
+```bash
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body'
+```
+
+Then update it to preserve the old review in a collapsible block:
+
 ```bash
 gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body='<!-- unified-review:superseded -->
-~~Superseded~~ See: [Latest Review](URL)'
+**[New review available here](NEW_COMMENT_URL)**
+
+<details>
+<summary>Previous review</summary>
+
+[OLD_COMMENT_BODY goes here, with the <!-- unified-review --> marker removed]
+
+</details>'
 ```
 
 **Final Output** - Return ONLY this structured summary:
