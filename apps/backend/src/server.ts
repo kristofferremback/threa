@@ -25,20 +25,21 @@ import { ConversationService } from "./services/conversation-service"
 import { UserPreferencesService } from "./services/user-preferences-service"
 import { BoundaryExtractionService } from "./services/boundary-extraction-service"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { createBroadcastListener } from "./lib/broadcast-listener"
-import { createCompanionListener } from "./lib/companion-listener"
-import { createNamingListener } from "./lib/naming-listener"
-import { createEmojiUsageListener } from "./lib/emoji-usage-listener"
-import { createEmbeddingListener } from "./lib/embedding-listener"
-import { createBoundaryExtractionListener } from "./lib/boundary-extraction-listener"
-import { createMemoAccumulator } from "./lib/memo-accumulator"
+import { OutboxDispatcher } from "./lib/outbox-dispatcher"
+import { BroadcastHandler } from "./lib/broadcast-handler"
+import { CompanionHandler } from "./lib/companion-handler"
+import { NamingHandler } from "./lib/naming-handler"
+import { EmojiUsageHandler } from "./lib/emoji-usage-handler"
+import { EmbeddingHandler } from "./lib/embedding-handler"
+import { BoundaryExtractionHandler } from "./lib/boundary-extraction-handler"
+import { MemoAccumulatorHandler } from "./lib/memo-accumulator-handler"
+import { CommandHandler } from "./lib/command-handler"
+import { MentionInvokeHandler } from "./lib/mention-invoke-handler"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
 import { StubMemoService } from "./services/memo-service.stub"
 import { AICostService } from "./services/ai-cost-service"
-import { createCommandListener } from "./lib/command-listener"
-import { createMentionInvokeListener } from "./lib/mention-invoke-listener"
 import { createOrphanSessionCleanup } from "./lib/orphan-session-cleanup"
 import { CommandRegistry } from "./commands"
 import { SimulateCommand } from "./commands/simulate-command"
@@ -252,27 +253,46 @@ export async function startServer(): Promise<ServerInstance> {
   // Schedule memo batch check cron job (every 30 seconds)
   await scheduleMemoBatchCheck(jobQueue)
 
-  // Outbox listeners
-  // Each listener uses pools.listen for LISTEN connections and pools.main for queries
-  const broadcastListener = createBroadcastListener(pools, io, userSocketRegistry)
-  const companionListener = createCompanionListener(pools, jobQueue)
-  const namingListener = createNamingListener(pools, jobQueue)
-  const emojiUsageListener = createEmojiUsageListener(pools)
-  const embeddingListener = createEmbeddingListener(pools, jobQueue)
-  const boundaryExtractionListener = createBoundaryExtractionListener(pools, jobQueue)
-  const memoAccumulator = createMemoAccumulator(pools)
-  const commandListener = createCommandListener(pools, jobQueue)
-  const mentionInvokeListener = createMentionInvokeListener({ pools, jobQueue })
+  // Outbox dispatcher - single LISTEN connection fans out to all handlers
+  const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
+
+  // Create handlers - each manages its own cursor, debouncing, and processing
+  const broadcastHandler = new BroadcastHandler(pool, io, userSocketRegistry)
+  const companionHandler = new CompanionHandler(pool, jobQueue)
+  const namingHandler = new NamingHandler(pool, jobQueue)
+  const emojiUsageHandler = new EmojiUsageHandler(pool)
+  const embeddingHandler = new EmbeddingHandler(pool, jobQueue)
+  const boundaryExtractionHandler = new BoundaryExtractionHandler(pool, jobQueue)
+  const memoAccumulatorHandler = new MemoAccumulatorHandler(pool)
+  const commandHandler = new CommandHandler(pool, jobQueue)
+  const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
+
+  // Ensure listeners exist in database
+  await broadcastHandler.ensureListener()
+  await companionHandler.ensureListener()
+  await namingHandler.ensureListener()
+  await emojiUsageHandler.ensureListener()
+  await embeddingHandler.ensureListener()
+  await boundaryExtractionHandler.ensureListener()
+  await memoAccumulatorHandler.ensureListener()
+  await commandHandler.ensureListener()
+  await mentionInvokeHandler.ensureListener()
+
+  // Register all handlers with dispatcher
+  outboxDispatcher.register(broadcastHandler)
+  outboxDispatcher.register(companionHandler)
+  outboxDispatcher.register(namingHandler)
+  outboxDispatcher.register(emojiUsageHandler)
+  outboxDispatcher.register(embeddingHandler)
+  outboxDispatcher.register(boundaryExtractionHandler)
+  outboxDispatcher.register(memoAccumulatorHandler)
+  outboxDispatcher.register(commandHandler)
+  outboxDispatcher.register(mentionInvokeHandler)
+
+  // Start single LISTEN connection that notifies all handlers
+  await outboxDispatcher.start()
+
   const orphanSessionCleanup = createOrphanSessionCleanup(pools.main)
-  await broadcastListener.start()
-  await companionListener.start()
-  await mentionInvokeListener.start()
-  await namingListener.start()
-  await emojiUsageListener.start()
-  await embeddingListener.start()
-  await boundaryExtractionListener.start()
-  await memoAccumulator.start()
-  await commandListener.start()
   orphanSessionCleanup.start()
 
   await new Promise<void>((resolve) => {
@@ -285,15 +305,7 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     orphanSessionCleanup.stop()
-    await memoAccumulator.stop()
-    await commandListener.stop()
-    await embeddingListener.stop()
-    await boundaryExtractionListener.stop()
-    await emojiUsageListener.stop()
-    await namingListener.stop()
-    await mentionInvokeListener.stop()
-    await companionListener.stop()
-    await broadcastListener.stop()
+    await outboxDispatcher.stop()
     await jobQueue.stop()
     logger.info("Closing socket.io...")
 
