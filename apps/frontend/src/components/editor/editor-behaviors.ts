@@ -281,7 +281,7 @@ function handleEnterTextBehavior(editor: Editor): boolean {
     return false
   }
 
-  // In code blocks: exit on double empty line at end
+  // In code blocks: insert newline, or exit on double empty line at end
   if (editor.isActive("codeBlock")) {
     const codeBlock = $from.parent
     const text = codeBlock.textContent
@@ -299,7 +299,8 @@ function handleEnterTextBehavior(editor: Editor): boolean {
         .exitCode()
         .run()
     }
-    return false // Let default code block behavior handle
+    // Insert newline in code block (handles both Enter and Shift+Enter uniformly)
+    return editor.chain().focus().insertContent("\n").run()
   }
 
   // Regular text: create new paragraph

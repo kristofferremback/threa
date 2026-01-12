@@ -115,7 +115,7 @@ export function MessageComposer({
               messageSendMode={messageSendMode}
             />
             {/* Send mode hint - positioned absolutely to avoid layout shift */}
-            <div className="absolute right-2 bottom-1 text-[11px] text-muted-foreground/60 pointer-events-none select-none">
+            <div className="absolute right-2 bottom-1 text-[11px] text-muted-foreground pointer-events-none select-none">
               {sendHint}
             </div>
           </div>

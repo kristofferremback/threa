@@ -149,6 +149,7 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: Tool
           className={cn("h-8 w-8 p-0 hover:bg-muted", isActive && "bg-muted-foreground/20 text-foreground")}
           tabIndex={-1}
           aria-label={label}
+          aria-pressed={isActive}
         >
           <Icon className={cn("h-4 w-4", isActive && "stroke-[2.5px]")} />
         </Button>
