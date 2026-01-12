@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
-import { EditorBehaviors } from "./editor-behaviors"
+import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
 import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
@@ -251,14 +251,17 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
-        // Cmd/Ctrl+Enter: always send (regardless of mode)
+        // Cmd/Ctrl+Enter: always send (regardless of mode or active suggestions)
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
           event.preventDefault()
           onSubmitRef.current()
           return true
         }
-        // Enter in "enter" send mode: always send (use Shift+Enter for newlines)
+        // Enter in "enter" send mode: send unless a suggestion popup is active
         if (event.key === "Enter" && !event.shiftKey && messageSendModeRef.current === "enter") {
+          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+            return false // Let suggestion popup handle Enter
+          }
           event.preventDefault()
           onSubmitRef.current()
           return true

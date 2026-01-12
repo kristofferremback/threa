@@ -16,9 +16,9 @@ export interface EditorBehaviorsOptions {
 
 /**
  * Check if any suggestion popup is currently active.
- * When a suggestion is active, we should not handle Tab ourselves.
+ * When a suggestion is active, we should let the popup handle Enter/Tab.
  */
-function isSuggestionActive(editor: Editor): boolean {
+export function isSuggestionActive(editor: Editor): boolean {
   const { state } = editor
   const mentionState = MentionPluginKey.getState(state)
   const channelState = ChannelPluginKey.getState(state)

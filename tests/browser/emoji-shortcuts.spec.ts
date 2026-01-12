@@ -89,9 +89,7 @@ test.describe("Emoji Shortcuts", () => {
     await expect(page.locator("[data-emoji-grid]")).not.toBeVisible()
   })
 
-  // TODO: Enter in emoji picker is captured by send mode. Use Tab for selection instead.
-  // This is a known limitation - Tab works, Enter sends the message.
-  test.skip("should insert emoji when pressing Enter on selected item", async ({ page }) => {
+  test("should insert emoji when pressing Enter on selected item", async ({ page }) => {
     const editor = await setupWorkspaceWithEditor(page)
 
     // Type ":smile" to search
@@ -139,7 +137,7 @@ test.describe("Emoji Shortcuts", () => {
     await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
     await expect(page.locator("[data-emoji-grid] button").first()).toBeVisible()
 
-    // Press Tab to select (Enter is captured by send mode)
+    // Tab also works for selection (Enter works too, tested separately)
     await page.keyboard.press("Tab")
 
     // Emoji should be inserted
