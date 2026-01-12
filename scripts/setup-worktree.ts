@@ -96,13 +96,11 @@ function extractDatabaseName(envContent: string): string | null {
 }
 
 async function findPostgresContainer(): Promise<string | null> {
-  // Find running postgres container by name pattern (works regardless of which worktree started it)
-  const result = await $`docker ps --format '{{.Names}}' --filter 'name=postgres'`.quiet().nothrow()
+  // Find running threa-postgres container specifically (not langfuse or other postgres containers)
+  const result = await $`docker ps --format '{{.Names}}' --filter 'name=threa-postgres'`.quiet().nothrow()
   const containers = result.stdout.toString().trim().split("\n").filter(Boolean)
 
-  // Prefer threa-postgres container (e.g., threa-postgres-1) over other postgres containers (e.g., langfuse)
-  const threaContainer = containers.find((c) => c.startsWith("threa-postgres"))
-  return threaContainer || containers[0] || null
+  return containers[0] || null
 }
 
 async function createDatabaseIfNotExists(dbName: string): Promise<void> {
