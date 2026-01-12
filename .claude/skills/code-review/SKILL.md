@@ -147,10 +147,11 @@ First, fetch the old comment body:
 gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body'
 ```
 
-Then update it to preserve the old review in a collapsible block:
+Then update it to preserve the old review in a collapsible block (use heredoc to avoid quoting issues):
 
 ```bash
-gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body='<!-- unified-review:superseded -->
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body="$(cat <<'EOFBODY'
+<!-- unified-review:superseded -->
 **[New review available here](NEW_COMMENT_URL)**
 
 <details>
@@ -158,7 +159,9 @@ gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body='<!-- unified-
 
 [OLD_COMMENT_BODY goes here, with the <!-- unified-review --> marker removed]
 
-</details>'
+</details>
+EOFBODY
+)"
 ```
 
 **Final Output** - Return ONLY this structured summary:
