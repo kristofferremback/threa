@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Run parallel multi-perspective code reviews on a PR
+description: Run multi-perspective code review on a PR
 ---
 
 # Multi-Perspective Code Review
@@ -53,177 +53,100 @@ Use the Task tool to spawn ONE agent with Sonnet 4.5.
 
 Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>` with actual values.
 
-````
-subagent_type: "general-purpose"
-model: "sonnet"
-description: "Multi-perspective PR review"
-run_in_background: true
-prompt: |
-  You are a comprehensive code review agent. Review PR #<NUMBER> from multiple perspectives and POST the review comment directly to GitHub.
+**Task parameters:**
 
-  PR: #<NUMBER> - <TITLE>
-  Repo: <OWNER>/<REPO>
+- subagent_type: "general-purpose"
+- model: "sonnet"
+- description: "Multi-perspective PR review"
+- run_in_background: true
+- prompt: (see below)
 
-  ## Step 1: Gather Context
+**Agent prompt:**
 
-  Run these commands to understand the PR:
+You are a comprehensive code review agent. Review PR #\<NUMBER\> from multiple perspectives and POST the review comment directly to GitHub.
 
-  ```bash
-  # Get the diff
-  gh pr diff <NUMBER>
+PR: #\<NUMBER\> - \<TITLE\>
+Repo: \<OWNER\>/\<REPO\>
 
-  # Get existing review comments (to avoid repeating addressed feedback)
-  gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'
+**Gather Context** - Run these commands:
 
-  # Check for previous unified review comment
-  gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("<!-- unified-review -->")) | {id: .id, url: .html_url}'
-````
+- `gh pr diff <NUMBER>` - Get the diff
+- `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
+- `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
 
-## Step 2: Multi-Perspective Analysis
+**Multi-Perspective Analysis** - Review from ALL perspectives:
 
-Review the PR from ALL of these perspectives:
+🔍 **Code Quality**: Logic errors, bugs, edge cases, code clarity, unaddressed previous comments
 
-### 🔍 Code Quality
+🔒 **Security**: Actual vulnerabilities (CRITICAL/HIGH/MED/LOW), not theoretical risks
 
-- Logic errors, bugs, edge cases
-- Code clarity and maintainability
-- Unaddressed previous review comments
+🧪 **Testing** (Integration/E2E only): Focus on browser/_.spec.ts and integration/_.test.ts. Flag .skip(), .todo(), flaky selectors. IGNORE missing unit tests.
 
-### 🔒 Security
+⚡ **Performance**: N+1 queries, unbounded queries, missing useMemo/useCallback. IGNORE "could be faster" without impact.
 
-- Actual vulnerabilities (not theoretical risks)
-- CRITICAL: Exploitable now, severe impact
-- HIGH: Exploitable with conditions
-- MED: Limited exploitability
-- LOW: Theoretical risk
+♿ **Accessibility** (WCAG 2.1 AA): Only for frontend. Flag div click handlers, missing aria-labels, color-only indicators.
 
-### 🧪 Testing (Integration/E2E only)
+🔄 **Reactivity**: Only for state mutations. Check outbox events, transactions, frontend handlers.
 
-- Focus on `tests/browser/*.spec.ts` and `tests/integration/*.test.ts`
-- Flag: `.skip()`, `.todo()`, flaky selectors, deleted tests without replacement
-- IGNORE: Missing unit tests, coverage percentages
+**Confidence Score** (1-7):
 
-### ⚡ Performance
+- 7: Excellent - No issues
+- 6: Very Good - Minor suggestions
+- 5: Good - Few improvements needed
+- 4: Acceptable - Some issues, nothing blocking
+- 3: Needs Work - Multiple issues to address
+- 2: Significant Concerns - Blocking issues
+- 1: Major Problems - Should not merge
 
-- Backend: N+1 queries, unbounded queries, connection leaks
-- Frontend: Missing useMemo/useCallback for expensive ops, missing virtualization
-- IGNORE: "Could be faster" without measurable impact
+**Post Comment** using `gh pr comment <NUMBER> --body "..."` with this structure:
 
-### ♿ Accessibility (WCAG 2.1 AA)
-
-- Only for frontend/UI changes
-- Flag: Click handlers on divs, missing aria-labels, color as only indicator, missing focus states
-
-### 🔄 Reactivity
-
-- Only for state mutations/real-time features
-- Check: Outbox event emitted? In same transaction? Frontend handles event type?
-
-## Step 3: Determine Confidence Score
-
-Rate overall PR quality on a 1-7 scale:
-
-- 7: Excellent - No issues, well-crafted code
-- 6: Very Good - Minor suggestions only
-- 5: Good - Few small improvements needed
-- 4: Acceptable - Some issues but nothing blocking
-- 3: Needs Work - Multiple issues that should be addressed
-- 2: Significant Concerns - Blocking issues present
-- 1: Major Problems - Critical issues, should not merge
-
-## Step 4: Compose and Post Comment
-
-Build this comment structure:
-
-```markdown
+```
 <!-- unified-review -->
 
 ## Code Review Summary
 
-**Confidence Score: [X]/7** - [One sentence explaining the score]
+**Confidence Score: [X]/7** - [explanation]
 
-[If ANY issues exist, list the key ones - max 5 most important:]
+**Suggested improvements:** (if any issues, max 5)
+- `file.ts:line` - [issue]. Suggestion: [fix]
 
-**Suggested improvements:**
-
-- `file.ts:123` - [issue]. Suggestion: [solution]
-- `file.tsx:45` - [another issue]. Suggestion: [solution]
-
-[If ALL areas are CLEAN:]
-✅ No issues found across all review perspectives.
+✅ No issues found across all review perspectives. (if all clean)
 
 ---
 
-<details>
-<summary>🔍 Code Quality [CLEAN | X suggestions]</summary>
-
-[Issues or "No issues found"]
-
-**Files reviewed:** [list files]
-
+<details><summary>🔍 Code Quality [CLEAN | X suggestions]</summary>
+[content]
 </details>
 
-<details>
-<summary>🔒 Security [CLEAN | X concerns]</summary>
-
-[Issues or "No security concerns found"]
-
+<details><summary>🔒 Security [CLEAN | X concerns]</summary>
+[content]
 </details>
 
-<details>
-<summary>🧪 Testing [CLEAN | X suggestions | N/A]</summary>
-
-[Issues or "No testing issues found" or "No test files in this PR"]
-
+<details><summary>🧪 Testing [CLEAN | N/A]</summary>
+[content]
 </details>
 
-<details>
-<summary>⚡ Performance [CLEAN | X concerns]</summary>
-
-[Issues or "No performance concerns found"]
-
+<details><summary>⚡ Performance [CLEAN | X concerns]</summary>
+[content]
 </details>
 
-<details>
-<summary>♿ Accessibility [CLEAN | X concerns | N/A]</summary>
-
-[Issues or "No accessibility issues found" or "No frontend changes"]
-
+<details><summary>♿ Accessibility [CLEAN | N/A]</summary>
+[content]
 </details>
 
-<details>
-<summary>🔄 Reactivity [CLEAN | X concerns | N/A]</summary>
-
-[Issues or "No reactivity issues found" or "No real-time features changed"]
-
+<details><summary>🔄 Reactivity [CLEAN | N/A]</summary>
+[content]
 </details>
 ```
 
-Post the comment:
+**Supersede Old Comment** (if previous unified-review exists):
 
 ```bash
-gh pr comment <NUMBER> --body "[YOUR COMPOSED COMMENT]"
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body='<!-- unified-review:superseded -->
+~~Superseded~~ See: [Latest Review](URL)'
 ```
 
-Capture the new comment URL from output.
-
-## Step 5: Supersede Old Comment (if exists)
-
-If you found a previous unified-review comment in Step 1:
-
-```bash
-gh api repos/<OWNER>/<REPO>/issues/comments/[OLD_COMMENT_ID] -X PATCH -f body="$(cat <<'EOF'
-<!-- unified-review:superseded -->
-~~This review has been superseded by a newer review.~~
-
-See: [Latest Review](<NEW_COMMENT_URL>)
-EOF
-)"
-```
-
-## Step 6: Report Summary
-
-After posting, output ONLY this structured summary (this is what gets returned to the orchestrator):
+**Final Output** - Return ONLY this structured summary:
 
 ```
 REVIEW_POSTED: <comment_url>
@@ -234,11 +157,7 @@ TESTING: <CLEAN | X suggestions | N/A>
 PERFORMANCE: <CLEAN | X concerns>
 ACCESSIBILITY: <CLEAN | X concerns | N/A>
 REACTIVITY: <CLEAN | X concerns | N/A>
-KEY_ISSUES: <comma-separated list of top 3 issues, or "None">
-```
-
-This summary is your final output. Do not include anything else after it.
-
+KEY_ISSUES: <top 3 comma-separated, or "None">
 ```
 
 ### Step 3: Collect Report
@@ -246,9 +165,7 @@ This summary is your final output. Do not include anything else after it.
 Use TaskOutput to wait for the agent:
 
 ```
-
 TaskOutput(task_id: "<task_id>", block: true, timeout: 300000)
-
 ```
 
 Parse the structured summary from the agent's output.
@@ -256,11 +173,9 @@ Parse the structured summary from the agent's output.
 ### Step 4: Report Results to User
 
 ```
-
 Code review posted to PR #<NUMBER>: <COMMENT_URL>
 
 Confidence: <SCORE>/7
-
 - Code: [status]
 - Security: [status]
 - Testing: [status]
@@ -268,25 +183,21 @@ Confidence: <SCORE>/7
 - Accessibility: [status]
 - Reactivity: [status]
 
-[If KEY_ISSUES is not "None":]
-Key issues: [list them]
-
+Key issues: [list if any]
 ```
 
 ## Example Usage
 
 ```
-
 /code-review 72
 /code-review
-
 ```
 
 ## Token Efficiency
 
 This skill uses a single Sonnet 4.5 agent instead of six parallel agents:
+
 - One code exploration pass (not six)
 - Shared context across all review perspectives
 - Agent posts comment directly (no large content passed back)
 - Only structured summary returned to orchestrator
-```
