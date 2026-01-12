@@ -25,22 +25,18 @@ describe("OutboxRepository", () => {
   })
 
   describe("OutboxRepository.fetchAfterId", () => {
-    // Helper to create test message payload
-    const testMessagePayload = (streamId: string) => ({
+    // Helper to create test event payload
+    const testEventPayload = (streamId: string) => ({
       workspaceId: "ws_test",
       streamId,
-      message: {
-        id: `msg_test_${Date.now()}`,
+      event: {
+        id: `evt_test_${Date.now()}_${Math.random()}`,
         streamId,
         sequence: 1n,
-        authorId: "usr_test",
-        authorType: "user" as const,
-        content: "test",
-        contentFormat: "markdown" as const,
-        replyCount: 0,
-        reactions: {},
-        editedAt: null,
-        deletedAt: null,
+        eventType: "message_created" as const,
+        payload: { messageId: `msg_test_${Date.now()}`, content: "test" },
+        actorId: "usr_test",
+        actorType: "user" as const,
         createdAt: new Date(),
       },
     })
@@ -48,9 +44,9 @@ describe("OutboxRepository", () => {
     test("should fetch events after cursor", async () => {
       await withTransaction(pool, async (client) => {
         // Insert some test events
-        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_1"))
-        const second = await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_2"))
-        await OutboxRepository.insert(client, "message:created", testMessagePayload("stream_3"))
+        await OutboxRepository.insert(client, "message:created", testEventPayload("stream_1"))
+        const second = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_2"))
+        await OutboxRepository.insert(client, "message:created", testEventPayload("stream_3"))
 
         // Fetch events after the second one
         const events = await OutboxRepository.fetchAfterId(client, second.id)
@@ -68,7 +64,7 @@ describe("OutboxRepository", () => {
 
         // Insert many events
         for (let i = 0; i < 10; i++) {
-          await OutboxRepository.insert(client, "message:created", testMessagePayload(`stream_${i}`))
+          await OutboxRepository.insert(client, "message:created", testEventPayload(`stream_${i}`))
         }
 
         const events = await OutboxRepository.fetchAfterId(client, baselineId, 3)
