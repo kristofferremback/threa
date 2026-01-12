@@ -137,8 +137,8 @@ test.describe("Emoji Shortcuts", () => {
     await expect(page.locator("[data-emoji-grid]")).toBeVisible({ timeout: 2000 })
     await expect(page.locator("[data-emoji-grid] button").first()).toBeVisible()
 
-    // Press Enter to select
-    await page.keyboard.press("Enter")
+    // Tab also works for selection (Enter works too, tested separately)
+    await page.keyboard.press("Tab")
 
     // Emoji should be inserted
     await expect(editor.locator("[data-type='emoji']")).toBeVisible()

@@ -155,6 +155,10 @@ export {
   FONT_FAMILY_OPTIONS,
   type FontFamily,
   FontFamilies,
+  // Message send mode
+  MESSAGE_SEND_MODE_OPTIONS,
+  type MessageSendMode,
+  MessageSendModes,
   // Settings tabs
   SETTINGS_TAB_OPTIONS,
   SETTINGS_TABS,

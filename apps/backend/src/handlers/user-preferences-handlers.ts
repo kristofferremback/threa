@@ -9,6 +9,7 @@ import {
   NOTIFICATION_LEVEL_OPTIONS,
   FONT_SIZE_OPTIONS,
   FONT_FAMILY_OPTIONS,
+  MESSAGE_SEND_MODE_OPTIONS,
 } from "@threa/types"
 
 const updatePreferencesSchema = z.object({
@@ -20,6 +21,7 @@ const updatePreferencesSchema = z.object({
   language: z.string().optional(),
   notificationLevel: z.enum(NOTIFICATION_LEVEL_OPTIONS).optional(),
   sidebarCollapsed: z.boolean().optional(),
+  messageSendMode: z.enum(MESSAGE_SEND_MODE_OPTIONS).optional(),
   keyboardShortcuts: z.record(z.string(), z.string()).optional(),
   accessibility: z
     .object({

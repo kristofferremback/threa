@@ -26,6 +26,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Open stream picker",
     defaultKey: "mod+k",
     category: "navigation",
+    global: true,
   },
   {
     id: "openSearch",
@@ -33,6 +34,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Open search",
     defaultKey: "mod+shift+f",
     category: "navigation",
+    global: true,
   },
   {
     id: "openCommands",
@@ -40,6 +42,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Open command palette",
     defaultKey: "mod+shift+k",
     category: "navigation",
+    global: true,
   },
   {
     id: "openSettings",

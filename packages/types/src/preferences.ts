@@ -71,6 +71,15 @@ export const FontFamilies = {
   DYSLEXIC: "dyslexic",
 } as const satisfies Record<string, FontFamily>
 
+// Message send mode - how Enter key behaves in composer
+export const MESSAGE_SEND_MODE_OPTIONS = ["enter", "cmdEnter"] as const
+export type MessageSendMode = (typeof MESSAGE_SEND_MODE_OPTIONS)[number]
+
+export const MessageSendModes = {
+  ENTER: "enter",
+  CMD_ENTER: "cmdEnter",
+} as const satisfies Record<string, MessageSendMode>
+
 // Settings tab options (for URL-driven settings dialog)
 export const SETTINGS_TAB_OPTIONS = ["appearance", "datetime", "notifications", "keyboard", "accessibility"] as const
 export type SettingsTab = (typeof SETTINGS_TAB_OPTIONS)[number]
@@ -124,6 +133,7 @@ export interface UserPreferences {
   language: string
   notificationLevel: NotificationLevel
   sidebarCollapsed: boolean
+  messageSendMode: MessageSendMode
   keyboardShortcuts: KeyboardShortcuts
   accessibility: AccessibilityPreferences
   createdAt: string
@@ -142,6 +152,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, "workspaceId" | "us
   language: "en",
   notificationLevel: "all",
   sidebarCollapsed: false,
+  messageSendMode: "enter",
   keyboardShortcuts: {},
   accessibility: DEFAULT_ACCESSIBILITY,
 }
@@ -162,6 +173,7 @@ export interface UpdateUserPreferencesInput {
   language?: string
   notificationLevel?: NotificationLevel
   sidebarCollapsed?: boolean
+  messageSendMode?: MessageSendMode
   keyboardShortcuts?: KeyboardShortcuts
   accessibility?: Partial<AccessibilityPreferences>
 }

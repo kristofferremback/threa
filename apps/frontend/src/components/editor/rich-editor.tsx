@@ -2,15 +2,16 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
-import { EditorBehaviors } from "./editor-behaviors"
-import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
+import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
+import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
+import type { MessageSendMode } from "@threa/types"
 
 interface RichEditorProps {
   value: string
@@ -23,6 +24,8 @@ interface RichEditorProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+  /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
+  messageSendMode?: MessageSendMode
 }
 
 export function RichEditor({
@@ -34,17 +37,14 @@ export function RichEditor({
   placeholder = "Type a message...",
   disabled = false,
   className,
+  messageSendMode = "enter",
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const isInternalUpdate = useRef(false)
   const [isFocused, setIsFocused] = useState(false)
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
   const [toolbarVisible, setToolbarVisible] = useState(false)
-  const [showLinkHint, setShowLinkHint] = useState(false)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const linkHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [, forceUpdate] = useState(0)
-  const isInternalUpdate = useRef(false)
 
   // Mention, channel, command, and emoji autocomplete
   const { mentionables } = useMentionables()
@@ -82,11 +82,19 @@ export function RichEditor({
   const imageCountRef = useRef(imageCount)
   imageCountRef.current = imageCount
 
+  // Refs for editor behaviors to avoid stale closures in keyboard shortcuts
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
+  const messageSendModeRef = useRef(messageSendMode)
+  messageSendModeRef.current = messageSendMode
+
   // Ref to access editor instance from callbacks defined before useEditor returns
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
   // Track mentionables state to detect when data loads or currentUser becomes known
   const lastParsedState = useRef({ count: mentionables.length, hasCurrentUser: false })
+  // Extensions are memoized but DON'T depend on messageSendMode/onSubmit
+  // because we pass refs that get updated on render
   const extensions = useMemo(
     () => [
       ...createEditorExtensions({
@@ -97,13 +105,16 @@ export function RichEditor({
         emojiSuggestion: emojiConfig,
         toEmoji,
       }),
-      EditorBehaviors,
+      EditorBehaviors.configure({
+        sendModeRef: messageSendModeRef,
+        onSubmitRef: onSubmitRef,
+      }),
     ],
     [placeholder, mentionConfig, channelConfig, commandConfig, emojiConfig, toEmoji]
   )
 
-  // Debounced toolbar visibility - stays visible 150ms after conditions become false
-  const shouldBeVisible = isFocused || linkPopoverOpen || dropdownOpen
+  // Debounced toolbar visibility - stays visible briefly after focus lost
+  const shouldBeVisible = isFocused || linkPopoverOpen
   useEffect(() => {
     if (shouldBeVisible) {
       if (hideTimeoutRef.current) {
@@ -165,11 +176,6 @@ export function RichEditor({
       const markdown = serializeToMarkdown(editor.getJSON())
       onChange(markdown)
     },
-    onTransaction: () => {
-      // Force re-render on any transaction to update toolbar button states immediately
-      // This includes formatting toggles (Cmd+B), selection changes, content changes
-      forceUpdate((n) => n + 1)
-    },
     onFocus: () => setIsFocused(true),
     onBlur: () => setIsFocused(false),
     editorProps: {
@@ -177,6 +183,23 @@ export function RichEditor({
         class: cn(
           "min-h-[80px] w-full px-3 py-2 outline-none",
           "prose prose-sm dark:prose-invert max-w-none",
+          // Paragraph styling - minimal spacing for chat-like feel
+          "[&_p]:my-0 [&_p]:min-h-[1.5em]",
+          // List styling
+          "[&_ul]:my-1 [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:pl-5",
+          "[&_li]:my-0 [&_li]:pl-0.5",
+          // Code block styling
+          "[&_pre]:my-2 [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3",
+          "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
+          // Inline code styling
+          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5",
+          "[&_code]:before:content-none [&_code]:after:content-none",
+          // Blockquote styling
+          "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-4 [&_blockquote]:italic",
+          // Heading styling
+          "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:my-2",
+          "[&_h2]:text-lg [&_h2]:font-semibold [&_h2]:my-1.5",
+          "[&_h3]:text-base [&_h3]:font-semibold [&_h3]:my-1",
           "focus:outline-none"
         ),
       },
@@ -228,10 +251,19 @@ export function RichEditor({
         return false
       },
       handleKeyDown: (_view, event) => {
-        // Cmd/Ctrl+Enter to submit
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        // Cmd/Ctrl+Enter: always send (regardless of mode or active suggestions)
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
           event.preventDefault()
-          onSubmit()
+          onSubmitRef.current()
+          return true
+        }
+        // Enter in "enter" send mode: send unless a suggestion popup is active
+        if (event.key === "Enter" && !event.shiftKey && messageSendModeRef.current === "enter") {
+          if (editorRef.current && isSuggestionActive(editorRef.current)) {
+            return false // Let suggestion popup handle Enter
+          }
+          event.preventDefault()
+          onSubmitRef.current()
           return true
         }
         // Shift+Cmd/Ctrl+V to paste as plain text (no mention parsing)
@@ -299,6 +331,27 @@ export function RichEditor({
     }
   }, [editor])
 
+  // Copy handler: serialize selection to markdown
+  useEffect(() => {
+    if (!editor || !containerRef.current) return
+
+    const handleCopy = (event: ClipboardEvent) => {
+      const { from, to } = editor.state.selection
+      if (from === to) return // No selection, use default behavior
+
+      const slice = editor.state.doc.slice(from, to)
+      const json = { type: "doc", content: slice.content.toJSON() }
+      const markdown = serializeToMarkdown(json)
+
+      event.clipboardData?.setData("text/plain", markdown)
+      event.preventDefault()
+    }
+
+    const container = containerRef.current
+    container.addEventListener("copy", handleCopy)
+    return () => container.removeEventListener("copy", handleCopy)
+  }, [editor])
+
   // Expose focus method
   const focus = useCallback(() => {
     if (editor && !editor.isDestroyed) {
@@ -315,36 +368,6 @@ export function RichEditor({
     }
   }, [disabled, editor, focus])
 
-  // Show hint when user presses Cmd+K with text selected (former link shortcut)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey
-      if (isMod && e.key.toLowerCase() === "k" && !e.shiftKey) {
-        // Check if editor has text selected and focus is within editor container
-        const focusInEditor = containerRef.current?.contains(document.activeElement)
-        if (editor && !editor.state.selection.empty && focusInEditor) {
-          // Clear any existing timeout
-          if (linkHintTimeoutRef.current) {
-            clearTimeout(linkHintTimeoutRef.current)
-          }
-          setShowLinkHint(true)
-          linkHintTimeoutRef.current = setTimeout(() => {
-            setShowLinkHint(false)
-          }, 4000)
-        }
-      }
-    }
-
-    // Use capture phase to detect before the global quick switcher handler
-    document.addEventListener("keydown", handleKeyDown, true)
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown, true)
-      if (linkHintTimeoutRef.current) {
-        clearTimeout(linkHintTimeoutRef.current)
-      }
-    }
-  }, [editor])
-
   return (
     <div ref={containerRef} className="relative flex-1">
       <EditorToolbar
@@ -353,7 +376,6 @@ export function RichEditor({
         referenceElement={containerRef.current}
         linkPopoverOpen={linkPopoverOpen}
         onLinkPopoverOpenChange={setLinkPopoverOpen}
-        onDropdownOpenChange={setDropdownOpen}
       />
       <div
         className={cn(
@@ -365,11 +387,6 @@ export function RichEditor({
         )}
       >
         <EditorContent editor={editor} />
-        {showLinkHint && (
-          <div className="absolute left-1/2 -translate-x-1/2 -top-10 z-50 px-3 py-2 text-xs font-medium bg-popover text-popover-foreground border rounded-md shadow-md animate-in fade-in slide-in-from-bottom-2 duration-200">
-            Trying to add a link? Paste a URL or use the toolbar.
-          </div>
-        )}
       </div>
       {renderMentionList()}
       {renderChannelList()}

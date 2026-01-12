@@ -1,0 +1,52 @@
+# Isolated test infrastructure - separate from dev services
+# Used for unit tests, integration tests, e2e tests, and Playwright browser tests
+#
+# Ports are intentionally different from docker-compose.yml to allow parallel execution:
+# - Postgres: 5455 (dev uses 5454)
+# - MinIO API: 9002 (dev uses 9000)
+# - MinIO Console: 9003 (dev uses 9001)
+
+services:
+  postgres-test:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5455:5432"
+    environment:
+      POSTGRES_USER: threa
+      POSTGRES_PASSWORD: threa
+      POSTGRES_DB: threa_test
+    command: >
+      postgres
+      -c max_connections=300
+      -c idle_session_timeout=60000
+      -c tcp_keepalives_idle=30
+      -c tcp_keepalives_interval=10
+      -c tcp_keepalives_count=3
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threa -d threa_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  minio-test:
+    image: minio/minio:latest
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_test_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+  minio_test_data:

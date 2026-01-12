@@ -9,6 +9,17 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
 }))
 
+// Mock preferences context
+// Note: messageSendMode affects keyboard behavior (Enter vs Cmd+Enter to send),
+// which is tested in E2E tests (message-send-mode.spec.ts). These unit tests
+// use button clicks, so the mode doesn't affect the behavior tested here.
+let mockMessageSendMode: "enter" | "cmdEnter" = "enter"
+vi.mock("@/contexts", () => ({
+  usePreferences: () => ({
+    preferences: { messageSendMode: mockMessageSendMode },
+  }),
+}))
+
 // Mock hooks
 const mockSendMessage = vi.fn()
 const mockClearDraft = vi.fn()
@@ -103,6 +114,7 @@ describe("MessageInput", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSendMessage.mockResolvedValue({})
+    mockMessageSendMode = "enter"
     mockComposerState = {
       content: "",
       pendingAttachments: [],
