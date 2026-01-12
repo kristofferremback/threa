@@ -221,6 +221,35 @@ describe("CursorLock", () => {
 
       expect(didWork).toBe(true)
     })
+
+    test("should reset retry state when no_events after recovering from backoff", async () => {
+      await ensureListener(pool, testListenerId, 100n)
+
+      // Simulate recovery from error: retry_after in past, but retry state still set
+      const pastTime = new Date(Date.now() - 1000)
+      await pool.query(
+        `UPDATE outbox_listeners
+         SET retry_count = 2, retry_after = $1, last_error = 'Previous error'
+         WHERE listener_id = $2`,
+        [pastTime, testListenerId]
+      )
+
+      const cursorLock = createTestCursorLock()
+      // Processor returns no_events (cursor already caught up)
+      const didWork = await cursorLock.run(async (): Promise<ProcessResult> => {
+        return { status: "no_events" }
+      })
+
+      expect(didWork).toBe(false)
+
+      // Verify retry state was reset
+      const state = await getListenerState()
+      expect(state!.retry_count).toBe(0)
+      expect(state!.retry_after).toBeNull()
+      expect(state!.last_error).toBeNull()
+      // Cursor should not have changed
+      expect(state!.last_processed_id).toBe("100")
+    })
   })
 
   describe("run - exhaust loop", () => {

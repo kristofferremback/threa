@@ -149,7 +149,8 @@ export class CursorLock {
           }
 
           case "no_events": {
-            // Cursor exhausted, exit loop
+            // Cursor exhausted - reset retry state if we were in backoff
+            await this.resetRetryState(getNow())
             continueProcessing = false
             break
           }
@@ -294,6 +295,24 @@ export class CursorLock {
         last_error = NULL,
         updated_at = ${now}
       WHERE listener_id = ${this.listenerId}
+    `)
+  }
+
+  /**
+   * Resets retry state without advancing cursor.
+   * Called when no_events is returned after recovering from backoff.
+   */
+  private async resetRetryState(now: Date): Promise<void> {
+    // Only update if there's error state to reset (avoid unnecessary writes)
+    await this.pool.query(sql`
+      UPDATE outbox_listeners
+      SET
+        retry_count = 0,
+        retry_after = NULL,
+        last_error = NULL,
+        updated_at = ${now}
+      WHERE listener_id = ${this.listenerId}
+        AND (retry_count > 0 OR retry_after IS NOT NULL OR last_error IS NOT NULL)
     `)
   }
 
