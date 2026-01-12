@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useLayoutEffect } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
-import { Bold, Italic, Strikethrough, Link2, Quote, Code, List, ListOrdered, X } from "lucide-react"
+import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered, X } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
@@ -118,6 +118,13 @@ export function EditorToolbar({
             icon={ListOrdered}
             label="Numbered list"
             isActive={editor.isActive("orderedList")}
+          />
+          <ToolbarButton
+            onAction={() => editor.chain().focus().toggleCodeBlock().run()}
+            icon={Braces}
+            label="Code block"
+            shortcut="⌘⇧C"
+            isActive={editor.isActive("codeBlock")}
           />
         </div>
       </div>
