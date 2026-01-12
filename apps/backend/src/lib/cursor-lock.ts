@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg"
+import { Pool } from "pg"
 import { ulid } from "ulid"
 import { sql, withClient } from "../db"
 import { calculateBackoffMs } from "./backoff"
@@ -185,24 +185,22 @@ export class CursorLock {
   }
 
   private async isReadyToProcess(now: Date): Promise<boolean> {
-    return withClient(this.pool, async (client) => {
-      const result = await client.query<{ retry_after: Date | null }>(sql`
-        SELECT retry_after
-        FROM outbox_listeners
-        WHERE listener_id = ${this.listenerId}
-      `)
+    const result = await this.pool.query<{ retry_after: Date | null }>(sql`
+      SELECT retry_after
+      FROM outbox_listeners
+      WHERE listener_id = ${this.listenerId}
+    `)
 
-      if (result.rows.length === 0) {
-        return false
-      }
+    if (result.rows.length === 0) {
+      return false
+    }
 
-      const retryAfter = result.rows[0].retry_after
-      if (retryAfter === null) {
-        return true
-      }
+    const retryAfter = result.rows[0].retry_after
+    if (retryAfter === null) {
+      return true
+    }
 
-      return now >= retryAfter
-    })
+    return now >= retryAfter
   }
 
   private async tryClaimLock(now: Date): Promise<{ cursor: bigint } | null> {
@@ -212,32 +210,30 @@ export class CursorLock {
     // Pad 100ms for clock drift
     const clockDriftPadMs = 100
 
-    return withClient(this.pool, async (client) => {
-      const result = await client.query<ListenerLockRow>(sql`
-        UPDATE outbox_listeners
-        SET
-          locked_until = ${lockedUntil},
-          lock_run_id = ${this.runId},
-          updated_at = ${now}
-        WHERE listener_id = ${this.listenerId}
-          AND (locked_until IS NULL OR locked_until < ${new Date(now.getTime() + clockDriftPadMs)})
-        RETURNING
-          listener_id,
-          last_processed_id,
-          retry_count,
-          retry_after,
-          locked_until,
-          lock_run_id
-      `)
+    const result = await this.pool.query<ListenerLockRow>(sql`
+      UPDATE outbox_listeners
+      SET
+        locked_until = ${lockedUntil},
+        lock_run_id = ${this.runId},
+        updated_at = ${now}
+      WHERE listener_id = ${this.listenerId}
+        AND (locked_until IS NULL OR locked_until < ${new Date(now.getTime() + clockDriftPadMs)})
+      RETURNING
+        listener_id,
+        last_processed_id,
+        retry_count,
+        retry_after,
+        locked_until,
+        lock_run_id
+    `)
 
-      if (result.rows.length === 0) {
-        this.runId = null
-        return null
-      }
+    if (result.rows.length === 0) {
+      this.runId = null
+      return null
+    }
 
-      const state = mapRowToState(result.rows[0])
-      return { cursor: state.lastProcessedId }
-    })
+    const state = mapRowToState(result.rows[0])
+    return { cursor: state.lastProcessedId }
   }
 
   private startRefreshTimer(getNow: () => Date): void {
@@ -261,50 +257,44 @@ export class CursorLock {
     const now = getNow()
     const lockedUntil = new Date(now.getTime() + this.lockDurationMs)
 
-    await withClient(this.pool, async (client) => {
-      await client.query(sql`
-        UPDATE outbox_listeners
-        SET
-          locked_until = ${lockedUntil},
-          updated_at = ${now}
-        WHERE listener_id = ${this.listenerId}
-          AND lock_run_id = ${this.runId}
-      `)
-    })
+    await this.pool.query(sql`
+      UPDATE outbox_listeners
+      SET
+        locked_until = ${lockedUntil},
+        updated_at = ${now}
+      WHERE listener_id = ${this.listenerId}
+        AND lock_run_id = ${this.runId}
+    `)
   }
 
   private async releaseLock(): Promise<void> {
     if (!this.runId) return
 
-    await withClient(this.pool, async (client) => {
-      await client.query(sql`
-        UPDATE outbox_listeners
-        SET
-          locked_until = NULL,
-          lock_run_id = NULL,
-          updated_at = NOW()
-        WHERE listener_id = ${this.listenerId}
-          AND lock_run_id = ${this.runId}
-      `)
-    })
+    await this.pool.query(sql`
+      UPDATE outbox_listeners
+      SET
+        locked_until = NULL,
+        lock_run_id = NULL,
+        updated_at = NOW()
+      WHERE listener_id = ${this.listenerId}
+        AND lock_run_id = ${this.runId}
+    `)
 
     this.runId = null
   }
 
   private async updateCursor(newCursor: bigint, now: Date): Promise<void> {
-    await withClient(this.pool, async (client) => {
-      await client.query(sql`
-        UPDATE outbox_listeners
-        SET
-          last_processed_id = ${newCursor.toString()},
-          last_processed_at = ${now},
-          retry_count = 0,
-          retry_after = NULL,
-          last_error = NULL,
-          updated_at = ${now}
-        WHERE listener_id = ${this.listenerId}
-      `)
-    })
+    await this.pool.query(sql`
+      UPDATE outbox_listeners
+      SET
+        last_processed_id = ${newCursor.toString()},
+        last_processed_at = ${now},
+        retry_count = 0,
+        retry_after = NULL,
+        last_error = NULL,
+        updated_at = ${now}
+      WHERE listener_id = ${this.listenerId}
+    `)
   }
 
   /**
@@ -397,13 +387,11 @@ export class CursorLock {
  * Use ensureListenerFromLatest() to start from the current position instead.
  */
 export async function ensureListener(pool: Pool, listenerId: string, startFromId: bigint = 0n): Promise<void> {
-  await withClient(pool, async (client) => {
-    await client.query(sql`
-      INSERT INTO outbox_listeners (listener_id, last_processed_id)
-      VALUES (${listenerId}, ${startFromId.toString()})
-      ON CONFLICT (listener_id) DO NOTHING
-    `)
-  })
+  await pool.query(sql`
+    INSERT INTO outbox_listeners (listener_id, last_processed_id)
+    VALUES (${listenerId}, ${startFromId.toString()})
+    ON CONFLICT (listener_id) DO NOTHING
+  `)
 }
 
 /**
@@ -412,12 +400,10 @@ export async function ensureListener(pool: Pool, listenerId: string, startFromId
  * Use this for listeners that don't need to backfill historical events.
  */
 export async function ensureListenerFromLatest(pool: Pool, listenerId: string): Promise<void> {
-  await withClient(pool, async (client) => {
-    await client.query(sql`
-      INSERT INTO outbox_listeners (listener_id, last_processed_id)
-      SELECT ${listenerId}, COALESCE(MAX(id), 0)
-      FROM outbox
-      ON CONFLICT (listener_id) DO NOTHING
-    `)
-  })
+  await pool.query(sql`
+    INSERT INTO outbox_listeners (listener_id, last_processed_id)
+    SELECT ${listenerId}, COALESCE(MAX(id), 0)
+    FROM outbox
+    ON CONFLICT (listener_id) DO NOTHING
+  `)
 }
