@@ -51,13 +51,13 @@ test.describe("Formatting Shortcuts", () => {
       await page.keyboard.type("hello ")
 
       // Press Cmd+B to enter bold mode
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+b")
 
       // Type inside bold
       await page.keyboard.type("bold")
 
       // Press Cmd+B again to exit bold mode
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+b")
       await page.keyboard.type(" world")
 
       // Editor should show styled text with bold element
@@ -70,9 +70,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("hello ")
-      await page.keyboard.press("Meta+i")
+      await page.keyboard.press("ControlOrMeta+i")
       await page.keyboard.type("italic")
-      await page.keyboard.press("Meta+i")
+      await page.keyboard.press("ControlOrMeta+i")
       await page.keyboard.type(" world")
 
       await expect(editor.locator("em")).toContainText("italic")
@@ -84,9 +84,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("hello ")
-      await page.keyboard.press("Meta+Shift+s")
+      await page.keyboard.press("ControlOrMeta+Shift+s")
       await page.keyboard.type("struck")
-      await page.keyboard.press("Meta+Shift+s")
+      await page.keyboard.press("ControlOrMeta+Shift+s")
       await page.keyboard.type(" world")
 
       await expect(editor.locator("s")).toContainText("struck")
@@ -98,9 +98,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("run ")
-      await page.keyboard.press("Meta+e")
+      await page.keyboard.press("ControlOrMeta+e")
       await page.keyboard.type("npm install")
-      await page.keyboard.press("Meta+e")
+      await page.keyboard.press("ControlOrMeta+e")
       await page.keyboard.type(" to install")
 
       await expect(editor.locator("code")).toContainText("npm install")
@@ -111,7 +111,7 @@ test.describe("Formatting Shortcuts", () => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
 
-      await page.keyboard.press("Meta+Shift+c")
+      await page.keyboard.press("ControlOrMeta+Shift+c")
       await page.keyboard.type("const x = 1")
 
       // Should have a code block (pre element)
@@ -127,10 +127,10 @@ test.describe("Formatting Shortcuts", () => {
 
       // Type text and select all with Cmd+A
       await page.keyboard.type("world")
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
 
       // Apply bold
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+b")
 
       // Should wrap the selection in strong
       await expect(editor.locator("strong")).toContainText("world")
@@ -141,9 +141,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("italic")
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
 
-      await page.keyboard.press("Meta+i")
+      await page.keyboard.press("ControlOrMeta+i")
 
       await expect(editor.locator("em")).toContainText("italic")
     })
@@ -153,9 +153,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("text")
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
 
-      await page.keyboard.press("Meta+Shift+s")
+      await page.keyboard.press("ControlOrMeta+Shift+s")
 
       await expect(editor.locator("s")).toContainText("text")
     })
@@ -165,9 +165,9 @@ test.describe("Formatting Shortcuts", () => {
       await editor.click()
 
       await page.keyboard.type("myVar")
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
 
-      await page.keyboard.press("Meta+e")
+      await page.keyboard.press("ControlOrMeta+e")
 
       await expect(editor.locator("code")).toContainText("myVar")
     })
@@ -187,7 +187,7 @@ test.describe("Formatting Shortcuts", () => {
 
       // Now try the shortcut on the cleared editor
       await editor.click()
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+b")
       await page.keyboard.type("bold text")
 
       await expect(editor.locator("strong")).toContainText("bold text")

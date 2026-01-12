@@ -88,14 +88,14 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("some text")
 
       // Select all and apply bold
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+b")
 
       await expect(editor.locator("strong")).toHaveText("some text")
 
       // Toggle off
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+b")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+b")
       await expect(editor.locator("strong")).not.toBeVisible()
     })
 
@@ -104,8 +104,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("text to italicize")
 
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+i")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+i")
 
       await expect(editor.locator("em")).toHaveText("text to italicize")
     })
@@ -115,8 +115,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("variable_name")
 
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+e")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+e")
 
       await expect(editor.locator("code")).toHaveText("variable_name")
     })
@@ -126,8 +126,8 @@ test.describe("Rich Text Editing", () => {
       await editor.click()
       await page.keyboard.type("crossed out")
 
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+Shift+s")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+Shift+s")
 
       await expect(editor.locator("s")).toHaveText("crossed out")
     })
@@ -240,8 +240,8 @@ test.describe("Rich Text Editing", () => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
       await page.keyboard.type("some code")
-      await page.keyboard.press("Meta+a")
-      await page.keyboard.press("Meta+Shift+c")
+      await page.keyboard.press("ControlOrMeta+a")
+      await page.keyboard.press("ControlOrMeta+Shift+c")
 
       await expect(editor.locator("pre")).toBeVisible()
     })
@@ -314,7 +314,7 @@ test.describe("Rich Text Editing", () => {
       const editor = page.locator("[contenteditable='true']")
       await editor.click()
       await page.keyboard.type("text")
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
 
       // Click bold button
       await page.getByRole("button", { name: "Bold" }).click()
@@ -423,7 +423,7 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("line 3")
 
       // Select all and press Tab
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
       await page.keyboard.press("Tab")
 
       // All lines should still exist (not replaced with tab)
@@ -448,7 +448,7 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("const c = 3")
 
       // Select all content in code block (Cmd+A should select within code block first)
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
       await page.keyboard.press("Tab")
 
       // All lines should be indented but still exist
@@ -470,7 +470,7 @@ test.describe("Rich Text Editing", () => {
       await page.keyboard.type("\tconst b = 2")
 
       // Select all and dedent
-      await page.keyboard.press("Meta+a")
+      await page.keyboard.press("ControlOrMeta+a")
       await page.keyboard.press("Shift+Tab")
 
       // Content should be dedented but still exist
