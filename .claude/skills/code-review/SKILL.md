@@ -80,7 +80,7 @@ Repo: \<OWNER\>/\<REPO\>
 
 🔒 **Security**: Actual vulnerabilities (CRITICAL/HIGH/MED/LOW), not theoretical risks
 
-🧪 **Testing** (Integration/E2E only): Focus on browser/_.spec.ts and integration/_.test.ts. Flag .skip(), .todo(), flaky selectors. IGNORE missing unit tests.
+🧪 **Testing** (Integration/E2E only): Focus on `browser/*.spec.ts` and `integration/*.test.ts`. Flag `.skip()`, `.todo()`, flaky selectors. IGNORE missing unit tests.
 
 ⚡ **Performance**: N+1 queries, unbounded queries, missing useMemo/useCallback. IGNORE "could be faster" without impact.
 
