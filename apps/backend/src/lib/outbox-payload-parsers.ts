@@ -48,68 +48,7 @@ export async function parseMessageCreatedPayload(
   payload: unknown,
   pool: Pool
 ): Promise<NormalizedMessageCreatedPayload | null> {
-  if (!payload || typeof payload !== "object") {
-    return null
-  }
-
-  const p = payload as Record<string, unknown>
-
-  // These are required in all formats
-  if (typeof p.workspaceId !== "string" || typeof p.streamId !== "string") {
-    return null
-  }
-
-  const event = p.event as Record<string, unknown> | undefined
-
-  // Modern format: event wrapper exists with nested payload
-  if (event && typeof event === "object") {
-    const eventPayload = event.payload as Record<string, unknown> | undefined
-
-    if (eventPayload && typeof eventPayload === "object" && typeof eventPayload.messageId === "string") {
-      return {
-        workspaceId: p.workspaceId,
-        streamId: p.streamId,
-        event: {
-          id: (event.id as string) ?? "",
-          sequence: (event.sequence as string) ?? "0",
-          actorType: (event.actorType as AuthorType) ?? AuthorTypes.USER,
-          actorId: (event.actorId as string | null) ?? null,
-          payload: {
-            messageId: eventPayload.messageId,
-            content: (eventPayload.content as string) ?? "",
-            contentFormat: (eventPayload.contentFormat as string) ?? "plain",
-          },
-        },
-      }
-    }
-  }
-
-  // Legacy format: messageId at top level, no event wrapper
-  if (typeof p.messageId === "string") {
-    const messageId = p.messageId
-
-    // Look up message to get actual authorType
-    const message = await withClient(pool, (client) => MessageRepository.findById(client, messageId))
-
-    return {
-      workspaceId: p.workspaceId,
-      streamId: p.streamId,
-      event: {
-        id: "",
-        sequence: message ? String(message.sequence) : "0",
-        actorType: message?.authorType ?? AuthorTypes.USER,
-        actorId: message?.authorId ?? null,
-        payload: {
-          messageId,
-          content: message?.content ?? (p.content as string) ?? "",
-          contentFormat: message?.contentFormat ?? (p.contentFormat as string) ?? "plain",
-        },
-      },
-    }
-  }
-
-  // Cannot extract minimum required fields
-  return null
+  return withClient(pool, (client) => parseMessageCreatedPayloadWithClient(payload, client))
 }
 
 /**

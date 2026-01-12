@@ -1,14 +1,10 @@
 import { Pool, PoolClient } from "pg"
 import { sql, withTransaction } from "../db"
 import { OutboxRepository, OutboxEvent } from "./outbox-repository"
-import {
-  type HandlerEffect,
-  type JobEffect,
-  type EmitEffect,
-  type EmitToUserEffect,
-  categorizeEffects,
-} from "../lib/handler-effects"
+import { type HandlerEffect, type EmitEffect, type EmitToUserEffect, categorizeEffects } from "../lib/handler-effects"
 import { type JobQueueManager, type JobQueueName, type JobDataMap } from "../lib/job-queue"
+import { calculateBackoffMs } from "../lib/backoff"
+import { logger } from "../lib/logger"
 
 export interface ListenerState {
   listenerId: string
@@ -137,6 +133,75 @@ export const OutboxListenerRepository = {
       SELECT ${listenerId}, COALESCE(MAX(id), 0)
       FROM outbox
       ON CONFLICT (listener_id) DO NOTHING
+    `)
+  },
+
+  /**
+   * Records an error and sets up retry with exponential backoff.
+   * Returns the new retry_after time, or null if max retries exceeded.
+   *
+   * Used for circuit breaker: after max retries, caller should move event to DLQ.
+   */
+  async recordError(
+    client: PoolClient,
+    listenerId: string,
+    error: string,
+    maxRetries: number,
+    baseBackoffMs: number
+  ): Promise<Date | null> {
+    const current = await client.query<{ retry_count: number }>(sql`
+      SELECT retry_count
+      FROM outbox_listeners
+      WHERE listener_id = ${listenerId}
+    `)
+
+    if (current.rows.length === 0) {
+      return null
+    }
+
+    const newRetryCount = current.rows[0].retry_count + 1
+
+    if (newRetryCount > maxRetries) {
+      return null
+    }
+
+    const backoffMs = calculateBackoffMs({ baseMs: baseBackoffMs, retryCount: newRetryCount })
+    const retryAfter = new Date(Date.now() + backoffMs)
+
+    await client.query(sql`
+      UPDATE outbox_listeners
+      SET
+        retry_count = ${newRetryCount},
+        retry_after = ${retryAfter},
+        last_error = ${error},
+        updated_at = NOW()
+      WHERE listener_id = ${listenerId}
+    `)
+
+    return retryAfter
+  },
+
+  /**
+   * Moves an event to the dead letter table after max retries exceeded.
+   * Also advances the cursor past this event and resets retry state.
+   */
+  async moveToDeadLetter(client: PoolClient, listenerId: string, eventId: bigint, error: string): Promise<void> {
+    await client.query(sql`
+      INSERT INTO outbox_dead_letters (listener_id, outbox_event_id, error)
+      VALUES (${listenerId}, ${eventId.toString()}, ${error})
+    `)
+
+    // Advance cursor past this event and reset retry state
+    await client.query(sql`
+      UPDATE outbox_listeners
+      SET
+        last_processed_id = ${eventId.toString()},
+        last_processed_at = NOW(),
+        retry_count = 0,
+        retry_after = NULL,
+        last_error = NULL,
+        updated_at = NOW()
+      WHERE listener_id = ${listenerId}
     `)
   },
 }

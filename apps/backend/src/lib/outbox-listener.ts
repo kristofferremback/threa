@@ -2,6 +2,7 @@ import { Pool, PoolClient } from "pg"
 import type { Server } from "socket.io"
 import {
   OutboxListenerRepository,
+  OutboxRepository,
   OUTBOX_CHANNEL,
   OutboxEvent,
   claimAndFetchEvents,
@@ -36,6 +37,14 @@ export interface OutboxListenerConfig {
   maxWaitMs?: number
   fallbackPollMs?: number
   keepaliveMs?: number
+
+  /**
+   * Circuit breaker config for pure handler mode.
+   * After maxRetries consecutive failures on the same cursor position,
+   * the failing event is moved to the dead letter queue and processing continues.
+   */
+  maxRetries?: number
+  baseBackoffMs?: number
 
   /**
    * Simple handler mode: handler runs outside the claim transaction.
@@ -82,6 +91,9 @@ const DEFAULT_CONFIG = {
   // since real-time delivery uses LISTEN/NOTIFY. Lower values cause connection pressure.
   fallbackPollMs: 2000,
   keepaliveMs: 30000,
+  // Circuit breaker defaults for pure handler mode
+  maxRetries: 5,
+  baseBackoffMs: 1000,
 }
 
 /**
@@ -135,6 +147,10 @@ export class OutboxListener {
   private fallbackPollMs: number
   private keepaliveMs: number
 
+  // Circuit breaker config (only used in pure handler mode)
+  private maxRetries: number
+  private baseBackoffMs: number
+
   // Handler mode fields (mutually exclusive)
   private handler: ((event: OutboxEvent) => Promise<void>) | null = null
   private pureHandler: PureHandler | null = null
@@ -158,6 +174,8 @@ export class OutboxListener {
     this.maxWaitMs = config.maxWaitMs ?? DEFAULT_CONFIG.maxWaitMs
     this.fallbackPollMs = config.fallbackPollMs ?? DEFAULT_CONFIG.fallbackPollMs
     this.keepaliveMs = config.keepaliveMs ?? DEFAULT_CONFIG.keepaliveMs
+    this.maxRetries = config.maxRetries ?? DEFAULT_CONFIG.maxRetries
+    this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
 
     // Validate and set handler mode
     if (config.handler && config.pureHandler) {
@@ -436,18 +454,31 @@ export class OutboxListener {
    *
    * If crash before commit: events will be reprocessed (at-least-once guarantee)
    * If crash after commit: pg-boss jobs are durable, ephemeral effects may be lost (acceptable)
+   *
+   * Circuit breaker: After maxRetries consecutive failures on the same cursor position,
+   * the failing event is moved to the dead letter queue and processing continues.
    */
   private async processEventsWithPureHandler(): Promise<void> {
     while (true) {
       if (!this.running) return
 
-      const result = await claimAndProcessEvents(
-        this.queryPool,
-        this.jobQueue!,
-        this.listenerId,
-        this.batchSize,
-        this.pureHandler!
-      )
+      let result
+      try {
+        result = await claimAndProcessEvents(
+          this.queryPool,
+          this.jobQueue!,
+          this.listenerId,
+          this.batchSize,
+          this.pureHandler!
+        )
+      } catch (err) {
+        // Transaction failed - apply circuit breaker logic
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        logger.error({ err, listenerId: this.listenerId }, "Pure handler processing failed")
+
+        await this.handleProcessingError(errorMessage)
+        return
+      }
 
       if (result.status === PROCESS_STATUS.NOT_READY) {
         return
@@ -480,5 +511,64 @@ export class OutboxListener {
         return
       }
     }
+  }
+
+  /**
+   * Handle a processing error with circuit breaker logic.
+   *
+   * Records the error with exponential backoff. If max retries exceeded,
+   * moves the first event after the cursor to the dead letter queue.
+   */
+  private async handleProcessingError(errorMessage: string): Promise<void> {
+    // Record error and check if we should retry or move to DLQ
+    const retryAfter = await withTransaction(this.queryPool, async (client) => {
+      return OutboxListenerRepository.recordError(
+        client,
+        this.listenerId,
+        errorMessage,
+        this.maxRetries,
+        this.baseBackoffMs
+      )
+    })
+
+    if (retryAfter !== null) {
+      // Will retry after backoff period - fallback poll will pick it up
+      logger.warn(
+        { listenerId: this.listenerId, retryAfter: retryAfter.toISOString() },
+        "Processing failed, will retry after backoff"
+      )
+      return
+    }
+
+    // Max retries exceeded - move the failing event to DLQ
+    logger.error({ listenerId: this.listenerId }, "Max retries exceeded, moving event to dead letter queue")
+
+    await withTransaction(this.queryPool, async (client) => {
+      // Get the current cursor position
+      const state = await OutboxListenerRepository.claimListener(client, this.listenerId)
+      if (!state) {
+        logger.error({ listenerId: this.listenerId }, "Could not claim listener for DLQ operation")
+        return
+      }
+
+      // Fetch the first event after cursor - this is the one causing failures
+      const events = await OutboxRepository.fetchAfterId(client, state.lastProcessedId, 1)
+      if (events.length === 0) {
+        logger.warn({ listenerId: this.listenerId }, "No events to move to DLQ")
+        return
+      }
+
+      const failedEvent = events[0]
+      logger.error(
+        {
+          listenerId: this.listenerId,
+          eventId: failedEvent.id.toString(),
+          eventType: failedEvent.eventType,
+        },
+        "Moving event to dead letter queue"
+      )
+
+      await OutboxListenerRepository.moveToDeadLetter(client, this.listenerId, failedEvent.id, errorMessage)
+    })
   }
 }
