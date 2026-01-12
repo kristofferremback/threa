@@ -4,7 +4,7 @@ import { withTransaction } from "../../src/db"
 import { OutboxRepository } from "../../src/repositories"
 import { setupTestDatabase } from "./setup"
 
-describe("Outbox", () => {
+describe("OutboxRepository", () => {
   let pool: Pool
 
   beforeAll(async () => {
