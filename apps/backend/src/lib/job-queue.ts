@@ -1,5 +1,5 @@
-import { PgBoss, type Job, type SendOptions, type WorkHandler, type Db } from "pg-boss"
-import type { Pool, PoolClient } from "pg"
+import { PgBoss, type Job, type SendOptions, type WorkHandler } from "pg-boss"
+import type { Pool } from "pg"
 import { withClient } from "../db"
 import { logger } from "./logger"
 
@@ -204,45 +204,6 @@ export class JobQueueManager {
     const mergedOptions = { ...DEFAULT_JOB_OPTIONS, ...options }
     const jobId = await this.boss.send(queue, data, mergedOptions)
     logger.debug({ queue, jobId, data }, "Job sent")
-    return jobId
-  }
-
-  /**
-   * Send a job using an existing database client (for transactional job creation).
-   *
-   * This allows job creation to be part of an existing transaction, ensuring
-   * atomicity between job dispatch and other database operations (like cursor updates).
-   *
-   * @example
-   * ```ts
-   * await withTransaction(pool, async (client) => {
-   *   // Do some work
-   *   await someRepository.update(client, ...)
-   *
-   *   // Job creation is part of the same transaction
-   *   await jobQueue.sendWithClient(client, JobQueues.PERSONA_AGENT, { ... })
-   *
-   *   // Both commit or rollback together
-   * })
-   * ```
-   */
-  async sendWithClient<T extends JobQueueName>(
-    client: PoolClient,
-    queue: T,
-    data: JobDataMap[T],
-    options?: Omit<SendOptions, "db">
-  ): Promise<string | null> {
-    // Create a db adapter that uses the provided client
-    const db: Db = {
-      executeSql: async (text: string, values?: unknown[]) => {
-        const result = await client.query(text, values as unknown[])
-        return { rows: result.rows }
-      },
-    }
-
-    const mergedOptions = { ...DEFAULT_JOB_OPTIONS, ...options, db }
-    const jobId = await this.boss.send(queue, data, mergedOptions)
-    logger.debug({ queue, jobId, data }, "Job sent (transactional)")
     return jobId
   }
 
