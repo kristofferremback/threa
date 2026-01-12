@@ -6,7 +6,7 @@
  * ensure consistent handling across all listeners.
  */
 
-import type { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 import type { AuthorType } from "@threa/types"
 import { AuthorTypes } from "@threa/types"
 import { withClient } from "../db"
@@ -47,6 +47,19 @@ export interface NormalizedMessageCreatedPayload {
 export async function parseMessageCreatedPayload(
   payload: unknown,
   pool: Pool
+): Promise<NormalizedMessageCreatedPayload | null> {
+  return withClient(pool, (client) => parseMessageCreatedPayloadWithClient(payload, client))
+}
+
+/**
+ * Parse and normalize a message:created outbox payload using an existing client.
+ *
+ * This variant is for use within transactions where you already have a PoolClient.
+ * See parseMessageCreatedPayload for format documentation.
+ */
+export async function parseMessageCreatedPayloadWithClient(
+  payload: unknown,
+  client: PoolClient
 ): Promise<NormalizedMessageCreatedPayload | null> {
   if (!payload || typeof payload !== "object") {
     return null
@@ -89,7 +102,7 @@ export async function parseMessageCreatedPayload(
     const messageId = p.messageId
 
     // Look up message to get actual authorType
-    const message = await withClient(pool, (client) => MessageRepository.findById(client, messageId))
+    const message = await MessageRepository.findById(client, messageId)
 
     return {
       workspaceId: p.workspaceId,
