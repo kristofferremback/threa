@@ -1,20 +1,18 @@
 ---
 name: code-review
-description: Run parallel code and security reviews on a PR, posting findings as comments
+description: Run multi-perspective code review on a PR
 ---
 
-# Parallel Code Review
+# Multi-Perspective Code Review
 
-This skill orchestrates two parallel review agents that analyze a PR and post their findings as comments.
+Spawns a single Sonnet 4.5 agent that analyzes a PR from six perspectives and posts a unified comment.
 
 ## What It Does
 
 1. Identifies the PR to review (from argument or current branch)
-2. Spawns two background agents in parallel:
-   - **Code Review Agent**: Runs `/review`, posts findings as PR comment
-   - **Security Review Agent**: Runs `/security-review`, posts findings as PR comment
-3. Waits for both agents to complete
-4. Reports the outcome
+2. Spawns ONE background agent (Sonnet 4.5) that reviews from all perspectives
+3. Agent posts the unified comment directly to GitHub
+4. Agent reports back a summary with confidence score
 
 ## Instructions
 
@@ -26,156 +24,198 @@ If a PR number was provided as an argument, use that. Otherwise, find the open P
 gh pr view --json number,title,url -q '"\(.number)|\(.title)|\(.url)"'
 ```
 
-This outputs `number|title|url` format. Parse the values from the output.
-
-If no PR exists for the current branch and no number was provided, stop and tell the user:
+Parse `number|title|url` from output. If no PR exists and no number provided:
 
 ```
 No open PR found for current branch. Please provide a PR number: /code-review <number>
 ```
 
-**Validate the PR exists** before proceeding. If a PR number was provided as an argument, verify it:
+Validate PR exists if number was provided:
 
 ```bash
 gh pr view <NUMBER> --json number -q '.number'
 ```
 
-If this fails, stop and tell the user:
+Also get repo owner/name for API calls:
 
-```
-PR #<NUMBER> not found. Please check the PR number and try again.
-```
-
-### Step 2: Spawn Both Review Agents
-
-Use the Task tool to spawn TWO agents in parallel. Both calls should be in the SAME message to run concurrently.
-
-**CRITICAL**: Set `run_in_background: true` for both agents.
-
-**Note**: In the prompts below, replace `<NUMBER>`, `<TITLE>`, and `<URL>` with actual values from the `gh pr view` output.
-
-**Task IDs**: The Task tool returns a `task_id` for each spawned agent. Capture these IDs from the tool responses - you'll need them in Step 3 to wait for completion.
-
-**Agent 1 - Code Review:**
-
-```
-subagent_type: "general-purpose"
-description: "Code review PR"
-run_in_background: true
-prompt: |
-  You are a code review agent. Your task:
-
-  1. Run the /review slash command to review PR #<NUMBER>
-  2. Format your findings as a well-structured markdown comment
-  3. Post the review as a PR comment using a heredoc to handle special characters:
-     gh pr comment <NUMBER> --body "$(cat <<'EOF'
-     <your review>
-     EOF
-     )"
-  4. If posting fails, retry up to 3 times total before giving up
-
-  PR Details:
-  - Number: <NUMBER>
-  - Title: <TITLE>
-  - URL: <URL>
-
-  Important:
-  - Focus on code quality, architecture, and maintainability
-  - Be constructive and specific
-  - Include code snippets when referencing specific issues
-  - End your comment with a clear summary (approve/request changes/comment)
-
-  When done, report: SUCCESS or FAILURE (with reason)
+```bash
+gh repo view --json owner,name -q '"\(.owner.login)|\(.name)"'
 ```
 
-**Agent 2 - Security Review:**
+### Step 2: Spawn Review Agent
+
+Use the Task tool to spawn ONE agent with Sonnet 4.5.
+
+**CRITICAL**:
+
+- Set `model: "sonnet"` to use Sonnet 4.5
+- Set `run_in_background: true`
+
+Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>` with actual values.
+
+**Task parameters:**
+
+- subagent_type: "general-purpose"
+- model: "sonnet"
+- description: "Multi-perspective PR review"
+- run_in_background: true
+- prompt: (see below)
+
+**Agent prompt:**
+
+You are a comprehensive code review agent. Review PR #\<NUMBER\> from multiple perspectives and POST the review comment directly to GitHub.
+
+PR: #\<NUMBER\> - \<TITLE\>
+Repo: \<OWNER\>/\<REPO\>
+
+**Gather Context** - Run these commands:
+
+- `gh pr diff <NUMBER>` - Get the diff
+- `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
+- `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
+
+**Multi-Perspective Analysis** - Review from ALL perspectives:
+
+🔍 **Code Quality**: Logic errors, bugs, edge cases, code clarity, unaddressed previous comments
+
+🔒 **Security**: Actual vulnerabilities (CRITICAL/HIGH/MED/LOW), not theoretical risks
+
+🧪 **Testing** (Integration/E2E only): Focus on `browser/*.spec.ts` and `integration/*.test.ts`. Flag `.skip()`, `.todo()`, flaky selectors. IGNORE missing unit tests.
+
+⚡ **Performance**: N+1 queries, unbounded queries, missing useMemo/useCallback. IGNORE "could be faster" without impact.
+
+♿ **Accessibility** (WCAG 2.1 AA): Only for frontend. Flag div click handlers, missing aria-labels, color-only indicators.
+
+🔄 **Reactivity**: Only for state mutations. Check outbox events, transactions, frontend handlers.
+
+**Confidence Score** (1-7):
+
+- 7: Excellent - No issues
+- 6: Very Good - Minor suggestions
+- 5: Good - Few improvements needed
+- 4: Acceptable - Some issues, nothing blocking
+- 3: Needs Work - Multiple issues to address
+- 2: Significant Concerns - Blocking issues
+- 1: Major Problems - Should not merge
+
+**Post Comment** using `gh pr comment <NUMBER> --body "..."` with this structure:
 
 ```
-subagent_type: "general-purpose"
-description: "Security review PR"
-run_in_background: true
-prompt: |
-  You are a security review agent. Your task:
+<!-- unified-review -->
 
-  1. Run the /security-review slash command to review PR #<NUMBER>
-  2. Format your findings as a well-structured markdown comment
-  3. Post the review as a PR comment using a heredoc to handle special characters:
-     gh pr comment <NUMBER> --body "$(cat <<'EOF'
-     <your review>
-     EOF
-     )"
-  4. If posting fails, retry up to 3 times total before giving up
+## Code Review Summary
 
-  PR Details:
-  - Number: <NUMBER>
-  - Title: <TITLE>
-  - URL: <URL>
+**Confidence Score: [X]/7** - [explanation]
 
-  Important:
-  - Focus on security vulnerabilities, injection risks, auth issues
-  - Reference OWASP top 10 where relevant
-  - Be specific about risk severity (critical/high/medium/low)
-  - Include remediation suggestions
-  - End with a security verdict (no issues found/issues found)
+**Suggested improvements:** (if any issues, max 5)
+- `file.ts:line` - [issue]. Suggestion: [fix]
 
-  When done, report: SUCCESS or FAILURE (with reason)
+✅ No issues found across all review perspectives. (if all clean)
+
+---
+
+<details><summary>🔍 Code Quality [CLEAN | X suggestions]</summary>
+[content]
+</details>
+
+<details><summary>🔒 Security [CLEAN | X concerns]</summary>
+[content]
+</details>
+
+<details><summary>🧪 Testing [CLEAN | N/A]</summary>
+[content]
+</details>
+
+<details><summary>⚡ Performance [CLEAN | X concerns]</summary>
+[content]
+</details>
+
+<details><summary>♿ Accessibility [CLEAN | N/A]</summary>
+[content]
+</details>
+
+<details><summary>🔄 Reactivity [CLEAN | N/A]</summary>
+[content]
+</details>
 ```
 
-### Step 3: Wait for Both Agents
+**Supersede Old Comment** (if previous unified-review exists):
 
-Use TaskOutput to wait for each background agent to complete:
+First, fetch the old comment body:
 
-```
-TaskOutput(task_id: "<agent1_task_id>", block: true, timeout: 300000)
-TaskOutput(task_id: "<agent2_task_id>", block: true, timeout: 300000)
-```
-
-The 5-minute timeout accounts for large PRs. Both TaskOutput calls can be made in parallel.
-
-**If a timeout occurs**: Report the agent as `TIMEOUT` rather than `FAILED`, and note that the review may still be in progress. The user can check the PR comments manually or re-run the skill.
-
-### Step 4: Report Results
-
-After both agents complete, summarize:
-
-**If both succeeded:**
-
-```
-Both reviews posted to PR #<NUMBER>:
-- Code review: Posted
-- Security review: Posted
-
-View at: <PR_URL>
+```bash
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body'
 ```
 
-**If one or both failed:**
+Then update it to preserve the old review in a collapsible block (use heredoc to avoid quoting issues):
+
+```bash
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body="$(cat <<'EOFBODY'
+<!-- unified-review:superseded -->
+**[New review available here](NEW_COMMENT_URL)**
+
+<details>
+<summary>Previous review</summary>
+
+[OLD_COMMENT_BODY goes here, with the <!-- unified-review --> marker removed]
+
+</details>
+EOFBODY
+)"
+```
+
+**Final Output** - Return ONLY this structured summary:
 
 ```
-Review results for PR #<NUMBER>:
-- Code review: <SUCCESS/FAILED: reason>
-- Security review: <SUCCESS/FAILED: reason>
+REVIEW_POSTED: <comment_url>
+CONFIDENCE: <1-7>
+CODE: <CLEAN | X suggestions>
+SECURITY: <CLEAN | X concerns>
+TESTING: <CLEAN | X suggestions | N/A>
+PERFORMANCE: <CLEAN | X concerns>
+ACCESSIBILITY: <CLEAN | X concerns | N/A>
+REACTIVITY: <CLEAN | X concerns | N/A>
+KEY_ISSUES: <top 3 comma-separated, or "None">
+```
 
-<If any failed>: You may want to run the failed review manually.
+### Step 3: Collect Report
+
+Use TaskOutput to wait for the agent:
+
+```
+TaskOutput(task_id: "<task_id>", block: true, timeout: 300000)
+```
+
+Parse the structured summary from the agent's output.
+
+### Step 4: Report Results to User
+
+```
+Code review posted to PR #<NUMBER>: <COMMENT_URL>
+
+Confidence: <SCORE>/7
+- Code: [status]
+- Security: [status]
+- Testing: [status]
+- Performance: [status]
+- Accessibility: [status]
+- Reactivity: [status]
+
+Key issues: [list if any]
 ```
 
 ## Example Usage
 
-**With PR number:**
-
 ```
 /code-review 72
-```
-
-**From current branch:**
-
-```
 /code-review
 ```
 
-## Notes
+## Token Efficiency
 
-- Each agent retries posting up to 3 times before reporting failure
-- Both agents run to completion independently (no fail-fast)
-- Reviews are posted as separate comments, not inline review comments
-- The agents have full context of the PR diff via the native slash commands
-- **Duplicate runs**: Running `/code-review` multiple times on the same PR will post duplicate comments. There is no deduplication mechanism.
+This skill uses a single Sonnet 4.5 agent instead of six parallel agents:
+
+- One code exploration pass (not six)
+- Shared context across all review perspectives
+- Agent posts comment directly (no large content passed back)
+- Only structured summary returned to orchestrator
