@@ -1,16 +1,14 @@
 /**
  * Payload parsers for outbox events.
  *
- * These parsers validate and normalize outbox payloads, handling legacy events
- * that may have different structures. Use these instead of raw type casts to
- * ensure consistent handling across all listeners.
+ * These parsers validate and normalize outbox payloads. Use these instead of
+ * raw type casts to ensure consistent handling across all listeners.
  */
 
 import type { Pool, PoolClient } from "pg"
 import type { AuthorType } from "@threa/types"
 import { AuthorTypes } from "@threa/types"
 import { withClient } from "../db"
-import { MessageRepository } from "../repositories"
 
 /**
  * Normalized payload for message:created events.
@@ -34,14 +32,9 @@ export interface NormalizedMessageCreatedPayload {
 /**
  * Parse and normalize a message:created outbox payload.
  *
- * Attempts to extract data from both modern and legacy event formats:
- * - Modern: { streamId, workspaceId, event: { actorType, payload: { messageId } } }
- * - Legacy: { streamId, workspaceId, messageId } (no event wrapper)
+ * Expected format: { streamId, workspaceId, event: { actorType, payload: { messageId } } }
  *
- * For legacy events, looks up the message to get the actual authorType.
- *
- * Returns null only if minimum required fields (streamId, workspaceId, messageId)
- * cannot be extracted.
+ * Returns null if minimum required fields cannot be extracted.
  */
 export async function parseMessageCreatedPayload(
   payload: unknown,
@@ -54,11 +47,10 @@ export async function parseMessageCreatedPayload(
  * Parse and normalize a message:created outbox payload using an existing client.
  *
  * This variant is for use within transactions where you already have a PoolClient.
- * See parseMessageCreatedPayload for format documentation.
  */
 export async function parseMessageCreatedPayloadWithClient(
   payload: unknown,
-  client: PoolClient
+  _client: PoolClient
 ): Promise<NormalizedMessageCreatedPayload | null> {
   if (!payload || typeof payload !== "object") {
     return null
@@ -88,36 +80,12 @@ export async function parseMessageCreatedPayloadWithClient(
           actorId: (event.actorId as string | null) ?? null,
           payload: {
             messageId: eventPayload.messageId,
-            contentMarkdown: (eventPayload.contentMarkdown as string) ?? (eventPayload.content as string) ?? "",
+            contentMarkdown: (eventPayload.contentMarkdown as string) ?? "",
           },
         },
       }
     }
   }
 
-  // Legacy format: messageId at top level, no event wrapper
-  if (typeof p.messageId === "string") {
-    const messageId = p.messageId
-
-    // Look up message to get actual authorType
-    const message = await MessageRepository.findById(client, messageId)
-
-    return {
-      workspaceId: p.workspaceId,
-      streamId: p.streamId,
-      event: {
-        id: "",
-        sequence: message ? String(message.sequence) : "0",
-        actorType: message?.authorType ?? AuthorTypes.USER,
-        actorId: message?.authorId ?? null,
-        payload: {
-          messageId,
-          contentMarkdown: message?.contentMarkdown ?? (p.contentMarkdown as string) ?? (p.content as string) ?? "",
-        },
-      },
-    }
-  }
-
-  // Cannot extract minimum required fields
   return null
 }

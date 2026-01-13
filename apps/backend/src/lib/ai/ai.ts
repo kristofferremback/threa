@@ -20,7 +20,7 @@ import type { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
 import { stripMarkdownFences } from "./text-utils"
-import { CostTracker, createCostCapturingFetch } from "./openrouter-cost-interceptor"
+import { CostTracker } from "./openrouter-cost-interceptor"
 import { logger } from "../logger"
 
 // Re-export cost tracking utilities for consumers
