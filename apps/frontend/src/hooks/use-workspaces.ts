@@ -1,3 +1,4 @@
+import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useWorkspaceService } from "@/contexts"
 import { db } from "@/db"
@@ -61,7 +62,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
   const hasExistingError = existingQueryState?.status === "error"
 
-  return useQuery({
+  const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: async () => {
       const bootstrap = await workspaceService.bootstrap(workspaceId)
@@ -103,6 +104,13 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
+
+  // Manual retry that resets error state first
+  const retryBootstrap = useCallback(() => {
+    queryClient.resetQueries({ queryKey: workspaceKeys.bootstrap(workspaceId) })
+  }, [queryClient, workspaceId])
+
+  return { ...query, retryBootstrap }
 }
 
 export function useCreateWorkspace() {

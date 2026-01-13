@@ -68,12 +68,9 @@ function normalizeContent(input: z.infer<typeof createMessageSchema> | z.infer<t
   contentMarkdown: string
 } {
   if ("contentJson" in input) {
-    // Rich client: JSON provided, derive markdown if missing
+    // Rich client: JSON provided, trust it and derive markdown
     const contentMarkdown = input.contentMarkdown ?? serializeToMarkdown(input.contentJson)
-    // Normalize emoji in markdown and re-parse to ensure consistency
-    const normalizedMarkdown = normalizeMessage(contentMarkdown)
-    const contentJson = parseMarkdown(normalizedMarkdown, undefined, toEmoji)
-    return { contentJson, contentMarkdown: normalizedMarkdown }
+    return { contentJson: input.contentJson, contentMarkdown }
   } else {
     // AI/external: Markdown provided, normalize and parse to JSON
     const normalizedMarkdown = normalizeMessage(input.content)
