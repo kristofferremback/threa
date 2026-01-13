@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Overview Concept 3: Ambient Edge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+        --destructive: 8 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .edge {
+        width: 6px;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .edge:hover,
+      .edge.expanded {
+        width: 340px;
+      }
+      .edge-segment {
+        transition: all 0.2s ease;
+        cursor: pointer;
+      }
+      .edge-segment:hover {
+        filter: brightness(1.1);
+      }
+      .activity-glow {
+        animation: glow 2s ease-in-out infinite alternate;
+      }
+      @keyframes glow {
+        from {
+          opacity: 0.6;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body class="h-screen flex overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed bottom-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Overview 3: Ambient Edge</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Ultra-minimal colored edge on the left. Each segment represents a stream - color intensity = activity. Expands
+        to full panel on hover. Most ambient option.
+      </p>
+    </div>
+
+    <!-- Ambient Edge -->
+    <div
+      class="edge h-full flex flex-col overflow-hidden"
+      style="background: hsl(var(--card)); border-right: 1px solid hsl(var(--border))"
+    >
+      <!-- When collapsed, just colored segments. When expanded, full detail -->
+
+      <!-- Header (only visible expanded) -->
+      <div
+        class="shrink-0 p-3 flex items-center gap-3 opacity-0 transition-opacity duration-300"
+        style="border-bottom: 1px solid hsl(var(--border))"
+      >
+        <div
+          class="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          T
+        </div>
+        <span class="font-semibold whitespace-nowrap">Activity</span>
+      </div>
+      <style>
+        .edge:hover > div:first-child {
+          opacity: 1;
+        }
+        .edge:hover .segment-content {
+          opacity: 1;
+        }
+        .edge:hover .segment-bar {
+          width: 4px;
+        }
+      </style>
+
+      <!-- Segments -->
+      <div class="flex-1 flex flex-col py-2">
+        <!-- Mentions segment - red/urgent -->
+        <div class="edge-segment flex-1 max-h-24 flex items-stretch relative group">
+          <div
+            class="segment-bar w-full transition-all duration-300 activity-glow rounded-r-sm"
+            style="background: hsl(var(--destructive))"
+          ></div>
+          <div
+            class="segment-content absolute inset-0 flex items-center px-4 opacity-0 transition-opacity duration-300"
+          >
+            <div class="flex items-center gap-3 flex-1">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style="background: hsl(var(--destructive) / 0.1)"
+              >
+                <span class="text-lg font-medium" style="color: hsl(var(--destructive))">@</span>
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <p class="font-medium text-sm">Mentions</p>
+                  <span
+                    class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                    style="background: hsl(var(--destructive)); color: white"
+                    >2</span
+                  >
+                </div>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">Alice, Bob mentioned you</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scratchpad segment - gold/AI active -->
+        <div class="edge-segment flex-1 max-h-32 flex items-stretch relative group">
+          <div
+            class="segment-bar w-full transition-all duration-300 activity-glow rounded-r-sm"
+            style="background: hsl(var(--primary))"
+          ></div>
+          <div
+            class="segment-content absolute inset-0 flex items-center px-4 opacity-0 transition-opacity duration-300"
+          >
+            <div class="flex items-center gap-3 flex-1">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style="background: hsl(var(--primary))"
+              >
+                <span class="text-lg font-bold" style="color: hsl(var(--primary-foreground))">S</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <p class="font-medium text-sm">My Scratchpad</p>
+                  <span
+                    class="px-1.5 py-0.5 rounded-full text-xs"
+                    style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+                    >Active</span
+                  >
+                </div>
+                <p class="text-xs truncate" style="color: hsl(var(--primary))">Ariadne is responding...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Engineering segment - medium activity -->
+        <div class="edge-segment flex-1 max-h-24 flex items-stretch relative group">
+          <div
+            class="segment-bar w-full transition-all duration-300 rounded-r-sm"
+            style="background: hsl(var(--primary) / 0.6)"
+          ></div>
+          <div
+            class="segment-content absolute inset-0 flex items-center px-4 opacity-0 transition-opacity duration-300"
+          >
+            <div class="flex items-center gap-3 flex-1">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style="background: hsl(var(--muted))"
+              >
+                <span class="text-lg font-medium">#</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <p class="font-medium text-sm">engineering</p>
+                  <span
+                    class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                    style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                    >5</span
+                  >
+                </div>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">
+                  Bob: Let's schedule the migration
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Design segment - low/no activity -->
+        <div class="edge-segment flex-1 max-h-24 flex items-stretch relative group">
+          <div
+            class="segment-bar w-full transition-all duration-300 rounded-r-sm"
+            style="background: hsl(var(--muted))"
+          ></div>
+          <div
+            class="segment-content absolute inset-0 flex items-center px-4 opacity-0 transition-opacity duration-300"
+          >
+            <div class="flex items-center gap-3 flex-1 opacity-60">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style="background: hsl(var(--muted))"
+              >
+                <span class="text-lg font-medium">#</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium text-sm">design</p>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">2 hours ago</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Draft segment - dashed/pending -->
+        <div class="edge-segment flex-1 max-h-24 flex items-stretch relative group">
+          <div
+            class="segment-bar w-full transition-all duration-300 rounded-r-sm"
+            style="
+              background: repeating-linear-gradient(
+                45deg,
+                hsl(var(--border)),
+                hsl(var(--border)) 2px,
+                transparent 2px,
+                transparent 6px
+              );
+            "
+          ></div>
+          <div
+            class="segment-content absolute inset-0 flex items-center px-4 opacity-0 transition-opacity duration-300"
+          >
+            <div class="flex items-center gap-3 flex-1">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style="background: hsl(var(--muted)); border: 2px dashed hsl(var(--border))"
+              >
+                <svg
+                  class="w-5 h-5"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                  />
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium text-sm">Draft: API Design</p>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">Unsaved changes</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+      </div>
+
+      <!-- Bottom actions (only visible expanded) -->
+      <div
+        class="shrink-0 p-2 opacity-0 transition-opacity duration-300"
+        style="border-top: 1px solid hsl(var(--border))"
+      >
+        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-black/5">
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))">Search</span>
+          <kbd class="ml-auto text-xs px-1.5 py-0.5 rounded" style="background: hsl(var(--muted))">⌘K</kbd>
+        </button>
+      </div>
+      <style>
+        .edge:hover > div:last-child {
+          opacity: 1;
+        }
+      </style>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex items-center justify-center">
+      <div class="text-center">
+        <p class="text-lg font-medium mb-2">Focus View Here</p>
+        <p style="color: hsl(var(--muted-foreground))">Hover the edge to see expanded state</p>
+        <p class="mt-4 text-sm" style="color: hsl(var(--muted-foreground))">
+          Colors indicate: <span style="color: hsl(var(--destructive))">Urgent</span> ·
+          <span style="color: hsl(var(--primary))">Active/AI</span> ·
+          <span style="color: hsl(var(--muted-foreground))">Quiet</span>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

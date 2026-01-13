@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Activity Concept 6: Compact Combined</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Thread weight - thin vertical indicator */
+      .thread-indicator {
+        position: absolute;
+        left: 0;
+        top: 4px;
+        bottom: 4px;
+        width: 3px;
+        border-radius: 2px;
+        transition: all 0.2s ease;
+      }
+      .thread-heavy {
+        width: 4px;
+        background: hsl(var(--primary));
+      }
+      .thread-medium {
+        width: 3px;
+        background: hsl(var(--primary) / 0.6);
+      }
+      .thread-light {
+        width: 2px;
+        background: hsl(var(--muted-foreground) / 0.3);
+      }
+      .thread-none {
+        width: 0;
+      }
+
+      /* Presence glow - subtle background */
+      .presence-ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.08) 0%, transparent 60%);
+      }
+      .presence-people {
+        background: linear-gradient(90deg, hsl(200 60% 50% / 0.06) 0%, transparent 60%);
+      }
+      .presence-mention {
+        background: linear-gradient(90deg, hsl(350 70% 50% / 0.08) 0%, transparent 60%);
+      }
+      .dark .presence-ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.12) 0%, transparent 60%);
+      }
+      .dark .presence-people {
+        background: linear-gradient(90deg, hsl(200 60% 50% / 0.1) 0%, transparent 60%);
+      }
+      .dark .presence-mention {
+        background: linear-gradient(90deg, hsl(350 70% 50% / 0.12) 0%, transparent 60%);
+      }
+
+      /* Stream item - compact height */
+      .stream-item {
+        position: relative;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px 0 16px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      /* Summary tooltip on hover */
+      .summary-tooltip {
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-left: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+        z-index: 100;
+        max-width: 280px;
+        white-space: normal;
+      }
+      .stream-item:hover .summary-tooltip {
+        opacity: 1;
+      }
+      .dark .summary-tooltip {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+
+      /* Unread indicator - bold name */
+      .stream-name-unread {
+        font-weight: 600;
+        color: hsl(var(--foreground));
+      }
+      .stream-name-read {
+        font-weight: 400;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Presence dot */
+      .presence-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .dot-ai {
+        background: hsl(var(--primary));
+      }
+      .dot-people {
+        background: hsl(200 60% 50%);
+      }
+      .dot-mention {
+        background: hsl(350 70% 50%);
+      }
+
+      /* Section header */
+      .section-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 12px 16px 6px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Sidebar container */
+      .sidebar {
+        width: 260px;
+        height: 100vh;
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex">
+    <!-- Description Panel -->
+    <div class="flex-1 p-8 overflow-auto">
+      <div class="max-w-2xl">
+        <div class="flex justify-between items-start mb-4">
+          <h1 class="text-xl font-bold">Activity 6: Compact Combined</h1>
+          <button
+            onclick="document.body.classList.toggle('dark')"
+            class="text-xs px-2 py-1 rounded"
+            style="background: hsl(var(--secondary))"
+          >
+            Toggle Dark
+          </button>
+        </div>
+        <p class="text-sm mb-6" style="color: hsl(var(--muted-foreground))">
+          <strong>Concept:</strong> Combines thread weight (left bar thickness) + presence glow (subtle gradient) +
+          on-demand summaries (tooltip on hover). Compact 36px rows fit 30+ channels easily. Unread = bold name.
+          AI/people/mention indicated by subtle presence dot.
+        </p>
+
+        <div class="p-4 rounded-xl mb-4" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Visual indicators:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• <strong>Thread weight</strong> (left bar) - thicker = more activity</li>
+            <li>• <strong>Presence glow</strong> (background gradient) - gold = AI, blue = people, red = mention</li>
+            <li>• <strong>Bold name</strong> = unread content</li>
+            <li>• <strong>Presence dot</strong> (right) - shows who's active</li>
+            <li>• <strong>Hover for summary</strong> - on-demand, not cluttering</li>
+          </ul>
+        </div>
+
+        <div class="p-4 rounded-xl" style="background: hsl(var(--primary) / 0.1)">
+          <p class="text-sm font-medium mb-2" style="color: hsl(var(--primary))">Hover over items to see summaries</p>
+          <p class="text-sm" style="color: hsl(var(--muted-foreground))">
+            Summaries are lazy-loaded on hover. In production, could use intersection observer to pre-fetch as items
+            come into view, or load on first hover and cache.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact Sidebar Demo -->
+    <div class="sidebar">
+      <!-- Scratchpads -->
+      <div class="section-header">Scratchpads</div>
+
+      <!-- AI active, heavy thread -->
+      <div class="stream-item presence-ai">
+        <div class="thread-indicator thread-heavy"></div>
+        <span class="text-sm pl-2 stream-name-unread">My Scratchpad</span>
+        <div class="presence-dot dot-ai"></div>
+        <div class="summary-tooltip">
+          <p class="text-sm font-medium" style="color: hsl(var(--primary))">Ariadne is here</p>
+          <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">
+            Found 3 related discussions about your auth question
+          </p>
+        </div>
+      </div>
+
+      <!-- Read scratchpad -->
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read">Project Ideas</span>
+      </div>
+
+      <!-- Channels -->
+      <div class="section-header">Channels</div>
+
+      <!-- Mention, medium thread -->
+      <div class="stream-item presence-mention">
+        <div class="thread-indicator thread-medium"></div>
+        <span class="text-sm pl-2 stream-name-unread"># engineering</span>
+        <div class="presence-dot dot-mention"></div>
+        <div class="summary-tooltip">
+          <p class="text-sm font-medium" style="color: hsl(350 70% 50%)">Bob mentioned you</p>
+          <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">
+            Needs review of migration plan before standup
+          </p>
+        </div>
+      </div>
+
+      <!-- People active -->
+      <div class="stream-item presence-people">
+        <div class="thread-indicator thread-medium"></div>
+        <span class="text-sm pl-2 stream-name-unread"># design</span>
+        <div class="presence-dot dot-people"></div>
+        <div class="summary-tooltip">
+          <p class="text-sm font-medium" style="color: hsl(200 60% 50%)">Carol and Dave are discussing</p>
+          <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">New color palette exploration</p>
+        </div>
+      </div>
+
+      <!-- Light activity, read -->
+      <div class="stream-item">
+        <div class="thread-indicator thread-light"></div>
+        <span class="text-sm pl-2 stream-name-read"># product</span>
+        <div class="summary-tooltip">
+          <p class="text-xs" style="color: hsl(var(--muted-foreground))">Some messages from earlier today</p>
+        </div>
+      </div>
+
+      <!-- No activity -->
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># random</span>
+      </div>
+
+      <!-- More channels to show density -->
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># announcements</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-light"></div>
+        <span class="text-sm pl-2 stream-name-read"># support</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># watercooler</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># standup</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># releases</span>
+      </div>
+
+      <div class="stream-item presence-people">
+        <div class="thread-indicator thread-light"></div>
+        <span class="text-sm pl-2 stream-name-unread"># frontend</span>
+        <div class="presence-dot dot-people"></div>
+        <div class="summary-tooltip">
+          <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+            Alex asked about the new component structure
+          </p>
+        </div>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># backend</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># devops</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># data</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># security</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-light"></div>
+        <span class="text-sm pl-2 stream-name-read"># mobile</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># hiring</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># events</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># book-club</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read"># music</span>
+      </div>
+
+      <!-- DMs -->
+      <div class="section-header">Direct Messages</div>
+
+      <div class="stream-item presence-ai">
+        <div class="thread-indicator thread-medium"></div>
+        <span class="text-sm pl-2 stream-name-unread">Ariadne</span>
+        <div class="presence-dot dot-ai"></div>
+        <div class="summary-tooltip">
+          <p class="text-sm" style="color: hsl(var(--primary))">Has insights about your last question</p>
+        </div>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read">Alice Chen</span>
+      </div>
+
+      <div class="stream-item presence-mention">
+        <div class="thread-indicator thread-light"></div>
+        <span class="text-sm pl-2 stream-name-unread">Bob Smith</span>
+        <div class="summary-tooltip">
+          <p class="text-xs" style="color: hsl(var(--muted-foreground))">Sent you a follow-up 10 min ago</p>
+        </div>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read">Carol Davis</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read">Dave Wilson</span>
+      </div>
+
+      <div class="stream-item">
+        <div class="thread-indicator thread-none"></div>
+        <span class="text-sm pl-2 stream-name-read">Eve Martinez</span>
+      </div>
+    </div>
+  </body>
+</html>

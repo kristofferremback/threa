@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 02: Top Bar with Dropdowns</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Top bar */
+      .top-bar {
+        height: 48px;
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 4px;
+      }
+
+      /* Nav item with glow indicator */
+      .nav-item {
+        position: relative;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .nav-item:hover {
+        background: hsl(var(--muted) / 0.7);
+      }
+      .nav-item.active {
+        background: hsl(var(--muted));
+      }
+
+      /* Activity indicator on nav item */
+      .nav-indicator {
+        position: absolute;
+        bottom: 4px;
+        left: 50%;
+        transform: translateX(-50%);
+        height: 3px;
+        border-radius: 2px;
+        transition: all 0.2s ease;
+      }
+      .indicator-ai {
+        width: 20px;
+        background: hsl(var(--primary));
+      }
+      .indicator-mention {
+        width: 16px;
+        background: hsl(350 70% 50%);
+      }
+      .indicator-people {
+        width: 12px;
+        background: hsl(200 60% 50%);
+      }
+
+      /* Dropdown panel */
+      .dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        min-width: 280px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        padding: 8px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-8px);
+        transition: all 0.2s ease;
+        z-index: 100;
+      }
+      .nav-item:hover .dropdown,
+      .nav-item.active .dropdown {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .dropdown-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .dropdown-item:hover {
+        background: hsl(var(--muted) / 0.7);
+      }
+
+      .dropdown-section {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 12px 12px 6px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Glow on dropdown items */
+      .item-glow {
+        width: 4px;
+        height: 24px;
+        border-radius: 2px;
+        margin-right: 10px;
+        flex-shrink: 0;
+      }
+      .item-glow-ai {
+        background: hsl(var(--primary));
+        box-shadow: 0 0 8px hsl(var(--primary) / 0.4);
+      }
+      .item-glow-mention {
+        background: hsl(350 70% 50%);
+        box-shadow: 0 0 8px hsl(350 70% 50% / 0.4);
+      }
+      .item-glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .item-glow-none {
+        background: transparent;
+      }
+
+      /* Main content */
+      .main-content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .drafts-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .label-tag {
+        font-size: 9px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        margin-left: auto;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <div class="top-bar">
+      <!-- Logo/Home -->
+      <div class="nav-item" style="font-weight: 600; color: hsl(var(--primary))">Threa</div>
+
+      <div style="width: 1px; height: 24px; background: hsl(var(--border)); margin: 0 8px"></div>
+
+      <!-- Drafts -->
+      <div class="nav-item">
+        <span class="text-sm">Drafts</span>
+        <span class="drafts-badge">3</span>
+      </div>
+
+      <!-- Threads -->
+      <div class="nav-item" style="position: relative">
+        <span class="text-sm">Threads</span>
+        <div class="nav-indicator indicator-ai"></div>
+        <div class="dropdown">
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-ai"></div>
+            <div>
+              <div class="text-sm font-medium">Auth implementation</div>
+              <div class="text-xs" style="color: hsl(var(--primary))">Ariadne has insights</div>
+            </div>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-people"></div>
+            <div>
+              <div class="text-sm">API design discussion</div>
+              <div class="text-xs" style="color: hsl(var(--muted-foreground))">3 people active</div>
+            </div>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <div class="text-sm" style="color: hsl(var(--muted-foreground))">Migration planning</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scratchpads -->
+      <div class="nav-item" style="position: relative">
+        <span class="text-sm">Scratchpads</span>
+        <div class="nav-indicator indicator-ai"></div>
+        <div class="dropdown">
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-ai"></div>
+            <div class="flex-1">
+              <div class="text-sm font-medium">My Scratchpad</div>
+            </div>
+            <span class="label-tag" style="background: hsl(var(--primary) / 0.12); color: hsl(var(--primary))"
+              >AI ready</span
+            >
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Project Ideas</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Meeting Notes</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Channels -->
+      <div class="nav-item" style="position: relative">
+        <span class="text-sm">Channels</span>
+        <div class="nav-indicator indicator-mention"></div>
+        <div class="dropdown">
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-mention"></div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold"># engineering</div>
+            </div>
+            <span class="label-tag" style="background: hsl(350 70% 50% / 0.1); color: hsl(350 70% 50%)">@you</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-people"></div>
+            <span class="text-sm font-medium"># design</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))"># product</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))"># random</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DMs -->
+      <div class="nav-item" style="position: relative">
+        <span class="text-sm">Messages</span>
+        <div class="nav-indicator indicator-ai"></div>
+        <div class="dropdown">
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-ai"></div>
+            <span class="text-sm font-medium">Ariadne</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm font-medium">Bob Smith</span>
+          </div>
+          <div class="dropdown-item">
+            <div class="item-glow item-glow-none"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Alice Chen</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1"></div>
+
+      <!-- Search -->
+      <div class="nav-item" style="background: hsl(var(--muted) / 0.5); color: hsl(var(--muted-foreground))">
+        <span class="text-sm">Search...</span>
+        <span class="text-xs" style="margin-left: 16px; opacity: 0.6">⌘K</span>
+      </div>
+
+      <button onclick="document.body.classList.toggle('dark')" class="nav-item text-xs">Theme</button>
+    </div>
+
+    <div class="main-content">
+      <div class="text-center">
+        <p class="text-sm mb-2">Full-width content area</p>
+        <p class="text-xs">Hover over nav items to see dropdowns with activity glows</p>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Activity Concept 1: Warmth Gradient</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      /* Temperature-based activity: warm = active, cool = quiet */
+      .temp-hot {
+        background: linear-gradient(135deg, hsl(38 70% 95%) 0%, hsl(25 60% 93%) 100%);
+        border-color: hsl(30 50% 80%);
+      }
+      .temp-warm {
+        background: linear-gradient(135deg, hsl(40 40% 96%) 0%, hsl(35 30% 94%) 100%);
+        border-color: hsl(35 30% 85%);
+      }
+      .temp-cool {
+        background: hsl(var(--muted));
+        border-color: hsl(var(--border));
+        opacity: 0.7;
+      }
+      .dark .temp-hot {
+        background: linear-gradient(135deg, hsl(35 30% 15%) 0%, hsl(25 25% 12%) 100%);
+        border-color: hsl(30 30% 25%);
+      }
+      .dark .temp-warm {
+        background: linear-gradient(135deg, hsl(35 20% 12%) 0%, hsl(30 15% 11%) 100%);
+        border-color: hsl(30 15% 20%);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen p-8">
+    <!-- Description -->
+    <div class="max-w-2xl mx-auto mb-8">
+      <div class="flex justify-between items-start mb-4">
+        <h1 class="text-xl font-bold">Activity 1: Warmth Gradient</h1>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-sm" style="color: hsl(var(--muted-foreground))">
+        <strong>Concept:</strong> Activity is conveyed through "temperature" - warmer colors/gradients for active
+        streams, cooler/neutral for quiet ones. No numbers, no badges. Just visual warmth that draws the eye naturally.
+        Like seeing which stovetop burner is on.
+      </p>
+    </div>
+
+    <!-- Demo -->
+    <div class="max-w-sm mx-auto space-y-2">
+      <div class="temp-hot p-4 rounded-xl border-2 cursor-pointer transition-all hover:scale-[1.02]">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-xl flex items-center justify-center"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+          >
+            <span class="font-bold">S</span>
+          </div>
+          <div>
+            <p class="font-medium">My Scratchpad</p>
+            <p class="text-sm" style="color: hsl(var(--primary))">Ariadne just responded</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="temp-warm p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.02]">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: hsl(var(--muted))">
+            <span class="font-medium">#</span>
+          </div>
+          <div>
+            <p class="font-medium">engineering</p>
+            <p class="text-sm" style="color: hsl(var(--muted-foreground))">Recent conversation</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="temp-cool p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.02]">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: hsl(var(--muted))">
+            <span class="font-medium">#</span>
+          </div>
+          <div>
+            <p class="font-medium" style="color: hsl(var(--muted-foreground))">design</p>
+            <p class="text-sm" style="color: hsl(var(--muted-foreground))">Quiet</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="max-w-2xl mx-auto mt-8 p-4 rounded-xl" style="background: hsl(var(--muted))">
+      <p class="text-sm font-medium mb-2">Why this works:</p>
+      <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+        <li>• No numbers = no counting, no anxiety about "clearing" notifications</li>
+        <li>• Warmth is inviting, not demanding</li>
+        <li>• Eye naturally drawn to warmer areas without feeling urgency</li>
+        <li>• Quiet streams fade back, don't clutter attention</li>
+      </ul>
+    </div>
+  </body>
+</html>

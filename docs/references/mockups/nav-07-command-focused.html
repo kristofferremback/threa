@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 07: Command Palette Focused</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Minimal top bar with just glow indicator */
+      .glow-bar {
+        height: 4px;
+        display: flex;
+      }
+      .glow-section {
+        flex: 1;
+        position: relative;
+        cursor: pointer;
+      }
+      .glow-section::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        height: 20px;
+        pointer-events: none;
+      }
+
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-ai::after {
+        background: linear-gradient(180deg, hsl(var(--primary) / 0.1) 0%, transparent 100%);
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-mention::after {
+        background: linear-gradient(180deg, hsl(350 70% 50% / 0.08) 0%, transparent 100%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-people::after {
+        background: linear-gradient(180deg, hsl(200 60% 50% / 0.06) 0%, transparent 100%);
+      }
+      .glow-none {
+        background: hsl(var(--border));
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Command palette */
+      .command-trigger {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        z-index: 20;
+      }
+      .command-trigger:hover {
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+        border-color: hsl(var(--primary) / 0.3);
+      }
+
+      /* Priority indicators in trigger */
+      .trigger-indicators {
+        display: flex;
+        gap: 6px;
+      }
+      .trigger-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      /* Command palette modal */
+      .command-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 80px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        z-index: 100;
+      }
+      .command-modal.open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .command-panel {
+        width: 560px;
+        max-height: 70vh;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+        transform: translateY(-20px);
+        transition: transform 0.2s ease;
+      }
+      .command-modal.open .command-panel {
+        transform: translateY(0);
+      }
+
+      .command-input {
+        width: 100%;
+        padding: 16px 20px;
+        border: none;
+        border-bottom: 1px solid hsl(var(--border));
+        background: transparent;
+        font-size: 16px;
+        outline: none;
+      }
+
+      .command-sections {
+        padding: 8px;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .command-section-header {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 12px 12px 6px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .command-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.1s ease;
+      }
+      .command-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .command-item.selected {
+        background: hsl(var(--muted));
+      }
+
+      .item-glow {
+        width: 4px;
+        height: 28px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .item-type {
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+      .item-shortcut {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        margin-left: 8px;
+      }
+
+      .main-content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <!-- Minimal glow bar -->
+    <div class="glow-bar">
+      <div class="glow-section glow-ai glow-pulse"></div>
+      <div class="glow-section glow-mention"></div>
+      <div class="glow-section glow-people"></div>
+      <div class="glow-section glow-none"></div>
+      <div class="glow-section glow-none"></div>
+    </div>
+
+    <!-- Floating command trigger -->
+    <div class="command-trigger" onclick="document.getElementById('modal').classList.add('open')">
+      <div class="trigger-indicators">
+        <div class="trigger-dot" style="background: hsl(var(--primary))"></div>
+        <div class="trigger-dot" style="background: hsl(350 70% 50%)"></div>
+      </div>
+      <span class="text-sm">Jump to...</span>
+      <span class="text-xs" style="color: hsl(var(--muted-foreground))">⌘K</span>
+    </div>
+
+    <!-- Command palette modal -->
+    <div id="modal" class="command-modal" onclick="if (event.target === this) this.classList.remove('open')">
+      <div class="command-panel">
+        <input type="text" class="command-input" placeholder="Search streams, labels, or type a command..." autofocus />
+
+        <div class="command-sections">
+          <div class="command-section-header">Priority</div>
+          <div class="command-item selected">
+            <div class="item-glow" style="background: hsl(var(--primary))"></div>
+            <div>
+              <div class="text-sm font-medium">My Scratchpad</div>
+              <div class="text-xs" style="color: hsl(var(--primary))">Ariadne has insights ready</div>
+            </div>
+            <span class="item-type">pad</span>
+          </div>
+          <div class="command-item">
+            <div class="item-glow" style="background: hsl(350 70% 50%)"></div>
+            <div>
+              <div class="text-sm font-medium"># engineering</div>
+              <div class="text-xs" style="color: hsl(350 70% 50%)">Bob mentioned you</div>
+            </div>
+            <span class="item-type">channel</span>
+          </div>
+
+          <div class="command-section-header">Recent</div>
+          <div class="command-item">
+            <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+            <div class="text-sm"># design</div>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="command-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <div class="text-sm">Auth implementation</div>
+            <span class="item-type">thread</span>
+          </div>
+          <div class="command-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <div class="text-sm" style="color: hsl(var(--muted-foreground))">Project Ideas</div>
+            <span class="item-type">pad</span>
+          </div>
+
+          <div class="command-section-header">Labels</div>
+          <div class="command-item">
+            <div
+              style="width: 10px; height: 10px; border-radius: 3px; background: hsl(280 60% 55%); margin-right: 4px"
+            ></div>
+            <div class="text-sm">Auth Project</div>
+            <span class="item-type">4 items</span>
+            <span class="item-shortcut">⌘1</span>
+          </div>
+          <div class="command-item">
+            <div
+              style="width: 10px; height: 10px; border-radius: 3px; background: hsl(150 60% 45%); margin-right: 4px"
+            ></div>
+            <div class="text-sm">Q1 Launch</div>
+            <span class="item-type">3 items</span>
+            <span class="item-shortcut">⌘2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="text-center max-w-lg p-8">
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded mb-4"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+        <h2 class="text-lg font-bold mb-2">Command Palette Focused</h2>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          Maximum screen real estate. Navigation happens through the command palette (⌘K). The glow bar provides ambient
+          awareness. Priority items surface in the palette automatically.
+        </p>
+        <div class="p-4 rounded-xl text-left" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Philosophy:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• Click the floating trigger or press ⌘K</li>
+            <li>• Priority items always at top of results</li>
+            <li>• Labels are searchable and have shortcuts</li>
+            <li>• Glow bar shows activity at a glance</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Concept 1: Tabs + Canvas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --secondary-foreground: 30 15% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --accent-foreground: 35 60% 35%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 12% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --accent-foreground: 40 45% 70%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .tab-active {
+        background: hsl(var(--background));
+        border-bottom: 2px solid hsl(var(--primary));
+      }
+      .tab-inactive {
+        background: hsl(var(--muted));
+        border-bottom: 2px solid transparent;
+      }
+      .tab-inactive:hover {
+        background: hsl(var(--secondary));
+      }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Concept 1: Tabs + Canvas</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Browser-like horizontal tabs replace the sidebar. Cmd+K for navigation, tabs for context switching. Maximum
+        vertical space for content.
+      </p>
+    </div>
+
+    <!-- Tab Bar -->
+    <div
+      class="flex items-end px-2 pt-2 gap-1"
+      style="background: hsl(var(--muted)); border-bottom: 1px solid hsl(var(--border))"
+    >
+      <!-- Logo/Home -->
+      <div class="flex items-center px-3 py-2 mr-2">
+        <div
+          class="w-6 h-6 rounded flex items-center justify-center text-xs font-bold"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          T
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <button class="tab-active px-4 py-2 rounded-t-lg text-sm font-medium flex items-center gap-2 min-w-0">
+        <span class="truncate">My Scratchpad</span>
+        <span class="text-xs opacity-60 hover:opacity-100">&times;</span>
+      </button>
+      <button
+        class="tab-inactive px-4 py-2 rounded-t-lg text-sm flex items-center gap-2 min-w-0"
+        style="color: hsl(var(--muted-foreground))"
+      >
+        <span class="truncate"># engineering</span>
+        <span class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></span>
+        <span class="text-xs opacity-0 hover:opacity-100">&times;</span>
+      </button>
+      <button
+        class="tab-inactive px-4 py-2 rounded-t-lg text-sm flex items-center gap-2 min-w-0"
+        style="color: hsl(var(--muted-foreground))"
+      >
+        <span class="truncate"># design</span>
+        <span class="text-xs opacity-0 hover:opacity-100">&times;</span>
+      </button>
+
+      <!-- New Tab -->
+      <button class="px-3 py-2 text-sm rounded-t-lg hover:bg-white/50" style="color: hsl(var(--muted-foreground))">
+        +
+      </button>
+
+      <!-- Spacer -->
+      <div class="flex-1"></div>
+
+      <!-- Search -->
+      <button
+        class="px-3 py-2 text-sm flex items-center gap-2 rounded-lg mb-1"
+        style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+      >
+        <svg
+          class="w-4 h-4"
+          style="color: hsl(var(--muted-foreground))"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
+        </svg>
+        <span style="color: hsl(var(--muted-foreground))">Search...</span>
+        <kbd
+          class="text-xs px-1.5 py-0.5 rounded"
+          style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground))"
+          >⌘K</kbd
+        >
+      </button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Stream Header -->
+      <div class="px-6 py-3 flex items-center gap-3" style="border-bottom: 1px solid hsl(var(--border))">
+        <h1 class="font-semibold">My Scratchpad</h1>
+        <span class="text-sm" style="color: hsl(var(--muted-foreground))">Personal notes with AI companion</span>
+      </div>
+
+      <!-- Messages -->
+      <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div class="flex gap-3">
+          <div
+            class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm font-medium"
+            style="background: hsl(var(--muted))"
+          >
+            K
+          </div>
+          <div class="flex-1">
+            <div class="flex items-baseline gap-2">
+              <span class="font-medium text-sm">Kris</span>
+              <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+            </div>
+            <p class="text-sm mt-1">How should I structure the authentication flow for the new API?</p>
+          </div>
+        </div>
+
+        <div class="flex gap-3 -mx-4 px-4 py-3 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+          <div
+            class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm font-medium"
+            style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+          >
+            A
+          </div>
+          <div class="flex-1">
+            <div class="flex items-baseline gap-2">
+              <span class="font-medium text-sm" style="color: hsl(var(--primary))">Ariadne</span>
+              <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+            </div>
+            <div class="text-sm mt-1 space-y-2">
+              <p>
+                Based on your previous discussions about security, I'd recommend JWT with refresh tokens. Here's a
+                structure:
+              </p>
+              <div class="p-3 rounded-md text-xs font-mono" style="background: hsl(var(--muted))">
+                POST /auth/login → { accessToken, refreshToken }<br />
+                POST /auth/refresh → { accessToken }<br />
+                POST /auth/logout → invalidate refresh token
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <div
+            class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm font-medium"
+            style="background: hsl(var(--muted))"
+          >
+            K
+          </div>
+          <div class="flex-1">
+            <div class="flex items-baseline gap-2">
+              <span class="font-medium text-sm">Kris</span>
+              <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:32 PM</span>
+            </div>
+            <p class="text-sm mt-1">Perfect, that matches what I was thinking. What about rate limiting?</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="px-6 py-4" style="border-top: 1px solid hsl(var(--border))">
+        <div class="rounded-lg px-4 py-3" style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))">
+          <div class="text-sm" style="color: hsl(var(--muted-foreground))">Message My Scratchpad...</div>
+        </div>
+        <div class="flex items-center justify-between mt-2 text-xs" style="color: hsl(var(--muted-foreground))">
+          <span>Markdown supported</span>
+          <span>⌘ Enter to send</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

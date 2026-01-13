@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 09f: Thin Glow + Hover Expand</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Left edge glow - ultra thin */
+      .edge-glow {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 6px;
+        display: flex;
+        flex-direction: column;
+        z-index: 100;
+        transition: width 0.3s ease;
+      }
+      .edge-glow:hover {
+        width: 260px;
+      }
+
+      .glow-segment {
+        flex-shrink: 0;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      /* Glow aura */
+      .glow-segment::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 30px;
+        pointer-events: none;
+        opacity: 0.6;
+      }
+
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-ai::after {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.2) 0%, transparent 100%);
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-mention::after {
+        background: linear-gradient(90deg, hsl(350 70% 50% / 0.15) 0%, transparent 100%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-people::after {
+        background: linear-gradient(90deg, hsl(200 60% 50% / 0.12) 0%, transparent 100%);
+      }
+      .glow-quiet {
+        background: hsl(var(--muted-foreground) / 0.15);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Expanded label content (shown on hover) */
+      .segment-content {
+        position: absolute;
+        left: 6px;
+        top: 0;
+        bottom: 0;
+        width: 254px;
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        padding: 8px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        overflow-y: auto;
+      }
+      .edge-glow:hover .segment-content {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .label-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .label-color {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+
+      .label-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s ease;
+      }
+      .label-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .item-glow {
+        width: 3px;
+        height: 12px;
+        border-radius: 1px;
+      }
+      .item-type {
+        font-size: 8px;
+        padding: 1px 3px;
+        border-radius: 2px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+
+      .main-content {
+        margin-left: 6px;
+        flex: 1;
+        padding: 24px;
+        transition: margin-left 0.3s ease;
+      }
+      .edge-glow:hover ~ .main-content {
+        margin-left: 260px;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex">
+    <!-- Edge glow that expands on hover -->
+    <div class="edge-glow">
+      <div class="glow-segment glow-ai glow-pulse" style="height: 90px">
+        <div class="segment-content">
+          <div class="label-header">
+            <div class="label-color" style="background: hsl(280 60% 55%)"></div>
+            Auth Project
+          </div>
+          <div class="label-item">
+            <div class="item-glow" style="background: hsl(var(--primary))"></div>
+            <span class="font-medium">Auth Scratchpad</span>
+            <span class="item-type">pad</span>
+          </div>
+          <div class="label-item" style="color: hsl(var(--muted-foreground))">
+            <div class="item-glow" style="background: transparent"></div>
+            <span># auth-dev</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="label-item" style="color: hsl(var(--muted-foreground))">
+            <div class="item-glow" style="background: transparent"></div>
+            <span>Security team</span>
+            <span class="item-type">group</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glow-segment glow-mention" style="height: 80px">
+        <div class="segment-content">
+          <div class="label-header">
+            <div class="label-color" style="background: hsl(150 60% 45%)"></div>
+            Q1 Launch
+          </div>
+          <div class="label-item">
+            <div class="item-glow" style="background: hsl(350 70% 50%)"></div>
+            <span class="font-semibold"># engineering</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="label-item">
+            <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+            <span>Launch planning</span>
+            <span class="item-type">thread</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glow-segment glow-people" style="height: 70px">
+        <div class="segment-content">
+          <div class="label-header">
+            <div class="label-color" style="background: hsl(30 70% 50%)"></div>
+            Design System
+          </div>
+          <div class="label-item">
+            <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+            <span># design</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="label-item" style="color: hsl(var(--muted-foreground))">
+            <div class="item-glow" style="background: transparent"></div>
+            <span>Component ideas</span>
+            <span class="item-type">pad</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glow-segment glow-quiet" style="flex: 1">
+        <div class="segment-content">
+          <div class="label-header">
+            <div class="label-color" style="background: hsl(200 60% 50%)"></div>
+            <span style="color: hsl(var(--muted-foreground))">Hiring</span>
+          </div>
+          <div class="label-item" style="color: hsl(var(--muted-foreground))">
+            <div class="item-glow" style="background: transparent"></div>
+            <span># hiring</span>
+            <span class="item-type">channel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="max-w-lg">
+        <div class="flex justify-between items-start mb-4">
+          <h1 class="text-lg font-bold">09f: Thin Glow + Hover Expand</h1>
+          <button
+            onclick="document.body.classList.toggle('dark')"
+            class="text-xs px-2 py-1 rounded"
+            style="background: hsl(var(--secondary))"
+          >
+            Theme
+          </button>
+        </div>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          Ultra-thin 6px glow strip on left edge. Hover anywhere on it to expand full sidebar. Each glow segment shows
+          its label's contents. Segment heights proportional to content.
+        </p>
+        <div class="p-4 rounded-xl" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Interaction:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• Hover left edge to reveal sidebar</li>
+            <li>• Glow segments align with label sections</li>
+            <li>• Maximum content space by default</li>
+            <li>• Pin open with click (could add)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

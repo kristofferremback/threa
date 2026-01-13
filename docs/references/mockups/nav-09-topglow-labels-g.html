@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 09g: Dual Glow (Top + Side)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Top glow - horizontal activity summary */
+      .top-glow {
+        height: 4px;
+        display: flex;
+      }
+      .top-segment {
+        flex: 1;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .top-segment:hover {
+        filter: brightness(1.2);
+      }
+      .top-segment::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        height: 12px;
+        pointer-events: none;
+      }
+
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-ai::after {
+        background: linear-gradient(180deg, hsl(var(--primary) / 0.1) 0%, transparent 100%);
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-mention::after {
+        background: linear-gradient(180deg, hsl(350 70% 50% / 0.08) 0%, transparent 100%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-people::after {
+        background: linear-gradient(180deg, hsl(200 60% 50% / 0.06) 0%, transparent 100%);
+      }
+      .glow-quiet {
+        background: hsl(var(--border));
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Side glow - vertical per-item */
+      .side-glow {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        display: flex;
+        flex-direction: column;
+      }
+      .side-segment {
+        flex-shrink: 0;
+        position: relative;
+      }
+      .side-segment::after {
+        content: "";
+        position: absolute;
+        left: 100%;
+        top: 0;
+        bottom: 0;
+        width: 20px;
+        pointer-events: none;
+      }
+      .side-ai::after {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.1) 0%, transparent 100%);
+      }
+      .side-mention::after {
+        background: linear-gradient(90deg, hsl(350 70% 50% / 0.08) 0%, transparent 100%);
+      }
+      .side-people::after {
+        background: linear-gradient(90deg, hsl(200 60% 50% / 0.06) 0%, transparent 100%);
+      }
+
+      /* Sidebar */
+      .sidebar {
+        position: relative;
+        width: 260px;
+        height: calc(100vh - 4px);
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        overflow-y: auto;
+      }
+      .sidebar-content {
+        padding: 8px 8px 8px 12px;
+      }
+
+      .label-group {
+        margin-bottom: 4px;
+      }
+      .label-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        border-radius: 6px;
+        transition: background 0.15s ease;
+      }
+      .label-header:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .label-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+      .label-name {
+        font-size: 13px;
+        font-weight: 600;
+        flex: 1;
+      }
+
+      .label-items {
+        padding: 2px 0 6px 18px;
+      }
+      .label-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.15s ease;
+      }
+      .label-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .item-type {
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+
+      .main-content {
+        flex: 1;
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <!-- Top horizontal glow (aggregate per label) -->
+    <div class="top-glow">
+      <div class="top-segment glow-ai glow-pulse" title="Auth Project"></div>
+      <div class="top-segment glow-mention" title="Q1 Launch"></div>
+      <div class="top-segment glow-people" title="Design System"></div>
+      <div class="top-segment glow-quiet" title="Hiring"></div>
+    </div>
+
+    <div class="flex flex-1">
+      <div class="sidebar">
+        <!-- Side vertical glow (per-item detail) -->
+        <div class="side-glow">
+          <!-- Auth Project section -->
+          <div class="side-segment" style="height: 36px"></div>
+          <div class="side-segment glow-ai side-ai" style="height: 28px"></div>
+          <div class="side-segment" style="height: 28px"></div>
+          <!-- Q1 Launch section -->
+          <div class="side-segment" style="height: 36px"></div>
+          <div class="side-segment glow-mention side-mention" style="height: 28px"></div>
+          <div class="side-segment glow-people side-people" style="height: 28px"></div>
+          <!-- Design System section -->
+          <div class="side-segment" style="height: 36px"></div>
+          <div class="side-segment glow-people side-people" style="height: 28px"></div>
+          <!-- Hiring -->
+          <div class="side-segment" style="height: 36px"></div>
+          <div class="side-segment" style="flex: 1"></div>
+        </div>
+
+        <div class="sidebar-content">
+          <div class="label-group">
+            <div class="label-header">
+              <div class="label-color" style="background: hsl(280 60% 55%)"></div>
+              <span class="label-name">Auth Project</span>
+            </div>
+            <div class="label-items">
+              <div class="label-item">
+                <span class="font-medium">Auth Scratchpad</span>
+                <span class="item-type">pad</span>
+              </div>
+              <div class="label-item" style="color: hsl(var(--muted-foreground))">
+                <span># auth-dev</span>
+                <span class="item-type">channel</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="label-group">
+            <div class="label-header">
+              <div class="label-color" style="background: hsl(150 60% 45%)"></div>
+              <span class="label-name">Q1 Launch</span>
+            </div>
+            <div class="label-items">
+              <div class="label-item">
+                <span class="font-semibold"># engineering</span>
+                <span class="item-type">channel</span>
+              </div>
+              <div class="label-item">
+                <span>Launch planning</span>
+                <span class="item-type">thread</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="label-group">
+            <div class="label-header">
+              <div class="label-color" style="background: hsl(30 70% 50%)"></div>
+              <span class="label-name">Design System</span>
+            </div>
+            <div class="label-items">
+              <div class="label-item">
+                <span># design</span>
+                <span class="item-type">channel</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="label-group">
+            <div class="label-header">
+              <div class="label-color" style="background: hsl(200 60% 50%)"></div>
+              <span class="label-name" style="color: hsl(var(--muted-foreground))">Hiring</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="max-w-lg">
+          <div class="flex justify-between items-start mb-4">
+            <h1 class="text-lg font-bold">09g: Dual Glow (Top + Side)</h1>
+            <button
+              onclick="document.body.classList.toggle('dark')"
+              class="text-xs px-2 py-1 rounded"
+              style="background: hsl(var(--secondary))"
+            >
+              Theme
+            </button>
+          </div>
+          <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+            Two glow systems working together. Top bar = aggregate per label (bird's eye). Side strip = per-item detail
+            (where exactly). Same color language at two scales.
+          </p>
+          <div class="p-4 rounded-xl" style="background: hsl(var(--muted))">
+            <p class="text-sm font-medium mb-2">Why dual glow?</p>
+            <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+              <li>• Top: "Q1 Launch has something urgent"</li>
+              <li>• Side: "It's specifically #engineering"</li>
+              <li>• Two levels of attention guidance</li>
+              <li>• Glance at top, scan side for detail</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

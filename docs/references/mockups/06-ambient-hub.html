@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Ambient Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --border: 35 15% 88%;
+        --destructive: 8 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Ambient Edge */
+      .ambient-edge {
+        width: 48px;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .ambient-edge:hover,
+      .ambient-edge.pinned {
+        width: 280px;
+      }
+      .ambient-edge.pinned {
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+      }
+
+      /* Segments */
+      .segment {
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      .segment-bar {
+        width: 8px;
+        border-radius: 0 4px 4px 0;
+        transition: all 0.3s ease;
+      }
+      .ambient-edge:hover .segment-bar,
+      .ambient-edge.pinned .segment-bar {
+        width: 4px;
+        border-radius: 0 2px 2px 0;
+      }
+      .segment-content {
+        opacity: 0;
+        transform: translateX(-8px);
+        transition: all 0.3s ease;
+      }
+      .ambient-edge:hover .segment-content,
+      .ambient-edge.pinned .segment-content {
+        opacity: 1;
+        transform: translateX(0);
+      }
+
+      /* Inactive segment */
+      .segment.inactive {
+        flex: 0.3;
+      }
+      .segment.inactive .segment-bar {
+        opacity: 0.25;
+      }
+
+      /* Active segment */
+      .segment.active {
+        flex: 1.5;
+      }
+
+      /* Urgent segment */
+      .segment.urgent {
+        flex: 1.2;
+      }
+
+      /* Ripple animation */
+      @keyframes ripple {
+        0% {
+          transform: scale(0);
+          opacity: 0.6;
+        }
+        100% {
+          transform: scale(2.5);
+          opacity: 0;
+        }
+      }
+      .ripple {
+        position: absolute;
+        border-radius: 50%;
+        animation: ripple 1.5s ease-out;
+        pointer-events: none;
+      }
+
+      /* Gentle pulse for active AI */
+      @keyframes gentle-pulse {
+        0%,
+        100% {
+          opacity: 0.8;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .gentle-pulse {
+        animation: gentle-pulse 3s ease-in-out infinite;
+      }
+
+      /* Focus view */
+      .focus-view {
+        transform: translateY(100%);
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .focus-view.open {
+        transform: translateY(0);
+      }
+
+      /* Command bar */
+      .command-bar {
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      }
+      .dark .command-bar {
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+      }
+
+      /* AI message */
+      .ai-message {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.06) 0%, hsl(var(--primary) / 0.02) 100%);
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      /* Input glow */
+      .input-glow:focus-within {
+        box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15);
+      }
+    </style>
+  </head>
+  <body class="h-screen flex overflow-hidden">
+    <!-- Instructions -->
+    <div
+      class="fixed top-4 right-4 z-[100] max-w-xs p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Ambient Hub</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Dark
+        </button>
+      </div>
+      <p class="text-xs mb-2" style="color: hsl(var(--muted-foreground))">
+        Hover edge to expand. Click pin to keep open. Click "Trigger Ripple" to see activity animation.
+      </p>
+      <div class="flex flex-wrap gap-1">
+        <button
+          onclick="triggerRipple('mentions')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Ripple: Mention
+        </button>
+        <button
+          onclick="triggerRipple('scratchpad')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Ripple: AI
+        </button>
+        <button onclick="showFocus()" class="text-xs px-2 py-1 rounded" style="background: hsl(var(--secondary))">
+          Focus View
+        </button>
+      </div>
+    </div>
+
+    <!-- Ambient Edge -->
+    <div
+      id="ambientEdge"
+      class="ambient-edge h-full flex flex-col shrink-0"
+      style="background: hsl(var(--card)); border-right: 1px solid hsl(var(--border))"
+    >
+      <!-- Header -->
+      <div class="shrink-0 h-14 flex items-center px-3 gap-3" style="border-bottom: 1px solid hsl(var(--border))">
+        <div
+          class="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          T
+        </div>
+        <span class="font-semibold whitespace-nowrap overflow-hidden segment-content">Threa</span>
+        <button
+          onclick="togglePin()"
+          class="segment-content ml-auto p-1.5 rounded-lg hover:bg-black/5"
+          title="Pin sidebar"
+        >
+          <svg
+            id="pinIcon"
+            class="w-4 h-4"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Segments -->
+      <div class="flex-1 flex flex-col py-2 gap-1">
+        <!-- Mentions Segment (urgent when has mentions, inactive when empty) -->
+        <div
+          id="mentions"
+          class="segment urgent flex items-stretch px-2 cursor-pointer rounded-r-lg hover:bg-black/5"
+          onclick="alert('Navigate to mentions')"
+        >
+          <div class="segment-bar shrink-0 gentle-pulse" style="background: hsl(var(--destructive))"></div>
+          <div class="segment-content flex-1 flex items-center gap-3 px-3 py-3 min-w-0">
+            <div
+              class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+              style="background: hsl(var(--destructive) / 0.1)"
+            >
+              <span class="text-base font-semibold" style="color: hsl(var(--destructive))">@</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="font-medium text-sm">Mentions</p>
+                <span
+                  class="badge px-1.5 py-0.5 rounded-full text-xs font-bold"
+                  style="background: hsl(var(--destructive)); color: white"
+                  >2</span
+                >
+              </div>
+              <p class="text-xs truncate mt-0.5" style="color: hsl(var(--muted-foreground))">Alice mentioned you</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scratchpad Segment (active - AI responding) -->
+        <div
+          id="scratchpad"
+          class="segment active flex items-stretch px-2 cursor-pointer rounded-r-lg hover:bg-black/5"
+          onclick="showFocus()"
+        >
+          <div class="segment-bar shrink-0 gentle-pulse" style="background: hsl(var(--primary))"></div>
+          <div class="segment-content flex-1 flex items-center gap-3 px-3 py-3 min-w-0">
+            <div
+              class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+              style="background: hsl(var(--primary))"
+            >
+              <span class="text-base font-bold" style="color: hsl(var(--primary-foreground))">S</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="font-medium text-sm">My Scratchpad</p>
+                <span
+                  class="badge text-xs px-1.5 py-0.5 rounded-full"
+                  style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+                  >AI</span
+                >
+              </div>
+              <p class="text-xs truncate mt-0.5" style="color: hsl(var(--primary))">Ariadne is typing...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Engineering Segment (has unread) -->
+        <div id="engineering" class="segment flex items-stretch px-2 cursor-pointer rounded-r-lg hover:bg-black/5">
+          <div class="segment-bar shrink-0" style="background: hsl(var(--primary) / 0.6)"></div>
+          <div class="segment-content flex-1 flex items-center gap-3 px-3 py-3 min-w-0">
+            <div
+              class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+              style="background: hsl(var(--muted))"
+            >
+              <span class="text-base font-medium">#</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="font-medium text-sm">engineering</p>
+                <span
+                  class="badge px-1.5 py-0.5 rounded-full text-xs font-bold"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >5</span
+                >
+              </div>
+              <p class="text-xs truncate mt-0.5" style="color: hsl(var(--muted-foreground))">Bob: Let's schedule...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Design Segment (inactive - no activity) -->
+        <div id="design" class="segment inactive flex items-stretch px-2 cursor-pointer rounded-r-lg hover:bg-black/5">
+          <div class="segment-bar shrink-0" style="background: hsl(var(--muted-foreground))"></div>
+          <div class="segment-content flex-1 flex items-center gap-3 px-3 py-3 min-w-0 opacity-50">
+            <div
+              class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+              style="background: hsl(var(--muted))"
+            >
+              <span class="text-base font-medium">#</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="font-medium text-sm">design</p>
+              <p class="text-xs truncate mt-0.5" style="color: hsl(var(--muted-foreground))">2 hours ago</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Draft Segment (inactive feel but shows draft exists) -->
+        <div id="draft" class="segment inactive flex items-stretch px-2 cursor-pointer rounded-r-lg hover:bg-black/5">
+          <div
+            class="segment-bar shrink-0"
+            style="
+              background: repeating-linear-gradient(
+                45deg,
+                hsl(var(--border)),
+                hsl(var(--border)) 2px,
+                transparent 2px,
+                transparent 5px
+              );
+            "
+          ></div>
+          <div class="segment-content flex-1 flex items-center gap-3 px-3 py-3 min-w-0 opacity-60">
+            <div
+              class="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center"
+              style="background: hsl(var(--muted)); border: 2px dashed hsl(var(--border))"
+            >
+              <svg
+                class="w-4 h-4"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                />
+              </svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="font-medium text-sm">Draft: API Design</p>
+              <p class="text-xs truncate mt-0.5" style="color: hsl(var(--muted-foreground))">Unsaved</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+      </div>
+
+      <!-- Footer -->
+      <div class="shrink-0 p-2" style="border-top: 1px solid hsl(var(--border))">
+        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-black/5">
+          <div
+            class="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center"
+            style="background: hsl(var(--muted))"
+          >
+            <svg
+              class="w-4 h-4"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+          <span class="segment-content text-sm" style="color: hsl(var(--muted-foreground))">Search</span>
+          <kbd class="segment-content ml-auto text-xs px-1.5 py-0.5 rounded" style="background: hsl(var(--muted))"
+            >⌘K</kbd
+          >
+        </button>
+      </div>
+    </div>
+
+    <!-- Hub View -->
+    <div id="hubView" class="flex-1 flex flex-col overflow-hidden">
+      <!-- Hub Header -->
+      <div
+        class="shrink-0 pt-8 pb-6 px-8"
+        style="background: linear-gradient(180deg, hsl(var(--muted)) 0%, hsl(var(--background)) 100%)"
+      >
+        <div class="max-w-2xl mx-auto">
+          <h1 class="font-semibold text-lg mb-4">Good afternoon, Kris</h1>
+          <div
+            class="command-bar rounded-2xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <div class="flex items-center gap-3 px-5 py-4">
+              <svg
+                class="w-5 h-5 shrink-0"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search, ask Ariadne, or type / for commands..."
+                class="flex-1 bg-transparent outline-none text-base"
+              />
+              <kbd class="text-xs px-2 py-1 rounded-lg" style="background: hsl(var(--muted))">⌘K</kbd>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream Cards -->
+      <div class="flex-1 overflow-y-auto px-8 py-4">
+        <div class="max-w-4xl mx-auto">
+          <h2 class="font-semibold mb-4">Recent</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Cards here - same as before -->
+            <div
+              onclick="showFocus()"
+              class="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
+              style="background: hsl(var(--card)); border: 2px solid hsl(var(--primary))"
+            >
+              <div class="flex items-center gap-2 mb-3">
+                <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+                <span class="font-semibold text-sm">My Scratchpad</span>
+              </div>
+              <p class="text-sm" style="color: hsl(var(--muted-foreground))">Working on authentication flow...</p>
+            </div>
+
+            <div
+              class="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center gap-2 mb-3">
+                <span class="font-semibold text-sm"># engineering</span>
+              </div>
+              <p class="text-sm" style="color: hsl(var(--muted-foreground))">Bob: Let's schedule migration</p>
+            </div>
+
+            <div
+              class="rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center min-h-[100px]"
+              style="background: hsl(var(--muted) / 0.3); border: 2px dashed hsl(var(--border))"
+            >
+              <svg
+                class="w-6 h-6 mb-2"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <p class="text-sm">New Scratchpad</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Focus View (overlays hub) -->
+    <div id="focusView" class="focus-view fixed inset-0 flex" style="background: hsl(var(--background)); left: 48px">
+      <!-- Content -->
+      <div class="flex-1 flex flex-col">
+        <!-- Header -->
+        <div class="shrink-0 h-14 flex items-center px-6 gap-4" style="border-bottom: 1px solid hsl(var(--border))">
+          <button onclick="hideFocus()" class="p-2 -ml-2 rounded-lg hover:bg-black/5">
+            <svg
+              class="w-5 h-5"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+            <h1 class="font-semibold">My Scratchpad</h1>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto">
+          <div class="max-w-3xl mx-auto px-6 py-6 space-y-6">
+            <div class="flex gap-4">
+              <div
+                class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
+                style="background: hsl(var(--muted))"
+              >
+                K
+              </div>
+              <div class="pt-1">
+                <p class="font-semibold mb-1">Kris</p>
+                <p>How should I structure the auth flow?</p>
+              </div>
+            </div>
+            <div class="ai-message -mx-6 px-6 py-5 rounded-r-xl">
+              <div class="max-w-3xl mx-auto flex gap-4">
+                <div
+                  class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                >
+                  A
+                </div>
+                <div class="pt-1">
+                  <p class="font-semibold mb-1" style="color: hsl(var(--primary))">Ariadne</p>
+                  <p>Based on your requirements, I recommend JWT with refresh token rotation...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="shrink-0 px-6 py-5">
+          <div class="max-w-3xl mx-auto">
+            <div
+              class="input-glow rounded-2xl overflow-hidden"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center gap-1 px-4 py-2" style="border-bottom: 1px solid hsl(var(--border))">
+                <button class="p-2 rounded-lg hover:bg-black/5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                  </svg>
+                </button>
+                <button class="p-2 rounded-lg hover:bg-black/5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                  </svg>
+                </button>
+                <button class="p-2 rounded-lg hover:bg-black/5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                  </svg>
+                </button>
+              </div>
+              <div class="px-4 py-4 min-h-[60px]" style="color: hsl(var(--muted-foreground))">Type a message...</div>
+              <div class="flex items-center justify-between px-4 py-3" style="background: hsl(var(--muted) / 0.3)">
+                <div class="flex gap-1">
+                  <button class="p-2 rounded-lg hover:bg-black/5">
+                    <svg
+                      class="w-5 h-5"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    </svg>
+                  </button>
+                </div>
+                <button
+                  class="px-5 py-2 rounded-xl text-sm font-semibold"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let isPinned = false
+
+      function togglePin() {
+        isPinned = !isPinned
+        const edge = document.getElementById("ambientEdge")
+        const icon = document.getElementById("pinIcon")
+        edge.classList.toggle("pinned", isPinned)
+        icon.style.color = isPinned ? "hsl(var(--primary))" : ""
+        icon.setAttribute("fill", isPinned ? "currentColor" : "none")
+      }
+
+      function showFocus() {
+        document.getElementById("focusView").classList.add("open")
+        // Adjust focus view left margin based on pin state
+        document.getElementById("focusView").style.left = isPinned ? "280px" : "48px"
+      }
+
+      function hideFocus() {
+        document.getElementById("focusView").classList.remove("open")
+      }
+
+      function triggerRipple(segmentId) {
+        const segment = document.getElementById(segmentId)
+        const bar = segment.querySelector(".segment-bar")
+        const rect = bar.getBoundingClientRect()
+
+        const ripple = document.createElement("div")
+        ripple.className = "ripple"
+        ripple.style.width = "20px"
+        ripple.style.height = "20px"
+        ripple.style.left = "0"
+        ripple.style.top = "50%"
+        ripple.style.marginTop = "-10px"
+        ripple.style.background = window.getComputedStyle(bar).background
+
+        segment.style.position = "relative"
+        segment.appendChild(ripple)
+
+        setTimeout(() => ripple.remove(), 1500)
+      }
+
+      // Escape to go back
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hideFocus()
+      })
+
+      // Hide badges when collapsed (CSS handles this via segment-content class)
+      // But we need to make badges part of segment-content
+      document.querySelectorAll(".badge").forEach((badge) => {
+        badge.classList.add("segment-content")
+      })
+    </script>
+  </body>
+</html>

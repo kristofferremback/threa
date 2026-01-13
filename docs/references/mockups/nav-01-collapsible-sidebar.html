@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 01: Collapsible Sidebar (Linear-style)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Sidebar states */
+      .sidebar {
+        position: relative;
+        height: 100vh;
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        overflow: hidden;
+        transition: width 0.3s ease;
+      }
+      .sidebar.expanded {
+        width: 260px;
+      }
+      .sidebar.collapsed {
+        width: 8px;
+        cursor: pointer;
+      }
+
+      /* Collapsed state - blurred glow strip */
+      .collapsed-glow {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 8px;
+        display: flex;
+        flex-direction: column;
+        filter: blur(2px);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+      .sidebar.collapsed .collapsed-glow {
+        opacity: 1;
+      }
+      .sidebar.expanded .collapsed-glow {
+        opacity: 0;
+      }
+
+      .glow-segment {
+        flex-shrink: 0;
+      }
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-active {
+        background: hsl(var(--primary) / 0.3);
+      }
+      .glow-none {
+        background: hsl(var(--border));
+      }
+
+      @keyframes pulse-glow {
+        0%,
+        100% {
+          opacity: 0.7;
+          filter: blur(2px);
+        }
+        50% {
+          opacity: 1;
+          filter: blur(3px);
+        }
+      }
+      .sidebar.collapsed .collapsed-glow {
+        animation: pulse-glow 3s ease-in-out infinite;
+      }
+
+      /* Expanded content */
+      .sidebar-content {
+        opacity: 1;
+        transition: opacity 0.2s ease;
+        padding-left: 4px;
+        height: 100%;
+        overflow-y: auto;
+      }
+      .sidebar.collapsed .sidebar-content {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Resize handle */
+      .resize-handle {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        cursor: ew-resize;
+        background: transparent;
+        transition: background 0.15s ease;
+      }
+      .resize-handle:hover {
+        background: hsl(var(--primary) / 0.3);
+      }
+
+      /* Stream items */
+      .stream-item {
+        height: 32px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        border-radius: 6px;
+        margin: 1px 8px 1px 4px;
+      }
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.7);
+      }
+
+      .section-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 16px 12px 6px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Drafts button */
+      .drafts-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        margin: 8px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .drafts-btn:hover {
+        background: hsl(var(--muted) / 0.7);
+      }
+      .drafts-count {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .drafts-count.has-drafts {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+        font-weight: 700;
+      }
+
+      /* Priority label */
+      .priority-label {
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        padding: 2px 5px;
+        border-radius: 3px;
+        margin-left: auto;
+      }
+
+      .presence-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        margin-left: auto;
+      }
+      .dot-ai {
+        background: hsl(var(--primary));
+      }
+      .dot-people {
+        background: hsl(200 60% 50%);
+      }
+      .dot-mention {
+        background: hsl(350 70% 50%);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex">
+    <div class="flex-1 p-8">
+      <div class="max-w-xl">
+        <div class="flex justify-between items-start mb-4">
+          <h1 class="text-xl font-bold">Nav 01: Collapsible Sidebar</h1>
+          <button
+            onclick="document.body.classList.toggle('dark')"
+            class="text-xs px-2 py-1 rounded"
+            style="background: hsl(var(--secondary))"
+          >
+            Toggle Dark
+          </button>
+        </div>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          Linear-style collapsible sidebar. Click the collapsed strip or the toggle button to expand/collapse. When
+          collapsed, shows blurred, pulsing glow strip indicating activity.
+        </p>
+        <button
+          onclick="
+            document.getElementById('sidebar').classList.toggle('collapsed')
+            document.getElementById('sidebar').classList.toggle('expanded')
+          "
+          class="text-sm px-3 py-1.5 rounded-lg"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          Toggle Sidebar
+        </button>
+
+        <div class="mt-6 p-4 rounded-xl" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Sections:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• <strong>Drafts</strong> - Link/button with count (bold when drafts exist)</li>
+            <li>• <strong>Threads</strong> - Active conversations, highlighted</li>
+            <li>• <strong>Scratchpads</strong> - Recent X items, AI activity glow</li>
+            <li>• <strong>Channels</strong> - User-configurable display</li>
+            <li>• <strong>DMs</strong> - Direct messages</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="sidebar"
+      class="sidebar expanded"
+      onclick="
+        if (this.classList.contains('collapsed')) {
+          this.classList.remove('collapsed')
+          this.classList.add('expanded')
+        }
+      "
+    >
+      <!-- Collapsed glow strip -->
+      <div class="collapsed-glow">
+        <div class="glow-segment glow-none" style="height: 60px"></div>
+        <div class="glow-segment glow-ai" style="height: 32px"></div>
+        <div class="glow-segment glow-active" style="height: 32px"></div>
+        <div class="glow-segment glow-none" style="height: 40px"></div>
+        <div class="glow-segment glow-mention" style="height: 32px"></div>
+        <div class="glow-segment glow-people" style="height: 32px"></div>
+        <div class="glow-segment glow-none" style="height: 200px"></div>
+        <div class="glow-segment glow-ai" style="height: 32px"></div>
+        <div class="glow-segment glow-none" style="flex: 1"></div>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- Drafts -->
+        <div class="drafts-btn">
+          <svg
+            class="w-4 h-4"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+            />
+          </svg>
+          <span class="text-sm">Drafts</span>
+          <span class="drafts-count has-drafts">3</span>
+        </div>
+
+        <!-- Threads -->
+        <div class="section-header">Threads</div>
+        <div class="stream-item" style="background: hsl(var(--primary) / 0.08)">
+          <span class="text-sm font-medium" style="color: hsl(var(--primary))">Auth implementation</span>
+          <div class="presence-dot dot-ai"></div>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm">API design discussion</span>
+          <div class="presence-dot dot-people"></div>
+        </div>
+
+        <!-- Scratchpads -->
+        <div class="section-header">Scratchpads</div>
+        <div class="stream-item">
+          <span class="text-sm font-semibold">My Scratchpad</span>
+          <span class="priority-label" style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+            >AI</span
+          >
+        </div>
+        <div class="stream-item">
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))">Project Ideas</span>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))">Meeting Notes</span>
+        </div>
+
+        <!-- Channels -->
+        <div class="section-header">Channels</div>
+        <div class="stream-item">
+          <span class="text-sm font-semibold"># engineering</span>
+          <span class="priority-label" style="background: hsl(350 70% 50% / 0.12); color: hsl(350 70% 50%)">@you</span>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm font-medium"># design</span>
+          <div class="presence-dot dot-people"></div>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))"># product</span>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))"># random</span>
+        </div>
+
+        <!-- DMs -->
+        <div class="section-header">Direct Messages</div>
+        <div class="stream-item">
+          <span class="text-sm font-medium">Ariadne</span>
+          <div class="presence-dot dot-ai"></div>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))">Alice Chen</span>
+        </div>
+        <div class="stream-item">
+          <span class="text-sm font-medium">Bob Smith</span>
+        </div>
+      </div>
+
+      <div class="resize-handle"></div>
+    </div>
+  </body>
+</html>

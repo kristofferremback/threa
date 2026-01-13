@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Concept 4: Single Focus</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --secondary-foreground: 30 15% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --accent-foreground: 35 60% 35%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 12% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --accent-foreground: 40 45% 70%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .ai-message {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.06) 0%, hsl(var(--primary) / 0.02) 100%);
+        border-left: 3px solid hsl(var(--primary));
+      }
+      .input-glow:focus-within {
+        box-shadow:
+          0 0 0 3px hsl(var(--primary) / 0.15),
+          0 4px 20px hsl(var(--primary) / 0.1);
+      }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Concept 4: Single Focus</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Maximum focus on one conversation. ChatGPT-like simplicity. Switcher overlay for navigation. Thread opens as
+        full-screen takeover.
+      </p>
+    </div>
+
+    <!-- Minimal Header -->
+    <div
+      class="h-14 flex items-center justify-between px-6 shrink-0"
+      style="border-bottom: 1px solid hsl(var(--border))"
+    >
+      <div class="flex items-center gap-4">
+        <button class="p-2 -ml-2 rounded-lg hover:bg-black/5" title="Open switcher (⌘K)">
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+          <h1 class="font-semibold">My Scratchpad</h1>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          class="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
+          style="background: hsl(var(--secondary))"
+        >
+          <svg
+            class="w-4 h-4"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <kbd class="text-xs px-1 rounded" style="background: hsl(var(--muted))">⌘K</kbd>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content - Centered, comfortable reading width -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="flex-1 overflow-y-auto">
+        <div class="max-w-3xl mx-auto px-6 py-6 space-y-6">
+          <!-- User message -->
+          <div class="flex gap-4">
+            <div
+              class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div class="flex-1 pt-1">
+              <div class="flex items-baseline gap-3 mb-1">
+                <span class="font-semibold">Kris</span>
+                <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-[15px] leading-relaxed">
+                I'm designing a new authentication system. What's the best approach for handling JWT refresh tokens
+                securely?
+              </p>
+            </div>
+          </div>
+
+          <!-- AI message with distinctive styling -->
+          <div class="ai-message -mx-6 px-6 py-5 rounded-r-xl">
+            <div class="flex gap-4 max-w-3xl mx-auto">
+              <div
+                class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                A
+              </div>
+              <div class="flex-1 pt-1">
+                <div class="flex items-baseline gap-3 mb-1">
+                  <span class="font-semibold" style="color: hsl(var(--primary))">Ariadne</span>
+                  <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+                </div>
+                <div class="text-[15px] leading-relaxed space-y-3">
+                  <p>Great question. Based on current security best practices, here's what I recommend:</p>
+                  <div
+                    class="p-4 rounded-lg"
+                    style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+                  >
+                    <p class="font-medium mb-2">Refresh Token Best Practices:</p>
+                    <ul class="space-y-1.5 text-sm" style="color: hsl(var(--muted-foreground))">
+                      <li>1. Store refresh tokens in HTTP-only cookies, not localStorage</li>
+                      <li>2. Implement token rotation on each refresh</li>
+                      <li>3. Use short-lived access tokens (15 min) with longer refresh tokens (7 days)</li>
+                      <li>4. Maintain a token family for detecting reuse</li>
+                    </ul>
+                  </div>
+                  <p>Would you like me to show you a concrete implementation?</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- User follow-up -->
+          <div class="flex gap-4">
+            <div
+              class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div class="flex-1 pt-1">
+              <div class="flex items-baseline gap-3 mb-1">
+                <span class="font-semibold">Kris</span>
+                <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:32 PM</span>
+              </div>
+              <p class="text-[15px] leading-relaxed">
+                Yes, especially the token rotation part. How do I handle concurrent requests?
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Premium Input Area -->
+      <div
+        class="shrink-0 px-6 py-5"
+        style="background: linear-gradient(to top, hsl(var(--background)) 0%, transparent 100%)"
+      >
+        <div class="max-w-3xl mx-auto">
+          <div
+            class="input-glow rounded-2xl overflow-hidden transition-shadow"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <!-- Formatting toolbar - always visible -->
+            <div class="flex items-center gap-0.5 px-4 py-2" style="border-bottom: 1px solid hsl(var(--border))">
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Bold (⌘B)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                  <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Italic (⌘I)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Strikethrough">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M16 4H9a3 3 0 00-3 3v2a3 3 0 003 3h7m-7 4h7a3 3 0 003-3v-2" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                </svg>
+              </button>
+              <div class="w-px h-5 mx-2" style="background: hsl(var(--border))"></div>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Inline code">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Code block">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M8 10l3 3-3 3M12 16h4" />
+                </svg>
+              </button>
+              <div class="w-px h-5 mx-2" style="background: hsl(var(--border))"></div>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Bullet list">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <line x1="8" y1="6" x2="21" y2="6" />
+                  <line x1="8" y1="12" x2="21" y2="12" />
+                  <line x1="8" y1="18" x2="21" y2="18" />
+                  <circle cx="4" cy="6" r="1" fill="currentColor" />
+                  <circle cx="4" cy="12" r="1" fill="currentColor" />
+                  <circle cx="4" cy="18" r="1" fill="currentColor" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Numbered list">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <line x1="10" y1="6" x2="21" y2="6" />
+                  <line x1="10" y1="12" x2="21" y2="12" />
+                  <line x1="10" y1="18" x2="21" y2="18" />
+                  <text x="3" y="8" font-size="8" fill="currentColor">1</text>
+                  <text x="3" y="14" font-size="8" fill="currentColor">2</text>
+                  <text x="3" y="20" font-size="8" fill="currentColor">3</text>
+                </svg>
+              </button>
+              <div class="w-px h-5 mx-2" style="background: hsl(var(--border))"></div>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Link (⌘K)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Attach file">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Text input area -->
+            <div class="px-4 py-4 min-h-[100px] text-[15px]" contenteditable="true" style="outline: none">
+              <span style="color: hsl(var(--muted-foreground))">Type a message...</span>
+            </div>
+
+            <!-- Bottom actions -->
+            <div class="flex items-center justify-between px-4 py-3" style="background: hsl(var(--muted) / 0.3)">
+              <div class="flex items-center gap-2">
+                <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Add emoji">
+                  <svg
+                    class="w-5 h-5"
+                    style="color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    <line x1="9" y1="9" x2="9.01" y2="9" stroke-width="2" />
+                    <line x1="15" y1="9" x2="15.01" y2="9" stroke-width="2" />
+                  </svg>
+                </button>
+                <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="@ Mention">
+                  <span class="text-base font-medium" style="color: hsl(var(--muted-foreground))">@</span>
+                </button>
+                <button class="p-2 rounded-lg hover:bg-black/5 transition-colors" title="Slash commands">
+                  <span class="text-base font-medium" style="color: hsl(var(--muted-foreground))">/</span>
+                </button>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">⌘ Enter to send</span>
+                <button
+                  class="px-5 py-2 rounded-xl text-sm font-semibold transition-transform hover:scale-105"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulated Switcher Overlay (for demo) -->
+    <div
+      class="hidden fixed inset-0 z-40 flex items-start justify-center pt-[15vh]"
+      style="background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(2px)"
+    >
+      <div
+        class="w-[560px] rounded-2xl shadow-2xl"
+        style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+      >
+        <div class="p-4">
+          <input
+            type="text"
+            placeholder="Search streams, messages, or type a command..."
+            class="w-full px-4 py-3 rounded-xl text-base outline-none"
+            style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+          />
+        </div>
+        <div class="px-2 pb-2 space-y-1">
+          <div class="px-3 py-2 rounded-lg flex items-center gap-3" style="background: hsl(var(--accent))">
+            <span class="font-medium">My Scratchpad</span>
+            <span
+              class="text-xs px-1.5 py-0.5 rounded"
+              style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+              >current</span
+            >
+          </div>
+          <div
+            class="px-3 py-2 rounded-lg flex items-center gap-3 hover:bg-black/5"
+            style="color: hsl(var(--muted-foreground))"
+          >
+            # engineering
+            <span class="ml-auto text-xs">3 unread</span>
+          </div>
+          <div
+            class="px-3 py-2 rounded-lg flex items-center gap-3 hover:bg-black/5"
+            style="color: hsl(var(--muted-foreground))"
+          >
+            # design
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

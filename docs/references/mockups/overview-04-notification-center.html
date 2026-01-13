@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Overview Concept 4: Notification Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+        --destructive: 8 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .panel {
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .panel.open {
+        transform: translateX(0);
+      }
+      .notification-item {
+        transition: all 0.15s ease;
+      }
+      .notification-item:hover {
+        background: hsl(var(--accent));
+      }
+    </style>
+  </head>
+  <body class="h-screen flex overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed bottom-4 left-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Overview 4: Notification Center</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        iOS/macOS-style notification center. Slide-in from right. Grouped by type (mentions, messages, AI). Always
+        accessible via bell icon or swipe gesture.
+      </p>
+    </div>
+
+    <!-- Main Content with trigger -->
+    <div class="flex-1 relative">
+      <!-- Top bar with notification trigger -->
+      <div
+        class="absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-6"
+        style="border-bottom: 1px solid hsl(var(--border))"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+          >
+            T
+          </div>
+          <span class="font-semibold">My Scratchpad</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            class="px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
+            style="background: hsl(var(--secondary))"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <kbd class="text-xs px-1 rounded" style="background: hsl(var(--muted))">⌘K</kbd>
+          </button>
+
+          <!-- Notification bell trigger -->
+          <button
+            onclick="document.getElementById('panel').classList.toggle('open')"
+            class="relative p-2 rounded-lg hover:bg-black/5"
+          >
+            <svg
+              class="w-5 h-5"
+              style="color: hsl(var(--foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+              />
+            </svg>
+            <!-- Badge -->
+            <span
+              class="absolute top-1 right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-bold"
+              style="background: hsl(var(--destructive)); color: white"
+              >7</span
+            >
+          </button>
+        </div>
+      </div>
+
+      <!-- Content placeholder -->
+      <div class="h-full flex items-center justify-center pt-14">
+        <div class="text-center">
+          <p class="text-lg font-medium mb-2">Focus View Here</p>
+          <p style="color: hsl(var(--muted-foreground))">Click the bell icon to open notification center</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Center Panel -->
+    <div
+      id="panel"
+      class="panel fixed top-0 right-0 bottom-0 w-96 flex flex-col"
+      style="
+        background: hsl(var(--card));
+        border-left: 1px solid hsl(var(--border));
+        box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <!-- Header -->
+      <div
+        class="shrink-0 px-4 py-4 flex items-center justify-between"
+        style="border-bottom: 1px solid hsl(var(--border))"
+      >
+        <h2 class="font-semibold">Notifications</h2>
+        <div class="flex items-center gap-2">
+          <button class="text-xs px-2 py-1 rounded-lg hover:bg-black/5" style="color: hsl(var(--primary))">
+            Mark all read
+          </button>
+          <button
+            onclick="document.getElementById('panel').classList.remove('open')"
+            class="p-1 rounded-lg hover:bg-black/5"
+          >
+            <svg
+              class="w-5 h-5"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Notification List -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- Mentions Section -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wide" style="color: hsl(var(--destructive))"
+              >Mentions</span
+            >
+            <span
+              class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+              style="background: hsl(var(--destructive)); color: white"
+              >2</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div
+              class="notification-item p-3 rounded-xl cursor-pointer"
+              style="background: hsl(var(--destructive) / 0.05)"
+            >
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-sm">Alice</span>
+                    <span class="text-xs" style="color: hsl(var(--muted-foreground))">in #engineering</span>
+                  </div>
+                  <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">
+                    @kris can you review this PR? The auth changes look good but I want a second pair of eyes.
+                  </p>
+                  <span class="text-xs mt-1 block" style="color: hsl(var(--muted-foreground))">5 min ago</span>
+                </div>
+              </div>
+            </div>
+            <div
+              class="notification-item p-3 rounded-xl cursor-pointer"
+              style="background: hsl(var(--destructive) / 0.05)"
+            >
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-sm">Bob</span>
+                    <span class="text-xs" style="color: hsl(var(--muted-foreground))">in #design</span>
+                  </div>
+                  <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">
+                    @kris thoughts on this mockup?
+                  </p>
+                  <span class="text-xs mt-1 block" style="color: hsl(var(--muted-foreground))">20 min ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="mx-4" style="border-top: 1px solid hsl(var(--border))"></div>
+
+        <!-- AI Activity Section -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wide" style="color: hsl(var(--primary))"
+              >AI Activity</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div class="notification-item p-3 rounded-xl cursor-pointer" style="background: hsl(var(--primary) / 0.05)">
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-sm font-medium"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                >
+                  A
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-sm" style="color: hsl(var(--primary))">Ariadne</span>
+                    <span class="text-xs" style="color: hsl(var(--muted-foreground))">in My Scratchpad</span>
+                  </div>
+                  <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">
+                    Finished analyzing the authentication flow. Found 3 potential improvements.
+                  </p>
+                  <span class="text-xs mt-1 block" style="color: hsl(var(--muted-foreground))">Just now</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="mx-4" style="border-top: 1px solid hsl(var(--border))"></div>
+
+        <!-- New Messages Section -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wide" style="color: hsl(var(--muted-foreground))"
+              >New Messages</span
+            >
+            <span
+              class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+              style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >5</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div class="notification-item p-3 rounded-xl cursor-pointer">
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-xl shrink-0 flex items-center justify-center"
+                  style="background: hsl(var(--muted))"
+                >
+                  <span class="text-sm font-medium">#</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-sm">engineering</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-xs" style="background: hsl(var(--muted))">5 new</span>
+                  </div>
+                  <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">
+                    Bob: Let's schedule the migration for next week
+                  </p>
+                  <span class="text-xs mt-1 block" style="color: hsl(var(--muted-foreground))">10 min ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="mx-4" style="border-top: 1px solid hsl(var(--border))"></div>
+
+        <!-- Drafts Section -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wide" style="color: hsl(var(--muted-foreground))"
+              >Drafts</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div class="notification-item p-3 rounded-xl cursor-pointer">
+              <div class="flex items-start gap-3">
+                <div
+                  class="w-8 h-8 rounded-xl shrink-0 flex items-center justify-center"
+                  style="background: hsl(var(--muted)); border: 2px dashed hsl(var(--border))"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    style="color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <span class="font-medium text-sm">API Design Notes</span>
+                  <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">Last edited 2 hours ago</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions Footer -->
+      <div class="shrink-0 p-4" style="border-top: 1px solid hsl(var(--border)); background: hsl(var(--muted) / 0.3)">
+        <div class="flex gap-2">
+          <button class="flex-1 px-3 py-2 rounded-xl text-sm font-medium" style="background: hsl(var(--secondary))">
+            All Streams
+          </button>
+          <button
+            class="flex-1 px-3 py-2 rounded-xl text-sm font-medium"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+          >
+            + New Scratchpad
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

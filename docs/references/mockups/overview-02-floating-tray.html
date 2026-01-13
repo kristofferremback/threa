@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Overview Concept 2: Floating Tray</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+        --destructive: 8 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .tray {
+        box-shadow:
+          0 -4px 24px rgba(0, 0, 0, 0.1),
+          0 -1px 4px rgba(0, 0, 0, 0.05);
+      }
+      .dark .tray {
+        box-shadow:
+          0 -4px 24px rgba(0, 0, 0, 0.4),
+          0 -1px 4px rgba(0, 0, 0, 0.2);
+      }
+      .tray-item {
+        transition: all 0.15s ease;
+      }
+      .tray-item:hover {
+        transform: translateY(-4px);
+      }
+      .tray-expanded {
+        max-height: 400px;
+      }
+      .preview-card {
+        transition: all 0.2s ease;
+      }
+      .preview-card:hover {
+        transform: scale(1.02);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Overview 2: Floating Tray</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        macOS dock-style tray at the bottom. Shows stream pills with badges. Expands upward on hover to show previews.
+        Can be toggled with keyboard shortcut.
+      </p>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex items-center justify-center">
+      <div class="text-center">
+        <p class="text-lg font-medium mb-2">Focus View Here</p>
+        <p style="color: hsl(var(--muted-foreground))">The tray floats at the bottom</p>
+      </div>
+    </div>
+
+    <!-- Floating Tray -->
+    <div
+      class="tray fixed bottom-6 left-1/2 -translate-x-1/2 rounded-2xl p-2 flex items-end gap-2"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <!-- Search -->
+      <div class="tray-item flex flex-col items-center cursor-pointer p-2 rounded-xl hover:bg-black/5">
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: hsl(var(--muted))">
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+        </div>
+        <span class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">⌘K</span>
+      </div>
+
+      <!-- Divider -->
+      <div class="w-px h-12 self-center" style="background: hsl(var(--border))"></div>
+
+      <!-- Mentions (with preview on hover) -->
+      <div class="tray-item group relative flex flex-col items-center cursor-pointer p-2 rounded-xl hover:bg-black/5">
+        <!-- Preview Card (shown on hover) -->
+        <div
+          class="preview-card absolute bottom-full mb-3 w-72 p-4 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+          style="
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          "
+        >
+          <p class="font-medium text-sm mb-2">Mentions</p>
+          <div class="space-y-2">
+            <div class="flex items-start gap-2 p-2 rounded-lg" style="background: hsl(var(--muted))">
+              <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--secondary))"></div>
+              <div class="min-w-0">
+                <p class="text-xs font-medium">Alice in #engineering</p>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">
+                  @kris can you review this PR?
+                </p>
+              </div>
+            </div>
+            <div class="flex items-start gap-2 p-2 rounded-lg" style="background: hsl(var(--muted))">
+              <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--secondary))"></div>
+              <div class="min-w-0">
+                <p class="text-xs font-medium">Bob in #design</p>
+                <p class="text-xs truncate" style="color: hsl(var(--muted-foreground))">
+                  @kris thoughts on this mockup?
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="w-12 h-12 rounded-xl flex items-center justify-center relative"
+          style="background: hsl(var(--destructive) / 0.1)"
+        >
+          <span class="text-lg font-medium" style="color: hsl(var(--destructive))">@</span>
+          <span
+            class="absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold"
+            style="background: hsl(var(--destructive)); color: white"
+            >2</span
+          >
+        </div>
+      </div>
+
+      <!-- Stream: My Scratchpad (active, AI responding) -->
+      <div
+        class="tray-item group relative flex flex-col items-center cursor-pointer p-2 rounded-xl"
+        style="background: hsl(var(--primary) / 0.1)"
+      >
+        <!-- Preview Card -->
+        <div
+          class="preview-card absolute bottom-full mb-3 w-72 p-4 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+          style="
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          "
+        >
+          <div class="flex items-center justify-between mb-2">
+            <p class="font-medium text-sm">My Scratchpad</p>
+            <span
+              class="text-xs px-2 py-0.5 rounded-full"
+              style="background: hsl(var(--primary) / 0.1); color: hsl(var(--primary))"
+              >Active</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-start gap-2">
+              <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+              <p class="text-xs" style="color: hsl(var(--muted-foreground))">How should I structure the auth?</p>
+            </div>
+            <div class="flex items-start gap-2 p-2 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+              <div
+                class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                A
+              </div>
+              <div>
+                <p class="text-xs" style="color: hsl(var(--primary))">Ariadne is typing...</p>
+                <div class="flex gap-1 mt-1">
+                  <span
+                    class="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style="background: hsl(var(--primary)); animation-delay: 0ms"
+                  ></span>
+                  <span
+                    class="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style="background: hsl(var(--primary)); animation-delay: 150ms"
+                  ></span>
+                  <span
+                    class="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style="background: hsl(var(--primary)); animation-delay: 300ms"
+                  ></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="w-12 h-12 rounded-xl flex items-center justify-center relative"
+          style="background: hsl(var(--primary))"
+        >
+          <span class="text-lg font-bold" style="color: hsl(var(--primary-foreground))">S</span>
+          <!-- Active indicator ring -->
+          <span class="absolute inset-0 rounded-xl" style="box-shadow: 0 0 0 2px hsl(var(--primary))"></span>
+        </div>
+        <span class="text-xs mt-1 font-medium truncate max-w-[60px]">Scratch...</span>
+      </div>
+
+      <!-- Stream: #engineering -->
+      <div class="tray-item group relative flex flex-col items-center cursor-pointer p-2 rounded-xl hover:bg-black/5">
+        <!-- Preview Card -->
+        <div
+          class="preview-card absolute bottom-full mb-3 w-72 p-4 rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+          style="
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          "
+        >
+          <p class="font-medium text-sm mb-2"># engineering</p>
+          <div class="space-y-2">
+            <div class="flex items-start gap-2">
+              <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+              <div>
+                <p class="text-xs font-medium">Alice</p>
+                <p class="text-xs" style="color: hsl(var(--muted-foreground))">The new SDK looks promising</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-2">
+              <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+              <div>
+                <p class="text-xs font-medium">Bob</p>
+                <p class="text-xs" style="color: hsl(var(--muted-foreground))">Let's schedule the migration</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="w-12 h-12 rounded-xl flex items-center justify-center relative"
+          style="background: hsl(var(--muted))"
+        >
+          <span class="text-lg font-medium">#</span>
+          <span
+            class="absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+            >5</span
+          >
+        </div>
+        <span class="text-xs mt-1 truncate max-w-[60px]" style="color: hsl(var(--muted-foreground))">eng</span>
+      </div>
+
+      <!-- Stream: #design (no unread) -->
+      <div
+        class="tray-item group relative flex flex-col items-center cursor-pointer p-2 rounded-xl hover:bg-black/5 opacity-60"
+      >
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: hsl(var(--muted))">
+          <span class="text-lg font-medium">#</span>
+        </div>
+        <span class="text-xs mt-1 truncate max-w-[60px]" style="color: hsl(var(--muted-foreground))">design</span>
+      </div>
+
+      <!-- Divider -->
+      <div class="w-px h-12 self-center" style="background: hsl(var(--border))"></div>
+
+      <!-- New Stream -->
+      <div class="tray-item flex flex-col items-center cursor-pointer p-2 rounded-xl hover:bg-black/5">
+        <div
+          class="w-12 h-12 rounded-xl flex items-center justify-center"
+          style="background: hsl(var(--muted)); border: 2px dashed hsl(var(--border))"
+        >
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+        </div>
+        <span class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">New</span>
+      </div>
+    </div>
+
+    <!-- Keyboard hint -->
+    <div class="fixed bottom-2 left-1/2 -translate-x-1/2 text-xs" style="color: hsl(var(--muted-foreground))">
+      Press <kbd class="px-1.5 py-0.5 rounded" style="background: hsl(var(--muted))">⌘ /</kbd> to toggle tray
+    </div>
+  </body>
+</html>

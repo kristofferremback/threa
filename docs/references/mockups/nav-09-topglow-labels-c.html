@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 09c: Segmented Top Bar (No Sidebar)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Top bar with labeled segments */
+      .top-bar {
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .segment-row {
+        display: flex;
+        padding: 0 8px;
+      }
+
+      .label-segment {
+        flex: 1;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .label-segment:hover {
+        background: hsl(var(--muted) / 0.3);
+      }
+      .label-segment.active {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .segment-color {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .segment-name {
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* Glow underline */
+      .segment-glow {
+        position: absolute;
+        bottom: 0;
+        left: 8px;
+        right: 8px;
+        height: 3px;
+        border-radius: 2px 2px 0 0;
+      }
+      .segment-glow::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        height: 12px;
+        pointer-events: none;
+      }
+
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-ai::after {
+        background: linear-gradient(180deg, hsl(var(--primary) / 0.15) 0%, transparent 100%);
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-mention::after {
+        background: linear-gradient(180deg, hsl(350 70% 50% / 0.12) 0%, transparent 100%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-people::after {
+        background: linear-gradient(180deg, hsl(200 60% 50% / 0.1) 0%, transparent 100%);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Expanded panel below active segment */
+      .content-panel {
+        display: none;
+        padding: 12px 16px;
+        background: hsl(var(--muted) / 0.3);
+        border-bottom: 1px solid hsl(var(--border));
+      }
+      .content-panel.active {
+        display: block;
+      }
+
+      .panel-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .panel-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .panel-item:hover {
+        border-color: hsl(var(--primary) / 0.3);
+        transform: translateY(-1px);
+      }
+
+      .item-glow {
+        width: 4px;
+        height: 20px;
+        border-radius: 2px;
+      }
+      .item-type {
+        font-size: 9px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+
+      .main-content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      /* Right side controls */
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        margin-left: auto;
+      }
+      .control-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .control-btn:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <div class="top-bar">
+      <div class="segment-row">
+        <div class="label-segment active" onclick="togglePanel('auth')">
+          <div class="segment-color" style="background: hsl(280 60% 55%)"></div>
+          <span class="segment-name">Auth Project</span>
+          <div class="segment-glow glow-ai glow-pulse"></div>
+        </div>
+        <div class="label-segment" onclick="togglePanel('launch')">
+          <div class="segment-color" style="background: hsl(150 60% 45%)"></div>
+          <span class="segment-name">Q1 Launch</span>
+          <div class="segment-glow glow-mention"></div>
+        </div>
+        <div class="label-segment" onclick="togglePanel('design')">
+          <div class="segment-color" style="background: hsl(30 70% 50%)"></div>
+          <span class="segment-name">Design System</span>
+          <div class="segment-glow glow-people"></div>
+        </div>
+        <div class="label-segment" onclick="togglePanel('hiring')">
+          <div class="segment-color" style="background: hsl(200 60% 50%)"></div>
+          <span class="segment-name" style="color: hsl(var(--muted-foreground))">Hiring</span>
+        </div>
+
+        <div class="controls">
+          <div class="control-btn" style="background: hsl(var(--muted) / 0.3); color: hsl(var(--muted-foreground))">
+            ⌘K
+          </div>
+          <button onclick="document.body.classList.toggle('dark')" class="control-btn">Theme</button>
+        </div>
+      </div>
+
+      <!-- Expandable panels -->
+      <div id="panel-auth" class="content-panel active">
+        <div class="panel-items">
+          <div class="panel-item">
+            <div class="item-glow" style="background: hsl(var(--primary))"></div>
+            <span class="text-sm font-medium">Auth Scratchpad</span>
+            <span class="item-type">pad</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <span class="text-sm"># auth-dev</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Auth thread</span>
+            <span class="item-type">thread</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Security team</span>
+            <span class="item-type">group</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-launch" class="content-panel">
+        <div class="panel-items">
+          <div class="panel-item">
+            <div class="item-glow" style="background: hsl(350 70% 50%)"></div>
+            <span class="text-sm font-semibold"># engineering</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+            <span class="text-sm">Launch planning</span>
+            <span class="item-type">thread</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))"># marketing</span>
+            <span class="item-type">channel</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-design" class="content-panel">
+        <div class="panel-items">
+          <div class="panel-item">
+            <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+            <span class="text-sm"># design</span>
+            <span class="item-type">channel</span>
+          </div>
+          <div class="panel-item">
+            <div class="item-glow" style="background: transparent"></div>
+            <span class="text-sm" style="color: hsl(var(--muted-foreground))">Component ideas</span>
+            <span class="item-type">pad</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="text-center max-w-lg">
+        <h2 class="text-lg font-bold mb-2">09c: Segmented Top Bar (No Sidebar)</h2>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          Labels as horizontal tabs in top bar. Click to expand a panel showing that label's streams. Full-width content
+          area. No sidebar at all.
+        </p>
+        <div class="p-4 rounded-xl text-left" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Concept:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• Click labels to see their contents</li>
+            <li>• Glow underline shows activity type</li>
+            <li>• Maximum content area</li>
+            <li>• Works well with few labels (3-5)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function togglePanel(name) {
+        document.querySelectorAll(".content-panel").forEach((p) => p.classList.remove("active"))
+        document.querySelectorAll(".label-segment").forEach((s) => s.classList.remove("active"))
+        const panel = document.getElementById("panel-" + name)
+        if (panel) {
+          panel.classList.add("active")
+          event.currentTarget.classList.add("active")
+        }
+      }
+    </script>
+  </body>
+</html>

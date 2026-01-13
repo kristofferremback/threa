@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Concept 3: Split Columns</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --secondary-foreground: 30 15% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --accent-foreground: 35 60% 35%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 12% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --accent-foreground: 40 45% 70%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .resize-handle {
+        width: 4px;
+        cursor: col-resize;
+        background: transparent;
+        transition: background 0.15s;
+      }
+      .resize-handle:hover {
+        background: hsl(var(--primary) / 0.3);
+      }
+      .column-active {
+        box-shadow: inset 0 2px 0 0 hsl(var(--primary));
+      }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Concept 3: Split Columns</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Side-by-side resizable columns like email clients. View multiple streams at once. Drag dividers to resize.
+        Perfect for reference + working context.
+      </p>
+    </div>
+
+    <!-- Top Bar -->
+    <div
+      class="h-12 flex items-center justify-between px-4 shrink-0"
+      style="background: hsl(var(--card)); border-bottom: 1px solid hsl(var(--border))"
+    >
+      <div class="flex items-center gap-4">
+        <div
+          class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          T
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1.5 text-sm rounded-lg" style="background: hsl(var(--secondary))">
+            <svg class="w-4 h-4 inline mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            Streams
+          </button>
+          <button class="px-3 py-1.5 text-sm rounded-lg hover:bg-black/5" style="color: hsl(var(--muted-foreground))">
+            + Add Column
+          </button>
+        </div>
+      </div>
+      <button class="px-3 py-1.5 text-sm rounded-lg flex items-center gap-2" style="background: hsl(var(--secondary))">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
+        </svg>
+        <kbd class="text-xs px-1 rounded" style="background: hsl(var(--muted))">⌘K</kbd>
+      </button>
+    </div>
+
+    <!-- Columns -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Column 1: Scratchpad (active) -->
+      <div class="flex-1 min-w-[320px] flex flex-col column-active" style="background: hsl(var(--background))">
+        <div class="px-4 py-3 flex items-center justify-between" style="border-bottom: 1px solid hsl(var(--border))">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-sm">My Scratchpad</span>
+          </div>
+          <button class="p-1 rounded hover:bg-black/5" style="color: hsl(var(--muted-foreground))">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          <div class="flex gap-3">
+            <div
+              class="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div class="flex-1">
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm">Kris</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-sm mt-0.5">Let me think through the database schema...</p>
+            </div>
+          </div>
+
+          <div class="flex gap-3 -mx-2 px-2 py-2 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+            <div
+              class="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium"
+              style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+            >
+              A
+            </div>
+            <div class="flex-1">
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm" style="color: hsl(var(--primary))">Ariadne</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-sm mt-0.5">
+                I found some relevant context from your #engineering discussion last week about normalization.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- New Input Design -->
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <!-- Always-visible toolbar -->
+            <div class="flex items-center gap-1 px-3 py-2" style="border-bottom: 1px solid hsl(var(--border))">
+              <button class="p-1.5 rounded hover:bg-black/5" title="Bold (⌘B)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                  <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                </svg>
+              </button>
+              <button class="p-1.5 rounded hover:bg-black/5" title="Italic (⌘I)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                </svg>
+              </button>
+              <button class="p-1.5 rounded hover:bg-black/5" title="Code">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                </svg>
+              </button>
+              <div class="w-px h-4 mx-1" style="background: hsl(var(--border))"></div>
+              <button class="p-1.5 rounded hover:bg-black/5" title="Link (⌘K)">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+              <button class="p-1.5 rounded hover:bg-black/5" title="Attach file">
+                <svg
+                  class="w-4 h-4"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                  />
+                </svg>
+              </button>
+              <div class="flex-1"></div>
+              <span class="text-xs" style="color: hsl(var(--muted-foreground))">Markdown</span>
+            </div>
+            <!-- Input area -->
+            <div class="px-3 py-3 min-h-[60px] text-sm" style="color: hsl(var(--muted-foreground))">
+              Type a message...
+            </div>
+            <!-- Bottom bar -->
+            <div class="flex items-center justify-between px-3 py-2" style="background: hsl(var(--muted) / 0.5)">
+              <div class="flex items-center gap-2">
+                <button class="p-1 rounded hover:bg-black/5" title="Emoji">
+                  <svg
+                    class="w-4 h-4"
+                    style="color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    <line x1="9" y1="9" x2="9.01" y2="9" />
+                    <line x1="15" y1="9" x2="15.01" y2="9" />
+                  </svg>
+                </button>
+                <button class="p-1 rounded hover:bg-black/5" title="@ Mention">
+                  <span class="text-sm font-medium" style="color: hsl(var(--muted-foreground))">@</span>
+                </button>
+              </div>
+              <button
+                class="px-3 py-1.5 rounded-lg text-sm font-medium"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resize Handle -->
+      <div class="resize-handle" style="background: hsl(var(--border))"></div>
+
+      <!-- Column 2: Channel -->
+      <div class="flex-1 min-w-[320px] flex flex-col" style="background: hsl(var(--background))">
+        <div class="px-4 py-3 flex items-center justify-between" style="border-bottom: 1px solid hsl(var(--border))">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-sm" style="color: hsl(var(--muted-foreground))"># engineering</span>
+            <span
+              class="px-1.5 py-0.5 text-xs rounded-full"
+              style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >3</span
+            >
+          </div>
+          <button class="p-1 rounded hover:bg-black/5" style="color: hsl(var(--muted-foreground))">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div class="flex gap-3">
+            <div class="w-8 h-8 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div class="flex-1">
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm">Alice</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">10:15 AM</span>
+              </div>
+              <p class="text-sm mt-0.5">The new SDK looks promising</p>
+            </div>
+          </div>
+          <div class="flex gap-3">
+            <div class="w-8 h-8 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div class="flex-1">
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm">Bob</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">10:22 AM</span>
+              </div>
+              <p class="text-sm mt-0.5">Agreed, let's schedule a migration discussion</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simpler input for non-active column -->
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <div class="px-3 py-3 text-sm" style="color: hsl(var(--muted-foreground))">Message #engineering...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resize Handle -->
+      <div class="resize-handle" style="background: hsl(var(--border))"></div>
+
+      <!-- Column 3: Thread -->
+      <div class="w-[340px] shrink-0 flex flex-col" style="background: hsl(var(--muted) / 0.3)">
+        <div class="px-4 py-3 flex items-center justify-between" style="border-bottom: 1px solid hsl(var(--border))">
+          <div class="flex items-center gap-2">
+            <svg
+              class="w-4 h-4"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+              />
+            </svg>
+            <span class="font-semibold text-sm" style="color: hsl(var(--muted-foreground))">Thread</span>
+          </div>
+          <button class="p-1 rounded hover:bg-black/5" style="color: hsl(var(--muted-foreground))">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Thread parent message -->
+        <div class="px-4 py-3" style="background: hsl(var(--card)); border-bottom: 1px solid hsl(var(--border))">
+          <div class="flex gap-2 items-start">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium text-sm">Alice</span>
+              <p class="text-sm mt-0.5" style="color: hsl(var(--muted-foreground))">The new SDK looks promising</p>
+            </div>
+          </div>
+          <div class="mt-2 text-xs" style="color: hsl(var(--muted-foreground))">3 replies</div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium text-sm">Bob</span>
+              <p class="text-sm mt-0.5">What's the migration path like?</p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium text-sm">Alice</span>
+              <p class="text-sm mt-0.5">Pretty straightforward, just need to update imports</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <div class="px-3 py-3 text-sm" style="color: hsl(var(--muted-foreground))">Reply...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

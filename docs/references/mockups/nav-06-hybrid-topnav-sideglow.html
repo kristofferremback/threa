@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 06: Hybrid Top Nav + Side Glow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Top navigation bar */
+      .top-nav {
+        height: 44px;
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 8px;
+      }
+
+      .nav-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        font-size: 13px;
+      }
+      .nav-btn:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .nav-btn.active {
+        background: hsl(var(--muted));
+        font-weight: 500;
+      }
+
+      /* Side glow strip - ambient indicator only */
+      .side-glow {
+        position: fixed;
+        left: 0;
+        top: 44px;
+        bottom: 0;
+        width: 6px;
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
+        cursor: pointer;
+      }
+      .glow-segment {
+        flex-shrink: 0;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .glow-segment::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 30px;
+        pointer-events: none;
+      }
+
+      .glow-threads {
+        background: hsl(var(--primary));
+      }
+      .glow-threads::after {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.12) 0%, transparent 100%);
+      }
+      .glow-scratchpads {
+        background: hsl(var(--primary) / 0.6);
+      }
+      .glow-scratchpads::after {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.08) 0%, transparent 100%);
+      }
+      .glow-channels {
+        background: hsl(350 70% 50%);
+      }
+      .glow-channels::after {
+        background: linear-gradient(90deg, hsl(350 70% 50% / 0.1) 0%, transparent 100%);
+      }
+      .glow-dms {
+        background: hsl(200 60% 50% / 0.5);
+      }
+      .glow-dms::after {
+        background: linear-gradient(90deg, hsl(200 60% 50% / 0.06) 0%, transparent 100%);
+      }
+      .glow-none {
+        background: hsl(var(--border));
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Hover label */
+      .glow-segment .glow-label {
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-left: 8px;
+        padding: 4px 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 6px;
+        font-size: 11px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .glow-segment:hover .glow-label {
+        opacity: 1;
+      }
+
+      .main-wrapper {
+        display: flex;
+        flex: 1;
+      }
+      .main-content {
+        flex: 1;
+        margin-left: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Slide-out panel on glow click */
+      .slide-panel {
+        position: fixed;
+        left: 6px;
+        top: 44px;
+        bottom: 0;
+        width: 280px;
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 5;
+        padding: 16px;
+        overflow-y: auto;
+      }
+      .slide-panel.open {
+        transform: translateX(0);
+      }
+
+      .panel-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        margin-bottom: 4px;
+      }
+      .panel-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .item-glow {
+        width: 4px;
+        height: 24px;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <div class="top-nav">
+      <span style="font-weight: 600; color: hsl(var(--primary)); margin-right: 8px">Threa</span>
+
+      <div style="width: 1px; height: 20px; background: hsl(var(--border))"></div>
+
+      <div class="nav-btn">
+        Drafts <span style="color: hsl(var(--primary)); font-weight: 600; margin-left: 4px">3</span>
+      </div>
+      <div class="nav-btn active">Threads</div>
+      <div class="nav-btn">Scratchpads</div>
+      <div class="nav-btn">Channels</div>
+      <div class="nav-btn">Messages</div>
+
+      <div style="flex: 1"></div>
+
+      <div class="nav-btn" style="background: hsl(var(--muted) / 0.3); color: hsl(var(--muted-foreground))">
+        Search... <span style="opacity: 0.5; margin-left: 12px; font-size: 11px">⌘K</span>
+      </div>
+
+      <button onclick="document.body.classList.toggle('dark')" class="nav-btn">Theme</button>
+    </div>
+
+    <div class="main-wrapper">
+      <!-- Ambient side glow -->
+      <div class="side-glow" onclick="document.getElementById('panel').classList.toggle('open')">
+        <div class="glow-segment glow-threads glow-pulse" style="height: 80px">
+          <span class="glow-label">Threads (2 active)</span>
+        </div>
+        <div class="glow-segment glow-scratchpads" style="height: 60px">
+          <span class="glow-label">Scratchpads</span>
+        </div>
+        <div class="glow-segment glow-channels" style="height: 100px">
+          <span class="glow-label">Channels (@you)</span>
+        </div>
+        <div class="glow-segment glow-dms" style="height: 60px">
+          <span class="glow-label">Messages</span>
+        </div>
+        <div class="glow-segment glow-none" style="flex: 1"></div>
+      </div>
+
+      <!-- Slide-out detail panel -->
+      <div id="panel" class="slide-panel">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="font-semibold text-sm">All Activity</h3>
+          <button
+            onclick="document.getElementById('panel').classList.remove('open')"
+            class="text-xs"
+            style="color: hsl(var(--muted-foreground))"
+          >
+            Close
+          </button>
+        </div>
+
+        <p class="text-xs uppercase font-semibold mb-2" style="color: hsl(var(--muted-foreground))">Threads</p>
+        <div class="panel-item">
+          <div class="item-glow" style="background: hsl(var(--primary))"></div>
+          <div>
+            <div class="text-sm font-medium">Auth implementation</div>
+            <div class="text-xs" style="color: hsl(var(--primary))">Ariadne ready</div>
+          </div>
+        </div>
+        <div class="panel-item">
+          <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+          <div class="text-sm">API design</div>
+        </div>
+
+        <p class="text-xs uppercase font-semibold mb-2 mt-4" style="color: hsl(var(--muted-foreground))">Channels</p>
+        <div class="panel-item">
+          <div class="item-glow" style="background: hsl(350 70% 50%)"></div>
+          <div>
+            <div class="text-sm font-semibold"># engineering</div>
+            <div class="text-xs" style="color: hsl(350 70% 50%)">@you</div>
+          </div>
+        </div>
+        <div class="panel-item">
+          <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+          <div class="text-sm"># design</div>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="text-center max-w-lg p-8">
+          <h2 class="text-lg font-bold mb-2">Hybrid: Top Nav + Side Glow</h2>
+          <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+            Top bar for section navigation, side glow for ambient activity awareness. Click the glow strip to expand a
+            detail panel. The glow shows WHERE activity is; top nav is for navigation.
+          </p>
+          <div class="p-4 rounded-xl text-left" style="background: hsl(var(--muted))">
+            <p class="text-sm font-medium mb-2">Try it:</p>
+            <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+              <li>• Hover over glow segments for labels</li>
+              <li>• Click the glow strip to expand panel</li>
+              <li>• Top nav switches between sections</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

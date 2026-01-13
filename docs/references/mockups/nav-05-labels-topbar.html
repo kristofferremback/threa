@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 05: Labels as Top Bar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .top-bar {
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+        padding: 8px 16px;
+      }
+      .top-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      /* Label tabs */
+      .label-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 8px 0;
+        overflow-x: auto;
+      }
+      .label-tab {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+      }
+      .label-tab:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .label-tab.active {
+        background: hsl(var(--muted));
+      }
+
+      .label-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        flex-shrink: 0;
+      }
+      .label-tab-name {
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      /* Activity glow under tab */
+      .tab-glow {
+        position: absolute;
+        bottom: 2px;
+        left: 50%;
+        transform: translateX(-50%);
+        height: 3px;
+        border-radius: 2px;
+      }
+      .tab-glow-ai {
+        width: 24px;
+        background: hsl(var(--primary));
+      }
+      .tab-glow-mention {
+        width: 20px;
+        background: hsl(350 70% 50%);
+      }
+      .tab-glow-people {
+        width: 16px;
+        background: hsl(200 60% 50%);
+      }
+
+      /* Expanded content for active label */
+      .label-content {
+        padding: 8px 0;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .content-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        background: hsl(var(--muted) / 0.3);
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .content-item:hover {
+        background: hsl(var(--muted));
+      }
+
+      .item-glow {
+        width: 4px;
+        height: 20px;
+        border-radius: 2px;
+      }
+      .item-type {
+        font-size: 10px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: hsl(var(--card));
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* System tabs */
+      .system-tabs {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+      }
+      .system-tab {
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        color: hsl(var(--muted-foreground));
+      }
+      .system-tab:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .main-content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <div class="top-bar">
+      <div class="top-row">
+        <span style="font-weight: 600; color: hsl(var(--primary))">Threa</span>
+
+        <div style="width: 1px; height: 20px; background: hsl(var(--border))"></div>
+
+        <!-- User labels as primary nav -->
+        <div class="label-tabs">
+          <div class="label-tab active">
+            <div class="label-dot" style="background: hsl(280 60% 55%)"></div>
+            <span class="label-tab-name">Auth Project</span>
+            <div class="tab-glow tab-glow-ai"></div>
+          </div>
+          <div class="label-tab">
+            <div class="label-dot" style="background: hsl(150 60% 45%)"></div>
+            <span class="label-tab-name">Q1 Launch</span>
+            <div class="tab-glow tab-glow-mention"></div>
+          </div>
+          <div class="label-tab">
+            <div class="label-dot" style="background: hsl(30 70% 50%)"></div>
+            <span class="label-tab-name">Design System</span>
+          </div>
+          <div class="label-tab">
+            <div class="label-dot" style="background: hsl(200 60% 50%)"></div>
+            <span class="label-tab-name">Hiring</span>
+            <div class="tab-glow tab-glow-people"></div>
+          </div>
+          <div class="label-tab" style="color: hsl(var(--muted-foreground))">
+            <span class="label-tab-name">+ New Label</span>
+          </div>
+        </div>
+
+        <!-- System sections -->
+        <div class="system-tabs">
+          <div class="system-tab">Drafts <span style="color: hsl(var(--primary)); font-weight: 600">3</span></div>
+          <div class="system-tab">All</div>
+        </div>
+
+        <div style="width: 1px; height: 20px; background: hsl(var(--border))"></div>
+
+        <div class="system-tab" style="background: hsl(var(--muted) / 0.5)">
+          Search... <span style="opacity: 0.5; margin-left: 8px">⌘K</span>
+        </div>
+
+        <button onclick="document.body.classList.toggle('dark')" class="system-tab">Theme</button>
+      </div>
+
+      <!-- Active label's contents -->
+      <div class="label-content">
+        <div class="content-item">
+          <div class="item-glow" style="background: hsl(var(--primary))"></div>
+          <span class="text-sm font-medium">Auth Scratchpad</span>
+          <span class="item-type">pad</span>
+        </div>
+        <div class="content-item">
+          <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+          <span class="text-sm"># auth-dev</span>
+          <span class="item-type">channel</span>
+        </div>
+        <div class="content-item">
+          <div class="item-glow" style="background: transparent"></div>
+          <span class="text-sm">Auth implementation</span>
+          <span class="item-type">thread</span>
+        </div>
+        <div class="content-item">
+          <div class="item-glow" style="background: transparent"></div>
+          <span class="text-sm" style="color: hsl(var(--muted-foreground))">Security team</span>
+          <span class="item-type">group</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="text-center max-w-lg p-8">
+        <h2 class="text-lg font-bold mb-2">Labels as Top Navigation</h2>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          User-defined project labels become the primary navigation. Click a label to see all streams in that project.
+          The glow under each tab shows aggregate activity.
+        </p>
+        <div class="p-4 rounded-xl text-left" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Benefits:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• Project-focused rather than type-focused</li>
+            <li>• Full-width content area</li>
+            <li>• One click to see everything related to a project</li>
+            <li>• Activity glow aggregated per project</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

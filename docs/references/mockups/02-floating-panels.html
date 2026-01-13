@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Concept 2: Floating Panels</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --secondary-foreground: 30 15% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --accent-foreground: 35 60% 35%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 12% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --accent-foreground: 40 45% 70%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .panel {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow:
+          0 4px 24px rgba(0, 0, 0, 0.08),
+          0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .dark .panel {
+        box-shadow:
+          0 4px 24px rgba(0, 0, 0, 0.3),
+          0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .panel-focused {
+        box-shadow:
+          0 8px 32px rgba(0, 0, 0, 0.12),
+          0 2px 4px rgba(0, 0, 0, 0.06),
+          0 0 0 2px hsl(var(--primary) / 0.2);
+      }
+      .dark .panel-focused {
+        box-shadow:
+          0 8px 32px rgba(0, 0, 0, 0.4),
+          0 2px 4px rgba(0, 0, 0, 0.3),
+          0 0 0 2px hsl(var(--primary) / 0.3);
+      }
+      .dot-grid {
+        background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+    </style>
+  </head>
+  <body class="h-screen overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Concept 2: Floating Panels</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Desktop app feel with floating, resizable panels. Work with multiple streams side-by-side. Panels can be
+        minimized, maximized, or tiled.
+      </p>
+    </div>
+
+    <!-- Background Canvas -->
+    <div class="h-full dot-grid relative">
+      <!-- Top Bar -->
+      <div
+        class="absolute top-0 left-0 right-0 h-12 flex items-center justify-between px-4"
+        style="
+          background: hsl(var(--background) / 0.8);
+          backdrop-filter: blur(8px);
+          border-bottom: 1px solid hsl(var(--border));
+        "
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+          >
+            T
+          </div>
+          <span class="font-semibold">Threa</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            class="px-3 py-1.5 text-sm rounded-lg flex items-center gap-2"
+            style="background: hsl(var(--secondary))"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            <span style="color: hsl(var(--muted-foreground))">Quick Open</span>
+            <kbd class="text-xs px-1 rounded" style="background: hsl(var(--muted))">⌘K</kbd>
+          </button>
+          <button class="p-2 rounded-lg" style="background: hsl(var(--secondary))">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel 1: Scratchpad (main, focused) -->
+      <div
+        class="panel panel-focused absolute flex flex-col"
+        style="top: 80px; left: 40px; width: 500px; height: 480px"
+      >
+        <div
+          class="flex items-center justify-between px-4 py-3 cursor-move"
+          style="border-bottom: 1px solid hsl(var(--border))"
+        >
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+            <span class="font-medium text-sm">My Scratchpad</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="p-1.5 rounded hover:bg-black/5">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+              </svg>
+            </button>
+            <button class="p-1.5 rounded hover:bg-black/5">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                />
+              </svg>
+            </button>
+            <button class="p-1.5 rounded hover:bg-black/5">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          <div class="flex gap-3">
+            <div
+              class="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div>
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm">Kris</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-sm mt-0.5">Working on the auth flow today</p>
+            </div>
+          </div>
+
+          <div class="flex gap-3 -mx-2 px-2 py-2 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+            <div
+              class="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium"
+              style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+            >
+              A
+            </div>
+            <div>
+              <div class="flex items-baseline gap-2">
+                <span class="font-medium text-sm" style="color: hsl(var(--primary))">Ariadne</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-sm mt-0.5">I can help with that. What approach are you considering?</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-lg px-3 py-2 text-sm"
+            style="
+              background: hsl(var(--background));
+              border: 1px solid hsl(var(--border));
+              color: hsl(var(--muted-foreground));
+            "
+          >
+            Type a message...
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Channel (smaller, unfocused) -->
+      <div class="panel absolute flex flex-col" style="top: 100px; left: 580px; width: 400px; height: 360px">
+        <div
+          class="flex items-center justify-between px-4 py-3 cursor-move"
+          style="border-bottom: 1px solid hsl(var(--border))"
+        >
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-sm" style="color: hsl(var(--muted-foreground))"># engineering</span>
+            <span
+              class="px-1.5 py-0.5 text-xs rounded-full"
+              style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >3</span
+            >
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="p-1.5 rounded hover:bg-black/5">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+              </svg>
+            </button>
+            <button class="p-1.5 rounded hover:bg-black/5">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium">Alice</span>
+              <span class="ml-2" style="color: hsl(var(--muted-foreground))">Anyone looked at the new SDK?</span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium">Bob</span>
+              <span class="ml-2" style="color: hsl(var(--muted-foreground))">Yes! The DX is much better</span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium">Alice</span>
+              <span class="ml-2" style="color: hsl(var(--muted-foreground))">Should we migrate?</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-lg px-3 py-2 text-sm"
+            style="
+              background: hsl(var(--background));
+              border: 1px solid hsl(var(--border));
+              color: hsl(var(--muted-foreground));
+            "
+          >
+            Message #engineering...
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Thread (slide-in from right simulation) -->
+      <div class="panel absolute flex flex-col" style="top: 140px; left: 660px; width: 340px; height: 300px">
+        <div
+          class="flex items-center justify-between px-4 py-3 cursor-move"
+          style="border-bottom: 1px solid hsl(var(--border))"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              class="w-4 h-4"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+              />
+            </svg>
+            <span class="font-medium text-sm" style="color: hsl(var(--muted-foreground))">Thread</span>
+          </div>
+          <button class="p-1.5 rounded hover:bg-black/5">
+            <svg
+              class="w-3 h-3"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
+          <div class="p-2 rounded-lg" style="background: hsl(var(--muted))">
+            <p class="font-medium">Alice:</p>
+            <p style="color: hsl(var(--muted-foreground))">Should we migrate?</p>
+          </div>
+          <div class="flex gap-2">
+            <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+            <div>
+              <span class="font-medium">Bob</span>
+              <span class="ml-2" style="color: hsl(var(--muted-foreground))">I think so, let's discuss tomorrow</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--border))">
+          <div
+            class="rounded-lg px-3 py-2 text-sm"
+            style="
+              background: hsl(var(--background));
+              border: 1px solid hsl(var(--border));
+              color: hsl(var(--muted-foreground));
+            "
+          >
+            Reply...
+          </div>
+        </div>
+      </div>
+
+      <!-- Minimized panels bar -->
+      <div class="absolute bottom-4 left-4 flex gap-2">
+        <button
+          class="px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+          style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+        >
+          <span style="color: hsl(var(--muted-foreground))"># design</span>
+        </button>
+        <button
+          class="px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+          style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+        >
+          <span style="color: hsl(var(--muted-foreground))">DM: Alice</span>
+          <span class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></span>
+        </button>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Activity Concept 9: Ambient Edge + Compact</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Ambient edge - continuous strip */
+      .ambient-edge {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 6px;
+        display: flex;
+        flex-direction: column;
+      }
+      .edge-segment {
+        flex-shrink: 0;
+        transition: all 0.3s ease;
+      }
+      .edge-ai {
+        background: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 100%);
+      }
+      .edge-mention {
+        background: linear-gradient(180deg, hsl(350 70% 50%) 0%, hsl(350 70% 50% / 0.7) 100%);
+      }
+      .edge-people {
+        background: linear-gradient(180deg, hsl(200 60% 50%) 0%, hsl(200 60% 50% / 0.7) 100%);
+      }
+      .edge-active {
+        background: hsl(var(--primary) / 0.25);
+      }
+      .edge-quiet {
+        background: hsl(var(--border));
+      }
+      .edge-none {
+        background: transparent;
+      }
+
+      /* Subtle glow on edge for high priority */
+      .edge-glow-ai {
+        box-shadow: 2px 0 12px hsl(var(--primary) / 0.3);
+      }
+      .edge-glow-mention {
+        box-shadow: 2px 0 12px hsl(350 70% 50% / 0.3);
+      }
+
+      /* Stream item - compact */
+      .stream-item {
+        height: 34px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px 0 14px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      /* Unread indicator */
+      .stream-name-unread {
+        font-weight: 600;
+        color: hsl(var(--foreground));
+      }
+      .stream-name-read {
+        font-weight: 400;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Presence indicator - tiny dot */
+      .presence-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .dot-ai {
+        background: hsl(var(--primary));
+      }
+      .dot-people {
+        background: hsl(200 60% 50%);
+      }
+      .dot-mention {
+        background: hsl(350 70% 50%);
+      }
+
+      /* Section header */
+      .section-header {
+        height: 28px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 12px 14px 4px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Sidebar container */
+      .sidebar {
+        position: relative;
+        width: 260px;
+        height: 100vh;
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        overflow-y: auto;
+      }
+      .sidebar-content {
+        padding-left: 6px; /* Make room for ambient edge */
+      }
+
+      /* Hover tooltip for summaries */
+      .summary-tooltip {
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-left: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+        z-index: 100;
+        max-width: 260px;
+        white-space: normal;
+      }
+      .stream-item:hover .summary-tooltip {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex">
+    <!-- Description Panel -->
+    <div class="flex-1 p-8 overflow-auto">
+      <div class="max-w-2xl">
+        <div class="flex justify-between items-start mb-4">
+          <h1 class="text-xl font-bold">Activity 9: Ambient Edge + Compact</h1>
+          <button
+            onclick="document.body.classList.toggle('dark')"
+            class="text-xs px-2 py-1 rounded"
+            style="background: hsl(var(--secondary))"
+          >
+            Toggle Dark
+          </button>
+        </div>
+        <p class="text-sm mb-6" style="color: hsl(var(--muted-foreground))">
+          <strong>Concept:</strong> Brings back the ambient edge as a continuous 6px strip on the left. Each segment
+          corresponds to an item in the list, creating a "heat map" you can see in peripheral vision. Gold = AI active,
+          red = mention, blue = people, faded = some activity, invisible = quiet.
+        </p>
+
+        <div class="p-4 rounded-xl mb-4" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">The ambient edge gives you:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• <strong>Peripheral awareness</strong> - see activity without looking directly</li>
+            <li>• <strong>Spatial memory</strong> - "the gold glow is near the top" = scratchpad</li>
+            <li>• <strong>Calm presence</strong> - no numbers, no badges, just color</li>
+            <li>• <strong>Scannable</strong> - glance at the edge, not the whole list</li>
+          </ul>
+        </div>
+
+        <div class="p-4 rounded-xl" style="background: hsl(var(--primary) / 0.1)">
+          <p class="text-sm font-medium mb-2" style="color: hsl(var(--primary))">Edge segments:</p>
+          <div class="flex gap-4 mt-2">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-8 rounded" style="background: hsl(var(--primary))"></div>
+              <span class="text-xs">AI active</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-8 rounded" style="background: hsl(350 70% 50%)"></div>
+              <span class="text-xs">Mention</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-8 rounded" style="background: hsl(200 60% 50%)"></div>
+              <span class="text-xs">People</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-8 rounded" style="background: hsl(var(--primary) / 0.25)"></div>
+              <span class="text-xs">Some activity</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar with Ambient Edge -->
+    <div class="sidebar">
+      <!-- Ambient Edge Strip -->
+      <div class="ambient-edge">
+        <!-- Scratchpads section header -->
+        <div class="edge-segment edge-none" style="height: 28px"></div>
+        <!-- My Scratchpad - AI active -->
+        <div class="edge-segment edge-ai edge-glow-ai" style="height: 34px"></div>
+        <!-- Project Ideas - quiet -->
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+
+        <!-- Channels section header -->
+        <div class="edge-segment edge-none" style="height: 28px"></div>
+        <!-- engineering - mention -->
+        <div class="edge-segment edge-mention edge-glow-mention" style="height: 34px"></div>
+        <!-- design - people active -->
+        <div class="edge-segment edge-people" style="height: 34px"></div>
+        <!-- product - some activity -->
+        <div class="edge-segment edge-active" style="height: 34px"></div>
+        <!-- random through music - quiet -->
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-active" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-people" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-active" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+
+        <!-- DMs section header -->
+        <div class="edge-segment edge-none" style="height: 28px"></div>
+        <!-- Ariadne - AI -->
+        <div class="edge-segment edge-ai" style="height: 34px"></div>
+        <!-- Rest quiet -->
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-active" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+        <div class="edge-segment edge-none" style="height: 34px"></div>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- Scratchpads -->
+        <div class="section-header">Scratchpads</div>
+
+        <div class="stream-item" style="position: relative">
+          <span class="text-sm stream-name-unread">My Scratchpad</span>
+          <div class="presence-dot dot-ai"></div>
+          <div class="summary-tooltip">
+            <p class="text-sm font-medium" style="color: hsl(var(--primary))">Ariadne is here</p>
+            <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">
+              Found 3 related discussions about your auth question
+            </p>
+          </div>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read">Project Ideas</span>
+        </div>
+
+        <!-- Channels -->
+        <div class="section-header">Channels</div>
+
+        <div class="stream-item" style="position: relative">
+          <span class="text-sm stream-name-unread"># engineering</span>
+          <div class="presence-dot dot-mention"></div>
+          <div class="summary-tooltip">
+            <p class="text-sm font-medium" style="color: hsl(350 70% 50%)">Bob mentioned you</p>
+            <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">
+              Needs review of migration plan before standup
+            </p>
+          </div>
+        </div>
+
+        <div class="stream-item" style="position: relative">
+          <span class="text-sm stream-name-unread"># design</span>
+          <div class="presence-dot dot-people"></div>
+          <div class="summary-tooltip">
+            <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+              Carol and Dave discussing new color palette
+            </p>
+          </div>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># product</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># random</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># announcements</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># support</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># watercooler</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># standup</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># releases</span>
+        </div>
+
+        <div class="stream-item" style="position: relative">
+          <span class="text-sm stream-name-unread"># frontend</span>
+          <div class="presence-dot dot-people"></div>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># backend</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># devops</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># data</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># security</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># mobile</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># hiring</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># events</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># book-club</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read"># music</span>
+        </div>
+
+        <!-- DMs -->
+        <div class="section-header">Direct Messages</div>
+
+        <div class="stream-item" style="position: relative">
+          <span class="text-sm stream-name-unread">Ariadne</span>
+          <div class="presence-dot dot-ai"></div>
+          <div class="summary-tooltip">
+            <p class="text-xs" style="color: hsl(var(--primary))">Has insights about your last question</p>
+          </div>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read">Alice Chen</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-unread">Bob Smith</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read">Carol Davis</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read">Dave Wilson</span>
+        </div>
+
+        <div class="stream-item">
+          <span class="text-sm stream-name-read">Eve Martinez</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

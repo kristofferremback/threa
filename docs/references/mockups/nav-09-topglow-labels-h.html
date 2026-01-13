@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 09h: Floating Panels + Top Glow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* Top glow bar - minimal trigger points */
+      .glow-bar {
+        height: 6px;
+        display: flex;
+        position: relative;
+        z-index: 50;
+      }
+      .glow-trigger {
+        flex: 1;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .glow-trigger:hover {
+        filter: brightness(1.3);
+      }
+      .glow-trigger.active {
+        filter: brightness(1.2);
+      }
+      .glow-trigger::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        height: 20px;
+        pointer-events: none;
+      }
+
+      .glow-ai {
+        background: hsl(var(--primary));
+      }
+      .glow-ai::after {
+        background: linear-gradient(180deg, hsl(var(--primary) / 0.15) 0%, transparent 100%);
+      }
+      .glow-mention {
+        background: hsl(350 70% 50%);
+      }
+      .glow-mention::after {
+        background: linear-gradient(180deg, hsl(350 70% 50% / 0.12) 0%, transparent 100%);
+      }
+      .glow-people {
+        background: hsl(200 60% 50%);
+      }
+      .glow-people::after {
+        background: linear-gradient(180deg, hsl(200 60% 50% / 0.1) 0%, transparent 100%);
+      }
+      .glow-quiet {
+        background: hsl(var(--muted-foreground) / 0.2);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* Floating panel that appears below trigger */
+      .floating-panel {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-top: none;
+        border-radius: 0 0 12px 12px;
+        box-shadow: 0 8px 32px hsl(var(--foreground) / 0.08);
+        padding: 16px;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-8px);
+        transition: all 0.2s ease;
+        z-index: 40;
+      }
+      .glow-trigger:hover .floating-panel,
+      .glow-trigger.active .floating-panel {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid hsl(var(--border));
+        margin-bottom: 12px;
+      }
+      .panel-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+      }
+      .panel-title {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .panel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 8px;
+      }
+
+      .panel-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        background: hsl(var(--muted) / 0.3);
+      }
+      .panel-item:hover {
+        background: hsl(var(--muted));
+      }
+
+      .item-glow {
+        width: 4px;
+        height: 24px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .item-content {
+        flex: 1;
+        min-width: 0;
+      }
+      .item-name {
+        font-size: 13px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .item-meta {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+      .item-type {
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--secondary));
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      /* Main content area */
+      .main-content {
+        flex: 1;
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Quick actions in top right */
+      .quick-actions {
+        position: absolute;
+        top: 12px;
+        right: 16px;
+        display: flex;
+        gap: 8px;
+        z-index: 60;
+      }
+      .action-btn {
+        padding: 6px 12px;
+        font-size: 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        transition: all 0.15s ease;
+      }
+      .action-btn:hover {
+        background: hsl(var(--muted));
+      }
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col relative">
+    <div class="quick-actions">
+      <div class="action-btn" style="color: hsl(var(--muted-foreground))">⌘K</div>
+      <button onclick="document.body.classList.toggle('dark')" class="action-btn">Theme</button>
+    </div>
+
+    <div class="glow-bar">
+      <!-- Auth Project trigger -->
+      <div class="glow-trigger glow-ai glow-pulse" onclick="toggleActive(this)">
+        <div class="floating-panel" onclick="event.stopPropagation()">
+          <div class="panel-header">
+            <div class="panel-color" style="background: hsl(280 60% 55%)"></div>
+            <span class="panel-title">Auth Project</span>
+          </div>
+          <div class="panel-grid">
+            <div class="panel-item">
+              <div class="item-glow" style="background: hsl(var(--primary))"></div>
+              <div class="item-content">
+                <div class="item-name">Auth Scratchpad</div>
+                <div class="item-meta">AI active now</div>
+              </div>
+              <span class="item-type">pad</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name"># auth-dev</div>
+                <div class="item-meta">12 members</div>
+              </div>
+              <span class="item-type">channel</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name">Security review</div>
+                <div class="item-meta">Thread from #auth-dev</div>
+              </div>
+              <span class="item-type">thread</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name" style="color: hsl(var(--muted-foreground))">Security team</div>
+                <div class="item-meta">3 people</div>
+              </div>
+              <span class="item-type">group</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q1 Launch trigger -->
+      <div class="glow-trigger glow-mention" onclick="toggleActive(this)">
+        <div class="floating-panel" onclick="event.stopPropagation()">
+          <div class="panel-header">
+            <div class="panel-color" style="background: hsl(150 60% 45%)"></div>
+            <span class="panel-title">Q1 Launch</span>
+          </div>
+          <div class="panel-grid">
+            <div class="panel-item">
+              <div class="item-glow" style="background: hsl(350 70% 50%)"></div>
+              <div class="item-content">
+                <div class="item-name font-semibold"># engineering</div>
+                <div class="item-meta">@you mentioned</div>
+              </div>
+              <span class="item-type">channel</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+              <div class="item-content">
+                <div class="item-name">Launch planning</div>
+                <div class="item-meta">Sarah typing...</div>
+              </div>
+              <span class="item-type">thread</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name" style="color: hsl(var(--muted-foreground))"># marketing</div>
+                <div class="item-meta">Quiet for 2h</div>
+              </div>
+              <span class="item-type">channel</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Design System trigger -->
+      <div class="glow-trigger glow-people" onclick="toggleActive(this)">
+        <div class="floating-panel" onclick="event.stopPropagation()">
+          <div class="panel-header">
+            <div class="panel-color" style="background: hsl(30 70% 50%)"></div>
+            <span class="panel-title">Design System</span>
+          </div>
+          <div class="panel-grid">
+            <div class="panel-item">
+              <div class="item-glow" style="background: hsl(200 60% 50%)"></div>
+              <div class="item-content">
+                <div class="item-name"># design</div>
+                <div class="item-meta">Marcus online</div>
+              </div>
+              <span class="item-type">channel</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name">Component ideas</div>
+                <div class="item-meta">Your scratchpad</div>
+              </div>
+              <span class="item-type">pad</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hiring trigger -->
+      <div class="glow-trigger glow-quiet" onclick="toggleActive(this)">
+        <div class="floating-panel" onclick="event.stopPropagation()">
+          <div class="panel-header">
+            <div class="panel-color" style="background: hsl(200 60% 50%)"></div>
+            <span class="panel-title" style="color: hsl(var(--muted-foreground))">Hiring</span>
+          </div>
+          <div class="panel-grid">
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name" style="color: hsl(var(--muted-foreground))"># hiring</div>
+                <div class="item-meta">No activity today</div>
+              </div>
+              <span class="item-type">channel</span>
+            </div>
+            <div class="panel-item">
+              <div class="item-glow" style="background: transparent"></div>
+              <div class="item-content">
+                <div class="item-name" style="color: hsl(var(--muted-foreground))">Candidate notes</div>
+                <div class="item-meta">Last week</div>
+              </div>
+              <span class="item-type">pad</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="text-center max-w-lg">
+        <h2 class="text-lg font-bold mb-2">09h: Floating Panels + Top Glow</h2>
+        <p class="text-sm mb-4" style="color: hsl(var(--muted-foreground))">
+          Ultra-minimal 6px glow bar at top. Each segment is a label. Hover/click reveals a floating panel with that
+          label's streams. Full content area by default. Panel shows grid of items with activity glow.
+        </p>
+        <div class="p-4 rounded-xl text-left" style="background: hsl(var(--muted))">
+          <p class="text-sm font-medium mb-2">Concept:</p>
+          <ul class="text-sm space-y-1" style="color: hsl(var(--muted-foreground))">
+            <li>• Hover top edge to reveal label panel</li>
+            <li>• Grid layout shows more items at once</li>
+            <li>• Activity glow on per-item basis</li>
+            <li>• Maximum content space (no sidebar)</li>
+            <li>• Panel auto-hides on mouse leave</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleActive(el) {
+        document.querySelectorAll(".glow-trigger").forEach((t) => {
+          if (t !== el) t.classList.remove("active")
+        })
+        el.classList.toggle("active")
+      }
+
+      // Close panels when clicking outside
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".glow-trigger")) {
+          document.querySelectorAll(".glow-trigger").forEach((t) => t.classList.remove("active"))
+        }
+      })
+    </script>
+  </body>
+</html>

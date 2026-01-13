@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Command Hub Evolved</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --border: 35 15% 88%;
+        --destructive: 8 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* View transitions */
+      .view {
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .view.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.98);
+      }
+
+      /* Focus view slide in */
+      .focus-view {
+        transform: translateY(100%);
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .focus-view.open {
+        transform: translateY(0);
+      }
+
+      /* Overview drawer */
+      .overview-drawer {
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .overview-drawer.open {
+        transform: translateX(0);
+      }
+
+      /* Mini stream cards */
+      .mini-stream {
+        transition: all 0.2s ease;
+      }
+      .mini-stream:hover {
+        transform: scale(1.02);
+      }
+      .mini-stream.active {
+        box-shadow: 0 0 0 2px hsl(var(--primary));
+      }
+
+      /* AI message styling */
+      .ai-message {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.06) 0%, hsl(var(--primary) / 0.02) 100%);
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      /* Input glow */
+      .input-glow:focus-within {
+        box-shadow:
+          0 0 0 3px hsl(var(--primary) / 0.15),
+          0 4px 20px hsl(var(--primary) / 0.1);
+      }
+
+      /* Command bar */
+      .command-bar {
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      }
+      .dark .command-bar {
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body class="h-screen overflow-hidden">
+    <!-- Instructions -->
+    <div
+      class="fixed top-4 right-4 z-[100] max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Command Hub - Evolved</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs mb-2" style="color: hsl(var(--muted-foreground))">
+        Click "My Scratchpad" card to enter Focus view. Use drawer toggle to see overview. Multiple streams shown as
+        mini-cards at top.
+      </p>
+      <div class="flex gap-2">
+        <button onclick="showHub()" class="text-xs px-2 py-1 rounded" style="background: hsl(var(--secondary))">
+          Hub View
+        </button>
+        <button onclick="showFocus()" class="text-xs px-2 py-1 rounded" style="background: hsl(var(--secondary))">
+          Focus View
+        </button>
+        <button onclick="toggleDrawer()" class="text-xs px-2 py-1 rounded" style="background: hsl(var(--secondary))">
+          Toggle Drawer
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== HUB VIEW ==================== -->
+    <div id="hubView" class="view absolute inset-0 flex flex-col">
+      <!-- Hub Header -->
+      <div
+        class="shrink-0 pt-8 pb-6 px-8"
+        style="background: linear-gradient(180deg, hsl(var(--muted)) 0%, hsl(var(--background)) 100%)"
+      >
+        <div class="max-w-2xl mx-auto">
+          <!-- Greeting -->
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                T
+              </div>
+              <div>
+                <h1 class="font-semibold text-lg">Good afternoon, Kris</h1>
+                <p class="text-sm" style="color: hsl(var(--muted-foreground))">
+                  <span class="inline-flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full" style="background: hsl(var(--destructive))"></span>
+                    2 mentions
+                  </span>
+                  <span class="mx-2">·</span>
+                  <span class="inline-flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></span>
+                    5 unread
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button onclick="toggleDrawer()" class="p-2 rounded-lg relative" style="background: hsl(var(--secondary))">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span
+                class="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-bold"
+                style="background: hsl(var(--destructive)); color: white"
+                >7</span
+              >
+            </button>
+          </div>
+
+          <!-- Command Bar -->
+          <div
+            class="command-bar rounded-2xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <div class="flex items-center gap-3 px-5 py-4">
+              <svg
+                class="w-5 h-5 shrink-0"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search, ask Ariadne, or type / for commands..."
+                class="flex-1 bg-transparent outline-none text-base"
+              />
+              <kbd class="text-xs px-2 py-1 rounded-lg" style="background: hsl(var(--muted))">⌘K</kbd>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream Cards -->
+      <div class="flex-1 overflow-y-auto px-8 py-4">
+        <div class="max-w-4xl mx-auto">
+          <h2 class="font-semibold mb-4">Recent Streams</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Scratchpad Card (clickable) -->
+            <div
+              onclick="showFocus()"
+              class="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
+              style="
+                background: hsl(var(--card));
+                border: 2px solid hsl(var(--primary));
+                box-shadow: 0 0 0 4px hsl(var(--primary) / 0.1);
+              "
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+                  <span class="font-semibold text-sm">My Scratchpad</span>
+                </div>
+                <span
+                  class="text-xs px-2 py-0.5 rounded-full"
+                  style="background: hsl(var(--primary) / 0.1); color: hsl(var(--primary))"
+                  >AI Active</span
+                >
+              </div>
+              <div class="space-y-2 text-sm">
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <p class="truncate" style="color: hsl(var(--muted-foreground))">How should I structure the auth?</p>
+                </div>
+                <div class="flex gap-2 p-2 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+                  <div
+                    class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs"
+                    style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >
+                    A
+                  </div>
+                  <p class="truncate" style="color: hsl(var(--primary))">Based on your requirements...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Engineering Card -->
+            <div
+              class="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <span class="font-semibold text-sm"># engineering</span>
+                <span
+                  class="px-2 py-0.5 text-xs rounded-full font-bold"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >5</span
+                >
+              </div>
+              <div class="space-y-2 text-sm" style="color: hsl(var(--muted-foreground))">
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <p class="truncate">Bob: Let's schedule the migration</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Design Card -->
+            <div
+              class="rounded-xl p-4 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg opacity-60"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <span class="font-semibold text-sm" style="color: hsl(var(--muted-foreground))"># design</span>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2h ago</span>
+              </div>
+              <div class="space-y-2 text-sm" style="color: hsl(var(--muted-foreground))">
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <p class="truncate">Carol: New mockups ready</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- New Card -->
+            <div
+              class="rounded-xl p-4 cursor-pointer flex flex-col items-center justify-center min-h-[140px]"
+              style="background: hsl(var(--muted) / 0.3); border: 2px dashed hsl(var(--border))"
+            >
+              <div
+                class="w-10 h-10 rounded-full flex items-center justify-center mb-2"
+                style="background: hsl(var(--muted))"
+              >
+                <svg
+                  class="w-5 h-5"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium">New Scratchpad</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== FOCUS VIEW ==================== -->
+    <div id="focusView" class="focus-view absolute inset-0 flex flex-col" style="background: hsl(var(--background))">
+      <!-- Top Bar with Mini Streams -->
+      <div
+        class="shrink-0 flex items-center h-14 px-4 gap-3"
+        style="background: hsl(var(--card)); border-bottom: 1px solid hsl(var(--border))"
+      >
+        <!-- Back to Hub -->
+        <button onclick="showHub()" class="p-2 rounded-lg hover:bg-black/5" title="Back to Hub (Esc)">
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+            />
+          </svg>
+        </button>
+
+        <!-- Divider -->
+        <div class="w-px h-8" style="background: hsl(var(--border))"></div>
+
+        <!-- Mini Stream Cards (open streams) -->
+        <div class="flex items-center gap-2 flex-1 overflow-x-auto py-1">
+          <!-- Active stream -->
+          <div
+            class="mini-stream active flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer shrink-0"
+            style="background: hsl(var(--primary) / 0.1)"
+          >
+            <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+            <span class="text-sm font-medium">My Scratchpad</span>
+            <button class="p-0.5 rounded hover:bg-black/10">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Other open stream -->
+          <div
+            class="mini-stream flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer shrink-0"
+            style="background: hsl(var(--muted))"
+          >
+            <span class="text-sm"># engineering</span>
+            <span
+              class="w-4 h-4 rounded-full text-xs flex items-center justify-center font-bold"
+              style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >5</span
+            >
+            <button class="p-0.5 rounded hover:bg-black/10">
+              <svg
+                class="w-3 h-3"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right actions -->
+        <div class="flex items-center gap-2">
+          <button class="p-2 rounded-lg hover:bg-black/5">
+            <svg
+              class="w-5 h-5"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </button>
+          <button onclick="toggleDrawer()" class="p-2 rounded-lg hover:bg-black/5 relative">
+            <svg
+              class="w-5 h-5"
+              style="color: hsl(var(--muted-foreground))"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+              />
+            </svg>
+            <span
+              class="absolute top-1 right-1 w-2 h-2 rounded-full"
+              style="background: hsl(var(--destructive))"
+            ></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages Area -->
+      <div class="flex-1 overflow-y-auto">
+        <div class="max-w-3xl mx-auto px-6 py-6 space-y-6">
+          <!-- User message -->
+          <div class="flex gap-4">
+            <div
+              class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div class="flex-1 pt-1">
+              <div class="flex items-baseline gap-3 mb-1">
+                <span class="font-semibold">Kris</span>
+                <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+              </div>
+              <p class="text-[15px] leading-relaxed">How should I structure the authentication flow for the new API?</p>
+            </div>
+          </div>
+
+          <!-- AI message -->
+          <div class="ai-message -mx-6 px-6 py-5 rounded-r-xl">
+            <div class="flex gap-4 max-w-3xl mx-auto">
+              <div
+                class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                A
+              </div>
+              <div class="flex-1 pt-1">
+                <div class="flex items-baseline gap-3 mb-1">
+                  <span class="font-semibold" style="color: hsl(var(--primary))">Ariadne</span>
+                  <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:30 PM</span>
+                </div>
+                <div class="text-[15px] leading-relaxed space-y-3">
+                  <p>Based on your previous discussions and security requirements, here's what I recommend:</p>
+                  <div
+                    class="p-4 rounded-lg"
+                    style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+                  >
+                    <p class="font-medium mb-2">JWT + Refresh Token Pattern:</p>
+                    <ul class="space-y-1.5 text-sm" style="color: hsl(var(--muted-foreground))">
+                      <li>1. Store refresh tokens in HTTP-only cookies</li>
+                      <li>2. Short-lived access tokens (15 min)</li>
+                      <li>3. Token rotation on each refresh</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- User follow-up -->
+          <div class="flex gap-4">
+            <div
+              class="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-sm font-semibold"
+              style="background: hsl(var(--muted))"
+            >
+              K
+            </div>
+            <div class="flex-1 pt-1">
+              <div class="flex items-baseline gap-3 mb-1">
+                <span class="font-semibold">Kris</span>
+                <span class="text-sm" style="color: hsl(var(--muted-foreground))">2:32 PM</span>
+              </div>
+              <p class="text-[15px] leading-relaxed">Perfect. Can you show me implementation details?</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div
+        class="shrink-0 px-6 py-5"
+        style="background: linear-gradient(to top, hsl(var(--background)) 0%, transparent 100%)"
+      >
+        <div class="max-w-3xl mx-auto">
+          <div
+            class="input-glow rounded-2xl overflow-hidden transition-shadow"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <!-- Always-visible toolbar -->
+            <div class="flex items-center gap-0.5 px-4 py-2" style="border-bottom: 1px solid hsl(var(--border))">
+              <button class="p-2 rounded-lg hover:bg-black/5" title="Bold">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                  <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5" title="Italic">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5" title="Code">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                </svg>
+              </button>
+              <div class="w-px h-5 mx-1" style="background: hsl(var(--border))"></div>
+              <button class="p-2 rounded-lg hover:bg-black/5" title="Link">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+              <button class="p-2 rounded-lg hover:bg-black/5" title="Attach">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path
+                    d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div class="px-4 py-4 min-h-[80px] text-[15px]" style="color: hsl(var(--muted-foreground))">
+              Type a message...
+            </div>
+            <div class="flex items-center justify-between px-4 py-3" style="background: hsl(var(--muted) / 0.3)">
+              <div class="flex items-center gap-2">
+                <button class="p-2 rounded-lg hover:bg-black/5">
+                  <svg
+                    class="w-5 h-5"
+                    style="color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                  </svg>
+                </button>
+                <button class="p-2 rounded-lg hover:bg-black/5">
+                  <span class="font-medium" style="color: hsl(var(--muted-foreground))">@</span>
+                </button>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">⌘ Enter</span>
+                <button
+                  class="px-5 py-2 rounded-xl text-sm font-semibold"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== OVERVIEW DRAWER ==================== -->
+    <div
+      id="overviewDrawer"
+      class="overview-drawer fixed top-0 left-0 bottom-0 w-80 flex flex-col z-50"
+      style="
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <!-- Header -->
+      <div
+        class="shrink-0 px-4 py-4 flex items-center justify-between"
+        style="border-bottom: 1px solid hsl(var(--border))"
+      >
+        <div class="flex items-center gap-2">
+          <div
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+            style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+          >
+            T
+          </div>
+          <span class="font-semibold">Activity</span>
+        </div>
+        <button onclick="toggleDrawer()" class="p-1.5 rounded-lg hover:bg-black/5">
+          <svg
+            class="w-5 h-5"
+            style="color: hsl(var(--muted-foreground))"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Activity List -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- Mentions -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase" style="color: hsl(var(--destructive))">Mentions</span>
+            <span
+              class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+              style="background: hsl(var(--destructive)); color: white"
+              >2</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div
+              class="p-3 rounded-xl cursor-pointer hover:bg-black/5"
+              style="background: hsl(var(--destructive) / 0.05)"
+            >
+              <div class="flex items-start gap-2">
+                <div class="w-7 h-7 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                <div class="min-w-0">
+                  <p class="text-sm font-medium">
+                    Alice <span style="color: hsl(var(--muted-foreground))">in #eng</span>
+                  </p>
+                  <p class="text-sm truncate" style="color: hsl(var(--muted-foreground))">@kris can you review this?</p>
+                  <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">5 min ago</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-4" style="border-top: 1px solid hsl(var(--border))"></div>
+
+        <!-- Unread -->
+        <div class="px-4 py-3">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-medium uppercase" style="color: hsl(var(--muted-foreground))">Unread</span>
+            <span
+              class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+              style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >5</span
+            >
+          </div>
+          <div class="space-y-2">
+            <div class="p-3 rounded-xl cursor-pointer hover:bg-black/5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-sm"># engineering</span>
+                </div>
+                <span class="text-xs px-1.5 py-0.5 rounded-full" style="background: hsl(var(--muted))">5</span>
+              </div>
+              <p class="text-sm truncate mt-1" style="color: hsl(var(--muted-foreground))">
+                Bob: Let's schedule migration
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="mx-4" style="border-top: 1px solid hsl(var(--border))"></div>
+
+        <!-- All Streams -->
+        <div class="px-4 py-3">
+          <p class="text-xs font-medium uppercase mb-2" style="color: hsl(var(--muted-foreground))">All Streams</p>
+          <div class="space-y-1">
+            <div class="p-2 rounded-lg cursor-pointer" style="background: hsl(var(--primary) / 0.1)">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+                <span class="text-sm font-medium">My Scratchpad</span>
+              </div>
+            </div>
+            <div class="p-2 rounded-lg cursor-pointer hover:bg-black/5">
+              <div class="flex items-center justify-between">
+                <span class="text-sm"># engineering</span>
+                <span
+                  class="text-xs px-1.5 py-0.5 rounded-full font-bold"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >5</span
+                >
+              </div>
+            </div>
+            <div class="p-2 rounded-lg cursor-pointer hover:bg-black/5 opacity-60">
+              <span class="text-sm"># design</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="shrink-0 p-4" style="border-top: 1px solid hsl(var(--border))">
+        <button
+          class="w-full px-4 py-2.5 rounded-xl text-sm font-medium"
+          style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+        >
+          + New Scratchpad
+        </button>
+      </div>
+    </div>
+
+    <!-- Backdrop for drawer -->
+    <div
+      id="drawerBackdrop"
+      onclick="toggleDrawer()"
+      class="fixed inset-0 z-40 hidden"
+      style="background: rgba(0, 0, 0, 0.3)"
+    ></div>
+
+    <script>
+      function showHub() {
+        document.getElementById("hubView").classList.remove("hidden")
+        document.getElementById("focusView").classList.remove("open")
+      }
+
+      function showFocus() {
+        document.getElementById("hubView").classList.add("hidden")
+        document.getElementById("focusView").classList.add("open")
+      }
+
+      function toggleDrawer() {
+        const drawer = document.getElementById("overviewDrawer")
+        const backdrop = document.getElementById("drawerBackdrop")
+        drawer.classList.toggle("open")
+        backdrop.classList.toggle("hidden")
+      }
+
+      // Keyboard shortcuts
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") showHub()
+      })
+    </script>
+  </body>
+</html>

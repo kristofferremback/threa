@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa - Concept 5: Command Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --secondary-foreground: 30 15% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 40 50% 94%;
+        --accent-foreground: 35 60% 35%;
+        --border: 35 15% 88%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 12% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 35 25% 18%;
+        --accent-foreground: 40 45% 70%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      .command-bar {
+        box-shadow:
+          0 4px 24px rgba(0, 0, 0, 0.06),
+          0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .dark .command-bar {
+        box-shadow:
+          0 4px 24px rgba(0, 0, 0, 0.2),
+          0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+      .stream-card {
+        transition: all 0.2s ease;
+      }
+      .stream-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      }
+      .dark .stream-card:hover {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      }
+      .active-stream {
+        border: 2px solid hsl(var(--primary));
+        box-shadow: 0 0 0 4px hsl(var(--primary) / 0.1);
+      }
+    </style>
+  </head>
+  <body class="h-screen overflow-hidden">
+    <!-- Concept Description -->
+    <div
+      class="fixed bottom-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg"
+      style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+    >
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-bold text-sm">Concept 5: Command Hub</h3>
+        <button
+          onclick="document.body.classList.toggle('dark')"
+          class="text-xs px-2 py-1 rounded"
+          style="background: hsl(var(--secondary))"
+        >
+          Toggle Dark
+        </button>
+      </div>
+      <p class="text-xs" style="color: hsl(var(--muted-foreground))">
+        Raycast/Spotlight-inspired. Command bar is always front-and-center. Streams as live cards below. AI-native:
+        search and commands are the primary interaction.
+      </p>
+    </div>
+
+    <div class="h-full flex flex-col">
+      <!-- Command Bar Hero Section -->
+      <div
+        class="shrink-0 pt-8 pb-6 px-8"
+        style="background: linear-gradient(180deg, hsl(var(--muted)) 0%, hsl(var(--background)) 100%)"
+      >
+        <div class="max-w-2xl mx-auto">
+          <!-- Logo & Greeting -->
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold"
+                style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+              >
+                T
+              </div>
+              <div>
+                <h1 class="font-semibold text-lg">Good afternoon, Kris</h1>
+                <p class="text-sm" style="color: hsl(var(--muted-foreground))">3 unread across 2 streams</p>
+              </div>
+            </div>
+            <button class="p-2 rounded-lg" style="background: hsl(var(--secondary))">
+              <svg
+                class="w-5 h-5"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Command Bar -->
+          <div
+            class="command-bar rounded-2xl overflow-hidden"
+            style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+          >
+            <div class="flex items-center gap-3 px-5 py-4">
+              <svg
+                class="w-5 h-5 shrink-0"
+                style="color: hsl(var(--muted-foreground))"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search, ask Ariadne, or type / for commands..."
+                class="flex-1 bg-transparent outline-none text-base"
+                style="color: hsl(var(--foreground))"
+              />
+              <div class="flex items-center gap-2">
+                <kbd
+                  class="text-xs px-2 py-1 rounded-lg"
+                  style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground))"
+                  >⌘K</kbd
+                >
+              </div>
+            </div>
+            <!-- Quick Actions -->
+            <div
+              class="flex items-center gap-2 px-5 py-3"
+              style="background: hsl(var(--muted) / 0.5); border-top: 1px solid hsl(var(--border))"
+            >
+              <span class="text-xs" style="color: hsl(var(--muted-foreground))">Quick:</span>
+              <button
+                class="px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-black/5"
+                style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+              >
+                + New Scratchpad
+              </button>
+              <button
+                class="px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-black/5"
+                style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+              >
+                Ask Ariadne
+              </button>
+              <button
+                class="px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-black/5"
+                style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+              >
+                Search Memory
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream Cards Grid -->
+      <div class="flex-1 overflow-y-auto px-8 py-4">
+        <div class="max-w-5xl mx-auto">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold">Open Streams</h2>
+            <div class="flex items-center gap-2">
+              <button class="text-sm px-3 py-1.5 rounded-lg" style="background: hsl(var(--secondary))">Recent</button>
+              <button
+                class="text-sm px-3 py-1.5 rounded-lg hover:bg-black/5"
+                style="color: hsl(var(--muted-foreground))"
+              >
+                All
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Active Stream Card -->
+            <div
+              class="stream-card active-stream rounded-xl p-4 flex flex-col h-[320px]"
+              style="background: hsl(var(--card))"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full" style="background: hsl(var(--primary))"></div>
+                  <span class="font-semibold text-sm">My Scratchpad</span>
+                </div>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">Active</span>
+              </div>
+
+              <div class="flex-1 overflow-y-auto space-y-3 mb-3">
+                <div class="flex gap-2">
+                  <div
+                    class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs"
+                    style="background: hsl(var(--muted))"
+                  >
+                    K
+                  </div>
+                  <p class="text-sm">Working on the auth flow</p>
+                </div>
+                <div class="flex gap-2 p-2 rounded-lg" style="background: hsl(var(--primary) / 0.05)">
+                  <div
+                    class="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs"
+                    style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+                  >
+                    A
+                  </div>
+                  <p class="text-sm">I can help with that. What approach...</p>
+                </div>
+              </div>
+
+              <!-- Mini Input -->
+              <div
+                class="rounded-xl overflow-hidden"
+                style="background: hsl(var(--background)); border: 1px solid hsl(var(--border))"
+              >
+                <div class="flex items-center gap-2 px-3 py-2">
+                  <button class="p-1 rounded hover:bg-black/5">
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                      <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    </svg>
+                  </button>
+                  <button class="p-1 rounded hover:bg-black/5">
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                    </svg>
+                  </button>
+                  <button class="p-1 rounded hover:bg-black/5">
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                    </svg>
+                  </button>
+                  <div class="w-px h-4" style="background: hsl(var(--border))"></div>
+                  <button class="p-1 rounded hover:bg-black/5">
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <div
+                  class="px-3 py-2 text-sm"
+                  style="border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground))"
+                >
+                  Type a message...
+                </div>
+                <div class="flex items-center justify-between px-3 py-2" style="background: hsl(var(--muted) / 0.3)">
+                  <button class="p-1 rounded hover:bg-black/5">
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--muted-foreground))"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    </svg>
+                  </button>
+                  <button
+                    class="px-3 py-1 rounded-lg text-xs font-medium"
+                    style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stream Card with Unread -->
+            <div
+              class="stream-card rounded-xl p-4 flex flex-col h-[320px] cursor-pointer"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold text-sm"># engineering</span>
+                </div>
+                <span
+                  class="px-2 py-0.5 text-xs rounded-full font-medium"
+                  style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground))"
+                  >3</span
+                >
+              </div>
+
+              <div class="flex-1 overflow-y-auto space-y-3">
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <div>
+                    <span class="text-sm font-medium">Alice</span>
+                    <p class="text-sm" style="color: hsl(var(--muted-foreground))">The new SDK looks promising</p>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <div>
+                    <span class="text-sm font-medium">Bob</span>
+                    <p class="text-sm" style="color: hsl(var(--muted-foreground))">Agreed, let's migrate</p>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <div>
+                    <span class="text-sm font-medium">Alice</span>
+                    <p class="text-sm" style="color: hsl(var(--muted-foreground))">I'll create a migration plan</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 pt-3" style="border-top: 1px solid hsl(var(--border))">
+                <p class="text-xs text-center" style="color: hsl(var(--muted-foreground))">Click to open</p>
+              </div>
+            </div>
+
+            <!-- Stream Card - No Unread -->
+            <div
+              class="stream-card rounded-xl p-4 flex flex-col h-[320px] cursor-pointer"
+              style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold text-sm" style="color: hsl(var(--muted-foreground))"># design</span>
+                </div>
+                <span class="text-xs" style="color: hsl(var(--muted-foreground))">2h ago</span>
+              </div>
+
+              <div class="flex-1 overflow-y-auto space-y-3">
+                <div class="flex gap-2">
+                  <div class="w-6 h-6 rounded-full shrink-0" style="background: hsl(var(--muted))"></div>
+                  <div>
+                    <span class="text-sm font-medium" style="color: hsl(var(--muted-foreground))">Carol</span>
+                    <p class="text-sm" style="color: hsl(var(--muted-foreground))">New mockups are ready for review</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 pt-3" style="border-top: 1px solid hsl(var(--border))">
+                <p class="text-xs text-center" style="color: hsl(var(--muted-foreground))">Click to open</p>
+              </div>
+            </div>
+
+            <!-- New Stream Card -->
+            <div
+              class="stream-card rounded-xl p-4 flex flex-col h-[320px] cursor-pointer items-center justify-center"
+              style="background: hsl(var(--muted) / 0.3); border: 2px dashed hsl(var(--border))"
+            >
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+                style="background: hsl(var(--muted))"
+              >
+                <svg
+                  class="w-6 h-6"
+                  style="color: hsl(var(--muted-foreground))"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <p class="font-medium text-sm">New Scratchpad</p>
+              <p class="text-xs mt-1" style="color: hsl(var(--muted-foreground))">Start a conversation</p>
+            </div>
+          </div>
+
+          <!-- Pinned Section -->
+          <div class="mt-8">
+            <h2 class="font-semibold mb-4">Recent Memory</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="p-4 rounded-xl" style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))">
+                <div class="flex items-start gap-3">
+                  <div
+                    class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style="background: hsl(var(--primary) / 0.1)"
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--primary))"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="text-sm font-medium">JWT Refresh Token Pattern</p>
+                    <p class="text-xs mt-0.5" style="color: hsl(var(--muted-foreground))">
+                      From My Scratchpad - 2 days ago
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="p-4 rounded-xl" style="background: hsl(var(--card)); border: 1px solid hsl(var(--border))">
+                <div class="flex items-start gap-3">
+                  <div
+                    class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style="background: hsl(var(--primary) / 0.1)"
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      style="color: hsl(var(--primary))"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="text-sm font-medium">Database Normalization Decision</p>
+                    <p class="text-xs mt-0.5" style="color: hsl(var(--muted-foreground))">
+                      From #engineering - 1 week ago
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
