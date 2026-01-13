@@ -639,6 +639,16 @@ export interface DispatchCommandResponse {
   event: StreamEvent
 }
 
+export interface CommandDispatchedResponse {
+  command: {
+    id: string
+    name: string
+    args: string
+    status: string
+  }
+  event: StreamEvent
+}
+
 export async function dispatchCommand(
   client: TestClient,
   workspaceId: string,

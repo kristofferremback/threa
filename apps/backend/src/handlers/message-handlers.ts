@@ -1,9 +1,16 @@
 import { z } from "zod"
 import type { Request, Response } from "express"
+import type { Pool } from "pg"
+import { withTransaction } from "../db"
 import type { EventService } from "../services/event-service"
 import type { StreamService } from "../services/stream-service"
 import type { Message } from "../repositories"
+import { StreamEventRepository } from "../repositories/stream-event-repository"
+import { OutboxRepository } from "../repositories/outbox-repository"
+import type { CommandRegistry } from "../commands"
+import type { CommandDispatchedPayload } from "./command-handlers"
 import { serializeBigInt } from "../lib/serialization"
+import { eventId, commandId as generateCommandId } from "../lib/id"
 import { toShortcode, normalizeMessage, toEmoji } from "../lib/emoji"
 import { parseMarkdown, serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
@@ -79,12 +86,39 @@ function serializeMessage(msg: Message) {
   return serializeBigInt(msg)
 }
 
-interface Dependencies {
-  eventService: EventService
-  streamService: StreamService
+interface DetectedCommand {
+  name: string
+  args: string
 }
 
-export function createMessageHandlers({ eventService, streamService }: Dependencies) {
+/**
+ * Detect if the first inline node is a command.
+ * Currently only checks the very first element - function name allows future expansion.
+ */
+function detectCommand(contentJson: JSONContent): DetectedCommand | null {
+  const firstBlock = contentJson.content?.[0]
+  if (firstBlock?.type !== "paragraph") return null
+
+  const firstInline = firstBlock.content?.[0]
+  if (firstInline?.type !== "command") return null
+
+  const attrs = firstInline.attrs as { name: string; args?: string } | undefined
+  if (!attrs?.name) return null
+
+  return {
+    name: attrs.name,
+    args: attrs.args ?? "",
+  }
+}
+
+interface Dependencies {
+  pool: Pool
+  eventService: EventService
+  streamService: StreamService
+  commandRegistry: CommandRegistry
+}
+
+export function createMessageHandlers({ pool, eventService, streamService, commandRegistry }: Dependencies) {
   return {
     async create(req: Request, res: Response) {
       const userId = req.userId!
@@ -118,9 +152,55 @@ export function createMessageHandlers({ eventService, streamService }: Dependenc
         return res.status(403).json({ error: "Not a member of this stream" })
       }
 
-      // Normalize to both JSON and markdown formats
+      // Check for slash command in first node BEFORE normalization (normalization loses command nodes)
+      const originalContentJson = "contentJson" in result.data ? result.data.contentJson : undefined
+      const detectedCommand = originalContentJson ? detectCommand(originalContentJson) : null
+
+      if (detectedCommand && commandRegistry.has(detectedCommand.name)) {
+        // Route to command dispatch instead of message creation
+        const cmdId = generateCommandId()
+        const evtId = eventId()
+
+        const event = await withTransaction(pool, async (client) => {
+          const evt = await StreamEventRepository.insert(client, {
+            id: evtId,
+            streamId,
+            eventType: "command_dispatched",
+            payload: {
+              commandId: cmdId,
+              name: detectedCommand.name,
+              args: detectedCommand.args,
+              status: "dispatched",
+            } satisfies CommandDispatchedPayload,
+            actorId: userId,
+            actorType: "user",
+          })
+
+          await OutboxRepository.insert(client, "command:dispatched", {
+            workspaceId,
+            streamId,
+            event: serializeBigInt(evt),
+            authorId: userId,
+          })
+
+          return evt
+        })
+
+        return res.status(202).json({
+          command: {
+            id: cmdId,
+            name: detectedCommand.name,
+            args: detectedCommand.args,
+            status: "dispatched",
+          },
+          event: serializeBigInt(event),
+        })
+      }
+
+      // Normalize to both JSON and markdown formats for normal message creation
       const { contentJson, contentMarkdown } = normalizeContent(result.data)
 
+      // Normal message creation
       const message = await eventService.createMessage({
         workspaceId,
         streamId,

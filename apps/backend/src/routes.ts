@@ -74,7 +74,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     commandRegistry,
   })
   const stream = createStreamHandlers({ streamService, eventService })
-  const message = createMessageHandlers({ eventService, streamService })
+  const message = createMessageHandlers({ pool, eventService, streamService, commandRegistry })
   const attachment = createAttachmentHandlers({ attachmentService, streamService })
   const search = createSearchHandlers({ searchService })
   const emoji = createEmojiHandlers()
