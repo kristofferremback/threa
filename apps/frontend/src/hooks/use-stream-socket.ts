@@ -37,7 +37,7 @@ interface MessageUpdatedPayload {
   messageId: string
   updateType: "reply_count" | "content"
   replyCount?: number
-  content?: string
+  contentMarkdown?: string
 }
 
 interface CommandDispatchedPayload {
@@ -240,15 +240,15 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
           ...bootstrap,
           events: bootstrap.events.map((e) => {
             if (e.eventType !== "message_created") return e
-            const eventPayload = e.payload as { messageId: string; replyCount?: number; content?: string }
+            const eventPayload = e.payload as { messageId: string; replyCount?: number; contentMarkdown?: string }
             if (eventPayload.messageId !== payload.messageId) return e
 
             // Only update the field specified by updateType
             if (payload.updateType === "reply_count" && payload.replyCount !== undefined) {
               return { ...e, payload: { ...eventPayload, replyCount: payload.replyCount } }
             }
-            if (payload.updateType === "content" && payload.content !== undefined) {
-              return { ...e, payload: { ...eventPayload, content: payload.content } }
+            if (payload.updateType === "content" && payload.contentMarkdown !== undefined) {
+              return { ...e, payload: { ...eventPayload, contentMarkdown: payload.contentMarkdown } }
             }
             return e
           }),

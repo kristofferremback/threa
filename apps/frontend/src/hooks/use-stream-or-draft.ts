@@ -8,7 +8,8 @@ import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
-import type { StreamType, CompanionMode, ContentFormat, StreamEvent } from "@threa/types"
+import { serializeToMarkdown } from "@threa/prosemirror"
+import type { StreamType, CompanionMode, StreamEvent, JSONContent } from "@threa/types"
 import { StreamTypes } from "@threa/types"
 
 function generateClientId(): string {
@@ -35,8 +36,7 @@ export interface VirtualStream {
 }
 
 export interface SendMessageInput {
-  content: string
-  contentFormat: ContentFormat
+  contentJson: JSONContent
   attachmentIds?: string[]
   /** Full attachment info for optimistic UI - required when attachmentIds is provided */
   attachments?: AttachmentSummary[]
@@ -104,10 +104,13 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         companionMode,
       })
 
+      // Serialize JSON to markdown for API and optimistic UI
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
+
       const message = await messageService.create(workspaceId, newStream.id, {
         streamId: newStream.id,
-        content: input.content,
-        contentFormat: input.contentFormat,
+        contentJson: input.contentJson,
+        contentMarkdown,
         attachmentIds: input.attachmentIds,
       })
 
@@ -119,8 +122,7 @@ function useDraftStream(workspaceId: string, streamId: string, enabled: boolean)
         createOptimisticBootstrap({
           stream: newStream,
           message,
-          content: input.content,
-          contentFormat: input.contentFormat,
+          contentMarkdown,
           attachments: input.attachments,
         })
       )
@@ -227,6 +229,9 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       const clientId = generateClientId()
       const now = new Date().toISOString()
 
+      // Serialize JSON to markdown
+      const contentMarkdown = serializeToMarkdown(input.contentJson)
+
       // Use timestamp as sequence to ensure optimistic events sort after real events
       // Real events have low sequence numbers (1, 2, 3...), timestamps are ~13 digits
       const optimisticSequence = Date.now().toString()
@@ -238,8 +243,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         eventType: "message_created",
         payload: {
           messageId: clientId,
-          content: input.content,
-          contentFormat: input.contentFormat,
+          contentMarkdown,
         },
         actorId: user?.id ?? null,
         actorType: "user",
@@ -259,13 +263,13 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         }
       })
 
-      // Persist to IndexedDB for recovery/retry capability
+      // Persist to IndexedDB for recovery/retry capability (store markdown for backwards compatibility)
       await db.pendingMessages.add({
         clientId,
         workspaceId,
         streamId,
-        content: input.content,
-        contentFormat: input.contentFormat,
+        content: contentMarkdown,
+        contentFormat: "markdown",
         createdAt: Date.now(),
         retryCount: 0,
       })
@@ -280,8 +284,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
       try {
         await messageService.create(workspaceId, streamId, {
           streamId,
-          content: input.content,
-          contentFormat: input.contentFormat,
+          contentJson: input.contentJson,
+          contentMarkdown,
           attachmentIds: input.attachmentIds,
         })
 

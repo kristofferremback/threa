@@ -2,6 +2,8 @@ import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useMemo } from "react"
 import { db, type CachedStream } from "@/db"
 import { isDraftId } from "./use-draft-scratchpads"
+import { serializeToMarkdown } from "@threa/prosemirror"
+import type { JSONContent } from "@threa/types"
 
 export type DraftType = "scratchpad" | "channel" | "dm" | "thread"
 
@@ -55,6 +57,23 @@ function truncatePreview(content: string, maxLength: number = 80): string {
   const truncated = trimmed.slice(0, maxLength)
   const lastSpace = truncated.lastIndexOf(" ")
   return (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "…"
+}
+
+/**
+ * Check if JSONContent is effectively empty.
+ */
+function isEmptyContent(contentJson: JSONContent | undefined): boolean {
+  if (!contentJson) return true
+  if (!contentJson.content) return true
+  return contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
+}
+
+/**
+ * Get markdown preview from JSONContent.
+ */
+function getContentPreview(contentJson: JSONContent | undefined): string {
+  if (!contentJson || isEmptyContent(contentJson)) return ""
+  return serializeToMarkdown(contentJson)
 }
 
 /**
@@ -134,7 +153,7 @@ export function useAllDrafts(workspaceId: string) {
       const draftMessage = (draftMessages ?? []).find((m) => m.id === draftMessageKey)
 
       // Only include if there's content or attachments
-      const hasContent = draftMessage?.content?.trim()
+      const hasContent = !isEmptyContent(draftMessage?.contentJson)
       const hasAttachments = (draftMessage?.attachments?.length ?? 0) > 0
 
       if (hasContent || hasAttachments) {
@@ -143,7 +162,7 @@ export function useAllDrafts(workspaceId: string) {
           type: "scratchpad",
           streamId: draft.id,
           displayName: draft.displayName || "New scratchpad",
-          preview: truncatePreview(draftMessage?.content ?? ""),
+          preview: truncatePreview(getContentPreview(draftMessage?.contentJson)),
           attachmentCount: draftMessage?.attachments?.length ?? 0,
           updatedAt: draftMessage?.updatedAt ?? draft.createdAt,
           href: `/w/${workspaceId}/s/${draft.id}`,
@@ -160,7 +179,7 @@ export function useAllDrafts(workspaceId: string) {
       if (parsed.type === "stream" && isDraftId(parsed.id)) continue
 
       // Only include if there's content or attachments
-      const hasContent = draftMessage.content?.trim()
+      const hasContent = !isEmptyContent(draftMessage.contentJson)
       const hasAttachments = (draftMessage.attachments?.length ?? 0) > 0
       if (!hasContent && !hasAttachments) continue
 
@@ -187,7 +206,7 @@ export function useAllDrafts(workspaceId: string) {
           type: "thread",
           streamId: parentStream?.id ?? null,
           displayName,
-          preview: truncatePreview(draftMessage.content),
+          preview: truncatePreview(getContentPreview(draftMessage.contentJson)),
           attachmentCount: draftMessage.attachments?.length ?? 0,
           updatedAt: draftMessage.updatedAt,
           href,
@@ -215,7 +234,7 @@ export function useAllDrafts(workspaceId: string) {
           type: draftType,
           streamId: parsed.id,
           displayName,
-          preview: truncatePreview(draftMessage.content),
+          preview: truncatePreview(getContentPreview(draftMessage.contentJson)),
           attachmentCount: draftMessage.attachments?.length ?? 0,
           updatedAt: draftMessage.updatedAt,
           href: `/w/${workspaceId}/s/${parsed.id}`,

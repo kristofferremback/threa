@@ -5,15 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { PendingAttachments } from "@/components/timeline/pending-attachments"
 import type { PendingAttachment, UploadResult } from "@/hooks/use-attachments"
-import type { MessageSendMode } from "@threa/types"
+import type { MessageSendMode, JSONContent } from "@threa/types"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl+ elsewhere) */
 const MOD_SYMBOL = navigator.platform?.toLowerCase().includes("mac") ? "⌘" : "Ctrl+"
 
 export interface MessageComposerProps {
   // Content (controlled)
-  content: string
-  onContentChange: (content: string) => void
+  content: JSONContent
+  onContentChange: (content: JSONContent) => void
 
   // Attachments (controlled)
   pendingAttachments: PendingAttachment[]

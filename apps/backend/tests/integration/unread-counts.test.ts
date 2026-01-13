@@ -6,7 +6,7 @@ import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
 import { StreamMemberRepository } from "../../src/repositories/stream-member-repository"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Unread Counts", () => {
   let pool: Pool
@@ -55,7 +55,7 @@ describe("Unread Counts", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Hello",
+        ...testMessageContent("Hello"),
       })
 
       // Get the event ID for this message
@@ -87,7 +87,7 @@ describe("Unread Counts", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Message 1",
+        ...testMessageContent("Message 1"),
       })
 
       await eventService.createMessage({
@@ -95,7 +95,7 @@ describe("Unread Counts", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Message 2",
+        ...testMessageContent("Message 2"),
       })
 
       await eventService.createMessage({
@@ -103,7 +103,7 @@ describe("Unread Counts", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Message 3",
+        ...testMessageContent("Message 3"),
       })
 
       // Get the first event as last read
@@ -136,7 +136,7 @@ describe("Unread Counts", () => {
           streamId: testStreamId,
           authorId: testUserId,
           authorType: "user",
-          content: `Message ${i}`,
+          ...testMessageContent(`Message ${i}`),
         })
       }
 
@@ -168,7 +168,7 @@ describe("Unread Counts", () => {
         streamId: testStreamId,
         authorId: authorId,
         authorType: "user",
-        content: "Hello from author",
+        ...testMessageContent("Hello from author"),
       })
 
       // Author's lastReadEventId should have been updated to include their own message
@@ -216,14 +216,14 @@ describe("Unread Counts", () => {
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 1 - Message 1",
+        ...testMessageContent("Stream 1 - Message 1"),
       })
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 1 - Message 2",
+        ...testMessageContent("Stream 1 - Message 2"),
       })
 
       // Stream 2: 3 messages
@@ -233,7 +233,7 @@ describe("Unread Counts", () => {
           streamId: stream2,
           authorId: testUserId,
           authorType: "user",
-          content: `Stream 2 - Message ${i}`,
+          ...testMessageContent(`Stream 2 - Message ${i}`),
         })
       }
 
@@ -280,14 +280,14 @@ describe("Unread Counts", () => {
         streamId: stream1,
         authorId: otherUserId,
         authorType: "user",
-        content: "Stream 1 message",
+        ...testMessageContent("Stream 1 message"),
       })
       await eventService.createMessage({
         workspaceId: testWorkspaceId,
         streamId: stream2,
         authorId: otherUserId,
         authorType: "user",
-        content: "Stream 2 message",
+        ...testMessageContent("Stream 2 message"),
       })
 
       // Mark all as read
@@ -339,7 +339,7 @@ describe("Unread Counts", () => {
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 1 message",
+        ...testMessageContent("Stream 1 message"),
       })
 
       // Mark stream1 as read first
@@ -381,14 +381,14 @@ describe("Unread Counts", () => {
         streamId: stream1,
         authorId: otherUserId,
         authorType: "user",
-        content: "Workspace 1 message",
+        ...testMessageContent("Workspace 1 message"),
       })
       await eventService.createMessage({
         workspaceId: workspace2,
         streamId: stream2,
         authorId: otherUserId,
         authorType: "user",
-        content: "Workspace 2 message",
+        ...testMessageContent("Workspace 2 message"),
       })
 
       // Mark all as read in workspace1 only
@@ -430,7 +430,7 @@ describe("Unread Counts", () => {
           streamId,
           authorId: testUserId,
           authorType: "user",
-          content: "Test message",
+          ...testMessageContent("Test message"),
         })
         const events = await withClient(pool, (client) => StreamEventRepository.list(client, streamId))
         eventIds.push(events[0].id)

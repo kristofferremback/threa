@@ -9,6 +9,8 @@ import {
   createOptimisticBootstrap,
   streamKeys,
 } from "@/hooks"
+import { serializeToMarkdown } from "@threa/prosemirror"
+import type { JSONContent } from "@threa/types"
 import {
   SidePanel,
   SidePanelHeader,
@@ -25,7 +27,6 @@ interface DraftThreadPanelProps {
   workspaceId: string
   parentStreamId: string
   parentMessageId: string
-  initialContent?: string
   onClose: () => void
   onThreadCreated: (threadId: string) => void
 }
@@ -34,7 +35,6 @@ export function DraftThreadPanel({
   workspaceId,
   parentStreamId,
   parentMessageId,
-  initialContent = "",
   onClose,
   onThreadCreated,
 }: DraftThreadPanelProps) {
@@ -48,7 +48,6 @@ export function DraftThreadPanel({
     workspaceId,
     draftKey,
     scopeId: parentMessageId,
-    initialContent,
   })
 
   // Fetch parent stream's bootstrap to get the parent message
@@ -65,7 +64,9 @@ export function DraftThreadPanel({
   const handleSubmit = useCallback(async () => {
     if (!composer.canSend) return
 
-    const trimmed = composer.content.trim()
+    // Capture content before clearing
+    const contentJson = composer.content
+    const contentMarkdown = serializeToMarkdown(contentJson)
     composer.setIsSending(true)
 
     // Capture full attachment info BEFORE clearing for optimistic UI
@@ -75,7 +76,8 @@ export function DraftThreadPanel({
       .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
 
     // Clear input immediately for responsiveness
-    composer.setContent("")
+    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+    composer.setContent(emptyDoc)
     composer.clearDraft()
     composer.clearAttachments()
 
@@ -90,8 +92,8 @@ export function DraftThreadPanel({
       // Send the first message with attachments
       const message = await messageService.create(workspaceId, thread.id, {
         streamId: thread.id,
-        content: trimmed || " ", // Backend requires content
-        contentFormat: "markdown",
+        contentJson,
+        contentMarkdown: contentMarkdown || " ", // Backend requires content
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
 
@@ -101,8 +103,7 @@ export function DraftThreadPanel({
         createOptimisticBootstrap({
           stream: thread,
           message,
-          content: trimmed || " ",
-          contentFormat: "markdown",
+          contentMarkdown: contentMarkdown || " ",
           attachments: attachments.length > 0 ? attachments : undefined,
         })
       )

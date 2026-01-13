@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useEffect, useRef } from "react"
 import { db, type DraftAttachment } from "@/db"
+import type { JSONContent } from "@threa/types"
 
 // Key formats:
 // - "stream:{streamId}" for messages in existing streams
@@ -26,7 +27,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
   const draft = useLiveQuery(() => db.draftMessages.get(draftKey), [draftKey], LOADING as unknown)
 
   const saveDraft = useCallback(
-    async (content: string, attachments?: DraftAttachment[]) => {
+    async (contentJson: JSONContent, attachments?: DraftAttachment[]) => {
       // Clear any pending debounced save
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
@@ -37,8 +38,13 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       const currentDraft = await db.draftMessages.get(draftKey)
       const finalAttachments = attachments ?? currentDraft?.attachments ?? []
 
+      // Check if content is empty (only has empty paragraphs)
+      const isEmpty =
+        !contentJson.content ||
+        contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
+
       // Delete draft only if both content and attachments are empty
-      if (!content.trim() && finalAttachments.length === 0) {
+      if (isEmpty && finalAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
         return
       }
@@ -46,7 +52,7 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       await db.draftMessages.put({
         id: draftKey,
         workspaceId,
-        content,
+        contentJson,
         attachments: finalAttachments,
         updatedAt: Date.now(),
       })
@@ -55,14 +61,14 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
   )
 
   const saveDraftDebounced = useCallback(
-    (content: string) => {
+    (contentJson: JSONContent) => {
       // Clear any pending debounced save
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
       }
 
       debounceRef.current = setTimeout(() => {
-        saveDraft(content)
+        saveDraft(contentJson)
         debounceRef.current = null
       }, DEBOUNCE_MS)
     },
@@ -82,10 +88,13 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
         return
       }
 
+      // Default empty document
+      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+
       await db.draftMessages.put({
         id: draftKey,
         workspaceId,
-        content: currentDraft?.content ?? "",
+        contentJson: currentDraft?.contentJson ?? emptyDoc,
         attachments: [...currentAttachments, attachment],
         updatedAt: Date.now(),
       })
@@ -104,8 +113,14 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
 
       const remainingAttachments = (currentDraft.attachments ?? []).filter((a) => a.id !== attachmentId)
 
+      // Check if content is empty
+      const contentJson = currentDraft.contentJson
+      const isEmpty =
+        !contentJson?.content ||
+        contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
+
       // Delete draft if both content and attachments are empty
-      if (!currentDraft.content.trim() && remainingAttachments.length === 0) {
+      if (isEmpty && remainingAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
         return
       }
@@ -142,12 +157,15 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
   const isLoading = draft === LOADING
   const resolvedDraft = isLoading
     ? undefined
-    : (draft as { content?: string; attachments?: DraftAttachment[] } | undefined)
+    : (draft as { contentJson?: JSONContent; attachments?: DraftAttachment[] } | undefined)
+
+  // Default empty document
+  const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
 
   return {
     /** Whether Dexie has finished loading the draft (true even if no draft exists) */
     isLoaded: !isLoading,
-    content: resolvedDraft?.content ?? "",
+    contentJson: resolvedDraft?.contentJson ?? emptyDoc,
     attachments: resolvedDraft?.attachments ?? [],
     saveDraft,
     saveDraftDebounced,

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { db } from "@/db"
 import { useMessageService } from "./services-context"
 import { streamKeys } from "@/hooks/use-streams"
+import { parseMarkdown } from "@threa/prosemirror"
 
 type MessageStatus = "pending" | "failed"
 
@@ -77,10 +78,12 @@ export function PendingMessagesProvider({ children }: PendingMessagesProviderPro
       markPending(id)
 
       try {
+        // Parse stored markdown back to JSON for retry
+        const contentJson = parseMarkdown(pending.content)
         await messageService.create(pending.workspaceId, pending.streamId, {
           streamId: pending.streamId,
-          content: pending.content,
-          contentFormat: pending.contentFormat,
+          contentJson,
+          contentMarkdown: pending.content,
         })
 
         // Clean up on success

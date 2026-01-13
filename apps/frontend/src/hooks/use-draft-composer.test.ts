@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useDraftComposer } from "./use-draft-composer"
+import type { JSONContent } from "@threa/types"
+
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+const makeDoc = (text: string): JSONContent => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+})
 
 // Mock useDraftMessage
 const mockSaveDraftDebounced = vi.fn()
@@ -9,13 +16,13 @@ const mockRemoveDraftAttachment = vi.fn()
 const mockClearDraft = vi.fn()
 
 let mockDraftIsLoaded = true
-let mockDraftContent = ""
+let mockDraftContentJson: JSONContent = EMPTY_DOC
 let mockDraftAttachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> = []
 
 vi.mock("./use-draft-message", () => ({
   useDraftMessage: () => ({
     isLoaded: mockDraftIsLoaded,
-    content: mockDraftContent,
+    contentJson: mockDraftContentJson,
     attachments: mockDraftAttachments,
     saveDraftDebounced: mockSaveDraftDebounced,
     addAttachment: mockAddDraftAttachment,
@@ -64,7 +71,7 @@ describe("useDraftComposer", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDraftIsLoaded = true
-    mockDraftContent = ""
+    mockDraftContentJson = EMPTY_DOC
     mockDraftAttachments = []
     mockPendingAttachments = []
   })
@@ -80,7 +87,7 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
       expect(result.current.isLoaded).toBe(false)
-      expect(result.current.content).toBe("")
+      expect(result.current.content).toEqual(EMPTY_DOC)
     })
 
     it("should return isLoaded=true after draft finishes loading", () => {
@@ -93,11 +100,12 @@ describe("useDraftComposer", () => {
 
     it("should restore saved content on initialization", () => {
       mockDraftIsLoaded = true
-      mockDraftContent = "Saved content"
+      const savedContent = makeDoc("Saved content")
+      mockDraftContentJson = savedContent
 
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
-      expect(result.current.content).toBe("Saved content")
+      expect(result.current.content).toEqual(savedContent)
     })
 
     it("should restore saved attachments on initialization", () => {
@@ -111,7 +119,7 @@ describe("useDraftComposer", () => {
 
     it("should not restore while still loading", () => {
       mockDraftIsLoaded = false
-      mockDraftContent = "Should not appear"
+      mockDraftContentJson = makeDoc("Should not appear")
       mockDraftAttachments = [{ id: "attach_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100 }]
 
       renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
@@ -121,13 +129,12 @@ describe("useDraftComposer", () => {
 
     it("should use initialContent when provided", () => {
       mockDraftIsLoaded = true
-      mockDraftContent = "" // No saved draft
+      mockDraftContentJson = EMPTY_DOC // No saved draft
+      const initialContent = makeDoc("Initial text")
 
-      const { result } = renderHook(() =>
-        useDraftComposer({ workspaceId, draftKey, scopeId, initialContent: "Initial text" })
-      )
+      const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId, initialContent }))
 
-      expect(result.current.content).toBe("Initial text")
+      expect(result.current.content).toEqual(initialContent)
     })
   })
 
@@ -138,15 +145,16 @@ describe("useDraftComposer", () => {
       })
 
       // Set content
+      const newContent = makeDoc("Some content")
       act(() => {
-        result.current.setContent("Some content")
+        result.current.setContent(newContent)
       })
-      expect(result.current.content).toBe("Some content")
+      expect(result.current.content).toEqual(newContent)
 
       // Change scope
       rerender({ scopeId: "stream_2" })
 
-      expect(result.current.content).toBe("")
+      expect(result.current.content).toEqual(EMPTY_DOC)
     })
 
     it("should clear attachments when scopeId changes", () => {
@@ -164,22 +172,24 @@ describe("useDraftComposer", () => {
   describe("handleContentChange", () => {
     it("should update content immediately", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      const newContent = makeDoc("New content")
 
       act(() => {
-        result.current.handleContentChange("New content")
+        result.current.handleContentChange(newContent)
       })
 
-      expect(result.current.content).toBe("New content")
+      expect(result.current.content).toEqual(newContent)
     })
 
     it("should call saveDraftDebounced", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
+      const newContent = makeDoc("New content")
 
       act(() => {
-        result.current.handleContentChange("New content")
+        result.current.handleContentChange(newContent)
       })
 
-      expect(mockSaveDraftDebounced).toHaveBeenCalledWith("New content")
+      expect(mockSaveDraftDebounced).toHaveBeenCalledWith(newContent)
     })
   })
 
@@ -201,7 +211,7 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
       act(() => {
-        result.current.setContent("Hello")
+        result.current.setContent(makeDoc("Hello"))
       })
 
       expect(result.current.canSend).toBe(true)
@@ -221,7 +231,7 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
       act(() => {
-        result.current.setContent("Hello")
+        result.current.setContent(makeDoc("Hello"))
         result.current.setIsSending(true)
       })
 
@@ -236,7 +246,7 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
       act(() => {
-        result.current.setContent("Hello")
+        result.current.setContent(makeDoc("Hello"))
       })
 
       expect(result.current.canSend).toBe(false)
@@ -250,7 +260,7 @@ describe("useDraftComposer", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
       act(() => {
-        result.current.setContent("Hello")
+        result.current.setContent(makeDoc("Hello"))
       })
 
       expect(result.current.canSend).toBe(false)
@@ -265,8 +275,9 @@ describe("useDraftComposer", () => {
     it("should be false with whitespace-only content", () => {
       const { result } = renderHook(() => useDraftComposer({ workspaceId, draftKey, scopeId }))
 
+      // Empty paragraph is considered empty
       act(() => {
-        result.current.setContent("   ")
+        result.current.setContent(EMPTY_DOC)
       })
 
       expect(result.current.canSend).toBe(false)

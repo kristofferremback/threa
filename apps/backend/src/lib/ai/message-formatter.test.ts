@@ -21,14 +21,15 @@ mock.module("../../repositories/persona-repository", () => ({
 const mockClient = {} as PoolClient
 
 function createMessage(overrides: Partial<Message> = {}): Message {
+  const contentMarkdown = overrides.contentMarkdown ?? "Hello, world!"
   return {
     id: "msg_123",
     streamId: "stream_123",
     sequence: 1n,
     authorId: "user_123",
     authorType: "user",
-    content: "Hello, world!",
-    contentFormat: "markdown",
+    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
+    contentMarkdown,
     replyCount: 0,
     reactions: {},
     editedAt: null,
@@ -65,7 +66,7 @@ describe("MessageFormatter", () => {
         id: "msg_1",
         authorId: "user_123",
         authorType: "user",
-        content: "Hello!",
+        contentMarkdown: "Hello!",
         createdAt: new Date("2024-01-01T10:00:00Z"),
       }),
     ]
@@ -85,7 +86,7 @@ describe("MessageFormatter", () => {
         id: "msg_1",
         authorId: "persona_456",
         authorType: "persona",
-        content: "I can help with that!",
+        contentMarkdown: "I can help with that!",
         createdAt: new Date("2024-01-01T10:00:01Z"),
       }),
     ]
@@ -102,9 +103,15 @@ describe("MessageFormatter", () => {
   test("should batch lookup mixed authors efficiently", async () => {
     const createdAt = new Date("2024-01-01T10:00:00Z")
     const messages = [
-      createMessage({ id: "msg_1", authorId: "user_123", authorType: "user", content: "Question?", createdAt }),
-      createMessage({ id: "msg_2", authorId: "persona_456", authorType: "persona", content: "Answer!", createdAt }),
-      createMessage({ id: "msg_3", authorId: "user_123", authorType: "user", content: "Thanks!", createdAt }),
+      createMessage({ id: "msg_1", authorId: "user_123", authorType: "user", contentMarkdown: "Question?", createdAt }),
+      createMessage({
+        id: "msg_2",
+        authorId: "persona_456",
+        authorType: "persona",
+        contentMarkdown: "Answer!",
+        createdAt,
+      }),
+      createMessage({ id: "msg_3", authorId: "user_123", authorType: "user", contentMarkdown: "Thanks!", createdAt }),
     ]
 
     mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
@@ -131,7 +138,7 @@ describe("MessageFormatter", () => {
         id: "msg_1",
         authorId: "user_deleted",
         authorType: "user",
-        content: "Message from deleted user",
+        contentMarkdown: "Message from deleted user",
       }),
     ]
 
@@ -144,9 +151,9 @@ describe("MessageFormatter", () => {
 
   test("should preserve message order", async () => {
     const messages = [
-      createMessage({ id: "msg_1", content: "First", createdAt: new Date("2024-01-01T10:00:00Z") }),
-      createMessage({ id: "msg_2", content: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
-      createMessage({ id: "msg_3", content: "Third", createdAt: new Date("2024-01-01T10:00:02Z") }),
+      createMessage({ id: "msg_1", contentMarkdown: "First", createdAt: new Date("2024-01-01T10:00:00Z") }),
+      createMessage({ id: "msg_2", contentMarkdown: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
+      createMessage({ id: "msg_3", contentMarkdown: "Third", createdAt: new Date("2024-01-01T10:00:02Z") }),
     ]
 
     mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
@@ -180,7 +187,7 @@ describe("MessageFormatter", () => {
     const messages = [
       createMessage({
         id: "msg_1",
-        content: "if (a < b && c > d) { return <tag>; }",
+        contentMarkdown: "if (a < b && c > d) { return <tag>; }",
       }),
     ]
 
@@ -198,7 +205,7 @@ describe("MessageFormatter", () => {
         id: "msg_1",
         authorId: "user_123",
         authorType: "user",
-        content: "Hello",
+        contentMarkdown: "Hello",
       }),
     ]
 
@@ -225,14 +232,14 @@ describe("MessageFormatter", () => {
           id: "msg_1",
           authorId: "user_123",
           authorType: "user",
-          content: "Hello!",
+          contentMarkdown: "Hello!",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
         createMessage({
           id: "msg_2",
           authorId: "persona_456",
           authorType: "persona",
-          content: "Hi there!",
+          contentMarkdown: "Hi there!",
           createdAt: new Date("2024-01-01T10:00:01Z"),
         }),
       ]
@@ -253,7 +260,7 @@ describe("MessageFormatter", () => {
           id: "msg_abc123",
           authorId: "user_123",
           authorType: "user",
-          content: "Hello!",
+          contentMarkdown: "Hello!",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
@@ -271,7 +278,7 @@ describe("MessageFormatter", () => {
           id: "msg_1",
           authorId: "user_deleted",
           authorType: "user",
-          content: "Message from deleted user",
+          contentMarkdown: "Message from deleted user",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
@@ -285,8 +292,8 @@ describe("MessageFormatter", () => {
 
     test("should separate messages with double newlines", async () => {
       const messages = [
-        createMessage({ id: "msg_1", content: "First", createdAt: new Date("2024-01-01T10:00:00Z") }),
-        createMessage({ id: "msg_2", content: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
+        createMessage({ id: "msg_1", contentMarkdown: "First", createdAt: new Date("2024-01-01T10:00:00Z") }),
+        createMessage({ id: "msg_2", contentMarkdown: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
       ]
 
       mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])

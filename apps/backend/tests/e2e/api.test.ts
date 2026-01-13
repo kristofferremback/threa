@@ -173,7 +173,7 @@ describe("API E2E Tests", () => {
       const message = await sendMessage(client, workspace.id, scratchpad.id, `Hello ${testRunId}!`)
 
       expect(message.id).toMatch(/^msg_/)
-      expect(message.content).toBe(`Hello ${testRunId}!`)
+      expect(message.contentMarkdown).toBe(`Hello ${testRunId}!`)
       expect(message.sequence).toBe("1")
       expect(message.authorId).toBe(user.id)
 
@@ -411,7 +411,7 @@ describe("API E2E Tests", () => {
 
       const message = await sendMessage(client, workspace.id, channel.id, "Hello channel!")
 
-      expect(message.content).toBe("Hello channel!")
+      expect(message.contentMarkdown).toBe("Hello channel!")
 
       const events = await listEvents(client, workspace.id, channel.id, ["message_created"])
       expect(events).toHaveLength(1)

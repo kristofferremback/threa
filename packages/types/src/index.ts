@@ -98,7 +98,11 @@ export type {
   StreamBootstrap,
   // Messages
   CreateMessageInput,
+  CreateMessageInputJson,
+  CreateMessageInputMarkdown,
   UpdateMessageInput,
+  UpdateMessageInputJson,
+  UpdateMessageInputMarkdown,
   // Workspaces
   CreateWorkspaceInput,
   WorkspaceBootstrap,
@@ -124,6 +128,50 @@ export type {
   AIBudgetResponse,
   UpdateAIBudgetInput,
 } from "./api"
+
+// ProseMirror / TipTap JSON types
+export type {
+  // Loose input type (compatible with TipTap)
+  JSONContent,
+  JSONContentMark,
+  // Strict document types
+  ThreaDocument,
+  ThreaBlockNode,
+  ThreaParagraph,
+  ThreaHeading,
+  ThreaCodeBlock,
+  ThreaBlockquote,
+  ThreaBulletList,
+  ThreaOrderedList,
+  ThreaListItem,
+  ThreaHorizontalRule,
+  ThreaInlineNode,
+  ThreaTextNode,
+  ThreaMention,
+  ThreaChannelLink,
+  ThreaCommand,
+  ThreaEmoji,
+  ThreaAttachmentReference,
+  ThreaHardBreak,
+  ThreaMark,
+  ThreaBoldMark,
+  ThreaItalicMark,
+  ThreaStrikeMark,
+  ThreaCodeMark,
+  ThreaLinkMark,
+  ThreaNodeType,
+  ThreaMarkType,
+} from "./prosemirror"
+export {
+  // Validation schema
+  threaDocumentSchema,
+  // Error class
+  ContentValidationError,
+  // Type guards and validators
+  isThreaDocument,
+  validateContent,
+  tryValidateContent,
+} from "./prosemirror"
 
 // User Preferences
 export {

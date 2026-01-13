@@ -157,14 +157,14 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
     const recentSection = context.recentMessages
       .map(
         (m) =>
-          `[${m.authorType}:${m.authorId.slice(-8)}]: ${m.content.slice(0, 200)}${m.content.length > 200 ? "..." : ""}`
+          `[${m.authorType}:${m.authorId.slice(-8)}]: ${m.contentMarkdown.slice(0, 200)}${m.contentMarkdown.length > 200 ? "..." : ""}`
       )
       .join("\n")
 
     return EXTRACTION_PROMPT.replace("{{CONVERSATIONS}}", convSection)
       .replace("{{RECENT_MESSAGES}}", recentSection || "No recent messages.")
       .replace("{{AUTHOR}}", `${context.newMessage.authorType}:${context.newMessage.authorId.slice(-8)}`)
-      .replace("{{CONTENT}}", context.newMessage.content)
+      .replace("{{CONTENT}}", context.newMessage.contentMarkdown)
   }
 
   private validateResult(
@@ -194,8 +194,8 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
   }
 
   private truncateAsTopic(message: Message): string {
-    const firstSentence = message.content.split(/[.!?\n]/)[0]?.trim()
-    const text = firstSentence && firstSentence.length > 0 ? firstSentence : message.content.trim()
+    const firstSentence = message.contentMarkdown.split(/[.!?\n]/)[0]?.trim()
+    const text = firstSentence && firstSentence.length > 0 ? firstSentence : message.contentMarkdown.trim()
 
     if (text.length <= 100) {
       return text

@@ -1,21 +1,36 @@
 import { useState, useCallback, useEffect, useRef, type ChangeEvent, type RefObject } from "react"
 import { useDraftMessage } from "./use-draft-message"
 import { useAttachments, type PendingAttachment, type UploadResult } from "./use-attachments"
+import type { JSONContent } from "@threa/types"
 
 export interface UseDraftComposerOptions {
   workspaceId: string
   draftKey: string
   /** ID used for detecting scope changes (streamId or parentMessageId) */
   scopeId: string
-  /** Initial content (optional, for pre-filled content) */
-  initialContent?: string
+  /** Initial content (optional, for pre-filled content as JSON) */
+  initialContent?: JSONContent
+}
+
+/** Default empty ProseMirror document */
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+
+/** Check if a document is empty (no actual text content) */
+function hasDocContent(doc: JSONContent | undefined): boolean {
+  if (!doc?.content) return false
+  return doc.content.some((node) => {
+    if (node.type === "paragraph") {
+      return node.content && node.content.length > 0
+    }
+    return true // Non-paragraph nodes count as content
+  })
 }
 
 export interface DraftComposerState {
   // Content
-  content: string
-  setContent: (content: string) => void
-  handleContentChange: (newContent: string) => void
+  content: JSONContent
+  setContent: (content: JSONContent) => void
+  handleContentChange: (newContent: JSONContent) => void
 
   // Attachments
   pendingAttachments: PendingAttachment[]
@@ -47,12 +62,12 @@ export function useDraftComposer({
   workspaceId,
   draftKey,
   scopeId,
-  initialContent = "",
+  initialContent = EMPTY_DOC,
 }: UseDraftComposerOptions): DraftComposerState {
   // Draft message persistence
   const {
     isLoaded: isDraftLoaded,
-    content: savedDraft,
+    contentJson: savedDraft,
     attachments: savedAttachments,
     saveDraftDebounced,
     addAttachment: addDraftAttachment,
@@ -76,7 +91,7 @@ export function useDraftComposer({
   } = useAttachments(workspaceId)
 
   // Local state
-  const [content, setContent] = useState(initialContent)
+  const [content, setContent] = useState<JSONContent>(initialContent)
   const [isSending, setIsSending] = useState(false)
   const hasInitialized = useRef(false)
   const prevScopeIdRef = useRef<string | null>(null)
@@ -104,7 +119,7 @@ export function useDraftComposer({
 
     // Restore saved draft content and attachments
     if (!hasInitialized.current) {
-      if (savedDraft) {
+      if (hasDocContent(savedDraft)) {
         setContent(savedDraft)
       }
       if (savedAttachments.length > 0) {
@@ -133,7 +148,7 @@ export function useDraftComposer({
 
   // Handle content change with draft persistence
   const handleContentChange = useCallback(
-    (newContent: string) => {
+    (newContent: JSONContent) => {
       setContent(newContent)
       saveDraftDebounced(newContent)
     },
@@ -149,7 +164,16 @@ export function useDraftComposer({
     [removeAttachment, removeDraftAttachment]
   )
 
-  const canSend = (!!content.trim() || uploadedIds.length > 0) && !isSending && !isUploading && !hasFailed
+  // Check if document has actual content (not just empty paragraphs)
+  const hasContent =
+    content.content?.some((node) => {
+      if (node.type === "paragraph") {
+        return node.content && node.content.length > 0
+      }
+      return true // Non-paragraph nodes count as content
+    }) ?? false
+
+  const canSend = (hasContent || uploadedIds.length > 0) && !isSending && !isUploading && !hasFailed
 
   return {
     // Content

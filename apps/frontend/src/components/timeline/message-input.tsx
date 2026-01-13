@@ -5,6 +5,8 @@ import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
+import { serializeToMarkdown } from "@threa/prosemirror"
+import type { JSONContent } from "@threa/types"
 
 interface MessageInputProps {
   workspaceId: string
@@ -29,17 +31,19 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
     composer.setIsSending(true)
     setError(null)
 
-    const trimmed = composer.content.trim()
+    // Serialize content to markdown to check for commands
+    const contentMarkdown = serializeToMarkdown(composer.content)
 
     // Detect slash commands and dispatch them instead of sending as messages
-    if (isCommand(trimmed)) {
+    if (isCommand(contentMarkdown.trim())) {
       // Clear input immediately for responsiveness
-      composer.setContent("")
+      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+      composer.setContent(emptyDoc)
       composer.clearDraft()
 
       try {
         const result = await commandsApi.dispatch(workspaceId, {
-          command: trimmed,
+          command: contentMarkdown.trim(),
           streamId,
         })
 
@@ -60,15 +64,18 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
       .filter((a) => a.status === "uploaded" && !a.id.startsWith("temp_"))
       .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
 
+    // Capture content before clearing
+    const contentJson = composer.content
+
     // Clear input immediately for responsiveness
-    composer.setContent("")
+    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+    composer.setContent(emptyDoc)
     composer.clearDraft()
     composer.clearAttachments()
 
     try {
       const result = await sendMessage({
-        content: trimmed || " ", // Backend requires content, use space for attachment-only messages
-        contentFormat: "markdown",
+        contentJson,
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
       })

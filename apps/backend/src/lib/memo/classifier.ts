@@ -141,7 +141,7 @@ export class MemoClassifier {
   async classifyMessage(message: Message, context: ClassifierContext): Promise<MessageClassification> {
     const prompt = MESSAGE_PROMPT.replace("{{AUTHOR_TYPE}}", message.authorType)
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
-      .replace("{{CONTENT}}", message.content)
+      .replace("{{CONTENT}}", message.contentMarkdown)
 
     const { value } = await this.ai.generateObject({
       model: this.modelId,

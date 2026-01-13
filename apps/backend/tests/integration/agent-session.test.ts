@@ -5,7 +5,7 @@ import { EventService } from "../../src/services/event-service"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { AgentSessionRepository, SessionStatuses } from "../../src/repositories/agent-session-repository"
 import { streamId, userId, workspaceId, sessionId, personaId, messageId } from "../../src/lib/id"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Agent Session Repository", () => {
   let pool: Pool
@@ -238,7 +238,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "First",
+      ...testMessageContent("First"),
     })
 
     const msg2 = await eventService.createMessage({
@@ -246,7 +246,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Second",
+      ...testMessageContent("Second"),
     })
 
     const msg3 = await eventService.createMessage({
@@ -254,7 +254,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Third",
+      ...testMessageContent("Third"),
     })
 
     await withClient(pool, async (client) => {
@@ -276,7 +276,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Only message",
+      ...testMessageContent("Only message"),
     })
 
     await withClient(pool, async (client) => {
@@ -297,7 +297,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: user1Id,
       authorType: "user",
-      content: "From user 1",
+      ...testMessageContent("From user 1"),
     })
 
     const msg2 = await eventService.createMessage({
@@ -305,7 +305,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: user2Id,
       authorType: "user",
-      content: "From user 2",
+      ...testMessageContent("From user 2"),
     })
 
     await eventService.createMessage({
@@ -313,7 +313,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: user1Id,
       authorType: "user",
-      content: "From user 1 again",
+      ...testMessageContent("From user 1 again"),
     })
 
     await withClient(pool, async (client) => {
@@ -336,7 +336,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "First",
+      ...testMessageContent("First"),
     })
 
     await eventService.createMessage({
@@ -344,7 +344,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Second",
+      ...testMessageContent("Second"),
     })
 
     await eventService.createMessage({
@@ -352,15 +352,15 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Third",
+      ...testMessageContent("Third"),
     })
 
     await withClient(pool, async (client) => {
       const messages = await MessageRepository.listSince(client, testStreamId, BigInt(0))
 
-      expect(messages[0].content).toBe("First")
-      expect(messages[1].content).toBe("Second")
-      expect(messages[2].content).toBe("Third")
+      expect(messages[0].contentMarkdown).toBe("First")
+      expect(messages[1].contentMarkdown).toBe("Second")
+      expect(messages[2].contentMarkdown).toBe("Third")
     })
   })
 
@@ -374,7 +374,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "First",
+      ...testMessageContent("First"),
     })
 
     const msg2 = await eventService.createMessage({
@@ -382,7 +382,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Second - will be deleted",
+      ...testMessageContent("Second - will be deleted"),
     })
 
     await eventService.createMessage({
@@ -390,7 +390,7 @@ describe("Message Repository - listSince", () => {
       streamId: testStreamId,
       authorId: testUserId,
       authorType: "user",
-      content: "Third",
+      ...testMessageContent("Third"),
     })
 
     await eventService.deleteMessage({
@@ -419,7 +419,7 @@ describe("Message Repository - listSince", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: `Message ${i + 1}`,
+        ...testMessageContent(`Message ${i + 1}`),
       })
     }
 

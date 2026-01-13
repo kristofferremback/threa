@@ -161,7 +161,7 @@ export class EmojiUsageHandler implements OutboxHandler {
       return
     }
 
-    const content = payload.event.payload.content
+    const content = payload.event.payload.contentMarkdown
     const emojiCounts = extractEmojiFromContent(content)
 
     if (emojiCounts.size === 0) {

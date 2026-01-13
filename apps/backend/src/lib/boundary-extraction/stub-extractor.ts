@@ -34,7 +34,7 @@ export class StubBoundaryExtractor implements BoundaryExtractor {
     // This is a simplification for testing - real extractor uses LLM to group messages
     return {
       conversationId: null,
-      newConversationTopic: this.extractTopic(context.newMessage.content),
+      newConversationTopic: this.extractTopic(context.newMessage.contentMarkdown),
       confidence: 1.0,
     }
   }

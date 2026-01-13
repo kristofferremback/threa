@@ -4,18 +4,18 @@ import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
-import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
+import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "@threa/prosemirror"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
 import { cn } from "@/lib/utils"
 import type { UploadResult } from "@/hooks/use-attachments"
 import type { AttachmentReferenceAttrs } from "./attachment-reference-extension"
-import type { MessageSendMode } from "@threa/types"
+import type { MessageSendMode, JSONContent } from "@threa/types"
 
 interface RichEditorProps {
-  value: string
-  onChange: (markdown: string) => void
+  value: JSONContent
+  onChange: (json: JSONContent) => void
   onSubmit: () => void
   /** Called when files are pasted or dropped. Returns upload result for updating the node. */
   onFileUpload?: (file: File) => Promise<UploadResult>
@@ -169,12 +169,11 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions,
-    content: parseMarkdown(value, getMentionType, toEmoji),
+    content: value,
     editable: !disabled,
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current) return
-      const markdown = serializeToMarkdown(editor.getJSON())
-      onChange(markdown)
+      onChange(editor.getJSON())
     },
     onFocus: () => setIsFocused(true),
     onBlur: () => setIsFocused(false),
@@ -291,13 +290,15 @@ export function RichEditor({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
 
-    const currentMarkdown = serializeToMarkdown(editor.getJSON())
-    if (value !== currentMarkdown) {
+    // Compare JSON content - use string comparison for simplicity
+    const currentJson = JSON.stringify(editor.getJSON())
+    const newJson = JSON.stringify(value)
+    if (newJson !== currentJson) {
       isInternalUpdate.current = true
-      editor.commands.setContent(parseMarkdown(value, getMentionType, toEmoji))
+      editor.commands.setContent(value)
       isInternalUpdate.current = false
     }
-  }, [value, editor, getMentionType, toEmoji])
+  }, [value, editor])
 
   // Re-parse content when mentionables load or currentUser becomes known (for correct mention type colors)
   useEffect(() => {
@@ -315,6 +316,7 @@ export function RichEditor({
 
     if (shouldReparse) {
       lastParsedState.current = current
+      // Round-trip through markdown to update mention types with new user data
       const markdown = serializeToMarkdown(editor.getJSON())
       if (markdown) {
         isInternalUpdate.current = true

@@ -69,7 +69,7 @@ export class MessageFormatter {
 
   private formatSingleMessage(m: Message, nameById: Map<string, string>): string {
     const authorName = nameById.get(m.authorId) ?? "Unknown"
-    return `<message authorType="${m.authorType}" authorId="${m.authorId}" authorName="${escapeXmlAttr(authorName)}" createdAt="${m.createdAt.toISOString()}">${escapeXml(m.content)}</message>`
+    return `<message authorType="${m.authorType}" authorId="${m.authorId}" authorName="${escapeXmlAttr(authorName)}" createdAt="${m.createdAt.toISOString()}">${escapeXml(m.contentMarkdown)}</message>`
   }
 
   /**
@@ -103,7 +103,7 @@ export class MessageFormatter {
       const authorName = nameById.get(m.authorId) ?? "Unknown"
       const idPrefix = options?.includeIds ? `[ID:${m.id}] ` : ""
       const timestamp = m.createdAt.toISOString()
-      return `${idPrefix}[${timestamp}] [${m.authorType}] ${authorName}: ${m.content}`
+      return `${idPrefix}[${timestamp}] [${m.authorType}] ${authorName}: ${m.contentMarkdown}`
     })
 
     return formatted.join("\n\n")

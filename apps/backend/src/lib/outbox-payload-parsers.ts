@@ -26,8 +26,7 @@ export interface NormalizedMessageCreatedPayload {
     actorId: string | null
     payload: {
       messageId: string
-      content: string
-      contentFormat: string
+      contentMarkdown: string
     }
   }
 }
@@ -89,8 +88,7 @@ export async function parseMessageCreatedPayloadWithClient(
           actorId: (event.actorId as string | null) ?? null,
           payload: {
             messageId: eventPayload.messageId,
-            content: (eventPayload.content as string) ?? "",
-            contentFormat: (eventPayload.contentFormat as string) ?? "plain",
+            contentMarkdown: (eventPayload.contentMarkdown as string) ?? (eventPayload.content as string) ?? "",
           },
         },
       }
@@ -114,8 +112,7 @@ export async function parseMessageCreatedPayloadWithClient(
         actorId: message?.authorId ?? null,
         payload: {
           messageId,
-          content: message?.content ?? (p.content as string) ?? "",
-          contentFormat: message?.contentFormat ?? (p.contentFormat as string) ?? "plain",
+          contentMarkdown: message?.contentMarkdown ?? (p.contentMarkdown as string) ?? (p.content as string) ?? "",
         },
       },
     }

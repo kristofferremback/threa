@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react"
 import { useSearchParams, useLocation } from "react-router-dom"
 
 interface PanelInfo {
@@ -10,7 +10,6 @@ interface PanelInfo {
 interface DraftReply {
   parentStreamId: string
   parentMessageId: string
-  content: string
 }
 
 interface PanelContextValue {
@@ -25,7 +24,6 @@ interface PanelContextValue {
   openThreadDraft: (parentStreamId: string, parentMessageId: string) => void
   closePanel: (streamId: string) => void
   closeAllPanels: () => void
-  setDraftContent: (content: string) => void
   transitionDraftToPanel: (streamId: string) => void
 }
 
@@ -38,7 +36,6 @@ interface PanelProviderProps {
 export function PanelProvider({ children }: PanelProviderProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
-  const [draftContent, setDraftContentState] = useState("")
 
   // Parse open panels from URL (deduplicated)
   const openPanels = useMemo(() => {
@@ -60,8 +57,8 @@ export function PanelProvider({ children }: PanelProviderProps) {
     if (!draftParam) return null
     const [parentStreamId, parentMessageId] = draftParam.split(":")
     if (!parentStreamId || !parentMessageId) return null
-    return { parentStreamId, parentMessageId, content: draftContent }
-  }, [searchParams, draftContent])
+    return { parentStreamId, parentMessageId }
+  }, [searchParams])
 
   // Check if a panel is already open
   const isPanelOpen = useCallback((streamId: string) => openPanels.some((p) => p.streamId === streamId), [openPanels])
@@ -94,7 +91,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
             const draftParam = next.get("draft")
             if (draftParam?.includes(parentInfo.parentMessageId)) {
               next.delete("draft")
-              setDraftContentState("")
             }
           }
           return next
@@ -149,12 +145,7 @@ export function PanelProvider({ children }: PanelProviderProps) {
       },
       { replace: true }
     )
-    setDraftContentState("")
   }, [setSearchParams])
-
-  const setDraftContent = useCallback((content: string) => {
-    setDraftContentState(content)
-  }, [])
 
   const transitionDraftToPanel = useCallback(
     (streamId: string) => {
@@ -168,7 +159,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
         },
         { replace: true }
       )
-      setDraftContentState("")
     },
     [setSearchParams]
   )
@@ -183,7 +173,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
       openThreadDraft,
       closePanel,
       closeAllPanels,
-      setDraftContent,
       transitionDraftToPanel,
     }),
     [
@@ -195,7 +184,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
       openThreadDraft,
       closePanel,
       closeAllPanels,
-      setDraftContent,
       transitionDraftToPanel,
     ]
   )

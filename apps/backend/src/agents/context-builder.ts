@@ -245,7 +245,7 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
         const authorName = await resolveAuthorName(db, message.authorId, message.authorType)
         anchorMessage = {
           id: message.id,
-          content: message.content.slice(0, 200), // Truncate for context
+          content: message.contentMarkdown.slice(0, 200), // Truncate for context
           authorName,
         }
       }

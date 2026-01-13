@@ -137,7 +137,7 @@ export interface Stream {
 
 export interface Message {
   id: string
-  content: string
+  contentMarkdown: string
   sequence: string
   authorId: string
   reactions: Record<string, string[]>

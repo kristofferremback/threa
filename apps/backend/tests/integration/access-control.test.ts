@@ -19,7 +19,7 @@ import { StreamService } from "../../src/services/stream-service"
 import { WorkspaceService } from "../../src/services/workspace-service"
 import { EventService } from "../../src/services/event-service"
 import { StreamNotFoundError } from "../../src/lib/errors"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, eventId, commandId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
 
@@ -571,7 +571,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Parent message for thread visibility test",
+        ...testMessageContent("Parent message for thread visibility test"),
       })
 
       // Create a thread from the channel
@@ -634,7 +634,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Deep message 1",
+        ...testMessageContent("Deep message 1"),
       })
 
       const thread1 = await streamService.createThread({
@@ -649,7 +649,7 @@ describe("Access Control", () => {
         streamId: thread1.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Deep message 2",
+        ...testMessageContent("Deep message 2"),
       })
 
       const thread2 = await streamService.createThread({
@@ -664,7 +664,7 @@ describe("Access Control", () => {
         streamId: thread2.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Deep message 3",
+        ...testMessageContent("Deep message 3"),
       })
 
       const thread3 = await streamService.createThread({
@@ -726,7 +726,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Private channel message for thread",
+        ...testMessageContent("Private channel message for thread"),
       })
 
       // Create a thread
@@ -800,7 +800,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: channelMemberId,
         authorType: "user",
-        content: "Message that will spawn a thread",
+        ...testMessageContent("Message that will spawn a thread"),
       })
       const thread = await streamService.createThread({
         workspaceId: wsId,
@@ -857,7 +857,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Message for add member to thread test",
+        ...testMessageContent("Message for add member to thread test"),
       })
 
       const thread = await streamService.createThread({
@@ -981,7 +981,7 @@ describe("Access Control", () => {
         streamId: channel.id,
         authorId: userAId,
         authorType: "user",
-        content: "Regular message visible to all",
+        ...testMessageContent("Regular message visible to all"),
       })
 
       // Create command events as User A (directly via repository for test control)

@@ -15,7 +15,7 @@ import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
 import { EventService } from "../../src/services/event-service"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, messageId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
 
@@ -69,7 +69,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Parent message for thread test",
+        ...testMessageContent("Parent message for thread test"),
       })
 
       // Create a thread from the channel
@@ -120,7 +120,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Message 1",
+        ...testMessageContent("Message 1"),
       })
 
       const thread1 = await streamService.createThread({
@@ -135,7 +135,7 @@ describe("Thread Graph", () => {
         streamId: thread1.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Message 2",
+        ...testMessageContent("Message 2"),
       })
 
       const thread2 = await streamService.createThread({
@@ -190,7 +190,7 @@ describe("Thread Graph", () => {
           streamId: parentStream.id,
           authorId: ownerId,
           authorType: "user",
-          content: `Deep message ${i + 1}`,
+          ...testMessageContent(`Deep message ${i + 1}`),
         })
 
         const thread = await streamService.createThread({
@@ -249,7 +249,7 @@ describe("Thread Graph", () => {
         streamId: scratchpad.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Scratchpad message for thread",
+        ...testMessageContent("Scratchpad message for thread"),
       })
 
       // Create a thread from the scratchpad
@@ -298,7 +298,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Message for thread membership test",
+        ...testMessageContent("Message for thread membership test"),
       })
 
       const thread = await streamService.createThread({
@@ -380,7 +380,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Parent message for idempotency test",
+        ...testMessageContent("Parent message for idempotency test"),
       })
 
       // Create thread first time
@@ -445,7 +445,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Parent message for multi-user idempotency test",
+        ...testMessageContent("Parent message for multi-user idempotency test"),
       })
 
       // First user creates thread
@@ -511,7 +511,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Parent message",
+        ...testMessageContent("Parent message"),
       })
 
       // Verify initial reply count is 0
@@ -532,7 +532,7 @@ describe("Thread Graph", () => {
         streamId: thread.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Reply 1",
+        ...testMessageContent("Reply 1"),
       })
 
       // Verify reply count is now 1
@@ -545,7 +545,7 @@ describe("Thread Graph", () => {
         streamId: thread.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Reply 2",
+        ...testMessageContent("Reply 2"),
       })
 
       // Verify reply count is now 2
@@ -586,7 +586,7 @@ describe("Thread Graph", () => {
         streamId: channel.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Channel message",
+        ...testMessageContent("Channel message"),
       })
 
       // Create thread from channel message
@@ -603,7 +603,7 @@ describe("Thread Graph", () => {
         streamId: thread1.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Thread 1 message",
+        ...testMessageContent("Thread 1 message"),
       })
 
       // Channel message should have 1 reply
@@ -624,7 +624,7 @@ describe("Thread Graph", () => {
         streamId: thread2.id,
         authorId: ownerId,
         authorType: "user",
-        content: "Thread 2 message",
+        ...testMessageContent("Thread 2 message"),
       })
 
       // Channel message should STILL have 1 reply (not 2)

@@ -14,7 +14,7 @@ import { EventService } from "../../src/services/event-service"
 import { StreamPersonaParticipantRepository } from "../../src/repositories/stream-persona-participant-repository"
 import { SearchRepository } from "../../src/repositories/search-repository"
 import { streamId, userId, workspaceId, personaId } from "../../src/lib/id"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { Visibilities } from "@threa/types"
 
 describe("Stream Persona Participants", () => {
@@ -59,7 +59,7 @@ describe("Stream Persona Participants", () => {
         streamId: testStreamId,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Hello from persona!",
+        ...testMessageContent("Hello from persona!"),
       })
 
       // Verify participation was recorded
@@ -91,7 +91,7 @@ describe("Stream Persona Participants", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Hello from user!",
+        ...testMessageContent("Hello from user!"),
       })
 
       // Verify NO participation was recorded
@@ -119,7 +119,7 @@ describe("Stream Persona Participants", () => {
         streamId: testStreamId,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "First message",
+        ...testMessageContent("First message"),
       })
 
       await eventService.createMessage({
@@ -127,7 +127,7 @@ describe("Stream Persona Participants", () => {
         streamId: testStreamId,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Second message",
+        ...testMessageContent("Second message"),
       })
 
       await eventService.createMessage({
@@ -135,7 +135,7 @@ describe("Stream Persona Participants", () => {
         streamId: testStreamId,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Third message",
+        ...testMessageContent("Third message"),
       })
 
       // Verify only one participation record exists
@@ -172,7 +172,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Hello in stream 1",
+        ...testMessageContent("Hello in stream 1"),
       })
 
       await eventService.createMessage({
@@ -180,7 +180,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream2,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Hello in stream 2",
+        ...testMessageContent("Hello in stream 2"),
       })
 
       // Verify findStreamsByPersona returns correct streams
@@ -221,7 +221,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: persona1,
         authorType: "persona",
-        content: "Persona 1 in stream 1",
+        ...testMessageContent("Persona 1 in stream 1"),
       })
 
       await eventService.createMessage({
@@ -229,7 +229,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: persona2,
         authorType: "persona",
-        content: "Persona 2 in stream 1",
+        ...testMessageContent("Persona 2 in stream 1"),
       })
 
       await eventService.createMessage({
@@ -237,7 +237,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream2,
         authorId: persona1,
         authorType: "persona",
-        content: "Only persona 1 in stream 2",
+        ...testMessageContent("Only persona 1 in stream 2"),
       })
 
       await eventService.createMessage({
@@ -245,7 +245,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream3,
         authorId: persona2,
         authorType: "persona",
-        content: "Only persona 2 in stream 3",
+        ...testMessageContent("Only persona 2 in stream 3"),
       })
 
       // Filter for streams where BOTH personas participated
@@ -289,7 +289,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: testPersonaId,
         authorType: "persona",
-        content: "Persona in stream 1",
+        ...testMessageContent("Persona in stream 1"),
       })
 
       // User sends message in both streams (for search content)
@@ -298,7 +298,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "User in stream 1",
+        ...testMessageContent("User in stream 1"),
       })
 
       await eventService.createMessage({
@@ -306,7 +306,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream2,
         authorId: testUserId,
         authorType: "user",
-        content: "User in stream 2",
+        ...testMessageContent("User in stream 2"),
       })
 
       // Get accessible streams with persona filter
@@ -359,7 +359,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream1,
         authorId: persona1,
         authorType: "persona",
-        content: "Persona in stream 1",
+        ...testMessageContent("Persona in stream 1"),
       })
 
       await eventService.createMessage({
@@ -367,7 +367,7 @@ describe("Stream Persona Participants", () => {
         streamId: stream2,
         authorId: persona1,
         authorType: "persona",
-        content: "Persona in stream 2",
+        ...testMessageContent("Persona in stream 2"),
       })
 
       // Filter for streams where user2 is member AND persona1 has participated

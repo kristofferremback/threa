@@ -25,7 +25,7 @@ export interface SearchResult {
 interface SearchResultRow {
   id: string
   stream_id: string
-  content: string
+  content_markdown: string
   author_id: string
   author_type: string
   created_at: Date
@@ -36,7 +36,7 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
   return {
     id: row.id,
     streamId: row.stream_id,
-    content: row.content,
+    content: row.content_markdown,
     authorId: row.author_id,
     authorType: row.author_type as "user" | "persona",
     createdAt: row.created_at,
@@ -177,7 +177,7 @@ export const SearchRepository = {
         SELECT
           m.id,
           m.stream_id,
-          m.content,
+          m.content_markdown,
           m.author_id,
           m.author_type,
           m.created_at,
@@ -200,7 +200,7 @@ export const SearchRepository = {
       SELECT
         m.id,
         m.stream_id,
-        m.content,
+        m.content_markdown,
         m.author_id,
         m.author_type,
         m.created_at,
@@ -246,7 +246,7 @@ export const SearchRepository = {
         SELECT
           m.id,
           m.stream_id,
-          m.content,
+          m.content_markdown,
           m.author_id,
           m.author_type,
           m.created_at,
@@ -266,7 +266,7 @@ export const SearchRepository = {
         SELECT
           m.id,
           m.stream_id,
-          m.content,
+          m.content_markdown,
           m.author_id,
           m.author_type,
           m.created_at,
@@ -286,7 +286,7 @@ export const SearchRepository = {
         SELECT
           COALESCE(k.id, s.id) as id,
           COALESCE(k.stream_id, s.stream_id) as stream_id,
-          COALESCE(k.content, s.content) as content,
+          COALESCE(k.content_markdown, s.content_markdown) as content_markdown,
           COALESCE(k.author_id, s.author_id) as author_id,
           COALESCE(k.author_type, s.author_type) as author_type,
           COALESCE(k.created_at, s.created_at) as created_at,
@@ -324,7 +324,7 @@ export const SearchRepository = {
       SELECT
         m.id,
         m.stream_id,
-        m.content,
+        m.content_markdown,
         m.author_id,
         m.author_type,
         m.created_at,
@@ -333,7 +333,7 @@ export const SearchRepository = {
       JOIN streams s ON m.stream_id = s.id
       WHERE m.stream_id = ANY(${streamIds})
         AND m.deleted_at IS NULL
-        AND m.content ILIKE '%' || ${escapedQuery} || '%'
+        AND m.content_markdown ILIKE '%' || ${escapedQuery} || '%'
         AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
         AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
         AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})

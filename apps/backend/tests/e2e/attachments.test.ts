@@ -169,7 +169,7 @@ describe("File Attachments E2E", () => {
       ])
 
       expect(message.id).toMatch(/^msg_/)
-      expect(message.content).toBe("Here is the file")
+      expect(message.contentMarkdown).toBe("Here is the file")
     })
 
     test("should attach multiple files to message", async () => {
@@ -208,7 +208,7 @@ describe("File Attachments E2E", () => {
       const message = await sendMessage(client, workspace.id, stream.id, "No files here")
 
       expect(message.id).toMatch(/^msg_/)
-      expect(message.content).toBe("No files here")
+      expect(message.contentMarkdown).toBe("No files here")
     })
   })
 

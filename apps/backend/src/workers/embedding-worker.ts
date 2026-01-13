@@ -40,13 +40,13 @@ export function createEmbeddingWorker(deps: EmbeddingWorkerDeps): JobHandler<Emb
       }
 
       // Skip very short messages (unlikely to be useful for semantic search)
-      if (message.content.trim().length < 10) {
+      if (message.contentMarkdown.trim().length < 10) {
         logger.debug({ messageId }, "Skipping embedding for very short message")
         return
       }
 
       // Generate embedding (with cost tracking context)
-      const embedding = await embeddingService.embed(message.content, {
+      const embedding = await embeddingService.embed(message.contentMarkdown, {
         workspaceId,
         functionId: "message-embedding",
       })

@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ThreadDraftPanel } from "./index"
+import type { JSONContent } from "@threa/types"
+
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+const makeDoc = (text: string): JSONContent => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+})
 
 // Mock react-router-dom
 vi.mock("react-router-dom", () => ({
@@ -34,7 +41,7 @@ const mockHandleFileSelect = vi.fn()
 
 // Composer state that tests can modify
 let mockComposerState = {
-  content: "",
+  content: EMPTY_DOC as JSONContent,
   pendingAttachments: [] as Array<{
     id: string
     filename: string
@@ -57,7 +64,7 @@ vi.mock("@/hooks", () => ({
       events: [
         {
           eventType: "message_created",
-          payload: { messageId: "msg_parent", content: "Parent message content" },
+          payload: { messageId: "msg_parent", contentMarkdown: "Parent message content" },
         },
       ],
     },
@@ -91,16 +98,14 @@ vi.mock("@/hooks", () => ({
 // Mock MessageComposer
 vi.mock("@/components/composer", () => ({
   MessageComposer: ({
-    content,
-    onContentChange,
     onSubmit,
     canSubmit,
     isSubmitting,
     hasFailed,
     pendingAttachments,
   }: {
-    content: string
-    onContentChange: (v: string) => void
+    content: JSONContent
+    onContentChange: (v: JSONContent) => void
     onSubmit: () => void
     canSubmit: boolean
     isSubmitting: boolean
@@ -108,7 +113,7 @@ vi.mock("@/components/composer", () => ({
     pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
   }) => (
     <div data-testid="message-composer">
-      <textarea data-testid="rich-editor" value={content} onChange={(e) => onContentChange(e.target.value)} />
+      <textarea data-testid="rich-editor" />
       {pendingAttachments.map((a) => (
         <div key={a.id}>
           <span>{a.filename}</span>
@@ -123,8 +128,8 @@ vi.mock("@/components/composer", () => ({
 
 // Mock EventItem
 vi.mock("@/components/timeline", () => ({
-  EventItem: ({ event }: { event: { payload: { content: string } } }) => (
-    <div data-testid="parent-message">{event.payload.content}</div>
+  EventItem: ({ event }: { event: { payload: { contentMarkdown: string } } }) => (
+    <div data-testid="parent-message">{event.payload.contentMarkdown}</div>
   ),
 }))
 
@@ -140,7 +145,7 @@ describe("ThreadDraftPanel", () => {
     mockStreamCreate.mockResolvedValue({ id: "stream_new_thread", createdBy: "user_123" })
     mockMessageCreate.mockResolvedValue({ id: "msg_123", createdAt: "2024-01-01T00:00:00Z" })
     mockComposerState = {
-      content: "",
+      content: EMPTY_DOC,
       pendingAttachments: [],
       uploadedIds: [],
       isUploading: false,
@@ -264,8 +269,9 @@ describe("ThreadDraftPanel", () => {
 
   describe("thread creation", () => {
     it("should create thread and send message when reply is clicked", async () => {
+      const helloContent = makeDoc("Hello thread")
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello thread"
+      mockComposerState.content = helloContent
 
       render(
         <ThreadDraftPanel
@@ -288,8 +294,8 @@ describe("ThreadDraftPanel", () => {
 
       expect(mockMessageCreate).toHaveBeenCalledWith(workspaceId, "stream_new_thread", {
         streamId: "stream_new_thread",
-        content: "Hello thread",
-        contentFormat: "markdown",
+        contentJson: helloContent,
+        contentMarkdown: "Hello thread",
         attachmentIds: undefined,
       })
 
@@ -298,7 +304,7 @@ describe("ThreadDraftPanel", () => {
 
     it("should clear draft and attachments when thread is created", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello thread"
+      mockComposerState.content = makeDoc("Hello thread")
 
       render(
         <ThreadDraftPanel
@@ -319,7 +325,7 @@ describe("ThreadDraftPanel", () => {
 
     it("should include attachment IDs when creating thread with attachments", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = ""
+      mockComposerState.content = EMPTY_DOC
       mockComposerState.uploadedIds = ["attach_123"]
       mockComposerState.pendingAttachments = [
         {
@@ -355,7 +361,7 @@ describe("ThreadDraftPanel", () => {
 
     it("should set optimistic cache before transitioning to thread panel", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello thread"
+      mockComposerState.content = makeDoc("Hello thread")
 
       render(
         <ThreadDraftPanel
@@ -378,7 +384,7 @@ describe("ThreadDraftPanel", () => {
 
     it("should include attachments in optimistic cache", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = ""
+      mockComposerState.content = EMPTY_DOC
       mockComposerState.uploadedIds = ["attach_123"]
       mockComposerState.pendingAttachments = [
         {

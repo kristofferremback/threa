@@ -122,7 +122,7 @@ export class Memorizer {
     const prompt = MESSAGE_MEMO_PROMPT.replace("{{MEMORY_CONTEXT}}", memoryContextText)
       .replace("{{MESSAGE_ID}}", message.id)
       .replace("{{AUTHOR_TYPE}}", message.authorType)
-      .replace("{{CONTENT}}", message.content)
+      .replace("{{CONTENT}}", message.contentMarkdown)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({

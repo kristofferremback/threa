@@ -10,8 +10,7 @@ const mockFindById = mock(() =>
       authorType: string
       authorId: string
       sequence: bigint
-      content: string
-      contentFormat: string
+      contentMarkdown: string
     } | null
   )
 )
@@ -46,8 +45,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "user_abc",
           payload: {
             messageId: "msg_def",
-            content: "Hello world",
-            contentFormat: "markdown",
+            contentMarkdown: "Hello world",
           },
         },
       }
@@ -64,8 +62,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "user_abc",
           payload: {
             messageId: "msg_def",
-            content: "Hello world",
-            contentFormat: "markdown",
+            contentMarkdown: "Hello world",
           },
         },
       })
@@ -82,8 +79,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "persona_xyz",
           payload: {
             messageId: "msg_def",
-            content: "AI response",
-            contentFormat: "markdown",
+            contentMarkdown: "AI response",
           },
         },
       }
@@ -117,8 +113,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: null,
           payload: {
             messageId: "msg_def",
-            content: "",
-            contentFormat: "plain",
+            contentMarkdown: "",
           },
         },
       })
@@ -145,8 +140,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: null,
           payload: {
             messageId: "msg_legacy",
-            content: "",
-            contentFormat: "plain",
+            contentMarkdown: "",
           },
         },
       })
@@ -158,8 +152,7 @@ describe("parseMessageCreatedPayload", () => {
         authorType: "persona",
         authorId: "persona_abc",
         sequence: BigInt(99),
-        content: "Looked up content",
-        contentFormat: "markdown",
+        contentMarkdown: "Looked up content",
       })
 
       const payload = {
@@ -173,7 +166,7 @@ describe("parseMessageCreatedPayload", () => {
       expect(result?.event.actorType).toBe("persona")
       expect(result?.event.actorId).toBe("persona_abc")
       expect(result?.event.sequence).toBe("99")
-      expect(result?.event.payload.content).toBe("Looked up content")
+      expect(result?.event.payload.contentMarkdown).toBe("Looked up content")
     })
 
     test("should use payload content as fallback when message not found", async () => {
@@ -183,14 +176,13 @@ describe("parseMessageCreatedPayload", () => {
         workspaceId: "ws_123",
         streamId: "stream_456",
         messageId: "msg_legacy",
-        content: "Fallback content",
-        contentFormat: "plain",
+        contentMarkdown: "Fallback content",
       }
 
       const result = await parseMessageCreatedPayload(payload, mockPool)
 
       expect(result?.event.actorType).toBe("user")
-      expect(result?.event.payload.content).toBe("Fallback content")
+      expect(result?.event.payload.contentMarkdown).toBe("Fallback content")
     })
   })
 

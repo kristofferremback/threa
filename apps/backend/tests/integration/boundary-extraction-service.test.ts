@@ -19,7 +19,7 @@ import { MessageRepository } from "../../src/repositories/message-repository"
 import { ConversationRepository } from "../../src/repositories/conversation-repository"
 import { OutboxRepository } from "../../src/repositories/outbox-repository"
 import { BoundaryExtractionService } from "../../src/services/boundary-extraction-service"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "../../src/lib/boundary-extraction/types"
@@ -119,7 +119,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "Starting a new topic",
+          ...testMessageContent("Starting a new topic"),
         })
       })
 
@@ -152,7 +152,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(10),
           authorId: testUserId,
           authorType: "user",
-          content: "First message",
+          ...testMessageContent("First message"),
         })
 
         await ConversationRepository.insert(client, {
@@ -170,7 +170,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(11),
           authorId: testUserId,
           authorType: "user",
-          content: "Continuation of topic",
+          ...testMessageContent("Continuation of topic"),
         })
       })
 
@@ -201,7 +201,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(20),
           authorId: testUserId,
           authorType: "user",
-          content: "Question about X",
+          ...testMessageContent("Question about X"),
         })
 
         await MessageRepository.insert(client, {
@@ -210,7 +210,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(21),
           authorId: testUserId,
           authorType: "user",
-          content: "Working on Y",
+          ...testMessageContent("Working on Y"),
         })
 
         await ConversationRepository.insert(client, {
@@ -237,7 +237,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(22),
           authorId: testUserId,
           authorType: "user",
-          content: "Answer to X",
+          ...testMessageContent("Answer to X"),
         })
       })
 
@@ -278,7 +278,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "New conversation starter",
+          ...testMessageContent("New conversation starter"),
         })
       })
 
@@ -329,7 +329,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "First message",
+          ...testMessageContent("First message"),
         })
 
         await ConversationRepository.insert(client, {
@@ -345,7 +345,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(2),
           authorId: testUserId,
           authorType: "user",
-          content: "Second message",
+          ...testMessageContent("Second message"),
         })
       })
 
@@ -385,7 +385,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(100),
           authorId: testUserId,
           authorType: "user",
-          content: "Test message",
+          ...testMessageContent("Test message"),
         })
       })
 
@@ -413,7 +413,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(50),
           authorId: testUserId,
           authorType: "user",
-          content: "User 1 message",
+          ...testMessageContent("User 1 message"),
         })
 
         await ConversationRepository.insert(client, {
@@ -430,7 +430,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(51),
           authorId: user2Id,
           authorType: "user",
-          content: "User 2 reply",
+          ...testMessageContent("User 2 reply"),
         })
       })
 
@@ -467,7 +467,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "Scratchpad message",
+          ...testMessageContent("Scratchpad message"),
         })
       })
 
@@ -499,7 +499,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "First note",
+          ...testMessageContent("First note"),
         })
       })
 
@@ -517,7 +517,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(2),
           authorId: testUserId,
           authorType: "user",
-          content: "Second note",
+          ...testMessageContent("Second note"),
         })
 
         await MessageRepository.insert(client, {
@@ -526,7 +526,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(3),
           authorId: testUserId,
           authorType: "user",
-          content: "Third note",
+          ...testMessageContent("Third note"),
         })
       })
 
@@ -568,7 +568,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "Some ideas",
+          ...testMessageContent("Some ideas"),
         })
       })
 
@@ -598,7 +598,7 @@ describe("BoundaryExtractionService", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "Test message",
+          ...testMessageContent("Test message"),
         })
       })
 

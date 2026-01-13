@@ -1,5 +1,6 @@
 import type { Querier } from "../db"
 import { sql } from "../db"
+import type { JSONContent } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface MessageRow {
@@ -8,8 +9,8 @@ interface MessageRow {
   sequence: string
   author_id: string
   author_type: string
-  content: string
-  content_format: string
+  content_json: JSONContent
+  content_markdown: string
   reply_count: number
   edited_at: Date | null
   deleted_at: Date | null
@@ -29,8 +30,8 @@ export interface Message {
   sequence: bigint
   authorId: string
   authorType: "user" | "persona"
-  content: string
-  contentFormat: "markdown" | "plaintext"
+  contentJson: JSONContent
+  contentMarkdown: string
   replyCount: number
   reactions: Record<string, string[]>
   editedAt: Date | null
@@ -44,8 +45,8 @@ export interface InsertMessageParams {
   sequence: bigint
   authorId: string
   authorType: "user" | "persona"
-  content: string
-  contentFormat?: "markdown" | "plaintext"
+  contentJson: JSONContent
+  contentMarkdown: string
 }
 
 function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = {}): Message {
@@ -55,8 +56,8 @@ function mapRowToMessage(row: MessageRow, reactions: Record<string, string[]> = 
     sequence: BigInt(row.sequence),
     authorId: row.author_id,
     authorType: row.author_type as "user" | "persona",
-    content: row.content,
-    contentFormat: row.content_format as "markdown" | "plaintext",
+    contentJson: row.content_json,
+    contentMarkdown: row.content_markdown,
     replyCount: row.reply_count,
     reactions,
     editedAt: row.edited_at,
@@ -99,7 +100,7 @@ function aggregateReactionsByMessage(rows: ReactionRow[]): Map<string, Record<st
 
 const SELECT_FIELDS = `
   id, stream_id, sequence, author_id, author_type,
-  content, content_format, reply_count,
+  content_json, content_markdown, reply_count,
   edited_at, deleted_at, created_at
 `
 
@@ -178,25 +179,30 @@ export const MessageRepository = {
 
   async insert(db: Querier, params: InsertMessageParams): Promise<Message> {
     const result = await db.query<MessageRow>(sql`
-      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content, content_format)
+      INSERT INTO messages (id, stream_id, sequence, author_id, author_type, content_json, content_markdown)
       VALUES (
         ${params.id},
         ${params.streamId},
         ${params.sequence.toString()},
         ${params.authorId},
         ${params.authorType},
-        ${params.content},
-        ${params.contentFormat ?? "markdown"}
+        ${JSON.stringify(params.contentJson)},
+        ${params.contentMarkdown}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRowToMessage(result.rows[0])
   },
 
-  async updateContent(db: Querier, id: string, content: string): Promise<Message | null> {
+  async updateContent(
+    db: Querier,
+    id: string,
+    contentJson: JSONContent,
+    contentMarkdown: string
+  ): Promise<Message | null> {
     const result = await db.query<MessageRow>(sql`
       UPDATE messages
-      SET content = ${content}, edited_at = NOW()
+      SET content_json = ${JSON.stringify(contentJson)}, content_markdown = ${contentMarkdown}, edited_at = NOW()
       WHERE id = ${id}
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
@@ -294,7 +300,7 @@ export const MessageRepository = {
     const result = await db.query<MessageRow & { parent_message_id: string }>(sql`
       SELECT
         m.id, m.stream_id, m.sequence, m.author_id, m.author_type,
-        m.content, m.content_format, m.reply_count,
+        m.content_json, m.content_markdown, m.reply_count,
         m.edited_at, m.deleted_at, m.created_at,
         s.parent_message_id
       FROM messages m

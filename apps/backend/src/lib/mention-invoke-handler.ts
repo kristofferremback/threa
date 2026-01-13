@@ -126,7 +126,7 @@ export class MentionInvokeHandler implements OutboxHandler {
           const triggeredBy = messageEvent.actorId
 
           // Extract @mentions from message content
-          const mentionSlugs = extractMentionSlugs(messageEvent.payload.content)
+          const mentionSlugs = extractMentionSlugs(messageEvent.payload.contentMarkdown)
           if (mentionSlugs.length === 0) {
             lastProcessedId = event.id
             continue

@@ -1,5 +1,5 @@
 {
-  "name": "@threa/types",
+  "name": "@threa/prosemirror",
   "version": "0.1.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -7,10 +7,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@threa/types": "workspace:*"
+  },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "zod": "^4.3.5"
   }
 }

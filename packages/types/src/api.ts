@@ -4,7 +4,8 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
+import type { StreamType, Visibility, CompanionMode } from "./constants"
+import type { JSONContent } from "./prosemirror"
 import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember, User, Persona } from "./domain"
 import type { UserPreferences } from "./preferences"
 
@@ -49,16 +50,53 @@ export interface StreamBootstrap {
 // Messages API
 // ============================================================================
 
-export interface CreateMessageInput {
+/**
+ * JSON input format - used by rich clients sending ProseMirror JSON directly.
+ */
+export interface CreateMessageInputJson {
   streamId: string
-  content: string
-  contentFormat?: ContentFormat
+  /** ProseMirror JSON content from TipTap editor */
+  contentJson: JSONContent
+  /** Optional pre-computed markdown (backend derives if missing) */
+  contentMarkdown?: string
   attachmentIds?: string[]
 }
 
-export interface UpdateMessageInput {
+/**
+ * Markdown input format - used by AI agents, external integrators, CLI tools.
+ */
+export interface CreateMessageInputMarkdown {
+  streamId: string
+  /** Markdown text content */
+  content: string
+  attachmentIds?: string[]
+}
+
+/**
+ * Union type - API accepts either JSON or Markdown input.
+ * Backend detects format by presence of `contentJson` vs `content` field.
+ */
+export type CreateMessageInput = CreateMessageInputJson | CreateMessageInputMarkdown
+
+/**
+ * JSON input format for updates.
+ */
+export interface UpdateMessageInputJson {
+  contentJson: JSONContent
+  contentMarkdown?: string
+}
+
+/**
+ * Markdown input format for updates.
+ */
+export interface UpdateMessageInputMarkdown {
   content: string
 }
+
+/**
+ * Union type - API accepts either JSON or Markdown for updates.
+ */
+export type UpdateMessageInput = UpdateMessageInputJson | UpdateMessageInputMarkdown
 
 // ============================================================================
 // Workspaces API
