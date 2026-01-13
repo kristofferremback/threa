@@ -198,7 +198,7 @@ describe("Real-time Events", () => {
         actorId: userId,
       })
       expect(event.event.payload).toMatchObject({
-        content: "Hello, real-time!",
+        contentMarkdown: "Hello, real-time!",
       })
     })
 
@@ -220,7 +220,7 @@ describe("Real-time Events", () => {
       })
       expect(event.event.payload).toMatchObject({
         messageId: message.id,
-        content: "Updated content",
+        contentMarkdown: "Updated content",
       })
     })
 

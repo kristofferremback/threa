@@ -228,7 +228,7 @@ describe("Companion Agent", () => {
         eventType: "message_created",
         actorType: "persona",
       })
-      expect(response.event.payload).toHaveProperty("content")
+      expect(response.event.payload).toHaveProperty("contentMarkdown")
     })
 
     test("should have proper message structure in companion response", async () => {
@@ -248,7 +248,7 @@ describe("Companion Agent", () => {
         actorType: "persona",
         createdAt: expect.any(String),
         payload: {
-          content: expect.any(String),
+          contentMarkdown: expect.any(String),
           messageId: expect.any(String),
         },
       })

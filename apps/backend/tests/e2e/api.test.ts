@@ -206,7 +206,7 @@ describe("API E2E Tests", () => {
 
       const updated = await updateMessage(client, workspace.id, message.id, "Updated content")
 
-      expect(updated.content).toBe("Updated content")
+      expect(updated.contentMarkdown).toBe("Updated content")
     })
 
     test("should delete message", async () => {
@@ -583,14 +583,13 @@ describe("API E2E Tests", () => {
 
       const scratchpad = await createScratchpad(client, workspace.id)
 
-      // Messages require streamId and content
+      // Messages require streamId and content (or contentJson)
       const { status: msgStatus, data: msgData } = await client.post<{
         error: string
         details?: Record<string, string[]>
       }>(`/api/workspaces/${workspace.id}/messages`, { streamId: scratchpad.id })
       expect(msgStatus).toBe(400)
       expect(msgData.error).toBe("Validation failed")
-      expect(msgData.details?.content).toBeDefined()
     })
   })
 
@@ -764,9 +763,9 @@ describe("API E2E Tests", () => {
       // 7. Verify edit via message_edited event
       const editEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_edited"])
       expect(editEvents.length).toBe(1)
-      const editPayload = editEvents[0].payload as { messageId: string; content: string }
+      const editPayload = editEvents[0].payload as { messageId: string; contentMarkdown: string }
       expect(editPayload.messageId).toBe(m2.id)
-      expect(editPayload.content).toBe("First step: talk to potential customers")
+      expect(editPayload.contentMarkdown).toBe("First step: talk to potential customers")
     })
   })
 })
