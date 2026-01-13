@@ -143,6 +143,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family:
+      "Space Grotesk",
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
   }
 }
 
@@ -177,6 +184,49 @@
 
   .dark .thread-glow {
     box-shadow: 0 0 20px hsl(var(--primary) / 0.1);
+  }
+
+  /* Premium glow effect for focused inputs */
+  .input-glow-wrapper {
+    position: relative;
+  }
+
+  .input-glow-wrapper::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 14px;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary) / 0.2),
+      hsl(var(--primary) / 0.05),
+      hsl(var(--primary) / 0.2)
+    );
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .input-glow-wrapper:focus-within::before {
+    opacity: 1;
+  }
+
+  /* Activity indicator dot */
+  .activity-dot {
+    @apply w-2 h-2 rounded-full bg-primary;
+  }
+
+  .activity-dot.recent {
+    @apply animate-activity-pulse;
+  }
+
+  /* Search result highlight */
+  .search-highlight mark {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+    padding: 0 2px;
+    border-radius: 2px;
   }
 }
 

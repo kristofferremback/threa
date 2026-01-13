@@ -379,16 +379,12 @@ export function RichEditor({
         linkPopoverOpen={linkPopoverOpen}
         onLinkPopoverOpenChange={setLinkPopoverOpen}
       />
-      <div
-        className={cn(
-          "rounded-md border border-input bg-background",
-          "ring-offset-background transition-colors",
-          "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
-          disabled && "cursor-not-allowed opacity-50",
-          className
-        )}
-      >
-        <EditorContent editor={editor} />
+      <div className={cn("input-glow-wrapper", disabled && "cursor-not-allowed opacity-50", className)}>
+        <div
+          className={cn("rounded-input border border-input bg-background", "ring-offset-background transition-colors")}
+        >
+          <EditorContent editor={editor} />
+        </div>
       </div>
       {renderMentionList()}
       {renderChannelList()}
