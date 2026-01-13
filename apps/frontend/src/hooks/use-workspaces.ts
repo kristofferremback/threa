@@ -54,6 +54,12 @@ export function useWorkspace(workspaceId: string) {
 
 export function useWorkspaceBootstrap(workspaceId: string) {
   const workspaceService = useWorkspaceService()
+  const queryClient = useQueryClient()
+
+  // Check if this query has already errored - don't re-enable if so
+  // This prevents continuous refetching when the server is down
+  const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
+  const hasExistingError = existingQueryState?.status === "error"
 
   return useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
@@ -87,7 +93,15 @@ export function useWorkspaceBootstrap(workspaceId: string) {
 
       return bootstrap
     },
-    enabled: !!workspaceId,
+    // Don't enable if the query has already errored to prevent continuous refetch loops
+    enabled: !!workspaceId && !hasExistingError,
+    // Prevent automatic refetching - socket events handle updates
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }
 
