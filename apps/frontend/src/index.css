@@ -228,6 +228,30 @@
     padding: 0 2px;
     border-radius: 2px;
   }
+
+  /* Inline attachment references in message content */
+  .inline-ref {
+    display: inline-flex;
+    padding: 2px 6px;
+    background: hsl(var(--primary) / 0.1);
+    border-radius: 4px;
+    font-size: 12px;
+    color: hsl(var(--primary));
+  }
+
+  /* Keyboard hint styling for quick switcher footer */
+  .kbd-hint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    background: hsl(var(--muted));
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+  }
 }
 
 /*

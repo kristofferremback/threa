@@ -64,16 +64,17 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        "message-item group flex gap-3 py-2",
-        isPersona && "bg-muted/30 -mx-4 px-4 rounded-lg",
+        // All messages get subtle gradient styling
+        "message-item group flex gap-3 py-3 px-3 -mx-3 rounded-lg",
+        "bg-gradient-to-br from-muted/[0.03] to-transparent",
+        // AI/Persona messages get subtle gold left border accent
+        isPersona && "border-l-2 border-l-primary/60 pl-3",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
       <Avatar className="message-avatar h-8 w-8 shrink-0">
-        <AvatarFallback className={cn(isPersona && "bg-primary text-primary-foreground")}>
-          {actorInitials}
-        </AvatarFallback>
+        <AvatarFallback className={cn(isPersona && "bg-primary/20 text-primary")}>{actorInitials}</AvatarFallback>
       </Avatar>
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
@@ -135,8 +136,9 @@ function SentMessageEvent({
   }
 
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
-  const threadFooter =
-    !hideActions && threadId ? (
+  // Shows on hover when no thread exists yet, or always when thread exists
+  const threadFooter = !hideActions ? (
+    threadId ? (
       replyCount > 0 ? (
         <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} className="mt-1" />
       ) : (
@@ -147,7 +149,16 @@ function SentMessageEvent({
           Reply in thread
         </Link>
       )
-    ) : null
+    ) : (
+      // Show "Reply in thread" on hover when no thread exists
+      <button
+        onClick={handleReplyClick}
+        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity text-left"
+      >
+        Reply in thread
+      </button>
+    )
+  ) : null
 
   return (
     <MessageLayout
@@ -158,21 +169,18 @@ function SentMessageEvent({
       actorInitials={actorInitials}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
+        // Only show the icon button when thread exists (to open it)
+        // For messages without threads, we show "Reply in thread" text in footer on hover
         !hideActions &&
-        !isParentOfCurrentThread && (
+        !isParentOfCurrentThread &&
+        threadId && (
           <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-            {threadId ? (
-              <Link
-                to={getPanelUrl(threadId)}
-                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
-              >
-                <MessageSquareReply className="h-4 w-4" />
-              </Link>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={handleReplyClick}>
-                <MessageSquareReply className="h-4 w-4" />
-              </Button>
-            )}
+            <Link
+              to={getPanelUrl(threadId)}
+              className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
+            >
+              <MessageSquareReply className="h-4 w-4" />
+            </Link>
           </div>
         )
       }

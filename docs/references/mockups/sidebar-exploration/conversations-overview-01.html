@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conversations Overview Exploration - Threa Design</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --background: 30 15% 8%;
+        --foreground: 35 20% 90%;
+        --card: 30 12% 12%;
+        --card-foreground: 35 20% 90%;
+        --popover: 30 12% 10%;
+        --popover-foreground: 35 20% 90%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 20% 90%;
+        --muted: 30 10% 20%;
+        --muted-foreground: 35 15% 55%;
+        --accent: 30 12% 18%;
+        --accent-foreground: 35 20% 90%;
+        --border: 30 10% 20%;
+        --input: 30 10% 15%;
+        --ring: 38 65% 50%;
+        --sidebar-bg: 30 15% 6%;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        line-height: 1.5;
+        padding: 40px;
+      }
+
+      h1 {
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+
+      .subtitle {
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 40px;
+        font-size: 15px;
+      }
+
+      .section {
+        margin-bottom: 60px;
+      }
+
+      .section-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .section-desc {
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 24px;
+        font-size: 14px;
+        max-width: 700px;
+      }
+
+      /* Problems section */
+      .problems {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+        margin-bottom: 40px;
+      }
+
+      .problem-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .problem-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: hsl(0 60% 60%);
+      }
+
+      .problem-desc {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Sidebar mockups */
+      .sidebar-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 24px;
+      }
+
+      .sidebar-mockup {
+        background: hsl(var(--sidebar-bg));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        overflow: hidden;
+        min-height: 500px;
+      }
+
+      .mockup-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--secondary));
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .mockup-label {
+        font-size: 11px;
+        color: hsl(var(--primary));
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+      }
+
+      /* Sidebar content */
+      .sidebar-content {
+        padding: 12px;
+      }
+
+      .sidebar-section {
+        margin-bottom: 16px;
+      }
+
+      .sidebar-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .sidebar-section-header .count {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: hsl(var(--secondary));
+        border-radius: 4px;
+      }
+
+      /* Stream items - Current (Basic) */
+      .stream-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      .stream-item:hover {
+        background: hsl(var(--secondary));
+      }
+
+      .stream-item.active {
+        background: hsl(var(--primary) / 0.15);
+      }
+
+      .stream-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      .stream-name {
+        flex: 1;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .unread-badge {
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-radius: 9px;
+        font-size: 11px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Stream items - Enhanced (with preview) */
+      .stream-item-enhanced {
+        display: flex;
+        gap: 10px;
+        padding: 10px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      .stream-item-enhanced:hover {
+        background: hsl(var(--secondary));
+      }
+
+      .stream-item-enhanced.active {
+        background: hsl(var(--primary) / 0.15);
+      }
+
+      .stream-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: hsl(var(--secondary));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+
+      .stream-avatar.channel {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .stream-avatar.scratchpad {
+        background: hsl(280 50% 30% / 0.3);
+        color: hsl(280 60% 70%);
+      }
+
+      .stream-avatar.dm {
+        background: hsl(var(--secondary));
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .stream-details {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .stream-top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2px;
+      }
+
+      .stream-name-enhanced {
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stream-time {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      .stream-preview {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stream-preview .author {
+        color: hsl(var(--foreground) / 0.7);
+      }
+
+      .stream-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+      }
+
+      .stream-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--secondary));
+        color: hsl(var(--muted-foreground));
+      }
+
+      .stream-badge.hot {
+        background: hsl(var(--primary) / 0.2);
+        color: hsl(var(--primary));
+      }
+
+      .stream-badge.stalled {
+        background: hsl(45 70% 40% / 0.2);
+        color: hsl(45 70% 60%);
+      }
+
+      /* Activity indicator */
+      .activity-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: hsl(var(--primary));
+        flex-shrink: 0;
+      }
+
+      .activity-dot.recent {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      /* Pinned section */
+      .pinned-section {
+        background: hsl(var(--primary) / 0.05);
+        border: 1px solid hsl(var(--primary) / 0.1);
+        border-radius: 8px;
+        padding: 8px;
+        margin-bottom: 16px;
+      }
+
+      .pinned-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--primary));
+        margin-bottom: 8px;
+        padding: 0 4px;
+      }
+
+      /* Tabs */
+      .sidebar-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 8px 8px 0;
+        border-bottom: 1px solid hsl(var(--border));
+        margin-bottom: 8px;
+      }
+
+      .sidebar-tab {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: all 0.15s;
+      }
+
+      .sidebar-tab:hover {
+        color: hsl(var(--foreground));
+      }
+
+      .sidebar-tab.active {
+        color: hsl(var(--primary));
+        border-bottom-color: hsl(var(--primary));
+      }
+
+      /* Search */
+      .sidebar-search {
+        padding: 8px;
+        margin-bottom: 8px;
+      }
+
+      .search-input {
+        width: 100%;
+        padding: 8px 12px;
+        background: hsl(var(--input));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        font-size: 13px;
+        color: hsl(var(--foreground));
+        outline: none;
+      }
+
+      .search-input::placeholder {
+        color: hsl(var(--muted-foreground));
+      }
+
+      .search-input:focus {
+        border-color: hsl(var(--primary) / 0.5);
+      }
+
+      /* Sort dropdown */
+      .sort-control {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+
+      .sort-control:hover {
+        background: hsl(var(--secondary));
+        color: hsl(var(--foreground));
+      }
+
+      /* Comparison table */
+      .comparison {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-top: 24px;
+      }
+
+      .comparison-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 20px;
+      }
+
+      .comparison-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .comparison-list {
+        list-style: none;
+      }
+
+      .comparison-list li {
+        font-size: 13px;
+        padding: 6px 0;
+        border-bottom: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .comparison-list li:last-child {
+        border-bottom: none;
+      }
+
+      .check-icon {
+        color: hsl(120 50% 50%);
+      }
+
+      .x-icon {
+        color: hsl(0 60% 50%);
+      }
+
+      /* Annotation */
+      .annotation {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        background: hsl(var(--primary) / 0.15);
+        border: 1px solid hsl(var(--primary) / 0.3);
+        border-radius: 6px;
+        font-size: 12px;
+        color: hsl(var(--primary));
+        margin-top: 12px;
+      }
+
+      /* Grid layout for exploration */
+      .exploration-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+
+      @media (max-width: 1200px) {
+        .exploration-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 800px) {
+        .exploration-grid,
+        .comparison,
+        .sidebar-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Muted stream */
+      .stream-item.muted,
+      .stream-item-enhanced.muted {
+        opacity: 0.5;
+      }
+
+      .mute-icon {
+        font-size: 10px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Quick actions on hover */
+      .stream-actions {
+        display: none;
+        gap: 4px;
+      }
+
+      .stream-item-enhanced:hover .stream-actions {
+        display: flex;
+      }
+
+      .stream-item-enhanced:hover .stream-time {
+        display: none;
+      }
+
+      .stream-action-btn {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: hsl(var(--secondary));
+        border: none;
+        border-radius: 4px;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .stream-action-btn:hover {
+        background: hsl(var(--accent));
+        color: hsl(var(--foreground));
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Conversations Overview Exploration</h1>
+    <p class="subtitle">Rethinking how streams and conversations are displayed in the sidebar</p>
+
+    <!-- Problems Section -->
+    <div class="section">
+      <h2 class="section-title">Current Problems</h2>
+      <div class="problems">
+        <div class="problem-card">
+          <div class="problem-title">No Activity Context</div>
+          <div class="problem-desc">
+            Must open each stream to see what's happening. No preview, no timestamp, no author.
+          </div>
+        </div>
+        <div class="problem-card">
+          <div class="problem-title">Alphabetical Only</div>
+          <div class="problem-desc">
+            Active conversations get buried. No way to sort by "most recent" or "most active".
+          </div>
+        </div>
+        <div class="problem-card">
+          <div class="problem-title">No Favorites</div>
+          <div class="problem-desc">Can't pin important streams to the top. Must scroll to find them every time.</div>
+        </div>
+        <div class="problem-card">
+          <div class="problem-title">Hidden Conversations</div>
+          <div class="problem-desc">
+            The conversation panel with AI summaries is hidden behind a button. Most users never discover it.
+          </div>
+        </div>
+        <div class="problem-card">
+          <div class="problem-title">No Status Indicators</div>
+          <div class="problem-desc">
+            Can't see which conversations need attention (hot) vs. which have gone quiet (stalled).
+          </div>
+        </div>
+        <div class="problem-card">
+          <div class="problem-title">Flat Structure</div>
+          <div class="problem-desc">
+            All streams in one list. No grouping, no collapsible sections, no visual hierarchy.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Design 1: Current vs Enhanced -->
+    <div class="section">
+      <h2 class="section-title">Design 1: Basic vs. Enhanced Items</h2>
+      <p class="section-desc">
+        Comparing the current minimal stream items with richer previews that show last message and activity time.
+      </p>
+
+      <div class="sidebar-grid">
+        <!-- Current -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">Current</div>
+            Basic List
+          </div>
+          <div class="sidebar-content">
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Scratchpads
+                <span class="count">3</span>
+              </div>
+              <div class="stream-item active">
+                <span class="stream-icon">📝</span>
+                <span class="stream-name">My Scratchpad</span>
+                <span class="unread-badge">2</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">📝</span>
+                <span class="stream-name">Redis Research</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">📝</span>
+                <span class="stream-name">Q4 Planning</span>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Channels
+                <span class="count">4</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">auth-dev</span>
+                <span class="unread-badge">5</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">engineering</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">general</span>
+                <span class="unread-badge">12</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">random</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Enhanced -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">Enhanced</div>
+            With Previews
+          </div>
+          <div class="sidebar-content">
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Scratchpads
+                <span class="count">3</span>
+              </div>
+              <div class="stream-item-enhanced active">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">My Scratchpad</span>
+                    <span class="stream-time">2m</span>
+                  </div>
+                  <div class="stream-preview">
+                    <span class="author">You:</span> Need to follow up on the auth refactor...
+                  </div>
+                </div>
+                <span class="unread-badge">2</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Redis Research</span>
+                    <span class="stream-time">2h</span>
+                  </div>
+                  <div class="stream-preview">
+                    <span class="author">Ariadne:</span> Based on your requirements, I'd recommend...
+                  </div>
+                </div>
+              </div>
+              <div class="stream-item-enhanced muted">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Q4 Planning</span>
+                    <span class="stream-time">3d</span>
+                    <span class="mute-icon">🔇</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">You:</span> Revenue targets for next quarter...</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Channels
+                <span class="count">4</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">auth-dev</span>
+                    <span class="stream-time">5m</span>
+                  </div>
+                  <div class="stream-preview">
+                    <span class="author">Sarah:</span> Just pushed the token refresh changes
+                  </div>
+                </div>
+                <div class="activity-dot recent"></div>
+                <span class="unread-badge">5</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">general</span>
+                    <span class="stream-time">1h</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Marcus:</span> Anyone up for lunch at noon?</div>
+                </div>
+                <span class="unread-badge">12</span>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">Shows author, preview, and time at a glance</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Design 2: Sort & Filter -->
+    <div class="section">
+      <h2 class="section-title">Design 2: Sorting & Filtering</h2>
+      <p class="section-desc">
+        Adding tabs or sort controls to let users choose between "Recent" (by activity) and "All" (alphabetical).
+      </p>
+
+      <div class="exploration-grid">
+        <!-- Tab-based -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">Option A</div>
+            Tab Navigation
+          </div>
+          <div class="sidebar-tabs">
+            <div class="sidebar-tab active">Recent</div>
+            <div class="sidebar-tab">All</div>
+            <div class="sidebar-tab">Unread</div>
+          </div>
+          <div class="sidebar-content">
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar channel">#</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">auth-dev</span>
+                  <span class="stream-time">5m</span>
+                </div>
+                <div class="stream-preview"><span class="author">Sarah:</span> Just pushed the token refresh</div>
+              </div>
+              <span class="unread-badge">5</span>
+            </div>
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar scratchpad">📝</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">My Scratchpad</span>
+                  <span class="stream-time">15m</span>
+                </div>
+                <div class="stream-preview"><span class="author">You:</span> Need to follow up...</div>
+              </div>
+              <span class="unread-badge">2</span>
+            </div>
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar channel">#</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">general</span>
+                  <span class="stream-time">1h</span>
+                </div>
+                <div class="stream-preview"><span class="author">Marcus:</span> Lunch at noon?</div>
+              </div>
+              <span class="unread-badge">12</span>
+            </div>
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar scratchpad">📝</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">Redis Research</span>
+                  <span class="stream-time">2h</span>
+                </div>
+                <div class="stream-preview"><span class="author">Ariadne:</span> I'd recommend...</div>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">Mixed types sorted by activity</div>
+        </div>
+
+        <!-- Search + Sort -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">Option B</div>
+            Search + Sort Dropdown
+          </div>
+          <div class="sidebar-search">
+            <input type="text" class="search-input" placeholder="Search conversations..." />
+          </div>
+          <div style="padding: 0 12px 8px; display: flex; justify-content: space-between; align-items: center">
+            <span style="font-size: 11px; color: hsl(var(--muted-foreground))">19 conversations</span>
+            <div class="sort-control">Sort: Recent ▾</div>
+          </div>
+          <div class="sidebar-content" style="padding-top: 0">
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar channel">#</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">auth-dev</span>
+                  <span class="stream-time">5m</span>
+                </div>
+                <div class="stream-preview"><span class="author">Sarah:</span> Token refresh changes</div>
+              </div>
+              <span class="unread-badge">5</span>
+            </div>
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar scratchpad">📝</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">My Scratchpad</span>
+                  <span class="stream-time">15m</span>
+                </div>
+                <div class="stream-preview"><span class="author">You:</span> Need to follow up...</div>
+              </div>
+              <span class="unread-badge">2</span>
+            </div>
+            <div class="stream-item-enhanced">
+              <div class="stream-avatar dm">SC</div>
+              <div class="stream-details">
+                <div class="stream-top-row">
+                  <span class="stream-name-enhanced">Sarah Chen</span>
+                  <span class="stream-time">30m</span>
+                </div>
+                <div class="stream-preview"><span class="author">Sarah:</span> Can you review my PR?</div>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">Searchable with sort options</div>
+        </div>
+
+        <!-- Hybrid with Pinned -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">Option C</div>
+            Pinned + Recent
+          </div>
+          <div class="sidebar-content">
+            <div class="pinned-section">
+              <div class="pinned-header">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L12 12" />
+                  <circle cx="12" cy="18" r="4" />
+                </svg>
+                Pinned
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">auth-dev</span>
+                <span class="unread-badge">5</span>
+              </div>
+              <div class="stream-item">
+                <span class="stream-icon">📝</span>
+                <span class="stream-name">My Scratchpad</span>
+                <span class="unread-badge">2</span>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Recent
+                <span class="sort-control">Activity ▾</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">general</span>
+                    <span class="stream-time">1h</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Marcus:</span> Lunch at noon?</div>
+                </div>
+                <span class="unread-badge">12</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Redis Research</span>
+                    <span class="stream-time">2h</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Ariadne:</span> I'd recommend...</div>
+                </div>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar dm">MJ</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Marcus Johnson</span>
+                    <span class="stream-time">3h</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">You:</span> Sounds good!</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">Pinned always visible + recent below</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Design 3: Status Indicators -->
+    <div class="section">
+      <h2 class="section-title">Design 3: Conversation Status</h2>
+      <p class="section-desc">
+        Surfacing conversation health (Active, Needs Attention, Stalled) directly in the sidebar.
+      </p>
+
+      <div class="sidebar-grid">
+        <!-- With status badges -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">With Status</div>
+            Activity Indicators
+          </div>
+          <div class="sidebar-content">
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Needs Attention
+                <span class="count" style="background: hsl(var(--primary) / 0.2); color: hsl(var(--primary))">3</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">auth-dev</span>
+                    <span class="stream-time">5m</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Sarah:</span> Can someone review this?</div>
+                  <div class="stream-meta">
+                    <span class="stream-badge hot">Question pending</span>
+                  </div>
+                </div>
+                <div class="activity-dot recent"></div>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar dm">SC</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Sarah Chen</span>
+                    <span class="stream-time">1h</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Sarah:</span> Did you see my message?</div>
+                  <div class="stream-meta">
+                    <span class="stream-badge hot">Waiting on you</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">Active</div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">general</span>
+                    <span class="stream-time">30m</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Marcus:</span> Sounds good for lunch</div>
+                </div>
+                <span class="unread-badge">8</span>
+              </div>
+            </div>
+
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">
+                Quiet
+                <span class="count">5</span>
+              </div>
+              <div class="stream-item muted">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">random</span>
+              </div>
+              <div class="stream-item muted">
+                <span class="stream-icon">#</span>
+                <span class="stream-name">engineering</span>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">AI detects "needs attention" patterns</div>
+        </div>
+
+        <!-- With hover actions -->
+        <div class="sidebar-mockup">
+          <div class="mockup-header">
+            <div class="mockup-label">With Actions</div>
+            Quick Actions on Hover
+          </div>
+          <div class="sidebar-content">
+            <div class="sidebar-section">
+              <div class="sidebar-section-header">Recent Activity</div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">auth-dev</span>
+                    <div class="stream-actions">
+                      <button class="stream-action-btn" title="Pin">📌</button>
+                      <button class="stream-action-btn" title="Mute">🔇</button>
+                      <button class="stream-action-btn" title="More">⋯</button>
+                    </div>
+                    <span class="stream-time">5m</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Sarah:</span> Token refresh changes</div>
+                </div>
+                <span class="unread-badge">5</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">My Scratchpad</span>
+                    <div class="stream-actions">
+                      <button class="stream-action-btn" title="Pin">📌</button>
+                      <button class="stream-action-btn" title="Rename">✏️</button>
+                      <button class="stream-action-btn" title="More">⋯</button>
+                    </div>
+                    <span class="stream-time">15m</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">You:</span> Need to follow up...</div>
+                </div>
+                <span class="unread-badge">2</span>
+              </div>
+              <div class="stream-item-enhanced">
+                <div class="stream-avatar dm">SC</div>
+                <div class="stream-details">
+                  <div class="stream-top-row">
+                    <span class="stream-name-enhanced">Sarah Chen</span>
+                    <div class="stream-actions">
+                      <button class="stream-action-btn" title="Pin">📌</button>
+                      <button class="stream-action-btn" title="Mute">🔇</button>
+                      <button class="stream-action-btn" title="More">⋯</button>
+                    </div>
+                    <span class="stream-time">30m</span>
+                  </div>
+                  <div class="stream-preview"><span class="author">Sarah:</span> Can you review my PR?</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="annotation" style="margin: 12px">Hover to reveal pin, mute, more actions</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison -->
+    <div class="section">
+      <h2 class="section-title">Feature Comparison</h2>
+
+      <div class="comparison">
+        <div class="comparison-card">
+          <div class="comparison-title">Current Design</div>
+          <ul class="comparison-list">
+            <li><span class="x-icon">✗</span> No message preview</li>
+            <li><span class="x-icon">✗</span> No activity time</li>
+            <li><span class="x-icon">✗</span> No favorites/pinning</li>
+            <li><span class="x-icon">✗</span> Alphabetical sort only</li>
+            <li><span class="x-icon">✗</span> No search</li>
+            <li><span class="x-icon">✗</span> No status indicators</li>
+            <li><span class="check-icon">✓</span> Unread count badge</li>
+            <li><span class="check-icon">✓</span> Type-based sections</li>
+          </ul>
+        </div>
+
+        <div class="comparison-card">
+          <div class="comparison-title">Proposed Design</div>
+          <ul class="comparison-list">
+            <li><span class="check-icon">✓</span> Message preview (author + text)</li>
+            <li><span class="check-icon">✓</span> Relative time (5m, 2h, 3d)</li>
+            <li><span class="check-icon">✓</span> Pinned section at top</li>
+            <li><span class="check-icon">✓</span> Sort by recent or alphabetical</li>
+            <li><span class="check-icon">✓</span> Quick search/filter</li>
+            <li><span class="check-icon">✓</span> AI-powered status badges</li>
+            <li><span class="check-icon">✓</span> Hover actions (pin, mute)</li>
+            <li><span class="check-icon">✓</span> Mixed-type activity feed</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="section">
+      <h2 class="section-title">Recommendations</h2>
+      <p class="section-desc">Based on the explorations above, here's what I think would work best:</p>
+
+      <div class="problems" style="margin-top: 24px">
+        <div class="problem-card" style="border-color: hsl(var(--primary) / 0.3)">
+          <div class="problem-title" style="color: hsl(var(--primary))">1. Enhanced Items with Previews</div>
+          <div class="problem-desc">
+            Show author, preview text, and relative time for every stream. This alone eliminates 80% of the "must open
+            to see what's happening" problem.
+          </div>
+        </div>
+        <div class="problem-card" style="border-color: hsl(var(--primary) / 0.3)">
+          <div class="problem-title" style="color: hsl(var(--primary))">2. Pinned Section</div>
+          <div class="problem-desc">
+            Let users pin their most important streams. Pinned items always visible at top, regardless of sort order.
+          </div>
+        </div>
+        <div class="problem-card" style="border-color: hsl(var(--primary) / 0.3)">
+          <div class="problem-title" style="color: hsl(var(--primary))">3. Default to "Recent" Sort</div>
+          <div class="problem-desc">
+            Activity-based sorting as default. Most recent conversations float to top. Option to switch to alphabetical.
+          </div>
+        </div>
+        <div class="problem-card" style="border-color: hsl(var(--primary) / 0.3)">
+          <div class="problem-title" style="color: hsl(var(--primary))">4. "Needs Attention" Section (Phase 2)</div>
+          <div class="problem-desc">
+            AI-powered detection of conversations waiting on the user. Questions, mentions, follow-ups. Surface them
+            prominently.
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

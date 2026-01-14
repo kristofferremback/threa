@@ -166,6 +166,7 @@ export function StreamContent({
           <MessageInput
             workspaceId={workspaceId}
             streamId={streamId}
+            streamName={stream?.displayName ?? undefined}
             disabled={isArchived}
             disabledReason={
               isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined

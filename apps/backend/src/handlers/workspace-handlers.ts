@@ -75,7 +75,7 @@ export function createWorkspaceHandlers({
       const [workspace, members, streams, personas, emojiWeights, userPreferences] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
-        streamService.list(workspaceId, userId),
+        streamService.listWithPreviews(workspaceId, userId),
         workspaceService.getPersonasForWorkspace(workspaceId),
         workspaceService.getEmojiWeights(workspaceId, userId),
         userPreferencesService.getPreferences(workspaceId, userId),

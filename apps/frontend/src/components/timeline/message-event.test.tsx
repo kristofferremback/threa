@@ -169,4 +169,51 @@ describe("MessageEvent", () => {
       expect(screen.getByText("US")).toBeInTheDocument()
     })
   })
+
+  describe("AI message styling", () => {
+    it("should apply subtle gold border to persona messages", () => {
+      const event: StreamEvent = {
+        ...createMessageEvent("msg_123", "AI response"),
+        actorType: "persona",
+      }
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).toHaveClass("border-l-2")
+      expect(messageContainer).toHaveClass("border-l-primary/60")
+    })
+
+    it("should not apply gold border to user messages", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).not.toHaveClass("border-l-2")
+      expect(messageContainer).not.toHaveClass("border-l-primary/60")
+    })
+
+    it("should apply gradient background to all messages", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).toHaveClass("bg-gradient-to-br")
+    })
+
+    it("should apply subtle primary background to persona avatar", () => {
+      const event: StreamEvent = {
+        ...createMessageEvent("msg_123", "AI response"),
+        actorType: "persona",
+      }
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const avatarFallback = container.querySelector("span")
+      expect(avatarFallback).toHaveClass("bg-primary/20")
+      expect(avatarFallback).toHaveClass("text-primary")
+    })
+  })
 })

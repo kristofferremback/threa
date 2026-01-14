@@ -63,7 +63,8 @@ describe("MessageComposer", () => {
     it("should render the upload button", () => {
       render(<MessageComposer {...defaultProps} />)
 
-      expect(screen.getByTitle("Attach files")).toBeInTheDocument()
+      // Upload button has aria-label "Attach files" via tooltip
+      expect(screen.getByRole("button", { name: /attach files/i })).toBeInTheDocument()
     })
 
     it("should render the submit button with default label", () => {
@@ -123,7 +124,7 @@ describe("MessageComposer", () => {
     it("should disable upload button when disabled is true", () => {
       render(<MessageComposer {...defaultProps} disabled={true} />)
 
-      expect(screen.getByTitle("Attach files")).toBeDisabled()
+      expect(screen.getByRole("button", { name: /attach files/i })).toBeDisabled()
     })
 
     it("should disable editor when isSubmitting is true", () => {

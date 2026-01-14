@@ -19,13 +19,28 @@ import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, type StreamType } from "@threa/types"
+
+function getStreamTypeLabel(type: StreamType): string {
+  switch (type) {
+    case StreamTypes.SCRATCHPAD:
+      return "Scratchpad"
+    case StreamTypes.CHANNEL:
+      return "Channel"
+    case StreamTypes.DM:
+      return "DM"
+    case StreamTypes.THREAD:
+      return "Thread"
+    default:
+      return type
+  }
+}
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
+  const { openPanels, draftReply, panelMode, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -133,6 +148,7 @@ export function StreamPage() {
           ) : (
             <h1 className="font-semibold">{streamName}</h1>
           )}
+          {stream && !isThread && !isDraft && <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>}
           {isArchived && (
             <Badge variant="secondary" className="gap-1">
               <ArchiveX className="h-3 w-3" />
@@ -235,11 +251,56 @@ export function StreamPage() {
     )
   }
 
-  // Calculate panel count for sizing
+  // Fullscreen mode: only show the panel, no main stream
+  if (panelMode === "fullscreen" && openPanels.length > 0) {
+    return (
+      <div className="h-full">
+        <StreamPanel
+          workspaceId={workspaceId}
+          streamId={openPanels[0].streamId}
+          onClose={() => closePanel(openPanels[0].streamId)}
+          isFullscreen
+        />
+      </div>
+    )
+  }
+
+  // Overlay mode: floating panel on top of main content
+  if (panelMode === "overlay") {
+    const activePanel = openPanels[0]
+    return (
+      <>
+        {mainStreamContent}
+        {conversationPanel}
+        {/* Overlay backdrop */}
+        <div className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-300" onClick={closeAllPanels} />
+        {/* Overlay panel */}
+        <div className="fixed inset-y-0 right-0 z-50 w-[min(480px,90vw)] bg-background border-l shadow-xl flex flex-col">
+          {activePanel ? (
+            <StreamPanel
+              workspaceId={workspaceId}
+              streamId={activePanel.streamId}
+              onClose={() => closePanel(activePanel.streamId)}
+            />
+          ) : draftReply ? (
+            <ThreadDraftPanel
+              workspaceId={workspaceId}
+              parentStreamId={draftReply.parentStreamId}
+              parentMessageId={draftReply.parentMessageId}
+              initialContent={draftReply.content}
+              onClose={handleCloseDraft}
+              onThreadCreated={handleThreadCreated}
+            />
+          ) : null}
+        </div>
+      </>
+    )
+  }
+
+  // Locked mode: resizable side-by-side layout
   const totalPanels = 1 + (draftReply ? 1 : 0) + openPanels.length
   const panelSize = Math.floor(100 / totalPanels)
 
-  // When panels are open, use resizable layout
   return (
     <>
       <ResizablePanelGroup orientation="horizontal" className="h-full">

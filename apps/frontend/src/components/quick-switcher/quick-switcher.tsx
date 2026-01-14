@@ -429,6 +429,26 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
           />
         )}
 
+        {/* Keyboard hints footer */}
+        {!inputRequest && (
+          <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex gap-4">
+              <span>
+                <kbd className="kbd-hint">↑↓</kbd> Navigate
+              </span>
+              <span>
+                <kbd className="kbd-hint">↵</kbd> Open
+              </span>
+              <span>
+                <kbd className="kbd-hint">{navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}↵</kbd> New tab
+              </span>
+            </div>
+            <span>
+              <kbd className="kbd-hint">esc</kbd> Close
+            </span>
+          </div>
+        )}
+
         {/* Escape hint - shown after 2s to help users with Vimium or similar */}
         {/* Uses absolute positioning to avoid layout shift (INV-21) */}
         {showEscapeHint && (

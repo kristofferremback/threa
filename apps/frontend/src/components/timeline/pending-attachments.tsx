@@ -24,17 +24,23 @@ export function PendingAttachments({ attachments, onRemove }: PendingAttachments
   if (attachments.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-2 mb-3">
+    <div className="flex flex-wrap gap-2 mb-3 max-h-[120px] overflow-y-auto">
       {attachments.map((attachment) => {
         const Icon = getFileIcon(attachment.mimeType)
         const isError = attachment.status === "error"
+        const isUploading = attachment.status === "uploading"
+        const isUploaded = attachment.status === "uploaded"
 
         const attachmentChip = (
           <div
             className={cn(
-              "flex items-center gap-2 rounded-md border px-2 py-1 text-xs",
-              isError && "border-destructive bg-destructive/10",
-              attachment.status === "uploading" && "opacity-60"
+              "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs",
+              // Error state
+              isError && "border border-destructive bg-destructive/10 text-destructive",
+              // Uploading state - dashed border, muted
+              isUploading && "border border-dashed border-border text-muted-foreground",
+              // Uploaded state - gold accent
+              isUploaded && "border border-primary/30 bg-primary/10 text-primary"
             )}
           >
             {attachment.status === "uploading" ? (

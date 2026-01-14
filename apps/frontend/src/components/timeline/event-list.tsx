@@ -115,7 +115,7 @@ export function EventList({
   }
 
   return (
-    <div className="flex flex-col gap-1 p-4">
+    <div className="flex flex-col gap-1 p-4 mx-auto max-w-[800px] w-full">
       {timelineItems.map((item) => {
         const showUnreadDivider = isFirstUnread(item)
         const eventId = item.type === "command_group" ? item.commandId : item.event.id

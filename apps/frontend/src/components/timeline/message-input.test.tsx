@@ -112,6 +112,11 @@ vi.mock("@/components/composer", () => ({
   ),
 }))
 
+// Mock DocumentEditorModal
+vi.mock("@/components/editor", () => ({
+  DocumentEditorModal: () => null,
+}))
+
 describe("MessageInput", () => {
   const workspaceId = "ws_123"
   const streamId = "stream_456"

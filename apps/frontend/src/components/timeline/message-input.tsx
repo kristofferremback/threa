@@ -3,19 +3,22 @@ import { useNavigate } from "react-router-dom"
 import { useDraftComposer, getDraftMessageKey, useStreamOrDraft } from "@/hooks"
 import { usePreferences } from "@/contexts"
 import { MessageComposer } from "@/components/composer"
+import { DocumentEditorModal } from "@/components/editor"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
+import { cn } from "@/lib/utils"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
 interface MessageInputProps {
   workspaceId: string
   streamId: string
+  streamName?: string
   disabled?: boolean
   disabledReason?: string
 }
 
-export function MessageInput({ workspaceId, streamId, disabled, disabledReason }: MessageInputProps) {
+export function MessageInput({ workspaceId, streamId, streamName, disabled, disabledReason }: MessageInputProps) {
   const navigate = useNavigate()
   const { preferences } = usePreferences()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
@@ -23,6 +26,7 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
 
   const composer = useDraftComposer({ workspaceId, draftKey, scopeId: streamId })
   const [error, setError] = useState<string | null>(null)
+  const [docEditorOpen, setDocEditorOpen] = useState(false)
   const messageSendMode = preferences?.messageSendMode ?? "enter"
 
   const handleSubmit = useCallback(async () => {
@@ -91,6 +95,37 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
     }
   }, [composer, sendMessage, navigate, workspaceId, streamId])
 
+  // Send from document editor modal
+  const handleDocEditorSend = useCallback(
+    async (content: string) => {
+      const trimmed = content.trim()
+      if (!trimmed) return
+
+      setError(null)
+
+      try {
+        const result = await sendMessage({
+          content: trimmed,
+          contentFormat: "markdown",
+        })
+        if (result.navigateTo) {
+          navigate(result.navigateTo, { replace: result.replace ?? false })
+        }
+      } catch {
+        setError("Failed to send message. Please try again.")
+      }
+    },
+    [sendMessage, navigate]
+  )
+
+  // Sync content from doc editor back to composer when dismissed
+  const handleDocEditorDismiss = useCallback(
+    (content: string) => {
+      composer.setContent(content)
+    },
+    [composer]
+  )
+
   if (disabled && disabledReason) {
     return (
       <div className="border-t p-4">
@@ -102,23 +137,37 @@ export function MessageInput({ workspaceId, streamId, disabled, disabledReason }
   }
 
   return (
-    <div className="border-t p-4">
-      <MessageComposer
-        content={composer.content}
-        onContentChange={composer.handleContentChange}
-        pendingAttachments={composer.pendingAttachments}
-        onRemoveAttachment={composer.handleRemoveAttachment}
-        fileInputRef={composer.fileInputRef}
-        onFileSelect={composer.handleFileSelect}
-        onFileUpload={composer.uploadFile}
-        imageCount={composer.imageCount}
-        onSubmit={handleSubmit}
-        canSubmit={composer.canSend}
-        isSubmitting={composer.isSending}
-        hasFailed={composer.hasFailed}
-        messageSendMode={messageSendMode}
+    <div className="border-t">
+      {/* Message composer - hidden when doc editor is open */}
+      <div className={cn("p-4 transition-all duration-200", docEditorOpen && "h-0 p-0 overflow-hidden opacity-0")}>
+        <MessageComposer
+          content={composer.content}
+          onContentChange={composer.handleContentChange}
+          pendingAttachments={composer.pendingAttachments}
+          onRemoveAttachment={composer.handleRemoveAttachment}
+          fileInputRef={composer.fileInputRef}
+          onFileSelect={composer.handleFileSelect}
+          onFileUpload={composer.uploadFile}
+          imageCount={composer.imageCount}
+          onSubmit={handleSubmit}
+          canSubmit={composer.canSend}
+          isSubmitting={composer.isSending}
+          hasFailed={composer.hasFailed}
+          messageSendMode={messageSendMode}
+          onExpandClick={() => setDocEditorOpen(true)}
+        />
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      </div>
+
+      {/* Document editor modal */}
+      <DocumentEditorModal
+        open={docEditorOpen}
+        onOpenChange={setDocEditorOpen}
+        initialContent={composer.content}
+        onSend={handleDocEditorSend}
+        onDismiss={handleDocEditorDismiss}
+        streamName={streamName ?? "this stream"}
       />
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
     </div>
   )
 }

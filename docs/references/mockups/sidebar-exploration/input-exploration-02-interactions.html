@@ -1,0 +1,1617 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Input Interactions - Floating Toolbar, Attachments & Popovers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+        --accent: 38 70% 55%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-elevated: 30 12% 14%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      .section-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-title span {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+      }
+
+      .demo-section {
+        margin-bottom: 64px;
+        padding-bottom: 48px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .demo-container {
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      .demo-note {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+        padding: 10px 14px;
+        background: hsl(var(--muted) / 0.3);
+        border-radius: 8px;
+        border-left: 3px solid hsl(var(--primary) / 0.5);
+      }
+
+      /* ========================================
+       FLOATING SELECTION TOOLBAR
+       Linear/Notion style
+       ======================================== */
+      .floating-toolbar {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 10px;
+        box-shadow:
+          0 4px 16px hsl(var(--foreground) / 0.12),
+          0 0 0 1px hsl(var(--foreground) / 0.04);
+      }
+      .dark .floating-toolbar {
+        background: hsl(var(--card-elevated, var(--card)));
+      }
+      .floating-tool {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        color: hsl(var(--foreground));
+        transition: all 0.15s ease;
+      }
+      .floating-tool:hover {
+        background: hsl(var(--muted));
+      }
+      .floating-tool.active {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .floating-tool svg {
+        width: 16px;
+        height: 16px;
+      }
+      .floating-divider {
+        width: 1px;
+        height: 20px;
+        background: hsl(var(--border));
+        margin: 0 2px;
+      }
+
+      /* Floating toolbar variants */
+      .floating-toolbar.minimal {
+        padding: 3px;
+        border-radius: 8px;
+      }
+      .floating-toolbar.minimal .floating-tool {
+        width: 28px;
+        height: 28px;
+      }
+      .floating-toolbar.minimal .floating-tool svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .floating-toolbar.with-labels .floating-tool {
+        width: auto;
+        padding: 0 10px;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .floating-toolbar.pill {
+        border-radius: 20px;
+        padding: 3px 6px;
+      }
+
+      /* AI action in toolbar */
+      .floating-ai {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.05));
+        color: hsl(var(--primary));
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .floating-ai:hover {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.25), hsl(var(--primary) / 0.1));
+      }
+      .floating-ai svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* Context text preview */
+      .selection-preview {
+        position: relative;
+        padding: 20px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .selection-preview .highlight {
+        background: hsl(var(--primary) / 0.2);
+        border-radius: 2px;
+        padding: 2px 0;
+      }
+      .toolbar-positioned {
+        position: absolute;
+        top: -20px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      /* ========================================
+       ATTACHMENT SYSTEM
+       File bar + inline references
+       ======================================== */
+      .input-with-attachments {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .input-with-attachments:focus-within {
+        border-color: hsl(var(--primary) / 0.5);
+        box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+      }
+
+      /* Attachment bar */
+      .attachment-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 14px;
+        background: hsl(var(--muted) / 0.3);
+        border-bottom: 1px solid hsl(var(--border));
+      }
+      .attachment-chip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      .attachment-chip-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .attachment-chip-icon svg {
+        width: 12px;
+        height: 12px;
+      }
+      .attachment-chip-icon.image {
+        background: hsl(200 60% 50% / 0.15);
+        color: hsl(200 60% 50%);
+      }
+      .attachment-chip-icon.doc {
+        background: hsl(220 60% 50% / 0.15);
+        color: hsl(220 60% 50%);
+      }
+      .attachment-chip-icon.code {
+        background: hsl(150 60% 45% / 0.15);
+        color: hsl(150 60% 45%);
+      }
+      .attachment-chip-name {
+        font-weight: 500;
+      }
+      .attachment-chip-size {
+        color: hsl(var(--muted-foreground));
+        font-size: 11px;
+      }
+      .attachment-chip-close {
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        margin-left: 4px;
+      }
+      .attachment-chip-close:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .attachment-chip-close svg {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* Inline reference nodes */
+      .inline-ref {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        background: hsl(var(--primary) / 0.15);
+        border: 1px solid hsl(var(--primary) / 0.3);
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--primary));
+        vertical-align: middle;
+        cursor: default;
+      }
+      .inline-ref svg {
+        width: 14px;
+        height: 14px;
+      }
+      .inline-ref.removable {
+        padding-right: 4px;
+      }
+      .inline-ref-close {
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        cursor: pointer;
+        opacity: 0.6;
+      }
+      .inline-ref-close:hover {
+        opacity: 1;
+        background: hsl(var(--primary) / 0.2);
+      }
+      .inline-ref-close svg {
+        width: 10px;
+        height: 10px;
+      }
+
+      /* Different inline ref styles */
+      .inline-ref.style-2 {
+        background: hsl(var(--muted));
+        border: none;
+        color: hsl(var(--foreground));
+        font-weight: 400;
+      }
+      .inline-ref.style-2 svg {
+        color: hsl(var(--muted-foreground));
+      }
+
+      .inline-ref.style-3 {
+        background: transparent;
+        border: 1px dashed hsl(var(--primary) / 0.4);
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+      }
+
+      /* Input field styling */
+      .input-field-rich {
+        min-height: 60px;
+        padding: 14px 16px;
+        font-size: 14px;
+        line-height: 1.6;
+        outline: none;
+      }
+      .input-field-rich:empty::before {
+        content: attr(data-placeholder);
+        color: hsl(var(--muted-foreground));
+      }
+
+      .input-footer-rich {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: hsl(var(--muted) / 0.2);
+      }
+      .input-left-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .input-action {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        transition: all 0.15s ease;
+      }
+      .input-action:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .input-action svg {
+        width: 18px;
+        height: 18px;
+      }
+      .input-send-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 18px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        background: linear-gradient(135deg, hsl(var(--primary)), hsl(38 70% 45%));
+        color: hsl(var(--primary-foreground));
+        cursor: pointer;
+        box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+      }
+      .input-send-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* ========================================
+       POPOVER DESIGNS
+       Emoji, Slash commands, Mentions
+       ======================================== */
+      .popover {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow:
+          0 8px 32px hsl(var(--foreground) / 0.15),
+          0 0 0 1px hsl(var(--foreground) / 0.05);
+        overflow: hidden;
+      }
+      .dark .popover {
+        background: hsl(var(--card-elevated, var(--card)));
+      }
+
+      /* Popover header */
+      .popover-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--muted) / 0.3);
+      }
+      .popover-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: hsl(var(--muted-foreground));
+      }
+      .popover-search {
+        flex: 1;
+        padding: 6px 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 6px;
+        font-size: 12px;
+        outline: none;
+      }
+      .popover-search::placeholder {
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* === EMOJI POPOVER === */
+      .emoji-popover {
+        width: 320px;
+      }
+      .emoji-categories {
+        display: flex;
+        gap: 2px;
+        padding: 8px 10px;
+        border-bottom: 1px solid hsl(var(--border));
+        overflow-x: auto;
+      }
+      .emoji-categories::-webkit-scrollbar {
+        height: 0;
+      }
+      .emoji-cat {
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .emoji-cat:hover {
+        background: hsl(var(--muted));
+      }
+      .emoji-cat.active {
+        background: hsl(var(--primary) / 0.15);
+      }
+      .emoji-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+        padding: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .emoji-item {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        font-size: 20px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .emoji-item:hover {
+        background: hsl(var(--muted));
+        transform: scale(1.15);
+      }
+      .emoji-footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-top: 1px solid hsl(var(--border));
+        background: hsl(var(--muted) / 0.2);
+      }
+      .emoji-preview {
+        font-size: 24px;
+      }
+      .emoji-preview-name {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* === SLASH COMMAND POPOVER === */
+      .command-popover {
+        width: 280px;
+      }
+      .command-list {
+        padding: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .command-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .command-item:hover {
+        background: hsl(var(--muted));
+      }
+      .command-item.selected {
+        background: hsl(var(--primary) / 0.1);
+      }
+      .command-icon {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+      .command-item.selected .command-icon,
+      .command-item:hover .command-icon {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .command-icon svg {
+        width: 18px;
+        height: 18px;
+      }
+      .command-icon.ai {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.2), hsl(var(--primary) / 0.1));
+        color: hsl(var(--primary));
+      }
+      .command-content {
+        flex: 1;
+        min-width: 0;
+      }
+      .command-name {
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 2px;
+      }
+      .command-desc {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .command-shortcut {
+        font-size: 10px;
+        font-family: ui-monospace, monospace;
+        padding: 3px 6px;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .command-section {
+        padding: 6px 12px 4px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* === MENTION POPOVER === */
+      .mention-popover {
+        width: 260px;
+      }
+      .mention-list {
+        padding: 6px;
+      }
+      .mention-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .mention-item:hover {
+        background: hsl(var(--muted));
+      }
+      .mention-item.selected {
+        background: hsl(var(--primary) / 0.1);
+      }
+      .mention-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .mention-avatar.user {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .mention-avatar.ai {
+        background: linear-gradient(135deg, hsl(var(--primary)), hsl(38 70% 45%));
+        color: hsl(var(--primary-foreground));
+      }
+      .mention-avatar.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .mention-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .mention-name {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .mention-meta {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+      .mention-section {
+        padding: 8px 10px 4px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* === ALTERNATIVE POPOVER STYLES === */
+      .popover.style-2 {
+        border-radius: 8px;
+        box-shadow: 0 4px 12px hsl(var(--foreground) / 0.1);
+      }
+
+      .popover.style-3 {
+        border-radius: 16px;
+        border: none;
+        box-shadow: 0 12px 48px hsl(var(--foreground) / 0.2);
+      }
+
+      .popover.floating {
+        border-radius: 20px;
+        padding: 4px;
+      }
+      .popover.floating .command-list,
+      .popover.floating .mention-list {
+        padding: 4px;
+      }
+      .popover.floating .command-item,
+      .popover.floating .mention-item {
+        border-radius: 12px;
+      }
+
+      /* ========================================
+       INLINE MENTION/TAG STYLES
+       ======================================== */
+      .inline-mention {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .inline-mention.user {
+        background: hsl(200 60% 50% / 0.15);
+        color: hsl(200 60% 50%);
+      }
+      .inline-mention.user:hover {
+        background: hsl(200 60% 50% / 0.25);
+      }
+      .inline-mention.ai {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .inline-mention.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      /* Controls */
+      .page-controls {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        gap: 8px;
+        z-index: 100;
+      }
+      .page-btn {
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        cursor: pointer;
+        color: hsl(var(--foreground));
+      }
+      .page-btn:hover {
+        background: hsl(var(--muted));
+      }
+
+      /* Grid layout for comparisons */
+      .comparison-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+        margin-top: 16px;
+      }
+      .comparison-item {
+        padding: 16px;
+        background: hsl(var(--muted) / 0.2);
+        border-radius: 12px;
+      }
+      .comparison-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body class="dark">
+    <div class="page-controls">
+      <button class="page-btn" onclick="document.body.classList.toggle('dark')">Toggle Theme</button>
+    </div>
+
+    <div style="padding: 60px 20px">
+      <h1 style="text-align: center; font-size: 24px; font-weight: 600; margin-bottom: 8px">Input Interactions</h1>
+      <p style="text-align: center; font-size: 14px; color: hsl(var(--muted-foreground)); margin-bottom: 48px">
+        Floating toolbar, attachments & popovers
+      </p>
+
+      <div class="demo-container">
+        <!-- ========== FLOATING SELECTION TOOLBAR ========== -->
+        <div class="demo-section">
+          <div class="section-title">Floating Selection Toolbar <span>Notion/Linear style</span></div>
+          <div class="demo-note">Appears when user selects text. Offers formatting + AI actions on the selection.</div>
+
+          <div class="comparison-grid">
+            <div class="comparison-item">
+              <div class="comparison-label">Style 1: Icon-only</div>
+              <div style="display: flex; justify-content: center">
+                <div class="floating-toolbar">
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                      <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool active">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                    </svg>
+                  </div>
+                  <div class="floating-divider"></div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                    </svg>
+                  </div>
+                  <div class="floating-divider"></div>
+                  <div class="floating-ai">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    Ask AI
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Style 2: Minimal</div>
+              <div style="display: flex; justify-content: center">
+                <div class="floating-toolbar minimal">
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                      <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool" style="color: hsl(var(--primary))">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Style 3: Pill with labels</div>
+              <div style="display: flex; justify-content: center">
+                <div class="floating-toolbar pill">
+                  <div class="floating-tool" style="padding: 0 8px; font-size: 12px; width: auto">Bold</div>
+                  <div class="floating-tool" style="padding: 0 8px; font-size: 12px; width: auto; font-style: italic">
+                    Italic
+                  </div>
+                  <div
+                    class="floating-tool"
+                    style="padding: 0 8px; font-size: 12px; width: auto; font-family: monospace"
+                  >
+                    Code
+                  </div>
+                  <div class="floating-divider"></div>
+                  <div class="floating-ai" style="border-radius: 16px">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    AI
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Style 4: AI-focused dropdown</div>
+              <div style="display: flex; justify-content: center">
+                <div class="floating-toolbar" style="flex-direction: column; padding: 6px">
+                  <div style="display: flex; gap: 2px">
+                    <div class="floating-tool">
+                      <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                        <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                      </svg>
+                    </div>
+                    <div class="floating-tool">
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                      </svg>
+                    </div>
+                    <div class="floating-tool">
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div style="width: 100%; height: 1px; background: hsl(var(--border)); margin: 4px 0"></div>
+                  <div class="floating-ai" style="width: 100%; justify-content: center">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    Improve with Ariadne
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- In-context demo -->
+          <div style="margin-top: 32px">
+            <div class="comparison-label">In context (positioned above selection)</div>
+            <div class="selection-preview">
+              <div class="toolbar-positioned">
+                <div class="floating-toolbar">
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                      <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                    </svg>
+                  </div>
+                  <div class="floating-tool">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                    </svg>
+                  </div>
+                  <div class="floating-divider"></div>
+                  <div class="floating-ai">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                    Ask AI
+                  </div>
+                </div>
+              </div>
+              The authentication system uses JWT tokens for session management.
+              <span class="highlight"
+                >The refresh token should be stored in an HTTP-only cookie to prevent XSS attacks</span
+              >, while the access token can be kept in memory for API calls.
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== ATTACHMENT SYSTEM ========== -->
+        <div class="demo-section">
+          <div class="section-title">Attachment System <span>Files + Inline References</span></div>
+          <div class="demo-note">
+            Attachments shown in bar above input. Inline references like [Image #1] can be added to text but removing
+            them doesn't remove the attachment.
+          </div>
+
+          <!-- Full input with attachments -->
+          <div class="input-with-attachments">
+            <div class="attachment-bar">
+              <div class="attachment-chip">
+                <div class="attachment-chip-icon image">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+                <span class="attachment-chip-name">pasted-image-1.png</span>
+                <span class="attachment-chip-size">18.2 KB</span>
+                <div class="attachment-chip-close">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+              </div>
+              <div class="attachment-chip">
+                <div class="attachment-chip-icon doc">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                </div>
+                <span class="attachment-chip-name">report.xlsx</span>
+                <span class="attachment-chip-size">42 KB</span>
+                <div class="attachment-chip-close">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="input-field-rich" contenteditable="true">
+              Here's the screenshot showing the issue:
+              <span class="inline-ref"
+                ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  /></svg
+                >[Image #1]</span
+              >
+              and the related data is in
+              <span class="inline-ref"
+                ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  /></svg
+                >[report.xlsx]</span
+              >
+            </div>
+            <div class="input-footer-rich">
+              <div class="input-left-actions">
+                <div class="input-action">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                    />
+                  </svg>
+                </div>
+                <div class="input-action">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <div class="input-action">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div class="input-send-btn">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+                Send
+              </div>
+            </div>
+          </div>
+
+          <!-- Inline ref styles -->
+          <div style="margin-top: 32px">
+            <div class="comparison-label">Inline reference styles</div>
+            <div class="comparison-grid">
+              <div class="comparison-item">
+                <div class="comparison-label">Style 1: Primary accent</div>
+                <div style="font-size: 14px; line-height: 2">
+                  See
+                  <span class="inline-ref"
+                    ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      /></svg
+                    >[Image #1]</span
+                  >
+                  for details
+                </div>
+              </div>
+              <div class="comparison-item">
+                <div class="comparison-label">Style 2: Muted</div>
+                <div style="font-size: 14px; line-height: 2">
+                  See
+                  <span class="inline-ref style-2"
+                    ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      /></svg
+                    >[Image #1]</span
+                  >
+                  for details
+                </div>
+              </div>
+              <div class="comparison-item">
+                <div class="comparison-label">Style 3: Dashed mono</div>
+                <div style="font-size: 14px; line-height: 2">
+                  See
+                  <span class="inline-ref style-3"
+                    ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      /></svg
+                    >[Image #1]</span
+                  >
+                  for details
+                </div>
+              </div>
+              <div class="comparison-item">
+                <div class="comparison-label">Style 4: With close button</div>
+                <div style="font-size: 14px; line-height: 2">
+                  See
+                  <span class="inline-ref removable"
+                    ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      /></svg
+                    >[Image #1]<span class="inline-ref-close"
+                      ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        /></svg></span
+                  ></span>
+                  for details
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== EMOJI POPOVER ========== -->
+        <div class="demo-section">
+          <div class="section-title">Emoji Popover <span>Triggered by : or button</span></div>
+
+          <div class="comparison-grid">
+            <div class="comparison-item">
+              <div class="comparison-label">Standard with categories</div>
+              <div class="popover emoji-popover">
+                <div class="popover-header">
+                  <input type="text" class="popover-search" placeholder="Search emoji..." />
+                </div>
+                <div class="emoji-categories">
+                  <div class="emoji-cat active">😀</div>
+                  <div class="emoji-cat">👍</div>
+                  <div class="emoji-cat">🎉</div>
+                  <div class="emoji-cat">❤️</div>
+                  <div class="emoji-cat">🍕</div>
+                  <div class="emoji-cat">🚀</div>
+                  <div class="emoji-cat">⚡</div>
+                  <div class="emoji-cat">🔧</div>
+                </div>
+                <div class="emoji-grid">
+                  <div class="emoji-item">😀</div>
+                  <div class="emoji-item">😃</div>
+                  <div class="emoji-item">😄</div>
+                  <div class="emoji-item">😁</div>
+                  <div class="emoji-item">😅</div>
+                  <div class="emoji-item">😂</div>
+                  <div class="emoji-item">🤣</div>
+                  <div class="emoji-item">😊</div>
+                  <div class="emoji-item">😇</div>
+                  <div class="emoji-item">🙂</div>
+                  <div class="emoji-item">😉</div>
+                  <div class="emoji-item">😌</div>
+                  <div class="emoji-item">😍</div>
+                  <div class="emoji-item">🥰</div>
+                  <div class="emoji-item">😘</div>
+                  <div class="emoji-item">😋</div>
+                </div>
+                <div class="emoji-footer">
+                  <span class="emoji-preview">😊</span>
+                  <span class="emoji-preview-name">smiling face with smiling eyes</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Compact (no categories)</div>
+              <div class="popover emoji-popover" style="width: 240px">
+                <div class="popover-header" style="padding: 8px 10px">
+                  <input
+                    type="text"
+                    class="popover-search"
+                    placeholder="Search..."
+                    style="padding: 5px 8px; font-size: 11px"
+                  />
+                </div>
+                <div class="emoji-grid" style="grid-template-columns: repeat(6, 1fr); padding: 8px">
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">👍</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">❤️</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">🎉</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">🚀</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">✅</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">👀</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">🔥</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">💯</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">⚡</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">💡</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">🤔</div>
+                  <div class="emoji-item" style="width: 32px; height: 32px; font-size: 18px">😅</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== SLASH COMMAND POPOVER ========== -->
+        <div class="demo-section">
+          <div class="section-title">Slash Command Popover <span>Triggered by /</span></div>
+
+          <div class="comparison-grid">
+            <div class="comparison-item">
+              <div class="comparison-label">With sections + shortcuts</div>
+              <div class="popover command-popover">
+                <div class="popover-header">
+                  <span class="popover-title">/</span>
+                  <input type="text" class="popover-search" placeholder="Search commands..." value="ask" />
+                </div>
+                <div class="command-list">
+                  <div class="command-section">AI Commands</div>
+                  <div class="command-item selected">
+                    <div class="command-icon ai">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/ask</div>
+                      <div class="command-desc">Ask Ariadne a question</div>
+                    </div>
+                    <span class="command-shortcut">⌥A</span>
+                  </div>
+                  <div class="command-item">
+                    <div class="command-icon ai">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M4 6h16M4 12h16m-7 6h7"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/summarize</div>
+                      <div class="command-desc">Summarize thread or selection</div>
+                    </div>
+                  </div>
+                  <div class="command-section">Formatting</div>
+                  <div class="command-item">
+                    <div class="command-icon">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/code</div>
+                      <div class="command-desc">Insert code block</div>
+                    </div>
+                  </div>
+                  <div class="command-item">
+                    <div class="command-icon">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/memo</div>
+                      <div class="command-desc">Create a memo from message</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Floating pill style</div>
+              <div class="popover floating command-popover" style="width: 260px">
+                <div class="command-list">
+                  <div class="command-item selected">
+                    <div class="command-icon ai" style="width: 32px; height: 32px">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/ask</div>
+                      <div class="command-desc">Ask Ariadne</div>
+                    </div>
+                  </div>
+                  <div class="command-item">
+                    <div class="command-icon" style="width: 32px; height: 32px">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M4 6h16M4 12h16m-7 6h7"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/summarize</div>
+                      <div class="command-desc">Summarize thread</div>
+                    </div>
+                  </div>
+                  <div class="command-item">
+                    <div class="command-icon" style="width: 32px; height: 32px">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                        />
+                      </svg>
+                    </div>
+                    <div class="command-content">
+                      <div class="command-name">/code</div>
+                      <div class="command-desc">Code block</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== MENTION POPOVER ========== -->
+        <div class="demo-section">
+          <div class="section-title">Mention Popover <span>Triggered by @</span></div>
+
+          <div class="comparison-grid">
+            <div class="comparison-item">
+              <div class="comparison-label">With sections (People + AI + Channels)</div>
+              <div class="popover mention-popover">
+                <div class="popover-header">
+                  <span class="popover-title">@</span>
+                  <input type="text" class="popover-search" placeholder="Search..." value="ar" />
+                </div>
+                <div class="mention-list">
+                  <div class="mention-section">AI</div>
+                  <div class="mention-item selected">
+                    <div class="mention-avatar ai">A</div>
+                    <div class="mention-info">
+                      <div class="mention-name">Ariadne</div>
+                      <div class="mention-meta">AI Assistant</div>
+                    </div>
+                  </div>
+                  <div class="mention-section">People</div>
+                  <div class="mention-item">
+                    <div class="mention-avatar user">M</div>
+                    <div class="mention-info">
+                      <div class="mention-name">Marcus Chen</div>
+                      <div class="mention-meta">Engineering</div>
+                    </div>
+                  </div>
+                  <div class="mention-item">
+                    <div class="mention-avatar user">S</div>
+                    <div class="mention-info">
+                      <div class="mention-name">Sarah Kim</div>
+                      <div class="mention-meta">Design</div>
+                    </div>
+                  </div>
+                  <div class="mention-section">Channels</div>
+                  <div class="mention-item">
+                    <div class="mention-avatar channel">#</div>
+                    <div class="mention-info">
+                      <div class="mention-name">#auth-dev</div>
+                      <div class="mention-meta">12 members</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Floating compact</div>
+              <div class="popover floating mention-popover" style="width: 220px">
+                <div class="mention-list">
+                  <div class="mention-item selected">
+                    <div class="mention-avatar ai" style="width: 28px; height: 28px; font-size: 11px">A</div>
+                    <div class="mention-info">
+                      <div class="mention-name" style="font-size: 12px">Ariadne</div>
+                    </div>
+                  </div>
+                  <div class="mention-item">
+                    <div class="mention-avatar user" style="width: 28px; height: 28px; font-size: 11px">M</div>
+                    <div class="mention-info">
+                      <div class="mention-name" style="font-size: 12px">Marcus Chen</div>
+                    </div>
+                  </div>
+                  <div class="mention-item">
+                    <div class="mention-avatar user" style="width: 28px; height: 28px; font-size: 11px">S</div>
+                    <div class="mention-info">
+                      <div class="mention-name" style="font-size: 12px">Sarah Kim</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inline mention styles -->
+          <div style="margin-top: 32px">
+            <div class="comparison-label">Inline mention styles (in message text)</div>
+            <div
+              style="
+                font-size: 14px;
+                line-height: 2;
+                padding: 16px;
+                background: hsl(var(--card));
+                border-radius: 12px;
+                border: 1px solid hsl(var(--border));
+              "
+            >
+              Hey <span class="inline-mention user">@Marcus</span> and <span class="inline-mention ai">@Ariadne</span>,
+              can you review the changes in <span class="inline-mention channel">#auth-dev</span>?
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== COMBINED DEMO ========== -->
+        <div class="demo-section" style="border-bottom: none">
+          <div class="section-title">Combined Example <span>Full input with all features</span></div>
+
+          <div style="position: relative">
+            <!-- Slash command popover positioned above input -->
+            <div
+              class="popover command-popover"
+              style="position: absolute; bottom: calc(100% + 8px); left: 16px; width: 240px"
+            >
+              <div class="command-list" style="padding: 4px">
+                <div class="command-item selected" style="padding: 8px 10px">
+                  <div class="command-icon ai" style="width: 28px; height: 28px">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"
+                      />
+                    </svg>
+                  </div>
+                  <div class="command-content">
+                    <div class="command-name" style="font-size: 12px">/ask</div>
+                    <div class="command-desc" style="font-size: 10px">Ask Ariadne</div>
+                  </div>
+                </div>
+                <div class="command-item" style="padding: 8px 10px">
+                  <div class="command-icon" style="width: 28px; height: 28px">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 6h16M4 12h16m-7 6h7"
+                      />
+                    </svg>
+                  </div>
+                  <div class="command-content">
+                    <div class="command-name" style="font-size: 12px">/summarize</div>
+                    <div class="command-desc" style="font-size: 10px">Summarize</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="input-with-attachments">
+              <div class="attachment-bar">
+                <div class="attachment-chip">
+                  <div class="attachment-chip-icon image">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </div>
+                  <span class="attachment-chip-name">screenshot.png</span>
+                  <span class="attachment-chip-size">24 KB</span>
+                  <div class="attachment-chip-close">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div class="input-field-rich" contenteditable="true">
+                /ask <span class="inline-mention ai">@Ariadne</span> can you look at
+                <span class="inline-ref"
+                  ><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    /></svg
+                  >[Image #1]</span
+                >
+                and tell me what's wrong?
+              </div>
+              <div class="input-footer-rich">
+                <div class="input-left-actions">
+                  <div class="input-action">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                      />
+                    </svg>
+                  </div>
+                  <div class="input-action" style="background: hsl(var(--primary) / 0.1); color: hsl(var(--primary))">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div class="input-action">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <div class="input-send-btn">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  Send
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

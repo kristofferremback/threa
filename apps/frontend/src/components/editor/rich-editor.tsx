@@ -180,7 +180,7 @@ export function RichEditor({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-[80px] w-full px-3 py-2 outline-none",
+          "min-h-[40px] max-h-[200px] overflow-y-auto w-full px-3 py-2 outline-none",
           "prose prose-sm dark:prose-invert max-w-none",
           // Paragraph styling - minimal spacing for chat-like feel
           "[&_p]:my-0 [&_p]:min-h-[1.5em]",
@@ -371,7 +371,7 @@ export function RichEditor({
   }, [disabled, editor, focus])
 
   return (
-    <div ref={containerRef} className="relative flex-1">
+    <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
       <EditorToolbar
         editor={editor}
         isVisible={toolbarVisible}
@@ -379,13 +379,7 @@ export function RichEditor({
         linkPopoverOpen={linkPopoverOpen}
         onLinkPopoverOpenChange={setLinkPopoverOpen}
       />
-      <div className={cn("input-glow-wrapper", disabled && "cursor-not-allowed opacity-50", className)}>
-        <div
-          className={cn("rounded-input border border-input bg-background", "ring-offset-background transition-colors")}
-        >
-          <EditorContent editor={editor} />
-        </div>
-      </div>
+      <EditorContent editor={editor} />
       {renderMentionList()}
       {renderChannelList()}
       {renderCommandList()}

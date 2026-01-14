@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nav 16: Full View (Nav + Messages)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 10% 92%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+
+        --label-auth: 280 60% 55%;
+        --label-launch: 150 60% 45%;
+        --label-design: 30 70% 50%;
+        --label-hiring: 200 60% 50%;
+
+        --activity-ai: 38 65% 50%;
+        --activity-mention: 350 70% 50%;
+        --activity-people: 200 60% 50%;
+      }
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      /* AI message styling */
+      .ai-message {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.06) 0%, hsl(var(--primary) / 0.02) 100%);
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      /* Input glow */
+      .input-glow:focus-within {
+        box-shadow:
+          0 0 0 3px hsl(var(--primary) / 0.15),
+          0 4px 20px hsl(var(--primary) / 0.1);
+      }
+
+      /* ========== TOP BAR ========== */
+      .top-bar {
+        height: 44px;
+        background: hsl(var(--card));
+        border-bottom: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 80;
+      }
+
+      .top-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100px;
+      }
+      .app-layout.sidebar-right .top-left {
+        order: 3;
+        justify-content: flex-end;
+      }
+
+      .top-center {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+      }
+
+      .top-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100px;
+        justify-content: flex-end;
+      }
+      .app-layout.sidebar-right .top-right {
+        order: 1;
+        justify-content: flex-start;
+      }
+
+      .top-toggle {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .top-toggle:hover {
+        background: hsl(var(--muted));
+      }
+      .top-toggle svg {
+        width: 16px;
+        height: 16px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .top-labels {
+        display: flex;
+        gap: 2px;
+      }
+
+      .top-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+      .top-label:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .top-label.active {
+        background: hsl(var(--muted));
+      }
+
+      .top-label-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+      .top-label-name {
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .top-label-glow {
+        position: absolute;
+        bottom: 2px;
+        left: 10px;
+        right: 10px;
+        height: 3px;
+        border-radius: 2px;
+        overflow: hidden;
+        display: flex;
+      }
+      .glow-stripe {
+        flex: 1;
+        height: 100%;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .glow-pulse {
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      .top-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        background: hsl(var(--muted) / 0.5);
+        color: hsl(var(--muted-foreground));
+        transition: all 0.15s ease;
+      }
+      .top-btn:hover {
+        background: hsl(var(--muted));
+      }
+
+      /* ========== LAYOUT ========== */
+      .app-layout {
+        display: flex;
+        min-height: 100vh;
+        padding-top: 44px;
+      }
+      .app-layout.sidebar-right {
+        flex-direction: row-reverse;
+      }
+
+      /* ========== SIDEBAR ========== */
+      .sidebar-wrapper {
+        position: relative;
+        display: flex;
+        flex-shrink: 0;
+      }
+
+      .hover-margin {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 100%;
+        width: 30px;
+        z-index: 40;
+      }
+      .app-layout.sidebar-right .hover-margin {
+        left: auto;
+        right: 100%;
+      }
+      .app-layout.sidebar-open .hover-margin {
+        display: none;
+      }
+
+      .sidebar {
+        width: var(--sidebar-width, 260px);
+        background: hsl(var(--card));
+        border-right: 1px solid hsl(var(--border));
+        display: flex;
+        flex-shrink: 0;
+        transition: width 0.25s ease;
+      }
+      .app-layout.sidebar-right .sidebar {
+        border-right: none;
+        border-left: 1px solid hsl(var(--border));
+      }
+      .app-layout.sidebar-collapsed .sidebar {
+        width: 6px;
+      }
+      .sidebar.preview {
+        width: var(--sidebar-width, 260px);
+        position: absolute;
+        top: 44px;
+        bottom: 0;
+        left: 0;
+        z-index: 50;
+        box-shadow: 4px 0 24px hsl(var(--foreground) / 0.1);
+      }
+      .app-layout.sidebar-right .sidebar.preview {
+        left: auto;
+        right: 0;
+        box-shadow: -4px 0 24px hsl(var(--foreground) / 0.1);
+      }
+
+      .color-strip {
+        width: 6px;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+
+      .color-segment {
+        position: relative;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+      }
+      .color-segment:hover {
+        filter: brightness(1.15);
+      }
+
+      .segment-base {
+        position: absolute;
+        inset: 0;
+        opacity: 0.3;
+      }
+      .segment-stripes {
+        position: relative;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .activity-stripe {
+        flex: 1;
+        min-height: 4px;
+      }
+
+      .color-auth .segment-base {
+        background: hsl(var(--label-auth));
+      }
+      .color-launch .segment-base {
+        background: hsl(var(--label-launch));
+      }
+      .color-design .segment-base {
+        background: hsl(var(--label-design));
+      }
+      .color-hiring .segment-base {
+        background: hsl(var(--label-hiring));
+      }
+
+      .stripe-ai {
+        background: hsl(var(--activity-ai));
+      }
+      .stripe-mention {
+        background: hsl(var(--activity-mention));
+      }
+      .stripe-people {
+        background: hsl(var(--activity-people));
+      }
+      .stripe-quiet {
+        background: hsl(var(--muted-foreground) / 0.15);
+      }
+
+      .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .app-layout.sidebar-collapsed .sidebar:not(.preview) .sidebar-content {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .label-section {
+        margin-bottom: 4px;
+      }
+
+      .label-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: background 0.15s ease;
+      }
+      .label-header:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .label-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+      .label-name {
+        font-size: 13px;
+        font-weight: 600;
+        flex: 1;
+      }
+      .label-activities {
+        display: flex;
+        gap: 2px;
+      }
+      .label-activity-pip {
+        width: 4px;
+        height: 18px;
+        border-radius: 2px;
+      }
+
+      .label-items {
+        padding: 2px 0 8px 0;
+      }
+
+      .stream-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px 8px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .stream-item.active {
+        background: hsl(var(--primary) / 0.1);
+      }
+
+      .stream-activity {
+        width: 3px;
+        height: 16px;
+        border-radius: 2px;
+      }
+      .stream-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+      .stream-name {
+        font-size: 12px;
+        flex: 1;
+      }
+      .stream-badge {
+        font-size: 9px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+
+      .muted {
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* ========== MESSAGE PANE ========== */
+      .message-pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      /* Stream header */
+      .stream-header {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        border-bottom: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        flex-shrink: 0;
+      }
+      .stream-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .stream-title-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+      .stream-title-name {
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .stream-title-type {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .stream-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .stream-action {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .stream-action:hover {
+        background: hsl(var(--muted));
+      }
+      .stream-action svg {
+        width: 18px;
+        height: 18px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Messages area */
+      .messages-area {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .messages-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 24px 24px 16px;
+      }
+
+      .message {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+      .message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .message-content {
+        flex: 1;
+        padding-top: 2px;
+      }
+      .message-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .message-author {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .message-time {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+      .message-text {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .message-code {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 10px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+      }
+      .message-code-title {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .message-code-list {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .message-code-list li {
+        padding: 4px 0;
+      }
+
+      /* AI message special styling */
+      .message.ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+        margin-left: -24px;
+        margin-right: -24px;
+        padding: 16px 24px;
+        border-left: 3px solid hsl(var(--primary));
+      }
+      .message.ai .message-avatar {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+      }
+      .message.ai .message-author {
+        color: hsl(var(--primary));
+      }
+
+      /* Input area */
+      .input-area {
+        flex-shrink: 0;
+        padding: 16px 24px 20px;
+        background: linear-gradient(to top, hsl(var(--background)) 50%, transparent 100%);
+      }
+      .input-container {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .input-box {
+        border-radius: 16px;
+        overflow: hidden;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        transition: box-shadow 0.2s ease;
+      }
+      .input-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 8px 12px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+      .toolbar-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .toolbar-btn:hover {
+        background: hsl(var(--muted));
+      }
+      .toolbar-btn svg {
+        width: 16px;
+        height: 16px;
+        color: hsl(var(--foreground));
+      }
+      .toolbar-divider {
+        width: 1px;
+        height: 20px;
+        background: hsl(var(--border));
+        margin: 0 4px;
+      }
+      .input-field {
+        padding: 14px 16px;
+        min-height: 60px;
+        font-size: 14px;
+        outline: none;
+      }
+      .input-field:empty::before {
+        content: attr(data-placeholder);
+        color: hsl(var(--muted-foreground));
+      }
+      .input-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: hsl(var(--muted) / 0.3);
+      }
+      .input-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .input-send-area {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .input-hint {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+      .input-send {
+        padding: 8px 20px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        cursor: pointer;
+        transition: transform 0.1s ease;
+      }
+      .input-send:hover {
+        transform: scale(1.02);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- TOP BAR -->
+    <div class="top-bar">
+      <div class="top-left">
+        <div class="top-toggle" onclick="toggleSidebar()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="9" y1="3" x2="9" y2="21" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="top-center">
+        <div class="top-labels">
+          <div class="top-label active" data-section="auth">
+            <div class="top-label-dot" style="background: hsl(var(--label-auth))"></div>
+            <span class="top-label-name">Auth Project</span>
+            <div class="top-label-glow glow-pulse">
+              <div class="glow-stripe" style="background: hsl(var(--activity-ai))"></div>
+            </div>
+          </div>
+          <div class="top-label" data-section="launch">
+            <div class="top-label-dot" style="background: hsl(var(--label-launch))"></div>
+            <span class="top-label-name">Q1 Launch</span>
+            <div class="top-label-glow">
+              <div class="glow-stripe" style="background: hsl(var(--activity-mention))"></div>
+              <div class="glow-stripe" style="background: hsl(var(--activity-ai))"></div>
+            </div>
+          </div>
+          <div class="top-label" data-section="design">
+            <div class="top-label-dot" style="background: hsl(var(--label-design))"></div>
+            <span class="top-label-name">Design System</span>
+            <div class="top-label-glow">
+              <div class="glow-stripe" style="background: hsl(var(--activity-people))"></div>
+            </div>
+          </div>
+          <div class="top-label" data-section="hiring">
+            <div class="top-label-dot" style="background: hsl(var(--label-hiring))"></div>
+            <span class="top-label-name muted">Hiring</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="top-right">
+        <div class="top-btn">⌘K</div>
+        <button class="top-btn" onclick="document.body.classList.toggle('dark')">Theme</button>
+      </div>
+    </div>
+
+    <!-- MAIN LAYOUT -->
+    <div class="app-layout sidebar-collapsed" id="app">
+      <!-- SIDEBAR -->
+      <div class="sidebar-wrapper">
+        <div class="hover-margin" id="hoverMargin"></div>
+        <div class="sidebar" id="sidebar">
+          <div class="color-strip" id="colorStrip">
+            <div class="color-segment color-auth" data-section="auth">
+              <div class="segment-base"></div>
+              <div class="segment-stripes">
+                <div class="activity-stripe stripe-ai"></div>
+              </div>
+            </div>
+            <div class="color-segment color-launch" data-section="launch">
+              <div class="segment-base"></div>
+              <div class="segment-stripes">
+                <div class="activity-stripe stripe-mention"></div>
+                <div class="activity-stripe stripe-ai"></div>
+              </div>
+            </div>
+            <div class="color-segment color-design" data-section="design">
+              <div class="segment-base"></div>
+              <div class="segment-stripes">
+                <div class="activity-stripe stripe-people"></div>
+              </div>
+            </div>
+            <div class="color-segment color-hiring" data-section="hiring">
+              <div class="segment-base"></div>
+              <div class="segment-stripes">
+                <div class="activity-stripe stripe-quiet"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sidebar-content" id="sidebarContent">
+            <div class="label-section" data-section="auth">
+              <div class="label-header">
+                <div class="label-dot" style="background: hsl(var(--label-auth))"></div>
+                <span class="label-name">Auth Project</span>
+                <div class="label-activities">
+                  <div class="label-activity-pip" style="background: hsl(var(--activity-ai))"></div>
+                </div>
+              </div>
+              <div class="label-items">
+                <div class="stream-item active">
+                  <div class="stream-activity" style="background: hsl(var(--activity-ai))"></div>
+                  <div class="stream-icon">📝</div>
+                  <span class="stream-name font-medium">Auth Scratchpad</span>
+                </div>
+                <div class="stream-item muted">
+                  <div class="stream-activity" style="background: transparent"></div>
+                  <div class="stream-icon">#</div>
+                  <span class="stream-name"># auth-dev</span>
+                </div>
+                <div class="stream-item muted">
+                  <div class="stream-activity" style="background: transparent"></div>
+                  <div class="stream-icon">↩</div>
+                  <span class="stream-name">Security review</span>
+                  <span class="stream-badge">thread</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="label-section" data-section="launch">
+              <div class="label-header">
+                <div class="label-dot" style="background: hsl(var(--label-launch))"></div>
+                <span class="label-name">Q1 Launch</span>
+                <div class="label-activities">
+                  <div class="label-activity-pip" style="background: hsl(var(--activity-mention))"></div>
+                  <div class="label-activity-pip" style="background: hsl(var(--activity-ai))"></div>
+                </div>
+              </div>
+              <div class="label-items">
+                <div class="stream-item">
+                  <div class="stream-activity" style="background: hsl(var(--activity-mention))"></div>
+                  <div class="stream-icon">#</div>
+                  <span class="stream-name font-semibold"># engineering</span>
+                </div>
+                <div class="stream-item">
+                  <div class="stream-activity" style="background: hsl(var(--activity-ai))"></div>
+                  <div class="stream-icon">↩</div>
+                  <span class="stream-name">Launch planning</span>
+                  <span class="stream-badge">thread</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="label-section" data-section="design">
+              <div class="label-header">
+                <div class="label-dot" style="background: hsl(var(--label-design))"></div>
+                <span class="label-name">Design System</span>
+                <div class="label-activities">
+                  <div class="label-activity-pip" style="background: hsl(var(--activity-people))"></div>
+                </div>
+              </div>
+              <div class="label-items">
+                <div class="stream-item">
+                  <div class="stream-activity" style="background: hsl(var(--activity-people))"></div>
+                  <div class="stream-icon">#</div>
+                  <span class="stream-name"># design</span>
+                </div>
+                <div class="stream-item muted">
+                  <div class="stream-activity" style="background: transparent"></div>
+                  <div class="stream-icon">📝</div>
+                  <span class="stream-name">Component ideas</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="label-section" data-section="hiring">
+              <div class="label-header">
+                <div class="label-dot" style="background: hsl(var(--label-hiring))"></div>
+                <span class="label-name muted">Hiring</span>
+              </div>
+              <div class="label-items">
+                <div class="stream-item muted">
+                  <div class="stream-activity" style="background: transparent"></div>
+                  <div class="stream-icon">#</div>
+                  <span class="stream-name"># hiring</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MESSAGE PANE -->
+      <div class="message-pane">
+        <!-- Stream Header -->
+        <div class="stream-header">
+          <div class="stream-title">
+            <div class="stream-title-dot" style="background: hsl(var(--label-auth))"></div>
+            <span class="stream-title-name">Auth Scratchpad</span>
+            <span class="stream-title-type">scratchpad</span>
+          </div>
+          <div class="stream-actions">
+            <div class="stream-action" title="Search">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
+            <div class="stream-action" title="Pin">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                />
+              </svg>
+            </div>
+            <div class="stream-action" title="More">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="messages-area">
+          <div class="messages-container">
+            <!-- User message -->
+            <div class="message">
+              <div class="message-avatar" style="background: hsl(var(--muted))">K</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Kris</span>
+                  <span class="message-time">2:30 PM</span>
+                </div>
+                <p class="message-text">
+                  I'm designing a new authentication system. What's the best approach for handling JWT refresh tokens
+                  securely?
+                </p>
+              </div>
+            </div>
+
+            <!-- AI message -->
+            <div class="message ai">
+              <div class="message-avatar">A</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Ariadne</span>
+                  <span class="message-time">2:30 PM</span>
+                </div>
+                <p class="message-text">
+                  Great question. Based on current security best practices, here's what I recommend:
+                </p>
+                <div class="message-code">
+                  <p class="message-code-title">Refresh Token Best Practices:</p>
+                  <ul class="message-code-list">
+                    <li>1. Store refresh tokens in HTTP-only cookies, not localStorage</li>
+                    <li>2. Implement token rotation on each refresh</li>
+                    <li>3. Use short-lived access tokens (15 min) with longer refresh tokens (7 days)</li>
+                    <li>4. Maintain a token family for detecting reuse</li>
+                  </ul>
+                </div>
+                <p class="message-text" style="margin-top: 12px">
+                  Would you like me to show you a concrete implementation?
+                </p>
+              </div>
+            </div>
+
+            <!-- User follow-up -->
+            <div class="message">
+              <div class="message-avatar" style="background: hsl(var(--muted))">K</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Kris</span>
+                  <span class="message-time">2:32 PM</span>
+                </div>
+                <p class="message-text">
+                  Yes, especially the token rotation part. How do I handle concurrent requests?
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area">
+          <div class="input-container">
+            <div class="input-box input-glow">
+              <div class="input-toolbar">
+                <div class="toolbar-btn" title="Bold">
+                  <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                    <path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" />
+                  </svg>
+                </div>
+                <div class="toolbar-btn" title="Italic">
+                  <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M19 4h-9m4 16H5M15 4L9 20" />
+                  </svg>
+                </div>
+                <div class="toolbar-btn" title="Code">
+                  <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+                  </svg>
+                </div>
+                <div class="toolbar-divider"></div>
+                <div class="toolbar-btn" title="Link">
+                  <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                  </svg>
+                </div>
+                <div class="toolbar-btn" title="Attach">
+                  <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path
+                      d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div class="input-field" contenteditable="true" data-placeholder="Type a message..."></div>
+              <div class="input-footer">
+                <div class="input-actions">
+                  <div class="toolbar-btn" title="Emoji">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                      <line x1="9" y1="9" x2="9.01" y2="9" stroke-width="2" />
+                      <line x1="15" y1="9" x2="15.01" y2="9" stroke-width="2" />
+                    </svg>
+                  </div>
+                  <div class="toolbar-btn" title="Mention">
+                    <span style="font-size: 14px; font-weight: 600; color: hsl(var(--muted-foreground))">@</span>
+                  </div>
+                  <div class="toolbar-btn" title="Slash command">
+                    <span style="font-size: 14px; font-weight: 600; color: hsl(var(--muted-foreground))">/</span>
+                  </div>
+                </div>
+                <div class="input-send-area">
+                  <span class="input-hint">⌘ Enter to send</span>
+                  <div class="input-send">Send</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const app = document.getElementById("app")
+      const sidebar = document.getElementById("sidebar")
+      const hoverMargin = document.getElementById("hoverMargin")
+      const sidebarContent = document.getElementById("sidebarContent")
+
+      let isOpen = false
+      let isHovering = false
+
+      function toggleSidebar() {
+        isOpen = !isOpen
+        app.classList.toggle("sidebar-collapsed", !isOpen)
+        app.classList.toggle("sidebar-open", isOpen)
+        if (isOpen) sidebar.classList.remove("preview")
+      }
+
+      function syncHeights() {
+        const sections = document.querySelectorAll(".label-section")
+        const segments = document.querySelectorAll(".color-segment")
+        sections.forEach((section, i) => {
+          if (segments[i]) segments[i].style.height = `${section.offsetHeight}px`
+        })
+      }
+      syncHeights()
+      window.addEventListener("resize", syncHeights)
+
+      function showPreview() {
+        if (!isOpen) {
+          isHovering = true
+          sidebar.classList.add("preview")
+        }
+      }
+
+      function hidePreview() {
+        isHovering = false
+        setTimeout(() => {
+          if (!isHovering && !isOpen) sidebar.classList.remove("preview")
+        }, 150)
+      }
+
+      hoverMargin.addEventListener("mouseenter", showPreview)
+      hoverMargin.addEventListener("mouseleave", hidePreview)
+      document.getElementById("colorStrip").addEventListener("mouseenter", showPreview)
+      document.getElementById("colorStrip").addEventListener("mouseleave", hidePreview)
+      sidebar.addEventListener("mouseenter", () => {
+        isHovering = true
+      })
+      sidebar.addEventListener("mouseleave", hidePreview)
+      document.querySelector(".top-toggle").addEventListener("mouseenter", showPreview)
+      document.querySelector(".top-toggle").addEventListener("mouseleave", hidePreview)
+    </script>
+  </body>
+</html>

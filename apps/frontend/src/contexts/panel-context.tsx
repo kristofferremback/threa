@@ -1,6 +1,9 @@
 import { createContext, useContext, useCallback, useMemo, type ReactNode } from "react"
 import { useSearchParams, useLocation } from "react-router-dom"
 
+/** Panel display mode */
+export type PanelMode = "overlay" | "locked" | "fullscreen"
+
 interface PanelInfo {
   streamId: string
   parentStreamId?: string
@@ -15,6 +18,10 @@ interface DraftReply {
 interface PanelContextValue {
   openPanels: PanelInfo[]
   draftReply: DraftReply | null
+  /** Current panel mode - overlay (floating), locked (resizable), or fullscreen */
+  panelMode: PanelMode
+  /** Active panel index when in locked mode with tabs */
+  activeTabIndex: number
 
   /** Check if a panel is already open */
   isPanelOpen: (streamId: string) => boolean
@@ -25,6 +32,14 @@ interface PanelContextValue {
   closePanel: (streamId: string) => void
   closeAllPanels: () => void
   transitionDraftToPanel: (streamId: string) => void
+  /** Pin panel to locked mode */
+  pinPanel: () => void
+  /** Expand panel to fullscreen */
+  expandPanel: () => void
+  /** Exit fullscreen mode */
+  exitFullscreen: () => void
+  /** Set active tab in locked mode */
+  setActiveTab: (index: number) => void
 }
 
 const PanelContext = createContext<PanelContextValue | null>(null)
@@ -36,6 +51,9 @@ interface PanelProviderProps {
 export function PanelProvider({ children }: PanelProviderProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
+
+  // Parse panel mode from URL (defaults to "overlay" for single panel, "locked" for multiple)
+  const panelModeParam = searchParams.get("pmode") as PanelMode | null
 
   // Parse open panels from URL (deduplicated)
   const openPanels = useMemo(() => {
@@ -50,6 +68,26 @@ export function PanelProvider({ children }: PanelProviderProps) {
     }
     return panels
   }, [searchParams])
+
+  // Derive panel mode: fullscreen if explicitly set, overlay for single panel, locked for multiple
+  const panelMode: PanelMode = useMemo(() => {
+    if (panelModeParam === "fullscreen") return "fullscreen"
+    if (panelModeParam === "locked") return "locked"
+    // Auto-derive: multiple panels → locked, single panel → overlay
+    return openPanels.length > 1 ? "locked" : "overlay"
+  }, [panelModeParam, openPanels.length])
+
+  // Active tab index for locked mode (URL param or default to 0)
+  const activeTabIndex = useMemo(() => {
+    const tabParam = searchParams.get("tab")
+    if (tabParam) {
+      const index = parseInt(tabParam, 10)
+      if (!isNaN(index) && index >= 0 && index < openPanels.length) {
+        return index
+      }
+    }
+    return 0
+  }, [searchParams, openPanels.length])
 
   // Parse draft from URL (format: parentStreamId:parentMessageId)
   const draftReply = useMemo(() => {
@@ -141,6 +179,8 @@ export function PanelProvider({ children }: PanelProviderProps) {
         const next = new URLSearchParams(prev)
         next.delete("panel")
         next.delete("draft")
+        next.delete("pmode")
+        next.delete("tab")
         return next
       },
       { replace: true }
@@ -163,10 +203,63 @@ export function PanelProvider({ children }: PanelProviderProps) {
     [setSearchParams]
   )
 
+  const pinPanel = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("pmode", "locked")
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  const expandPanel = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("pmode", "fullscreen")
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  const exitFullscreen = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("pmode")
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  const setActiveTab = useCallback(
+    (index: number) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (index === 0) {
+            next.delete("tab")
+          } else {
+            next.set("tab", index.toString())
+          }
+          return next
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
+
   const value = useMemo<PanelContextValue>(
     () => ({
       openPanels,
       draftReply,
+      panelMode,
+      activeTabIndex,
       isPanelOpen,
       getPanelUrl,
       openPanel,
@@ -174,10 +267,16 @@ export function PanelProvider({ children }: PanelProviderProps) {
       closePanel,
       closeAllPanels,
       transitionDraftToPanel,
+      pinPanel,
+      expandPanel,
+      exitFullscreen,
+      setActiveTab,
     }),
     [
       openPanels,
       draftReply,
+      panelMode,
+      activeTabIndex,
       isPanelOpen,
       getPanelUrl,
       openPanel,
@@ -185,6 +284,10 @@ export function PanelProvider({ children }: PanelProviderProps) {
       closePanel,
       closeAllPanels,
       transitionDraftToPanel,
+      pinPanel,
+      expandPanel,
+      exitFullscreen,
+      setActiveTab,
     ]
   )
 

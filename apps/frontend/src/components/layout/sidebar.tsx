@@ -22,10 +22,12 @@ import {
   useUnreadCounts,
   useAllDrafts,
   workspaceKeys,
+  useActors,
 } from "@/hooks"
 import { useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
-import { StreamTypes } from "@threa/types"
+import { RelativeTime } from "@/components/relative-time"
+import { StreamTypes, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 
@@ -249,7 +251,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   <ScratchpadItem
                     key={stream.id}
                     workspaceId={workspaceId}
-                    streamId={stream.id}
+                    stream={stream}
                     isActive={stream.id === activeStreamId}
                     unreadCount={getUnreadCount(stream.id)}
                   />
@@ -276,8 +278,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   <StreamItem
                     key={stream.id}
                     workspaceId={workspaceId}
-                    streamId={stream.id}
-                    name={stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"}
+                    stream={stream}
                     isActive={stream.id === activeStreamId}
                     unreadCount={getUnreadCount(stream.id)}
                   />
@@ -325,47 +326,83 @@ function SidebarSection({ title, children }: { title: string; children: React.Re
   )
 }
 
+/** Check if activity is recent (within 5 minutes) */
+function isRecentActivity(createdAt: string): boolean {
+  const diff = Date.now() - new Date(createdAt).getTime()
+  return diff < 5 * 60 * 1000 // 5 minutes
+}
+
+/** Truncate content for preview display */
+function truncateContent(content: string, maxLength: number = 50): string {
+  // Strip markdown formatting for cleaner preview
+  const stripped = content
+    .replace(/[*_~`#]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Links
+    .replace(/\n+/g, " ")
+    .trim()
+  return stripped.length > maxLength ? stripped.slice(0, maxLength) + "..." : stripped
+}
+
 interface StreamItemProps {
   workspaceId: string
-  streamId: string
-  name: string
+  stream: StreamWithPreview
   isActive: boolean
   unreadCount: number
 }
 
-function StreamItem({ workspaceId, streamId, name, isActive, unreadCount }: StreamItemProps) {
+function StreamItem({ workspaceId, stream, isActive, unreadCount }: StreamItemProps) {
+  const { getActorName } = useActors(workspaceId)
   const hasUnread = unreadCount > 0
+  const preview = stream.lastMessagePreview
+  const isRecent = preview && isRecentActivity(preview.createdAt)
+  const name = stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"
 
   return (
     <Link
-      to={`/w/${workspaceId}/s/${streamId}`}
+      to={`/w/${workspaceId}/s/${stream.id}`}
       className={cn(
-        "flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors",
+        "group flex flex-col gap-0.5 rounded-md px-2 py-2 text-sm transition-colors",
         isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
         hasUnread && !isActive && "font-medium"
       )}
     >
-      <span className="truncate">{name}</span>
-      <UnreadBadge count={unreadCount} />
+      <div className="flex items-center justify-between">
+        <span className="truncate font-medium">{name}</span>
+        <div className="flex items-center gap-1.5">
+          {isRecent && <span className="activity-dot recent" />}
+          <UnreadBadge count={unreadCount} />
+        </div>
+      </div>
+      {preview && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="truncate flex-1">
+            {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+          </span>
+          <RelativeTime date={preview.createdAt} className="shrink-0" />
+        </div>
+      )}
     </Link>
   )
 }
 
 interface ScratchpadItemProps {
   workspaceId: string
-  streamId: string
+  stream: StreamWithPreview
   isActive: boolean
   unreadCount: number
 }
 
-function ScratchpadItem({ workspaceId, streamId, isActive, unreadCount }: ScratchpadItemProps) {
-  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamId)
+function ScratchpadItem({ workspaceId, stream: streamWithPreview, isActive, unreadCount }: ScratchpadItemProps) {
+  const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
+  const { getActorName } = useActors(workspaceId)
   const hasUnread = unreadCount > 0
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
 
   const name = stream?.displayName || "New scratchpad"
+  const preview = streamWithPreview.lastMessagePreview
+  const isRecent = preview && isRecentActivity(preview.createdAt)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -418,41 +455,55 @@ function ScratchpadItem({ workspaceId, streamId, isActive, unreadCount }: Scratc
   return (
     <div
       className={cn(
-        "group flex items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors",
+        "group flex flex-col gap-0.5 rounded-md px-2 py-2 text-sm transition-colors",
         isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
         hasUnread && !isActive && "font-medium"
       )}
     >
-      <Link to={`/w/${workspaceId}/s/${streamId}`} className="flex-1 truncate">
-        {name}
-        {isDraft && <span className="ml-1 text-xs text-muted-foreground font-normal">(draft)</span>}
-      </Link>
-      <div className="flex items-center gap-1">
-        <UnreadBadge count={unreadCount} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-              onClick={(e) => e.preventDefault()}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={handleStartRename}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-              <Archive className="mr-2 h-4 w-4" />
-              {isDraft ? "Delete" : "Archive"}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center justify-between">
+        <Link to={`/w/${workspaceId}/s/${streamWithPreview.id}`} className="flex-1 truncate font-medium">
+          {name}
+          {isDraft && <span className="ml-1 text-xs text-muted-foreground font-normal">(draft)</span>}
+        </Link>
+        <div className="flex items-center gap-1">
+          {isRecent && <span className="activity-dot recent" />}
+          <UnreadBadge count={unreadCount} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                onClick={(e) => e.preventDefault()}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={handleStartRename}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                <Archive className="mr-2 h-4 w-4" />
+                {isDraft ? "Delete" : "Archive"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
+      {preview && (
+        <Link
+          to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
+          className="flex items-center gap-1 text-xs text-muted-foreground"
+        >
+          <span className="truncate flex-1">
+            {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+          </span>
+          <RelativeTime date={preview.createdAt} className="shrink-0" />
+        </Link>
+      )}
     </div>
   )
 }
