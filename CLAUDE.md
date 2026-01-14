@@ -51,6 +51,21 @@ threa/
 - UI Components: Shadcn UI (Golden Thread theme)
 - Styling: Tailwind CSS
 
+## Design System References
+
+**Primary documentation:**
+
+- `docs/design-system.md` - Comprehensive design system guide (typography, colors, components, patterns)
+- `docs/design-system-kitchen-sink.html` - Interactive reference with all UI components and patterns
+
+**When implementing UI components:**
+
+1. Check `docs/design-system.md` for design decisions and patterns
+2. Reference `docs/design-system-kitchen-sink.html` for visual examples and CSS implementation
+3. When adding new components or patterns, update BOTH files to keep them in sync
+
+The kitchen sink is a living reference - update it whenever you add new components, patterns, or styling. It serves as both documentation and a visual regression test.
+
 ## Shadcn UI Reference
 
 Shadcn UI is a collection of accessible components built on Radix UI primitives and Tailwind CSS. Components are copied into the codebase (not imported from npm), allowing full customization.

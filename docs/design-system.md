@@ -4,6 +4,8 @@ A comprehensive reference for Threa's visual design language. Use this document 
 
 **Design Philosophy:** Bold, modern, "AI-native" aesthetic for professionals at tech companies. The golden thread motif (inspired by Ariadne) provides warmth and distinction without being flashy.
 
+**Visual Reference:** See `docs/design-system-kitchen-sink.html` for a complete interactive demo of all components and patterns with working code examples. The kitchen sink should be updated whenever new components or patterns are added.
+
 ---
 
 ## Typography
@@ -306,6 +308,200 @@ Appears above selected text for formatting actions.
 
 Format: `[Image #1]`, `[filename.ext]`
 
+### Code Blocks
+
+**Reference:** `design-system-kitchen-sink.html` section "CODE BLOCK WITH HEADER"
+
+Code blocks use a Linear-inspired header design with language picker (editing mode) or copy button (viewing mode).
+
+**Header:**
+
+```css
+.code-block {
+  border-radius: 10px;
+  background: hsl(var(--muted) / 0.5);
+  border: 1px solid hsl(var(--border));
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: hsl(var(--muted) / 0.5);
+  border-bottom: 1px solid hsl(var(--border));
+  min-height: 36px;
+}
+```
+
+**Language Picker (Editing):**
+Dropdown on right side of header for selecting syntax highlighting.
+
+**Copy Button (Viewing):**
+Appears on hover, shows checkmark when copied.
+
+```css
+.code-block-copy {
+  width: 28px;
+  height: 28px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.code-block:hover .code-block-copy {
+  opacity: 1;
+}
+
+.code-block-copy.copied {
+  background: hsl(var(--success) / 0.15);
+  color: hsl(var(--success));
+}
+```
+
+### Image Attachments & Gallery
+
+**Reference:** `design-system-kitchen-sink.html` section "IMAGE ATTACHMENTS & GALLERY"
+
+**Single Image:**
+
+```css
+.image-preview.single {
+  max-width: 400px;
+  max-height: 300px;
+  border-radius: 8px;
+  border: 1px solid hsl(var(--border));
+  cursor: pointer;
+}
+```
+
+**Multiple Images:**
+Grid layout with fixed size:
+
+```css
+.image-preview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.image-preview.multi {
+  width: 180px;
+  height: 180px;
+}
+```
+
+**"More" Overlay:**
+When >4 images, show "+N more" on 4th thumbnail:
+
+```css
+.image-preview-overlay {
+  position: absolute;
+  inset: 0;
+  background: hsl(0 0% 0% / 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 18px;
+  font-weight: 600;
+}
+```
+
+**Full-Screen Gallery:**
+Click any image to open full-screen viewer with:
+
+- Navigation arrows (prev/next)
+- Thumbnail strip at bottom
+- Download and close buttons
+- Dark backdrop (95% black)
+
+### Message Styling
+
+**Reference:** `design-system-kitchen-sink.html` section "MESSAGE STYLING"
+
+**Standard Message:**
+
+```css
+.message {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+```
+
+**AI Message (Special Styling):**
+AI messages get a gold accent and subtle background:
+
+```css
+.message.ai {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+  margin-left: -24px;
+  margin-right: -24px;
+  padding: 16px 24px;
+  border-left: 3px solid hsl(var(--primary));
+}
+
+.message.ai .message-avatar {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.message.ai .message-author {
+  color: hsl(var(--primary));
+}
+```
+
+This creates a subtle "golden thread" visual for AI contributions.
+
+### Inline Mentions
+
+**Reference:** `design-system-kitchen-sink.html` section "MENTIONS"
+
+Inline mentions in message text use subtle backgrounds:
+
+```css
+.inline-mention {
+  display: inline;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* User mentions */
+.inline-mention.user {
+  background: hsl(200 70% 50% / 0.1);
+  color: hsl(200 70% 50%);
+}
+
+/* AI persona mentions */
+.inline-mention.ai {
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+}
+
+/* Channel mentions */
+.inline-mention.channel {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+/* Current user (me) - stronger highlight */
+.inline-mention.me {
+  background: hsl(200 70% 50% / 0.15);
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+```
+
 ### Popovers
 
 #### Emoji Picker
@@ -416,7 +612,79 @@ For long-form content and announcements.
 }
 ```
 
-### Conversations Overview (Sidebar)
+### Sidebar with Color Strip
+
+**Reference:** `design-system-kitchen-sink.html` section "SIDEBAR"
+
+The sidebar features a color strip on the left edge that provides at-a-glance activity information. The sidebar can collapse to just the color strip (like Linear).
+
+**Structure:**
+
+```css
+.sidebar {
+  display: flex;
+  width: 280px; /* Expanded state */
+}
+
+.color-strip {
+  width: 6px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.color-segment {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: filter 0.15s;
+}
+
+.color-segment:hover {
+  filter: brightness(1.15);
+}
+```
+
+**Activity Stripes:**
+Each color segment shows activity types through vertical stripes:
+
+- Gold stripe - AI activity
+- Red stripe - Mentions
+- Blue stripe - People activity
+- Muted stripe - Quiet/no activity
+
+**Collapse Behavior:**
+
+- Default: Collapsed to just color strip
+- Hover: Preview expansion
+- Click: Pin open (persists until clicked again)
+
+**Label-Based Organization:**
+Labels group streams across types (channels, scratchpads, threads) into meaningful collections:
+
+```css
+.label-section {
+  margin-bottom: 4px;
+}
+
+.label-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.label-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--label-color); /* User-defined */
+}
+```
+
+### Conversations Overview (Sidebar Content)
 
 **Stream Items (Enhanced):**
 
@@ -532,6 +800,63 @@ For long-form content and announcements.
 
 **Footer:** Keyboard hints (↑↓ Navigate, ↵ Open, ⌘↵ New tab, esc Close)
 
+### Top Bar
+
+**Reference:** `design-system-kitchen-sink.html` section 15
+
+The top bar provides workspace navigation and context.
+
+```css
+.top-bar {
+  height: 44px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+}
+```
+
+**Layout:**
+
+- Left: Sidebar toggle, workspace switcher (~100px width)
+- Center: Context labels (stream/thread indicators) with activity glow
+- Right: Search, notifications, profile (~100px width)
+
+**Activity Glow:**
+Active streams show a subtle multi-color glow at the bottom of their label:
+
+```css
+.stream-label-glow {
+  position: absolute;
+  bottom: 2px;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  border-radius: 2px;
+  display: flex;
+  overflow: hidden;
+}
+
+.glow-stripe {
+  flex: 1;
+  height: 100%;
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+```
+
+Each active persona gets a color stripe in the glow, creating a visual "thread" of who's active.
+
 ---
 
 ## Animation & Motion
@@ -594,9 +919,25 @@ Respect user preference:
 
 ---
 
-## Mockup References
+## Reference Files
 
-All visual explorations are in `docs/references/mockups/sidebar-exploration/`:
+### Kitchen Sink (Primary Reference)
+
+`docs/design-system-kitchen-sink.html` - **THE** comprehensive reference with all components and patterns. This is a living document that should be updated whenever new UI components or patterns are added to the system.
+
+The kitchen sink includes:
+
+- Complete CSS implementation for all components
+- Interactive examples with hover states
+- Dark mode support
+- All color variables and typography
+- Working animations and transitions
+
+**When to update:** Add new sections to the kitchen sink when implementing new UI patterns, components, or significant style changes. Keep it in sync with this document.
+
+### Exploration Mockups
+
+Historical explorations in `docs/references/mockups/sidebar-exploration/`:
 
 | File                                     | Purpose                               |
 | ---------------------------------------- | ------------------------------------- |
@@ -624,3 +965,4 @@ When implementing a component, verify:
 - [ ] Keyboard navigation support
 - [ ] Respects reduced motion preference
 - [ ] Dark mode tested
+- [ ] **Kitchen sink updated** - Add new component/pattern to `design-system-kitchen-sink.html` with working example
