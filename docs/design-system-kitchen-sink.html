@@ -1,0 +1,4902 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threa Design System - Kitchen Sink Reference</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* ========================================
+         CSS VARIABLES - Golden Thread Theme
+         ======================================== */
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 15% 93%;
+        --secondary-foreground: 30 10% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 38 70% 55%;
+        --accent-foreground: 30 10% 12%;
+        --border: 35 15% 88%;
+        --input: 35 15% 88%;
+        --ring: 38 65% 50%;
+        --destructive: 0 84% 60%;
+        --success: 142 76% 36%;
+      }
+
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --card-foreground: 35 15% 92%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --secondary-foreground: 35 15% 85%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --accent: 40 60% 50%;
+        --accent-foreground: 35 15% 92%;
+        --border: 30 10% 20%;
+        --input: 30 10% 20%;
+        --ring: 40 55% 55%;
+      }
+
+      /* ========================================
+         TYPOGRAPHY - Space Grotesk
+         ======================================== */
+      body {
+        font-family:
+          "Space Grotesk",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        line-height: 1.6;
+      }
+
+      /* Accessibility: System font option */
+      [data-font-family="system"] body {
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+
+      /* ========================================
+         LAYOUT & SECTIONS
+         ======================================== */
+      .kitchen-sink {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 40px 24px;
+      }
+
+      .section {
+        margin-bottom: 64px;
+        padding-bottom: 48px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+      .section:last-child {
+        border-bottom: none;
+      }
+
+      .section-header {
+        margin-bottom: 24px;
+      }
+      .section-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: hsl(var(--foreground));
+      }
+      .section-subtitle {
+        font-size: 14px;
+        color: hsl(var(--muted-foreground));
+      }
+      .section-ref {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 500;
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-top: 8px;
+      }
+
+      .component-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+      }
+
+      .component-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .component-label {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+      }
+
+      .demo-container {
+        background: hsl(var(--muted) / 0.3);
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 12px;
+      }
+
+      /* ========================================
+         1. MESSAGE INPUT - Premium Glow Style
+         ======================================== */
+      .premium-input-container {
+        position: relative;
+      }
+
+      .premium-input-box {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        padding: 12px;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px hsl(var(--foreground) / 0.03);
+      }
+
+      .premium-input-box:focus-within {
+        border-color: hsl(var(--primary) / 0.5);
+        box-shadow:
+          0 0 0 3px hsl(var(--primary) / 0.1),
+          0 0 20px hsl(var(--primary) / 0.15),
+          0 4px 12px hsl(var(--foreground) / 0.05);
+      }
+
+      .premium-input-box:focus-within::before {
+        content: "";
+        position: absolute;
+        inset: -1px;
+        border-radius: 17px;
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.3), transparent 50%);
+        z-index: -1;
+        opacity: 0.5;
+      }
+
+      .attachment-bar {
+        display: flex;
+        gap: 8px;
+        padding: 8px 0;
+        margin-bottom: 8px;
+        border-bottom: 1px solid hsl(var(--border) / 0.5);
+        flex-wrap: wrap;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+
+      .attachment-bar:empty {
+        display: none;
+      }
+
+      .attachment-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      /* Style 1: Primary Accent - Uploaded */
+      .attachment-chip.uploaded {
+        background: hsl(var(--primary) / 0.1);
+        border: 1px solid hsl(var(--primary) / 0.3);
+        color: hsl(var(--primary));
+      }
+
+      /* Style 3: Dashed Mono - Uploading */
+      .attachment-chip.uploading {
+        background: transparent;
+        border: 1px dashed hsl(var(--muted-foreground) / 0.4);
+        color: hsl(var(--muted-foreground));
+      }
+
+      .attachment-chip svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .attachment-chip .remove-btn {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0.6;
+        transition: opacity 0.15s;
+      }
+      .attachment-chip .remove-btn:hover {
+        opacity: 1;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .spinner {
+        animation: spin 1s linear infinite;
+      }
+
+      .input-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+      }
+
+      .expand-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: hsl(var(--muted) / 0.5);
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .expand-btn:hover {
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
+      }
+
+      .text-input-wrapper {
+        flex: 1;
+        min-height: 40px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .text-input {
+        width: 100%;
+        min-height: 40px;
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        font-size: 14px;
+        font-family: inherit;
+        color: hsl(var(--foreground));
+        resize: none;
+        outline: none;
+      }
+      .text-input::placeholder {
+        color: hsl(var(--muted-foreground));
+      }
+
+      .send-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .send-btn:hover {
+        filter: brightness(1.1);
+        transform: scale(1.02);
+      }
+      .send-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      /* ========================================
+         2. FORMATTING TOOLBAR - Always Visible
+         ======================================== */
+      .formatting-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 0;
+        margin-bottom: 8px;
+        border-bottom: 1px solid hsl(var(--border) / 0.5);
+      }
+
+      .toolbar-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .toolbar-btn:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .toolbar-btn.active {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .toolbar-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .toolbar-divider {
+        width: 1px;
+        height: 20px;
+        background: hsl(var(--border));
+        margin: 0 4px;
+      }
+
+      /* ========================================
+         3. FLOATING SELECTION TOOLBAR - Icon Only
+         ======================================== */
+      .floating-toolbar {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow:
+          0 4px 12px hsl(var(--foreground) / 0.1),
+          0 2px 4px hsl(var(--foreground) / 0.05);
+      }
+
+      .floating-toolbar-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .floating-toolbar-btn:hover {
+        background: hsl(var(--muted));
+      }
+      .floating-toolbar-btn.active {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .floating-toolbar-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* ========================================
+         4. INLINE REFERENCE NODES
+         ======================================== */
+      .inline-ref {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        background: hsl(var(--primary) / 0.15);
+        border: 1px solid hsl(var(--primary) / 0.25);
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--primary));
+        cursor: default;
+        vertical-align: middle;
+      }
+      .inline-ref svg {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* ========================================
+         5. EMOJI PICKER - Standard with Categories
+         ======================================== */
+      .emoji-picker {
+        width: 320px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow: 0 8px 24px hsl(var(--foreground) / 0.12);
+        overflow: hidden;
+      }
+
+      .emoji-picker-header {
+        padding: 12px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .emoji-search {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        background: hsl(var(--background));
+        font-size: 13px;
+        font-family: inherit;
+        color: hsl(var(--foreground));
+        outline: none;
+      }
+      .emoji-search:focus {
+        border-color: hsl(var(--primary));
+      }
+
+      .emoji-categories {
+        display: flex;
+        gap: 4px;
+        padding: 8px 12px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .emoji-category-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .emoji-category-btn:hover {
+        background: hsl(var(--muted));
+      }
+      .emoji-category-btn.active {
+        background: hsl(var(--primary) / 0.15);
+      }
+
+      .emoji-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+        padding: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .emoji-item {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .emoji-item:hover {
+        background: hsl(var(--muted));
+        transform: scale(1.15);
+      }
+
+      /* Inline emoji search (no top bar) */
+      .emoji-inline-search {
+        padding: 8px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow: 0 4px 12px hsl(var(--foreground) / 0.1);
+      }
+      .emoji-inline-search .emoji-grid {
+        padding: 8px 0 0 0;
+        max-height: 150px;
+      }
+
+      /* ========================================
+         6. SLASH COMMANDS - Floating Pill Style
+         ======================================== */
+      .slash-popover {
+        width: 280px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        box-shadow: 0 8px 24px hsl(var(--foreground) / 0.12);
+        padding: 6px;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+
+      .slash-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .slash-item:hover,
+      .slash-item.selected {
+        background: hsl(var(--muted));
+      }
+
+      .slash-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .slash-icon.backend {
+        background: hsl(280 60% 55% / 0.15);
+        color: hsl(280 60% 55%);
+      }
+      .slash-icon.frontend {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+      }
+      .slash-icon.ai {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .slash-content {
+        flex: 1;
+        min-width: 0;
+      }
+      .slash-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+      }
+      .slash-desc {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .slash-shortcut {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: hsl(var(--muted));
+        border-radius: 4px;
+        color: hsl(var(--muted-foreground));
+        font-family: monospace;
+      }
+
+      /* ========================================
+         7. MENTIONS - Floating Compact
+         ======================================== */
+      .mention-popover {
+        width: 240px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 10px;
+        box-shadow: 0 8px 24px hsl(var(--foreground) / 0.12);
+        padding: 4px;
+        max-height: 280px;
+        overflow-y: auto;
+      }
+
+      .mention-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .mention-item:hover,
+      .mention-item.selected {
+        background: hsl(var(--muted));
+      }
+
+      .mention-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      .mention-avatar.user {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+      }
+      .mention-avatar.ai {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .mention-avatar.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        font-size: 14px;
+      }
+
+      .mention-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .mention-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+      }
+      .mention-detail {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Inline mention styles */
+      .inline-mention {
+        display: inline;
+        padding: 1px 4px;
+        border-radius: 4px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .inline-mention.user {
+        background: hsl(200 70% 50% / 0.1);
+        color: hsl(200 70% 50%);
+      }
+      .inline-mention.ai {
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
+      }
+      .inline-mention.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .inline-mention.me {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(var(--primary));
+        font-weight: 600;
+      }
+
+      /* ========================================
+         MESSAGE CONTENT FORMATTING
+         ======================================== */
+      .rendered-content {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .rendered-content strong,
+      .rendered-content b {
+        font-weight: 600;
+      }
+
+      .rendered-content em,
+      .rendered-content i {
+        font-style: italic;
+      }
+
+      .rendered-content s,
+      .rendered-content del {
+        text-decoration: line-through;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .rendered-content code {
+        font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+        font-size: 0.9em;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .rendered-content pre {
+        margin: 12px 0;
+        padding: 14px;
+        border-radius: 10px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+        overflow-x: auto;
+      }
+
+      .rendered-content pre code {
+        padding: 0;
+        background: transparent;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      /* ========================================
+         CODE BLOCK WITH HEADER (Linear-style)
+         ======================================== */
+      .code-block {
+        position: relative;
+        margin: 12px 0;
+        border-radius: 10px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+        overflow: hidden;
+      }
+      .code-block-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: hsl(var(--muted) / 0.5);
+        border-bottom: 1px solid hsl(var(--border));
+        min-height: 36px;
+      }
+      .code-block-filename {
+        font-size: 12px;
+        font-weight: 500;
+        color: hsl(var(--muted-foreground));
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+      .code-block-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      /* Language picker (editing mode) */
+      .language-picker {
+        position: relative;
+      }
+      .language-picker-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: transparent;
+        border: none;
+        color: hsl(var(--muted-foreground));
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .language-picker-btn:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .language-picker-btn svg {
+        width: 12px;
+        height: 12px;
+      }
+      .language-picker-dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow: 0 4px 12px hsl(0 0% 0% / 0.15);
+        padding: 4px;
+        min-width: 140px;
+        max-height: 280px;
+        overflow-y: auto;
+        z-index: 100;
+      }
+      .language-picker-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: hsl(var(--foreground));
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .language-picker-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .language-picker-item.selected {
+        color: hsl(var(--primary));
+      }
+      .language-picker-item svg {
+        width: 14px;
+        height: 14px;
+        color: hsl(var(--primary));
+      }
+
+      /* Copy button (viewing mode - appears on hover) */
+      .code-block-copy {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: hsl(var(--muted));
+        border: none;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        opacity: 0;
+        transition: all 0.15s ease;
+      }
+      .code-block:hover .code-block-copy {
+        opacity: 1;
+      }
+      .code-block-copy:hover {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .code-block-copy.copied {
+        background: hsl(var(--success) / 0.15);
+        color: hsl(var(--success));
+      }
+      .code-block-copy svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .code-block-body {
+        padding: 14px;
+        overflow-x: auto;
+      }
+      .code-block-body code {
+        font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        color: hsl(var(--foreground));
+      }
+
+      /* Syntax highlighting (basic) */
+      .code-block .token-keyword {
+        color: hsl(280 60% 65%);
+      }
+      .code-block .token-string {
+        color: hsl(100 50% 45%);
+      }
+      .code-block .token-comment {
+        color: hsl(var(--muted-foreground));
+        font-style: italic;
+      }
+      .code-block .token-function {
+        color: hsl(200 70% 55%);
+      }
+      .code-block .token-number {
+        color: hsl(30 80% 55%);
+      }
+
+      /* ========================================
+         IMAGE ATTACHMENTS & GALLERY
+         ======================================== */
+      .message-attachments {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .image-preview-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .image-preview {
+        position: relative;
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+        border: 1px solid hsl(var(--border));
+        transition: all 0.15s ease;
+      }
+      .image-preview:hover {
+        border-color: hsl(var(--primary) / 0.5);
+        box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+      }
+      .image-preview img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .image-preview.single {
+        max-width: 400px;
+        max-height: 300px;
+      }
+      .image-preview.multi {
+        width: 180px;
+        height: 180px;
+      }
+      .image-preview-overlay {
+        position: absolute;
+        inset: 0;
+        background: hsl(0 0% 0% / 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 18px;
+        font-weight: 600;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      .image-preview:hover .image-preview-overlay {
+        opacity: 1;
+      }
+      .image-preview.more .image-preview-overlay {
+        opacity: 1;
+        background: hsl(0 0% 0% / 0.6);
+      }
+
+      /* Attachment pills below images */
+      .attachment-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .attachment-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 16px;
+        background: hsl(var(--muted));
+        font-size: 12px;
+        color: hsl(var(--foreground));
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .attachment-pill:hover {
+        background: hsl(var(--muted-foreground) / 0.2);
+      }
+      .attachment-pill svg {
+        width: 14px;
+        height: 14px;
+        color: hsl(var(--muted-foreground));
+      }
+      .attachment-pill.image {
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
+      }
+      .attachment-pill.image svg {
+        color: hsl(var(--primary));
+      }
+
+      /* Full-screen gallery */
+      .gallery-overlay {
+        position: fixed;
+        inset: 0;
+        background: hsl(0 0% 0% / 0.95);
+        display: flex;
+        flex-direction: column;
+        z-index: 1000;
+      }
+      .gallery-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        color: white;
+      }
+      .gallery-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: hsl(0 0% 70%);
+      }
+      .gallery-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .gallery-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: hsl(0 0% 100% / 0.1);
+        border: none;
+        color: white;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .gallery-btn:hover {
+        background: hsl(0 0% 100% / 0.2);
+      }
+      .gallery-btn svg {
+        width: 20px;
+        height: 20px;
+      }
+      .gallery-main {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        position: relative;
+      }
+      .gallery-main img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 4px;
+      }
+      .gallery-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: hsl(0 0% 100% / 0.1);
+        border: none;
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease;
+      }
+      .gallery-nav:hover {
+        background: hsl(0 0% 100% / 0.2);
+      }
+      .gallery-nav.prev {
+        left: 24px;
+      }
+      .gallery-nav.next {
+        right: 24px;
+      }
+      .gallery-nav svg {
+        width: 24px;
+        height: 24px;
+      }
+      .gallery-thumbnails {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        padding: 16px 24px 24px;
+        background: hsl(0 0% 0% / 0.5);
+      }
+      .gallery-thumb {
+        width: 64px;
+        height: 64px;
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        border: 2px solid transparent;
+        opacity: 0.5;
+        transition: all 0.15s ease;
+      }
+      .gallery-thumb:hover {
+        opacity: 0.8;
+      }
+      .gallery-thumb.active {
+        border-color: white;
+        opacity: 1;
+      }
+      .gallery-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .gallery-counter {
+        text-align: center;
+        padding-bottom: 8px;
+        font-size: 13px;
+        color: hsl(0 0% 60%);
+      }
+
+      .rendered-content a {
+        color: hsl(var(--primary));
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        text-decoration-color: hsl(var(--primary) / 0.4);
+        transition: text-decoration-color 0.15s;
+      }
+      .rendered-content a:hover {
+        text-decoration-color: hsl(var(--primary));
+      }
+
+      .rendered-content blockquote {
+        margin: 12px 0;
+        padding: 8px 16px;
+        border-left: 3px solid hsl(var(--border));
+        color: hsl(var(--muted-foreground));
+        font-style: italic;
+      }
+
+      .rendered-content ul,
+      .rendered-content ol {
+        margin: 8px 0;
+        padding-left: 24px;
+      }
+
+      .rendered-content li {
+        margin: 4px 0;
+      }
+
+      .rendered-content ul li {
+        list-style-type: disc;
+      }
+
+      .rendered-content ol li {
+        list-style-type: decimal;
+      }
+
+      /* Slash command in message (executed) */
+      .inline-command {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: hsl(280 60% 55% / 0.1);
+        color: hsl(280 60% 55%);
+        font-size: 13px;
+        font-weight: 500;
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+
+      /* ========================================
+         8. DOCUMENT EDITOR MODAL
+         ======================================== */
+      .doc-editor-modal {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        box-shadow: 0 24px 48px hsl(var(--foreground) / 0.2);
+        width: 100%;
+        max-width: 700px;
+        display: flex;
+        flex-direction: column;
+        max-height: 600px;
+      }
+
+      .doc-editor-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .doc-editor-title {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .doc-editor-close {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .doc-editor-close:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .doc-editor-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 12px 20px;
+        border-bottom: 1px solid hsl(var(--border));
+        flex-wrap: wrap;
+      }
+
+      .doc-editor-body {
+        flex: 1;
+        padding: 20px;
+        min-height: 200px;
+        overflow-y: auto;
+      }
+
+      .doc-editor-textarea {
+        width: 100%;
+        min-height: 180px;
+        border: none;
+        background: transparent;
+        font-size: 14px;
+        font-family: inherit;
+        color: hsl(var(--foreground));
+        resize: none;
+        outline: none;
+        line-height: 1.7;
+      }
+
+      .doc-editor-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-top: 1px solid hsl(var(--border));
+      }
+
+      .doc-editor-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: hsl(var(--muted-foreground));
+        border: none;
+      }
+      .btn-ghost:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .btn-outline {
+        background: transparent;
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+      }
+      .btn-outline:hover {
+        background: hsl(var(--muted));
+      }
+
+      .btn-primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border: none;
+      }
+      .btn-primary:hover {
+        filter: brightness(1.1);
+      }
+
+      /* ========================================
+         9. CONVERSATIONS OVERVIEW
+         ======================================== */
+      .stream-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .stream-section-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+        padding: 12px 12px 8px;
+      }
+
+      .stream-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.1s;
+        position: relative;
+      }
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .stream-item.active {
+        background: hsl(var(--primary) / 0.1);
+      }
+
+      .stream-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .stream-avatar.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .stream-avatar.scratchpad {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .stream-avatar.dm {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+        font-weight: 600;
+        font-size: 12px;
+      }
+
+      .activity-dot {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 10px;
+        height: 10px;
+        background: hsl(var(--primary));
+        border-radius: 50%;
+        border: 2px solid hsl(var(--card));
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .stream-content {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .stream-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .stream-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stream-time {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      .stream-preview {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+      .stream-preview strong {
+        color: hsl(var(--foreground) / 0.8);
+        font-weight: 500;
+      }
+
+      .unread-badge {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 10px;
+        min-width: 18px;
+        text-align: center;
+      }
+
+      .stream-hover-actions {
+        display: none;
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        gap: 4px;
+      }
+      .stream-item:hover .stream-hover-actions {
+        display: flex;
+      }
+
+      .hover-action-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--muted-foreground));
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .hover-action-btn:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .hover-action-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* ========================================
+         10. THREAD PANEL - Hybrid Resizable
+         ======================================== */
+      .thread-panel {
+        width: 440px;
+        background: hsl(var(--card));
+        border-left: 1px solid hsl(var(--border));
+        display: flex;
+        flex-direction: column;
+        height: 400px;
+      }
+
+      .thread-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .thread-tabs {
+        display: flex;
+        gap: 4px;
+      }
+
+      .thread-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.1s;
+        max-width: 150px;
+      }
+      .thread-tab:hover {
+        background: hsl(var(--muted) / 0.5);
+        color: hsl(var(--foreground));
+      }
+      .thread-tab.active {
+        background: hsl(var(--primary) / 0.1);
+        color: hsl(var(--primary));
+      }
+
+      .thread-tab-title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .thread-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .thread-action {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .thread-action:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+      .thread-action.active {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .thread-action svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* Breadcrumbs */
+      .thread-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 14px;
+        background: hsl(var(--muted) / 0.2);
+        font-size: 11px;
+        border-bottom: 1px solid hsl(var(--border));
+        overflow-x: auto;
+      }
+      .thread-breadcrumb::-webkit-scrollbar {
+        height: 0;
+      }
+
+      .breadcrumb-item {
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        white-space: nowrap;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: all 0.15s;
+      }
+      .breadcrumb-item:hover {
+        color: hsl(var(--primary));
+        background: hsl(var(--primary) / 0.1);
+      }
+      .breadcrumb-item.current {
+        color: hsl(var(--foreground));
+        font-weight: 500;
+        background: hsl(var(--muted) / 0.5);
+        cursor: default;
+      }
+
+      .breadcrumb-sep {
+        color: hsl(var(--muted-foreground) / 0.4);
+        font-size: 10px;
+      }
+
+      .breadcrumb-ellipsis {
+        color: hsl(var(--muted-foreground) / 0.6);
+        padding: 2px 4px;
+        cursor: pointer;
+      }
+      .breadcrumb-ellipsis:hover {
+        color: hsl(var(--primary));
+      }
+
+      .thread-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+      }
+
+      /* Resize handle */
+      .resize-handle {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        cursor: ew-resize;
+        background: transparent;
+        transition: background 0.15s;
+      }
+      .resize-handle:hover {
+        background: hsl(var(--primary) / 0.3);
+      }
+
+      /* ========================================
+         11. QUICK SWITCHER
+         ======================================== */
+      .quick-switcher {
+        width: 600px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        box-shadow:
+          0 24px 48px hsl(var(--foreground) / 0.2),
+          0 0 0 1px hsl(var(--foreground) / 0.05);
+        overflow: hidden;
+      }
+
+      .quick-switcher-input-wrapper {
+        padding: 16px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .quick-switcher-input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid hsl(var(--border));
+        border-radius: 10px;
+        background: hsl(var(--background));
+        font-size: 15px;
+        font-family: inherit;
+        color: hsl(var(--foreground));
+        outline: none;
+        transition: all 0.15s;
+      }
+      .quick-switcher-input:focus {
+        border-color: hsl(var(--primary));
+        box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+      }
+      .quick-switcher-input::placeholder {
+        color: hsl(var(--muted-foreground));
+      }
+
+      .quick-switcher-results {
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 8px;
+      }
+
+      .quick-switcher-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .quick-switcher-item:hover,
+      .quick-switcher-item.selected {
+        background: hsl(var(--muted));
+      }
+
+      .quick-switcher-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-top: 1px solid hsl(var(--border));
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .quick-switcher-hints {
+        display: flex;
+        gap: 16px;
+      }
+
+      .hint-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 5px;
+        background: hsl(var(--muted));
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 500;
+        font-family: monospace;
+        margin-right: 4px;
+      }
+
+      /* ========================================
+         12. TYPOGRAPHY SAMPLES
+         ======================================== */
+      .typography-samples {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .type-sample {
+        padding: 12px 16px;
+        background: hsl(var(--muted) / 0.3);
+        border-radius: 8px;
+      }
+
+      .type-label {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 4px;
+      }
+
+      /* ========================================
+         13. MESSAGE STYLING (Clean, document-like)
+         ======================================== */
+      .message {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+
+      .message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .message-content {
+        flex: 1;
+        padding-top: 2px;
+      }
+
+      .message-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .message-author {
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .message-time {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .message-text {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .message-code {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 10px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+      }
+
+      .message-code-title {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+
+      .message-code-list {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .message-code-list li {
+        padding: 4px 0;
+      }
+
+      /* AI message special styling - full width with gold accent */
+      .message.ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+        margin-left: -24px;
+        margin-right: -24px;
+        padding: 16px 24px;
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      .message.ai .message-avatar {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+      }
+
+      .message.ai .message-author {
+        color: hsl(var(--primary));
+      }
+
+      /* ========================================
+         14. INPUT GROWTH DEMO
+         ======================================== */
+      .growth-demo {
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .growth-stream {
+        height: 200px;
+        min-height: 200px;
+        background: hsl(var(--muted) / 0.2);
+        padding: 16px;
+        transition: height 0.2s ease;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+      }
+
+      .growth-input-area {
+        border-top: 1px solid hsl(var(--border));
+        max-height: 380px;
+        transition: max-height 0.2s ease;
+      }
+
+      /* ========================================
+         DARK MODE TOGGLE
+         ======================================== */
+      .theme-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: hsl(var(--foreground));
+        z-index: 100;
+        transition: all 0.15s;
+      }
+      .theme-toggle:hover {
+        background: hsl(var(--muted));
+      }
+
+      /* ========================================
+         15. TOP BAR
+         ======================================== */
+      .top-bar-demo {
+        height: 44px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+      }
+
+      .top-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100px;
+      }
+
+      .top-center {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+      }
+
+      .top-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100px;
+        justify-content: flex-end;
+      }
+
+      .top-toggle {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .top-toggle:hover {
+        background: hsl(var(--muted));
+      }
+      .top-toggle svg {
+        width: 16px;
+        height: 16px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .top-labels {
+        display: flex;
+        gap: 2px;
+      }
+
+      .top-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+      .top-label:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .top-label.active {
+        background: hsl(var(--muted));
+      }
+
+      .top-label-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+      .top-label-name {
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .top-label-glow {
+        position: absolute;
+        bottom: 2px;
+        left: 10px;
+        right: 10px;
+        height: 3px;
+        border-radius: 2px;
+        overflow: hidden;
+        display: flex;
+      }
+      .glow-stripe {
+        flex: 1;
+        height: 100%;
+      }
+
+      @keyframes glow-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .glow-pulse {
+        animation: glow-pulse 2s ease-in-out infinite;
+      }
+
+      .top-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        background: hsl(var(--muted) / 0.5);
+        color: hsl(var(--muted-foreground));
+        transition: all 0.15s ease;
+      }
+      .top-btn:hover {
+        background: hsl(var(--muted));
+      }
+
+      /* Label colors */
+      .label-auth {
+        background: hsl(280 60% 55%);
+      }
+      .label-launch {
+        background: hsl(150 60% 45%);
+      }
+      .label-design {
+        background: hsl(30 70% 50%);
+      }
+      .label-hiring {
+        background: hsl(200 60% 50%);
+      }
+
+      /* Activity colors */
+      .activity-ai {
+        background: hsl(var(--primary));
+      }
+      .activity-mention {
+        background: hsl(350 70% 50%);
+      }
+      .activity-people {
+        background: hsl(200 60% 50%);
+      }
+      .activity-quiet {
+        background: hsl(var(--muted-foreground) / 0.15);
+      }
+
+      /* ========================================
+         16. SIDEBAR
+         ======================================== */
+      .sidebar-demo {
+        width: 280px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        display: flex;
+        overflow: hidden;
+      }
+
+      .color-strip {
+        width: 6px;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+
+      .color-segment {
+        position: relative;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        transition: filter 0.15s;
+      }
+      .color-segment:hover {
+        filter: brightness(1.15);
+      }
+
+      .segment-base {
+        position: absolute;
+        inset: 0;
+        opacity: 0.3;
+      }
+      .segment-stripes {
+        position: relative;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .activity-stripe {
+        flex: 1;
+        min-height: 4px;
+      }
+
+      .sidebar-content-demo {
+        flex: 1;
+        padding: 8px;
+        overflow-y: auto;
+      }
+
+      .label-section {
+        margin-bottom: 4px;
+      }
+
+      .label-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: background 0.15s ease;
+      }
+      .label-header:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .label-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+      .label-name {
+        font-size: 13px;
+        font-weight: 600;
+        flex: 1;
+      }
+      .label-activities {
+        display: flex;
+        gap: 2px;
+      }
+      .label-activity-pip {
+        width: 4px;
+        height: 18px;
+        border-radius: 2px;
+      }
+
+      .label-items {
+        padding: 2px 0 8px 0;
+      }
+
+      .sidebar-stream-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px 8px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .sidebar-stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .sidebar-stream-item.active {
+        background: hsl(var(--primary) / 0.1);
+      }
+
+      .sidebar-stream-activity {
+        width: 3px;
+        height: 16px;
+        border-radius: 2px;
+      }
+      .sidebar-stream-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+      .sidebar-stream-name {
+        font-size: 12px;
+        flex: 1;
+      }
+      .sidebar-stream-badge {
+        font-size: 9px;
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+
+      .text-muted-dim {
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* ========================================
+         MINIMIZED THREADS STRIP
+         ======================================== */
+      .minimized-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--card));
+        border-top: 1px solid hsl(var(--border));
+        border-radius: 12px 12px 0 0;
+      }
+      .minimized-strip-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: hsl(var(--muted-foreground));
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .minimized-thread-item {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+      .minimized-thread-item:hover {
+        background: hsl(var(--primary) / 0.2);
+        color: hsl(var(--primary));
+      }
+      .minimized-thread-item.has-activity::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: hsl(var(--activity-ai));
+      }
+      .minimized-thread-item.has-mention::after {
+        background: hsl(var(--activity-mention));
+      }
+
+      /* ========================================
+         AI-POWERED STATUS SECTIONS (Phase 2)
+         ======================================== */
+      .status-section {
+        margin-bottom: 16px;
+      }
+      .status-section-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        border-radius: 6px;
+        transition: background 0.15s ease;
+      }
+      .status-section-header:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .status-section-header svg {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      .status-section.collapsed .status-section-header svg {
+        transform: rotate(-90deg);
+      }
+      .status-section-count {
+        margin-left: auto;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+      }
+      .status-section.needs-attention .status-section-count {
+        background: hsl(var(--activity-mention) / 0.15);
+        color: hsl(var(--activity-mention));
+      }
+      .status-section.active .status-section-count {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+      .status-section.quiet .status-section-count {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+      .status-section-items {
+        padding: 4px 0 4px 20px;
+      }
+      .status-section.collapsed .status-section-items {
+        display: none;
+      }
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.15s ease;
+      }
+      .status-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .status-item-indicator {
+        width: 3px;
+        height: 16px;
+        border-radius: 2px;
+      }
+      .status-item-icon {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+      .status-item-name {
+        flex: 1;
+      }
+      .status-item-reason {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ========================================
+         BREADCRUMB DROPDOWN
+         ======================================== */
+      .breadcrumb-dropdown-wrapper {
+        position: relative;
+        display: inline-block;
+      }
+      .breadcrumb-dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        box-shadow: 0 4px 12px hsl(0 0% 0% / 0.15);
+        padding: 4px;
+        min-width: 160px;
+        z-index: 100;
+      }
+      .breadcrumb-dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: hsl(var(--foreground));
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .breadcrumb-dropdown-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+      .breadcrumb-dropdown-item svg {
+        width: 14px;
+        height: 14px;
+        color: hsl(var(--muted-foreground));
+      }
+      .breadcrumb-depth {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+
+      /* ========================================
+         UTILITIES
+         ======================================== */
+      .flex {
+        display: flex;
+      }
+      .items-center {
+        align-items: center;
+      }
+      .gap-2 {
+        gap: 8px;
+      }
+      .gap-4 {
+        gap: 16px;
+      }
+      .mt-4 {
+        margin-top: 16px;
+      }
+      .text-sm {
+        font-size: 14px;
+      }
+      .text-muted {
+        color: hsl(var(--muted-foreground));
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Theme Toggle -->
+    <button class="theme-toggle" onclick="toggleTheme()">
+      <svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="5" />
+        <path
+          d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+        />
+      </svg>
+    </button>
+
+    <div class="kitchen-sink">
+      <!-- Header -->
+      <header style="margin-bottom: 48px">
+        <h1
+          style="
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--primary)));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          "
+        >
+          Threa Design System
+        </h1>
+        <p style="font-size: 16px; color: hsl(var(--muted-foreground))">
+          Kitchen Sink Reference - All approved design decisions in one place
+        </p>
+      </header>
+
+      <!-- 1. Typography -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Typography</h2>
+          <p class="section-subtitle">Space Grotesk - Geometric, technical, modern. Fits "AI-native" positioning.</p>
+          <span class="section-ref">typography-exploration-01.html</span>
+        </div>
+
+        <div class="typography-samples">
+          <div class="type-sample">
+            <div class="type-label">Heading 1 - 700</div>
+            <div style="font-size: 32px; font-weight: 700">The quick brown fox</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-label">Heading 2 - 600</div>
+            <div style="font-size: 24px; font-weight: 600">The quick brown fox jumps</div>
+          </div>
+          <div class="type-sample">
+            <div class="type-label">Body - 400</div>
+            <div style="font-size: 14px; font-weight: 400">
+              The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.
+            </div>
+          </div>
+          <div class="type-sample">
+            <div class="type-label">Medium - 500</div>
+            <div style="font-size: 14px; font-weight: 500">Used for emphasis and labels</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Top Bar Navigation -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Top Bar Navigation</h2>
+          <p class="section-subtitle">
+            Centered label tabs with activity glows. Sidebar toggle left, quick actions right.
+          </p>
+          <span class="section-ref">nav-16-full-view.html</span>
+        </div>
+
+        <div class="component-card">
+          <div class="component-label">Full Top Bar</div>
+          <div class="top-bar-demo">
+            <div class="top-left">
+              <div class="top-toggle" title="Toggle Sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="9" y1="3" x2="9" y2="21" />
+                </svg>
+              </div>
+            </div>
+
+            <div class="top-center">
+              <div class="top-labels">
+                <div class="top-label active">
+                  <div class="top-label-dot label-auth"></div>
+                  <span class="top-label-name">Auth Project</span>
+                  <div class="top-label-glow glow-pulse">
+                    <div class="glow-stripe activity-ai"></div>
+                  </div>
+                </div>
+                <div class="top-label">
+                  <div class="top-label-dot label-launch"></div>
+                  <span class="top-label-name">Q1 Launch</span>
+                  <div class="top-label-glow">
+                    <div class="glow-stripe activity-mention"></div>
+                    <div class="glow-stripe activity-ai"></div>
+                  </div>
+                </div>
+                <div class="top-label">
+                  <div class="top-label-dot label-design"></div>
+                  <span class="top-label-name">Design System</span>
+                  <div class="top-label-glow">
+                    <div class="glow-stripe activity-people"></div>
+                  </div>
+                </div>
+                <div class="top-label">
+                  <div class="top-label-dot label-hiring"></div>
+                  <span class="top-label-name text-muted-dim">Hiring</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="top-right">
+              <div class="top-btn">⌘K</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-grid mt-4">
+          <div class="component-card">
+            <div class="component-label">Label Tab Anatomy</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Color dot:</strong> Label identifier (user-defined)</li>
+                <li><strong>Name:</strong> Label name, muted when quiet</li>
+                <li><strong>Activity glow:</strong> Pulsing stripes below tab</li>
+                <li><strong>Active state:</strong> Muted background</li>
+              </ul>
+            </div>
+          </div>
+          <div class="component-card">
+            <div class="component-label">Activity Glow Types</div>
+            <div class="demo-container">
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <div style="width: 24px; height: 4px; border-radius: 2px" class="activity-ai"></div>
+                  <span style="font-size: 13px">AI activity (gold)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <div style="width: 24px; height: 4px; border-radius: 2px" class="activity-mention"></div>
+                  <span style="font-size: 13px">Mentions (red)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <div style="width: 24px; height: 4px; border-radius: 2px" class="activity-people"></div>
+                  <span style="font-size: 13px">People activity (blue)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <div style="width: 24px; height: 4px; border-radius: 2px" class="activity-quiet"></div>
+                  <span style="font-size: 13px">Quiet (muted)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Sidebar -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Collapsible Sidebar</h2>
+          <p class="section-subtitle">
+            Color strip on left (height-synced with sections). Hover to preview, click to pin open. Label-based
+            organization.
+          </p>
+          <span class="section-ref">nav-16-full-view.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Expanded Sidebar</div>
+            <div class="sidebar-demo">
+              <!-- Color Strip -->
+              <div class="color-strip">
+                <div class="color-segment" style="height: 110px">
+                  <div class="segment-base label-auth"></div>
+                  <div class="segment-stripes">
+                    <div class="activity-stripe activity-ai"></div>
+                  </div>
+                </div>
+                <div class="color-segment" style="height: 85px">
+                  <div class="segment-base label-launch"></div>
+                  <div class="segment-stripes">
+                    <div class="activity-stripe activity-mention"></div>
+                    <div class="activity-stripe activity-ai"></div>
+                  </div>
+                </div>
+                <div class="color-segment" style="height: 70px">
+                  <div class="segment-base label-design"></div>
+                  <div class="segment-stripes">
+                    <div class="activity-stripe activity-people"></div>
+                  </div>
+                </div>
+                <div class="color-segment" style="height: 50px">
+                  <div class="segment-base label-hiring"></div>
+                  <div class="segment-stripes">
+                    <div class="activity-stripe activity-quiet"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sidebar Content -->
+              <div class="sidebar-content-demo">
+                <div class="label-section">
+                  <div class="label-header">
+                    <div class="label-dot label-auth"></div>
+                    <span class="label-name">Auth Project</span>
+                    <div class="label-activities">
+                      <div class="label-activity-pip activity-ai"></div>
+                    </div>
+                  </div>
+                  <div class="label-items">
+                    <div class="sidebar-stream-item active">
+                      <div class="sidebar-stream-activity activity-ai"></div>
+                      <div class="sidebar-stream-icon">📝</div>
+                      <span class="sidebar-stream-name" style="font-weight: 500">Auth Scratchpad</span>
+                    </div>
+                    <div class="sidebar-stream-item text-muted-dim">
+                      <div class="sidebar-stream-activity" style="background: transparent"></div>
+                      <div class="sidebar-stream-icon">#</div>
+                      <span class="sidebar-stream-name"># auth-dev</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="label-section">
+                  <div class="label-header">
+                    <div class="label-dot label-launch"></div>
+                    <span class="label-name">Q1 Launch</span>
+                    <div class="label-activities">
+                      <div class="label-activity-pip activity-mention"></div>
+                      <div class="label-activity-pip activity-ai"></div>
+                    </div>
+                  </div>
+                  <div class="label-items">
+                    <div class="sidebar-stream-item">
+                      <div class="sidebar-stream-activity activity-mention"></div>
+                      <div class="sidebar-stream-icon">#</div>
+                      <span class="sidebar-stream-name" style="font-weight: 600"># engineering</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="label-section">
+                  <div class="label-header">
+                    <div class="label-dot label-design"></div>
+                    <span class="label-name">Design System</span>
+                    <div class="label-activities">
+                      <div class="label-activity-pip activity-people"></div>
+                    </div>
+                  </div>
+                  <div class="label-items">
+                    <div class="sidebar-stream-item">
+                      <div class="sidebar-stream-activity activity-people"></div>
+                      <div class="sidebar-stream-icon">#</div>
+                      <span class="sidebar-stream-name"># design</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Sidebar Features</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Color strip:</strong> 6px wide, synced heights with sections</li>
+                <li><strong>Activity stripes:</strong> Show activity types within each label</li>
+                <li><strong>Collapse behavior:</strong> Collapses to just color strip</li>
+                <li><strong>Hover preview:</strong> Expands temporarily on hover</li>
+                <li><strong>Click to pin:</strong> Stays open when clicked (like Linear)</li>
+                <li><strong>Label sections:</strong> User-defined groupings across stream types</li>
+              </ul>
+            </div>
+
+            <div class="component-label mt-4">Stream Item States</div>
+            <div class="demo-container">
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <div class="sidebar-stream-item active" style="margin: -8px">
+                  <div class="sidebar-stream-activity activity-ai"></div>
+                  <div class="sidebar-stream-icon">📝</div>
+                  <span class="sidebar-stream-name" style="font-weight: 500">Active stream</span>
+                </div>
+                <div class="sidebar-stream-item" style="margin: -8px">
+                  <div class="sidebar-stream-activity activity-mention"></div>
+                  <div class="sidebar-stream-icon">#</div>
+                  <span class="sidebar-stream-name" style="font-weight: 600">With activity</span>
+                </div>
+                <div class="sidebar-stream-item text-muted-dim" style="margin: -8px">
+                  <div class="sidebar-stream-activity" style="background: transparent"></div>
+                  <div class="sidebar-stream-icon">#</div>
+                  <span class="sidebar-stream-name">Quiet stream</span>
+                </div>
+                <div class="sidebar-stream-item text-muted-dim" style="margin: -8px">
+                  <div class="sidebar-stream-activity" style="background: transparent"></div>
+                  <div class="sidebar-stream-icon">↩</div>
+                  <span class="sidebar-stream-name">Thread name</span>
+                  <span class="sidebar-stream-badge">thread</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Message Input - Premium Glow -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Message Input - Premium Glow</h2>
+          <p class="section-subtitle">
+            Subtle gold glow on focus. Attachment bar above, text input below, send button right.
+          </p>
+          <span class="section-ref">input-exploration-01.html - Design #7</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="grid-column: span 2">
+            <div class="component-label">Full Width (Stream View)</div>
+            <div class="premium-input-container">
+              <div class="premium-input-box">
+                <!-- Formatting Toolbar - Always Visible -->
+                <div class="formatting-toolbar">
+                  <button class="toolbar-btn" title="Bold">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        fill="none"
+                      />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn" title="Italic">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="19" y1="4" x2="10" y2="4" />
+                      <line x1="14" y1="20" x2="5" y2="20" />
+                      <line x1="15" y1="4" x2="9" y2="20" />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn" title="Strikethrough">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M16 4H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn" title="Code">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="16,18 22,12 16,6" />
+                      <polyline points="8,6 2,12 8,18" />
+                    </svg>
+                  </button>
+                  <div class="toolbar-divider"></div>
+                  <button class="toolbar-btn" title="Link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn" title="Bullet List">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="8" y1="6" x2="21" y2="6" />
+                      <line x1="8" y1="12" x2="21" y2="12" />
+                      <line x1="8" y1="18" x2="21" y2="18" />
+                      <circle cx="4" cy="6" r="1" fill="currentColor" />
+                      <circle cx="4" cy="12" r="1" fill="currentColor" />
+                      <circle cx="4" cy="18" r="1" fill="currentColor" />
+                    </svg>
+                  </button>
+                  <div class="toolbar-divider"></div>
+                  <button class="toolbar-btn" title="Emoji">😊</button>
+                  <button class="toolbar-btn" title="Mention">@</button>
+                  <button class="toolbar-btn" title="Slash Command">/</button>
+                  <button class="toolbar-btn" title="Attach File">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path
+                        d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- Attachment Bar -->
+                <div class="attachment-bar">
+                  <div class="attachment-chip uploaded">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <span>screenshot.png</span>
+                    <span class="remove-btn">×</span>
+                  </div>
+                  <div class="attachment-chip uploading">
+                    <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                    <span>report.pdf</span>
+                  </div>
+                </div>
+
+                <!-- Input Row -->
+                <div class="input-row">
+                  <button class="expand-btn" title="Open Document Editor">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="15 3 21 3 21 9" />
+                      <polyline points="9 21 3 21 3 15" />
+                      <line x1="21" y1="3" x2="14" y2="10" />
+                      <line x1="3" y1="21" x2="10" y2="14" />
+                    </svg>
+                  </button>
+                  <div class="text-input-wrapper">
+                    <div
+                      class="text-input rendered-content"
+                      style="
+                        min-height: 40px;
+                        padding: 8px 12px;
+                        display: flex;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        gap: 4px;
+                      "
+                    >
+                      <span>Hey </span>
+                      <span class="inline-mention user">@Alex</span>
+                      <span>, I pushed the fix to </span>
+                      <span class="inline-mention channel">#auth-dev</span>
+                      <span> – check </span>
+                      <span class="inline-ref" style="display: inline-flex">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        diff.patch
+                      </span>
+                    </div>
+                  </div>
+                  <button class="send-btn" title="Send Message">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Narrow (Thread View)</div>
+            <div class="premium-input-container" style="max-width: 320px; margin: 0 auto">
+              <div class="premium-input-box">
+                <div class="formatting-toolbar">
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        fill="none"
+                      />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="19" y1="4" x2="10" y2="4" />
+                      <line x1="14" y1="20" x2="5" y2="20" />
+                      <line x1="15" y1="4" x2="9" y2="20" />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="16,18 22,12 16,6" />
+                      <polyline points="8,6 2,12 8,18" />
+                    </svg>
+                  </button>
+                  <div class="toolbar-divider"></div>
+                  <button class="toolbar-btn">😊</button>
+                  <button class="toolbar-btn">@</button>
+                </div>
+                <div class="input-row">
+                  <div class="text-input-wrapper">
+                    <div
+                      class="text-input rendered-content"
+                      style="
+                        min-height: 40px;
+                        padding: 8px 12px;
+                        display: flex;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        gap: 4px;
+                      "
+                    >
+                      <span>Try using </span>
+                      <code style="font-size: 12px">mutex.Lock()</code>
+                      <span> 👍</span>
+                    </div>
+                  </div>
+                  <button class="send-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Floating Selection Toolbar -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Floating Selection Toolbar</h2>
+          <p class="section-subtitle">Style 1: Icon-only. Appears above selected text. No "Ask AI" on own text.</p>
+          <span class="section-ref">input-exploration-02-interactions.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Icon-Only Toolbar</div>
+            <div class="floating-toolbar">
+              <button class="floating-toolbar-btn" title="Bold">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    fill="none"
+                  />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn active" title="Italic">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="19" y1="4" x2="10" y2="4" />
+                  <line x1="14" y1="20" x2="5" y2="20" />
+                  <line x1="15" y1="4" x2="9" y2="20" />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn" title="Strikethrough">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 4H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn" title="Code">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16,18 22,12 16,6" />
+                  <polyline points="8,6 2,12 8,18" />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn" title="Link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">With "Ask AI" (on OTHER users' messages)</div>
+            <div class="floating-toolbar">
+              <button class="floating-toolbar-btn" title="Bold">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    fill="none"
+                  />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn" title="Italic">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="19" y1="4" x2="10" y2="4" />
+                  <line x1="14" y1="20" x2="5" y2="20" />
+                  <line x1="15" y1="4" x2="9" y2="20" />
+                </svg>
+              </button>
+              <button class="floating-toolbar-btn" title="Code">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16,18 22,12 16,6" />
+                  <polyline points="8,6 2,12 8,18" />
+                </svg>
+              </button>
+              <div style="width: 1px; height: 20px; background: hsl(var(--border)); margin: 0 4px"></div>
+              <button
+                class="floating-toolbar-btn"
+                title="Ask AI"
+                style="background: hsl(var(--primary) / 0.1); color: hsl(var(--primary))"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path
+                    d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"
+                  />
+                  <circle cx="8" cy="14" r="1" />
+                  <circle cx="16" cy="14" r="1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Inline References -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Inline References</h2>
+          <p class="section-subtitle">Claude Code inspired. Removing inline ref does NOT remove attachment from bar.</p>
+          <span class="section-ref">input-exploration-02-interactions.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Inline Reference Chips</div>
+            <div style="font-size: 14px; line-height: 2">
+              <p>
+                Here's the analysis of the data from
+                <span class="inline-ref">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  report.xlsx </span
+                >. As you can see in
+                <span class="inline-ref">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  Image #1 </span
+                >, the trend is positive.
+              </p>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Attachment States</div>
+            <div class="flex gap-4" style="flex-wrap: wrap">
+              <div class="attachment-chip uploaded">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+                <span>photo.jpg</span>
+                <span class="remove-btn">×</span>
+              </div>
+              <div class="attachment-chip uploading">
+                <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                <span>data.csv</span>
+              </div>
+            </div>
+            <p class="text-sm text-muted mt-4">
+              <strong>Uploaded:</strong> Primary accent (gold)<br />
+              <strong>Uploading:</strong> Dashed mono with spinner
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. Emoji Picker -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Emoji Picker</h2>
+          <p class="section-subtitle">Standard with categories for reactions. Inline uses typed text as search.</p>
+          <span class="section-ref">input-exploration-02-interactions.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Standard with Categories (Reactions)</div>
+            <div class="emoji-picker">
+              <div class="emoji-picker-header">
+                <input type="text" class="emoji-search" placeholder="Search emojis..." />
+              </div>
+              <div class="emoji-categories">
+                <button class="emoji-category-btn active">😊</button>
+                <button class="emoji-category-btn">🐱</button>
+                <button class="emoji-category-btn">🍔</button>
+                <button class="emoji-category-btn">⚽</button>
+                <button class="emoji-category-btn">🚗</button>
+                <button class="emoji-category-btn">💡</button>
+                <button class="emoji-category-btn">🎵</button>
+                <button class="emoji-category-btn">🏳️</button>
+              </div>
+              <div class="emoji-grid">
+                <div class="emoji-item">😀</div>
+                <div class="emoji-item">😃</div>
+                <div class="emoji-item">😄</div>
+                <div class="emoji-item">😁</div>
+                <div class="emoji-item">😆</div>
+                <div class="emoji-item">😅</div>
+                <div class="emoji-item">🤣</div>
+                <div class="emoji-item">😂</div>
+                <div class="emoji-item">🙂</div>
+                <div class="emoji-item">😊</div>
+                <div class="emoji-item">😇</div>
+                <div class="emoji-item">🥰</div>
+                <div class="emoji-item">😍</div>
+                <div class="emoji-item">🤩</div>
+                <div class="emoji-item">😘</div>
+                <div class="emoji-item">😗</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Inline Search (no top bar)</div>
+            <div class="demo-container">
+              <p style="font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 12px">
+                User types <code style="background: hsl(var(--muted)); padding: 2px 6px; border-radius: 4px">:smi</code>
+              </p>
+              <div class="emoji-inline-search">
+                <div style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-bottom: 8px">
+                  Showing results for "smi"
+                </div>
+                <div class="emoji-grid" style="grid-template-columns: repeat(6, 1fr)">
+                  <div class="emoji-item">😊</div>
+                  <div class="emoji-item">😄</div>
+                  <div class="emoji-item">😃</div>
+                  <div class="emoji-item">🙂</div>
+                  <div class="emoji-item">😀</div>
+                  <div class="emoji-item">😁</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. Slash Commands -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Slash Commands</h2>
+          <p class="section-subtitle">
+            Floating pill style. Sort by relevance (best match top), NOT grouped by type. Icons/colors indicate type.
+          </p>
+          <span class="section-ref">input-exploration-02-interactions.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Floating Pill - By Relevance</div>
+            <div class="slash-popover">
+              <div class="slash-item selected">
+                <div class="slash-icon frontend">B</div>
+                <div class="slash-content">
+                  <div class="slash-name">/bold</div>
+                  <div class="slash-desc">Make text bold</div>
+                </div>
+                <span class="slash-shortcut">⌘B</span>
+              </div>
+              <div class="slash-item">
+                <div class="slash-icon ai">✨</div>
+                <div class="slash-content">
+                  <div class="slash-name">/brainstorm</div>
+                  <div class="slash-desc">Get AI suggestions</div>
+                </div>
+              </div>
+              <div class="slash-item">
+                <div class="slash-icon backend">📋</div>
+                <div class="slash-content">
+                  <div class="slash-name">/bug</div>
+                  <div class="slash-desc">Report a bug</div>
+                </div>
+              </div>
+              <div class="slash-item">
+                <div class="slash-icon frontend">•</div>
+                <div class="slash-content">
+                  <div class="slash-name">/bullet</div>
+                  <div class="slash-desc">Create bullet list</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Command Type Indicators</div>
+            <div class="demo-container">
+              <div class="flex gap-4" style="flex-wrap: wrap">
+                <div class="flex items-center gap-2">
+                  <div class="slash-icon backend">📋</div>
+                  <span class="text-sm">Backend action</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="slash-icon frontend">B</div>
+                  <span class="text-sm">Frontend formatting</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="slash-icon ai">✨</div>
+                  <span class="text-sm">AI-powered</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. Mentions -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Mentions</h2>
+          <p class="section-subtitle">
+            Floating compact. Sort by relevance, NOT by type. @ for users/personas, # for channels.
+          </p>
+          <span class="section-ref">input-exploration-02-interactions.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">@mention Popover - Floating Compact</div>
+            <div class="mention-popover">
+              <div class="mention-item selected">
+                <div class="mention-avatar ai">A</div>
+                <div class="mention-info">
+                  <div class="mention-name">Ariadne</div>
+                  <div class="mention-detail">AI Assistant</div>
+                </div>
+              </div>
+              <div class="mention-item">
+                <div class="mention-avatar user">AL</div>
+                <div class="mention-info">
+                  <div class="mention-name">Alex Lee</div>
+                  <div class="mention-detail">alex@threa.io</div>
+                </div>
+              </div>
+              <div class="mention-item">
+                <div class="mention-avatar user">AM</div>
+                <div class="mention-info">
+                  <div class="mention-name">Amara</div>
+                  <div class="mention-detail">amara@threa.io</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">#channel Popover</div>
+            <div class="mention-popover">
+              <div class="mention-item selected">
+                <div class="mention-avatar channel">#</div>
+                <div class="mention-info">
+                  <div class="mention-name">auth-dev</div>
+                  <div class="mention-detail">12 members</div>
+                </div>
+              </div>
+              <div class="mention-item">
+                <div class="mention-avatar channel">#</div>
+                <div class="mention-info">
+                  <div class="mention-name">announcements</div>
+                  <div class="mention-detail">45 members</div>
+                </div>
+              </div>
+              <div class="mention-item">
+                <div class="mention-avatar channel">#</div>
+                <div class="mention-info">
+                  <div class="mention-name">api-design</div>
+                  <div class="mention-detail">8 members</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Inline Mention Styles</div>
+            <div style="font-size: 14px; line-height: 2">
+              <p>
+                Hey
+                <span class="inline-mention user">@Alex Lee</span>, did you see
+                <span class="inline-mention ai">@Ariadne</span>'s analysis? I posted it in
+                <span class="inline-mention channel">#auth-dev</span>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. Document Editor Modal -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Document Editor Modal</h2>
+          <p class="section-subtitle">
+            Triggered by expand button (↗). Explicit "Send Message" button. For announcements, long-form content.
+          </p>
+          <span class="section-ref">input-exploration-03-growth.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto">
+          <div class="component-label">Modal Layout</div>
+          <div class="doc-editor-modal">
+            <div class="doc-editor-header">
+              <span class="doc-editor-title">Compose Message</span>
+              <button class="doc-editor-close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div class="doc-editor-toolbar">
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    fill="none"
+                  />
+                </svg>
+              </button>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="19" y1="4" x2="10" y2="4" />
+                  <line x1="14" y1="20" x2="5" y2="20" />
+                  <line x1="15" y1="4" x2="9" y2="20" />
+                </svg>
+              </button>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 4H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                </svg>
+              </button>
+              <div class="toolbar-divider"></div>
+              <button class="toolbar-btn">H1</button>
+              <button class="toolbar-btn">H2</button>
+              <button class="toolbar-btn">H3</button>
+              <div class="toolbar-divider"></div>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="8" y1="6" x2="21" y2="6" />
+                  <line x1="8" y1="12" x2="21" y2="12" />
+                  <line x1="8" y1="18" x2="21" y2="18" />
+                  <circle cx="4" cy="6" r="1" fill="currentColor" />
+                  <circle cx="4" cy="12" r="1" fill="currentColor" />
+                  <circle cx="4" cy="18" r="1" fill="currentColor" />
+                </svg>
+              </button>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="10" y1="6" x2="21" y2="6" />
+                  <line x1="10" y1="12" x2="21" y2="12" />
+                  <line x1="10" y1="18" x2="21" y2="18" />
+                  <path d="M4 6h1v4" />
+                  <path d="M4 10h2" />
+                  <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+                </svg>
+              </button>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                  <path d="M8 3l4 7 4-7" />
+                  <path d="M4 17h16" />
+                </svg>
+              </button>
+              <div class="toolbar-divider"></div>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+              <button class="toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path
+                    d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                  />
+                </svg>
+              </button>
+              <button class="toolbar-btn">@</button>
+              <button class="toolbar-btn">😊</button>
+            </div>
+            <div class="doc-editor-body">
+              <!-- Attachment Drop Zone -->
+              <div
+                style="
+                  border: 2px dashed hsl(var(--border));
+                  border-radius: 8px;
+                  padding: 16px;
+                  margin-bottom: 16px;
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  background: hsl(var(--muted) / 0.3);
+                "
+              >
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1">
+                  <div class="attachment-chip uploaded">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <span>screenshot.png</span>
+                    <span class="remove-btn">×</span>
+                  </div>
+                  <div class="attachment-chip uploaded">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    <span>spec.pdf</span>
+                    <span class="remove-btn">×</span>
+                  </div>
+                </div>
+                <button class="btn btn-ghost" style="font-size: 12px; padding: 6px 10px">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    style="margin-right: 4px"
+                  >
+                    <path
+                      d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                    />
+                  </svg>
+                  Add files
+                </button>
+              </div>
+
+              <!-- Rich Text Content (TipTap rendered) -->
+              <div class="rendered-content" style="min-height: 200px; outline: none" contenteditable="true">
+                <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 16px 0">Weekly Update</h2>
+                <p>Hey team! Here's a quick summary of what we accomplished this week:</p>
+
+                <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 12px 0">Completed</h3>
+                <ul style="margin: 0; padding-left: 24px">
+                  <li>Finished the authentication refactor</li>
+                  <li>Deployed new API endpoints</li>
+                  <li>Updated documentation</li>
+                </ul>
+
+                <h3 style="font-size: 16px; font-weight: 600; margin: 20px 0 12px 0">Next Week</h3>
+                <ul style="margin: 0; padding-left: 24px">
+                  <li>Start on the notification system</li>
+                  <li>Review PRs from <span class="inline-mention user">@Alex</span></li>
+                </ul>
+
+                <p style="margin-top: 16px">
+                  See
+                  <span class="inline-ref">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    Image #1
+                  </span>
+                  for the new dashboard design. Let me know if you have any questions!
+                </p>
+              </div>
+            </div>
+            <div class="doc-editor-footer">
+              <div class="flex items-center gap-2">
+                <button class="btn btn-ghost">Preview</button>
+                <button class="btn btn-ghost">Save Draft</button>
+              </div>
+              <div class="doc-editor-actions">
+                <button class="btn btn-outline">Schedule</button>
+                <button class="btn btn-primary">Send Message</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 11. Input Growth Behavior -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Input Growth Behavior</h2>
+          <p class="section-subtitle">
+            Push strategy: Stream shrinks, input grows upward. Text input: 40px min → 200px max. Attachment bar: 0px →
+            120px max.
+          </p>
+          <span class="section-ref">input-exploration-03-growth.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 600px; margin: 0 auto">
+          <div class="component-label">Stream + Input Growth Demo</div>
+          <div class="growth-demo">
+            <div class="growth-stream">
+              <div class="message" style="margin-bottom: 12px">
+                <div class="message-avatar" style="width: 28px; height: 28px; font-size: 11px">K</div>
+                <div class="message-content">
+                  <div class="message-text" style="font-size: 13px">What's the status on the auth refactor?</div>
+                </div>
+              </div>
+              <div class="message ai" style="margin: 0 -16px; padding: 12px 16px">
+                <div class="message-avatar" style="width: 28px; height: 28px; font-size: 11px">A</div>
+                <div class="message-content">
+                  <div class="message-text" style="font-size: 13px">
+                    The refactor is 80% complete. We've migrated the token refresh logic and are now working on the
+                    session management.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="growth-input-area">
+              <div class="premium-input-box" style="border-radius: 0">
+                <div class="formatting-toolbar">
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        fill="none"
+                      />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="19" y1="4" x2="10" y2="4" />
+                      <line x1="14" y1="20" x2="5" y2="20" />
+                      <line x1="15" y1="4" x2="9" y2="20" />
+                    </svg>
+                  </button>
+                  <button class="toolbar-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="16,18 22,12 16,6" />
+                      <polyline points="8,6 2,12 8,18" />
+                    </svg>
+                  </button>
+                  <div class="toolbar-divider"></div>
+                  <button class="toolbar-btn">😊</button>
+                  <button class="toolbar-btn">@</button>
+                  <button class="toolbar-btn">/</button>
+                </div>
+                <div class="input-row">
+                  <button class="expand-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="15 3 21 3 21 9" />
+                      <polyline points="9 21 3 21 3 15" />
+                      <line x1="21" y1="3" x2="14" y2="10" />
+                      <line x1="3" y1="21" x2="10" y2="14" />
+                    </svg>
+                  </button>
+                  <div class="text-input-wrapper">
+                    <div class="text-input rendered-content" style="min-height: 40px; padding: 8px 12px">
+                      <span>Thanks </span>
+                      <span class="inline-mention ai">@Ariadne</span>
+                      <span>! Can you also check </span>
+                      <span class="inline-mention channel">#backend</span>
+                      <span> for related issues?</span>
+                    </div>
+                  </div>
+                  <button class="send-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 text-sm text-muted">
+            <strong>Constraints:</strong>
+            <ul style="margin-top: 8px; padding-left: 20px">
+              <li>Text input: 40px min → grows → 200px max → internal scroll</li>
+              <li>Attachment bar: 0px (hidden) → 120px max → internal scroll</li>
+              <li>Total input area: ~380px max to maintain 200px stream view</li>
+              <li>Auto-scroll: Stream scrolls to bottom as input grows</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12. Conversations Overview -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Conversations Overview</h2>
+          <p class="section-subtitle">
+            Enhanced stream items with preview, time, badges. Pinned section, sorted by activity. Hover actions.
+          </p>
+          <span class="section-ref">conversations-overview-01.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Stream List</div>
+            <div class="stream-list">
+              <div class="stream-section-header">Pinned</div>
+
+              <div class="stream-item">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-content">
+                  <div class="stream-header-row">
+                    <span class="stream-name">auth-dev</span>
+                    <span class="stream-time">5m</span>
+                  </div>
+                  <div class="stream-preview"><strong>Alex:</strong> The token refresh is working now</div>
+                </div>
+                <span class="unread-badge">3</span>
+                <div class="stream-hover-actions">
+                  <button class="hover-action-btn" title="Unpin">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L4 12h5v8l6-10h-5z" />
+                    </svg>
+                  </button>
+                  <button class="hover-action-btn" title="More">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="1" />
+                      <circle cx="19" cy="12" r="1" />
+                      <circle cx="5" cy="12" r="1" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="stream-section-header">Recent</div>
+
+              <div class="stream-item active">
+                <div class="stream-avatar scratchpad">
+                  <span>📝</span>
+                  <div class="activity-dot"></div>
+                </div>
+                <div class="stream-content">
+                  <div class="stream-header-row">
+                    <span class="stream-name">API Design Notes</span>
+                    <span class="stream-time">2m</span>
+                  </div>
+                  <div class="stream-preview"><strong>Ariadne:</strong> Here's the analysis you requested</div>
+                </div>
+                <div class="stream-hover-actions">
+                  <button class="hover-action-btn" title="Pin">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2L4 12h5v8l6-10h-5z" />
+                    </svg>
+                  </button>
+                  <button class="hover-action-btn" title="Rename">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="stream-item">
+                <div class="stream-avatar dm">JS</div>
+                <div class="stream-content">
+                  <div class="stream-header-row">
+                    <span class="stream-name">Jordan Smith</span>
+                    <span class="stream-time">1h</span>
+                  </div>
+                  <div class="stream-preview"><strong>Jordan:</strong> Thanks for the feedback!</div>
+                </div>
+                <div class="stream-hover-actions">
+                  <button class="hover-action-btn" title="Mute">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                      <line x1="23" y1="9" x2="17" y2="15" />
+                      <line x1="17" y1="9" x2="23" y2="15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="stream-item">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-content">
+                  <div class="stream-header-row">
+                    <span class="stream-name">announcements</span>
+                    <span class="stream-time">3h</span>
+                  </div>
+                  <div class="stream-preview"><strong>Admin:</strong> Team meeting at 3pm</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Stream Item Anatomy</div>
+            <div class="demo-container">
+              <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px">
+                <div><strong>Avatar:</strong> Icon/emoji for type (# channel, 📝 scratchpad, initials for DM)</div>
+                <div><strong>Activity dot:</strong> Pulsing indicator for very recent activity</div>
+                <div><strong>Name:</strong> Stream name, truncated with ellipsis</div>
+                <div><strong>Preview:</strong> "Author: Message preview..." (truncated)</div>
+                <div><strong>Time:</strong> Relative time (5m, 2h, 3d)</div>
+                <div><strong>Unread badge:</strong> Count if > 0</div>
+                <div><strong>Hover actions:</strong> Pin, Mute, Rename, More menu</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 13. Thread Panel -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Thread Panel System</h2>
+          <p class="section-subtitle">
+            Overlay → Locked (pinned) → Full-screen. Tabs in locked mode. Resizable with breadcrumbs.
+          </p>
+          <span class="section-ref">nav-19-hybrid-resizable.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 500px">
+          <div class="component-label">Locked Panel with Tabs</div>
+          <div class="thread-panel" style="position: relative">
+            <div class="resize-handle"></div>
+            <div class="thread-panel-header">
+              <div class="thread-tabs">
+                <div class="thread-tab active">
+                  <span class="thread-tab-title">Token refresh</span>
+                </div>
+                <div class="thread-tab">
+                  <span class="thread-tab-title">Race condition</span>
+                </div>
+              </div>
+              <div class="thread-actions">
+                <button class="thread-action active" title="Lock Panel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                </button>
+                <button class="thread-action" title="Maximize">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                </button>
+                <button class="thread-action" title="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="thread-breadcrumb">
+              <span class="breadcrumb-item"># auth-dev</span>
+              <span class="breadcrumb-sep">›</span>
+              <span class="breadcrumb-item current">Token refresh</span>
+            </div>
+            <div class="thread-content">
+              <div class="message" style="margin-bottom: 12px">
+                <div class="message-avatar" style="width: 28px; height: 28px; font-size: 11px">K</div>
+                <div class="message-content">
+                  <div class="message-text" style="font-size: 13px">
+                    What's causing the race condition in token refresh?
+                  </div>
+                </div>
+              </div>
+              <div class="message ai" style="margin: 0 -16px; padding: 12px 16px">
+                <div class="message-avatar" style="width: 28px; height: 28px; font-size: 11px">A</div>
+                <div class="message-content">
+                  <div class="message-text" style="font-size: 13px">
+                    The issue is that multiple tabs can trigger refresh simultaneously. We should use BroadcastChannel
+                    to coordinate.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card mt-4" style="max-width: 500px">
+          <div class="component-label">Deep Nesting Breadcrumbs (>4 levels)</div>
+          <div class="thread-breadcrumb" style="border-radius: 8px">
+            <span class="breadcrumb-item"># auth-dev</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-item">Token refresh</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-ellipsis" title="Click to see hidden levels">...</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-item">Implementation</span>
+            <span class="breadcrumb-sep">›</span>
+            <span class="breadcrumb-item current">Edge cases</span>
+          </div>
+          <p class="text-sm text-muted mt-4">
+            Show first 2 + "..." + last 2. Ellipsis opens dropdown to select hidden levels.
+          </p>
+        </div>
+      </section>
+
+      <!-- 14. Quick Switcher -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Quick Switcher</h2>
+          <p class="section-subtitle">Keyboard-first navigation. Search across all streams.</p>
+          <span class="section-ref">quick-switcher-01.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 650px; margin: 0 auto; padding: 40px">
+          <div class="quick-switcher">
+            <div class="quick-switcher-input-wrapper">
+              <input
+                type="text"
+                class="quick-switcher-input"
+                placeholder="Search streams, messages, or commands..."
+                value="auth"
+              />
+            </div>
+            <div class="quick-switcher-results">
+              <div class="quick-switcher-item selected">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-content">
+                  <div class="stream-name">auth-dev</div>
+                  <div class="stream-preview">Channel · 12 members</div>
+                </div>
+              </div>
+              <div class="quick-switcher-item">
+                <div class="stream-avatar scratchpad">📝</div>
+                <div class="stream-content">
+                  <div class="stream-name">Auth API Design</div>
+                  <div class="stream-preview">Scratchpad · Last edited 2h ago</div>
+                </div>
+              </div>
+              <div class="quick-switcher-item">
+                <div class="stream-avatar channel">#</div>
+                <div class="stream-content">
+                  <div class="stream-name">authentication-help</div>
+                  <div class="stream-preview">Channel · 45 members</div>
+                </div>
+              </div>
+            </div>
+            <div class="quick-switcher-footer">
+              <div class="quick-switcher-hints">
+                <span><span class="hint-key">↵</span> Open</span>
+                <span><span class="hint-key">↑↓</span> Navigate</span>
+                <span><span class="hint-key">esc</span> Close</span>
+              </div>
+              <span>⌘K to open</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 15. Messages -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Message Styling</h2>
+          <p class="section-subtitle">
+            Clean, document-like layout. AI messages have full-width gold gradient + left border accent.
+          </p>
+          <span class="section-ref">nav-16-full-view.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto">
+          <div class="component-label">Conversation Flow</div>
+          <div style="padding: 24px; overflow: hidden">
+            <!-- User message -->
+            <div class="message">
+              <div class="message-avatar">K</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Kris</span>
+                  <span class="message-time">2:30 PM</span>
+                </div>
+                <p class="message-text">
+                  I'm designing a new authentication system. What's the best approach for handling JWT refresh tokens
+                  securely?
+                </p>
+              </div>
+            </div>
+
+            <!-- AI message -->
+            <div class="message ai">
+              <div class="message-avatar">A</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Ariadne</span>
+                  <span class="message-time">2:30 PM</span>
+                </div>
+                <p class="message-text">
+                  Great question. Based on current security best practices, here's what I recommend:
+                </p>
+                <div class="message-code">
+                  <p class="message-code-title">Refresh Token Best Practices:</p>
+                  <ul class="message-code-list">
+                    <li>1. Store refresh tokens in HTTP-only cookies, not localStorage</li>
+                    <li>2. Implement token rotation on each refresh</li>
+                    <li>3. Use short-lived access tokens (15 min) with longer refresh tokens (7 days)</li>
+                    <li>4. Maintain a token family for detecting reuse</li>
+                  </ul>
+                </div>
+                <p class="message-text" style="margin-top: 12px">
+                  Would you like me to show you a concrete implementation?
+                </p>
+              </div>
+            </div>
+
+            <!-- User follow-up -->
+            <div class="message">
+              <div class="message-avatar">K</div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="message-author">Kris</span>
+                  <span class="message-time">2:32 PM</span>
+                </div>
+                <p class="message-text">
+                  Yes, especially the token rotation part. How do I handle concurrent requests?
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-grid mt-4">
+          <div class="component-card">
+            <div class="component-label">User Message</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li>Rounded avatar with initials</li>
+                <li>Muted background on avatar</li>
+                <li>No background on message itself</li>
+                <li>Clean, document-like feel</li>
+              </ul>
+            </div>
+          </div>
+          <div class="component-card">
+            <div class="component-label">AI Message</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li>Full-width gold gradient (fades right)</li>
+                <li>3px gold left border accent</li>
+                <li>Gold avatar + author name</li>
+                <li>Extends past container edges</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 16. Message Content Formatting -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Message Content Formatting</h2>
+          <p class="section-subtitle">
+            Inline styling for @mentions, #channels, /commands, and rich text. Consistent across input and rendered
+            messages.
+          </p>
+          <span class="section-ref">rich-editor.tsx, editor-markdown.ts</span>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto">
+          <div class="component-label">All Inline Styles</div>
+          <div class="rendered-content" style="padding: 24px">
+            <p>
+              Hey <span class="inline-mention me">@Kris</span>,
+              <span class="inline-mention user">@Alex Lee</span> mentioned you! I saw
+              <span class="inline-mention ai">@Ariadne</span>'s response in
+              <span class="inline-mention channel">#auth-dev</span>. The key points are:
+            </p>
+
+            <p style="margin-top: 16px">
+              <strong>Bold text</strong> for emphasis, <em>italic text</em> for nuance, and <s>strikethrough</s> for
+              corrections. Use <code>inline code</code> for technical terms.
+            </p>
+
+            <pre><code>// Code blocks for longer snippets
+const refreshToken = async (token: string) => {
+  const { accessToken, newRefresh } = await rotate(token);
+  return { accessToken, refreshToken: newRefresh };
+}</code></pre>
+
+            <blockquote>
+              Blockquotes are useful for highlighting important quotes or callouts from earlier in the conversation.
+            </blockquote>
+
+            <p style="margin-top: 16px">Links look like <a href="#">this documentation</a> with gold underlines.</p>
+
+            <p style="margin-top: 16px">
+              Slash commands render as pills: <span class="inline-command">/summarize</span>
+              when executed in a message. File references appear as:
+              <span
+                class="inline-ref"
+                style="
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 4px;
+                  padding: 2px 8px;
+                  background: hsl(var(--muted));
+                  border-radius: 4px;
+                  font-size: 13px;
+                "
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+                Image #1
+              </span>
+            </p>
+
+            <p style="margin-top: 16px">Lists work too:</p>
+            <ul>
+              <li>Unordered list item one</li>
+              <li>Unordered list item two</li>
+            </ul>
+            <ol>
+              <li>Ordered list item one</li>
+              <li>Ordered list item two</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="component-grid mt-4">
+          <div class="component-card">
+            <div class="component-label">Mentions</div>
+            <div class="demo-container" style="display: flex; flex-direction: column; gap: 12px">
+              <div>
+                <span class="inline-mention user">@Alex Lee</span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >User mention (blue)</span
+                >
+              </div>
+              <div>
+                <span class="inline-mention me">@Kris</span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >Current user (gold on blue) – stands out!</span
+                >
+              </div>
+              <div>
+                <span class="inline-mention ai">@Ariadne</span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >AI persona (gold)</span
+                >
+              </div>
+              <div>
+                <span class="inline-mention channel">#auth-dev</span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >Channel (muted)</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Commands & References</div>
+            <div class="demo-container" style="display: flex; flex-direction: column; gap: 12px">
+              <div>
+                <span class="inline-command">/summarize</span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >Executed command (purple)</span
+                >
+              </div>
+              <div>
+                <span
+                  class="inline-ref"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 2px 8px;
+                    background: hsl(var(--muted));
+                    border-radius: 4px;
+                    font-size: 13px;
+                  "
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  report.xlsx
+                </span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >File reference</span
+                >
+              </div>
+              <div>
+                <span
+                  class="inline-ref"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 2px 8px;
+                    background: hsl(var(--muted));
+                    border-radius: 4px;
+                    font-size: 13px;
+                  "
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  Image #1
+                </span>
+                <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                  >Image reference</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Rich Text</div>
+            <div class="demo-container rendered-content" style="font-size: 14px; line-height: 2">
+              <strong>Bold</strong> · <em>Italic</em> · <s>Strikethrough</s> · <code>inline code</code> ·
+              <a href="#">Link</a>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">CSS Classes</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><code>.inline-mention.user</code> – blue tint</li>
+                <li><code>.inline-mention.me</code> – gold text on blue (current user)</li>
+                <li><code>.inline-mention.ai</code> – gold tint</li>
+                <li><code>.inline-mention.channel</code> – muted</li>
+                <li><code>.inline-command</code> – purple tint</li>
+                <li><code>.inline-ref</code> – muted chip</li>
+                <li><code>.rendered-content</code> – wrapper for rich text</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 17. Code Blocks -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Code Blocks</h2>
+          <p class="section-subtitle">
+            Linear-style code blocks with language picker (editing) and copy button (viewing). Syntax highlighting
+            included.
+          </p>
+          <span class="section-ref">Linear reference</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="max-width: 600px">
+            <div class="component-label">Editing Mode (Language Picker)</div>
+            <div class="code-block">
+              <div class="code-block-header">
+                <span class="code-block-filename"></span>
+                <div class="code-block-actions">
+                  <div class="language-picker">
+                    <button class="language-picker-btn">
+                      TypeScript
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    <div class="language-picker-dropdown">
+                      <div class="language-picker-item">Auto detect</div>
+                      <div class="language-picker-item">Bash</div>
+                      <div class="language-picker-item">CSS</div>
+                      <div class="language-picker-item">Go</div>
+                      <div class="language-picker-item">HTML</div>
+                      <div class="language-picker-item">JSON</div>
+                      <div class="language-picker-item">JavaScript</div>
+                      <div class="language-picker-item selected">
+                        TypeScript
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </div>
+                      <div class="language-picker-item">Python</div>
+                      <div class="language-picker-item">Rust</div>
+                      <div class="language-picker-item">SQL</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="code-block-body">
+                <code>
+                  <pre
+                    style="margin: 0"
+                  ><span class="token-keyword">async function</span> <span class="token-function">fetchUser</span>(id: <span class="token-keyword">string</span>) {
+  <span class="token-keyword">const</span> response = <span class="token-keyword">await</span> fetch(<span class="token-string">`/api/users/${id}`</span>);
+  <span class="token-keyword">return</span> response.json();
+}</pre>
+                </code>
+              </div>
+            </div>
+            <p class="text-sm text-muted mt-4">
+              <strong>Trigger:</strong> Click language name to open picker<br />
+              <strong>Auto-detect:</strong> Default option, infers from code
+            </p>
+          </div>
+
+          <div class="component-card" style="max-width: 600px">
+            <div class="component-label">Viewing Mode (Copy on Hover)</div>
+            <div class="code-block" style="position: relative">
+              <div class="code-block-header">
+                <span class="code-block-filename">auth.ts</span>
+                <div class="code-block-actions">
+                  <button class="code-block-copy" style="opacity: 1" title="Copy code">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="code-block-body">
+                <code>
+                  <pre
+                    style="margin: 0"
+                  ><span class="token-keyword">export const</span> <span class="token-function">validateToken</span> = (token: <span class="token-keyword">string</span>) => {
+  <span class="token-keyword">if</span> (!token) <span class="token-keyword">throw new</span> Error(<span class="token-string">"Missing token"</span>);
+  <span class="token-keyword">return</span> jwt.verify(token, SECRET);
+};</pre>
+                </code>
+              </div>
+            </div>
+            <p class="text-sm text-muted mt-4">
+              <strong>Hover:</strong> Copy button appears in top-right<br />
+              <strong>Click:</strong> Copies code, shows checkmark briefly
+            </p>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Copy Button States</div>
+            <div class="demo-container">
+              <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <button class="code-block-copy" style="opacity: 1; position: relative">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                  <span style="font-size: 13px">Default</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <button
+                    class="code-block-copy"
+                    style="
+                      opacity: 1;
+                      position: relative;
+                      background: hsl(var(--primary) / 0.15);
+                      color: hsl(var(--primary));
+                    "
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                  <span style="font-size: 13px">Hover</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <button class="code-block-copy copied" style="opacity: 1; position: relative">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </button>
+                  <span style="font-size: 13px">Copied!</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Features</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Language picker:</strong> Only shown when editing/composing</li>
+                <li><strong>Copy button:</strong> Appears on hover when viewing messages</li>
+                <li><strong>Filename:</strong> Optional, shown in header left side</li>
+                <li><strong>Syntax highlighting:</strong> Keywords, strings, functions, comments</li>
+                <li><strong>Feedback:</strong> Checkmark + green tint after copy</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 18. Image Attachments & Gallery -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Image Attachments & Gallery</h2>
+          <p class="section-subtitle">
+            Slack-style image previews below messages with attachment pills. Full-screen gallery with thumbnails for
+            navigation.
+          </p>
+          <span class="section-ref">Slack reference</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="max-width: 600px">
+            <div class="component-label">Message with Image Attachments</div>
+            <div style="background: hsl(var(--background)); padding: 16px; border-radius: 12px">
+              <!-- Message content -->
+              <div class="rendered-content" style="margin-bottom: 12px">
+                <p>
+                  Here are the screenshots from the design review! The header looks great but I think we should tweak
+                  the spacing on mobile.
+                </p>
+              </div>
+
+              <!-- Image previews -->
+              <div class="message-attachments">
+                <div class="image-preview-grid">
+                  <div
+                    class="image-preview multi"
+                    style="background: linear-gradient(135deg, hsl(200 60% 70%), hsl(220 60% 60%))"
+                  >
+                    <div
+                      style="
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 11px;
+                      "
+                    >
+                      Dashboard.png
+                    </div>
+                    <div class="image-preview-overlay">
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div
+                    class="image-preview multi"
+                    style="background: linear-gradient(135deg, hsl(280 60% 70%), hsl(300 60% 60%))"
+                  >
+                    <div
+                      style="
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 11px;
+                      "
+                    >
+                      Mobile.png
+                    </div>
+                    <div class="image-preview-overlay">
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div
+                    class="image-preview multi more"
+                    style="background: linear-gradient(135deg, hsl(30 60% 70%), hsl(40 70% 60%))"
+                  >
+                    <div
+                      style="
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 11px;
+                      "
+                    >
+                      Settings.png
+                    </div>
+                    <div class="image-preview-overlay">+2</div>
+                  </div>
+                </div>
+
+                <!-- Attachment pills -->
+                <div class="attachment-pills">
+                  <span class="attachment-pill image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    5 images
+                  </span>
+                  <span class="attachment-pill">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    spec.pdf
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card" style="max-width: 600px">
+            <div class="component-label">Single Image Preview</div>
+            <div style="background: hsl(var(--background)); padding: 16px; border-radius: 12px">
+              <div class="rendered-content" style="margin-bottom: 12px">
+                <p>Check out this error I'm seeing:</p>
+              </div>
+              <div class="message-attachments">
+                <div
+                  class="image-preview single"
+                  style="background: linear-gradient(135deg, hsl(0 60% 40%), hsl(0 50% 30%)); height: 200px"
+                >
+                  <div
+                    style="
+                      width: 100%;
+                      height: 100%;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      color: white;
+                      font-size: 12px;
+                      padding: 20px;
+                      text-align: center;
+                    "
+                  >
+                    Error: Cannot read property 'map' of undefined
+                  </div>
+                  <div class="image-preview-overlay">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                    </svg>
+                  </div>
+                </div>
+                <div class="attachment-pills">
+                  <span class="attachment-pill image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    screenshot.png
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card mt-4" style="max-width: 900px; margin-left: auto; margin-right: auto">
+          <div class="component-label">Full-Screen Gallery (Click to Open)</div>
+          <div class="gallery-overlay" style="position: relative; height: 500px; border-radius: 12px; overflow: hidden">
+            <div class="gallery-header">
+              <span class="gallery-title">Dashboard.png · 1920 × 1080</span>
+              <div class="gallery-actions">
+                <button class="gallery-btn" title="Download">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+                <button class="gallery-btn" title="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="gallery-main">
+              <button class="gallery-nav prev">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <div
+                style="
+                  background: linear-gradient(135deg, hsl(200 60% 70%), hsl(220 60% 60%));
+                  width: 600px;
+                  height: 300px;
+                  border-radius: 8px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  color: white;
+                "
+              >
+                Dashboard Preview
+              </div>
+              <button class="gallery-nav next">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+            <div class="gallery-counter">1 of 5</div>
+            <div class="gallery-thumbnails">
+              <div
+                class="gallery-thumb active"
+                style="background: linear-gradient(135deg, hsl(200 60% 70%), hsl(220 60% 60%))"
+              ></div>
+              <div
+                class="gallery-thumb"
+                style="background: linear-gradient(135deg, hsl(280 60% 70%), hsl(300 60% 60%))"
+              ></div>
+              <div
+                class="gallery-thumb"
+                style="background: linear-gradient(135deg, hsl(30 60% 70%), hsl(40 70% 60%))"
+              ></div>
+              <div
+                class="gallery-thumb"
+                style="background: linear-gradient(135deg, hsl(150 60% 60%), hsl(170 60% 50%))"
+              ></div>
+              <div
+                class="gallery-thumb"
+                style="background: linear-gradient(135deg, hsl(0 60% 60%), hsl(20 60% 50%))"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-grid mt-4">
+          <div class="component-card">
+            <div class="component-label">Image Preview Behavior</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Single image:</strong> Larger preview (max 400×300px)</li>
+                <li><strong>Multiple images:</strong> Grid of 180×180px thumbnails</li>
+                <li><strong>4+ images:</strong> Show 3 + "+N more" overlay</li>
+                <li><strong>Hover:</strong> Expand icon overlay appears</li>
+                <li><strong>Click:</strong> Opens full-screen gallery</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Gallery Navigation</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Arrow keys:</strong> Previous/next image</li>
+                <li><strong>Escape:</strong> Close gallery</li>
+                <li><strong>Thumbnails:</strong> Click to jump to image</li>
+                <li><strong>Counter:</strong> Shows current position (1 of 5)</li>
+                <li><strong>Download:</strong> Save current image</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Attachment Pills</div>
+            <div class="demo-container">
+              <div style="display: flex; flex-direction: column; gap: 12px">
+                <div>
+                  <span class="attachment-pill image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    3 images
+                  </span>
+                  <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                    >Image count (gold)</span
+                  >
+                </div>
+                <div>
+                  <span class="attachment-pill">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    document.pdf
+                  </span>
+                  <span style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-left: 8px"
+                    >File attachment (muted)</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 19. Minimized Threads Strip -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Minimized Threads Strip</h2>
+          <p class="section-subtitle">
+            Strip at bottom with activity indicators. Click to restore thread. Shows thread identifiers with activity
+            states.
+          </p>
+          <span class="section-ref">nav-17-thread-panels.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="max-width: 500px">
+            <div class="component-label">Minimized Strip (Bottom of Screen)</div>
+            <div style="background: hsl(var(--background)); padding: 20px; border-radius: 12px">
+              <div class="minimized-strip">
+                <span class="minimized-strip-label">Threads</span>
+                <div class="minimized-thread-item has-activity" title="Token refresh discussion">T1</div>
+                <div class="minimized-thread-item has-mention" title="API rate limiting (mentioned you)">T2</div>
+                <div class="minimized-thread-item" title="Database migration">T3</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Activity States</div>
+            <div class="demo-container">
+              <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <div class="minimized-thread-item has-activity">T1</div>
+                  <span style="font-size: 13px">AI activity (gold dot)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <div class="minimized-thread-item has-mention">T2</div>
+                  <span style="font-size: 13px">Mention (red dot)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <div class="minimized-thread-item">T3</div>
+                  <span style="font-size: 13px">Quiet (no dot)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Behavior</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Position:</strong> Fixed strip at bottom of viewport</li>
+                <li><strong>Click:</strong> Restores thread to overlay/locked state</li>
+                <li><strong>Hover:</strong> Shows full thread title tooltip</li>
+                <li><strong>Identifier:</strong> First letters or abbreviation of thread name</li>
+                <li><strong>Activity dots:</strong> Gold (AI), Red (mention), None (quiet)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 20. AI-Powered Status (Phase 2) -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">AI-Powered Status (Phase 2)</h2>
+          <p class="section-subtitle">
+            Smart sections that automatically categorize conversations. Needs Attention surfaces urgent items, Active
+            shows ongoing, Quiet collapses idle streams.
+          </p>
+          <span class="section-ref">conversations-overview-01.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="max-width: 320px">
+            <div class="component-label">Status-Based Stream List</div>
+            <div style="background: hsl(var(--background)); padding: 12px; border-radius: 12px">
+              <!-- Needs Attention -->
+              <div class="status-section needs-attention">
+                <div class="status-section-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span>Needs Attention</span>
+                  <span class="status-section-count">2</span>
+                </div>
+                <div class="status-section-items">
+                  <div class="status-item">
+                    <div class="status-item-indicator" style="background: hsl(var(--activity-mention))"></div>
+                    <div class="status-item-icon">#</div>
+                    <div class="status-item-name">auth-dev</div>
+                    <div class="status-item-reason">@you mentioned</div>
+                  </div>
+                  <div class="status-item">
+                    <div class="status-item-indicator" style="background: hsl(var(--activity-ai))"></div>
+                    <div class="status-item-icon">📝</div>
+                    <div class="status-item-name">API Design</div>
+                    <div class="status-item-reason">Question for you</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Active -->
+              <div class="status-section active">
+                <div class="status-section-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span>Active</span>
+                  <span class="status-section-count">3</span>
+                </div>
+                <div class="status-section-items">
+                  <div class="status-item">
+                    <div class="status-item-indicator" style="background: hsl(var(--activity-ai))"></div>
+                    <div class="status-item-icon">📝</div>
+                    <div class="status-item-name">Brainstorm</div>
+                    <div class="status-item-reason">5m ago</div>
+                  </div>
+                  <div class="status-item">
+                    <div class="status-item-indicator" style="background: hsl(var(--activity-people))"></div>
+                    <div class="status-item-icon">JS</div>
+                    <div class="status-item-name">Jordan Smith</div>
+                    <div class="status-item-reason">12m ago</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quiet (collapsed) -->
+              <div class="status-section quiet collapsed">
+                <div class="status-section-header">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span>Quiet</span>
+                  <span class="status-section-count">5</span>
+                </div>
+                <div class="status-section-items">
+                  <!-- Hidden when collapsed -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Section Types</div>
+            <div class="demo-container">
+              <div style="display: flex; flex-direction: column; gap: 16px; font-size: 13px">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                    <span
+                      class="status-section-count"
+                      style="background: hsl(var(--activity-mention) / 0.15); color: hsl(var(--activity-mention))"
+                      >2</span
+                    >
+                    <strong>Needs Attention</strong>
+                  </div>
+                  <div style="color: hsl(var(--muted-foreground))">Questions waiting on you, mentions, follow-ups</div>
+                </div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                    <span
+                      class="status-section-count"
+                      style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+                      >3</span
+                    >
+                    <strong>Active</strong>
+                  </div>
+                  <div style="color: hsl(var(--muted-foreground))">Recent activity, ongoing conversations</div>
+                </div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                    <span
+                      class="status-section-count"
+                      style="background: hsl(var(--muted)); color: hsl(var(--muted-foreground))"
+                      >5</span
+                    >
+                    <strong>Quiet</strong>
+                  </div>
+                  <div style="color: hsl(var(--muted-foreground))">No recent activity, collapsed by default</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">AI Classification</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>Mention detection:</strong> @you in any message</li>
+                <li><strong>Question detection:</strong> AI identifies questions directed at you</li>
+                <li><strong>Follow-up detection:</strong> Conversations awaiting your response</li>
+                <li><strong>Activity decay:</strong> Streams move to Quiet after inactivity</li>
+                <li><strong>Manual override:</strong> Pin important streams to stay visible</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 21. Breadcrumb Dropdown -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Breadcrumb Dropdown</h2>
+          <p class="section-subtitle">
+            When breadcrumbs are truncated with "...", clicking reveals a dropdown to navigate to hidden levels.
+          </p>
+          <span class="section-ref">nav-19-hybrid-resizable.html</span>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card" style="max-width: 500px">
+            <div class="component-label">Ellipsis with Dropdown</div>
+            <div class="demo-container" style="padding: 24px">
+              <div class="thread-breadcrumb" style="border-radius: 8px; position: relative">
+                <span class="breadcrumb-item"># auth-dev</span>
+                <span class="breadcrumb-sep">›</span>
+                <span class="breadcrumb-item">Token refresh</span>
+                <span class="breadcrumb-sep">›</span>
+                <span class="breadcrumb-dropdown-wrapper">
+                  <span
+                    class="breadcrumb-ellipsis"
+                    style="background: hsl(var(--primary) / 0.15); color: hsl(var(--primary))"
+                    >...</span
+                  >
+                  <div class="breadcrumb-dropdown">
+                    <div class="breadcrumb-dropdown-item">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 10h10a8 8 0 018 8v4M3 10l6 6m-6-6l6-6" />
+                      </svg>
+                      <span>Race condition</span>
+                      <span class="breadcrumb-depth">Level 3</span>
+                    </div>
+                    <div class="breadcrumb-dropdown-item">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 10h10a8 8 0 018 8v4M3 10l6 6m-6-6l6-6" />
+                      </svg>
+                      <span>Mutex solutions</span>
+                      <span class="breadcrumb-depth">Level 4</span>
+                    </div>
+                  </div>
+                </span>
+                <span class="breadcrumb-sep">›</span>
+                <span class="breadcrumb-item">Implementation</span>
+                <span class="breadcrumb-sep">›</span>
+                <span class="breadcrumb-item current">Edge cases</span>
+              </div>
+            </div>
+            <p class="text-sm text-muted mt-4">
+              <strong>Trigger:</strong> Click on "..." to reveal hidden levels<br />
+              <strong>Selection:</strong> Click item to navigate directly to that level<br />
+              <strong>Depth indicator:</strong> Shows nesting level for orientation
+            </p>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Truncation Rules</div>
+            <div class="demo-container">
+              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
+                <li><strong>≤4 levels:</strong> Show all breadcrumbs, no ellipsis</li>
+                <li><strong>>4 levels:</strong> Show first 2 + "..." + last 2</li>
+                <li><strong>Ellipsis click:</strong> Opens dropdown with hidden levels</li>
+                <li><strong>Each item:</strong> Shows thread icon, name, and depth</li>
+                <li><strong>Navigation:</strong> Click jumps directly to that thread level</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Design Principles -->
+      <section class="section" style="border-bottom: none">
+        <div class="section-header">
+          <h2 class="section-title">Design Principles</h2>
+          <p class="section-subtitle">Key principles that guide all design decisions.</p>
+        </div>
+
+        <div class="component-grid">
+          <div class="component-card">
+            <div class="component-label">Visual</div>
+            <ul style="font-size: 14px; line-height: 1.8; padding-left: 20px">
+              <li>Clean, modern, bold without being flashy</li>
+              <li>AI-native feel</li>
+              <li>Gold accents used sparingly ("reward, not noise")</li>
+              <li>Support both light and dark mode</li>
+            </ul>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Interaction</div>
+            <ul style="font-size: 14px; line-height: 1.8; padding-left: 20px">
+              <li>Sort by relevance, not by type</li>
+              <li>No numbers by default (invitation, not obligation)</li>
+              <li>Avoid mouse-only interactions</li>
+              <li>Multiple views/threads open simultaneously</li>
+            </ul>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Technical</div>
+            <ul style="font-size: 14px; line-height: 1.8; padding-left: 20px">
+              <li>WCAG 2.1 AA accessibility</li>
+              <li>URL-based state (persist on refresh)</li>
+              <li>Links for navigation (cmd+click support)</li>
+              <li>Use Shadcn UI, restyle as needed</li>
+            </ul>
+          </div>
+
+          <div class="component-card">
+            <div class="component-label">Layout</div>
+            <ul style="font-size: 14px; line-height: 1.8; padding-left: 20px">
+              <li>Message input at bottom</li>
+              <li>Messages top-to-bottom (newest at bottom)</li>
+              <li>Thread panels: overlay → locked → fullscreen</li>
+              <li>Max 3 visible streams</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      function toggleTheme() {
+        document.documentElement.classList.toggle("dark")
+      }
+
+      // Auto-resize textareas
+      document.querySelectorAll(".text-input").forEach((textarea) => {
+        textarea.addEventListener("input", function () {
+          this.style.height = "auto"
+          this.style.height = Math.min(this.scrollHeight, 200) + "px"
+        })
+      })
+    </script>
+  </body>
+</html>
