@@ -171,7 +171,7 @@ describe("MessageEvent", () => {
   })
 
   describe("AI message styling", () => {
-    it("should apply subtle gold border to persona messages", () => {
+    it("should apply enhanced gold styling to persona messages", () => {
       const event: StreamEvent = {
         ...createMessageEvent("msg_123", "AI response"),
         actorType: "persona",
@@ -180,8 +180,10 @@ describe("MessageEvent", () => {
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
-      expect(messageContainer).toHaveClass("border-l-2")
-      expect(messageContainer).toHaveClass("border-l-primary/60")
+      expect(messageContainer).toHaveClass("border-l-[3px]")
+      expect(messageContainer).toHaveClass("border-l-primary")
+      expect(messageContainer).toHaveClass("bg-gradient-to-r")
+      expect(messageContainer).toHaveClass("from-primary/[0.06]")
     })
 
     it("should not apply gold border to user messages", () => {
@@ -190,17 +192,18 @@ describe("MessageEvent", () => {
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
-      expect(messageContainer).not.toHaveClass("border-l-2")
-      expect(messageContainer).not.toHaveClass("border-l-primary/60")
+      expect(messageContainer).not.toHaveClass("border-l-[3px]")
+      expect(messageContainer).not.toHaveClass("border-l-primary")
     })
 
-    it("should apply gradient background to all messages", () => {
+    it("should apply subtle gradient background to user messages", () => {
       const event = createMessageEvent("msg_123", "User message")
 
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
       expect(messageContainer).toHaveClass("bg-gradient-to-br")
+      expect(messageContainer).toHaveClass("from-muted/[0.03]")
     })
 
     it("should apply subtle primary background to persona avatar", () => {

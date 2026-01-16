@@ -64,11 +64,11 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        // All messages get subtle gradient styling
-        "message-item group flex gap-3 py-3 px-3 -mx-3 rounded-lg",
-        "bg-gradient-to-br from-muted/[0.03] to-transparent",
-        // AI/Persona messages get subtle gold left border accent
-        isPersona && "border-l-2 border-l-primary/60 pl-3",
+        "message-item group flex gap-3 rounded-lg",
+        // AI/Persona messages get full-width gradient with gold accent
+        isPersona
+          ? "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary"
+          : "bg-gradient-to-br from-muted/[0.03] to-transparent py-3 px-3 -mx-3",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
