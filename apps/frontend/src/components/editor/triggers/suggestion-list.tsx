@@ -102,11 +102,15 @@ function SuggestionListInner<T>(
     <div
       ref={refs.setFloating}
       style={floatingStyles}
-      className={cn("z-50 rounded-md border bg-popover text-popover-foreground shadow-md pointer-events-auto", width)}
+      className={cn(
+        "z-50 rounded-[10px] border bg-popover text-popover-foreground pointer-events-auto",
+        "shadow-[0_8px_24px_hsl(var(--foreground)/0.12)]",
+        width
+      )}
       role="listbox"
       aria-label={ariaLabel}
     >
-      <ScrollArea className="max-h-64">
+      <ScrollArea className="max-h-[280px]">
         <div className="p-1">
           {items.map((item, index) => (
             <button
@@ -117,9 +121,10 @@ function SuggestionListInner<T>(
               role="option"
               aria-selected={index === selectedIndex}
               className={cn(
-                "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
-                "cursor-pointer hover:bg-accent hover:text-accent-foreground",
-                index === selectedIndex && "bg-accent text-accent-foreground"
+                "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
+                "cursor-pointer transition-colors duration-100",
+                "hover:bg-muted",
+                index === selectedIndex && "bg-muted"
               )}
               onClick={() => command(item)}
               onMouseEnter={() => setSelectedIndex(index)}
