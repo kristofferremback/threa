@@ -34,33 +34,39 @@ export function PendingAttachments({ attachments, onRemove }: PendingAttachments
         const attachmentChip = (
           <div
             className={cn(
-              "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs",
+              "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium",
               // Error state
               isError && "border border-destructive bg-destructive/10 text-destructive",
-              // Uploading state - dashed border, muted
-              isUploading && "border border-dashed border-border text-muted-foreground",
-              // Uploaded state - gold accent
+              // Uploading state - dashed border, muted (matches kitchen sink)
+              isUploading && "border border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground",
+              // Uploaded state - gold accent (matches kitchen sink)
               isUploaded && "border border-primary/30 bg-primary/10 text-primary"
             )}
           >
             {attachment.status === "uploading" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : isError ? (
-              <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+              <AlertCircle className="h-3.5 w-3.5" />
             ) : (
               <Icon className="h-3.5 w-3.5" />
             )}
             <span className="max-w-[120px] truncate">{attachment.filename}</span>
             {isError ? (
-              <span className="text-destructive">Failed</span>
+              <span>Failed</span>
             ) : (
-              <span className="text-muted-foreground">{formatFileSize(attachment.sizeBytes)}</span>
+              <span className={cn(isUploaded ? "text-primary/70" : "text-muted-foreground")}>
+                {formatFileSize(attachment.sizeBytes)}
+              </span>
             )}
             {attachment.status !== "uploading" && (
               <button
                 type="button"
                 onClick={() => onRemove(attachment.id)}
-                className="ml-1 hover:text-destructive"
+                className={cn(
+                  "ml-0.5 rounded-full p-0.5 opacity-60 hover:opacity-100 transition-opacity",
+                  isError && "hover:bg-destructive/20",
+                  isUploaded && "hover:bg-primary/20"
+                )}
                 aria-label={`Remove ${attachment.filename}`}
               >
                 <X className="h-3 w-3" />
