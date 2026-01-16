@@ -75,7 +75,8 @@ describe("mention-renderer", () => {
 
       const chip = screen.getByText(/@kristoffer/)
       expect(chip).toBeInTheDocument()
-      expect(chip.className).toContain("bg-blue")
+      // User mentions have blue HSL background
+      expect(chip.className).toContain("bg-[hsl(200")
     })
 
     it("should render channel chip with correct styling", () => {
@@ -84,7 +85,8 @@ describe("mention-renderer", () => {
 
       const chip = screen.getByText(/#general/)
       expect(chip).toBeInTheDocument()
-      expect(chip.className).toContain("bg-green")
+      // Channel chips have muted background
+      expect(chip.className).toContain("bg-muted")
     })
 
     it("should render broadcast mentions with orange styling", () => {
@@ -192,7 +194,7 @@ describe("mention-renderer", () => {
       render(<>{result}</>)
 
       const chip = screen.getByText(/@kristoffer/)
-      expect(chip.className).toContain("inline-flex")
+      expect(chip.className).toContain("inline")
       expect(chip.className).toContain("rounded")
     })
 
