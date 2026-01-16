@@ -4,7 +4,8 @@ import { useParams } from "react-router-dom"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors, isSuggestionActive } from "./editor-behaviors"
 import { EditorToolbar } from "./editor-toolbar"
-import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "@threa/prosemirror"
+import { FormattingToolbar } from "./formatting-toolbar"
+import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./editor-markdown"
 import { useMentionSuggestion, useChannelSuggestion, useCommandSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
@@ -26,6 +27,10 @@ interface RichEditorProps {
   className?: string
   /** How Enter key behaves: "enter" = Enter sends, "cmdEnter" = Cmd+Enter sends */
   messageSendMode?: MessageSendMode
+  /** Show the always-visible formatting toolbar above the editor */
+  showFormattingToolbar?: boolean
+  /** Called when attach button in formatting toolbar is clicked */
+  onAttachClick?: () => void
 }
 
 export function RichEditor({
@@ -38,6 +43,8 @@ export function RichEditor({
   disabled = false,
   className,
   messageSendMode = "enter",
+  showFormattingToolbar = false,
+  onAttachClick,
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
@@ -370,8 +377,36 @@ export function RichEditor({
     }
   }, [disabled, editor, focus])
 
+  // Callbacks for formatting toolbar trigger buttons
+  const handleMentionClick = useCallback(() => {
+    editor?.chain().focus().insertContent("@").run()
+  }, [editor])
+
+  const handleSlashClick = useCallback(() => {
+    editor?.chain().focus().insertContent("/").run()
+  }, [editor])
+
+  const handleEmojiClick = useCallback(() => {
+    editor?.chain().focus().insertContent(":").run()
+  }, [editor])
+
+  const handleLinkClick = useCallback(() => {
+    setLinkPopoverOpen(true)
+  }, [])
+
   return (
     <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
+      {showFormattingToolbar && (
+        <FormattingToolbar
+          editor={editor}
+          disabled={disabled}
+          onLinkClick={handleLinkClick}
+          onMentionClick={handleMentionClick}
+          onSlashClick={handleSlashClick}
+          onEmojiClick={handleEmojiClick}
+          onAttachClick={onAttachClick}
+        />
+      )}
       <EditorToolbar
         editor={editor}
         isVisible={toolbarVisible}

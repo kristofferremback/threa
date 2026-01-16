@@ -1,5 +1,5 @@
-import { type ChangeEvent, type RefObject, useMemo } from "react"
-import { Paperclip, Expand } from "lucide-react"
+import { type ChangeEvent, type RefObject, useMemo, useCallback } from "react"
+import { Expand } from "lucide-react"
 import { RichEditor } from "@/components/editor"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
@@ -79,6 +79,11 @@ export function MessageComposer({
     return `${MOD_SYMBOL}Enter to send`
   }, [messageSendMode])
 
+  // Handle attach button click from formatting toolbar
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [fileInputRef])
+
   return (
     <TooltipProvider delayDuration={300}>
       {/* Message input wrapper with premium styling */}
@@ -86,81 +91,62 @@ export function MessageComposer({
         {/* Attachment bar - shown above input */}
         <PendingAttachments attachments={pendingAttachments} onRemove={onRemoveAttachment} />
 
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={onFileSelect}
+          disabled={isDisabled}
+        />
+
         {/* Main input area with glow effect */}
         <div className="input-glow-wrapper">
           <div className="rounded-xl border border-input bg-card">
-            {/* Editor row */}
-            <div className="flex items-start gap-2 px-4 py-3">
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={onFileSelect}
-                disabled={isDisabled}
-              />
+            {/* Editor with formatting toolbar */}
+            <RichEditor
+              value={content}
+              onChange={onContentChange}
+              onSubmit={onSubmit}
+              onFileUpload={onFileUpload}
+              imageCount={imageCount}
+              placeholder={placeholder}
+              disabled={isDisabled}
+              messageSendMode={messageSendMode}
+              showFormattingToolbar
+              onAttachClick={handleAttachClick}
+            />
 
-              {/* Left buttons */}
-              <div className="flex items-center gap-1 pt-1">
-                {/* Expand button - opens document editor modal */}
-                {onExpandClick && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={onExpandClick}
-                        disabled={isDisabled}
-                      >
-                        <Expand className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">Expand editor</TooltipContent>
-                  </Tooltip>
-                )}
-
-                {/* Upload button */}
+            {/* Footer row - expand button, hints, send button */}
+            <div className="flex items-center gap-2 px-3 py-2 border-t border-border/50 bg-muted/20 rounded-b-xl">
+              {/* Expand button - opens document editor modal */}
+              {onExpandClick && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => fileInputRef.current?.click()}
+                      className="h-7 w-7 shrink-0"
+                      onClick={onExpandClick}
                       disabled={isDisabled}
-                      aria-label="Attach files"
                     >
-                      <Paperclip className="h-4 w-4" />
+                      <Expand className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Attach files</TooltipContent>
+                  <TooltipContent side="top">Expand editor</TooltipContent>
                 </Tooltip>
-              </div>
+              )}
 
-              {/* Editor */}
-              <div className="flex-1 min-w-0">
-                <RichEditor
-                  value={content}
-                  onChange={onContentChange}
-                  onSubmit={onSubmit}
-                  onFileUpload={onFileUpload}
-                  imageCount={imageCount}
-                  placeholder={placeholder}
-                  disabled={isDisabled}
-                  messageSendMode={messageSendMode}
-                />
-              </div>
+              <span className="flex-1 text-[11px] text-muted-foreground text-right">{sendHint}</span>
 
               {/* Send button */}
               {hasFailed ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="pt-1">
-                      <Button disabled className="pointer-events-none h-8">
+                    <span>
+                      <Button disabled className="pointer-events-none h-7">
                         {submitLabel}
                       </Button>
                     </span>
@@ -170,15 +156,10 @@ export function MessageComposer({
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <Button onClick={onSubmit} disabled={!canSubmit} className="h-8 pt-1">
+                <Button onClick={onSubmit} disabled={!canSubmit} className="h-7">
                   {isSubmitting ? submittingLabel : submitLabel}
                 </Button>
               )}
-            </div>
-
-            {/* Footer row - hints */}
-            <div className="flex items-center justify-end px-4 py-2 border-t border-border/50 bg-muted/20 rounded-b-xl">
-              <span className="text-[11px] text-muted-foreground">{sendHint}</span>
             </div>
           </div>
         </div>

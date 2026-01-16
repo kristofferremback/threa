@@ -12,30 +12,43 @@ vi.mock("@/components/editor", () => ({
     onSubmit,
     placeholder,
     disabled,
+    showFormattingToolbar,
+    onAttachClick,
   }: {
     value: JSONContent
     onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder: string
     disabled: boolean
+    showFormattingToolbar?: boolean
+    onAttachClick?: () => void
   }) => (
-    <textarea
-      data-testid="rich-editor"
-      data-content-type="json"
-      onChange={(e) => {
-        // Simulate content change by creating a simple doc with the text
-        const text = e.target.value
-        onChange({
-          type: "doc",
-          content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
-        })
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.metaKey) onSubmit()
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+    <div data-testid="rich-editor-wrapper">
+      {showFormattingToolbar && (
+        <div data-testid="formatting-toolbar">
+          <button type="button" onClick={onAttachClick} disabled={disabled} aria-label="Attach files">
+            Attach
+          </button>
+        </div>
+      )}
+      <textarea
+        data-testid="rich-editor"
+        data-content-type="json"
+        onChange={(e) => {
+          // Simulate content change by creating a simple doc with the text
+          const text = e.target.value
+          onChange({
+            type: "doc",
+            content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+          })
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.metaKey) onSubmit()
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    </div>
   ),
 }))
 
