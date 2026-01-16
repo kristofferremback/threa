@@ -575,13 +575,14 @@ For long-form content and announcements.
 **Modes:**
 | Mode | Behavior |
 |------|----------|
-| **Overlay** | Single thread, appears over main stream |
-| **Locked** | Multiple tabs, pushes main stream aside |
+| **Locked** | Side-by-side resizable layout (default), max 3 panels |
 | **Full-screen** | Expands to fill entire view |
 
-**Resize:** Drag handle on left edge with snap points
+**Resize:** Drag handle between panels with 20% minimum width
 
-**Breadcrumbs:** Show first 2 + "..." + last 2 for deep nesting (>4 levels)
+**Breadcrumbs:** Full ancestor chain from root → intermediate threads → current thread. Each breadcrumb item truncates at 120px to prevent overflow.
+
+**Panel Limit:** Maximum of 3 total panels (main stream + 2 thread panels). Opening a new panel when at limit automatically closes the oldest panel.
 
 ```css
 .thread-panel {

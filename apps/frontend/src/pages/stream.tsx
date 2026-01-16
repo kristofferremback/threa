@@ -40,7 +40,7 @@ export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const { openPanels, draftReply, panelMode, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
+  const { openPanels, draftReply, panelMode, closePanel, closeDraft, transitionDraftToPanel } = usePanel()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -63,7 +63,7 @@ export function StreamPage() {
   const isChannel = stream?.type === StreamTypes.CHANNEL
 
   const handleCloseDraft = () => {
-    closeAllPanels() // This also clears draftReply
+    closeDraft()
   }
 
   const handleThreadCreated = (threadId: string) => {
@@ -119,7 +119,7 @@ export function StreamPage() {
 
   const mainStreamContent = (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-4">
+      <header className="flex h-11 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 flex-1">
           {isEditing ? (
             <Input
@@ -241,16 +241,6 @@ export function StreamPage() {
     </>
   )
 
-  // When no panels open, render just the main stream
-  if (!hasSidePanel) {
-    return (
-      <>
-        {mainStreamContent}
-        {conversationPanel}
-      </>
-    )
-  }
-
   // Fullscreen mode: only show the panel, no main stream
   if (panelMode === "fullscreen" && openPanels.length > 0) {
     return (
@@ -265,79 +255,58 @@ export function StreamPage() {
     )
   }
 
-  // Overlay mode: floating panel on top of main content
-  if (panelMode === "overlay") {
-    const activePanel = openPanels[0]
+  // Locked mode: resizable side-by-side layout
+  if (panelMode === "locked" && hasSidePanel) {
+    const totalPanels = 1 + (draftReply ? 1 : 0) + openPanels.length
+    const panelSize = Math.floor(100 / totalPanels)
+
     return (
       <>
-        {mainStreamContent}
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
+            {mainStreamContent}
+          </ResizablePanel>
+
+          {/* Stream panels */}
+          {openPanels.map((panel) => (
+            <Fragment key={panel.streamId}>
+              <ResizableHandle withHandle />
+              <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
+                <StreamPanel
+                  workspaceId={workspaceId}
+                  streamId={panel.streamId}
+                  onClose={() => closePanel(panel.streamId)}
+                />
+              </ResizablePanel>
+            </Fragment>
+          ))}
+
+          {/* Draft panel for creating new threads (appears rightmost) */}
+          {draftReply && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
+                <ThreadDraftPanel
+                  workspaceId={workspaceId}
+                  parentStreamId={draftReply.parentStreamId}
+                  parentMessageId={draftReply.parentMessageId}
+                  initialContent={draftReply.content}
+                  onClose={handleCloseDraft}
+                  onThreadCreated={handleThreadCreated}
+                />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
         {conversationPanel}
-        {/* Overlay backdrop */}
-        <div className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-300" onClick={closeAllPanels} />
-        {/* Overlay panel */}
-        <div className="fixed inset-y-0 right-0 z-50 w-[min(480px,90vw)] bg-background border-l shadow-xl flex flex-col">
-          {activePanel ? (
-            <StreamPanel
-              workspaceId={workspaceId}
-              streamId={activePanel.streamId}
-              onClose={() => closePanel(activePanel.streamId)}
-            />
-          ) : draftReply ? (
-            <ThreadDraftPanel
-              workspaceId={workspaceId}
-              parentStreamId={draftReply.parentStreamId}
-              parentMessageId={draftReply.parentMessageId}
-              initialContent={draftReply.content}
-              onClose={handleCloseDraft}
-              onThreadCreated={handleThreadCreated}
-            />
-          ) : null}
-        </div>
       </>
     )
   }
 
-  // Locked mode: resizable side-by-side layout
-  const totalPanels = 1 + (draftReply ? 1 : 0) + openPanels.length
-  const panelSize = Math.floor(100 / totalPanels)
-
+  // Default: main content without panels
   return (
     <>
-      <ResizablePanelGroup orientation="horizontal" className="h-full">
-        <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
-          {mainStreamContent}
-        </ResizablePanel>
-
-        {/* Stream panels */}
-        {openPanels.map((panel) => (
-          <Fragment key={panel.streamId}>
-            <ResizableHandle withHandle />
-            <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
-              <StreamPanel
-                workspaceId={workspaceId}
-                streamId={panel.streamId}
-                onClose={() => closePanel(panel.streamId)}
-              />
-            </ResizablePanel>
-          </Fragment>
-        ))}
-
-        {/* Draft panel for creating new threads (appears rightmost) */}
-        {draftReply && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
-              <ThreadDraftPanel
-                workspaceId={workspaceId}
-                parentStreamId={draftReply.parentStreamId}
-                parentMessageId={draftReply.parentMessageId}
-                onClose={handleCloseDraft}
-                onThreadCreated={handleThreadCreated}
-              />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+      {mainStreamContent}
       {conversationPanel}
     </>
   )

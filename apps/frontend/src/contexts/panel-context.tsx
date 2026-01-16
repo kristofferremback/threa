@@ -30,6 +30,7 @@ interface PanelContextValue {
   openPanel: (streamId: string, parentInfo?: { parentStreamId: string; parentMessageId: string }) => void
   openThreadDraft: (parentStreamId: string, parentMessageId: string) => void
   closePanel: (streamId: string) => void
+  closeDraft: () => void
   closeAllPanels: () => void
   transitionDraftToPanel: (streamId: string) => void
   /** Pin panel to locked mode */
@@ -69,12 +70,12 @@ export function PanelProvider({ children }: PanelProviderProps) {
     return panels
   }, [searchParams])
 
-  // Derive panel mode: fullscreen if explicitly set, overlay for single panel, locked for multiple
+  // Derive panel mode: fullscreen if explicitly set, otherwise always locked when panels are open
   const panelMode: PanelMode = useMemo(() => {
     if (panelModeParam === "fullscreen") return "fullscreen"
     if (panelModeParam === "locked") return "locked"
-    // Auto-derive: multiple panels → locked, single panel → overlay
-    return openPanels.length > 1 ? "locked" : "overlay"
+    // Auto-derive: always locked when panels are open
+    return openPanels.length > 0 ? "locked" : "overlay"
   }, [panelModeParam, openPanels.length])
 
   // Active tab index for locked mode (URL param or default to 0)
@@ -123,6 +124,19 @@ export function PanelProvider({ children }: PanelProviderProps) {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev)
+          const currentPanels = prev.getAll("panel")
+
+          // Maximum of 3 panels (main stream + 2 thread panels)
+          // If we're at the limit, close the oldest panel first
+          const MAX_PANELS = 3
+          if (currentPanels.length >= MAX_PANELS) {
+            // Remove the first (oldest) panel
+            next.delete("panel")
+            for (let i = 1; i < currentPanels.length; i++) {
+              next.append("panel", currentPanels[i])
+            }
+          }
+
           next.append("panel", streamId)
           // Clear draft if we're opening the thread for our draft
           if (parentInfo?.parentMessageId) {
@@ -172,6 +186,18 @@ export function PanelProvider({ children }: PanelProviderProps) {
     },
     [setSearchParams]
   )
+
+  const closeDraft = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("draft")
+        return next
+      },
+      { replace: true }
+    )
+    setDraftContentState("")
+  }, [setSearchParams])
 
   const closeAllPanels = useCallback(() => {
     setSearchParams(
@@ -265,6 +291,7 @@ export function PanelProvider({ children }: PanelProviderProps) {
       openPanel,
       openThreadDraft,
       closePanel,
+      closeDraft,
       closeAllPanels,
       transitionDraftToPanel,
       pinPanel,
@@ -282,6 +309,7 @@ export function PanelProvider({ children }: PanelProviderProps) {
       openPanel,
       openThreadDraft,
       closePanel,
+      closeDraft,
       closeAllPanels,
       transitionDraftToPanel,
       pinPanel,

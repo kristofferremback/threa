@@ -1,9 +1,18 @@
 import { Link } from "react-router-dom"
 import { ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useStreamBootstrap } from "@/hooks"
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+  BreadcrumbPage,
+} from "@/components/ui/breadcrumb"
+import { useThreadAncestors } from "@/hooks"
 
 interface ThreadHeaderStream {
+  id: string
   parentStreamId: string | null
   rootStreamId: string | null
 }
@@ -16,22 +25,14 @@ interface ThreadHeaderProps {
 }
 
 export function ThreadHeader({ workspaceId, stream, onBack }: ThreadHeaderProps) {
-  const rootStreamId = stream.rootStreamId
-  const parentStreamId = stream.parentStreamId
-
-  // Fetch root stream to get its display name
-  const { data: rootBootstrap } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
-    enabled: !!rootStreamId,
-  })
-  const rootStream = rootBootstrap?.stream
-  const rootStreamName = rootStream?.slug ? `#${rootStream.slug}` : rootStream?.displayName
+  const { ancestors } = useThreadAncestors(workspaceId, stream.id, stream.parentStreamId, stream.rootStreamId)
 
   const backButton = onBack ? (
     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onBack}>
       <ChevronLeft className="h-4 w-4" />
     </Button>
-  ) : parentStreamId ? (
-    <Link to={`/w/${workspaceId}/s/${parentStreamId}`}>
+  ) : stream.parentStreamId ? (
+    <Link to={`/w/${workspaceId}/s/${stream.parentStreamId}`}>
       <Button variant="ghost" size="icon" className="h-8 w-8">
         <ChevronLeft className="h-4 w-4" />
       </Button>
@@ -39,18 +40,42 @@ export function ThreadHeader({ workspaceId, stream, onBack }: ThreadHeaderProps)
   ) : null
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 min-w-0">
       {backButton}
-      <h1 className="font-semibold">
-        Thread in{" "}
-        {rootStreamId ? (
-          <Link to={`/w/${workspaceId}/s/${rootStreamId}`} className="text-primary hover:underline">
-            {rootStreamName || "..."}
-          </Link>
-        ) : (
-          "..."
-        )}
-      </h1>
+      <Breadcrumb className="min-w-0">
+        <BreadcrumbList className="flex-nowrap">
+          {/* Ancestor breadcrumb items */}
+          {ancestors.map((ancestor, index) => {
+            const isLast = index === ancestors.length - 1
+            const displayName = ancestor.slug ? `#${ancestor.slug}` : ancestor.displayName || "..."
+
+            return (
+              <div key={ancestor.id} className="contents">
+                <BreadcrumbItem className="max-w-[120px]">
+                  {!isLast ? (
+                    <BreadcrumbLink asChild>
+                      <Link to={`/w/${workspaceId}/s/${ancestor.id}`} className="truncate block">
+                        {displayName}
+                      </Link>
+                    </BreadcrumbLink>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <Link to={`/w/${workspaceId}/s/${ancestor.id}`} className="truncate block">
+                        {ancestor.type === "thread" ? "Thread" : displayName}
+                      </Link>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+              </div>
+            )
+          })}
+          {/* Current thread */}
+          <BreadcrumbItem>
+            <BreadcrumbPage className="truncate">Thread</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
     </div>
   )
 }

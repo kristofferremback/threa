@@ -126,7 +126,11 @@ export function StreamContent({
     <MentionableMarkdownWrapper mentionables={mentionables}>
       <WorkspaceEmojiProvider workspaceId={workspaceId}>
         <div className="flex h-full flex-col">
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto mb-4" onScroll={handleScroll}>
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden mb-4"
+            onScroll={handleScroll}
+          >
             {/* Show parent message for threads */}
             {isThread && parentMessage && parentStreamId && (
               <ThreadParentMessage

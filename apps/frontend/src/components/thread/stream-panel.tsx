@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom"
-import { Pin, Maximize2, Minimize2 } from "lucide-react"
+import { Maximize2, Minimize2 } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -26,7 +26,7 @@ interface StreamPanelProps {
 export function StreamPanel({ workspaceId, streamId, onClose, isFullscreen }: StreamPanelProps) {
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
-  const { panelMode, pinPanel, expandPanel, exitFullscreen } = usePanel()
+  const { expandPanel, exitFullscreen } = usePanel()
 
   const { data: bootstrap, error } = useStreamBootstrap(workspaceId, streamId)
   const stream = bootstrap?.stream
@@ -42,17 +42,6 @@ export function StreamPanel({ workspaceId, streamId, onClose, isFullscreen }: St
         )}
         <TooltipProvider delayDuration={300}>
           <div className="flex items-center gap-1">
-            {/* Pin button - only show in overlay mode */}
-            {panelMode === "overlay" && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={pinPanel}>
-                    <Pin className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Pin panel</TooltipContent>
-              </Tooltip>
-            )}
             {/* Expand/minimize button */}
             {isFullscreen ? (
               <Tooltip>
