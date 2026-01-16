@@ -255,9 +255,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         <Link
           to={`/w/${workspaceId}/drafts`}
           className={cn(
-            "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
-            "hover:bg-accent hover:text-accent-foreground",
-            isDraftsPage && "bg-accent text-accent-foreground",
+            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+            isDraftsPage ? "bg-primary/10" : "hover:bg-muted/50",
             !isDraftsPage && draftCount === 0 && "text-muted-foreground"
           )}
         >
@@ -331,8 +330,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         <Link
           to={`/w/${workspaceId}/admin/ai-usage`}
           className={cn(
-            "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
-            "hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+            "hover:bg-muted/50 text-muted-foreground"
           )}
         >
           <DollarSign className="h-4 w-4" />
@@ -391,26 +390,33 @@ function StreamItem({ workspaceId, stream, isActive, unreadCount }: StreamItemPr
     <Link
       to={`/w/${workspaceId}/s/${stream.id}`}
       className={cn(
-        "group flex flex-col gap-0.5 rounded-md px-2 py-2 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+        isActive ? "bg-primary/10" : "hover:bg-muted/50",
         hasUnread && !isActive && "font-medium"
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="truncate font-medium">{name}</span>
-        <div className="flex items-center gap-1.5">
-          {isRecent && <span className="activity-dot recent" />}
+      {/* Activity indicator */}
+      <span
+        className={cn(
+          "w-0.5 h-5 rounded-full shrink-0",
+          isRecent ? "bg-[hsl(200_60%_50%)]" : hasUnread ? "bg-primary" : "bg-transparent"
+        )}
+      />
+
+      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+        <div className="flex items-center justify-between">
+          <span className="truncate font-medium">{name}</span>
           <UnreadBadge count={unreadCount} />
         </div>
+        {preview && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="truncate flex-1">
+              {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+            </span>
+            <RelativeTime date={preview.createdAt} className="shrink-0" />
+          </div>
+        )}
       </div>
-      {preview && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <span className="truncate flex-1">
-            {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
-          </span>
-          <RelativeTime date={preview.createdAt} className="shrink-0" />
-        </div>
-      )}
     </Link>
   )
 }
@@ -485,55 +491,64 @@ function ScratchpadItem({ workspaceId, stream: streamWithPreview, isActive, unre
   return (
     <div
       className={cn(
-        "group flex flex-col gap-0.5 rounded-md px-2 py-2 text-sm transition-colors",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+        "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+        isActive ? "bg-primary/10" : "hover:bg-muted/50",
         hasUnread && !isActive && "font-medium"
       )}
     >
-      <div className="flex items-center justify-between">
-        <Link to={`/w/${workspaceId}/s/${streamWithPreview.id}`} className="flex-1 truncate font-medium">
-          {name}
-          {isDraft && <span className="ml-1 text-xs text-muted-foreground font-normal">(draft)</span>}
-        </Link>
-        <div className="flex items-center gap-1">
-          {isRecent && <span className="activity-dot recent" />}
-          <UnreadBadge count={unreadCount} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-                onClick={(e) => e.preventDefault()}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={handleStartRename}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                <Archive className="mr-2 h-4 w-4" />
-                {isDraft ? "Delete" : "Archive"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      {/* Activity indicator - gold for AI/scratchpad activity */}
+      <span
+        className={cn(
+          "w-0.5 h-5 rounded-full shrink-0",
+          isRecent ? "bg-primary" : hasUnread ? "bg-primary" : "bg-transparent"
+        )}
+      />
+
+      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+        <div className="flex items-center justify-between">
+          <Link to={`/w/${workspaceId}/s/${streamWithPreview.id}`} className="flex-1 truncate font-medium">
+            {name}
+            {isDraft && <span className="ml-1 text-xs text-muted-foreground font-normal">(draft)</span>}
+          </Link>
+          <div className="flex items-center gap-1">
+            <UnreadBadge count={unreadCount} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={handleStartRename}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleArchive} className="text-destructive">
+                  <Archive className="mr-2 h-4 w-4" />
+                  {isDraft ? "Delete" : "Archive"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+        {preview && (
+          <Link
+            to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+          >
+            <span className="truncate flex-1">
+              {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+            </span>
+            <RelativeTime date={preview.createdAt} className="shrink-0" />
+          </Link>
+        )}
       </div>
-      {preview && (
-        <Link
-          to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
-          className="flex items-center gap-1 text-xs text-muted-foreground"
-        >
-          <span className="truncate flex-1">
-            {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
-          </span>
-          <RelativeTime date={preview.createdAt} className="shrink-0" />
-        </Link>
-      )}
     </div>
   )
 }
