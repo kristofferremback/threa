@@ -43,18 +43,48 @@ interface SidebarShellProps {
 }
 
 /**
+ * Color strip on sidebar left edge showing activity indicators.
+ * Colors represent: Gold = AI, Red = Mentions, Blue = People, Muted = Quiet
+ */
+function SidebarColorStrip() {
+  return (
+    <div className="flex w-1.5 flex-shrink-0 flex-col">
+      {/* Scratchpads section - typically has AI activity */}
+      <div className="flex-1 min-h-[80px]">
+        <div className="h-full bg-primary/30 flex flex-col">
+          <div className="flex-1 bg-primary" />
+        </div>
+      </div>
+      {/* Channels section */}
+      <div className="flex-1 min-h-[60px]">
+        <div className="h-full bg-[hsl(200_60%_50%/0.3)] flex flex-col">
+          <div className="flex-1 bg-[hsl(200_60%_50%)]" />
+          <div className="flex-1 bg-primary" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Sidebar structural shell - defines layout without content.
  * Used by both real Sidebar and skeleton to ensure identical structure.
  */
 export function SidebarShell({ header, draftsLink, streamList, footer }: SidebarShellProps) {
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-14 items-center justify-between border-b px-4">{header}</div>
-      <div className="border-b px-2 py-2">{draftsLink}</div>
-      <ScrollArea className="flex-1">
-        <div className="p-2">{streamList}</div>
-      </ScrollArea>
-      {footer && <div className="border-t px-2 py-2">{footer}</div>}
+    <div className="flex h-full">
+      {/* Activity color strip */}
+      <SidebarColorStrip />
+
+      {/* Main sidebar content */}
+      <div className="flex h-full flex-1 flex-col min-w-0">
+        <div className="flex h-14 items-center justify-between border-b px-4">{header}</div>
+        <div className="border-b px-2 py-2">{draftsLink}</div>
+        <ScrollArea className="flex-1">
+          <div className="p-2">{streamList}</div>
+        </ScrollArea>
+        {footer && <div className="border-t px-2 py-2">{footer}</div>}
+      </div>
     </div>
   )
 }
