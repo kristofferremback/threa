@@ -233,9 +233,9 @@ describe("QuickSwitcher Integration Tests", () => {
   })
 
   describe("keyboard navigation", () => {
-    // Helper to check if an item is selected (component uses bg-accent class, not aria-selected)
+    // Helper to check if an item is selected (component uses bg-muted class, not aria-selected)
     const isItemSelected = (element: Element | null) => {
-      return element?.classList.contains("bg-accent")
+      return element?.classList.contains("bg-muted")
     }
 
     describe("when popover is closed", () => {
@@ -608,7 +608,7 @@ describe("QuickSwitcher Integration Tests", () => {
       await user.keyboard("{ArrowDown}")
 
       const secondItem = screen.getByText("#random").closest("a")
-      expect(secondItem?.classList.contains("bg-accent")).toBe(true)
+      expect(secondItem?.classList.contains("bg-muted")).toBe(true)
 
       // Switch to command mode
       await user.type(screen.getByLabelText("Quick switcher input"), ">")
@@ -619,7 +619,7 @@ describe("QuickSwitcher Integration Tests", () => {
         const commandItems = screen.getAllByText(/new scratchpad|new channel|toggle theme/i)
         if (commandItems.length > 0) {
           const firstCommandItem = commandItems[0].closest("div[data-index]")
-          expect(firstCommandItem?.classList.contains("bg-accent")).toBe(true)
+          expect(firstCommandItem?.classList.contains("bg-muted")).toBe(true)
         }
       })
     })
