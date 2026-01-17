@@ -35,6 +35,28 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   const showTabs = openPanels.length > 1
 
+  // Helper to get display name for a stream ID
+  const getStreamDisplayName = (streamId: string): string => {
+    if (streamId === activeStreamId && stream) {
+      // We have the active stream data loaded
+      if (stream.type === StreamTypes.THREAD) {
+        return stream.displayName || "Thread"
+      }
+      if (stream.slug) {
+        return `#${stream.slug}`
+      }
+      if (stream.displayName) {
+        return stream.displayName
+      }
+      if (stream.type === StreamTypes.SCRATCHPAD) {
+        return "New scratchpad"
+      }
+      return "Stream"
+    }
+    // For non-active panels, we don't have the data yet - show a loading state
+    return "..."
+  }
+
   return (
     <SidePanel>
       <SidePanelHeader>
@@ -44,6 +66,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
             <div className="flex gap-1 overflow-x-auto flex-1 min-w-0">
               {openPanels.map((panel, index) => {
                 const isActive = index === activeTabIndex
+                const displayName = getStreamDisplayName(panel.streamId)
                 return (
                   <div
                     key={panel.streamId}
@@ -58,7 +81,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                       }
                     }}
                   >
-                    <span className="truncate">{panel.streamId}</span>
+                    <span className="truncate">{displayName}</span>
                     <button
                       className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
                       onClick={(e) => {
