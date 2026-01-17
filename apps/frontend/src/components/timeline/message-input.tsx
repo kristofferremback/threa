@@ -103,6 +103,10 @@ export function MessageInput({ workspaceId, streamId, streamName, disabled, disa
 
       setError(null)
 
+      // Clear composer content immediately so it doesn't persist when modal closes
+      composer.setContent("")
+      composer.clearDraft()
+
       try {
         const result = await sendMessage({
           content: trimmed,
@@ -115,7 +119,7 @@ export function MessageInput({ workspaceId, streamId, streamName, disabled, disa
         setError("Failed to send message. Please try again.")
       }
     },
-    [sendMessage, navigate]
+    [sendMessage, navigate, composer]
   )
 
   // Sync content from doc editor back to composer when dismissed
@@ -128,9 +132,11 @@ export function MessageInput({ workspaceId, streamId, streamName, disabled, disa
 
   if (disabled && disabledReason) {
     return (
-      <div className="border-t p-4">
-        <div className="flex items-center justify-center py-3 px-4 rounded-md bg-muted/50">
-          <p className="text-sm text-muted-foreground text-center">{disabledReason}</p>
+      <div className="border-t">
+        <div className="p-6 mx-auto max-w-[800px] w-full min-w-0">
+          <div className="flex items-center justify-center py-3 px-4 rounded-md bg-muted/50">
+            <p className="text-sm text-muted-foreground text-center">{disabledReason}</p>
+          </div>
         </div>
       </div>
     )
@@ -139,7 +145,12 @@ export function MessageInput({ workspaceId, streamId, streamName, disabled, disa
   return (
     <div className="border-t">
       {/* Message composer - hidden when doc editor is open */}
-      <div className={cn("p-4 transition-all duration-200", docEditorOpen && "h-0 p-0 overflow-hidden opacity-0")}>
+      <div
+        className={cn(
+          "p-6 mx-auto max-w-[800px] w-full min-w-0 transition-all duration-200",
+          docEditorOpen && "h-0 p-0 overflow-hidden opacity-0"
+        )}
+      >
         <MessageComposer
           content={composer.content}
           onContentChange={composer.handleContentChange}

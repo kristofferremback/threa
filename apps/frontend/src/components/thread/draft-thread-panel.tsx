@@ -151,24 +151,26 @@ export function DraftThreadPanel({
             </EmptyHeader>
           </Empty>
         </div>
-        <div className="p-4 border-t">
-          <MessageComposer
-            content={composer.content}
-            onContentChange={composer.handleContentChange}
-            pendingAttachments={composer.pendingAttachments}
-            onRemoveAttachment={composer.handleRemoveAttachment}
-            fileInputRef={composer.fileInputRef}
-            onFileSelect={composer.handleFileSelect}
-            onFileUpload={composer.uploadFile}
-            imageCount={composer.imageCount}
-            onSubmit={handleSubmit}
-            canSubmit={composer.canSend}
-            isSubmitting={composer.isSending}
-            hasFailed={composer.hasFailed}
-            submitLabel="Reply"
-            submittingLabel="Creating..."
-            placeholder="Write your reply..."
-          />
+        <div className="border-t">
+          <div className="p-6 mx-auto max-w-[800px] w-full min-w-0">
+            <MessageComposer
+              content={composer.content}
+              onContentChange={composer.handleContentChange}
+              pendingAttachments={composer.pendingAttachments}
+              onRemoveAttachment={composer.handleRemoveAttachment}
+              fileInputRef={composer.fileInputRef}
+              onFileSelect={composer.handleFileSelect}
+              onFileUpload={composer.uploadFile}
+              imageCount={composer.imageCount}
+              onSubmit={handleSubmit}
+              canSubmit={composer.canSend}
+              isSubmitting={composer.isSending}
+              hasFailed={composer.hasFailed}
+              submitLabel="Reply"
+              submittingLabel="Creating..."
+              placeholder="Write your reply..."
+            />
+          </div>
         </div>
       </SidePanelContent>
     </SidePanel>

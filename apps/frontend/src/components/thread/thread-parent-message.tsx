@@ -12,12 +12,16 @@ interface ThreadParentMessageProps {
 export function ThreadParentMessage({ event, workspaceId, streamId, replyCount }: ThreadParentMessageProps) {
   return (
     <div className="border-b">
-      <div className="px-6 pt-4 pb-2">
-        <EventItem event={event} workspaceId={workspaceId} streamId={streamId} hideActions />
+      <div className="pt-4 pb-2">
+        <div className="px-6 mx-auto max-w-[800px] w-full min-w-0">
+          <EventItem event={event} workspaceId={workspaceId} streamId={streamId} hideActions />
+        </div>
       </div>
       <Separator />
-      <div className="py-2 px-6 text-xs text-muted-foreground bg-muted/30">
-        {replyCount} {replyCount === 1 ? "reply" : "replies"}
+      <div className="py-2 bg-muted/30 text-xs text-muted-foreground">
+        <div className="px-6 mx-auto max-w-[800px] w-full min-w-0">
+          {replyCount} {replyCount === 1 ? "reply" : "replies"}
+        </div>
       </div>
     </div>
   )
