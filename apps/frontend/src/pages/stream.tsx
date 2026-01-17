@@ -1,4 +1,4 @@
-import { useState, useRef, Fragment } from "react"
+import { useState, useRef } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -209,7 +209,8 @@ export function StreamPage() {
     </div>
   )
 
-  const hasSidePanel = openPanels.length > 0 || draftReply !== null
+  const hasPanels = openPanels.length > 0
+  const hasDraft = draftReply !== null
 
   // Conversation side panel - only shown for channels
   const conversationPanel = isChannel && (
@@ -247,62 +248,32 @@ export function StreamPage() {
     </>
   )
 
-  // Fullscreen mode: only show the panel, no main stream
-  if (panelMode === "fullscreen" && openPanels.length > 0) {
-    return (
-      <div className="h-full">
-        <StreamPanel
-          workspaceId={workspaceId}
-          streamId={openPanels[0].streamId}
-          onClose={() => closePanel(openPanels[0].streamId)}
-          isFullscreen
-        />
-      </div>
-    )
-  }
-
-  // Locked mode: resizable side-by-side layout
-  if (panelMode === "locked" && hasSidePanel) {
-    const totalPanels = 1 + (draftReply ? 1 : 0) + openPanels.length
-    const panelSize = Math.floor(100 / totalPanels)
-
+  // Locked mode: resizable side-by-side layout with single panel
+  if (panelMode === "locked" && (hasPanels || hasDraft)) {
     return (
       <>
         <ResizablePanelGroup orientation="horizontal" className="h-full">
-          <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
+          <ResizablePanel id="main" defaultSize={60} minSize={30}>
             {mainStreamContent}
           </ResizablePanel>
 
-          {/* Stream panels */}
-          {openPanels.map((panel) => (
-            <Fragment key={panel.streamId}>
-              <ResizableHandle withHandle />
-              <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
-                <StreamPanel
-                  workspaceId={workspaceId}
-                  streamId={panel.streamId}
-                  onClose={() => closePanel(panel.streamId)}
-                />
-              </ResizablePanel>
-            </Fragment>
-          ))}
+          <ResizableHandle withHandle />
 
-          {/* Draft panel for creating new threads (appears rightmost) */}
-          {draftReply && (
-            <>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
-                <ThreadDraftPanel
-                  workspaceId={workspaceId}
-                  parentStreamId={draftReply.parentStreamId}
-                  parentMessageId={draftReply.parentMessageId}
-                  initialContent={draftReply.content}
-                  onClose={handleCloseDraft}
-                  onThreadCreated={handleThreadCreated}
-                />
-              </ResizablePanel>
-            </>
-          )}
+          <ResizablePanel id="panel" defaultSize={40} minSize={30}>
+            {/* Single panel that handles tabs internally */}
+            {hasDraft ? (
+              <ThreadDraftPanel
+                workspaceId={workspaceId}
+                parentStreamId={draftReply.parentStreamId}
+                parentMessageId={draftReply.parentMessageId}
+                initialContent={draftReply.content}
+                onClose={handleCloseDraft}
+                onThreadCreated={handleThreadCreated}
+              />
+            ) : (
+              <StreamPanel workspaceId={workspaceId} onClose={() => closePanel(openPanels[0].streamId)} />
+            )}
+          </ResizablePanel>
         </ResizablePanelGroup>
         {conversationPanel}
       </>

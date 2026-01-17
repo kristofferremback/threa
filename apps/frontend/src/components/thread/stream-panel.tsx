@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom"
-import { Maximize2, Minimize2 } from "lucide-react"
+import { X } from "lucide-react"
 import {
   SidePanel,
   SidePanelHeader,
@@ -7,8 +7,7 @@ import {
   SidePanelClose,
   SidePanelContent,
 } from "@/components/ui/side-panel"
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 import { useStreamBootstrap } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { StreamContent } from "@/components/timeline"
@@ -18,59 +17,83 @@ import { StreamTypes } from "@threa/types"
 
 interface StreamPanelProps {
   workspaceId: string
-  streamId: string
   onClose: () => void
-  isFullscreen?: boolean
 }
 
-export function StreamPanel({ workspaceId, streamId, onClose, isFullscreen }: StreamPanelProps) {
+export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const [searchParams] = useSearchParams()
   const highlightMessageId = searchParams.get("m")
-  const { expandPanel, exitFullscreen } = usePanel()
+  const { openPanels, activePanelId, activeTabIndex, setActiveTab, closePanel } = usePanel()
 
-  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, streamId)
+  // Get active panel's stream ID from context
+  const activeStreamId = activePanelId
+  if (!activeStreamId) return null
+
+  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, activeStreamId)
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
+
+  const showTabs = openPanels.length > 1
 
   return (
     <SidePanel>
       <SidePanelHeader>
-        {isThread && stream ? (
-          <ThreadHeader workspaceId={workspaceId} stream={stream} onBack={onClose} />
-        ) : (
-          <SidePanelTitle>{stream?.displayName || "Stream"}</SidePanelTitle>
-        )}
-        <TooltipProvider delayDuration={300}>
-          <div className="flex items-center gap-1">
-            {/* Expand/minimize button */}
-            {isFullscreen ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={exitFullscreen}>
-                    <Minimize2 className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Exit fullscreen</TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={expandPanel}>
-                    <Maximize2 className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Fullscreen</TooltipContent>
-              </Tooltip>
-            )}
+        {/* Tabs when multiple panels */}
+        {showTabs ? (
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <div className="flex gap-1 overflow-x-auto flex-1 min-w-0">
+              {openPanels.map((panel, index) => {
+                const isActive = index === activeTabIndex
+                return (
+                  <div
+                    key={panel.streamId}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm cursor-pointer transition-all max-w-[150px] group",
+                      "hover:bg-muted/50 hover:text-foreground",
+                      isActive ? "bg-primary/10 text-primary" : "text-muted-foreground"
+                    )}
+                    onClick={() => {
+                      if (index !== activeTabIndex) {
+                        setActiveTab(index)
+                      }
+                    }}
+                  >
+                    <span className="truncate">{panel.streamId}</span>
+                    <button
+                      className={cn(
+                        "opacity-0 hover:opacity-100 transition-opacity",
+                        isActive && "group-hover:opacity-60"
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closePanel(panel.streamId)
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
             <SidePanelClose onClose={onClose} />
           </div>
-        </TooltipProvider>
+        ) : (
+          // Single panel header
+          <>
+            {isThread && stream ? (
+              <ThreadHeader workspaceId={workspaceId} stream={stream} onBack={onClose} />
+            ) : (
+              <SidePanelTitle>{stream?.displayName || "Stream"}</SidePanelTitle>
+            )}
+            <SidePanelClose onClose={onClose} />
+          </>
+        )}
       </SidePanelHeader>
       <SidePanelContent className="flex flex-col">
-        <StreamErrorBoundary streamId={streamId} queryError={error}>
+        <StreamErrorBoundary streamId={activeStreamId} queryError={error}>
           <StreamContent
             workspaceId={workspaceId}
-            streamId={streamId}
+            streamId={activeStreamId}
             highlightMessageId={highlightMessageId}
             stream={stream}
           />

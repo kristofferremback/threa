@@ -2,7 +2,7 @@ import { createContext, useContext, useCallback, useMemo, type ReactNode } from 
 import { useSearchParams, useLocation } from "react-router-dom"
 
 /** Panel display mode */
-export type PanelMode = "overlay" | "locked" | "fullscreen"
+export type PanelMode = "overlay" | "locked"
 
 interface PanelInfo {
   streamId: string
@@ -18,10 +18,12 @@ interface DraftReply {
 interface PanelContextValue {
   openPanels: PanelInfo[]
   draftReply: DraftReply | null
-  /** Current panel mode - overlay (floating), locked (resizable), or fullscreen */
+  /** Current panel mode - overlay (floating) or locked (resizable) */
   panelMode: PanelMode
   /** Active panel index when in locked mode with tabs */
   activeTabIndex: number
+  /** ID of the currently active panel (derived from activeTabIndex) */
+  activePanelId: string | null
 
   /** Check if a panel is already open */
   isPanelOpen: (streamId: string) => boolean
@@ -35,10 +37,6 @@ interface PanelContextValue {
   transitionDraftToPanel: (streamId: string) => void
   /** Pin panel to locked mode */
   pinPanel: () => void
-  /** Expand panel to fullscreen */
-  expandPanel: () => void
-  /** Exit fullscreen mode */
-  exitFullscreen: () => void
   /** Set active tab in locked mode */
   setActiveTab: (index: number) => void
 }
@@ -70,9 +68,8 @@ export function PanelProvider({ children }: PanelProviderProps) {
     return panels
   }, [searchParams])
 
-  // Derive panel mode: fullscreen if explicitly set, otherwise always locked when panels are open
+  // Derive panel mode: always locked when panels are open
   const panelMode: PanelMode = useMemo(() => {
-    if (panelModeParam === "fullscreen") return "fullscreen"
     if (panelModeParam === "locked") return "locked"
     // Auto-derive: always locked when panels are open
     return openPanels.length > 0 ? "locked" : "overlay"
@@ -89,6 +86,11 @@ export function PanelProvider({ children }: PanelProviderProps) {
     }
     return 0
   }, [searchParams, openPanels.length])
+
+  // Derive active panel ID from active tab index
+  const activePanelId = useMemo(() => {
+    return openPanels[activeTabIndex]?.streamId ?? null
+  }, [openPanels, activeTabIndex])
 
   // Parse draft from URL (format: parentStreamId:parentMessageId)
   const draftReply = useMemo(() => {
@@ -240,28 +242,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
     )
   }, [setSearchParams])
 
-  const expandPanel = useCallback(() => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.set("pmode", "fullscreen")
-        return next
-      },
-      { replace: true }
-    )
-  }, [setSearchParams])
-
-  const exitFullscreen = useCallback(() => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete("pmode")
-        return next
-      },
-      { replace: true }
-    )
-  }, [setSearchParams])
-
   const setActiveTab = useCallback(
     (index: number) => {
       setSearchParams(
@@ -286,6 +266,7 @@ export function PanelProvider({ children }: PanelProviderProps) {
       draftReply,
       panelMode,
       activeTabIndex,
+      activePanelId,
       isPanelOpen,
       getPanelUrl,
       openPanel,
@@ -295,8 +276,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
       closeAllPanels,
       transitionDraftToPanel,
       pinPanel,
-      expandPanel,
-      exitFullscreen,
       setActiveTab,
     }),
     [
@@ -304,6 +283,7 @@ export function PanelProvider({ children }: PanelProviderProps) {
       draftReply,
       panelMode,
       activeTabIndex,
+      activePanelId,
       isPanelOpen,
       getPanelUrl,
       openPanel,
@@ -313,8 +293,6 @@ export function PanelProvider({ children }: PanelProviderProps) {
       closeAllPanels,
       transitionDraftToPanel,
       pinPanel,
-      expandPanel,
-      exitFullscreen,
       setActiveTab,
     ]
   )
