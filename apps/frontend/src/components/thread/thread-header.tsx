@@ -46,7 +46,15 @@ export function ThreadHeader({ workspaceId, stream, onBack }: ThreadHeaderProps)
         <BreadcrumbList className="flex-nowrap">
           {/* Ancestor breadcrumb items */}
           {ancestors.map((ancestor) => {
-            const displayName = ancestor.slug ? `#${ancestor.slug}` : ancestor.displayName || "..."
+            // For threads with no name, show "Thread"
+            // For channels, show #slug
+            // For other types, show displayName
+            const displayName =
+              ancestor.type === "thread"
+                ? ancestor.displayName || "Thread"
+                : ancestor.slug
+                  ? `#${ancestor.slug}`
+                  : ancestor.displayName || "..."
 
             return (
               <div key={ancestor.id} className="contents">
