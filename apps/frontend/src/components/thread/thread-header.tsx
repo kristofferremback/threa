@@ -45,26 +45,17 @@ export function ThreadHeader({ workspaceId, stream, onBack }: ThreadHeaderProps)
       <Breadcrumb className="min-w-0">
         <BreadcrumbList className="flex-nowrap">
           {/* Ancestor breadcrumb items */}
-          {ancestors.map((ancestor, index) => {
-            const isLast = index === ancestors.length - 1
+          {ancestors.map((ancestor) => {
             const displayName = ancestor.slug ? `#${ancestor.slug}` : ancestor.displayName || "..."
 
             return (
               <div key={ancestor.id} className="contents">
                 <BreadcrumbItem className="max-w-[120px]">
-                  {!isLast ? (
-                    <BreadcrumbLink asChild>
-                      <Link to={`/w/${workspaceId}/s/${ancestor.id}`} className="truncate block">
-                        {displayName}
-                      </Link>
-                    </BreadcrumbLink>
-                  ) : (
-                    <BreadcrumbLink asChild>
-                      <Link to={`/w/${workspaceId}/s/${ancestor.id}`} className="truncate block">
-                        {ancestor.type === "thread" ? "Thread" : displayName}
-                      </Link>
-                    </BreadcrumbLink>
-                  )}
+                  <BreadcrumbLink asChild>
+                    <Link to={`/w/${workspaceId}/s/${ancestor.id}`} className="truncate block">
+                      {displayName}
+                    </Link>
+                  </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
               </div>

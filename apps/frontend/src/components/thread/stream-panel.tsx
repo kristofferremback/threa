@@ -60,10 +60,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                   >
                     <span className="truncate">{panel.streamId}</span>
                     <button
-                      className={cn(
-                        "opacity-0 hover:opacity-100 transition-opacity",
-                        isActive && "group-hover:opacity-60"
-                      )}
+                      className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
                       onClick={(e) => {
                         e.stopPropagation()
                         closePanel(panel.streamId)
@@ -89,6 +86,16 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
           </>
         )}
       </SidePanelHeader>
+
+      {/* Breadcrumbs row (below tabs, when active panel is a thread) */}
+      {showTabs && isThread && stream && (
+        <div className="border-b bg-muted/20">
+          <div className="px-4 py-2">
+            <ThreadHeader workspaceId={workspaceId} stream={stream} onBack={onClose} />
+          </div>
+        </div>
+      )}
+
       <SidePanelContent className="flex flex-col">
         <StreamErrorBoundary streamId={activeStreamId} queryError={error}>
           <StreamContent
