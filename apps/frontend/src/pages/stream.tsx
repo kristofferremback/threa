@@ -85,7 +85,11 @@ export function StreamPage() {
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
   const isArchived = stream?.archivedAt != null
-  const streamName = stream?.displayName || (isDraft ? "New scratchpad" : isThread ? "Thread" : "Stream")
+  const streamName = stream?.slug
+    ? `#${stream.slug}`
+    : stream?.displayName ||
+      (isDraft ? "New scratchpad" : isThread ? "Thread" : isScratchpad ? "New scratchpad" : "Stream")
+  const isUnnamedScratchpad = isScratchpad && !stream?.displayName
 
   const handleStartRename = () => {
     setEditValue(stream?.displayName || "")
@@ -148,7 +152,9 @@ export function StreamPage() {
           ) : (
             <h1 className="font-semibold">{streamName}</h1>
           )}
-          {stream && !isThread && !isDraft && <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>}
+          {stream && !isThread && !isDraft && !isChannel && !isUnnamedScratchpad && (
+            <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>
+          )}
           {isArchived && (
             <Badge variant="secondary" className="gap-1">
               <ArchiveX className="h-3 w-3" />

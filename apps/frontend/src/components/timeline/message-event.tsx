@@ -64,26 +64,27 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        "message-item group flex gap-3 rounded-lg",
+        "message-item group flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
-        isPersona
-          ? "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary"
-          : "bg-gradient-to-br from-muted/[0.03] to-transparent py-3 px-3 -mx-3",
+        isPersona &&
+          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
-      <Avatar className="message-avatar h-8 w-8 shrink-0">
-        <AvatarFallback className={cn(isPersona && "bg-primary/20 text-primary")}>{actorInitials}</AvatarFallback>
+      <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+        <AvatarFallback className={cn("bg-muted text-foreground", isPersona && "bg-primary text-primary-foreground")}>
+          {actorInitials}
+        </AvatarFallback>
       </Avatar>
       <div className="message-content flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm">{actorName}</span>
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>
           {statusIndicator}
           {actions}
         </div>
         <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-          <MarkdownContent content={payload.contentMarkdown} className="mt-0.5 text-sm" />
+          <MarkdownContent content={payload.content} className="text-sm leading-relaxed" />
           {payload.attachments && payload.attachments.length > 0 && (
             <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
           )}

@@ -196,17 +196,18 @@ describe("MessageEvent", () => {
       expect(messageContainer).not.toHaveClass("border-l-primary")
     })
 
-    it("should apply subtle gradient background to user messages", () => {
+    it("should not apply background to user messages", () => {
       const event = createMessageEvent("msg_123", "User message")
 
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
-      expect(messageContainer).toHaveClass("bg-gradient-to-br")
-      expect(messageContainer).toHaveClass("from-muted/[0.03]")
+      expect(messageContainer).not.toHaveClass("bg-gradient-to-br")
+      expect(messageContainer).not.toHaveClass("bg-gradient-to-r")
+      expect(messageContainer).not.toHaveClass("from-muted/[0.03]")
     })
 
-    it("should apply subtle primary background to persona avatar", () => {
+    it("should apply gold background to persona avatar", () => {
       const event: StreamEvent = {
         ...createMessageEvent("msg_123", "AI response"),
         actorType: "persona",
@@ -215,8 +216,18 @@ describe("MessageEvent", () => {
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const avatarFallback = container.querySelector("span")
-      expect(avatarFallback).toHaveClass("bg-primary/20")
-      expect(avatarFallback).toHaveClass("text-primary")
+      expect(avatarFallback).toHaveClass("bg-primary")
+      expect(avatarFallback).toHaveClass("text-primary-foreground")
+    })
+
+    it("should apply muted background to user avatar", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const avatarFallback = container.querySelector("span")
+      expect(avatarFallback).toHaveClass("bg-muted")
+      expect(avatarFallback).toHaveClass("text-foreground")
     })
   })
 })
