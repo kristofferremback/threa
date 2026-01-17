@@ -93,7 +93,7 @@ vi.mock("@/hooks", () => ({
   }),
 }))
 
-const createMessageEvent = (messageId: string, content: string): StreamEvent => ({
+const createMessageEvent = (messageId: string, contentMarkdown: string): StreamEvent => ({
   id: `event_${messageId}`,
   streamId: "stream_123",
   sequence: "1",
@@ -101,7 +101,7 @@ const createMessageEvent = (messageId: string, content: string): StreamEvent => 
   actorType: "user",
   actorId: "user_123",
   createdAt: new Date().toISOString(),
-  payload: { messageId, content },
+  payload: { messageId, contentMarkdown },
 })
 
 describe("MessageEvent", () => {

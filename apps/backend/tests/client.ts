@@ -137,7 +137,7 @@ export interface Stream {
 
 export interface Message {
   id: string
-  content: string
+  contentMarkdown: string
   sequence: string
   authorId: string
   reactions: Record<string, string[]>
@@ -636,6 +636,16 @@ export interface DispatchCommandResponse {
   commandId: string
   command: string
   args: string
+  event: StreamEvent
+}
+
+export interface CommandDispatchedResponse {
+  command: {
+    id: string
+    name: string
+    args: string
+    status: string
+  }
   event: StreamEvent
 }
 

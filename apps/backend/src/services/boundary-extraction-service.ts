@@ -241,7 +241,7 @@ export class BoundaryExtractionService {
         id: c.id,
         topicSummary: c.topicSummary,
         messageCount: c.messageIds.length,
-        lastMessagePreview: lastMessage?.content.slice(0, 100) ?? "",
+        lastMessagePreview: lastMessage?.contentMarkdown.slice(0, 100) ?? "",
         participantIds: c.participantIds,
         completenessScore: c.completenessScore,
       }

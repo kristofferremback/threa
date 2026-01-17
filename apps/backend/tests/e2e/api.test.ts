@@ -173,7 +173,7 @@ describe("API E2E Tests", () => {
       const message = await sendMessage(client, workspace.id, scratchpad.id, `Hello ${testRunId}!`)
 
       expect(message.id).toMatch(/^msg_/)
-      expect(message.content).toBe(`Hello ${testRunId}!`)
+      expect(message.contentMarkdown).toBe(`Hello ${testRunId}!`)
       expect(message.sequence).toBe("1")
       expect(message.authorId).toBe(user.id)
 
@@ -206,7 +206,7 @@ describe("API E2E Tests", () => {
 
       const updated = await updateMessage(client, workspace.id, message.id, "Updated content")
 
-      expect(updated.content).toBe("Updated content")
+      expect(updated.contentMarkdown).toBe("Updated content")
     })
 
     test("should delete message", async () => {
@@ -411,7 +411,7 @@ describe("API E2E Tests", () => {
 
       const message = await sendMessage(client, workspace.id, channel.id, "Hello channel!")
 
-      expect(message.content).toBe("Hello channel!")
+      expect(message.contentMarkdown).toBe("Hello channel!")
 
       const events = await listEvents(client, workspace.id, channel.id, ["message_created"])
       expect(events).toHaveLength(1)
@@ -583,14 +583,150 @@ describe("API E2E Tests", () => {
 
       const scratchpad = await createScratchpad(client, workspace.id)
 
-      // Messages require streamId and content
+      // Messages require streamId and content (or contentJson)
       const { status: msgStatus, data: msgData } = await client.post<{
         error: string
         details?: Record<string, string[]>
       }>(`/api/workspaces/${workspace.id}/messages`, { streamId: scratchpad.id })
       expect(msgStatus).toBe(400)
       expect(msgData.error).toBe("Validation failed")
-      expect(msgData.details?.content).toBeDefined()
+    })
+  })
+
+  describe("Slash Commands via Messages", () => {
+    test("should dispatch command when first node is a registered command", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("cmd-dispatch"), "Cmd Dispatch Test")
+      const workspace = await createWorkspace(client, `Cmd Dispatch WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+
+      const contentJson = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "command",
+                attrs: { name: "simulate", args: "ariadne chatting about testing" },
+              },
+            ],
+          },
+        ],
+      }
+
+      const { status, data } = await client.post<{
+        command?: { id: string; name: string; args: string; status: string }
+        event?: unknown
+      }>(`/api/workspaces/${workspace.id}/messages`, {
+        streamId: scratchpad.id,
+        contentJson,
+      })
+
+      expect(status).toBe(202)
+      expect(data.command).toBeDefined()
+      expect(data.command!.id).toMatch(/^cmd_/)
+      expect(data.command!.name).toBe("simulate")
+      expect(data.command!.args).toBe("ariadne chatting about testing")
+      expect(data.command!.status).toBe("dispatched")
+      expect(data.event).toBeDefined()
+    })
+
+    test("should create message when command is not registered", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("cmd-unreg"), "Cmd Unregistered Test")
+      const workspace = await createWorkspace(client, `Cmd Unreg WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+
+      const contentJson = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "command",
+                attrs: { name: "nonexistent", args: "" },
+              },
+            ],
+          },
+        ],
+      }
+
+      const { status, data } = await client.post<{ message?: { id: string } }>(
+        `/api/workspaces/${workspace.id}/messages`,
+        {
+          streamId: scratchpad.id,
+          contentJson,
+        }
+      )
+
+      expect(status).toBe(201)
+      expect(data.message).toBeDefined()
+      expect(data.message!.id).toMatch(/^msg_/)
+    })
+
+    test("should create normal message when no command in content", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("cmd-normal"), "Cmd Normal Test")
+      const workspace = await createWorkspace(client, `Cmd Normal WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+
+      const contentJson = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Hello world" }],
+          },
+        ],
+      }
+
+      const { status, data } = await client.post<{ message?: { id: string } }>(
+        `/api/workspaces/${workspace.id}/messages`,
+        {
+          streamId: scratchpad.id,
+          contentJson,
+        }
+      )
+
+      expect(status).toBe(201)
+      expect(data.message).toBeDefined()
+      expect(data.message!.id).toMatch(/^msg_/)
+    })
+
+    test("should create command_dispatched event not message_created", async () => {
+      const client = new TestClient()
+      await loginAs(client, testEmail("cmd-event"), "Cmd Event Test")
+      const workspace = await createWorkspace(client, `Cmd Event WS ${testRunId}`)
+      const scratchpad = await createScratchpad(client, workspace.id)
+
+      const contentJson = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "command",
+                attrs: { name: "simulate", args: "test" },
+              },
+            ],
+          },
+        ],
+      }
+
+      await client.post(`/api/workspaces/${workspace.id}/messages`, {
+        streamId: scratchpad.id,
+        contentJson,
+      })
+
+      // Should have command_dispatched event, not message_created
+      const cmdEvents = await listEvents(client, workspace.id, scratchpad.id, ["command_dispatched"])
+      const msgEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
+
+      expect(cmdEvents.length).toBe(1)
+      expect(msgEvents.length).toBe(0)
     })
   })
 
@@ -627,9 +763,9 @@ describe("API E2E Tests", () => {
       // 7. Verify edit via message_edited event
       const editEvents = await listEvents(client, workspace.id, scratchpad.id, ["message_edited"])
       expect(editEvents.length).toBe(1)
-      const editPayload = editEvents[0].payload as { messageId: string; content: string }
+      const editPayload = editEvents[0].payload as { messageId: string; contentMarkdown: string }
       expect(editPayload.messageId).toBe(m2.id)
-      expect(editPayload.content).toBe("First step: talk to potential customers")
+      expect(editPayload.contentMarkdown).toBe("First step: talk to potential customers")
     })
   })
 })

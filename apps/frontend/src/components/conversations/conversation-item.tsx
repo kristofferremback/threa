@@ -134,7 +134,9 @@ interface MessagePreviewProps {
 function MessagePreview({ message, workspaceId, getActorName, onMessageClick }: MessagePreviewProps) {
   const maxLength = 200
   const truncatedContent =
-    message.content.length > maxLength ? message.content.slice(0, maxLength) + "..." : message.content
+    message.contentMarkdown.length > maxLength
+      ? message.contentMarkdown.slice(0, maxLength) + "..."
+      : message.contentMarkdown
 
   // Use message's own streamId - thread messages belong to thread streams, not the parent channel
   const messageUrl = `/w/${workspaceId}/s/${message.streamId}?m=${message.id}`

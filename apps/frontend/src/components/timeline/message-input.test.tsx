@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageInput } from "./message-input"
+import type { JSONContent } from "@threa/types"
+
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+const makeDoc = (text: string): JSONContent => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+})
 
 // Mock react-router-dom
 const mockNavigate = vi.fn()
@@ -32,7 +39,7 @@ const mockHandleFileSelect = vi.fn()
 
 // Composer state that tests can modify
 let mockComposerState = {
-  content: "",
+  content: EMPTY_DOC as JSONContent,
   pendingAttachments: [] as Array<{
     id: string
     filename: string
@@ -75,16 +82,14 @@ vi.mock("@/hooks", () => ({
 // Mock MessageComposer
 vi.mock("@/components/composer", () => ({
   MessageComposer: ({
-    content,
-    onContentChange,
     onSubmit,
     canSubmit,
     isSubmitting,
     hasFailed,
     pendingAttachments,
   }: {
-    content: string
-    onContentChange: (v: string) => void
+    content: JSONContent
+    onContentChange: (v: JSONContent) => void
     onSubmit: () => void
     canSubmit: boolean
     isSubmitting: boolean
@@ -92,7 +97,7 @@ vi.mock("@/components/composer", () => ({
     pendingAttachments: Array<{ id: string; filename: string; sizeBytes: number; status: string }>
   }) => (
     <div data-testid="message-composer">
-      <textarea data-testid="rich-editor" value={content} onChange={(e) => onContentChange(e.target.value)} />
+      <textarea data-testid="rich-editor" />
       {pendingAttachments.map((a) => (
         <div key={a.id}>
           <span>{a.filename}</span>
@@ -116,7 +121,7 @@ describe("MessageInput", () => {
     mockSendMessage.mockResolvedValue({})
     mockMessageSendMode = "enter"
     mockComposerState = {
-      content: "",
+      content: EMPTY_DOC,
       pendingAttachments: [],
       uploadedIds: [],
       isUploading: false,
@@ -157,8 +162,9 @@ describe("MessageInput", () => {
 
   describe("sending messages", () => {
     it("should call sendMessage when send button is clicked", async () => {
+      const helloContent = makeDoc("Hello world")
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello world"
+      mockComposerState.content = helloContent
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
@@ -166,15 +172,15 @@ describe("MessageInput", () => {
       await userEvent.click(sendButton)
 
       expect(mockSendMessage).toHaveBeenCalledWith({
-        content: "Hello world",
-        contentFormat: "markdown",
+        contentJson: helloContent,
         attachmentIds: undefined,
+        attachments: undefined,
       })
     })
 
     it("should clear draft and attachments after sending", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello world"
+      mockComposerState.content = makeDoc("Hello world")
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
@@ -187,7 +193,7 @@ describe("MessageInput", () => {
 
     it("should set isSending state during send", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello world"
+      mockComposerState.content = makeDoc("Hello world")
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
 
@@ -202,7 +208,7 @@ describe("MessageInput", () => {
 
     it("should navigate when sendMessage returns navigateTo", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello world"
+      mockComposerState.content = makeDoc("Hello world")
       mockSendMessage.mockResolvedValue({ navigateTo: "/w/ws_123/s/new_stream", replace: true })
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)
@@ -262,7 +268,7 @@ describe("MessageInput", () => {
 
     it("should include attachment IDs when sending", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = ""
+      mockComposerState.content = EMPTY_DOC
       mockComposerState.uploadedIds = ["attach_123"]
       mockComposerState.pendingAttachments = [
         {
@@ -280,8 +286,7 @@ describe("MessageInput", () => {
       await userEvent.click(sendButton)
 
       expect(mockSendMessage).toHaveBeenCalledWith({
-        content: " ", // Space for attachment-only messages
-        contentFormat: "markdown",
+        contentJson: EMPTY_DOC,
         attachmentIds: ["attach_123"],
         attachments: [{ id: "attach_123", filename: "test.txt", mimeType: "text/plain", sizeBytes: 1024 }],
       })
@@ -291,7 +296,7 @@ describe("MessageInput", () => {
   describe("error handling", () => {
     it("should show error message when sendMessage fails", async () => {
       mockComposerState.canSend = true
-      mockComposerState.content = "Hello world"
+      mockComposerState.content = makeDoc("Hello world")
       mockSendMessage.mockRejectedValue(new Error("Network error"))
 
       render(<MessageInput workspaceId={workspaceId} streamId={streamId} />)

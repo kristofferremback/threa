@@ -33,14 +33,15 @@ const mockAI: Partial<AI> = {
 }
 
 function createMockMessage(overrides: Partial<Message> = {}): Message {
+  const contentMarkdown = overrides.contentMarkdown ?? "Test message content"
   return {
     id: "msg_test123",
     streamId: "stream_test",
     sequence: BigInt(1),
     authorId: "usr_test",
     authorType: "user",
-    content: "Test message content",
-    contentFormat: "markdown",
+    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
+    contentMarkdown,
     replyCount: 0,
     reactions: {},
     editedAt: null,
@@ -111,7 +112,7 @@ describe("LLMBoundaryExtractor", () => {
       const context = createMockContext({
         streamType: "thread",
         activeConversations: [],
-        newMessage: createMockMessage({ content: "Starting a thread discussion" }),
+        newMessage: createMockMessage({ contentMarkdown: "Starting a thread discussion" }),
       })
 
       const result = await extractor.extract(context)
@@ -204,7 +205,7 @@ describe("LLMBoundaryExtractor", () => {
   describe("error handling", () => {
     test("propagates API errors for retry handling", async () => {
       const context = createMockContext({
-        newMessage: createMockMessage({ content: "Error fallback topic" }),
+        newMessage: createMockMessage({ contentMarkdown: "Error fallback topic" }),
       })
 
       mockGenerateObject.mockRejectedValueOnce(new Error("API error"))
@@ -214,7 +215,7 @@ describe("LLMBoundaryExtractor", () => {
 
     test("handles NoObjectGeneratedError gracefully with new conversation", async () => {
       const context = createMockContext({
-        newMessage: createMockMessage({ content: "Parsing error topic here" }),
+        newMessage: createMockMessage({ contentMarkdown: "Parsing error topic here" }),
       })
 
       // Simulate LLM returning unparseable response (e.g., JSON wrapped in markdown)
@@ -238,7 +239,7 @@ describe("LLMBoundaryExtractor", () => {
       const existingConv = createMockConversation({ id: "conv_real123" })
       const context = createMockContext({
         activeConversations: [existingConv],
-        newMessage: createMockMessage({ content: "New topic content" }),
+        newMessage: createMockMessage({ contentMarkdown: "New topic content" }),
       })
 
       // LLM returns an ID that doesn't exist in active conversations
@@ -265,7 +266,7 @@ describe("LLMBoundaryExtractor", () => {
         streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
-          content: "This is the first sentence. This is the second sentence.",
+          contentMarkdown: "This is the first sentence. This is the second sentence.",
         }),
       })
 
@@ -279,7 +280,7 @@ describe("LLMBoundaryExtractor", () => {
         streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
-          content: "How do we handle this? I'm not sure about it.",
+          contentMarkdown: "How do we handle this? I'm not sure about it.",
         }),
       })
 
@@ -293,7 +294,7 @@ describe("LLMBoundaryExtractor", () => {
         streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
-          content: "This is exciting news! Can't wait to share more.",
+          contentMarkdown: "This is exciting news! Can't wait to share more.",
         }),
       })
 
@@ -307,7 +308,7 @@ describe("LLMBoundaryExtractor", () => {
         streamType: "thread",
         activeConversations: [],
         newMessage: createMockMessage({
-          content: "First line here\nSecond line here\nThird line",
+          contentMarkdown: "First line here\nSecond line here\nThird line",
         }),
       })
 
@@ -321,7 +322,7 @@ describe("LLMBoundaryExtractor", () => {
       const context = createMockContext({
         streamType: "thread",
         activeConversations: [],
-        newMessage: createMockMessage({ content: longContent }),
+        newMessage: createMockMessage({ contentMarkdown: longContent }),
       })
 
       const result = await extractor.extract(context)

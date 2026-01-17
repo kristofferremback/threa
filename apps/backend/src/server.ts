@@ -63,6 +63,8 @@ import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/comp
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
+import { parseMarkdown } from "@threa/prosemirror"
+import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
@@ -126,7 +128,27 @@ export async function startServer(): Promise<ServerInstance> {
   const jobQueue = createJobQueue(pool)
 
   // Create helpers for agents
-  const createMessage = (params: Parameters<typeof eventService.createMessage>[0]) => eventService.createMessage(params)
+  // This adapter accepts markdown content and converts to JSON+markdown format
+  const createMessage = async (params: {
+    workspaceId: string
+    streamId: string
+    authorId: string
+    authorType: "user" | "persona"
+    content: string
+    sources?: { title: string; url: string }[]
+  }) => {
+    const contentMarkdown = normalizeMessage(params.content)
+    const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
+    return eventService.createMessage({
+      workspaceId: params.workspaceId,
+      streamId: params.streamId,
+      authorId: params.authorId,
+      authorType: params.authorType,
+      contentJson,
+      contentMarkdown,
+      sources: params.sources,
+    })
+  }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   // Simulation agent - needed for SimulateCommand

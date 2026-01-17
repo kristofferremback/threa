@@ -16,7 +16,7 @@ import { WorkspaceRepository } from "../../src/repositories/workspace-repository
 import { StreamRepository } from "../../src/repositories/stream-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { ConversationRepository, type Conversation } from "../../src/repositories/conversation-repository"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"
 import { ConversationStatuses } from "@threa/types"
 
@@ -98,7 +98,7 @@ describe("ConversationRepository", () => {
           sequence: BigInt(1),
           authorId: testUserId,
           authorType: "user",
-          content: "Test message",
+          ...testMessageContent("Test message"),
         })
 
         return ConversationRepository.insert(client, {
@@ -301,7 +301,7 @@ describe("ConversationRepository", () => {
           sequence: BigInt(100),
           authorId: testUserId,
           authorType: "user",
-          content: "Message in conversation",
+          ...testMessageContent("Message in conversation"),
         })
 
         await ConversationRepository.insert(client, {
@@ -419,7 +419,7 @@ describe("ConversationRepository", () => {
           sequence: BigInt(200),
           authorId: testUserId,
           authorType: "user",
-          content: "First message",
+          ...testMessageContent("First message"),
         })
 
         await MessageRepository.insert(client, {
@@ -428,7 +428,7 @@ describe("ConversationRepository", () => {
           sequence: BigInt(201),
           authorId: testUserId,
           authorType: "user",
-          content: "Second message",
+          ...testMessageContent("Second message"),
         })
 
         await ConversationRepository.insert(client, {

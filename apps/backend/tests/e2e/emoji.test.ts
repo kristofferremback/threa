@@ -125,7 +125,7 @@ describe("Emoji E2E Tests", () => {
       const message = await sendMessage(client, workspace.id, scratchpad.id, "Great job! 👍")
 
       // Should be stored with shortcode
-      expect(message.content).toBe("Great job! :+1:")
+      expect(message.contentMarkdown).toBe("Great job! :+1:")
     })
 
     test("should normalize multiple emojis in same message", async () => {
@@ -136,9 +136,9 @@ describe("Emoji E2E Tests", () => {
 
       const message = await sendMessage(client, workspace.id, scratchpad.id, "🎉 Congrats! 🎊 You rock! 🤘")
 
-      expect(message.content).toContain(":tada:")
-      expect(message.content).toContain(":confetti_ball:")
-      expect(message.content).toContain(":metal:")
+      expect(message.contentMarkdown).toContain(":tada:")
+      expect(message.contentMarkdown).toContain(":confetti_ball:")
+      expect(message.contentMarkdown).toContain(":metal:")
     })
 
     test("should preserve existing shortcodes", async () => {
@@ -150,7 +150,7 @@ describe("Emoji E2E Tests", () => {
       // Send message with shortcode (already normalized)
       const message = await sendMessage(client, workspace.id, scratchpad.id, "This is :fire: content!")
 
-      expect(message.content).toBe("This is :fire: content!")
+      expect(message.contentMarkdown).toBe("This is :fire: content!")
     })
 
     test("should leave unknown emoji unchanged", async () => {
@@ -162,7 +162,7 @@ describe("Emoji E2E Tests", () => {
       // Send message with text that looks like emoji but isn't registered
       const message = await sendMessage(client, workspace.id, scratchpad.id, "This is :notarealshortcode: text")
 
-      expect(message.content).toBe("This is :notarealshortcode: text")
+      expect(message.contentMarkdown).toBe("This is :notarealshortcode: text")
     })
   })
 
@@ -288,9 +288,9 @@ describe("Emoji E2E Tests", () => {
       await sendMessage(client, workspace.id, scratchpad.id, "Testing 👍 events")
 
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
-      const payload = events[0].payload as { content: string }
+      const payload = events[0].payload as { contentMarkdown: string }
 
-      expect(payload.content).toBe("Testing :+1: events")
+      expect(payload.contentMarkdown).toBe("Testing :+1: events")
     })
 
     test("reaction_added event should contain shortcode", async () => {

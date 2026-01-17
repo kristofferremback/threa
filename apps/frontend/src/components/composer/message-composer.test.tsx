@@ -3,26 +3,33 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageComposer } from "./message-composer"
 import type { PendingAttachment } from "@/hooks/use-attachments"
+import type { JSONContent } from "@threa/types"
 
-// Mock RichEditor
+// Mock RichEditor to work with JSONContent
 vi.mock("@/components/editor", () => ({
   RichEditor: ({
-    value,
     onChange,
     onSubmit,
     placeholder,
     disabled,
   }: {
-    value: string
-    onChange: (v: string) => void
+    value: JSONContent
+    onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder: string
     disabled: boolean
   }) => (
     <textarea
       data-testid="rich-editor"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      data-content-type="json"
+      onChange={(e) => {
+        // Simulate content change by creating a simple doc with the text
+        const text = e.target.value
+        onChange({
+          type: "doc",
+          content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+        })
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.metaKey) onSubmit()
       }}
@@ -32,9 +39,11 @@ vi.mock("@/components/editor", () => ({
   ),
 }))
 
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+
 describe("MessageComposer", () => {
   const defaultProps = {
-    content: "",
+    content: EMPTY_DOC,
     onContentChange: vi.fn(),
     pendingAttachments: [] as PendingAttachment[],
     onRemoveAttachment: vi.fn(),
@@ -132,7 +141,9 @@ describe("MessageComposer", () => {
       const editor = screen.getByTestId("rich-editor")
       await userEvent.type(editor, "H")
 
-      expect(onContentChange).toHaveBeenCalledWith("H")
+      // Should have been called with JSONContent structure
+      expect(onContentChange).toHaveBeenCalled()
+      expect(onContentChange).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }))
     })
 
     it("should call onSubmit when submit button is clicked", async () => {

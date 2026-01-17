@@ -19,8 +19,7 @@ export interface CreateOptimisticBootstrapParams {
     id: string
     createdAt: string
   }
-  content: string
-  contentFormat: "markdown" | "plaintext"
+  contentMarkdown: string
   attachments?: AttachmentSummary[]
 }
 
@@ -40,8 +39,7 @@ export interface OptimisticBootstrap {
 export function createOptimisticBootstrap({
   stream,
   message,
-  content,
-  contentFormat,
+  contentMarkdown,
   attachments,
 }: CreateOptimisticBootstrapParams): OptimisticBootstrap {
   // Use temp_ prefix so WebSocket handler can dedupe by content matching
@@ -53,8 +51,7 @@ export function createOptimisticBootstrap({
     eventType: "message_created",
     payload: {
       messageId: message.id,
-      content,
-      contentFormat,
+      contentMarkdown,
       ...(attachments && attachments.length > 0 && { attachments }),
     },
     actorId: stream.createdBy,

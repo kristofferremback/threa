@@ -85,20 +85,6 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         return
       }
 
-      // Legacy stream room format: stream:${streamId}
-      const legacyStreamMatch = room.match(/^stream:(.+)$/)
-      if (legacyStreamMatch) {
-        const streamId = legacyStreamMatch[1]
-        const isMember = await streamService.isMember(streamId, userId)
-        if (!isMember) {
-          socket.emit("error", { message: "Not authorized to join this stream" })
-          return
-        }
-        socket.join(room)
-        logger.debug({ userId, room }, "Joined stream room (legacy)")
-        return
-      }
-
       // Unknown room format
       socket.emit("error", { message: "Invalid room format" })
     })

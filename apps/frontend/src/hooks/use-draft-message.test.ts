@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useDraftMessage, getDraftMessageKey } from "./use-draft-message"
+import type { JSONContent } from "@threa/types"
+
+const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+const makeDoc = (text: string): JSONContent => ({
+  type: "doc",
+  content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+})
 
 // Mock Dexie database
 const mockGet = vi.fn()
@@ -68,7 +75,7 @@ describe("useDraftMessage", () => {
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
       expect(result.current.isLoaded).toBe(false)
-      expect(result.current.content).toBe("")
+      expect(result.current.contentJson).toEqual(EMPTY_DOC)
       expect(result.current.attachments).toEqual([])
     })
 
@@ -79,16 +86,17 @@ describe("useDraftMessage", () => {
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
       expect(result.current.isLoaded).toBe(true)
-      expect(result.current.content).toBe("")
+      expect(result.current.contentJson).toEqual(EMPTY_DOC)
       expect(result.current.attachments).toEqual([])
     })
 
     it("should return isLoaded=true with saved content after Dexie loads", () => {
       liveQueryLoading = false
+      const savedContentJson = makeDoc("Hello world")
       liveQueryResult = {
         id: draftKey,
         workspaceId,
-        content: "Hello world",
+        contentJson: savedContentJson,
         attachments: [{ id: "attach_1", filename: "test.txt", mimeType: "text/plain", sizeBytes: 100 }],
         updatedAt: Date.now(),
       }
@@ -96,7 +104,7 @@ describe("useDraftMessage", () => {
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
       expect(result.current.isLoaded).toBe(true)
-      expect(result.current.content).toBe("Hello world")
+      expect(result.current.contentJson).toEqual(savedContentJson)
       expect(result.current.attachments).toHaveLength(1)
       expect(result.current.attachments[0].filename).toBe("test.txt")
     })
@@ -108,16 +116,17 @@ describe("useDraftMessage", () => {
       liveQueryResult = undefined
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
+      const newContent = makeDoc("New content")
 
       await act(async () => {
-        await result.current.saveDraft("New content")
+        await result.current.saveDraft(newContent)
       })
 
       expect(mockPut).toHaveBeenCalledWith(
         expect.objectContaining({
           id: draftKey,
           workspaceId,
-          content: "New content",
+          contentJson: newContent,
           attachments: [],
         })
       )
@@ -131,7 +140,7 @@ describe("useDraftMessage", () => {
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
       await act(async () => {
-        await result.current.saveDraft("")
+        await result.current.saveDraft(EMPTY_DOC)
       })
 
       expect(mockDelete).toHaveBeenCalledWith(draftKey)
@@ -144,14 +153,15 @@ describe("useDraftMessage", () => {
       mockGet.mockResolvedValue({ attachments: existingAttachments })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
+      const updatedContent = makeDoc("Updated content")
 
       await act(async () => {
-        await result.current.saveDraft("Updated content")
+        await result.current.saveDraft(updatedContent)
       })
 
       expect(mockPut).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: "Updated content",
+          contentJson: updatedContent,
           attachments: existingAttachments,
         })
       )
@@ -164,11 +174,12 @@ describe("useDraftMessage", () => {
       liveQueryResult = undefined
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
+      const thirdContent = makeDoc("Third")
 
       act(() => {
-        result.current.saveDraftDebounced("First")
-        result.current.saveDraftDebounced("Second")
-        result.current.saveDraftDebounced("Third")
+        result.current.saveDraftDebounced(makeDoc("First"))
+        result.current.saveDraftDebounced(makeDoc("Second"))
+        result.current.saveDraftDebounced(thirdContent)
       })
 
       // Nothing saved yet
@@ -183,7 +194,7 @@ describe("useDraftMessage", () => {
       expect(mockPut).toHaveBeenCalledTimes(1)
       expect(mockPut).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: "Third",
+          contentJson: thirdContent,
         })
       )
     })
@@ -206,7 +217,7 @@ describe("useDraftMessage", () => {
         expect.objectContaining({
           id: draftKey,
           workspaceId,
-          content: "",
+          contentJson: EMPTY_DOC,
           attachments: [attachment],
         })
       )
@@ -215,7 +226,7 @@ describe("useDraftMessage", () => {
     it("should not add duplicate attachment", async () => {
       liveQueryLoading = false
       const existingAttachment = { id: "attach_1", filename: "existing.txt", mimeType: "text/plain", sizeBytes: 50 }
-      mockGet.mockResolvedValue({ content: "", attachments: [existingAttachment] })
+      mockGet.mockResolvedValue({ contentJson: EMPTY_DOC, attachments: [existingAttachment] })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
@@ -234,7 +245,7 @@ describe("useDraftMessage", () => {
         { id: "attach_1", filename: "file1.txt", mimeType: "text/plain", sizeBytes: 50 },
         { id: "attach_2", filename: "file2.txt", mimeType: "text/plain", sizeBytes: 100 },
       ]
-      mockGet.mockResolvedValue({ id: draftKey, content: "Some content", attachments })
+      mockGet.mockResolvedValue({ id: draftKey, contentJson: makeDoc("Some content"), attachments })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
@@ -252,7 +263,7 @@ describe("useDraftMessage", () => {
     it("should delete draft when removing last attachment and content is empty", async () => {
       liveQueryLoading = false
       const attachment = { id: "attach_1", filename: "file.txt", mimeType: "text/plain", sizeBytes: 50 }
-      mockGet.mockResolvedValue({ id: draftKey, content: "", attachments: [attachment] })
+      mockGet.mockResolvedValue({ id: draftKey, contentJson: EMPTY_DOC, attachments: [attachment] })
 
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
@@ -284,7 +295,7 @@ describe("useDraftMessage", () => {
       const { result } = renderHook(() => useDraftMessage(workspaceId, draftKey))
 
       act(() => {
-        result.current.saveDraftDebounced("Will be cancelled")
+        result.current.saveDraftDebounced(makeDoc("Will be cancelled"))
       })
 
       await act(async () => {

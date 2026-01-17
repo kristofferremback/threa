@@ -1,27 +1,8 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 
 // Mock the database dependencies
-const mockFindById = mock(() =>
-  Promise.resolve(
-    null as {
-      id: string
-      authorType: string
-      authorId: string
-      sequence: bigint
-      content: string
-      contentFormat: string
-    } | null
-  )
-)
-
-mock.module("../repositories", () => ({
-  MessageRepository: {
-    findById: mockFindById,
-  },
-}))
-
 mock.module("../db", () => ({
   withClient: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
 }))
@@ -29,11 +10,6 @@ mock.module("../db", () => ({
 const mockPool = {} as any
 
 describe("parseMessageCreatedPayload", () => {
-  beforeEach(() => {
-    mockFindById.mockReset()
-    mockFindById.mockResolvedValue(null)
-  })
-
   describe("modern format", () => {
     test("should parse valid modern payload", async () => {
       const payload = {
@@ -46,8 +22,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "user_abc",
           payload: {
             messageId: "msg_def",
-            content: "Hello world",
-            contentFormat: "markdown",
+            contentMarkdown: "Hello world",
           },
         },
       }
@@ -64,8 +39,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "user_abc",
           payload: {
             messageId: "msg_def",
-            content: "Hello world",
-            contentFormat: "markdown",
+            contentMarkdown: "Hello world",
           },
         },
       })
@@ -82,8 +56,7 @@ describe("parseMessageCreatedPayload", () => {
           actorId: "persona_xyz",
           payload: {
             messageId: "msg_def",
-            content: "AI response",
-            contentFormat: "markdown",
+            contentMarkdown: "AI response",
           },
         },
       }
@@ -117,80 +90,10 @@ describe("parseMessageCreatedPayload", () => {
           actorId: null,
           payload: {
             messageId: "msg_def",
-            content: "",
-            contentFormat: "plain",
+            contentMarkdown: "",
           },
         },
       })
-    })
-  })
-
-  describe("legacy format", () => {
-    test("should normalize legacy payload with messageId at top level", async () => {
-      const payload = {
-        workspaceId: "ws_123",
-        streamId: "stream_456",
-        messageId: "msg_legacy",
-      }
-
-      const result = await parseMessageCreatedPayload(payload, mockPool)
-
-      expect(result).toEqual({
-        workspaceId: "ws_123",
-        streamId: "stream_456",
-        event: {
-          id: "",
-          sequence: "0",
-          actorType: "user",
-          actorId: null,
-          payload: {
-            messageId: "msg_legacy",
-            content: "",
-            contentFormat: "plain",
-          },
-        },
-      })
-    })
-
-    test("should look up message to get actual authorType", async () => {
-      mockFindById.mockResolvedValue({
-        id: "msg_legacy",
-        authorType: "persona",
-        authorId: "persona_abc",
-        sequence: BigInt(99),
-        content: "Looked up content",
-        contentFormat: "markdown",
-      })
-
-      const payload = {
-        workspaceId: "ws_123",
-        streamId: "stream_456",
-        messageId: "msg_legacy",
-      }
-
-      const result = await parseMessageCreatedPayload(payload, mockPool)
-
-      expect(result?.event.actorType).toBe("persona")
-      expect(result?.event.actorId).toBe("persona_abc")
-      expect(result?.event.sequence).toBe("99")
-      expect(result?.event.payload.content).toBe("Looked up content")
-    })
-
-    test("should use payload content as fallback when message not found", async () => {
-      mockFindById.mockResolvedValue(null)
-
-      const payload = {
-        workspaceId: "ws_123",
-        streamId: "stream_456",
-        messageId: "msg_legacy",
-        content: "Fallback content",
-        contentFormat: "plain",
-      }
-
-      const result = await parseMessageCreatedPayload(payload, mockPool)
-
-      expect(result?.event.actorType).toBe("user")
-      expect(result?.event.payload.content).toBe("Fallback content")
     })
   })
 

@@ -9,7 +9,7 @@ import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamPersonaParticipantRepository } from "../repositories/stream-persona-participant-repository"
 import { eventId, messageId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
-import { normalizeMessage } from "../lib/emoji"
+import type { JSONContent } from "@threa/types"
 
 // Event payloads
 export interface AttachmentSummary {
@@ -26,15 +26,16 @@ export interface SourceItem {
 
 export interface MessageCreatedPayload {
   messageId: string
-  content: string
-  contentFormat: "markdown" | "plaintext"
+  contentJson: JSONContent
+  contentMarkdown: string
   attachments?: AttachmentSummary[]
   sources?: SourceItem[]
 }
 
 export interface MessageEditedPayload {
   messageId: string
-  content: string
+  contentJson: JSONContent
+  contentMarkdown: string
 }
 
 export interface MessageDeletedPayload {
@@ -58,8 +59,8 @@ export interface CreateMessageParams {
   streamId: string
   authorId: string
   authorType: "user" | "persona"
-  content: string
-  contentFormat?: "markdown" | "plaintext"
+  contentJson: JSONContent
+  contentMarkdown: string
   attachmentIds?: string[]
   sources?: SourceItem[]
 }
@@ -68,7 +69,8 @@ export interface EditMessageParams {
   workspaceId: string
   messageId: string
   streamId: string
-  content: string
+  contentJson: JSONContent
+  contentMarkdown: string
   actorId: string
 }
 
@@ -103,11 +105,6 @@ export class EventService {
       const msgId = messageId()
       const evtId = eventId()
 
-      // Normalize emoji in content (convert raw emoji to :shortcode: format)
-      // This ensures consistent storage regardless of whether the client sends
-      // raw emoji or shortcodes, enabling external API clients to send either format
-      const normalizedContent = normalizeMessage(params.content)
-
       // 1. Validate and prepare attachments FIRST (before creating event)
       let attachmentSummaries: AttachmentSummary[] | undefined
       if (params.attachmentIds && params.attachmentIds.length > 0) {
@@ -135,8 +132,8 @@ export class EventService {
         eventType: "message_created",
         payload: {
           messageId: msgId,
-          content: normalizedContent,
-          contentFormat: params.contentFormat ?? "markdown",
+          contentJson: params.contentJson,
+          contentMarkdown: params.contentMarkdown,
           ...(attachmentSummaries && { attachments: attachmentSummaries }),
           ...(params.sources && params.sources.length > 0 && { sources: params.sources }),
         } satisfies MessageCreatedPayload,
@@ -151,8 +148,8 @@ export class EventService {
         sequence: event.sequence,
         authorId: params.authorId,
         authorType: params.authorType,
-        content: normalizedContent,
-        contentFormat: params.contentFormat,
+        contentJson: params.contentJson,
+        contentMarkdown: params.contentMarkdown,
       })
 
       // 4. Update author's read position to include their own message
@@ -222,9 +219,6 @@ export class EventService {
 
   async editMessage(params: EditMessageParams): Promise<Message | null> {
     return withTransaction(this.pool, async (client) => {
-      // Normalize emoji in content
-      const normalizedContent = normalizeMessage(params.content)
-
       // 1. Append event
       const event = await StreamEventRepository.insert(client, {
         id: eventId(),
@@ -232,14 +226,20 @@ export class EventService {
         eventType: "message_edited",
         payload: {
           messageId: params.messageId,
-          content: normalizedContent,
+          contentJson: params.contentJson,
+          contentMarkdown: params.contentMarkdown,
         } satisfies MessageEditedPayload,
         actorId: params.actorId,
         actorType: "user",
       })
 
       // 2. Update projection
-      const message = await MessageRepository.updateContent(client, params.messageId, normalizedContent)
+      const message = await MessageRepository.updateContent(
+        client,
+        params.messageId,
+        params.contentJson,
+        params.contentMarkdown
+      )
 
       if (message) {
         // 3. Publish to outbox

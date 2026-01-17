@@ -13,7 +13,6 @@ import type {
   StreamType,
   Visibility,
   CompanionMode,
-  ContentFormat,
   AuthorType,
   EventType,
   WorkspaceMemberRole,
@@ -27,6 +26,7 @@ import type {
   MemoStatus,
   PendingItemType,
 } from "./constants"
+import type { ThreaDocument } from "./prosemirror"
 
 export interface User {
   id: string
@@ -92,8 +92,8 @@ export interface Message {
   sequence: string
   authorId: string
   authorType: AuthorType
-  content: string
-  contentFormat: ContentFormat
+  contentJson: ThreaDocument
+  contentMarkdown: string
   replyCount: number
   reactions: Record<string, string[]>
   editedAt: string | null

@@ -198,7 +198,7 @@ describe("Real-time Events", () => {
         actorId: userId,
       })
       expect(event.event.payload).toMatchObject({
-        content: "Hello, real-time!",
+        contentMarkdown: "Hello, real-time!",
       })
     })
 
@@ -220,7 +220,7 @@ describe("Real-time Events", () => {
       })
       expect(event.event.payload).toMatchObject({
         messageId: message.id,
-        content: "Updated content",
+        contentMarkdown: "Updated content",
       })
     })
 
@@ -409,8 +409,8 @@ describe("Real-time Events", () => {
 
         const [event1, event2] = await Promise.all([event1Promise, event2Promise])
 
-        expect(event1.event.payload.content).toBe("Broadcast test")
-        expect(event2.event.payload.content).toBe("Broadcast test")
+        expect(event1.event.payload.contentMarkdown).toBe("Broadcast test")
+        expect(event2.event.payload.contentMarkdown).toBe("Broadcast test")
       } finally {
         socket2.disconnect()
       }

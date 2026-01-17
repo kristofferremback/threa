@@ -632,10 +632,10 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
    */
   private buildContextSummary(triggerMessage: Message, conversationHistory: Message[]): string {
     const recentMessages = conversationHistory.slice(-5)
-    const historyText = recentMessages.map((m) => `${m.authorType}: ${m.content}`).join("\n")
+    const historyText = recentMessages.map((m) => `${m.authorType}: ${m.contentMarkdown}`).join("\n")
 
     return `## Current Message
-${triggerMessage.content}
+${triggerMessage.contentMarkdown}
 
 ## Recent Conversation
 ${historyText || "No recent messages."}`

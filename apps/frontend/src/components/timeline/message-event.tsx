@@ -14,8 +14,8 @@ import { ThreadIndicator } from "./thread-indicator"
 
 interface MessagePayload {
   messageId: string
-  content: string
-  contentFormat?: "markdown" | "plaintext"
+  contentMarkdown: string
+  contentJson?: unknown
   attachments?: AttachmentSummary[]
   replyCount?: number
   threadId?: string
@@ -82,7 +82,7 @@ function MessageLayout({
           {actions}
         </div>
         <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-          <MarkdownContent content={payload.content} className="mt-0.5 text-sm" />
+          <MarkdownContent content={payload.contentMarkdown} className="mt-0.5 text-sm" />
           {payload.attachments && payload.attachments.length > 0 && (
             <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
           )}

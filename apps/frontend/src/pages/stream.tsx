@@ -270,7 +270,6 @@ export function StreamPage() {
                 workspaceId={workspaceId}
                 parentStreamId={draftReply.parentStreamId}
                 parentMessageId={draftReply.parentMessageId}
-                initialContent={draftReply.content}
                 onClose={handleCloseDraft}
                 onThreadCreated={handleThreadCreated}
               />

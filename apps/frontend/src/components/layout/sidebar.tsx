@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
-import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit, DollarSign } from "lucide-react"
+import { MoreHorizontal, Pencil, Archive, Search, CheckCheck, FileEdit, DollarSign, RefreshCw } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -116,7 +116,7 @@ interface SidebarProps {
 export function Sidebar({ workspaceId }: SidebarProps) {
   const { isLoading: coordinatedLoading } = useCoordinatedLoading()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
-  const { data: bootstrap, isLoading, error } = useWorkspaceBootstrap(workspaceId)
+  const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
   const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
@@ -135,6 +135,29 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         header={<HeaderSkeleton />}
         draftsLink={<DraftsLinkSkeleton />}
         streamList={<StreamListSkeleton />}
+      />
+    )
+  }
+
+  // Show error state with retry button when bootstrap fails
+  if (error && !bootstrap) {
+    return (
+      <SidebarShell
+        header={
+          <Link to="/workspaces" className="font-semibold hover:underline truncate">
+            Workspace
+          </Link>
+        }
+        draftsLink={null}
+        streamList={
+          <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+            <p className="text-sm text-muted-foreground mb-3">Failed to load workspace</p>
+            <Button variant="outline" size="sm" onClick={retryBootstrap} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </Button>
+          </div>
+        }
       />
     )
   }

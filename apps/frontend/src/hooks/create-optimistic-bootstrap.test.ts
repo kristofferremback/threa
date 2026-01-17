@@ -28,8 +28,7 @@ describe("createOptimisticBootstrap", () => {
     const result = createOptimisticBootstrap({
       stream: mockStream,
       message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
-      content: "Hello world",
-      contentFormat: "markdown",
+      contentMarkdown: "Hello world",
     })
 
     expect(result.events[0].id).toMatch(/^temp_/)
@@ -39,8 +38,7 @@ describe("createOptimisticBootstrap", () => {
     const params = {
       stream: mockStream,
       message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
-      content: "Hello world",
-      contentFormat: "markdown" as const,
+      contentMarkdown: "Hello world",
     }
 
     const result1 = createOptimisticBootstrap(params)
@@ -53,8 +51,7 @@ describe("createOptimisticBootstrap", () => {
     const result = createOptimisticBootstrap({
       stream: mockStream,
       message: { id: "msg_01SPECIFIC", createdAt: "2024-01-01T00:00:00Z" },
-      content: "Hello world",
-      contentFormat: "markdown",
+      contentMarkdown: "Hello world",
     })
 
     const payload = result.events[0].payload as { messageId: string }
@@ -66,8 +63,7 @@ describe("createOptimisticBootstrap", () => {
     const result = createOptimisticBootstrap({
       stream: mockStream,
       message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
-      content: "Check out this image",
-      contentFormat: "markdown",
+      contentMarkdown: "Check out this image",
       attachments: [{ id: "att_01TEST", filename: "photo.jpg", mimeType: "image/jpeg", sizeBytes: 12345 }],
     })
 
@@ -79,8 +75,7 @@ describe("createOptimisticBootstrap", () => {
     const result = createOptimisticBootstrap({
       stream: { ...mockStream, createdBy: "user_AUTHOR" },
       message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
-      content: "Hello",
-      contentFormat: "markdown",
+      contentMarkdown: "Hello",
     })
 
     expect(result.events[0].actorId).toBe("user_AUTHOR")

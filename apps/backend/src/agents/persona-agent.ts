@@ -469,7 +469,7 @@ export class PersonaAgent {
 
               return messages.map((m) => ({
                 id: m.id,
-                content: m.content,
+                content: m.contentMarkdown,
                 authorName:
                   m.authorType === "user"
                     ? (userMap.get(m.authorId) ?? "Unknown User")
@@ -493,7 +493,7 @@ export class PersonaAgent {
             })
             return messages.map((m) => ({
               sequence: m.sequence,
-              content: m.content,
+              content: m.contentMarkdown,
               authorId: m.authorId,
             }))
           },
@@ -821,7 +821,7 @@ function formatMessagesWithTemporal(
     // No temporal context - return messages with original content
     return messages.map((m) => ({
       role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-      content: m.content,
+      content: m.contentMarkdown,
     }))
   }
 
@@ -856,13 +856,13 @@ function formatMessagesWithTemporal(
       const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
       result.push({
         role,
-        content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.content}`,
+        content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.contentMarkdown}`,
       })
     } else {
       // Assistant/persona messages - no timestamp or date markers to avoid model mimicking
       result.push({
         role,
-        content: msg.content,
+        content: msg.contentMarkdown,
       })
     }
   }

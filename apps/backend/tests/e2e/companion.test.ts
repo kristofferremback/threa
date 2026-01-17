@@ -152,7 +152,7 @@ describe("Companion Agent", () => {
       expect(response.event.eventType).toBe("message_created")
       expect(response.event.actorType).toBe("persona")
       // Stub companion returns a canned response
-      expect(response.event.payload.content).toContain("stub response")
+      expect(response.event.payload.contentMarkdown).toContain("stub response")
     })
 
     test("should respond with persona author, not user", async () => {
@@ -228,7 +228,7 @@ describe("Companion Agent", () => {
         eventType: "message_created",
         actorType: "persona",
       })
-      expect(response.event.payload).toHaveProperty("content")
+      expect(response.event.payload).toHaveProperty("contentMarkdown")
     })
 
     test("should have proper message structure in companion response", async () => {
@@ -248,7 +248,7 @@ describe("Companion Agent", () => {
         actorType: "persona",
         createdAt: expect.any(String),
         payload: {
-          content: expect.any(String),
+          contentMarkdown: expect.any(String),
           messageId: expect.any(String),
         },
       })

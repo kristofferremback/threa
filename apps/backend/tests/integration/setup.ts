@@ -45,3 +45,32 @@ export async function setupTestDatabase(): Promise<Pool> {
   await migrator.up()
   return pool
 }
+
+/**
+ * Creates a minimal ProseMirror JSON document from text.
+ * Used in tests to construct contentJson field for messages.
+ */
+export function testContentJson(text: string) {
+  return { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] }
+}
+
+/**
+ * Transforms a simple content string into the contentJson/contentMarkdown format
+ * required by MessageRepository.insert. Use this in tests to avoid verbose JSON.
+ *
+ * @example
+ * await MessageRepository.insert(client, {
+ *   id: msgId,
+ *   streamId,
+ *   sequence: BigInt(1),
+ *   authorId,
+ *   authorType: "user",
+ *   ...testMessageContent("Hello world"),
+ * })
+ */
+export function testMessageContent(content: string) {
+  return {
+    contentJson: testContentJson(content),
+    contentMarkdown: content,
+  }
+}

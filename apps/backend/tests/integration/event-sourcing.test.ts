@@ -6,7 +6,7 @@ import { StreamEventRepository } from "../../src/repositories/stream-event-repos
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { OutboxRepository } from "../../src/repositories/outbox-repository"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Event Sourcing", () => {
   let pool: Pool
@@ -44,14 +44,14 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Hello, world!",
+        ...testMessageContent("Hello, world!"),
       })
 
       // Verify message projection was created
       expect(message.id).toMatch(/^msg_/)
       expect(message.streamId).toBe(testStreamId)
       expect(message.authorId).toBe(testUserId)
-      expect(message.content).toBe("Hello, world!")
+      expect(message.contentMarkdown).toBe("Hello, world!")
       expect(message.sequence).toBe(1n)
 
       // Verify event was created
@@ -68,8 +68,7 @@ describe("Event Sourcing", () => {
         })
         expect(events[0].payload).toMatchObject({
           messageId: message.id,
-          content: "Hello, world!",
-          contentFormat: "markdown",
+          contentMarkdown: "Hello, world!",
         })
       })
     })
@@ -84,7 +83,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "First",
+        ...testMessageContent("First"),
       })
 
       const msg2 = await eventService.createMessage({
@@ -92,7 +91,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Second",
+        ...testMessageContent("Second"),
       })
 
       const msg3 = await eventService.createMessage({
@@ -100,7 +99,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Third",
+        ...testMessageContent("Third"),
       })
 
       expect(msg1.sequence).toBe(1n)
@@ -126,7 +125,7 @@ describe("Event Sourcing", () => {
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 1 - First",
+        ...testMessageContent("Stream 1 - First"),
       })
 
       await eventService.createMessage({
@@ -134,7 +133,7 @@ describe("Event Sourcing", () => {
         streamId: stream2,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 2 - First",
+        ...testMessageContent("Stream 2 - First"),
       })
 
       const msg1_2 = await eventService.createMessage({
@@ -142,7 +141,7 @@ describe("Event Sourcing", () => {
         streamId: stream1,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 1 - Second",
+        ...testMessageContent("Stream 1 - Second"),
       })
 
       const msg2_2 = await eventService.createMessage({
@@ -150,7 +149,7 @@ describe("Event Sourcing", () => {
         streamId: stream2,
         authorId: testUserId,
         authorType: "user",
-        content: "Stream 2 - Second",
+        ...testMessageContent("Stream 2 - Second"),
       })
 
       // Each stream should have its own sequence
@@ -168,7 +167,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: personaId,
         authorType: "persona",
-        content: "I am Ariadne",
+        ...testMessageContent("I am Ariadne"),
       })
 
       expect(message.authorId).toBe(personaId)
@@ -194,7 +193,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Test message",
+        ...testMessageContent("Test message"),
       })
 
       await withClient(pool, async (client) => {
@@ -230,20 +229,20 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Original content",
+        ...testMessageContent("Original content"),
       })
 
       const edited = await eventService.editMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         messageId: original.id,
-        content: "Edited content",
+        ...testMessageContent("Edited content"),
         actorId: testUserId,
       })
 
       // Projection should be updated
       expect(edited).not.toBeNull()
-      expect(edited!.content).toBe("Edited content")
+      expect(edited!.contentMarkdown).toBe("Edited content")
       expect(edited!.editedAt).not.toBeNull()
 
       // Both events should exist
@@ -255,7 +254,7 @@ describe("Event Sourcing", () => {
         expect(events[1].eventType).toBe("message_edited")
         expect(events[1].payload).toMatchObject({
           messageId: original.id,
-          content: "Edited content",
+          contentMarkdown: "Edited content",
         })
       })
     })
@@ -270,14 +269,14 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Original",
+        ...testMessageContent("Original"),
       })
 
       const edited = await eventService.editMessage({
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         messageId: original.id,
-        content: "Edited",
+        ...testMessageContent("Edited"),
         actorId: testUserId,
       })
 
@@ -295,7 +294,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Original",
+        ...testMessageContent("Original"),
       })
 
       // Get baseline after message creation
@@ -306,7 +305,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         messageId: original.id,
-        content: "Edited",
+        ...testMessageContent("Edited"),
         actorId: testUserId,
       })
 
@@ -330,7 +329,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "To be deleted",
+        ...testMessageContent("To be deleted"),
       })
 
       const deleted = await eventService.deleteMessage({
@@ -366,7 +365,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Keep me",
+        ...testMessageContent("Keep me"),
       })
 
       const msg2 = await eventService.createMessage({
@@ -374,7 +373,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Delete me",
+        ...testMessageContent("Delete me"),
       })
 
       await eventService.deleteMessage({
@@ -400,7 +399,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "To delete",
+        ...testMessageContent("To delete"),
       })
 
       const baselineResult = await pool.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
@@ -436,7 +435,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "React to me",
+        ...testMessageContent("React to me"),
       })
 
       const updated = await eventService.addReaction({
@@ -477,7 +476,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: user1,
         authorType: "user",
-        content: "Popular message",
+        ...testMessageContent("Popular message"),
       })
 
       await eventService.addReaction({
@@ -522,7 +521,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "React then unreact",
+        ...testMessageContent("React then unreact"),
       })
 
       await eventService.addReaction({
@@ -564,7 +563,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Double react",
+        ...testMessageContent("Double react"),
       })
 
       await eventService.addReaction({
@@ -600,7 +599,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Outbox test",
+        ...testMessageContent("Outbox test"),
       })
 
       const baselineResult = await pool.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
@@ -643,7 +642,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "First",
+        ...testMessageContent("First"),
       })
 
       await eventService.createMessage({
@@ -651,7 +650,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Second",
+        ...testMessageContent("Second"),
       })
 
       await eventService.createMessage({
@@ -659,7 +658,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Third",
+        ...testMessageContent("Third"),
       })
 
       const events = await eventService.listEvents(testStreamId)
@@ -680,7 +679,7 @@ describe("Event Sourcing", () => {
         streamId: testStreamId,
         authorId: testUserId,
         authorType: "user",
-        content: "Test",
+        ...testMessageContent("Test"),
       })
 
       await eventService.addReaction({
@@ -695,7 +694,7 @@ describe("Event Sourcing", () => {
         workspaceId: testWorkspaceId,
         streamId: testStreamId,
         messageId: message.id,
-        content: "Edited",
+        ...testMessageContent("Edited"),
         actorId: testUserId,
       })
 
@@ -719,7 +718,7 @@ describe("Event Sourcing", () => {
           streamId: testStreamId,
           authorId: testUserId,
           authorType: "user",
-          content: `Message ${i + 1}`,
+          ...testMessageContent(`Message ${i + 1}`),
         })
       }
 
@@ -745,7 +744,7 @@ describe("Event Sourcing", () => {
           streamId: testStreamId,
           authorId: testUserId,
           authorType: "user",
-          content: `Message ${i + 1}`,
+          ...testMessageContent(`Message ${i + 1}`),
         })
       }
 
@@ -787,7 +786,7 @@ describe("Event Sourcing", () => {
             sequence: 1n,
             authorId: testUserId,
             authorType: "user",
-            content: "Test",
+            ...testMessageContent("Test"),
           })
 
           // Simulate failure before outbox insert

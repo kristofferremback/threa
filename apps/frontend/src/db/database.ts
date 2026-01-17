@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie"
-import type { EventType } from "@threa/types"
+import type { EventType, JSONContent } from "@threa/types"
 
 // Cached entity types - mirror backend domain types
 
@@ -121,7 +121,8 @@ export interface DraftMessage {
   // Key format: "stream:{streamId}" or "thread:{parentMessageId}" for new threads
   id: string
   workspaceId: string
-  content: string
+  /** ProseMirror JSON content */
+  contentJson: JSONContent
   /** Attachments that have been uploaded and are ready to attach to the message */
   attachments?: DraftAttachment[]
   updatedAt: number
@@ -168,6 +169,14 @@ class ThreaDatabase extends Dexie {
     this.version(5).stores({
       users: "id, email, slug, _cachedAt",
     })
+
+    // v6: DraftMessage now stores contentJson (JSONContent) instead of content (string)
+    // Clear existing drafts since converting markdown → JSON requires complex dependencies
+    this.version(6)
+      .stores({})
+      .upgrade((tx) => {
+        return tx.table("draftMessages").clear()
+      })
   }
 }
 

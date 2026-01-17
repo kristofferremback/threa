@@ -17,7 +17,7 @@ import { StreamRepository } from "../../src/repositories/stream-repository"
 import { StreamMemberRepository } from "../../src/repositories/stream-member-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { buildStreamContext } from "../../src/agents/context-builder"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId } from "../../src/lib/id"
 import { StreamTypes, Visibilities } from "@threa/types"
 
@@ -71,7 +71,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "Hello world",
+          ...testMessageContent("Hello world"),
         })
         await MessageRepository.insert(client, {
           id: msg2Id,
@@ -79,7 +79,7 @@ describe("Context Builder", () => {
           sequence: BigInt(2),
           authorId: ownerId,
           authorType: "user",
-          content: "Second message",
+          ...testMessageContent("Second message"),
         })
 
         const context = await buildStreamContext(client, scratchpad)
@@ -90,7 +90,7 @@ describe("Context Builder", () => {
             name: "My Scratchpad",
             description: "Personal notes",
           },
-          conversationHistory: [{ content: "Hello world" }, { content: "Second message" }],
+          conversationHistory: [{ contentMarkdown: "Hello world" }, { contentMarkdown: "Second message" }],
         })
         expect(context.participants).toBeUndefined()
       })
@@ -147,7 +147,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "Welcome to the channel!",
+          ...testMessageContent("Welcome to the channel!"),
         })
 
         const context = await buildStreamContext(client, channel)
@@ -205,7 +205,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "This is the parent message that spawned the thread",
+          ...testMessageContent("This is the parent message that spawned the thread"),
         })
 
         // Create thread from channel
@@ -229,7 +229,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "Reply in thread",
+          ...testMessageContent("Reply in thread"),
         })
 
         const context = await buildStreamContext(client, thread)
@@ -237,7 +237,7 @@ describe("Context Builder", () => {
         expect(context).toMatchObject({
           streamType: StreamTypes.THREAD,
           streamInfo: { name: "Thread Discussion" },
-          conversationHistory: [{ content: "Reply in thread" }],
+          conversationHistory: [{ contentMarkdown: "Reply in thread" }],
           threadContext: {
             depth: 2,
             path: [
@@ -291,7 +291,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "First level message",
+          ...testMessageContent("First level message"),
         })
 
         await StreamRepository.insert(client, {
@@ -313,7 +313,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "Second level message",
+          ...testMessageContent("Second level message"),
         })
 
         const thread2 = await StreamRepository.insert(client, {
@@ -335,7 +335,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: ownerId,
           authorType: "user",
-          content: "Third level message",
+          ...testMessageContent("Third level message"),
         })
 
         const context = await buildStreamContext(client, thread2)
@@ -395,7 +395,7 @@ describe("Context Builder", () => {
           sequence: BigInt(1),
           authorId: user1Id,
           authorType: "user",
-          content: "Hey Bob!",
+          ...testMessageContent("Hey Bob!"),
         })
 
         const context = await buildStreamContext(client, dm)
