@@ -4,6 +4,7 @@ import { db, type CachedStream } from "@/db"
 import { isDraftId } from "./use-draft-scratchpads"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
+import { isEmptyContent } from "@/lib/prosemirror-utils"
 
 export type DraftType = "scratchpad" | "channel" | "dm" | "thread"
 
@@ -57,15 +58,6 @@ function truncatePreview(content: string, maxLength: number = 80): string {
   const truncated = trimmed.slice(0, maxLength)
   const lastSpace = truncated.lastIndexOf(" ")
   return (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "…"
-}
-
-/**
- * Check if JSONContent is effectively empty.
- */
-function isEmptyContent(contentJson: JSONContent | undefined): boolean {
-  if (!contentJson) return true
-  if (!contentJson.content) return true
-  return contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
 }
 
 /**

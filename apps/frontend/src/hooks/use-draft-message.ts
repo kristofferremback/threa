@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks"
 import { useCallback, useEffect, useRef } from "react"
 import { db, type DraftAttachment } from "@/db"
 import type { JSONContent } from "@threa/types"
+import { isEmptyContent } from "@/lib/prosemirror-utils"
 
 // Key formats:
 // - "stream:{streamId}" for messages in existing streams
@@ -38,13 +39,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
       const currentDraft = await db.draftMessages.get(draftKey)
       const finalAttachments = attachments ?? currentDraft?.attachments ?? []
 
-      // Check if content is empty (only has empty paragraphs)
-      const isEmpty =
-        !contentJson.content ||
-        contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
-
       // Delete draft only if both content and attachments are empty
-      if (isEmpty && finalAttachments.length === 0) {
+      if (isEmptyContent(contentJson) && finalAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
         return
       }
@@ -113,14 +109,8 @@ export function useDraftMessage(workspaceId: string, draftKey: string) {
 
       const remainingAttachments = (currentDraft.attachments ?? []).filter((a) => a.id !== attachmentId)
 
-      // Check if content is empty
-      const contentJson = currentDraft.contentJson
-      const isEmpty =
-        !contentJson?.content ||
-        contentJson.content.every((node) => node.type === "paragraph" && (!node.content || node.content.length === 0))
-
       // Delete draft if both content and attachments are empty
-      if (isEmpty && remainingAttachments.length === 0) {
+      if (isEmptyContent(currentDraft.contentJson) && remainingAttachments.length === 0) {
         await db.draftMessages.delete(draftKey)
         return
       }
