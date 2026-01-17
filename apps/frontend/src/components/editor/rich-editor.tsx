@@ -187,7 +187,7 @@ export function RichEditor({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-[40px] max-h-[200px] overflow-y-auto w-full px-3 py-2 outline-none",
+          "min-h-[40px] max-h-[200px] overflow-y-auto w-full py-2 outline-none",
           "prose prose-sm dark:prose-invert max-w-none",
           // Paragraph styling - minimal spacing for chat-like feel
           "[&_p]:my-0 [&_p]:min-h-[1.5em]",
@@ -390,30 +390,30 @@ export function RichEditor({
     editor?.chain().focus().insertContent(":").run()
   }, [editor])
 
-  const handleLinkClick = useCallback(() => {
-    setLinkPopoverOpen(true)
-  }, [])
-
   return (
     <div ref={containerRef} className={cn("relative flex-1", disabled && "cursor-not-allowed opacity-50", className)}>
       {showFormattingToolbar && (
         <FormattingToolbar
           editor={editor}
           disabled={disabled}
-          onLinkClick={handleLinkClick}
           onMentionClick={handleMentionClick}
           onSlashClick={handleSlashClick}
           onEmojiClick={handleEmojiClick}
           onAttachClick={onAttachClick}
+          linkPopoverOpen={linkPopoverOpen}
+          onLinkPopoverOpenChange={setLinkPopoverOpen}
         />
       )}
-      <EditorToolbar
-        editor={editor}
-        isVisible={toolbarVisible}
-        referenceElement={containerRef.current}
-        linkPopoverOpen={linkPopoverOpen}
-        onLinkPopoverOpenChange={setLinkPopoverOpen}
-      />
+      {/* Floating toolbar - only shown when fixed toolbar is not visible */}
+      {!showFormattingToolbar && (
+        <EditorToolbar
+          editor={editor}
+          isVisible={toolbarVisible}
+          referenceElement={containerRef.current}
+          linkPopoverOpen={linkPopoverOpen}
+          onLinkPopoverOpenChange={setLinkPopoverOpen}
+        />
+      )}
       <EditorContent editor={editor} />
       {renderMentionList()}
       {renderChannelList()}

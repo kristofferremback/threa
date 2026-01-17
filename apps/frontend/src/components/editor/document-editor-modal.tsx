@@ -300,7 +300,11 @@ export function DocumentEditorModal({
         </TooltipProvider>
 
         {/* Editor body */}
-        <div ref={containerRef} className="flex-1 overflow-hidden">
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-hidden cursor-text"
+          onClick={() => editor?.commands.focus("end")}
+        >
           <EditorContent editor={editor} className="h-full" />
           {renderMentionList()}
           {renderChannelList()}
