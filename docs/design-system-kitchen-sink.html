@@ -2025,140 +2025,300 @@
       /* ========================================
          16. SIDEBAR
          ======================================== */
-      .sidebar-demo {
+      .smart-sidebar {
         width: 280px;
-        background: hsl(var(--card));
+        background: hsl(35 15% 96%);
         border: 1px solid hsl(var(--border));
-        border-radius: 8px;
+        border-radius: 12px;
+        overflow: hidden;
         display: flex;
+        flex-direction: column;
+        height: 600px;
+      }
+
+      .smart-sidebar-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
       }
 
-      .color-strip {
-        width: 6px;
-        display: flex;
-        flex-direction: column;
+      .smart-sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid hsl(var(--border));
         flex-shrink: 0;
       }
 
-      .color-segment {
-        position: relative;
+      .smart-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--background));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .smart-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .smart-view-toggle {
+        display: flex;
+        gap: 4px;
+        background: hsl(var(--muted));
+        border-radius: 6px;
+        padding: 2px;
+      }
+
+      .smart-view-btn {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
         cursor: pointer;
-        display: flex;
-        flex-direction: column;
-        transition: filter 0.15s;
-      }
-      .color-segment:hover {
-        filter: brightness(1.15);
+        transition: all 0.15s;
+        color: hsl(var(--muted-foreground));
       }
 
-      .segment-base {
-        position: absolute;
-        inset: 0;
-        opacity: 0.3;
-      }
-      .segment-stripes {
-        position: relative;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-      }
-      .activity-stripe {
-        flex: 1;
-        min-height: 4px;
+      .smart-view-btn.active {
+        background: hsl(var(--card));
+        color: hsl(var(--primary));
       }
 
-      .sidebar-content-demo {
+      .smart-filter-btn {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        background: hsl(var(--muted));
+        cursor: pointer;
+        transition: all 0.15s;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .smart-filter-btn:hover {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .smart-sidebar-body {
         flex: 1;
-        padding: 8px;
+        display: flex;
         overflow-y: auto;
       }
 
-      .label-section {
-        margin-bottom: 4px;
+      .urgency-strip {
+        width: 6px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
       }
 
-      .label-header {
+      .urgency-segment {
+        flex-shrink: 0;
+        /* Height matches corresponding stream item */
+        /* Color based on urgency: red, blue, gray, or gold */
+      }
+
+      .smart-sidebar-streams {
+        flex: 1;
+        padding: 8px;
+      }
+
+      .smart-section {
+        margin-bottom: 16px;
+      }
+
+      .smart-section-label {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px;
+        justify-content: space-between;
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
         cursor: pointer;
-        border-radius: 8px;
-        transition: background 0.15s ease;
+        border-radius: 6px;
+        transition: all 0.15s;
       }
-      .label-header:hover {
+
+      .smart-section-label:hover {
         background: hsl(var(--muted) / 0.5);
       }
 
-      .label-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 3px;
+      .smart-section-count {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: hsl(var(--muted));
+        border-radius: 10px;
       }
-      .label-name {
-        font-size: 13px;
-        font-weight: 600;
-        flex: 1;
-      }
-      .label-activities {
+
+      .smart-stream-list {
         display: flex;
+        flex-direction: column;
         gap: 2px;
       }
-      .label-activity-pip {
-        width: 4px;
-        height: 18px;
-        border-radius: 2px;
-      }
 
-      .label-items {
-        padding: 2px 0 8px 0;
-      }
-
-      .sidebar-stream-item {
+      .smart-stream-item {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 8px 10px 8px 20px;
-        border-radius: 6px;
+        padding: 8px 10px;
+        border-radius: 8px;
         cursor: pointer;
-        transition: background 0.15s ease;
+        transition: all 0.1s;
       }
-      .sidebar-stream-item:hover {
+
+      .smart-stream-item:hover {
         background: hsl(var(--muted) / 0.5);
       }
-      .sidebar-stream-item.active {
+
+      .smart-stream-item.active {
         background: hsl(var(--primary) / 0.1);
       }
 
-      .sidebar-stream-activity {
-        width: 3px;
-        height: 16px;
-        border-radius: 2px;
-      }
-      .sidebar-stream-icon {
-        width: 20px;
-        height: 20px;
+      .smart-stream-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 12px;
-        color: hsl(var(--muted-foreground));
+        font-size: 13px;
+        font-weight: 600;
+        flex-shrink: 0;
       }
-      .sidebar-stream-name {
-        font-size: 12px;
-        flex: 1;
-      }
-      .sidebar-stream-badge {
-        font-size: 9px;
-        padding: 2px 5px;
-        border-radius: 3px;
+
+      .smart-stream-avatar.channel {
         background: hsl(var(--muted));
         color: hsl(var(--muted-foreground));
       }
 
-      .text-muted-dim {
+      .smart-stream-avatar.scratchpad {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .smart-stream-avatar.dm {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+        font-size: 11px;
+      }
+
+      .smart-stream-content {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .smart-stream-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .smart-stream-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .smart-stream-indicators {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .smart-activity-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      .smart-activity-dot.gold {
+        background: hsl(var(--primary));
+      }
+
+      .smart-activity-dot.red {
+        background: hsl(0 84% 60%);
+      }
+
+      .smart-activity-dot.blue {
+        background: hsl(200 70% 50%);
+      }
+
+      .smart-unread-badge {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        font-size: 9px;
+        font-weight: 600;
+        padding: 2px 5px;
+        border-radius: 10px;
+        min-width: 16px;
+        text-align: center;
+      }
+
+      .smart-stream-time {
+        font-size: 10px;
         color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      .smart-stream-preview {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+
+      .smart-stream-preview strong {
+        color: hsl(var(--foreground) / 0.8);
+        font-weight: 500;
+      }
+
+      .smart-collapsed-indicator {
+        font-size: 10px;
+        color: hsl(var(--muted-foreground));
+        text-align: center;
+        padding: 8px 4px;
+        font-style: italic;
+      }
+
+      /* Compact mode */
+      .smart-sidebar.compact .smart-stream-item {
+        padding: 6px 10px;
+      }
+
+      .smart-sidebar.compact .smart-stream-avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+      }
+
+      .smart-sidebar.compact .smart-stream-name {
+        font-size: 12px;
+      }
+
+      .smart-sidebar.compact .smart-stream-preview {
+        display: none;
+      }
+
+      .smart-sidebar.compact .smart-stream-time {
+        display: none;
       }
 
       /* ========================================
@@ -2538,152 +2698,622 @@
       <!-- 3. Sidebar -->
       <section class="section">
         <div class="section-header">
-          <h2 class="section-title">Collapsible Sidebar</h2>
+          <h2 class="section-title">Sidebar</h2>
           <p class="section-subtitle">
-            Color strip on left (height-synced with sections). Hover to preview, click to pin open. Label-based
-            organization.
+            Smart auto-sections organize streams automatically. Urgency strip shows priority at a glance. Three states:
+            Collapsed (6px strip + 15px hover zone) → Preview (hover, absolute) → Pinned (click, pushes content).
+            Independent resizable widths for preview and pinned states, persisted to localStorage.
           </p>
-          <span class="section-ref">nav-16-full-view.html</span>
+          <span class="section-ref">sidebar-organization-exploration.html, nav-16-full-view.html</span>
         </div>
 
         <div class="component-grid">
+          <!-- Smart View Demo -->
           <div class="component-card">
-            <div class="component-label">Expanded Sidebar</div>
-            <div class="sidebar-demo">
-              <!-- Color Strip -->
-              <div class="color-strip">
-                <div class="color-segment" style="height: 110px">
-                  <div class="segment-base label-auth"></div>
-                  <div class="segment-stripes">
-                    <div class="activity-stripe activity-ai"></div>
+            <div class="component-label">Smart View (Default)</div>
+            <div class="smart-sidebar">
+              <div class="smart-sidebar-content">
+                <div class="smart-sidebar-header">
+                  <div class="smart-search">
+                    <span>🔍</span>
+                    <span>Search or ⌘K</span>
+                  </div>
+                  <div class="smart-controls">
+                    <div class="smart-view-toggle">
+                      <div class="smart-view-btn active">Smart</div>
+                      <div class="smart-view-btn">All</div>
+                    </div>
+                    <div class="smart-filter-btn">Unread: 12</div>
                   </div>
                 </div>
-                <div class="color-segment" style="height: 85px">
-                  <div class="segment-base label-launch"></div>
-                  <div class="segment-stripes">
-                    <div class="activity-stripe activity-mention"></div>
-                    <div class="activity-stripe activity-ai"></div>
+                <div class="smart-sidebar-body">
+                  <!-- Urgency strip scrolls with content -->
+                  <div class="urgency-strip">
+                    <div class="urgency-segment" style="height: 80px; background: hsl(0 84% 60%)"></div>
+                    <div class="urgency-segment" style="height: 80px; background: hsl(38 65% 50%)"></div>
+                    <div class="urgency-segment" style="height: 140px; background: hsl(200 70% 50%)"></div>
+                    <div
+                      class="urgency-segment"
+                      style="height: 120px; background: hsl(var(--muted-foreground) / 0.2)"
+                    ></div>
+                    <div
+                      class="urgency-segment"
+                      style="height: 80px; background: hsl(var(--muted-foreground) / 0.2)"
+                    ></div>
                   </div>
-                </div>
-                <div class="color-segment" style="height: 70px">
-                  <div class="segment-base label-design"></div>
-                  <div class="segment-stripes">
-                    <div class="activity-stripe activity-people"></div>
+                  <div class="smart-sidebar-streams">
+                    <!-- Important Section -->
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>⚡ Important</span>
+                        <span class="smart-section-count">4</span>
+                      </div>
+                      <div class="smart-stream-list">
+                        <div class="smart-stream-item active">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">engineering</div>
+                              <div class="smart-stream-indicators">
+                                <div class="smart-activity-dot red"></div>
+                                <div class="smart-unread-badge">3</div>
+                              </div>
+                            </div>
+                            <div class="smart-stream-preview"><strong>@you:</strong> Can you review?</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar dm">JD</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">Jane Doe</div>
+                              <div class="smart-stream-indicators">
+                                <div class="smart-activity-dot gold"></div>
+                                <div class="smart-unread-badge">2</div>
+                              </div>
+                            </div>
+                            <div class="smart-stream-preview">Quick question about...</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Recent Section -->
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>🕐 Recent</span>
+                        <span class="smart-section-count">8</span>
+                      </div>
+                      <div class="smart-stream-list">
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar scratchpad">📝</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">Q4 Planning</div>
+                              <div class="smart-stream-time">2h</div>
+                            </div>
+                            <div class="smart-stream-preview">Working on roadmap with Ariadne...</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">design-system</div>
+                              <div class="smart-stream-time">4h</div>
+                            </div>
+                            <div class="smart-stream-preview">Updated the color palette...</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar scratchpad">📝</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">Meeting Notes</div>
+                              <div class="smart-stream-time">6h</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Pinned Section -->
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>📌 Pinned</span>
+                        <span class="smart-section-count">3</span>
+                      </div>
+                      <div class="smart-stream-list">
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-name">general</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar scratchpad">📝</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-name">Ideas</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Everything Else -->
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>📂 Everything Else</span>
+                        <span class="smart-section-count">47</span>
+                      </div>
+                      <div class="smart-collapsed-indicator">Click to expand or use search</div>
+                    </div>
                   </div>
+                  <!-- .smart-sidebar-streams -->
                 </div>
-                <div class="color-segment" style="height: 50px">
-                  <div class="segment-base label-hiring"></div>
-                  <div class="segment-stripes">
-                    <div class="activity-stripe activity-quiet"></div>
-                  </div>
-                </div>
+                <!-- .smart-sidebar-body -->
               </div>
+              <!-- .smart-sidebar-content -->
+            </div>
+            <!-- .smart-sidebar -->
+          </div>
+          <!-- .component-card -->
 
-              <!-- Sidebar Content -->
-              <div class="sidebar-content-demo">
-                <div class="label-section">
-                  <div class="label-header">
-                    <div class="label-dot label-auth"></div>
-                    <span class="label-name">Auth Project</span>
-                    <div class="label-activities">
-                      <div class="label-activity-pip activity-ai"></div>
-                    </div>
+          <!-- Compact Mode -->
+          <div class="component-card">
+            <div class="component-label">Compact Density Mode</div>
+            <div class="smart-sidebar compact">
+              <div class="smart-sidebar-content">
+                <div class="smart-sidebar-header">
+                  <div class="smart-search">
+                    <span>🔍</span>
+                    <span>Search</span>
                   </div>
-                  <div class="label-items">
-                    <div class="sidebar-stream-item active">
-                      <div class="sidebar-stream-activity activity-ai"></div>
-                      <div class="sidebar-stream-icon">📝</div>
-                      <span class="sidebar-stream-name" style="font-weight: 500">Auth Scratchpad</span>
-                    </div>
-                    <div class="sidebar-stream-item text-muted-dim">
-                      <div class="sidebar-stream-activity" style="background: transparent"></div>
-                      <div class="sidebar-stream-icon">#</div>
-                      <span class="sidebar-stream-name"># auth-dev</span>
+                  <div class="smart-controls">
+                    <div class="smart-view-toggle">
+                      <div class="smart-view-btn active">Smart</div>
+                      <div class="smart-view-btn">All</div>
                     </div>
                   </div>
                 </div>
+                <div class="smart-sidebar-body">
+                  <!-- Urgency strip scrolls with content -->
+                  <div class="urgency-strip">
+                    <div class="urgency-segment" style="height: 56px; background: hsl(0 84% 60%)"></div>
+                    <div class="urgency-segment" style="height: 56px; background: hsl(38 65% 50%)"></div>
+                    <div class="urgency-segment" style="height: 110px; background: hsl(200 70% 50%)"></div>
+                  </div>
+                  <div class="smart-sidebar-streams">
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>⚡ Important</span>
+                        <span class="smart-section-count">4</span>
+                      </div>
+                      <div class="smart-stream-list">
+                        <div class="smart-stream-item active">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">engineering</div>
+                              <div class="smart-unread-badge">3</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar dm">JD</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">Jane Doe</div>
+                              <div class="smart-unread-badge">2</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar scratchpad">📝</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">Q4 Planning</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-header">
+                              <div class="smart-stream-name">design-system</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                <div class="label-section">
-                  <div class="label-header">
-                    <div class="label-dot label-launch"></div>
-                    <span class="label-name">Q1 Launch</span>
-                    <div class="label-activities">
-                      <div class="label-activity-pip activity-mention"></div>
-                      <div class="label-activity-pip activity-ai"></div>
+                    <div class="smart-section">
+                      <div class="smart-section-label">
+                        <span>🕐 Recent</span>
+                        <span class="smart-section-count">12</span>
+                      </div>
+                      <div class="smart-stream-list">
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-name">frontend</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar scratchpad">📝</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-name">Ideas</div>
+                          </div>
+                        </div>
+                        <div class="smart-stream-item">
+                          <div class="smart-stream-avatar channel">#</div>
+                          <div class="smart-stream-content">
+                            <div class="smart-stream-name">backend</div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div class="label-items">
-                    <div class="sidebar-stream-item">
-                      <div class="sidebar-stream-activity activity-mention"></div>
-                      <div class="sidebar-stream-icon">#</div>
-                      <span class="sidebar-stream-name" style="font-weight: 600"># engineering</span>
-                    </div>
-                  </div>
+                  <!-- .smart-sidebar-streams -->
+                </div>
+                <!-- .smart-sidebar-body -->
+              </div>
+              <!-- .smart-sidebar-content -->
+            </div>
+            <!-- .smart-sidebar -->
+          </div>
+          <!-- .component-card -->
+
+          <!-- Urgency Strip Explained -->
+          <div class="component-card">
+            <div class="component-label">Urgency Strip</div>
+            <div class="demo-container">
+              <p style="font-size: 13px; margin-bottom: 12px">
+                The 6px strip on the left <strong>scrolls with the sidebar content</strong>. Each stream item has a
+                corresponding segment showing its urgency:
+              </p>
+              <ul style="font-size: 12px; line-height: 1.8; padding-left: 20px">
+                <li><strong style="color: hsl(0 84% 60%)">Red</strong> - Mentions (especially many) - most urgent</li>
+                <li>
+                  <strong style="color: hsl(200 70% 50%)">Blue</strong> - Activity in threads you're in - medium
+                  priority
+                </li>
+                <li>
+                  <strong style="color: hsl(var(--muted-foreground))">Gray</strong> - Quiet streams - low priority
+                </li>
+                <li><strong style="color: hsl(var(--primary))">Gold</strong> (future) - AI activity indicator</li>
+              </ul>
+              <p style="font-size: 12px; margin-top: 12px; color: hsl(var(--muted-foreground))">
+                <strong>Implementation:</strong> The strip is positioned inside the scrollable area
+                (`.smart-sidebar-body`), not as a fixed sibling. Each stream item's height determines its strip segment
+                height. As you scroll, the strip scrolls with the content, maintaining the visual connection between
+                strip color and stream item.
+              </p>
+            </div>
+          </div>
+
+          <!-- Collapsible States -->
+          <div class="component-card">
+            <div class="component-label">Collapsible States</div>
+            <div class="demo-container">
+              <div style="font-size: 13px; line-height: 1.9">
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Three States:</p>
+                <ul style="padding-left: 20px; margin-bottom: 16px">
+                  <li>
+                    <strong>Collapsed (default):</strong> 6px urgency strip only. Content hidden with opacity: 0 and
+                    pointer-events: none.
+                  </li>
+                  <li>
+                    <strong>Preview (hover):</strong> Expands to saved width (default 260px), positioned absolutely
+                    (doesn't push content). Has box-shadow for depth. Triggered by hover on urgency strip, 15px hover
+                    margin, or sidebar itself. Independently resizable and persisted.
+                  </li>
+                  <li>
+                    <strong>Pinned (click):</strong> Expands to saved width (default 280px), positioned normally (pushes
+                    main content). Click anywhere on sidebar to pin. No hover margin when pinned. Independently
+                    resizable and persisted.
+                  </li>
+                </ul>
+
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Hover Margin:</p>
+                <ul style="padding-left: 20px; margin-bottom: 16px">
+                  <li>
+                    <strong>15px invisible zone</strong> adjacent to collapsed sidebar. Reduced from 30px to prevent
+                    accidental triggers while maintaining discoverability.
+                  </li>
+                  <li><strong>Triggers preview</strong> when mouse enters (same as hovering color strip itself).</li>
+                  <li><strong>Only present in collapsed state.</strong> Disappears when sidebar is pinned.</li>
+                  <li>
+                    <strong>Position:</strong> `position: absolute; left: 100%` (to the right of the sidebar wrapper).
+                  </li>
+                </ul>
+
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Resize & Persistence:</p>
+                <ul style="padding-left: 20px; margin-bottom: 16px">
+                  <li>
+                    <strong>Independent widths:</strong> Preview (hover) and pinned states have separate resizable
+                    widths.
+                  </li>
+                  <li><strong>Resize handle:</strong> 4px draggable area on the right edge when sidebar is visible.</li>
+                  <li><strong>Width constraints:</strong> Min 200px, max 600px for both states.</li>
+                  <li>
+                    <strong>Persistence:</strong> Widths saved to localStorage (`sidebar.width.preview` and
+                    `sidebar.width.pinned`).
+                  </li>
+                  <li><strong>Defaults:</strong> Preview: 260px, Pinned: 280px.</li>
+                </ul>
+
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Interaction Details:</p>
+                <ul style="padding-left: 20px">
+                  <li>
+                    <strong>150ms hide delay:</strong> Preview doesn't immediately disappear on mouse leave - prevents
+                    flickering when moving between hover zones.
+                  </li>
+                  <li>
+                    <strong>Z-index layering:</strong> Preview (z-index: 50), hover margin (z-index: 40), ensures proper
+                    stacking.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- State Transitions Diagram -->
+          <div class="component-card" style="grid-column: span 2">
+            <div class="component-label">State Transitions</div>
+            <div class="demo-container">
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 16px;
+                  font-size: 12px;
+                  padding: 16px 0;
+                  flex-wrap: wrap;
+                  justify-content: center;
+                "
+              >
+                <!-- Collapsed State -->
+                <div style="text-align: center">
+                  <div
+                    style="
+                      width: 6px;
+                      height: 80px;
+                      background: linear-gradient(to bottom, hsl(var(--primary)), hsl(var(--primary) / 0.6));
+                      border-radius: 3px;
+                      margin: 0 auto 8px;
+                    "
+                  ></div>
+                  <div style="font-weight: 600">Collapsed</div>
+                  <div style="color: hsl(var(--muted-foreground)); margin-top: 4px">6px strip</div>
+                  <div style="color: hsl(var(--muted-foreground))">+ 15px hover zone</div>
                 </div>
 
-                <div class="label-section">
-                  <div class="label-header">
-                    <div class="label-dot label-design"></div>
-                    <span class="label-name">Design System</span>
-                    <div class="label-activities">
-                      <div class="label-activity-pip activity-people"></div>
-                    </div>
+                <!-- Arrow -->
+                <div style="color: hsl(var(--muted-foreground)); font-size: 18px">
+                  →
+                  <div style="font-size: 11px; margin-top: 4px">hover</div>
+                </div>
+
+                <!-- Preview State -->
+                <div style="text-align: center">
+                  <div
+                    style="
+                      width: 80px;
+                      height: 80px;
+                      background: hsl(var(--card));
+                      border: 1px solid hsl(var(--border));
+                      border-left: 3px solid hsl(var(--primary));
+                      border-radius: 8px;
+                      margin: 0 auto 8px;
+                      box-shadow: 4px 0 12px hsl(var(--foreground) / 0.1);
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      font-size: 10px;
+                      color: hsl(var(--muted-foreground));
+                    "
+                  >
+                    260px
                   </div>
-                  <div class="label-items">
-                    <div class="sidebar-stream-item">
-                      <div class="sidebar-stream-activity activity-people"></div>
-                      <div class="sidebar-stream-icon">#</div>
-                      <span class="sidebar-stream-name"># design</span>
-                    </div>
+                  <div style="font-weight: 600">Preview</div>
+                  <div style="color: hsl(var(--muted-foreground)); margin-top: 4px">Absolute position</div>
+                  <div style="color: hsl(var(--muted-foreground))">+ box shadow</div>
+                </div>
+
+                <!-- Arrow -->
+                <div style="color: hsl(var(--muted-foreground)); font-size: 18px">
+                  →
+                  <div style="font-size: 11px; margin-top: 4px">click</div>
+                </div>
+
+                <!-- Pinned State -->
+                <div style="text-align: center">
+                  <div
+                    style="
+                      width: 80px;
+                      height: 80px;
+                      background: hsl(var(--card));
+                      border: 1px solid hsl(var(--border));
+                      border-left: 3px solid hsl(var(--primary));
+                      border-radius: 8px;
+                      margin: 0 auto 8px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      font-size: 10px;
+                      color: hsl(var(--muted-foreground));
+                    "
+                  >
+                    260px
                   </div>
+                  <div style="font-weight: 600">Pinned</div>
+                  <div style="color: hsl(var(--muted-foreground)); margin-top: 4px">Normal flow</div>
+                  <div style="color: hsl(var(--muted-foreground))">Pushes content</div>
+                </div>
+
+                <!-- Arrow back -->
+                <div style="color: hsl(var(--muted-foreground)); font-size: 18px">
+                  ←
+                  <div style="font-size: 11px; margin-top: 4px">click again</div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="component-card">
-            <div class="component-label">Sidebar Features</div>
+          <!-- Implementation Notes -->
+          <div class="component-card" style="grid-column: span 2">
+            <div class="component-label">Implementation Notes</div>
             <div class="demo-container">
-              <ul style="font-size: 13px; line-height: 1.8; padding-left: 20px">
-                <li><strong>Color strip:</strong> 6px wide, synced heights with sections</li>
-                <li><strong>Activity stripes:</strong> Show activity types within each label</li>
-                <li><strong>Collapse behavior:</strong> Collapses to just color strip</li>
-                <li><strong>Hover preview:</strong> Expands temporarily on hover</li>
-                <li><strong>Click to pin:</strong> Stays open when clicked (like Linear)</li>
-                <li><strong>Label sections:</strong> User-defined groupings across stream types</li>
-              </ul>
-            </div>
+              <div style="font-size: 13px; line-height: 1.9">
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Structure:</p>
+                <ul style="padding-left: 20px; margin-bottom: 16px">
+                  <li>
+                    <strong>Urgency strip scrolls with content:</strong> Positioned inside `.smart-sidebar-body`, not as
+                    a fixed sibling. Each stream item has a corresponding `.urgency-segment` with height matching the
+                    item.
+                  </li>
+                  <li>
+                    <strong>Smart Auto-Sections:</strong> Automatic organization without requiring labels (Important,
+                    Recent, Pinned, Everything Else).
+                  </li>
+                  <li><strong>View modes:</strong> Smart (auto-organized) vs All (type-based inventory).</li>
+                  <li>
+                    <strong>Density modes:</strong> Comfortable (with previews) vs Compact (names only, fits 2x more).
+                  </li>
+                  <li><strong>Quick filters:</strong> Unread, Active, Pinned states.</li>
+                </ul>
 
-            <div class="component-label mt-4">Stream Item States</div>
-            <div class="demo-container">
-              <div style="display: flex; flex-direction: column; gap: 8px">
-                <div class="sidebar-stream-item active" style="margin: -8px">
-                  <div class="sidebar-stream-activity activity-ai"></div>
-                  <div class="sidebar-stream-icon">📝</div>
-                  <span class="sidebar-stream-name" style="font-weight: 500">Active stream</span>
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Key CSS Patterns:</p>
+
+                <div
+                  style="
+                    background: hsl(var(--muted) / 0.3);
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-family: &quot;SF Mono&quot;, &quot;Fira Code&quot;, monospace;
+                    font-size: 12px;
+                    margin-bottom: 12px;
+                  "
+                >
+                  <div style="color: hsl(var(--muted-foreground)); margin-bottom: 8px">
+                    /* Sidebar body with scrolling strip */
+                  </div>
+                  <div>.smart-sidebar-body {</div>
+                  <div style="padding-left: 16px">display: flex;</div>
+                  <div style="padding-left: 16px">overflow-y: auto;</div>
+                  <div>}</div>
+                  <div>.urgency-strip {</div>
+                  <div style="padding-left: 16px">width: 6px;</div>
+                  <div style="padding-left: 16px">flex-shrink: 0;</div>
+                  <div style="padding-left: 16px">display: flex;</div>
+                  <div style="padding-left: 16px">flex-direction: column;</div>
+                  <div>}</div>
+                  <div>.urgency-segment {</div>
+                  <div style="padding-left: 16px">flex-shrink: 0;</div>
+                  <div style="padding-left: 16px">/* Height matches stream item */</div>
+                  <div style="padding-left: 16px">/* Color: red, blue, gray, gold */</div>
+                  <div>}</div>
+                  <div>.smart-sidebar-streams {</div>
+                  <div style="padding-left: 16px">flex: 1;</div>
+                  <div style="padding-left: 16px">padding: 8px;</div>
+                  <div>}</div>
+                  <br />
+                  <div style="color: hsl(var(--muted-foreground)); margin-bottom: 8px">/* Collapsed state */</div>
+                  <div>.sidebar-collapsed .sidebar {</div>
+                  <div style="padding-left: 16px">width: 6px;</div>
+                  <div>}</div>
+                  <div>.sidebar-collapsed .sidebar:not(.preview) .smart-sidebar-content {</div>
+                  <div style="padding-left: 16px">opacity: 0;</div>
+                  <div style="padding-left: 16px">pointer-events: none;</div>
+                  <div>}</div>
+                  <br />
+                  <div style="color: hsl(var(--muted-foreground)); margin-bottom: 8px">/* Preview state */</div>
+                  <div>.sidebar.preview {</div>
+                  <div style="padding-left: 16px">
+                    width: var(--sidebar-width-preview, 260px); /* Dynamic, from localStorage */
+                  </div>
+                  <div style="padding-left: 16px">position: absolute;</div>
+                  <div style="padding-left: 16px">z-index: 50;</div>
+                  <div style="padding-left: 16px">box-shadow: 4px 0 24px hsl(var(--foreground) / 0.1);</div>
+                  <div>}</div>
+                  <div>.sidebar.pinned {</div>
+                  <div style="padding-left: 16px">
+                    width: var(--sidebar-width-pinned, 280px); /* Dynamic, from localStorage */
+                  </div>
+                  <div>}</div>
+                  <br />
+                  <div style="color: hsl(var(--muted-foreground)); margin-bottom: 8px">/* Hover margin */</div>
+                  <div>.hover-margin {</div>
+                  <div style="padding-left: 16px">position: absolute;</div>
+                  <div style="padding-left: 16px">left: 100%;</div>
+                  <div style="padding-left: 16px">width: 15px; /* Reduced from 30px */</div>
+                  <div style="padding-left: 16px">z-index: 40;</div>
+                  <div>}</div>
+                  <div>.sidebar-open .hover-margin {</div>
+                  <div style="padding-left: 16px">display: none;</div>
+                  <div>}</div>
+                  <br />
+                  <div style="color: hsl(var(--muted-foreground)); margin-bottom: 8px">/* Resize handle */</div>
+                  <div>.sidebar-resize-handle {</div>
+                  <div style="padding-left: 16px">position: absolute;</div>
+                  <div style="padding-left: 16px">right: 0;</div>
+                  <div style="padding-left: 16px">top: 0;</div>
+                  <div style="padding-left: 16px">bottom: 0;</div>
+                  <div style="padding-left: 16px">width: 4px;</div>
+                  <div style="padding-left: 16px">cursor: ew-resize;</div>
+                  <div style="padding-left: 16px">z-index: 60;</div>
+                  <div>}</div>
+                  <div>.sidebar-resize-handle:hover {</div>
+                  <div style="padding-left: 16px">background: hsl(var(--primary) / 0.2);</div>
+                  <div>}</div>
                 </div>
-                <div class="sidebar-stream-item" style="margin: -8px">
-                  <div class="sidebar-stream-activity activity-mention"></div>
-                  <div class="sidebar-stream-icon">#</div>
-                  <span class="sidebar-stream-name" style="font-weight: 600">With activity</span>
-                </div>
-                <div class="sidebar-stream-item text-muted-dim" style="margin: -8px">
-                  <div class="sidebar-stream-activity" style="background: transparent"></div>
-                  <div class="sidebar-stream-icon">#</div>
-                  <span class="sidebar-stream-name">Quiet stream</span>
-                </div>
-                <div class="sidebar-stream-item text-muted-dim" style="margin: -8px">
-                  <div class="sidebar-stream-activity" style="background: transparent"></div>
-                  <div class="sidebar-stream-icon">↩</div>
-                  <span class="sidebar-stream-name">Thread name</span>
-                  <span class="sidebar-stream-badge">thread</span>
-                </div>
+
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">JavaScript Behavior:</p>
+
+                <ul style="padding-left: 20px; margin-bottom: 16px">
+                  <li>
+                    <strong>showPreview():</strong> Add `.preview` class to sidebar. Apply saved width from localStorage
+                    (`sidebar.width.preview`, default 260px).
+                  </li>
+                  <li>
+                    <strong>hidePreview():</strong> Remove `.preview` class after 150ms delay (check isHovering flag).
+                  </li>
+                  <li>
+                    <strong>toggleSidebar():</strong> Toggle between collapsed and pinned. Apply saved width from
+                    localStorage (`sidebar.width.pinned`, default 280px). Remove preview class when pinning.
+                  </li>
+                  <li>
+                    <strong>handleResize():</strong> On mousedown on resize handle, track mousemove to update width
+                    (constrained 200-600px). Save to localStorage on mouseup. Update different key based on state
+                    (preview vs pinned).
+                  </li>
+                  <li>
+                    <strong>Event listeners:</strong> Attach to hover-margin, urgency-strip, and sidebar itself. All
+                    trigger showPreview on mouseenter. Resize handle has mousedown listener.
+                  </li>
+                </ul>
+
+                <p style="font-weight: 600; margin-bottom: 12px; color: hsl(var(--primary))">Accessibility:</p>
+
+                <ul style="padding-left: 20px">
+                  <li><strong>Keyboard navigation:</strong> Pin/unpin with spacebar or enter when focused.</li>
+                  <li>
+                    <strong>Screen readers:</strong> Announce state changes ("sidebar expanded", "sidebar collapsed").
+                  </li>
+                  <li>
+                    <strong>Reduced motion:</strong> Skip transitions if prefers-reduced-motion is enabled (instant
+                    state changes).
+                  </li>
+                  <li>
+                    <strong>Focus management:</strong> When pinned, first stream item should receive focus for keyboard
+                    navigation.
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
         </div>
       </section>
-
       <!-- 4. Message Input - Premium Glow -->
       <section class="section">
         <div class="section-header">
@@ -2889,102 +3519,7 @@
         </div>
       </section>
 
-      <!-- 5. Floating Selection Toolbar -->
-      <section class="section">
-        <div class="section-header">
-          <h2 class="section-title">Floating Selection Toolbar</h2>
-          <p class="section-subtitle">Style 1: Icon-only. Appears above selected text. No "Ask AI" on own text.</p>
-          <span class="section-ref">input-exploration-02-interactions.html</span>
-        </div>
-
-        <div class="component-grid">
-          <div class="component-card">
-            <div class="component-label">Icon-Only Toolbar</div>
-            <div class="floating-toolbar">
-              <button class="floating-toolbar-btn" title="Bold">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    fill="none"
-                  />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn active" title="Italic">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="19" y1="4" x2="10" y2="4" />
-                  <line x1="14" y1="20" x2="5" y2="20" />
-                  <line x1="15" y1="4" x2="9" y2="20" />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn" title="Strikethrough">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M16 4H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8" />
-                  <line x1="4" y1="12" x2="20" y2="12" />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn" title="Code">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="16,18 22,12 16,6" />
-                  <polyline points="8,6 2,12 8,18" />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn" title="Link">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="component-card">
-            <div class="component-label">With "Ask AI" (on OTHER users' messages)</div>
-            <div class="floating-toolbar">
-              <button class="floating-toolbar-btn" title="Bold">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    fill="none"
-                  />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn" title="Italic">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="19" y1="4" x2="10" y2="4" />
-                  <line x1="14" y1="20" x2="5" y2="20" />
-                  <line x1="15" y1="4" x2="9" y2="20" />
-                </svg>
-              </button>
-              <button class="floating-toolbar-btn" title="Code">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="16,18 22,12 16,6" />
-                  <polyline points="8,6 2,12 8,18" />
-                </svg>
-              </button>
-              <div style="width: 1px; height: 20px; background: hsl(var(--border)); margin: 0 4px"></div>
-              <button
-                class="floating-toolbar-btn"
-                title="Ask AI"
-                style="background: hsl(var(--primary) / 0.1); color: hsl(var(--primary))"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path
-                    d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"
-                  />
-                  <circle cx="8" cy="14" r="1" />
-                  <circle cx="16" cy="14" r="1" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 6. Inline References -->
+      <!-- 5. Inline References -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Inline References</h2>
@@ -3044,7 +3579,7 @@
         </div>
       </section>
 
-      <!-- 7. Emoji Picker -->
+      <!-- 6. Emoji Picker -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Emoji Picker</h2>
@@ -3114,7 +3649,7 @@
         </div>
       </section>
 
-      <!-- 8. Slash Commands -->
+      <!-- 7. Slash Commands -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Slash Commands</h2>
@@ -3182,7 +3717,7 @@
         </div>
       </section>
 
-      <!-- 9. Mentions -->
+      <!-- 8. Mentions -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Mentions</h2>
@@ -3261,7 +3796,7 @@
         </div>
       </section>
 
-      <!-- 10. Document Editor Modal -->
+      <!-- 9. Document Editor Modal -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Document Editor Modal</h2>
@@ -3453,7 +3988,7 @@
         </div>
       </section>
 
-      <!-- 11. Input Growth Behavior -->
+      <!-- 10. Input Growth Behavior -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Input Growth Behavior</h2>
@@ -3555,7 +4090,7 @@
         </div>
       </section>
 
-      <!-- 12. Conversations Overview -->
+      <!-- 11. Conversations Overview -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Conversations Overview</h2>
@@ -3676,7 +4211,7 @@
         </div>
       </section>
 
-      <!-- 13. Thread Panel -->
+      <!-- 12. Thread Panel -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Thread Panel System</h2>
@@ -3768,7 +4303,7 @@
         </div>
       </section>
 
-      <!-- 14. Quick Switcher -->
+      <!-- 13. Quick Switcher -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Quick Switcher</h2>
@@ -3821,7 +4356,7 @@
         </div>
       </section>
 
-      <!-- 15. Messages -->
+      <!-- 14. Messages -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Message Styling</h2>
@@ -3917,7 +4452,7 @@
         </div>
       </section>
 
-      <!-- 16. Message Content Formatting -->
+      <!-- 15. Message Content Formatting -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Message Content Formatting</h2>
@@ -4106,7 +4641,7 @@ const refreshToken = async (token: string) => {
         </div>
       </section>
 
-      <!-- 17. Code Blocks -->
+      <!-- 16. Code Blocks -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Code Blocks</h2>
@@ -4257,7 +4792,7 @@ const refreshToken = async (token: string) => {
         </div>
       </section>
 
-      <!-- 18. Image Attachments & Gallery -->
+      <!-- 17. Image Attachments & Gallery -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Image Attachments & Gallery</h2>
@@ -4568,7 +5103,7 @@ const refreshToken = async (token: string) => {
         </div>
       </section>
 
-      <!-- 19. Minimized Threads Strip -->
+      <!-- 18. Minimized Threads Strip -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Minimized Threads Strip</h2>
@@ -4627,7 +5162,7 @@ const refreshToken = async (token: string) => {
         </div>
       </section>
 
-      <!-- 20. AI-Powered Status (Phase 2) -->
+      <!-- 19. AI-Powered Status (Phase 2) -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">AI-Powered Status (Phase 2)</h2>
@@ -4764,7 +5299,7 @@ const refreshToken = async (token: string) => {
         </div>
       </section>
 
-      <!-- 21. Breadcrumb Dropdown -->
+      <!-- 20. Breadcrumb Dropdown -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Breadcrumb Dropdown</h2>

@@ -613,118 +613,249 @@ For long-form content and announcements.
 }
 ```
 
-### Sidebar with Color Strip
+### Sidebar with Urgency Strip
 
 **Reference:** `design-system-kitchen-sink.html` section "SIDEBAR"
 
-The sidebar features a color strip on the left edge that provides at-a-glance activity information. The sidebar can collapse to just the color strip (like Linear).
+The sidebar features a 6px urgency strip on the left edge that provides at-a-glance priority information. The sidebar can collapse to just the urgency strip (like Linear).
 
 **Structure:**
 
 ```css
-.sidebar {
+.smart-sidebar {
   display: flex;
-  width: 280px; /* Expanded state */
+  flex-direction: column;
+  width: 280px;
 }
 
-.color-strip {
+.smart-sidebar-body {
+  display: flex;
+  overflow-y: auto;
+}
+
+.urgency-strip {
   width: 6px;
-  display: flex;
-  flex-direction: column;
   flex-shrink: 0;
-}
-
-.color-segment {
-  position: relative;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  transition: filter 0.15s;
+  /* Scrolls with content inside .smart-sidebar-body */
 }
 
-.color-segment:hover {
-  filter: brightness(1.15);
+.urgency-segment {
+  flex-shrink: 0;
+  /* Height matches corresponding stream item */
+  /* Background color based on urgency: red, blue, gray, gold */
+}
+
+.smart-sidebar-streams {
+  flex: 1;
+  padding: 8px;
 }
 ```
 
-**Activity Stripes:**
-Each color segment shows activity types through vertical stripes:
+**Urgency Strip:**
+The strip is a 6px column that scrolls with the sidebar content. Each stream item has a corresponding segment on the strip showing its urgency level:
 
-- Gold stripe - AI activity
-- Red stripe - Mentions
-- Blue stripe - People activity
-- Muted stripe - Quiet/no activity
+- **Red** - Mentions (especially many) - most urgent, needs attention
+- **Blue** - Activity in threads/conversations you're in - medium priority
+- **Muted/gray** - Quiet streams - low priority
+- **Gold** (future) - AI activity indicator
+
+**Implementation:** The strip is positioned inside the scrollable area (`.smart-sidebar-body`), not as a fixed element. Each stream item's height determines its strip segment height. As you scroll the sidebar, the strip scrolls with it, maintaining the visual connection between strip color and stream item.
+
+**Not tied to labels:** The strip shows urgency per item, whether organized by smart sections, labels, or type-based views.
 
 **Collapse Behavior:**
 
-- Default: Collapsed to just color strip
-- Hover: Preview expansion
+- Default: Collapsed to just urgency strip (6px)
+- Hover: Preview expansion (triggered by 15px invisible hover margin or urgency strip)
 - Click: Pin open (persists until clicked again)
+- When collapsed, urgency distribution still visible
 
-**Label-Based Organization:**
-Labels group streams across types (channels, scratchpads, threads) into meaningful collections:
+**Resize & Persistence:**
+
+- Independent resizable widths for preview (hover) and pinned states
+- Width constraints: min 200px, max 600px
+- 4px draggable resize handle on right edge when visible
+- Widths persisted to localStorage:
+  - `sidebar.width.preview` (default: 260px)
+  - `sidebar.width.pinned` (default: 280px)
+- Hover margin: 15px invisible zone (reduced from 30px to prevent accidental triggers)
+
+### Sidebar Organization: Smart Auto-Sections
+
+**Reference:** `docs/references/mockups/sidebar-organization-exploration.html`
+
+The sidebar uses **Smart Auto-Sections** to surface important information at scale without requiring user-defined labels. This pattern works for 10 streams or 100+ streams.
+
+**Core Principle:** Automatic organization that surfaces what matters, with manual override.
+
+#### View Modes
 
 ```css
-.label-section {
-  margin-bottom: 4px;
-}
-
-.label-header {
+.view-toggle {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  cursor: pointer;
+  gap: 4px;
+  background: hsl(var(--muted));
+  border-radius: 6px;
+  padding: 2px;
 }
 
-.label-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--label-color); /* User-defined */
+.view-toggle-btn.active {
+  background: hsl(var(--card));
+  color: hsl(var(--primary));
 }
 ```
 
-### Conversations Overview (Sidebar Content)
+**Smart View (Default):**
+Auto-organized sections based on activity patterns.
 
-**Stream Items (Enhanced):**
+**All View:**
+Type-based sections (Scratchpads / Channels / DMs) for inventory overview.
+
+#### Smart Sections
+
+**⚡ Important** (max 10 items)
+Auto-populated based on signals that demand attention:
+
+- Unread mentions (@you)
+- Active AI conversations (last 1 hour)
+- Unread messages in pinned streams
+- Recent threads you participated in
+
+Sorted by urgency score. Updates in real-time.
+
+**🕐 Recent** (max 15 items)
+Streams with activity in the last 7 days:
+
+- Any stream you've sent messages in
+- Any stream with new messages (not in Important)
+- Sorted by last activity timestamp
+- Excludes archived/muted streams
+
+Auto-expires after 7 days of inactivity.
+
+**📌 Pinned** (unlimited)
+User-controlled, always visible:
+
+- Manually pinned by user
+- Persists regardless of activity
+- Drag to reorder
+- Right-click to unpin
+
+**📂 Everything Else** (collapsed by default)
+All other streams:
+
+- Click to expand (shows all, scrollable)
+- Use search to find specific items
+- Can switch to "All" view for type-based organization
+- Prevents overwhelming the sidebar
+
+#### Stream Items
 
 ```css
 .stream-item {
   display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 10px;
+  padding: 8px 10px;
   border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.stream-item:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.stream-item.active {
+  background: hsl(var(--primary) / 0.1);
 }
 
 .stream-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
-.stream-preview {
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
+.stream-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--foreground));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.stream-time {
+.stream-preview {
   font-size: 11px;
   color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.stream-time {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
 }
 ```
 
-**Organization:**
+#### Density Modes
 
-- Pinned section at top (user-controlled)
-- Default sort: recent activity
-- Mixed types sorted together
+**Comfortable** (default):
+
+- Shows preview text and metadata
+- 40px item height
+- Better for scanning content
+
+**Compact:**
+
+- Names and indicators only
+- 32px item height
+- Fits ~2x more items on screen
+- Better for navigating large lists
+
+```css
+.sidebar-mockup.compact .stream-item {
+  padding: 6px 10px;
+}
+
+.sidebar-mockup.compact .stream-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.sidebar-mockup.compact .stream-preview {
+  display: none;
+}
+```
+
+#### Quick Filters
+
+- **Unread** - Show only streams with unread messages
+- **Active** - Activity in last 24 hours
+- **Pinned** - Show only pinned streams
+- **Muted toggle** - Hide/show muted streams
+
+#### Migration Path to Labels
+
+When user-defined labels are added:
+
+1. Smart sections remain the default view
+2. View toggle adds "Labels" option (Smart / All / Labels)
+3. Labels appear as badges in Smart view
+4. Filter by label in any view
+5. Unlabeled streams stay in "Uncategorized" section
 
 **Hover Actions:** Pin, Mute, Rename (scratchpads), More menu
 
