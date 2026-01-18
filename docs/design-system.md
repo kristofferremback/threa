@@ -463,19 +463,23 @@ This creates a subtle "golden thread" visual for AI contributions.
 
 **Message Context Menu ("..."):**
 
-All messages (both user and AI) include a context menu button that appears on hover in the top-right corner, similar to Slack's message actions.
+All messages (both user and AI) include a context menu button that appears on hover, aligned with the author name and timestamp in the message header.
 
 ```css
 .message {
   position: relative;
 }
 
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .message-menu-button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
+  margin-left: auto; /* Pushes button to the right */
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
@@ -485,11 +489,11 @@ All messages (both user and AI) include a context menu button that appears on ho
   cursor: pointer;
   transition: all 0.15s;
   box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
-  z-index: 10;
+  flex-shrink: 0;
 }
 
 .message:hover .message-menu-button {
-  display: flex;
+  display: inline-flex;
 }
 
 .message-menu-button:hover {
@@ -500,11 +504,71 @@ All messages (both user and AI) include a context menu button that appears on ho
 
 **Menu icon:** Three vertical dots (•••)
 
+**Dropdown menu styling:**
+
+```css
+.message-context-menu {
+  position: absolute;
+  top: 32px; /* Just below the message header */
+  right: 0; /* Aligned with right edge of message */
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
+  min-width: 200px;
+  z-index: 100;
+  display: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.menu-item:hover {
+  background: hsl(var(--muted));
+}
+
+.menu-item svg {
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+```
+
+**HTML structure:**
+
+```html
+<div class="message">
+  <div class="message-avatar">K</div>
+  <div class="message-content">
+    <div class="message-header">
+      <span class="message-author">Kris</span>
+      <span class="message-time">2:30 PM</span>
+      <button class="message-menu-button">•••</button>
+    </div>
+    <p class="message-text">Message content...</p>
+  </div>
+  <div class="message-context-menu">
+    <!-- Menu items -->
+  </div>
+</div>
+```
+
 **Interaction behavior:**
 
-- **Show button:** Appears on message hover
+- **Show button:** Appears on message hover, inline with author name and timestamp
 - **Open menu:** Click the "..." button
 - **Close menu:** Click the button again OR click outside the menu
+
+**Menu positioning:** The dropdown opens below the message header (`top: 32px`) and aligns with the right edge of the message. This prevents the menu from covering the message content while keeping it visually connected to the header where the button appears.
 
 **Common menu items:**
 
@@ -1125,7 +1189,7 @@ AI messages in the stream have two ways to access the trace: click the message i
 .message-context-menu {
   position: absolute;
   top: 40px;
-  right: 8px;
+  right: 40px; /* Opens to the left of button, not below it */
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -1133,6 +1197,16 @@ AI messages in the stream have two ways to access the trace: click the message i
   box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
   min-width: 200px;
   z-index: 100;
+}
+
+/* Alternative: Position above the message on smaller screens */
+@media (max-width: 480px) {
+  .message-context-menu {
+    top: auto;
+    bottom: 100%;
+    right: 8px;
+    margin-bottom: 8px;
+  }
 }
 
 .menu-item {
@@ -1169,6 +1243,8 @@ AI messages in the stream have two ways to access the trace: click the message i
 - **Open menu:** Click the "..." button to reveal menu
 - **Close menu:** Click the button again OR click outside the menu
 - **Alternative access:** Click message body directly → Opens trace scrolled to response (bypasses menu)
+
+**Menu positioning:** The dropdown opens to the LEFT of the button (`right: 40px`) rather than directly below it. This prevents the menu from covering the message content. On smaller screens (<480px), the menu can optionally appear above the message.
 
 **This is how users view sources:** Sources are not shown prominently in the message view; they're only accessible via the trace modal through either clicking the message body or using "Show trace and sources" from the menu.
 
@@ -1762,6 +1838,589 @@ document.addEventListener("keydown", (e) => {
 .modal-action-btn.active {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
+}
+```
+
+#### Content Rendering & Typography
+
+Content within trace steps follows consistent formatting rules for readability:
+
+**Step Body Text:**
+
+```css
+.trace-step-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: hsl(var(--foreground));
+}
+
+.trace-step-body p {
+  margin-bottom: 12px;
+}
+
+.trace-step-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Preserve whitespace for code/preformatted content */
+.trace-step-body pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Courier New", monospace;
+  font-size: 13px;
+  background: hsl(var(--muted) / 0.5);
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.trace-step-body code {
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Courier New", monospace;
+  font-size: 13px;
+  background: hsl(var(--muted) / 0.5);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.trace-step-body pre code {
+  background: none;
+  padding: 0;
+}
+```
+
+**Tool Results:**
+Tool call results may contain structured data, JSON, or plain text. Format based on content type:
+
+```css
+.tool-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  border-left: 3px solid hsl(200 70% 50%);
+}
+
+.tool-result.json {
+  font-family: "SF Mono", Monaco, monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.tool-result.error {
+  border-left-color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.05);
+}
+```
+
+**Long Content Handling:**
+
+- **Thinking text:** No truncation, full text shown
+- **Tool results:** Show first 500 characters with "Show more" button if longer
+- **Titles:** Truncate with ellipsis at 60 characters
+
+```css
+.truncate-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expand-button {
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: transparent;
+  transition: all 0.15s;
+}
+
+.expand-button:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--primary) / 0.3);
+}
+```
+
+#### Accessibility
+
+The agent trace modal is fully accessible via keyboard and screen readers:
+
+**ARIA Attributes:**
+
+```html
+<!-- Modal overlay -->
+<div
+  id="traceModal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="trace-modal-title"
+  aria-describedby="trace-modal-desc"
+>
+  <!-- Modal header -->
+  <div class="modal-header">
+    <div>
+      <h2 id="trace-modal-title">Agent Session</h2>
+      <div id="trace-modal-desc" class="modal-meta">Ariadne • 6.3s • 5 steps</div>
+    </div>
+
+    <!-- Action buttons with labels -->
+    <button class="modal-action-btn" aria-label="Trace preferences" aria-pressed="false">
+      <!-- Settings icon -->
+    </button>
+
+    <button class="modal-action-btn" aria-label="Close dialog">
+      <!-- Close icon -->
+    </button>
+  </div>
+
+  <!-- Trace steps -->
+  <div class="modal-body" role="region" aria-label="Trace steps">
+    <div class="trace-step" role="article" aria-labelledby="step-1-type">
+      <div class="trace-step-header">
+        <span id="step-1-type" class="trace-step-type thinking"> Thinking </span>
+      </div>
+      <div class="trace-step-body">
+        <!-- Step content -->
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+**Keyboard Navigation:**
+
+- **TAB:** Move focus through interactive elements (settings, close, source links, expand buttons)
+- **SHIFT+TAB:** Move focus backward
+- **ENTER/SPACE:** Activate focused button
+- **ESC:** Close modal
+- **Arrow keys:** Scroll modal content (native browser behavior)
+
+**Focus Management:**
+
+```javascript
+function openModal(highlightStepIndex) {
+  const modal = document.getElementById("traceModal")
+  const closeButton = modal.querySelector('.modal-action-btn[aria-label="Close dialog"]')
+
+  // Store previously focused element
+  const previouslyFocused = document.activeElement
+  modal.dataset.previousFocus = previouslyFocused
+
+  // Show modal
+  modal.classList.add("active")
+  modal.style.display = "flex"
+
+  // Move focus to close button
+  closeButton.focus()
+
+  // Trap focus within modal
+  modal.addEventListener("keydown", trapFocus)
+}
+
+function closeModal() {
+  const modal = document.getElementById("traceModal")
+
+  // Remove focus trap
+  modal.removeEventListener("keydown", trapFocus)
+
+  // Hide modal
+  modal.classList.remove("active")
+  modal.style.display = "none"
+
+  // Restore focus to previous element
+  const previouslyFocused = document.querySelector(`[data-id="${modal.dataset.previousFocus}"]`)
+  if (previouslyFocused) {
+    previouslyFocused.focus()
+  }
+}
+
+function trapFocus(event) {
+  const modal = document.getElementById("traceModal")
+  const focusableElements = modal.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  const firstFocusable = focusableElements[0]
+  const lastFocusable = focusableElements[focusableElements.length - 1]
+
+  if (event.key === "Tab") {
+    if (event.shiftKey) {
+      // SHIFT+TAB
+      if (document.activeElement === firstFocusable) {
+        event.preventDefault()
+        lastFocusable.focus()
+      }
+    } else {
+      // TAB
+      if (document.activeElement === lastFocusable) {
+        event.preventDefault()
+        firstFocusable.focus()
+      }
+    }
+  }
+}
+```
+
+**Screen Reader Announcements:**
+
+```html
+<!-- Live region for status updates -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+  <!-- Announce when sources expand/collapse -->
+  Sources expanded. 3 sources available.
+</div>
+
+<!-- Hidden text for context -->
+<span class="sr-only">Click to view full trace</span>
+```
+
+**Collapsible Sources:**
+
+```html
+<button class="sources-header" aria-expanded="false" aria-controls="sources-list-1">
+  <div class="sources-title">
+    Sources
+    <span class="sources-count">3</span>
+  </div>
+  <!-- Chevron icon -->
+</button>
+
+<div id="sources-list-1" class="sources-list" hidden>
+  <!-- Source items -->
+</div>
+```
+
+#### Responsive Behavior
+
+The trace modal adapts gracefully to different screen sizes:
+
+**Desktop (> 1024px):**
+
+```css
+.modal-dialog {
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+}
+```
+
+**Tablet (768px - 1024px):**
+
+```css
+@media (max-width: 1024px) {
+  .modal-dialog {
+    width: 95%;
+    max-width: 700px;
+    max-height: 90vh;
+  }
+
+  .trace-step {
+    padding: 16px 20px;
+  }
+
+  .modal-header,
+  .modal-footer {
+    padding: 16px 20px;
+  }
+}
+```
+
+**Mobile (< 768px):**
+
+```css
+@media (max-width: 768px) {
+  .modal-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100vh;
+    height: 100vh;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .modal-overlay {
+    padding: 0;
+  }
+
+  .trace-step {
+    padding: 16px;
+  }
+
+  .modal-header,
+  .modal-footer {
+    padding: 12px 16px;
+  }
+
+  .modal-meta {
+    font-size: 11px;
+  }
+
+  /* Stack modal header on mobile */
+  .modal-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .modal-action-buttons {
+    align-self: flex-end;
+  }
+
+  /* Sources section more compact */
+  .sources-results {
+    padding: 8px;
+  }
+
+  .source-item {
+    padding: 8px;
+  }
+}
+```
+
+**Touch Interactions:**
+
+- Touch-friendly button sizes (min 44×44px)
+- No hover states on touch devices
+- Swipe down to close (optional enhancement)
+
+```css
+@media (hover: none) {
+  /* Hide hover hints on touch devices */
+  .session-expand-hint,
+  .message-trace-hint {
+    display: none;
+  }
+
+  /* Always show context menu button on mobile */
+  .message .message-menu-button {
+    display: flex;
+  }
+
+  /* Increase touch target sizes */
+  .modal-action-btn,
+  .message-menu-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+```
+
+#### Edge Cases & Error States
+
+**Empty States:**
+
+**No sources available:**
+
+```html
+<div class="sources-section">
+  <div class="sources-header" aria-disabled="true" style="cursor: default; opacity: 0.5;">
+    <div class="sources-title">
+      <svg class="icon"><!-- Document icon --></svg>
+      Sources
+      <span class="sources-count">0</span>
+    </div>
+  </div>
+  <div class="sources-empty">
+    <p style="font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 8px;">No sources used for this step</p>
+  </div>
+</div>
+```
+
+**No thinking text (immediate tool call):**
+
+```html
+<div class="trace-step tool">
+  <div class="trace-step-header">
+    <span class="trace-step-type tool">
+      <svg class="icon"><!-- Tool icon --></svg>
+      Web Search
+    </span>
+    <span class="trace-step-time">0.3s</span>
+  </div>
+  <!-- No body content, just sources -->
+  <div class="sources-section">
+    <!-- Sources here -->
+  </div>
+</div>
+```
+
+**Error States:**
+
+**Tool call failed:**
+
+```css
+.trace-step.error {
+  background: hsl(var(--destructive) / 0.05);
+  border-left: 3px solid hsl(var(--destructive));
+}
+
+.trace-step-type.error {
+  background: hsl(var(--destructive) / 0.15);
+  color: hsl(var(--destructive));
+}
+```
+
+```html
+<div class="trace-step tool error">
+  <div class="trace-step-header">
+    <span class="trace-step-type error">
+      <svg class="icon"><!-- Alert icon --></svg>
+      Tool Error
+    </span>
+    <span class="trace-step-time">0.1s</span>
+  </div>
+  <div class="trace-step-body">
+    <div class="error-message"><strong>Error:</strong> Failed to fetch search results</div>
+    <details style="margin-top: 8px; font-size: 12px; color: hsl(var(--muted-foreground));">
+      <summary style="cursor: pointer;">Technical details</summary>
+      <pre style="margin-top: 8px;">Network timeout after 5000ms</pre>
+    </details>
+  </div>
+</div>
+```
+
+**Session failed:**
+
+```html
+<div class="agent-session-event failed">
+  <div class="session-status-icon failed">
+    <svg><!-- X icon --></svg>
+  </div>
+  <div class="session-info">
+    <div class="session-status">Session failed</div>
+    <div class="session-meta">2 steps • 1.2s • Error during execution</div>
+  </div>
+</div>
+```
+
+```css
+.agent-session-event.failed {
+  border-color: hsl(var(--destructive) / 0.3);
+  background: hsl(var(--destructive) / 0.05);
+}
+
+.session-status-icon.failed {
+  background: hsl(var(--destructive) / 0.15);
+}
+
+.session-status-icon.failed svg {
+  color: hsl(var(--destructive));
+}
+```
+
+**Long Content:**
+
+**Very long thinking text:**
+
+- Show full content initially
+- If > 1000 characters, consider "See less" collapse option
+
+**Very long tool results:**
+
+```html
+<div class="tool-result">
+  <div class="tool-result-preview">
+    <!-- First 500 characters -->
+    Lorem ipsum dolor sit amet...
+  </div>
+  <button class="expand-button" onclick="expandContent(this)">Show full result (2,453 characters)</button>
+</div>
+```
+
+**Source title truncation:**
+
+```html
+<div class="source-title" title="Very Long Article Title That Exceeds Normal Length And Needs To Be Truncated">
+  Very Long Article Title That Exceeds Normal Length And...
+</div>
+```
+
+```css
+.source-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Show full title on hover */
+.source-item:hover .source-title {
+  white-space: normal;
+  overflow: visible;
+}
+```
+
+**Z-Index Management:**
+
+```css
+/* Ensure proper layering */
+.modal-overlay {
+  z-index: 1000; /* Above everything */
+}
+
+.message-context-menu {
+  z-index: 100; /* Above messages */
+}
+
+.message-menu-button {
+  z-index: 10; /* Above message content */
+}
+
+.tooltip {
+  z-index: 1001; /* Above modal */
+}
+```
+
+**Loading States:**
+
+**Session still running:**
+
+```html
+<div class="agent-session-event running">
+  <div class="session-status-icon running">
+    <!-- Animated spinner -->
+    <svg class="spinner" viewBox="0 0 24 24">
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        stroke-width="3"
+        fill="none"
+        stroke-dasharray="31.4 31.4"
+        stroke-linecap="round"
+      >
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="1s"
+          repeatCount="indefinite"
+        />
+      </circle>
+    </svg>
+  </div>
+  <div class="session-info">
+    <div class="session-status">Session running...</div>
+    <div class="session-meta">3 steps so far • 4.2s elapsed</div>
+  </div>
+</div>
+```
+
+```css
+.session-status-icon.running {
+  background: hsl(var(--primary) / 0.15);
+}
+
+.session-status-icon.running svg {
+  color: hsl(var(--primary));
+  width: 14px;
+  height: 14px;
 }
 ```
 
