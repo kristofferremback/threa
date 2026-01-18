@@ -6,7 +6,8 @@ import { AgentSessionRepository, SessionStatuses } from "../repositories/agent-s
 import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes, CompanionModes } from "@threa/types"
 import { logger } from "./logger"
-import { JobQueueManager, JobQueues } from "./job-queue"
+import { JobQueues } from "./job-queue"
+import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
@@ -49,12 +50,12 @@ export class CompanionHandler implements OutboxHandler {
   readonly listenerId = "companion"
 
   private readonly db: Pool
-  private readonly jobQueue: JobQueueManager
+  private readonly jobQueue: QueueManager
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, jobQueue: JobQueueManager, config?: CompanionHandlerConfig) {
+  constructor(db: Pool, jobQueue: QueueManager, config?: CompanionHandlerConfig) {
     this.db = db
     this.jobQueue = jobQueue
     this.batchSize = config?.batchSize ?? DEFAULT_CONFIG.batchSize

@@ -2,7 +2,8 @@ import type { Pool } from "pg"
 import { OutboxRepository } from "../repositories"
 import type { CommandDispatchedOutboxPayload } from "../repositories/outbox-repository"
 import { logger } from "./logger"
-import { JobQueueManager, JobQueues } from "./job-queue"
+import { JobQueues } from "./job-queue"
+import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
@@ -43,12 +44,12 @@ export class CommandHandler implements OutboxHandler {
   readonly listenerId = "command"
 
   private readonly db: Pool
-  private readonly jobQueue: JobQueueManager
+  private readonly jobQueue: QueueManager
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, jobQueue: JobQueueManager, config?: CommandHandlerConfig) {
+  constructor(db: Pool, jobQueue: QueueManager, config?: CommandHandlerConfig) {
     this.db = db
     this.jobQueue = jobQueue
     this.batchSize = config?.batchSize ?? DEFAULT_CONFIG.batchSize

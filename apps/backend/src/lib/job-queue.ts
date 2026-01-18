@@ -41,6 +41,7 @@ export interface PersonaAgentJobData {
 }
 
 export interface NamingJobData {
+  workspaceId: string
   streamId: string
   /** If true, must generate a name (no NOT_ENOUGH_CONTEXT escape). Set when message is from agent. */
   requireName: boolean
@@ -58,7 +59,7 @@ export interface BoundaryExtractionJobData {
 }
 
 export interface MemoBatchCheckJobData {
-  // Empty - cron job just triggers the check
+  workspaceId: string // Use "system" for system-wide cron job
 }
 
 export interface MemoBatchProcessJobData {

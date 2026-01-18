@@ -48,11 +48,7 @@ import { Researcher } from "./agents/researcher"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
-import {
-  createMemoBatchCheckWorker,
-  createMemoBatchProcessWorker,
-  scheduleMemoBatchCheck,
-} from "./workers/memo-batch-worker"
+import { createMemoBatchCheckWorker, createMemoBatchProcessWorker } from "./workers/memo-batch-worker"
 import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
@@ -68,14 +64,16 @@ import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
-import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
+import { createQueueManager, type QueueManager } from "./lib/queue-manager"
+import { QueueRepository } from "./repositories/queue-repository"
+import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 
 export interface ServerInstance {
   server: Server
   io: SocketIOServer
   pools: DatabasePools
-  jobQueue: JobQueueManager
+  jobQueue: QueueManager
   port: number
   stop: () => Promise<void>
 }
@@ -125,7 +123,11 @@ export async function startServer(): Promise<ServerInstance> {
   const searchService = new SearchService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.)
-  const jobQueue = createJobQueue(pool)
+  const jobQueue = createQueueManager({
+    pool,
+    queueRepository: QueueRepository,
+    tokenPoolRepository: TokenPoolRepository,
+  })
 
   // Create helpers for agents
   // This adapter accepts markdown content and converts to JSON+markdown format
@@ -270,10 +272,11 @@ export async function startServer(): Promise<ServerInstance> {
   const commandWorker = createCommandWorker({ pool, commandRegistry })
   jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
 
+  // Register handlers before starting
   await jobQueue.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
-  await scheduleMemoBatchCheck(jobQueue)
+  jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" })
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })

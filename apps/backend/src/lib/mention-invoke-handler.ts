@@ -5,7 +5,8 @@ import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "./logger"
-import { JobQueueManager, JobQueues } from "./job-queue"
+import { JobQueues } from "./job-queue"
+import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
@@ -46,12 +47,12 @@ export class MentionInvokeHandler implements OutboxHandler {
   readonly listenerId = "mention-invoke"
 
   private readonly db: Pool
-  private readonly jobQueue: JobQueueManager
+  private readonly jobQueue: QueueManager
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, jobQueue: JobQueueManager, config?: MentionInvokeHandlerConfig) {
+  constructor(db: Pool, jobQueue: QueueManager, config?: MentionInvokeHandlerConfig) {
     this.db = db
     this.jobQueue = jobQueue
     this.batchSize = config?.batchSize ?? DEFAULT_CONFIG.batchSize
