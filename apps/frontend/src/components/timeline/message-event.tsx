@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { usePendingMessages, usePanel } from "@/contexts"
+import { usePendingMessages, usePanel, createDraftPanelId } from "@/contexts"
 import { useActors } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
@@ -116,7 +116,7 @@ function SentMessageEvent({
   hideActions,
   isHighlighted,
 }: MessageEventInnerProps) {
-  const { openPanels, getPanelUrl, openThreadDraft } = usePanel()
+  const { panelId, getPanelUrl } = usePanel()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -129,12 +129,11 @@ function SentMessageEvent({
   }, [isHighlighted])
 
   // Don't show reply button if we're viewing this message as the thread parent
-  const isParentOfCurrentThread = openPanels.some((p) => p.streamId === threadId)
+  const isParentOfCurrentThread = panelId === threadId
 
-  const handleReplyClick = () => {
-    // Only used when no thread exists yet - opens draft UI
-    openThreadDraft(streamId, payload.messageId)
-  }
+  // Create draft panel URL for messages that don't have a thread yet
+  const draftPanelId = createDraftPanelId(streamId, payload.messageId)
+  const draftPanelUrl = getPanelUrl(draftPanelId)
 
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
   // Shows on hover when no thread exists yet, or always when thread exists
@@ -151,13 +150,13 @@ function SentMessageEvent({
         </Link>
       )
     ) : (
-      // Show "Reply in thread" on hover when no thread exists
-      <button
-        onClick={handleReplyClick}
-        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity text-left"
+      // Show "Reply in thread" on hover when no thread exists - opens draft panel
+      <Link
+        to={draftPanelUrl}
+        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
       >
         Reply in thread
-      </button>
+      </Link>
     )
   ) : null
 

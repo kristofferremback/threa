@@ -462,7 +462,7 @@ export function AIUsageAdminPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center gap-3 border-b px-4">
+      <header className="flex h-11 items-center gap-3 border-b px-4">
         <Link to={`/w/${workspaceId}`}>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <ArrowLeft className="h-4 w-4" />

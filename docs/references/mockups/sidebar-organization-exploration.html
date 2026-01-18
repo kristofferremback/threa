@@ -1,0 +1,1301 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sidebar Organization Exploration - Threa Design System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --card-foreground: 30 10% 12%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 15% 93%;
+        --secondary-foreground: 30 10% 25%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --accent: 38 70% 55%;
+        --accent-foreground: 30 10% 12%;
+        --border: 35 15% 88%;
+        --input: 35 15% 88%;
+        --ring: 38 65% 50%;
+      }
+
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        margin: 0;
+        padding: 24px;
+      }
+
+      .container {
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      .header {
+        margin-bottom: 32px;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .subtitle {
+        font-size: 14px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+      }
+
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+        margin-bottom: 48px;
+      }
+
+      .scenario {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 20px;
+      }
+
+      .scenario-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .scenario-desc {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+      }
+
+      .challenge-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .challenge-list li {
+        padding: 6px 0;
+        font-size: 12px;
+        color: hsl(var(--foreground));
+      }
+
+      .challenge-list li::before {
+        content: "⚠️ ";
+        margin-right: 6px;
+      }
+
+      .section-header {
+        margin: 48px 0 24px;
+      }
+
+      .section-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .section-subtitle {
+        font-size: 14px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* Sidebar mockup styles */
+      .sidebar-mockup {
+        width: 280px;
+        height: 600px;
+        background: hsl(35 15% 96%);
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+      }
+
+      .color-strip {
+        width: 6px;
+        background: linear-gradient(
+          to bottom,
+          hsl(var(--primary)),
+          hsl(0 84% 60%),
+          hsl(200 70% 50%),
+          hsl(var(--muted))
+        );
+        flex-shrink: 0;
+      }
+
+      .sidebar-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid hsl(var(--border));
+        flex-shrink: 0;
+      }
+
+      .sidebar-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--background));
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .sidebar-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .view-toggle {
+        display: flex;
+        gap: 4px;
+        background: hsl(var(--muted));
+        border-radius: 6px;
+        padding: 2px;
+      }
+
+      .view-toggle-btn {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .view-toggle-btn.active {
+        background: hsl(var(--card));
+        color: hsl(var(--primary));
+      }
+
+      .filter-btn {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        background: hsl(var(--muted));
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .filter-btn:hover {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .sidebar-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+
+      /* Smart sections */
+      .section {
+        margin-bottom: 16px;
+      }
+
+      .section-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        border-radius: 6px;
+        transition: all 0.15s;
+      }
+
+      .section-label:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .section-count {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: hsl(var(--muted));
+        border-radius: 10px;
+      }
+
+      .stream-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .stream-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+
+      .stream-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .stream-item.active {
+        background: hsl(var(--primary) / 0.1);
+      }
+
+      .stream-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+
+      .stream-avatar.channel {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+      }
+
+      .stream-avatar.scratchpad {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .stream-avatar.dm {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+        font-size: 11px;
+      }
+
+      .stream-content {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .stream-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .stream-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stream-time {
+        font-size: 10px;
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+      }
+
+      .stream-preview {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+
+      .stream-indicators {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .activity-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .activity-dot.gold {
+        background: hsl(var(--primary));
+      }
+
+      .activity-dot.red {
+        background: hsl(0 84% 60%);
+      }
+
+      .activity-dot.blue {
+        background: hsl(200 70% 50%);
+      }
+
+      .unread-badge {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        font-size: 9px;
+        font-weight: 600;
+        padding: 2px 5px;
+        border-radius: 10px;
+        min-width: 16px;
+        text-align: center;
+      }
+
+      /* Compact mode */
+      .sidebar-mockup.compact .stream-item {
+        padding: 6px 10px;
+      }
+
+      .sidebar-mockup.compact .stream-avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+      }
+
+      .sidebar-mockup.compact .stream-name {
+        font-size: 12px;
+      }
+
+      .sidebar-mockup.compact .stream-preview {
+        display: none;
+      }
+
+      .sidebar-mockup.compact .stream-time {
+        display: none;
+      }
+
+      /* Strategy cards */
+      .strategy-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 24px;
+        margin-bottom: 48px;
+      }
+
+      .strategy-card {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 24px;
+      }
+
+      .strategy-card.recommended {
+        border-color: hsl(var(--primary) / 0.5);
+        box-shadow: 0 0 0 2px hsl(var(--primary) / 0.1);
+      }
+
+      .strategy-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .strategy-badge {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .strategy-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .strategy-desc {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px;
+      }
+
+      .pros-cons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .pros-cons h4 {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+
+      .pros-cons ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .pros-cons li {
+        font-size: 12px;
+        padding: 4px 0;
+        padding-left: 16px;
+        position: relative;
+      }
+
+      .pros-cons li::before {
+        position: absolute;
+        left: 0;
+      }
+
+      .pros li::before {
+        content: "✓";
+        color: hsl(142 76% 36%);
+      }
+
+      .cons li::before {
+        content: "×";
+        color: hsl(0 84% 60%);
+      }
+
+      .mockup-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+        margin-top: 24px;
+      }
+
+      .mockup-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .mockup-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 12px;
+        text-align: center;
+      }
+
+      .collapsed-indicator {
+        font-size: 10px;
+        color: hsl(var(--muted-foreground));
+        text-align: center;
+        padding: 4px;
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Sidebar Organization Exploration</h1>
+        <p class="subtitle">How to handle different scales of streams without user-defined labels</p>
+      </div>
+
+      <!-- Problem Space -->
+      <div class="section-header">
+        <h2 class="section-title">Problem Space</h2>
+        <p class="section-subtitle">Four scenarios that need different organizational approaches</p>
+      </div>
+
+      <div class="scenario-grid">
+        <div class="scenario">
+          <div class="scenario-title">Scenario 1: No Labels, High Volume</div>
+          <div class="scenario-desc">30+ scratchpads, 30+ channels, 30+ DMs. No organization yet.</div>
+          <ul class="challenge-list">
+            <li>90+ items in flat list = unusable</li>
+            <li>Can't find anything without search</li>
+            <li>No way to see what's important NOW</li>
+            <li>Scrolling fatigue</li>
+          </ul>
+        </div>
+
+        <div class="scenario">
+          <div class="scenario-title">Scenario 2: Few Labels, Sparse</div>
+          <div class="scenario-desc">3-4 labels with 2-5 streams each. Light usage.</div>
+          <ul class="challenge-list">
+            <li>Current design works fine</li>
+            <li>But labels might feel forced</li>
+            <li>Empty sections look sparse</li>
+          </ul>
+        </div>
+
+        <div class="scenario">
+          <div class="scenario-title">Scenario 3: Dense Labels</div>
+          <div class="scenario-desc">A few labels but 20+ streams per label. Power user.</div>
+          <ul class="challenge-list">
+            <li>Sections become too long</li>
+            <li>Need nested scrolling or collapse</li>
+            <li>Color strip loses effectiveness</li>
+            <li>Need density controls</li>
+          </ul>
+        </div>
+
+        <div class="scenario">
+          <div class="scenario-title">Scenario 4: Many Heavy Labels</div>
+          <div class="scenario-desc">10+ labels with 10+ streams each. Organization sprawl.</div>
+          <ul class="challenge-list">
+            <li>Over-organization problem</li>
+            <li>Can't see overview</li>
+            <li>Needs filter/search to be useful</li>
+            <li>Quick switcher becomes essential</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Strategies -->
+      <div class="section-header">
+        <h2 class="section-title">Organizational Strategies</h2>
+        <p class="section-subtitle">Different approaches to surface important information at scale</p>
+      </div>
+
+      <div class="strategy-grid">
+        <div class="strategy-card recommended">
+          <div class="strategy-header">
+            <div>
+              <div class="strategy-title">Smart Auto-Sections</div>
+            </div>
+            <div class="strategy-badge">Recommended</div>
+          </div>
+          <div class="strategy-desc">
+            Automatically organize by activity patterns and user behavior, without requiring explicit organization.
+          </div>
+          <div class="pros-cons">
+            <div class="pros">
+              <h4>Pros</h4>
+              <ul>
+                <li>Zero setup required</li>
+                <li>Surfaces important items</li>
+                <li>Works before labels exist</li>
+                <li>Adapts to usage patterns</li>
+              </ul>
+            </div>
+            <div class="cons">
+              <h4>Cons</h4>
+              <ul>
+                <li>Less predictable</li>
+                <li>May hide wanted items</li>
+                <li>Needs good algorithms</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-header">
+            <div>
+              <div class="strategy-title">Type-Based Sections</div>
+            </div>
+          </div>
+          <div class="strategy-desc">
+            Group by stream type (Scratchpads / Channels / DMs) with collapsible sections.
+          </div>
+          <div class="pros-cons">
+            <div class="pros">
+              <h4>Pros</h4>
+              <ul>
+                <li>Predictable structure</li>
+                <li>Easy to understand</li>
+                <li>Natural categories</li>
+                <li>Good for inventory view</li>
+              </ul>
+            </div>
+            <div class="cons">
+              <h4>Cons</h4>
+              <ul>
+                <li>Doesn't surface priority</li>
+                <li>Still need to scan all</li>
+                <li>Type may not matter</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-header">
+            <div>
+              <div class="strategy-title">View Modes + Filters</div>
+            </div>
+          </div>
+          <div class="strategy-desc">
+            Multiple view modes (Recent, Type, Alphabetical) with filter controls to show different subsets.
+          </div>
+          <div class="pros-cons">
+            <div class="pros">
+              <h4>Pros</h4>
+              <ul>
+                <li>Flexible for power users</li>
+                <li>Can customize view</li>
+                <li>Works at any scale</li>
+                <li>Discoverable</li>
+              </ul>
+            </div>
+            <div class="cons">
+              <h4>Cons</h4>
+              <ul>
+                <li>More UI complexity</li>
+                <li>Requires user action</li>
+                <li>May be overwhelming</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-header">
+            <div>
+              <div class="strategy-title">Density Modes</div>
+            </div>
+          </div>
+          <div class="strategy-desc">
+            Toggle between compact (names only) and comfortable (with previews) to fit more items in viewport.
+          </div>
+          <div class="pros-cons">
+            <div class="pros">
+              <h4>Pros</h4>
+              <ul>
+                <li>Fits more on screen</li>
+                <li>User preference</li>
+                <li>Quick toggle</li>
+                <li>Reduces scrolling</li>
+              </ul>
+            </div>
+            <div class="cons">
+              <h4>Cons</h4>
+              <ul>
+                <li>Loses context in compact</li>
+                <li>Doesn't solve organization</li>
+                <li>Just a display tweak</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Mockups -->
+      <div class="section-header">
+        <h2 class="section-title">Recommended Approach: Smart Sections</h2>
+        <p class="section-subtitle">Automatic organization that surfaces what matters, with manual override</p>
+      </div>
+
+      <div class="mockup-grid">
+        <!-- Default View -->
+        <div class="mockup-wrapper">
+          <div class="mockup-label">Default View (Smart Sections)</div>
+          <div class="sidebar-mockup">
+            <div class="color-strip"></div>
+            <div class="sidebar-content">
+              <div class="sidebar-header">
+                <div class="sidebar-search">
+                  <span>🔍</span>
+                  <span>Search or ⌘K</span>
+                </div>
+                <div class="sidebar-controls">
+                  <div class="view-toggle">
+                    <div class="view-toggle-btn active">Smart</div>
+                    <div class="view-toggle-btn">All</div>
+                  </div>
+                  <div class="filter-btn">Unread: 12</div>
+                </div>
+              </div>
+              <div class="sidebar-body">
+                <!-- Important Section -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>⚡ Important</span>
+                    <span class="section-count">4</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item active">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">engineering</div>
+                          <div class="stream-indicators">
+                            <div class="activity-dot red"></div>
+                            <div class="unread-badge">3</div>
+                          </div>
+                        </div>
+                        <div class="stream-preview"><strong>@you:</strong> Can you review?</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar dm">JD</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">Jane Doe</div>
+                          <div class="stream-indicators">
+                            <div class="activity-dot gold"></div>
+                            <div class="unread-badge">2</div>
+                          </div>
+                        </div>
+                        <div class="stream-preview">Quick question about...</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Recent Section -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>🕐 Recent</span>
+                    <span class="section-count">8</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">Q4 Planning</div>
+                          <div class="stream-time">2h</div>
+                        </div>
+                        <div class="stream-preview">Working on roadmap with Ariadne...</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">design-system</div>
+                          <div class="stream-time">4h</div>
+                        </div>
+                        <div class="stream-preview">Updated the color palette...</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">Meeting Notes</div>
+                          <div class="stream-time">6h</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pinned Section -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>📌 Pinned</span>
+                    <span class="section-count">3</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">general</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Ideas</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Everything Else Collapsed -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>📂 Everything Else</span>
+                    <span class="section-count">47</span>
+                  </div>
+                  <div class="collapsed-indicator">Click to expand or use search</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- All View (Type-Based) -->
+        <div class="mockup-wrapper">
+          <div class="mockup-label">All View (Type-Based)</div>
+          <div class="sidebar-mockup">
+            <div class="color-strip"></div>
+            <div class="sidebar-content">
+              <div class="sidebar-header">
+                <div class="sidebar-search">
+                  <span>🔍</span>
+                  <span>Search or ⌘K</span>
+                </div>
+                <div class="sidebar-controls">
+                  <div class="view-toggle">
+                    <div class="view-toggle-btn">Smart</div>
+                    <div class="view-toggle-btn active">All</div>
+                  </div>
+                  <div class="filter-btn">Type ▾</div>
+                </div>
+              </div>
+              <div class="sidebar-body">
+                <!-- Scratchpads -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>📝 Scratchpads</span>
+                    <span class="section-count">32</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Q4 Planning</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Meeting Notes</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Ideas</div>
+                      </div>
+                    </div>
+                    <div class="collapsed-indicator">+ 29 more scratchpads</div>
+                  </div>
+                </div>
+
+                <!-- Channels -->
+                <div class="section">
+                  <div class="section-label">
+                    <span># Channels</span>
+                    <span class="section-count">18</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">engineering</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">general</div>
+                      </div>
+                    </div>
+                    <div class="collapsed-indicator">+ 16 more channels</div>
+                  </div>
+                </div>
+
+                <!-- DMs -->
+                <div class="section">
+                  <div class="section-label">
+                    <span>💬 Direct Messages</span>
+                    <span class="section-count">12</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar dm">JD</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Jane Doe</div>
+                      </div>
+                    </div>
+                    <div class="collapsed-indicator">+ 11 more DMs</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Compact Mode -->
+        <div class="mockup-wrapper">
+          <div class="mockup-label">Compact Density Mode</div>
+          <div class="sidebar-mockup compact">
+            <div class="color-strip"></div>
+            <div class="sidebar-content">
+              <div class="sidebar-header">
+                <div class="sidebar-search">
+                  <span>🔍</span>
+                  <span>Search</span>
+                </div>
+                <div class="sidebar-controls">
+                  <div class="view-toggle">
+                    <div class="view-toggle-btn active">Smart</div>
+                    <div class="view-toggle-btn">All</div>
+                  </div>
+                  <div class="filter-btn">Compact</div>
+                </div>
+              </div>
+              <div class="sidebar-body">
+                <div class="section">
+                  <div class="section-label">
+                    <span>⚡ Important</span>
+                    <span class="section-count">4</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item active">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">engineering</div>
+                          <div class="stream-indicators">
+                            <div class="unread-badge">3</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar dm">JD</div>
+                      <div class="stream-content">
+                        <div class="stream-header">
+                          <div class="stream-name">Jane Doe</div>
+                          <div class="stream-indicators">
+                            <div class="unread-badge">2</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Q4 Planning</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">design-system</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-label">
+                    <span>🕐 Recent</span>
+                    <span class="section-count">12</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Meeting Notes</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">backend</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar dm">AS</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Alice Smith</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">API Design</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">frontend</div>
+                      </div>
+                    </div>
+                    <div class="collapsed-indicator">+ 7 more recent</div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-label">
+                    <span>📌 Pinned</span>
+                    <span class="section-count">3</span>
+                  </div>
+                  <div class="stream-list">
+                    <div class="stream-item">
+                      <div class="stream-avatar channel">#</div>
+                      <div class="stream-content">
+                        <div class="stream-name">general</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Ideas</div>
+                      </div>
+                    </div>
+                    <div class="stream-item">
+                      <div class="stream-avatar scratchpad">📝</div>
+                      <div class="stream-content">
+                        <div class="stream-name">Resources</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-label">
+                    <span>📂 Everything Else</span>
+                    <span class="section-count">47</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Implementation Details -->
+      <div class="section-header">
+        <h2 class="section-title">Implementation Details</h2>
+        <p class="section-subtitle">How the smart sections algorithm works</p>
+      </div>
+
+      <div class="strategy-grid">
+        <div class="strategy-card">
+          <div class="strategy-title">⚡ Important Section</div>
+          <div class="strategy-desc">Auto-populated based on signals that demand attention:</div>
+          <ul class="challenge-list">
+            <li>Unread mentions (@you)</li>
+            <li>Active AI conversations (last 1 hour)</li>
+            <li>Unread messages in pinned streams</li>
+            <li>Recent threads you participated in</li>
+          </ul>
+          <div style="margin-top: 12px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            Max 10 items. Sorted by urgency score.
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">🕐 Recent Section</div>
+          <div class="strategy-desc">Streams with activity in the last 7 days:</div>
+          <ul class="challenge-list">
+            <li>Any stream you've sent messages in</li>
+            <li>Any stream with new messages (not in Important)</li>
+            <li>Sorted by last activity timestamp</li>
+            <li>Excludes archived/muted streams</li>
+          </ul>
+          <div style="margin-top: 12px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            Max 15 items. Auto-expires after 7 days.
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">📌 Pinned Section</div>
+          <div class="strategy-desc">User-controlled, always visible:</div>
+          <ul class="challenge-list">
+            <li>Manually pinned by user</li>
+            <li>Persists regardless of activity</li>
+            <li>Drag to reorder</li>
+            <li>Right-click to unpin</li>
+          </ul>
+          <div style="margin-top: 12px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            No limit. User decides.
+          </div>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">📂 Everything Else</div>
+          <div class="strategy-desc">All other streams, collapsed by default:</div>
+          <ul class="challenge-list">
+            <li>Streams not in above sections</li>
+            <li>Click to expand (shows all, scrollable)</li>
+            <li>Use search to find specific items</li>
+            <li>Can switch to "All" view for inventory</li>
+          </ul>
+          <div style="margin-top: 12px; font-size: 12px; color: hsl(var(--muted-foreground))">
+            Prevents overwhelming the sidebar.
+          </div>
+        </div>
+      </div>
+
+      <!-- Key Interactions -->
+      <div class="section-header">
+        <h2 class="section-title">Key Interactions</h2>
+        <p class="section-subtitle">How users navigate and manage their sidebar</p>
+      </div>
+
+      <div class="strategy-grid">
+        <div class="strategy-card">
+          <div class="strategy-title">Quick Switcher (⌘K)</div>
+          <div class="strategy-desc">Essential for navigating at scale. Fuzzy search across all streams.</div>
+          <ul style="list-style: none; padding: 0; margin-top: 12px">
+            <li style="font-size: 12px; padding: 4px 0">🔍 Type to search by name or content</li>
+            <li style="font-size: 12px; padding: 4px 0">⚡ Shows recent and important first</li>
+            <li style="font-size: 12px; padding: 4px 0">↑↓ Navigate, ↵ Open, ⌘↵ New tab</li>
+            <li style="font-size: 12px; padding: 4px 0">💡 Learns from usage patterns</li>
+          </ul>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">View Toggle</div>
+          <div class="strategy-desc">Switch between smart and inventory views instantly.</div>
+          <ul style="list-style: none; padding: 0; margin-top: 12px">
+            <li style="font-size: 12px; padding: 4px 0">📊 <strong>Smart:</strong> Auto-organized by importance</li>
+            <li style="font-size: 12px; padding: 4px 0">📁 <strong>All:</strong> Type-based sections (inventory)</li>
+            <li style="font-size: 12px; padding: 4px 0">💾 Preference saved per user</li>
+          </ul>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">Density Toggle</div>
+          <div class="strategy-desc">Adjust information density to fit your workflow.</div>
+          <ul style="list-style: none; padding: 0; margin-top: 12px">
+            <li style="font-size: 12px; padding: 4px 0">📏 <strong>Comfortable:</strong> Preview + metadata</li>
+            <li style="font-size: 12px; padding: 4px 0">📐 <strong>Compact:</strong> Names + indicators only</li>
+            <li style="font-size: 12px; padding: 4px 0">🎯 Compact fits ~2x more items on screen</li>
+          </ul>
+        </div>
+
+        <div class="strategy-card">
+          <div class="strategy-title">Filter by Status</div>
+          <div class="strategy-desc">Quick filters for common queries without search.</div>
+          <ul style="list-style: none; padding: 0; margin-top: 12px">
+            <li style="font-size: 12px; padding: 4px 0">🔴 <strong>Unread:</strong> Show only streams with unread</li>
+            <li style="font-size: 12px; padding: 4px 0">💬 <strong>Active:</strong> Activity in last 24h</li>
+            <li style="font-size: 12px; padding: 4px 0">📌 <strong>Pinned:</strong> Show only pinned</li>
+            <li style="font-size: 12px; padding: 4px 0">🔕 Toggle to hide muted streams</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Migration Path -->
+      <div class="section-header">
+        <h2 class="section-title">Migration Path to Labels</h2>
+        <p class="section-subtitle">How this system evolves when user-defined labels are added</p>
+      </div>
+
+      <div class="strategy-card" style="max-width: 800px; margin: 0 auto">
+        <div class="strategy-title">Phase 1: Smart Sections (Now)</div>
+        <div class="strategy-desc" style="margin-bottom: 24px">
+          Automatic organization without user setup. Works immediately for new users.
+        </div>
+
+        <div class="strategy-title">Phase 2: Add Label Support</div>
+        <div class="strategy-desc" style="margin-bottom: 12px">
+          When labels are implemented, they integrate seamlessly:
+        </div>
+        <ul style="list-style: none; padding: 0; margin-bottom: 24px">
+          <li style="font-size: 13px; padding: 4px 0">1️⃣ Smart sections remain the default view</li>
+          <li style="font-size: 13px; padding: 4px 0">2️⃣ Users can optionally assign labels to streams</li>
+          <li style="font-size: 13px; padding: 4px 0">3️⃣ View toggle adds "Labels" option (Smart / All / Labels)</li>
+          <li style="font-size: 13px; padding: 4px 0">4️⃣ Labels view shows user-defined sections</li>
+          <li style="font-size: 13px; padding: 4px 0">5️⃣ Unlabeled streams stay in "Uncategorized" section</li>
+        </ul>
+
+        <div class="strategy-title">Phase 3: Hybrid Mode</div>
+        <div class="strategy-desc" style="margin-bottom: 12px">
+          Best of both worlds - smart sections with label awareness:
+        </div>
+        <ul style="list-style: none; padding: 0">
+          <li style="font-size: 13px; padding: 4px 0">
+            🎯 Important section shows labeled context (e.g., "[Work] #engineering" instead of just "#engineering")
+          </li>
+          <li style="font-size: 13px; padding: 4px 0">🏷️ Label badges appear on stream items in Smart view</li>
+          <li style="font-size: 13px; padding: 4px 0">🔍 Quick switcher searches across labels</li>
+          <li style="font-size: 13px; padding: 4px 0">⚙️ Filter by label in any view</li>
+        </ul>
+      </div>
+
+      <!-- Summary -->
+      <div class="section-header">
+        <h2 class="section-title">Summary & Recommendation</h2>
+      </div>
+
+      <div class="strategy-card" style="max-width: 800px; margin: 0 auto">
+        <div class="strategy-title">Recommended Implementation</div>
+        <div class="strategy-desc" style="margin-bottom: 16px">
+          Build <strong>Smart Auto-Sections</strong> as the foundation, with progressive enhancement:
+        </div>
+
+        <div style="background: hsl(var(--primary) / 0.1); padding: 16px; border-radius: 8px; margin-bottom: 16px">
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: hsl(var(--primary))">
+            ✓ Solves all four scenarios
+          </div>
+          <ul style="list-style: none; padding: 0; margin: 0">
+            <li style="font-size: 12px; padding: 4px 0">
+              <strong>Scenario 1 (90+ items):</strong> Smart sections surface what matters, rest collapses
+            </li>
+            <li style="font-size: 12px; padding: 4px 0">
+              <strong>Scenario 2 (few items):</strong> Works fine, no forced organization
+            </li>
+            <li style="font-size: 12px; padding: 4px 0">
+              <strong>Scenario 3 (dense sections):</strong> Compact mode + filters handle scale
+            </li>
+            <li style="font-size: 12px; padding: 4px 0">
+              <strong>Scenario 4 (many labels):</strong> Quick switcher becomes primary nav
+            </li>
+          </ul>
+        </div>
+
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px; margin-top: 20px">Core Features:</div>
+        <ol style="font-size: 12px; padding-left: 20px; margin: 0; line-height: 1.8">
+          <li><strong>⚡ Important section</strong> - Mentions, AI activity, pinned unread (max 10)</li>
+          <li><strong>🕐 Recent section</strong> - Activity in last 7 days (max 15)</li>
+          <li><strong>📌 Pinned section</strong> - User-controlled</li>
+          <li><strong>📂 Everything Else</strong> - Collapsed by default, click to expand</li>
+          <li><strong>View toggle</strong> - Smart (default) / All (type-based)</li>
+          <li><strong>Density toggle</strong> - Comfortable / Compact</li>
+          <li><strong>Quick filters</strong> - Unread, Active, Pinned</li>
+          <li><strong>Quick switcher</strong> - ⌘K for fast navigation at scale</li>
+        </ol>
+
+        <div style="margin-top: 20px; padding: 12px; background: hsl(var(--muted)); border-radius: 8px">
+          <div
+            style="
+              font-size: 11px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-bottom: 6px;
+            "
+          >
+            Migration path
+          </div>
+          <div style="font-size: 12px; color: hsl(var(--muted-foreground))">
+            When labels are added later, they integrate as an additional view mode without disrupting existing patterns.
+            Smart sections remain useful even with labels, providing automatic prioritization on top of manual
+            organization.
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

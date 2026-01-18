@@ -46,6 +46,9 @@ export interface MessageComposerProps {
 
   /** Called when expand button is clicked to open document editor */
   onExpandClick?: () => void
+
+  /** Auto-focus the editor when mounted */
+  autoFocus?: boolean
 }
 
 export function MessageComposer({
@@ -68,6 +71,7 @@ export function MessageComposer({
   className,
   messageSendMode = "enter",
   onExpandClick,
+  autoFocus = false,
 }: MessageComposerProps) {
   const isDisabled = disabled || isSubmitting
 
@@ -143,6 +147,7 @@ export function MessageComposer({
                   messageSendMode={messageSendMode}
                   showFormattingToolbar
                   onAttachClick={handleAttachClick}
+                  autoFocus={autoFocus}
                 />
               </div>
 

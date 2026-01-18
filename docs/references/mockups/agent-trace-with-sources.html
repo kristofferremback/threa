@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Trace with Sources & References</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ========================================
+         GOLDEN THREAD THEME
+         ======================================== */
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --secondary: 35 15% 93%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+        --success: 142 76% 36%;
+        --destructive: 0 84% 60%;
+      }
+
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --secondary: 30 10% 18%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        line-height: 1.6;
+        padding: 40px 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+
+      .subtitle {
+        font-size: 16px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 48px;
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        margin-bottom: 48px;
+      }
+
+      .demo-panel {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 24px;
+      }
+
+      .panel-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      /* ========================================
+         MESSAGE STREAM
+         ======================================== */
+      .message {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+
+      .message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .message.ai .message-avatar {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+      }
+
+      .message-content {
+        flex: 1;
+        padding-top: 2px;
+      }
+
+      .message-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .message-author {
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .message.ai .message-author {
+        color: hsl(var(--primary));
+      }
+
+      .message-time {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .message-text {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .message.ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+        margin-left: -24px;
+        margin-right: -24px;
+        padding: 16px 24px;
+        border-left: 3px solid hsl(var(--primary));
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .message.ai:hover {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.1) 0%, transparent 100%);
+      }
+
+      .message-trace-hint {
+        font-size: 11px;
+        color: hsl(var(--primary));
+        opacity: 0;
+        transition: opacity 0.15s;
+        margin-top: 4px;
+      }
+
+      .message.ai:hover .message-trace-hint {
+        opacity: 1;
+      }
+
+      /* ========================================
+         AGENT SESSION EVENT
+         ======================================== */
+      .agent-session-event {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 20px;
+        font-size: 13px;
+      }
+
+      .agent-session-event:hover {
+        background: hsl(var(--muted) / 0.7);
+        border-color: hsl(var(--primary) / 0.3);
+      }
+
+      .session-status-icon {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .session-status-icon.complete {
+        background: hsl(var(--success) / 0.15);
+        border-radius: 50%;
+      }
+
+      .session-status-icon.complete svg {
+        color: hsl(var(--success));
+        width: 14px;
+        height: 14px;
+      }
+
+      .session-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .session-primary {
+        font-weight: 500;
+        color: hsl(var(--foreground));
+        margin-bottom: 2px;
+      }
+
+      .session-secondary {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .session-expand-hint {
+        font-size: 11px;
+        color: hsl(var(--primary));
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+
+      .agent-session-event:hover .session-expand-hint {
+        opacity: 1;
+      }
+
+      /* ========================================
+         MODAL
+         ======================================== */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: hsl(0 0% 0% / 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.2s;
+      }
+
+      .modal-overlay.active {
+        display: flex;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .modal-dialog {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 16px;
+        width: 90%;
+        max-width: 800px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 24px 48px hsl(0 0% 0% / 0.3);
+        animation: slideUp 0.25s ease-out;
+      }
+
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .modal-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+
+      .modal-title {
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .modal-meta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-top: 4px;
+      }
+
+      .modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .modal-action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        color: hsl(var(--muted-foreground));
+        position: relative;
+      }
+
+      .modal-action-btn:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .modal-action-btn.active {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .tooltip {
+        position: absolute;
+        top: -32px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: hsl(var(--foreground));
+        color: hsl(var(--background));
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+
+      .modal-action-btn:hover .tooltip {
+        opacity: 1;
+      }
+
+      .modal-close {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .modal-close:hover {
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .modal-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+      }
+
+      .modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* ========================================
+         TRACE STEPS
+         ======================================== */
+      .trace-step {
+        padding: 20px 24px;
+        border-bottom: 1px solid hsl(var(--border));
+        animation: stepFadeIn 0.3s ease-out;
+        scroll-margin-top: 20px;
+      }
+
+      .trace-step:last-child {
+        border-bottom: none;
+      }
+
+      .trace-step.highlighted {
+        background: hsl(var(--primary) / 0.08);
+        animation: highlight-flash 2s ease-out;
+      }
+
+      @keyframes highlight-flash {
+        0%,
+        100% {
+          background: hsl(var(--primary) / 0.08);
+        }
+        50% {
+          background: hsl(var(--primary) / 0.15);
+        }
+      }
+
+      @keyframes stepFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .trace-step.thinking {
+        background: hsl(var(--primary) / 0.03);
+      }
+
+      .trace-step.tool {
+        background: hsl(200 70% 50% / 0.03);
+      }
+
+      .trace-step.response {
+        background: hsl(var(--success) / 0.03);
+      }
+
+      .trace-step-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .trace-step-type {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .trace-step-type.thinking {
+        background: hsl(var(--primary) / 0.15);
+        color: hsl(var(--primary));
+      }
+
+      .trace-step-type.tool {
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+      }
+
+      .trace-step-type.response {
+        background: hsl(var(--success) / 0.15);
+        color: hsl(var(--success));
+      }
+
+      .trace-step-time {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+
+      .trace-step-content {
+        font-size: 14px;
+        line-height: 1.6;
+        color: hsl(var(--foreground));
+      }
+
+      /* ========================================
+         SOURCES & REFERENCES
+         ======================================== */
+      .sources-section {
+        margin-top: 16px;
+      }
+
+      .sources-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 8px 0;
+        user-select: none;
+      }
+
+      .sources-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: hsl(var(--foreground));
+      }
+
+      .sources-count {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .sources-chevron {
+        width: 16px;
+        height: 16px;
+        color: hsl(var(--muted-foreground));
+        transition: transform 0.2s;
+      }
+
+      .sources-header.expanded .sources-chevron {
+        transform: rotate(90deg);
+      }
+
+      .sources-list {
+        margin-top: 8px;
+        display: none;
+      }
+
+      .sources-header.expanded + .sources-list {
+        display: block;
+      }
+
+      .sources-results {
+        margin-top: 10px;
+        padding: 10px;
+        background: hsl(var(--muted) / 0.3);
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      .trace-step.thinking .sources-results {
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      .trace-step.tool .sources-results {
+        border-left: 3px solid hsl(200 70% 50%);
+      }
+
+      .trace-step.response .sources-results {
+        border-left: 3px solid hsl(var(--success));
+      }
+
+      .sources-results-header {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: hsl(var(--primary));
+        font-size: 12px;
+      }
+
+      .source-item {
+        padding: 6px 10px;
+        margin: 0 -10px;
+        border-bottom: 1px solid hsl(var(--border));
+        transition: background 0.15s ease;
+        border-radius: 4px;
+      }
+
+      .source-item:hover {
+        background: hsl(var(--muted) / 0.5);
+      }
+
+      .source-item:last-child {
+        border-bottom: none;
+      }
+
+      .source-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+        font-size: 12px;
+        transition: color 0.15s ease;
+      }
+
+      .source-item:hover .source-title {
+        color: hsl(var(--primary));
+      }
+
+      .source-meta {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 4px;
+      }
+
+      .source-snippet {
+        color: hsl(var(--muted-foreground));
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .source-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: hsl(var(--primary));
+        text-decoration: none;
+        margin-top: 6px;
+      }
+
+      .source-link:hover {
+        text-decoration: underline;
+      }
+
+      /* ========================================
+         CONTROLS
+         ======================================== */
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 24px;
+        padding: 16px;
+        background: hsl(var(--muted) / 0.3);
+        border-radius: 8px;
+      }
+
+      .btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        border: 1px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+      }
+
+      .btn:hover {
+        background: hsl(var(--muted));
+      }
+
+      .btn.primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+      }
+
+      .btn.primary:hover {
+        filter: brightness(1.1);
+      }
+
+      .theme-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: hsl(var(--foreground));
+        z-index: 100;
+        transition: all 0.15s;
+      }
+
+      .theme-toggle:hover {
+        background: hsl(var(--muted));
+      }
+
+      .icon {
+        width: 16px;
+        height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="theme-toggle" onclick="toggleTheme()">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+        />
+      </svg>
+    </div>
+
+    <div class="container">
+      <h1>Agent Trace with Sources</h1>
+      <p class="subtitle">
+        Bidirectional linking: Click session event OR message to view trace. Sources from web search and workspace
+        search are shown expandable.
+      </p>
+
+      <div class="controls">
+        <button class="btn primary" onclick="openTraceFromSession()">Open trace from session event</button>
+        <button class="btn primary" onclick="openTraceFromMessage()">
+          Open trace from message (scroll to highlight)
+        </button>
+        <button class="btn" onclick="toggleStreamingPref()">
+          Toggle streaming preference (current: <span id="streamPref">instant</span>)
+        </button>
+      </div>
+
+      <div class="demo-grid">
+        <!-- Left: Message Stream -->
+        <div class="demo-panel">
+          <h2 class="panel-title">Message Stream</h2>
+
+          <div class="message">
+            <div class="message-avatar">KR</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-author">Kristoffer</span>
+                <span class="message-time">2:34 PM</span>
+              </div>
+              <div class="message-text">
+                What's the latest on the Mars rover mission? And do we have any internal discussions about space tech?
+              </div>
+            </div>
+          </div>
+
+          <div class="agent-session-event" onclick="openTraceFromSession()">
+            <div class="session-status-icon complete">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div class="session-info">
+              <div class="session-primary">Session complete</div>
+              <div class="session-secondary">5 steps • 6.3s • 1 message sent</div>
+            </div>
+            <div class="session-expand-hint">View trace →</div>
+          </div>
+
+          <div class="message ai" onclick="openTraceFromMessage()">
+            <div class="message-avatar">A</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-author">Ariadne</span>
+                <span class="message-time">2:34 PM</span>
+              </div>
+              <div class="message-text">
+                NASA's Perseverance rover recently discovered organic molecules in Jezero Crater, suggesting ancient
+                Mars may have supported microbial life. The rover is preparing samples for eventual return to Earth.<br /><br />
+
+                Regarding internal discussions: Martin mentioned in #engineering-ideas yesterday that SpaceX's Starship
+                could revolutionize space exploration. The conversation focused on reusability and cost reduction.
+              </div>
+              <div class="message-trace-hint">Click to view trace →</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Key Features -->
+        <div class="demo-panel">
+          <h2 class="panel-title">Key Features</h2>
+
+          <div style="font-size: 14px; line-height: 1.8">
+            <strong style="color: hsl(var(--primary))">Bidirectional Navigation</strong>
+            <ul style="margin: 8px 0 16px 20px">
+              <li>Click session event → view full trace</li>
+              <li>Click AI message → view trace, scroll to that message</li>
+            </ul>
+
+            <strong style="color: hsl(var(--primary))">Sources & References</strong>
+            <ul style="margin: 8px 0 16px 20px">
+              <li>Web search results (title, URL, snippet)</li>
+              <li>Workspace messages (author, stream, time)</li>
+              <li>Expandable for full context</li>
+            </ul>
+
+            <strong style="color: hsl(var(--primary))">User Preferences</strong>
+            <ul style="margin: 8px 0 16px 20px">
+              <li>Stream steps as they happen (like Claude.ai)</li>
+              <li>OR instant display of completed trace</li>
+              <li>Toggle via settings icon in modal</li>
+            </ul>
+
+            <strong style="color: hsl(var(--primary))">Message Highlighting</strong>
+            <ul style="margin: 8px 0 0 20px">
+              <li>When opening from message, that response is highlighted</li>
+              <li>Smooth scroll to the highlighted step</li>
+              <li>Flash effect to draw attention</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modalOverlay" class="modal-overlay" onclick="closeModalOnBackdrop(event)">
+      <div class="modal-dialog" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">Agent Session Trace</div>
+            <div class="modal-meta">
+              <span>Ariadne</span>
+              <span>•</span>
+              <span>2:34 PM</span>
+              <span>•</span>
+              <span>6.3s</span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <div class="modal-action-btn" id="streamToggle" onclick="toggleStreamingPref()">
+              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <div class="tooltip">Trace preferences</div>
+            </div>
+            <div class="modal-close" onclick="closeModal()">
+              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="modal-body" id="modalTraceBody">
+          <!-- Steps will be inserted here -->
+        </div>
+        <div class="modal-footer">
+          <span>Session completed</span>
+          <span>5 steps • 1 message sent</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let streamingEnabled = false
+
+      function toggleTheme() {
+        document.documentElement.classList.toggle("dark")
+      }
+
+      function toggleStreamingPref() {
+        streamingEnabled = !streamingEnabled
+        document.getElementById("streamPref").textContent = streamingEnabled ? "streaming" : "instant"
+
+        const toggle = document.getElementById("streamToggle")
+        if (streamingEnabled) {
+          toggle.classList.add("active")
+        } else {
+          toggle.classList.remove("active")
+        }
+      }
+
+      function openTraceFromSession() {
+        openModal(null)
+      }
+
+      function openTraceFromMessage() {
+        // Open with highlight on the response step (step 4)
+        openModal(4)
+      }
+
+      function openModal(highlightStepIndex) {
+        const overlay = document.getElementById("modalOverlay")
+        const body = document.getElementById("modalTraceBody")
+
+        body.innerHTML = buildTraceSteps(highlightStepIndex)
+
+        overlay.classList.add("active")
+
+        // Scroll to highlighted step if specified
+        if (highlightStepIndex !== null) {
+          setTimeout(() => {
+            const highlightedStep = body.querySelector(".trace-step.highlighted")
+            if (highlightedStep) {
+              highlightedStep.scrollIntoView({ behavior: "smooth", block: "center" })
+            }
+          }, 100)
+        }
+      }
+
+      function closeModal() {
+        document.getElementById("modalOverlay").classList.remove("active")
+      }
+
+      function closeModalOnBackdrop(event) {
+        if (event.target.id === "modalOverlay") {
+          closeModal()
+        }
+      }
+
+      function toggleSources(event) {
+        event.currentTarget.classList.toggle("expanded")
+      }
+
+      function buildTraceSteps(highlightIndex) {
+        const steps = [
+          {
+            type: "thinking",
+            label: "Thinking",
+            time: "0.4s",
+            content: `User asks about Mars rover mission and internal space tech discussions. Two-part query:
+              <ol style="margin: 8px 0; padding-left: 20px;">
+                <li>Current Mars rover news (web search)</li>
+                <li>Internal workspace discussions about space tech (workspace search)</li>
+              </ol>
+              I'll handle both parts.`,
+          },
+          {
+            type: "tool",
+            label: "Web Search",
+            time: "2.3s",
+            content: `<strong>Query:</strong> "Mars rover Perseverance latest news 2026"`,
+            sources: [
+              {
+                type: "web",
+                title: "NASA JPL - Mars 2020 Mission Updates",
+                url: "https://mars.nasa.gov/mars2020/mission/status/",
+                snippet:
+                  "Perseverance has discovered organic molecules in Jezero Crater rocks, providing the strongest evidence yet that ancient Mars could have supported microbial life...",
+                domain: "mars.nasa.gov",
+              },
+              {
+                type: "web",
+                title: "Space.com - Perseverance Rover Makes Groundbreaking Discovery",
+                url: "https://www.space.com/perseverance-organic-molecules-jezero",
+                snippet:
+                  "The rover's instruments have detected complex organic compounds that could be biosignatures. Scientists are preparing samples for eventual return to Earth...",
+                domain: "space.com",
+              },
+              {
+                type: "web",
+                title: "The Verge - Mars Sample Return Mission Timeline",
+                url: "https://www.theverge.com/2026/mars-sample-return",
+                snippet:
+                  "NASA and ESA are finalizing plans to bring Perseverance's samples back to Earth by 2033. The mission will cost $7 billion...",
+                domain: "theverge.com",
+              },
+            ],
+          },
+          {
+            type: "tool",
+            label: "Search Workspace",
+            time: "1.4s",
+            content: `<strong>Query:</strong> "space technology SpaceX"<br>
+              <strong>Filters:</strong> Recent messages (last 7 days)`,
+            sources: [
+              {
+                type: "workspace",
+                title: "Martin in #engineering-ideas",
+                content:
+                  "SpaceX's Starship could fundamentally change space exploration. Full reusability means we could reduce launch costs by 100x. That opens up so many possibilities...",
+                author: "Martin",
+                stream: "#engineering-ideas",
+                time: "Yesterday at 3:42 PM",
+              },
+              {
+                type: "workspace",
+                title: "Anna in #engineering-ideas",
+                content:
+                  "The key insight is vertical integration. SpaceX builds everything in-house, which lets them iterate faster than traditional aerospace companies.",
+                author: "Anna",
+                stream: "#engineering-ideas",
+                time: "Yesterday at 3:48 PM",
+              },
+            ],
+          },
+          {
+            type: "thinking",
+            label: "Thinking",
+            time: "0.5s",
+            content:
+              "Got good data from both searches. Web search has recent Mars rover news with organic molecule discovery. Workspace search found relevant discussion from yesterday in #engineering-ideas about SpaceX and reusability. I can synthesize both into a coherent response.",
+          },
+          {
+            type: "response",
+            label: "Response",
+            time: "1.7s",
+            content: `Sent message:
+              <div style="margin-top: 12px; padding: 12px; background: hsl(var(--muted) / 0.3); border-left: 3px solid hsl(var(--success)); border-radius: 6px; font-size: 13px;">
+                NASA's Perseverance rover recently discovered organic molecules in Jezero Crater, suggesting ancient Mars may have supported microbial life. The rover is preparing samples for eventual return to Earth.<br><br>
+
+                Regarding internal discussions: Martin mentioned in #engineering-ideas yesterday that SpaceX's Starship could revolutionize space exploration. The conversation focused on reusability and cost reduction.
+              </div>`,
+            sources: [
+              {
+                type: "web",
+                title: "NASA JPL - Mars 2020 Mission Updates",
+                url: "https://mars.nasa.gov/mars2020/mission/status/",
+                snippet:
+                  "Perseverance has discovered organic molecules in Jezero Crater rocks, providing the strongest evidence yet that ancient Mars could have supported microbial life...",
+                domain: "mars.nasa.gov",
+              },
+              {
+                type: "web",
+                title: "Space.com - Perseverance Rover Makes Groundbreaking Discovery",
+                url: "https://www.space.com/perseverance-organic-molecules-jezero",
+                snippet:
+                  "The rover's instruments have detected complex organic compounds that could be biosignatures. Scientists are preparing samples for eventual return to Earth...",
+                domain: "space.com",
+              },
+              {
+                type: "workspace",
+                title: "Martin in #engineering-ideas",
+                content:
+                  "SpaceX's Starship could fundamentally change space exploration. Full reusability means we could reduce launch costs by 100x. That opens up so many possibilities...",
+                author: "Martin",
+                stream: "#engineering-ideas",
+                time: "Yesterday at 3:42 PM",
+              },
+            ],
+          },
+        ]
+
+        return steps
+          .map((step, index) => {
+            const isHighlighted = highlightIndex === index
+            const sourcesHtml = step.sources ? buildSourcesHtml(step.sources) : ""
+
+            return `
+            <div class="trace-step ${step.type} ${isHighlighted ? "highlighted" : ""}" id="step-${index}">
+              <div class="trace-step-header">
+                <span class="trace-step-type ${step.type}">
+                  ${getStepIcon(step.type)}
+                  ${step.label}
+                </span>
+                <span class="trace-step-time">${step.time}</span>
+              </div>
+              <div class="trace-step-content">
+                ${step.content}
+                ${sourcesHtml}
+              </div>
+            </div>
+          `
+          })
+          .join("")
+      }
+
+      function buildSourcesHtml(sources) {
+        if (!sources || sources.length === 0) return ""
+
+        const sourceItems = sources
+          .map((source) => {
+            if (source.type === "web") {
+              return `
+              <a href="${source.url}" target="_blank" class="source-item" style="display: block; text-decoration: none; color: inherit; cursor: pointer;">
+                <div class="source-title">${source.title}</div>
+                <div class="source-meta">${source.domain}</div>
+                ${source.snippet ? `<div class="source-snippet">${source.snippet}</div>` : ""}
+              </a>
+            `
+            } else if (source.type === "workspace") {
+              return `
+              <div class="source-item" style="cursor: pointer;">
+                <div class="source-title">${source.title}</div>
+                <div class="source-meta">${source.stream} • ${source.time}</div>
+                <div class="source-snippet">${source.content}</div>
+              </div>
+            `
+            }
+          })
+          .join("")
+
+        return `
+          <div class="sources-section">
+            <div class="sources-header" onclick="toggleSources(event)">
+              <div class="sources-title">
+                <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                Sources
+                <span class="sources-count">${sources.length}</span>
+              </div>
+              <svg class="sources-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+            <div class="sources-list">
+              <div class="sources-results">
+                ${sourceItems}
+              </div>
+            </div>
+          </div>
+        `
+      }
+
+      function getStepIcon(type) {
+        const icons = {
+          thinking:
+            '<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>',
+          tool: '<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>',
+          response:
+            '<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>',
+        }
+        return icons[type] || ""
+      }
+
+      // Keyboard shortcuts
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeModal()
+        }
+      })
+    </script>
+  </body>
+</html>

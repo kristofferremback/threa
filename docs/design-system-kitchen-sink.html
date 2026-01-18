@@ -4361,16 +4361,25 @@
         <div class="section-header">
           <h2 class="section-title">Message Styling</h2>
           <p class="section-subtitle">
-            Clean, document-like layout. AI messages have full-width gold gradient + left border accent.
+            Clean, document-like layout. AI messages have full-width gold gradient + left border accent. All messages
+            include a "..." context menu (like Slack) for actions.
           </p>
           <span class="section-ref">nav-16-full-view.html</span>
         </div>
 
         <div class="component-card" style="max-width: 800px; margin: 0 auto">
-          <div class="component-label">Conversation Flow</div>
+          <div class="component-label">Conversation Flow (with Context Menus)</div>
           <div style="padding: 24px; overflow: hidden">
-            <!-- User message -->
-            <div class="message">
+            <!-- User message with context menu -->
+            <div
+              class="message"
+              style="position: relative"
+              onmouseenter="this.querySelector('.user-menu-btn').style.display = 'flex'"
+              onmouseleave="
+                if (!this.querySelector('.user-context-menu'))
+                  this.querySelector('.user-menu-btn').style.display = 'none'
+              "
+            >
               <div class="message-avatar">K</div>
               <div class="message-content">
                 <div class="message-header">
@@ -4382,10 +4391,206 @@
                   securely?
                 </p>
               </div>
+
+              <!-- Context Menu Button -->
+              <div
+                class="user-menu-btn"
+                style="
+                  position: absolute;
+                  top: 8px;
+                  right: 8px;
+                  width: 28px;
+                  height: 28px;
+                  border-radius: 6px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  display: none;
+                  align-items: center;
+                  justify-content: center;
+                  cursor: pointer;
+                  transition: all 0.15s;
+                  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+                  z-index: 10;
+                "
+                onclick="
+                  event.stopPropagation()
+                  const menu = this.nextElementSibling
+                  if (menu.style.display === 'block') {
+                    menu.style.display = 'none'
+                  } else {
+                    menu.style.display = 'block'
+                  }
+                "
+                onmouseenter="
+                  this.style.background = 'hsl(var(--muted))'
+                  this.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                "
+                onmouseleave="
+                  this.style.background = 'hsl(var(--card))'
+                  this.style.borderColor = 'hsl(var(--border))'
+                "
+              >
+                <svg
+                  style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </div>
+
+              <!-- User Message Context Menu -->
+              <div
+                class="user-context-menu"
+                style="
+                  position: absolute;
+                  top: 40px;
+                  right: 8px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  border-radius: 8px;
+                  padding: 4px;
+                  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
+                  min-width: 200px;
+                  z-index: 100;
+                  display: none;
+                "
+                onclick="event.stopPropagation()"
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Copy message
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                    />
+                  </svg>
+                  Edit
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                    />
+                  </svg>
+                  Start thread
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
+                  </svg>
+                  Save as memo
+                </div>
+              </div>
             </div>
 
-            <!-- AI message -->
-            <div class="message ai">
+            <!-- AI message with context menu -->
+            <div
+              class="message ai"
+              style="position: relative"
+              onmouseenter="this.querySelector('.ai-menu-btn').style.display = 'flex'"
+              onmouseleave="
+                if (
+                  !this.querySelector('.ai-context-menu') ||
+                  this.querySelector('.ai-context-menu').style.display === 'none'
+                )
+                  this.querySelector('.ai-menu-btn').style.display = 'none'
+              "
+            >
               <div class="message-avatar">A</div>
               <div class="message-content">
                 <div class="message-header">
@@ -4407,6 +4612,168 @@
                 <p class="message-text" style="margin-top: 12px">
                   Would you like me to show you a concrete implementation?
                 </p>
+              </div>
+
+              <!-- Context Menu Button -->
+              <div
+                class="ai-menu-btn"
+                style="
+                  position: absolute;
+                  top: 8px;
+                  right: 8px;
+                  width: 28px;
+                  height: 28px;
+                  border-radius: 6px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  display: none;
+                  align-items: center;
+                  justify-content: center;
+                  cursor: pointer;
+                  transition: all 0.15s;
+                  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+                  z-index: 10;
+                "
+                onclick="
+                  event.stopPropagation()
+                  const menu = this.nextElementSibling
+                  if (menu.style.display === 'block') {
+                    menu.style.display = 'none'
+                  } else {
+                    menu.style.display = 'block'
+                  }
+                "
+                onmouseenter="
+                  this.style.background = 'hsl(var(--muted))'
+                  this.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                "
+                onmouseleave="
+                  this.style.background = 'hsl(var(--card))'
+                  this.style.borderColor = 'hsl(var(--border))'
+                "
+              >
+                <svg
+                  style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </div>
+
+              <!-- AI Message Context Menu -->
+              <div
+                class="ai-context-menu"
+                style="
+                  position: absolute;
+                  top: 40px;
+                  right: 8px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  border-radius: 8px;
+                  padding: 4px;
+                  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
+                  min-width: 200px;
+                  z-index: 100;
+                  display: none;
+                "
+                onclick="event.stopPropagation()"
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
+                  </svg>
+                  Show trace and sources
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Copy message
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
+                  </svg>
+                  Save as memo
+                </div>
               </div>
             </div>
 
@@ -4435,6 +4802,7 @@
                 <li>Muted background on avatar</li>
                 <li>No background on message itself</li>
                 <li>Clean, document-like feel</li>
+                <li><strong>"..." menu (hover):</strong> Copy, Edit, Start thread, Save as memo</li>
               </ul>
             </div>
           </div>
@@ -4446,13 +4814,1087 @@
                 <li>3px gold left border accent</li>
                 <li>Gold avatar + author name</li>
                 <li>Extends past container edges</li>
+                <li><strong>"..." menu (hover):</strong> Show trace and sources (primary), Copy, Save as memo</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto; margin-top: 24px">
+          <div class="component-label">Context Menu Explained</div>
+          <div style="padding: 24px">
+            <div style="font-size: 14px; line-height: 1.8">
+              <p style="margin-bottom: 12px">
+                <strong>All messages</strong> (both user and AI) have a "..." button that appears on hover in the
+                top-right corner, similar to Slack's message actions.
+              </p>
+
+              <div style="background: hsl(var(--muted) / 0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px">
+                <strong>Interaction behavior:</strong>
+                <ul style="margin: 8px 0 0 20px; font-size: 13px">
+                  <li><strong>Show button:</strong> Appears on message hover</li>
+                  <li><strong>Open menu:</strong> Click the "..." button</li>
+                  <li><strong>Close menu:</strong> Click the button again OR click outside the menu</li>
+                </ul>
+              </div>
+
+              <p style="margin-bottom: 12px">
+                <strong>For AI messages specifically:</strong> The "Show trace and sources" option is the primary way to
+                access the agent's reasoning steps and sources. This design choice keeps the message view clean while
+                making transparency easily accessible.
+              </p>
+              <p style="color: hsl(var(--muted-foreground)); font-size: 13px; font-style: italic">
+                Sources are NOT shown prominently in the message view - they're only accessible via the trace modal.
+                This prevents cluttering the conversation while maintaining full transparency.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 15. Agent Trace -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Agent Trace</h2>
+          <p class="section-subtitle">
+            Full transparency into agent reasoning with bidirectional navigation. Click session event or AI message to
+            view trace with sources. Includes icons, animations, tooltips, keyboard shortcuts, and streaming
+            preferences.
+          </p>
+          <span class="section-ref">docs/references/mockups/agent-trace-with-sources.html</span>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto">
+          <div class="component-label">AI Message with Context Menu</div>
+
+          <div style="padding: 24px">
+            <div
+              class="ai-message-demo"
+              style="
+                position: relative;
+                background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+                padding: 16px 24px;
+                border-left: 3px solid hsl(var(--primary));
+                cursor: pointer;
+                transition: all 0.15s;
+                border-radius: 8px;
+              "
+              onclick="
+                if (event.target.closest('.message-menu-button, .message-context-menu')) return
+                document.getElementById('agentTraceDemo').style.display = 'flex'
+              "
+              onmouseenter="
+                this.style.background = 'linear-gradient(90deg, hsl(var(--primary) / 0.1) 0%, transparent 100%)'
+                this.querySelector('.trace-hint').style.opacity = '1'
+                this.querySelector('.message-menu-button').style.display = 'flex'
+              "
+              onmouseleave="
+                this.style.background = 'linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%)'
+                this.querySelector('.trace-hint').style.opacity = '0'
+                if (!this.querySelector('.message-context-menu'))
+                  this.querySelector('.message-menu-button').style.display = 'none'
+              "
+            >
+              <!-- Context Menu Button -->
+              <div
+                class="message-menu-button"
+                style="
+                  position: absolute;
+                  top: 8px;
+                  right: 8px;
+                  width: 28px;
+                  height: 28px;
+                  border-radius: 6px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  display: none;
+                  align-items: center;
+                  justify-content: center;
+                  cursor: pointer;
+                  transition: all 0.15s;
+                  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+                  z-index: 10;
+                "
+                onclick="
+                  event.stopPropagation()
+                  const menu = this.nextElementSibling
+                  if (menu.style.display === 'block') {
+                    menu.style.display = 'none'
+                  } else {
+                    menu.style.display = 'block'
+                  }
+                "
+                onmouseenter="
+                  this.style.background = 'hsl(var(--muted))'
+                  this.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                "
+                onmouseleave="
+                  this.style.background = 'hsl(var(--card))'
+                  this.style.borderColor = 'hsl(var(--border))'
+                "
+              >
+                <svg
+                  style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </div>
+
+              <!-- Context Menu Dropdown -->
+              <div
+                class="message-context-menu"
+                style="
+                  position: absolute;
+                  top: 40px;
+                  right: 8px;
+                  background: hsl(var(--card));
+                  border: 1px solid hsl(var(--border));
+                  border-radius: 8px;
+                  padding: 4px;
+                  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
+                  min-width: 200px;
+                  z-index: 100;
+                  display: none;
+                "
+                onclick="event.stopPropagation()"
+              >
+                <div
+                  class="menu-item"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onclick="
+                    this.closest('.message-context-menu').style.display = 'none'
+                    document.getElementById('agentTraceDemo').style.display = 'flex'
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
+                  </svg>
+                  Show trace and sources
+                </div>
+                <div
+                  class="menu-item"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Copy message
+                </div>
+                <div
+                  class="menu-item"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                  "
+                  onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                  onmouseleave="this.style.background = 'transparent'"
+                >
+                  <svg
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground))"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                    />
+                  </svg>
+                  Save as memo
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 14px; align-items: flex-start">
+                <div
+                  style="
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 10px;
+                    background: hsl(var(--primary));
+                    color: hsl(var(--primary-foreground));
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: 600;
+                    font-size: 13px;
+                  "
+                >
+                  A
+                </div>
+                <div style="flex: 1">
+                  <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px">
+                    <span style="font-weight: 600; font-size: 14px; color: hsl(var(--primary))">Ariadne</span>
+                    <span style="font-size: 12px; color: hsl(var(--muted-foreground))">2:34 PM</span>
+                  </div>
+                  <div style="font-size: 14px; line-height: 1.6">
+                    NASA's Perseverance rover recently discovered organic molecules in Jezero Crater...
+                  </div>
+                  <div
+                    class="trace-hint"
+                    style="
+                      font-size: 11px;
+                      color: hsl(var(--primary));
+                      opacity: 0;
+                      transition: opacity 0.15s;
+                      margin-top: 4px;
+                    "
+                  >
+                    Click to view trace →
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              style="
+                margin-top: 16px;
+                padding: 12px;
+                background: hsl(var(--muted) / 0.2);
+                border-radius: 8px;
+                font-size: 13px;
+                line-height: 1.6;
+              "
+            >
+              <strong>Context Menu Behavior:</strong>
+              <ul style="margin: 8px 0 0 20px">
+                <li><strong>Show button:</strong> "..." appears on message hover</li>
+                <li><strong>Open menu:</strong> Click the "..." button</li>
+                <li><strong>Close menu:</strong> Click the button again OR click outside</li>
+              </ul>
+              <div style="margin-top: 12px">
+                <strong>Two ways to access trace &amp; sources:</strong>
+                <ul style="margin: 8px 0 0 20px">
+                  <li><strong>Direct:</strong> Click message body → Opens trace scrolled to this response</li>
+                  <li><strong>Via menu:</strong> Click "..." → "Show trace and sources" → Same result</li>
+                  <li style="margin-top: 4px; color: hsl(var(--muted-foreground)); font-style: italic">
+                    Sources are NOT shown in message view - only accessible via trace modal
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto; margin-top: 24px">
+          <div class="component-label">Agent Session Event (In-Stream)</div>
+
+          <div style="padding: 24px">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 14px;
+                background: hsl(var(--muted) / 0.5);
+                border: 1px solid hsl(var(--border));
+                border-radius: 10px;
+                cursor: pointer;
+                transition: all 0.15s;
+                font-size: 13px;
+              "
+              onclick="document.getElementById('agentTraceDemo').style.display = 'flex'"
+              onmouseenter="
+                this.style.background = 'hsl(var(--muted) / 0.7)'
+                this.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                this.querySelector('.session-hint').style.opacity = '1'
+              "
+              onmouseleave="
+                this.style.background = 'hsl(var(--muted) / 0.5)'
+                this.style.borderColor = 'hsl(var(--border))'
+                this.querySelector('.session-hint').style.opacity = '0'
+              "
+            >
+              <div
+                style="
+                  width: 20px;
+                  height: 20px;
+                  background: hsl(142 76% 36% / 0.15);
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                "
+              >
+                <svg
+                  style="width: 14px; height: 14px; color: hsl(142 76% 36%)"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div style="flex: 1">
+                <div style="font-weight: 500">Session complete</div>
+                <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 2px">
+                  5 steps • 6.3s • 1 message sent
+                </div>
+              </div>
+              <div
+                class="session-hint"
+                style="font-size: 11px; color: hsl(var(--primary)); opacity: 0; transition: opacity 0.15s"
+              >
+                Show trace and sources →
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto; margin-top: 24px">
+          <div class="component-label">Step Type Badges (with Icons)</div>
+
+          <div style="padding: 24px">
+            <div style="display: flex; flex-direction: column; gap: 16px">
+              <div style="display: flex; align-items: center; gap: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(var(--primary) / 0.15);
+                    color: hsl(var(--primary));
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                    />
+                  </svg>
+                  Thinking
+                </div>
+                <span style="font-size: 13px; color: hsl(var(--muted-foreground))"
+                  >Agent reasoning (lightbulb icon)</span
+                >
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(200 70% 50% / 0.15);
+                    color: hsl(200 70% 50%);
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                  Web Search
+                </div>
+                <span style="font-size: 13px; color: hsl(var(--muted-foreground))"
+                  >Tool calls (magnifying glass icon)</span
+                >
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(142 76% 36% / 0.15);
+                    color: hsl(142 76% 36%);
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                    />
+                  </svg>
+                  Response
+                </div>
+                <span style="font-size: 13px; color: hsl(var(--muted-foreground))"
+                  >Message sent (chat bubble icon)</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="component-card" style="max-width: 800px; margin: 0 auto; margin-top: 24px">
+          <div class="component-label">Sources (Compact, Collapsible)</div>
+
+          <div style="padding: 24px">
+            <div style="margin-top: 16px">
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  cursor: pointer;
+                  padding: 8px 0;
+                  user-select: none;
+                "
+                onclick="
+                  this.classList.toggle('expanded')
+                  this.nextElementSibling.style.display = this.classList.contains('expanded') ? 'block' : 'none'
+                  this.querySelector('.chevron').style.transform = this.classList.contains('expanded')
+                    ? 'rotate(90deg)'
+                    : 'rotate(0deg)'
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600">
+                  <svg style="width: 16px; height: 16px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Sources
+                  <span
+                    style="
+                      background: hsl(var(--muted));
+                      color: hsl(var(--muted-foreground));
+                      padding: 2px 6px;
+                      border-radius: 10px;
+                      font-size: 11px;
+                      font-weight: 600;
+                    "
+                    >4</span
+                  >
+                </div>
+                <svg
+                  class="chevron"
+                  style="width: 16px; height: 16px; color: hsl(var(--muted-foreground)); transition: transform 0.2s"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+
+              <div style="display: none; margin-top: 8px">
+                <div
+                  style="
+                    padding: 10px;
+                    background: hsl(var(--muted) / 0.3);
+                    border-left: 3px solid hsl(200 70% 50%);
+                    border-radius: 6px;
+                    font-size: 12px;
+                  "
+                >
+                  <!-- Web Source 1 -->
+                  <div
+                    style="
+                      padding: 6px 10px;
+                      margin: 0 -10px;
+                      border-bottom: 1px solid hsl(var(--border));
+                      transition: background 0.15s ease;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    onmouseenter="
+                      this.style.background = 'hsl(var(--muted) / 0.5)'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--primary))'
+                    "
+                    onmouseleave="
+                      this.style.background = 'transparent'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--foreground))'
+                    "
+                  >
+                    <div
+                      class="source-title"
+                      style="font-weight: 600; margin-bottom: 4px; font-size: 12px; transition: color 0.15s ease"
+                    >
+                      NASA JPL - Mars 2020 Mission Updates
+                    </div>
+                    <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                      mars.nasa.gov
+                    </div>
+                    <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                      Perseverance has discovered organic molecules in Jezero Crater rocks, providing the strongest
+                      evidence yet...
+                    </div>
+                  </div>
+
+                  <!-- Web Source 2 -->
+                  <div
+                    style="
+                      padding: 6px 10px;
+                      margin: 0 -10px;
+                      border-bottom: 1px solid hsl(var(--border));
+                      transition: background 0.15s ease;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    onmouseenter="
+                      this.style.background = 'hsl(var(--muted) / 0.5)'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--primary))'
+                    "
+                    onmouseleave="
+                      this.style.background = 'transparent'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--foreground))'
+                    "
+                  >
+                    <div
+                      class="source-title"
+                      style="font-weight: 600; margin-bottom: 4px; font-size: 12px; transition: color 0.15s ease"
+                    >
+                      Space.com - Perseverance Rover Discovery
+                    </div>
+                    <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                      space.com
+                    </div>
+                    <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                      The rover's instruments have detected complex organic compounds that could be biosignatures...
+                    </div>
+                  </div>
+
+                  <!-- Workspace Source 1 -->
+                  <div
+                    style="
+                      padding: 6px 10px;
+                      margin: 0 -10px;
+                      border-bottom: 1px solid hsl(var(--border));
+                      transition: background 0.15s ease;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    onmouseenter="
+                      this.style.background = 'hsl(var(--muted) / 0.5)'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--primary))'
+                    "
+                    onmouseleave="
+                      this.style.background = 'transparent'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--foreground))'
+                    "
+                  >
+                    <div
+                      class="source-title"
+                      style="font-weight: 600; margin-bottom: 4px; font-size: 12px; transition: color 0.15s ease"
+                    >
+                      Martin in #engineering-ideas
+                    </div>
+                    <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                      #engineering-ideas • Yesterday at 3:42 PM
+                    </div>
+                    <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                      SpaceX's Starship could fundamentally change space exploration. Full reusability means we could
+                      reduce launch costs by 100x...
+                    </div>
+                  </div>
+
+                  <!-- Workspace Source 2 (Last, no border) -->
+                  <div
+                    style="
+                      padding: 6px 10px;
+                      margin: 0 -10px;
+                      transition: background 0.15s ease;
+                      border-radius: 4px;
+                      cursor: pointer;
+                    "
+                    onmouseenter="
+                      this.style.background = 'hsl(var(--muted) / 0.5)'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--primary))'
+                    "
+                    onmouseleave="
+                      this.style.background = 'transparent'
+                      this.querySelector('.source-title').style.color = 'hsl(var(--foreground))'
+                    "
+                  >
+                    <div
+                      class="source-title"
+                      style="font-weight: 600; margin-bottom: 4px; font-size: 12px; transition: color 0.15s ease"
+                    >
+                      Anna in #engineering-ideas
+                    </div>
+                    <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                      #engineering-ideas • Yesterday at 3:48 PM
+                    </div>
+                    <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                      The key insight is vertical integration. SpaceX builds everything in-house, which lets them
+                      iterate faster...
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              style="
+                margin-top: 24px;
+                padding: 12px;
+                background: hsl(var(--muted) / 0.2);
+                border-radius: 8px;
+                font-size: 13px;
+                line-height: 1.6;
+              "
+            >
+              <strong>Key Features:</strong>
+              <ul style="margin: 8px 0 0 20px">
+                <li>Document icon + count badge + chevron that rotates 90° when expanded</li>
+                <li>All sources in one compact box with colored left border</li>
+                <li>Border color matches step type (blue for tools, gold for thinking, green for response)</li>
+                <li>Collapsed by default to keep UI clean</li>
+                <li>Entire source item is hoverable/clickable</li>
+                <li>Last item has no bottom border for clean look</li>
+                <li>Web sources: Title, domain, snippet</li>
+                <li>Workspace sources: "Author in #channel", timestamp, message excerpt</li>
               </ul>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- 15. Message Content Formatting -->
+      <!-- Agent Trace Modal Demo (Hidden by default) -->
+      <div
+        id="agentTraceDemo"
+        style="
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(4px);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 10000;
+          padding: 40px;
+        "
+        onclick="if (event.target === this) this.style.display = 'none'"
+      >
+        <div
+          style="
+            background: hsl(var(--card));
+            border: 1px solid hsl(var(--border));
+            border-radius: 16px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+          "
+          onclick="event.stopPropagation()"
+        >
+          <div
+            style="
+              padding: 20px 24px;
+              border-bottom: 1px solid hsl(var(--border));
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            "
+          >
+            <div>
+              <div style="font-size: 18px; font-weight: 600">Agent Session Trace</div>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  font-size: 12px;
+                  color: hsl(var(--muted-foreground));
+                  margin-top: 4px;
+                "
+              >
+                <span>Ariadne</span>
+                <span>•</span>
+                <span>2:34 PM</span>
+                <span>•</span>
+                <span>6.3s</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <!-- Settings button with tooltip -->
+              <div
+                style="
+                  position: relative;
+                  width: 32px;
+                  height: 32px;
+                  border-radius: 6px;
+                  background: transparent;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  cursor: pointer;
+                  color: hsl(var(--muted-foreground));
+                  transition: all 0.15s;
+                "
+                onmouseenter="
+                  this.style.background = 'hsl(var(--muted))'
+                  this.style.color = 'hsl(var(--foreground))'
+                  this.querySelector('.settings-tooltip').style.opacity = '1'
+                "
+                onmouseleave="
+                  this.style.background = 'transparent'
+                  this.style.color = 'hsl(var(--muted-foreground))'
+                  this.querySelector('.settings-tooltip').style.opacity = '0'
+                "
+              >
+                <svg style="width: 16px; height: 16px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <div
+                  class="settings-tooltip"
+                  style="
+                    position: absolute;
+                    top: -32px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: hsl(var(--foreground));
+                    color: hsl(var(--background));
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    white-space: nowrap;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 0.15s;
+                  "
+                >
+                  Trace preferences
+                </div>
+              </div>
+              <!-- Close button -->
+              <button
+                onclick="document.getElementById('agentTraceDemo').style.display = 'none'"
+                style="
+                  width: 32px;
+                  height: 32px;
+                  border-radius: 6px;
+                  background: transparent;
+                  border: none;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  cursor: pointer;
+                  color: hsl(var(--muted-foreground));
+                  transition: background 0.15s;
+                "
+                onmouseenter="this.style.background = 'hsl(var(--muted))'"
+                onmouseleave="this.style.background = 'transparent'"
+              >
+                <svg style="width: 20px; height: 20px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div style="overflow-y: auto; flex: 1">
+            <!-- Thinking Step -->
+            <div
+              style="
+                padding: 20px 24px;
+                border-bottom: 1px solid hsl(var(--border));
+                background: hsl(var(--primary) / 0.03);
+              "
+            >
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(var(--primary) / 0.15);
+                    color: hsl(var(--primary));
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                    />
+                  </svg>
+                  Thinking
+                </div>
+                <span style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-left: auto">0.4s</span>
+              </div>
+              <div style="font-size: 14px; line-height: 1.6">
+                User asks about Mars rover mission and internal space tech discussions. Two-part query: web search for
+                news, workspace search for internal discussions.
+              </div>
+            </div>
+
+            <!-- Tool Step (Web Search) -->
+            <div
+              style="
+                padding: 20px 24px;
+                border-bottom: 1px solid hsl(var(--border));
+                background: hsl(200 70% 50% / 0.03);
+              "
+            >
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(200 70% 50% / 0.15);
+                    color: hsl(200 70% 50%);
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                  Web Search
+                </div>
+                <span style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-left: auto">2.3s</span>
+              </div>
+              <div style="font-size: 14px; line-height: 1.6">
+                <strong>Query:</strong> "Mars rover Perseverance latest news 2026"
+              </div>
+
+              <div style="margin-top: 16px">
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    cursor: pointer;
+                    padding: 8px 0;
+                  "
+                  onclick="
+                    this.classList.toggle('expanded')
+                    this.nextElementSibling.style.display = this.classList.contains('expanded') ? 'block' : 'none'
+                    this.querySelector('.chevron-2').style.transform = this.classList.contains('expanded')
+                      ? 'rotate(90deg)'
+                      : 'rotate(0deg)'
+                  "
+                >
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600">
+                    <svg style="width: 16px; height: 16px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                      />
+                    </svg>
+                    Sources
+                    <span
+                      style="
+                        background: hsl(var(--muted));
+                        color: hsl(var(--muted-foreground));
+                        padding: 2px 6px;
+                        border-radius: 10px;
+                        font-size: 11px;
+                        font-weight: 600;
+                      "
+                      >2</span
+                    >
+                  </div>
+                  <svg
+                    class="chevron-2"
+                    style="width: 16px; height: 16px; color: hsl(var(--muted-foreground)); transition: transform 0.2s"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+
+                <div style="display: none; margin-top: 8px">
+                  <div
+                    style="
+                      padding: 10px;
+                      background: hsl(var(--muted) / 0.3);
+                      border-left: 3px solid hsl(200 70% 50%);
+                      border-radius: 6px;
+                      font-size: 12px;
+                    "
+                  >
+                    <div style="padding: 6px 10px; margin: 0 -10px; border-bottom: 1px solid hsl(var(--border))">
+                      <div style="font-weight: 600; margin-bottom: 4px; font-size: 12px">
+                        NASA JPL - Mars 2020 Mission
+                      </div>
+                      <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                        mars.nasa.gov
+                      </div>
+                      <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                        Perseverance has discovered organic molecules...
+                      </div>
+                    </div>
+                    <div style="padding: 6px 10px; margin: 0 -10px">
+                      <div style="font-weight: 600; margin-bottom: 4px; font-size: 12px">Space.com - Discovery</div>
+                      <div style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-bottom: 4px">
+                        space.com
+                      </div>
+                      <div style="color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4">
+                        Complex organic compounds detected...
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Response Step -->
+            <div style="padding: 20px 24px; background: hsl(142 76% 36% / 0.03)">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px">
+                <div
+                  style="
+                    padding: 4px 10px;
+                    background: hsl(142 76% 36% / 0.15);
+                    color: hsl(142 76% 36%);
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                  "
+                >
+                  <svg style="width: 14px; height: 14px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                    />
+                  </svg>
+                  Response
+                </div>
+                <span style="font-size: 11px; color: hsl(var(--muted-foreground)); margin-left: auto">1.7s</span>
+              </div>
+              <div style="font-size: 14px; line-height: 1.6">
+                Sent message: "NASA's Perseverance rover recently discovered organic molecules..."
+              </div>
+            </div>
+          </div>
+
+          <div
+            style="
+              padding: 16px 24px;
+              border-top: 1px solid hsl(var(--border));
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              font-size: 12px;
+              color: hsl(var(--muted-foreground));
+            "
+          >
+            <span>Session completed</span>
+            <span>5 steps • 1 message sent</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 16. Message Content Formatting -->
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Message Content Formatting</h2>

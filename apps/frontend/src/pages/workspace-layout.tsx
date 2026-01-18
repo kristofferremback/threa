@@ -12,6 +12,7 @@ import {
   CoordinatedLoadingProvider,
   CoordinatedLoadingGate,
   MainContentGate,
+  SidebarProvider,
 } from "@/contexts"
 import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
@@ -105,13 +106,15 @@ export function WorkspaceLayout() {
           >
             <QuickSwitcherProvider openSwitcher={openSwitcher}>
               <PanelProvider>
-                <CoordinatedLoadingGate>
-                  <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                    <MainContentGate>
-                      <Outlet />
-                    </MainContentGate>
-                  </AppShell>
-                </CoordinatedLoadingGate>
+                <SidebarProvider>
+                  <CoordinatedLoadingGate>
+                    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                      <MainContentGate>
+                        <Outlet />
+                      </MainContentGate>
+                    </AppShell>
+                  </CoordinatedLoadingGate>
+                </SidebarProvider>
                 <QuickSwitcher
                   workspaceId={workspaceId}
                   open={switcherOpen}

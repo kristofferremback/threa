@@ -31,6 +31,8 @@ interface RichEditorProps {
   showFormattingToolbar?: boolean
   /** Called when attach button in formatting toolbar is clicked */
   onAttachClick?: () => void
+  /** Auto-focus the editor when mounted */
+  autoFocus?: boolean
 }
 
 export function RichEditor({
@@ -45,6 +47,7 @@ export function RichEditor({
   messageSendMode = "enter",
   showFormattingToolbar = false,
   onAttachClick,
+  autoFocus = false,
 }: RichEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isInternalUpdate = useRef(false)
@@ -178,6 +181,7 @@ export function RichEditor({
     extensions,
     content: value,
     editable: !disabled,
+    autofocus: autoFocus ? "end" : false,
     onUpdate: ({ editor }) => {
       if (isInternalUpdate.current) return
       onChange(editor.getJSON())

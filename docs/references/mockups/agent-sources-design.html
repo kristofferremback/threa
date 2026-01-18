@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Sources Design - In-Stream vs Trace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ========================================
+         GOLDEN THREAD THEME
+         ======================================== */
+      :root {
+        --background: 40 20% 98%;
+        --foreground: 30 10% 12%;
+        --card: 40 15% 99%;
+        --primary: 38 65% 50%;
+        --primary-foreground: 40 20% 98%;
+        --muted: 35 12% 93%;
+        --muted-foreground: 30 8% 45%;
+        --border: 35 15% 88%;
+      }
+
+      .dark {
+        --background: 30 15% 8%;
+        --foreground: 35 15% 92%;
+        --card: 30 12% 11%;
+        --primary: 40 55% 55%;
+        --primary-foreground: 30 15% 8%;
+        --muted: 30 10% 15%;
+        --muted-foreground: 35 10% 55%;
+        --border: 30 10% 20%;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        line-height: 1.6;
+        padding: 40px 20px;
+      }
+
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+
+      .subtitle {
+        font-size: 16px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 48px;
+      }
+
+      .principle-box {
+        background: hsl(var(--primary) / 0.08);
+        border: 1px solid hsl(var(--primary) / 0.2);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 48px;
+      }
+
+      .principle-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: hsl(var(--primary));
+        margin-bottom: 12px;
+      }
+
+      .principle-list {
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .principle-list strong {
+        color: hsl(var(--foreground));
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        margin-bottom: 64px;
+      }
+
+      .demo-section {
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: 12px;
+        padding: 24px;
+      }
+
+      .section-header {
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .section-desc {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      /* ========================================
+         MESSAGE COMPONENTS
+         ======================================== */
+      .message {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+
+      .message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        background: hsl(var(--muted));
+        color: hsl(var(--foreground));
+      }
+
+      .message.ai .message-avatar {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+      }
+
+      .message-content {
+        flex: 1;
+        padding-top: 2px;
+      }
+
+      .message-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .message-author {
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .message.ai .message-author {
+        color: hsl(var(--primary));
+      }
+
+      .message-time {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .message-text {
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .message.ai {
+        background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+        margin-left: -24px;
+        margin-right: -24px;
+        padding: 16px 24px;
+        border-left: 3px solid hsl(var(--primary));
+      }
+
+      /* ========================================
+         IN-STREAM SOURCES
+         ======================================== */
+      .message-sources {
+        margin-top: 12px;
+      }
+
+      .sources-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        color: hsl(var(--muted-foreground));
+        cursor: pointer;
+        transition: all 0.15s;
+        user-select: none;
+      }
+
+      .sources-toggle:hover {
+        background: hsl(var(--muted));
+        border-color: hsl(var(--primary) / 0.3);
+        color: hsl(var(--foreground));
+      }
+
+      .sources-toggle.expanded {
+        background: hsl(var(--primary) / 0.1);
+        border-color: hsl(var(--primary) / 0.3);
+        color: hsl(var(--primary));
+      }
+
+      .sources-count {
+        background: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .sources-toggle.expanded .sources-count {
+        background: hsl(var(--primary) / 0.2);
+        color: hsl(var(--primary));
+      }
+
+      .sources-chevron {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.2s;
+      }
+
+      .sources-toggle.expanded .sources-chevron {
+        transform: rotate(90deg);
+      }
+
+      .sources-list {
+        margin-top: 10px;
+        display: none;
+        gap: 8px;
+        flex-direction: column;
+      }
+
+      .sources-toggle.expanded + .sources-list {
+        display: flex;
+      }
+
+      .source-card {
+        padding: 10px 12px;
+        background: hsl(var(--muted) / 0.3);
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        transition: all 0.15s;
+      }
+
+      .source-card:hover {
+        background: hsl(var(--muted) / 0.5);
+        border-color: hsl(var(--primary) / 0.2);
+      }
+
+      .source-card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .source-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .source-icon.web {
+        color: hsl(200 70% 50%);
+      }
+
+      .source-icon.workspace {
+        color: hsl(var(--primary));
+      }
+
+      .source-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .source-title {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 2px;
+        color: hsl(var(--foreground));
+      }
+
+      .source-title a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .source-title a:hover {
+        color: hsl(var(--primary));
+        text-decoration: underline;
+      }
+
+      .source-meta {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+      }
+
+      .source-snippet {
+        margin-top: 6px;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      /* Inline compact variant */
+      .sources-inline {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .source-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: hsl(var(--muted) / 0.5);
+        border: 1px solid hsl(var(--border));
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+        text-decoration: none;
+        transition: all 0.15s;
+      }
+
+      .source-chip:hover {
+        background: hsl(var(--primary) / 0.1);
+        border-color: hsl(var(--primary) / 0.3);
+        color: hsl(var(--primary));
+      }
+
+      .source-chip-icon {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* ========================================
+         TRACE TOOL OUTCOMES
+         ======================================== */
+      .trace-section {
+        max-height: 500px;
+        overflow-y: auto;
+      }
+
+      .trace-step {
+        padding: 16px;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .trace-step:last-child {
+        border-bottom: none;
+      }
+
+      .trace-step.tool {
+        background: hsl(200 70% 50% / 0.03);
+      }
+
+      .trace-step-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .trace-step-type {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: hsl(200 70% 50% / 0.15);
+        color: hsl(200 70% 50%);
+      }
+
+      .trace-step-time {
+        font-size: 11px;
+        color: hsl(var(--muted-foreground));
+        margin-left: auto;
+      }
+
+      .trace-step-content {
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .trace-step-label {
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: hsl(var(--foreground));
+      }
+
+      .trace-results {
+        margin-top: 10px;
+        padding: 10px;
+        background: hsl(var(--muted) / 0.3);
+        border-left: 3px solid hsl(200 70% 50%);
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      .trace-result-item {
+        padding: 6px 0;
+        border-bottom: 1px solid hsl(var(--border));
+      }
+
+      .trace-result-item:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+
+      .trace-result-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+
+      .trace-result-snippet {
+        color: hsl(var(--muted-foreground));
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .theme-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: hsl(var(--foreground));
+        z-index: 100;
+        transition: all 0.15s;
+      }
+
+      .theme-toggle:hover {
+        background: hsl(var(--muted));
+      }
+
+      .icon {
+        width: 16px;
+        height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="theme-toggle" onclick="toggleTheme()">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+        />
+      </svg>
+    </div>
+
+    <div class="container">
+      <h1>Sources Design: In-Stream vs Trace</h1>
+      <p class="subtitle">
+        Sources are for trust & verification (on message). Tool outcomes are for transparency & debugging (in trace).
+      </p>
+
+      <div class="principle-box">
+        <div class="principle-title">Design Principles</div>
+        <div class="principle-list">
+          <strong>Message Sources (In-Stream):</strong> What sources did the agent use to generate THIS specific
+          response?<br />
+          • Visible directly on the message<br />
+          • Expandable to see details<br />
+          • User-facing, trust-building<br />
+          <br />
+          <strong>Tool Outcomes (Trace Modal):</strong> What did each tool call return during the session?<br />
+          • Shows all results, even unused ones<br />
+          • Hidden by default, available on-demand<br />
+          • Developer/power-user facing, transparency
+        </div>
+      </div>
+
+      <div class="demo-grid">
+        <!-- Left: In-Stream Sources -->
+        <div class="demo-section">
+          <div class="section-header">
+            <h2 class="section-title">In-Stream: Message Sources</h2>
+            <p class="section-desc">Visible on the message itself - these sources were USED for this response</p>
+          </div>
+
+          <div class="message">
+            <div class="message-avatar">KR</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-author">Kristoffer</span>
+                <span class="message-time">2:34 PM</span>
+              </div>
+              <div class="message-text">What's the latest on Mars exploration?</div>
+            </div>
+          </div>
+
+          <div class="message ai">
+            <div class="message-avatar">A</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="message-author">Ariadne</span>
+                <span class="message-time">2:34 PM</span>
+              </div>
+              <div class="message-text">
+                NASA's Perseverance rover recently discovered organic molecules in Jezero Crater, suggesting ancient
+                Mars may have supported microbial life. The rover is preparing samples for eventual return to Earth by
+                2033.
+              </div>
+
+              <div class="message-sources">
+                <div class="sources-toggle" onclick="toggleSources(event)">
+                  <svg class="icon sources-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span>Sources</span>
+                  <span class="sources-count">2</span>
+                </div>
+
+                <div class="sources-list">
+                  <div class="source-card">
+                    <div class="source-card-header">
+                      <svg class="source-icon web" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                        />
+                      </svg>
+                      <div class="source-info">
+                        <div class="source-title">
+                          <a href="https://mars.nasa.gov" target="_blank">NASA JPL - Mars 2020 Mission Updates</a>
+                        </div>
+                        <div class="source-meta">mars.nasa.gov</div>
+                        <div class="source-snippet">
+                          Perseverance has discovered organic molecules in Jezero Crater rocks, providing the strongest
+                          evidence yet that ancient Mars could have supported microbial life...
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="source-card">
+                    <div class="source-card-header">
+                      <svg class="source-icon web" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                        />
+                      </svg>
+                      <div class="source-info">
+                        <div class="source-title">
+                          <a href="https://theverge.com" target="_blank">The Verge - Mars Sample Return Mission</a>
+                        </div>
+                        <div class="source-meta">theverge.com</div>
+                        <div class="source-snippet">
+                          NASA and ESA are finalizing plans to bring Perseverance's samples back to Earth by 2033. The
+                          mission will cost $7 billion...
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style="
+              margin-top: 32px;
+              padding: 16px;
+              background: hsl(var(--muted) / 0.2);
+              border-radius: 8px;
+              font-size: 13px;
+            "
+          >
+            <strong>Alternative: Inline Chips</strong>
+            <div style="margin-top: 12px">
+              <div class="sources-inline">
+                <a href="#" class="source-chip">
+                  <svg class="source-chip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                    />
+                  </svg>
+                  NASA JPL
+                </a>
+                <a href="#" class="source-chip">
+                  <svg class="source-chip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                    />
+                  </svg>
+                  The Verge
+                </a>
+              </div>
+            </div>
+            <div style="margin-top: 12px; color: hsl(var(--muted-foreground))">
+              Chips: More compact, always visible. Good when sources are just URLs.<br />
+              Expandable: Shows snippets, better for understanding context.
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Trace Tool Outcomes -->
+        <div class="demo-section">
+          <div class="section-header">
+            <h2 class="section-title">Trace: Tool Outcomes</h2>
+            <p class="section-desc">What each tool returned (including unused results) - debugging/transparency</p>
+          </div>
+
+          <div class="trace-section">
+            <div class="trace-step tool">
+              <div class="trace-step-header">
+                <span class="trace-step-type">
+                  <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                    />
+                  </svg>
+                  Web Search
+                </span>
+                <span class="trace-step-time">2.3s</span>
+              </div>
+              <div class="trace-step-content">
+                <div class="trace-step-label">Query: "Mars Perseverance latest news 2026"</div>
+
+                <div class="trace-results">
+                  <div style="font-weight: 600; margin-bottom: 8px; color: hsl(200 70% 50%)">Found 5 results</div>
+
+                  <div class="trace-result-item">
+                    <div class="trace-result-title">NASA JPL - Mars 2020 Mission Updates</div>
+                    <div class="trace-result-snippet">
+                      Perseverance has discovered organic molecules in Jezero Crater rocks, providing the strongest
+                      evidence yet that ancient Mars could have supported microbial life...
+                    </div>
+                  </div>
+
+                  <div class="trace-result-item">
+                    <div class="trace-result-title">Space.com - Perseverance Makes Groundbreaking Discovery</div>
+                    <div class="trace-result-snippet">
+                      The rover's instruments have detected complex organic compounds that could be biosignatures...
+                    </div>
+                  </div>
+
+                  <div class="trace-result-item">
+                    <div class="trace-result-title">The Verge - Mars Sample Return Mission Timeline</div>
+                    <div class="trace-result-snippet">
+                      NASA and ESA are finalizing plans to bring Perseverance's samples back to Earth by 2033...
+                    </div>
+                  </div>
+
+                  <div class="trace-result-item">
+                    <div class="trace-result-title">CNN - Mars Exploration Milestone</div>
+                    <div class="trace-result-snippet">
+                      Scientists say this discovery represents a major step forward in understanding Mars' potential for
+                      past life...
+                    </div>
+                  </div>
+
+                  <div class="trace-result-item">
+                    <div class="trace-result-title">BBC Science - Organic Molecules on Mars</div>
+                    <div class="trace-result-snippet">
+                      The finding adds to mounting evidence that the red planet was once habitable...
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="trace-step tool">
+              <div class="trace-step-header">
+                <span class="trace-step-type">
+                  <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                  Search Workspace
+                </span>
+                <span class="trace-step-time">1.1s</span>
+              </div>
+              <div class="trace-step-content">
+                <div class="trace-step-label">Query: "Mars exploration"</div>
+
+                <div class="trace-results">
+                  <div style="font-weight: 600; margin-bottom: 8px; color: hsl(200 70% 50%)">Found 0 results</div>
+                  <div style="color: hsl(var(--muted-foreground)); font-size: 11px">
+                    No workspace messages found about Mars exploration
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style="
+              margin-top: 24px;
+              padding: 16px;
+              background: hsl(var(--muted) / 0.2);
+              border-radius: 8px;
+              font-size: 13px;
+            "
+          >
+            <strong>Key Difference:</strong><br />
+            • Trace shows ALL 5 web search results<br />
+            • Message sources show only 2 (the ones actually used)<br />
+            • Trace shows workspace search returned 0 (unused)<br />
+            • Message sources don't mention it (irrelevant to user)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggleTheme() {
+        document.documentElement.classList.toggle("dark")
+      }
+
+      function toggleSources(event) {
+        event.currentTarget.classList.toggle("expanded")
+      }
+    </script>
+  </body>
+</html>

@@ -24,7 +24,7 @@ import {
   workspaceKeys,
   useActors,
 } from "@/hooks"
-import { useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
+import { useQuickSwitcher, useCoordinatedLoading, useSidebar } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { RelativeTime } from "@/components/relative-time"
 import { StreamTypes, type StreamWithPreview } from "@threa/types"
@@ -69,16 +69,28 @@ function SidebarColorStrip() {
 /**
  * Sidebar structural shell - defines layout without content.
  * Used by both real Sidebar and skeleton to ensure identical structure.
+ *
+ * Color strip is always visible, content fades in/out based on sidebar state.
  */
 export function SidebarShell({ header, draftsLink, streamList, footer }: SidebarShellProps) {
+  const { state } = useSidebar()
+  const isCollapsed = state === "collapsed"
+
   return (
     <div className="flex h-full">
-      {/* Activity color strip */}
+      {/* Activity color strip - always visible */}
       <SidebarColorStrip />
 
-      {/* Main sidebar content */}
-      <div className="flex h-full flex-1 flex-col min-w-0">
-        <div className="flex h-14 items-center justify-between border-b px-4">{header}</div>
+      {/* Main sidebar content - hidden when collapsed */}
+      <div
+        className={cn(
+          "flex h-full flex-1 flex-col min-w-0",
+          isCollapsed && "pointer-events-none opacity-0 w-0 overflow-hidden",
+          !isCollapsed && "pointer-events-auto opacity-100",
+          "transition-[opacity,width] duration-150"
+        )}
+      >
+        <div className="flex h-11 items-center justify-between border-b px-4">{header}</div>
         <div className="border-b px-2 py-2">{draftsLink}</div>
         <ScrollArea className="flex-1">
           <div className="p-2">{streamList}</div>

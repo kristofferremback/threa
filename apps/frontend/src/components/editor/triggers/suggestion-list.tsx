@@ -103,8 +103,7 @@ function SuggestionListInner<T>(
       ref={refs.setFloating}
       style={floatingStyles}
       className={cn(
-        "z-50 rounded-[10px] border bg-popover text-popover-foreground pointer-events-auto",
-        "shadow-[0_8px_24px_hsl(var(--foreground)/0.12)]",
+        "z-50 rounded-[10px] border bg-popover text-popover-foreground pointer-events-auto shadow-md",
         width
       )}
       role="listbox"
@@ -121,7 +120,7 @@ function SuggestionListInner<T>(
               role="option"
               aria-selected={index === selectedIndex}
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none",
+                "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none text-left",
                 "cursor-pointer transition-colors duration-100",
                 "hover:bg-muted",
                 index === selectedIndex && "bg-muted"

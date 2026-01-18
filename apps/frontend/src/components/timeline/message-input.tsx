@@ -16,9 +16,17 @@ interface MessageInputProps {
   streamName?: string
   disabled?: boolean
   disabledReason?: string
+  autoFocus?: boolean
 }
 
-export function MessageInput({ workspaceId, streamId, streamName, disabled, disabledReason }: MessageInputProps) {
+export function MessageInput({
+  workspaceId,
+  streamId,
+  streamName,
+  disabled,
+  disabledReason,
+  autoFocus,
+}: MessageInputProps) {
   const navigate = useNavigate()
   const { preferences } = usePreferences()
   const { sendMessage } = useStreamOrDraft(workspaceId, streamId)
@@ -166,6 +174,7 @@ export function MessageInput({ workspaceId, streamId, streamName, disabled, disa
           hasFailed={composer.hasFailed}
           messageSendMode={messageSendMode}
           onExpandClick={() => setDocEditorOpen(true)}
+          autoFocus={autoFocus}
         />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>

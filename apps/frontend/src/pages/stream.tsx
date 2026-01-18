@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
-import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
+import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
 import { StreamTypes, type StreamType } from "@threa/types"
@@ -40,7 +40,7 @@ export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const { openPanels, draftReply, panelMode, closePanel, closeDraft, transitionDraftToPanel } = usePanel()
+  const { isPanelOpen, closePanel } = usePanel()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -61,14 +61,6 @@ export function StreamPage() {
 
   const isThread = stream?.type === StreamTypes.THREAD
   const isChannel = stream?.type === StreamTypes.CHANNEL
-
-  const handleCloseDraft = () => {
-    closeDraft()
-  }
-
-  const handleThreadCreated = (threadId: string) => {
-    transitionDraftToPanel(threadId)
-  }
 
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
@@ -209,9 +201,6 @@ export function StreamPage() {
     </div>
   )
 
-  const hasPanels = openPanels.length > 0
-  const hasDraft = draftReply !== null
-
   // Conversation side panel - only shown for channels
   const conversationPanel = isChannel && (
     <>
@@ -248,8 +237,8 @@ export function StreamPage() {
     </>
   )
 
-  // Locked mode: resizable side-by-side layout with single panel
-  if (panelMode === "locked" && (hasPanels || hasDraft)) {
+  // Panel open: resizable side-by-side layout
+  if (isPanelOpen) {
     return (
       <>
         <ResizablePanelGroup orientation="horizontal" className="h-full">
@@ -260,19 +249,8 @@ export function StreamPage() {
           <ResizableHandle withHandle />
 
           <ResizablePanel id="panel" defaultSize={40} minSize={30}>
-            {/* Single panel that handles tabs internally */}
-            {hasDraft ? (
-              <ThreadDraftPanel
-                workspaceId={workspaceId}
-                parentStreamId={draftReply.parentStreamId}
-                parentMessageId={draftReply.parentMessageId}
-                initialContent={draftReply.content}
-                onClose={handleCloseDraft}
-                onThreadCreated={handleThreadCreated}
-              />
-            ) : (
-              <StreamPanel workspaceId={workspaceId} onClose={() => closePanel(openPanels[0].streamId)} />
-            )}
+            {/* StreamPanel handles both regular streams and drafts */}
+            <StreamPanel workspaceId={workspaceId} onClose={closePanel} />
           </ResizablePanel>
         </ResizablePanelGroup>
         {conversationPanel}

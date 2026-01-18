@@ -461,6 +461,58 @@ AI messages get a gold accent and subtle background:
 
 This creates a subtle "golden thread" visual for AI contributions.
 
+**Message Context Menu ("..."):**
+
+All messages (both user and AI) include a context menu button that appears on hover in the top-right corner, similar to Slack's message actions.
+
+```css
+.message {
+  position: relative;
+}
+
+.message-menu-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+  z-index: 10;
+}
+
+.message:hover .message-menu-button {
+  display: flex;
+}
+
+.message-menu-button:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--primary) / 0.3);
+}
+```
+
+**Menu icon:** Three vertical dots (•••)
+
+**Interaction behavior:**
+
+- **Show button:** Appears on message hover
+- **Open menu:** Click the "..." button
+- **Close menu:** Click the button again OR click outside the menu
+
+**Common menu items:**
+
+- **User messages:** Copy message, Edit, Delete, Start thread, Save as memo
+- **AI messages:** Show trace and sources (primary), Copy message, Save as memo
+
+**For AI messages specifically:** The "Show trace and sources" option is the primary way to access the agent's reasoning steps and sources. This keeps the message view clean while making transparency easily accessible.
+
 ### Inline Mentions
 
 **Reference:** `design-system-kitchen-sink.html` section "MENTIONS"
@@ -988,6 +1040,730 @@ Active streams show a subtle multi-color glow at the bottom of their label:
 ```
 
 Each active persona gets a color stripe in the glow, creating a visual "thread" of who's active.
+
+### Agent Trace
+
+**Reference:** `docs/references/mockups/agent-trace-with-sources.html`
+
+Agent trace provides full transparency into AI agent reasoning and sources. It uses **bidirectional navigation** - users can access the trace from either the session event or by clicking on the AI message itself.
+
+**Design Goals:**
+
+- Show agent reasoning steps (thinking, tool calls, responses)
+- Display sources used for each step
+- Provide scroll-to-highlight for message-initiated traces
+- Keep UI clean while maintaining full transparency
+
+#### AI Message with Context Menu
+
+AI messages in the stream have two ways to access the trace: click the message itself, or use the "..." context menu (like Slack).
+
+**Message Container:**
+
+```css
+.message.ai {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.06) 0%, transparent 100%);
+  margin-left: -24px;
+  margin-right: -24px;
+  padding: 16px 24px;
+  border-left: 3px solid hsl(var(--primary));
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.message.ai:hover {
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.1) 0%, transparent 100%);
+}
+
+.message-trace-hint {
+  font-size: 11px;
+  color: hsl(var(--primary));
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 4px;
+}
+
+.message.ai:hover .message-trace-hint {
+  opacity: 1;
+}
+```
+
+**Context Menu Button ("..."):**
+
+```css
+.message-menu-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.1);
+}
+
+.message.ai:hover .message-menu-button {
+  display: flex;
+}
+
+.message-menu-button:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--primary) / 0.3);
+}
+```
+
+**Dropdown Menu:**
+
+```css
+.message-context-menu {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px hsl(0 0% 0% / 0.15);
+  min-width: 200px;
+  z-index: 100;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.menu-item:hover {
+  background: hsl(var(--muted));
+}
+
+.menu-item svg {
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--muted-foreground));
+}
+```
+
+**Menu Items:**
+
+1. **Show trace and sources** (primary action) - Opens trace modal scrolled to this message's response step
+2. **Copy message** - Copy message text to clipboard
+3. **Save as memo** - Create a memo from this message
+
+**Interaction behavior:**
+
+- **Show button:** "..." button appears on hover in top-right corner of message
+- **Open menu:** Click the "..." button to reveal menu
+- **Close menu:** Click the button again OR click outside the menu
+- **Alternative access:** Click message body directly → Opens trace scrolled to response (bypasses menu)
+
+**This is how users view sources:** Sources are not shown prominently in the message view; they're only accessible via the trace modal through either clicking the message body or using "Show trace and sources" from the menu.
+
+#### Agent Session Event (In-Stream)
+
+Compact event shown in the message stream after agent execution:
+
+```css
+.agent-session-event {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: hsl(var(--muted) / 0.5);
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 13px;
+}
+
+.agent-session-event:hover {
+  background: hsl(var(--muted) / 0.7);
+  border-color: hsl(var(--primary) / 0.3);
+}
+
+.session-status-icon.complete {
+  width: 20px;
+  height: 20px;
+  background: hsl(var(--success) / 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-status-icon.complete svg {
+  color: hsl(var(--success));
+  width: 14px;
+  height: 14px;
+}
+
+.session-expand-hint {
+  font-size: 11px;
+  color: hsl(var(--primary));
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.agent-session-event:hover .session-expand-hint {
+  opacity: 1;
+}
+```
+
+**Structure:**
+
+- Status icon (checkmark for complete, spinner for running)
+- Session info: "Session complete" with "5 steps • 6.3s • 1 message sent" on second line
+- Hover hint: "View trace →"
+
+#### Trace Modal
+
+Full-screen modal showing agent session steps with collapsible sources:
+
+```css
+/* Modal Overlay & Animations */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: hsl(0 0% 0% / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-dialog {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 16px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 48px hsl(0 0% 0% / 0.3);
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Modal Header with Actions */
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  margin-top: 4px;
+}
+
+/* Action buttons (settings, close) */
+.modal-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: hsl(var(--muted-foreground));
+  position: relative;
+}
+
+.modal-action-btn:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.modal-action-btn.active {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+
+/* Tooltips */
+.tooltip {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.modal-action-btn:hover .tooltip {
+  opacity: 1;
+}
+
+/* Modal Footer */
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid hsl(var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Trace Steps */
+.trace-step {
+  padding: 20px 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  animation: stepFadeIn 0.3s ease-out;
+  scroll-margin-top: 20px;
+}
+
+@keyframes stepFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.trace-step.highlighted {
+  background: hsl(var(--primary) / 0.08);
+  animation: highlight-flash 2s ease-out;
+}
+```
+
+**Modal Structure:**
+
+- **Header:** Session title, persona name, time, duration, and action buttons
+- **Action buttons:** Settings (gear icon) for trace preferences, close button
+- **Tooltips:** Show on hover ("Trace preferences", etc.)
+- **Body:** Scrollable list of trace steps
+- **Footer:** Summary ("Session completed • 5 steps • 1 message sent")
+
+**Interactions:**
+
+- Click backdrop to close
+- ESC key to close
+- Settings button toggles streaming preference (active state shown)
+
+**Step Types:**
+
+Each step has an icon, colored badge, and background tint:
+
+| Type         | Icon             | Color                     | Usage                | Label Examples                   |
+| ------------ | ---------------- | ------------------------- | -------------------- | -------------------------------- |
+| **Thinking** | Lightbulb        | Gold (`--primary`)        | Agent reasoning      | "Thinking"                       |
+| **Tool**     | Magnifying glass | Blue (`hsl(200 70% 50%)`) | Tool calls           | "Web Search", "Search Workspace" |
+| **Response** | Chat bubble      | Green (`--success`)       | Message sent to user | "Response"                       |
+
+```css
+/* Step background tints */
+.trace-step.thinking {
+  background: hsl(var(--primary) / 0.03);
+}
+
+.trace-step.tool {
+  background: hsl(200 70% 50% / 0.03);
+}
+
+.trace-step.response {
+  background: hsl(var(--success) / 0.03);
+}
+
+/* Step type badges */
+.trace-step-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.trace-step-type.thinking {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+
+.trace-step-type.tool {
+  background: hsl(200 70% 50% / 0.15);
+  color: hsl(200 70% 50%);
+}
+
+.trace-step-type.response {
+  background: hsl(var(--success) / 0.15);
+  color: hsl(var(--success));
+}
+
+/* Step header with type badge and duration */
+.trace-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.trace-step-time {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  margin-left: auto;
+}
+```
+
+**Step Icons:**
+
+```html
+<!-- Thinking: Lightbulb -->
+<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+  />
+</svg>
+
+<!-- Tool: Magnifying glass -->
+<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+  />
+</svg>
+
+<!-- Response: Chat bubble -->
+<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+  />
+</svg>
+```
+
+#### Sources (Collapsible)
+
+Sources appear inline on tool and response steps, collapsed by default:
+
+```css
+.sources-section {
+  margin-top: 16px;
+}
+
+.sources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.sources-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sources-count {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sources-chevron {
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--muted-foreground));
+  transition: transform 0.2s;
+}
+
+.sources-header.expanded .sources-chevron {
+  transform: rotate(90deg);
+}
+
+.sources-list {
+  margin-top: 8px;
+  display: none;
+}
+
+.sources-header.expanded + .sources-list {
+  display: block;
+}
+
+.sources-results {
+  margin-top: 10px;
+  padding: 10px;
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* Border color matches step type */
+.trace-step.thinking .sources-results {
+  border-left: 3px solid hsl(var(--primary));
+}
+
+.trace-step.tool .sources-results {
+  border-left: 3px solid hsl(200 70% 50%);
+}
+
+.trace-step.response .sources-results {
+  border-left: 3px solid hsl(var(--success));
+}
+
+.source-item {
+  padding: 6px 10px;
+  margin: 0 -10px;
+  border-bottom: 1px solid hsl(var(--border));
+  transition: background 0.15s ease;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.source-item:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.source-item:last-child {
+  border-bottom: none;
+}
+
+.source-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 12px;
+  transition: color 0.15s ease;
+}
+
+.source-item:hover .source-title {
+  color: hsl(var(--primary));
+}
+
+.source-meta {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 4px;
+}
+
+.source-snippet {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.4;
+}
+```
+
+**Source Header:**
+
+```html
+<div class="sources-header" onclick="toggleSources(event)">
+  <div class="sources-title">
+    <!-- Document icon -->
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+      />
+    </svg>
+    Sources
+    <span class="sources-count">3</span>
+  </div>
+  <!-- Chevron that rotates when expanded -->
+  <svg class="sources-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+  </svg>
+</div>
+```
+
+**Source Types:**
+
+**Web Source** (clickable link):
+
+- **Title:** Page title (bold, 12px)
+- **Meta:** Domain (11px, muted)
+- **Snippet:** Relevant excerpt (11px, muted, 2-line clamp)
+- Entire item is `<a>` tag with `target="_blank"`
+
+**Workspace Source** (clickable to navigate):
+
+- **Title:** "Author in #channel" format (bold, 12px)
+- **Meta:** "#channel • Yesterday at 3:42 PM" (11px, muted)
+- **Snippet:** Message content excerpt (11px, muted)
+- Entire item is clickable div
+
+**Key Features:**
+
+- All sources in one compact box with colored left border
+- Border color matches step type (gold/blue/green)
+- Collapsed by default, click header to expand
+- Chevron rotates 90° when expanded
+- Entire source item is hoverable/clickable
+- Last item has no bottom border
+
+#### Bidirectional Navigation
+
+Users can open the trace from two entry points:
+
+1. **Session event** (click) → Opens trace at top, no highlighting
+2. **AI message** (click) → Opens trace scrolled to response step with highlight
+
+```javascript
+// Open from session event
+function openTraceFromSession() {
+  openModal(null) // No highlight
+}
+
+// Open from AI message
+function openTraceFromMessage() {
+  openModal(responseStepIndex) // Highlight the response step
+}
+
+// Modal opening logic
+function openModal(highlightStepIndex) {
+  const overlay = document.getElementById("modalOverlay")
+  const body = document.getElementById("modalTraceBody")
+
+  // Render trace steps (apply .highlighted class if highlightStepIndex matches)
+  body.innerHTML = buildTraceSteps(highlightStepIndex)
+
+  overlay.classList.add("active")
+
+  // Scroll to highlighted step after modal animation completes
+  if (highlightStepIndex !== null) {
+    setTimeout(() => {
+      const highlightedStep = body.querySelector(".trace-step.highlighted")
+      if (highlightedStep) {
+        highlightedStep.scrollIntoView({ behavior: "smooth", block: "center" })
+      }
+    }, 100)
+  }
+}
+
+// Close on backdrop click
+function closeModalOnBackdrop(event) {
+  if (event.target.id === "modalOverlay") {
+    closeModal()
+  }
+}
+
+// Keyboard shortcuts
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeModal()
+  }
+})
+```
+
+**Navigation Behavior:**
+
+- **From session event:** Trace opens at the top (first step visible)
+- **From AI message:** Trace scrolls to center the response step
+- **Backdrop click:** Closes modal
+- **ESC key:** Closes modal
+- **Smooth scroll:** Uses `scrollIntoView({ behavior: 'smooth', block: 'center' })`
+
+#### Highlight Animation
+
+```css
+@keyframes highlight-flash {
+  0%,
+  100% {
+    background: hsl(var(--primary) / 0.08);
+  }
+  50% {
+    background: hsl(var(--primary) / 0.15);
+  }
+}
+
+.trace-step.highlighted {
+  background: hsl(var(--primary) / 0.08);
+  animation: highlight-flash 2s ease-out;
+}
+```
+
+**Animation Behavior:**
+
+- **Duration:** 2 seconds
+- **Easing:** ease-out
+- **Pattern:** Starts at 8% opacity, pulses to 15%, returns to 8%
+- **Scroll:** Smooth scroll centers the highlighted step
+- **Works for:** Any step type (thinking, tool, response)
+- **Applied when:** Opening trace from AI message click
+
+#### User Preferences
+
+**Streaming vs Instant Display:**
+
+- **Streaming mode:** Steps appear one-by-one as agent works (like Claude.ai)
+- **Instant mode:** Complete trace shown immediately
+- **Toggle:** Settings button (gear icon) in modal header
+- **Active state:** Settings button shows gold background when streaming enabled
+
+```css
+.modal-action-btn.active {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+```
 
 ---
 

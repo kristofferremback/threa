@@ -12,7 +12,7 @@ SidePanel.displayName = "SidePanel"
 
 const SidePanelHeader = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement>>(
   ({ className, ...props }, ref) => (
-    <header ref={ref} className={cn("flex h-14 items-center justify-between border-b px-4", className)} {...props} />
+    <header ref={ref} className={cn("flex h-11 items-center justify-between border-b px-4", className)} {...props} />
   )
 )
 SidePanelHeader.displayName = "SidePanelHeader"

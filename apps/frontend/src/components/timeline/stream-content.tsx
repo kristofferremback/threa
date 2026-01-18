@@ -27,6 +27,8 @@ interface StreamContentProps {
   isDraft?: boolean
   /** Pre-fetched stream data from parent - avoids duplicate bootstrap call */
   stream?: Stream
+  /** Auto-focus the message input when mounted */
+  autoFocus?: boolean
 }
 
 export function StreamContent({
@@ -35,6 +37,7 @@ export function StreamContent({
   highlightMessageId,
   isDraft = false,
   stream: streamFromProps,
+  autoFocus,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
@@ -175,6 +178,7 @@ export function StreamContent({
             disabledReason={
               isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
             }
+            autoFocus={autoFocus}
           />
         </div>
       </WorkspaceEmojiProvider>

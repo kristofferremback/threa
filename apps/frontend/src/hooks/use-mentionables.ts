@@ -3,6 +3,7 @@ import type { Mentionable } from "@/components/editor/triggers/types"
 import { useWorkspaceBootstrap } from "./use-workspaces"
 import { useParams } from "react-router-dom"
 import { useUser } from "@/auth"
+import { useWorkspaceEmoji } from "./use-workspace-emoji"
 
 /**
  * Reserved broadcast mention slugs.
@@ -32,6 +33,7 @@ export function useMentionables() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: bootstrap, isLoading } = useWorkspaceBootstrap(workspaceId ?? "")
   const currentUser = useUser()
+  const { toEmoji } = useWorkspaceEmoji(workspaceId ?? "")
 
   const mentionables = useMemo<Mentionable[]>(() => {
     if (!bootstrap) return BROADCAST_MENTIONS
@@ -53,16 +55,20 @@ export function useMentionables() {
       return 0
     })
 
-    const personas: Mentionable[] = bootstrap.personas.map((persona) => ({
-      id: persona.id,
-      slug: persona.slug,
-      name: persona.name,
-      type: "persona",
-      avatarEmoji: persona.avatarEmoji ?? undefined,
-    }))
+    const personas: Mentionable[] = bootstrap.personas.map((persona) => {
+      // Convert shortcode to emoji (e.g., ":thread:" -> "🧵")
+      const emoji = persona.avatarEmoji ? toEmoji(persona.avatarEmoji) : undefined
+      return {
+        id: persona.id,
+        slug: persona.slug,
+        name: persona.name,
+        type: "persona",
+        avatarEmoji: emoji ?? undefined,
+      }
+    })
 
     return [...users, ...personas, ...BROADCAST_MENTIONS]
-  }, [bootstrap, currentUser?.id])
+  }, [bootstrap, currentUser?.id, toEmoji])
 
   return {
     mentionables,

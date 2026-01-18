@@ -14,12 +14,6 @@ interface MentionListProps {
   placement?: Placement
 }
 
-const typeLabels: Record<Mentionable["type"], string> = {
-  user: "User",
-  persona: "Persona",
-  broadcast: "Notify",
-}
-
 /** Avatar background and text colors by mention type */
 const avatarStyles: Record<Mentionable["type"], string> = {
   user: "bg-[hsl(200_70%_50%/0.15)] text-[hsl(200_70%_50%)]",
@@ -27,11 +21,17 @@ const avatarStyles: Record<Mentionable["type"], string> = {
   broadcast: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
 }
 
-/** Text color for the slug/type label */
-const slugColors: Record<Mentionable["type"], string> = {
-  user: "text-[hsl(200_70%_50%)]",
-  persona: "text-primary",
-  broadcast: "text-orange-600 dark:text-orange-400",
+/** Type badge styles - small pill next to the slug */
+const typeBadgeStyles: Record<Mentionable["type"], string> = {
+  user: "bg-[hsl(200_70%_50%/0.1)] text-[hsl(200_70%_50%)]",
+  persona: "bg-primary/10 text-primary",
+  broadcast: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+}
+
+const typeLabels: Record<Mentionable["type"], string> = {
+  user: "User",
+  persona: "AI",
+  broadcast: "Notify",
 }
 
 function MentionItem({ item }: { item: Mentionable }) {
@@ -43,13 +43,18 @@ function MentionItem({ item }: { item: Mentionable }) {
         </AvatarFallback>
       </Avatar>
       <div className="flex flex-1 flex-col items-start min-w-0">
-        <span className="text-[13px] font-medium truncate w-full">
-          {item.name}
-          {item.isCurrentUser && <span className="text-muted-foreground font-normal"> (me)</span>}
-        </span>
-        <span className={cn("text-xs truncate w-full", slugColors[item.type])}>
-          @{item.slug} · {item.isCurrentUser ? "You" : typeLabels[item.type]}
-        </span>
+        <div className="flex items-center gap-1.5 w-full">
+          <span className="text-[13px] font-medium truncate">
+            {item.name}
+            {item.isCurrentUser && <span className="text-muted-foreground font-normal"> (me)</span>}
+          </span>
+          <span
+            className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0", typeBadgeStyles[item.type])}
+          >
+            {typeLabels[item.type]}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground truncate w-full">@{item.slug}</span>
       </div>
     </>
   )
