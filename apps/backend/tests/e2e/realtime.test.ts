@@ -346,11 +346,15 @@ describe("Real-time Events", () => {
       // Only join stream1
       socket.emit("join", `ws:${workspaceId}:stream:${stream1.id}`)
 
-      // Send message to stream1 - should receive
+      // Send message to stream1 - should receive both user message and companion response
       const event1Promise = waitForEvent<{ event: any }>(socket, "message:created")
+      const companionPromise = waitForEvent<{ event: any }>(socket, "message:created")
       await sendMessage(client, workspaceId, stream1.id, "Message to stream 1")
       const event1 = await event1Promise
       expect(event1.streamId).toBe(stream1.id)
+      // Wait for companion response before testing stream2
+      const companionEvent = await companionPromise
+      expect(companionEvent.streamId).toBe(stream1.id)
 
       // Send message to stream2 - should NOT receive (not joined)
       // To verify nothing is received, we use a short timeout
