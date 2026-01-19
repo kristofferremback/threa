@@ -66,8 +66,7 @@ CREATE TABLE cron_ticks (
 -- Hot path: Find ticks ready for execution
 -- Used by Message Ticker to find ticks that are due and available
 CREATE INDEX idx_cron_ticks_execute
-    ON cron_ticks (execute_at)
-    WHERE leased_until IS NULL OR leased_until < NOW();
+    ON cron_ticks (execute_at);
 
 -- Find ticks by schedule (for deduplication check)
 CREATE INDEX idx_cron_ticks_schedule
