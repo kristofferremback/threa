@@ -7,7 +7,7 @@ export interface BoundaryExtractionWorkerDeps {
 }
 
 /**
- * Create the boundary extraction job handler for pg-boss.
+ * Create the boundary extraction job handler for queue system.
  * Thin wrapper that delegates to the service.
  */
 export function createBoundaryExtractionWorker(

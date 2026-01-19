@@ -63,14 +63,14 @@ export interface DatabasePools {
 /**
  * Create separated database pools for different concerns.
  *
- * - main: Used by services, workers, pg-boss, and HTTP handlers (30 connections)
+ * - main: Used by services, workers, queue system, and HTTP handlers (30 connections)
  * - listen: Dedicated to OutboxListener LISTEN connections (12 connections)
  *
  * This separation ensures that long-held LISTEN connections don't compete
  * with transactional work for pool slots.
  *
  * Pool sizing rationale:
- * - main (30): Handles concurrent HTTP requests, workers, and pg-boss jobs
+ * - main (30): Handles concurrent HTTP requests, workers, and queue jobs
  * - listen (12): Currently 9 OutboxListeners + 3 headroom for reconnects
  *   If adding more listeners, increase this accordingly.
  */

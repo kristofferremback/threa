@@ -11,7 +11,7 @@ export interface SimulationWorkerDeps {
 }
 
 /**
- * Create the simulation job handler for pg-boss.
+ * Create the simulation job handler for queue system.
  *
  * Thin wrapper that extracts job data and delegates to the simulation agent.
  */

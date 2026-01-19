@@ -135,7 +135,7 @@ export class NamingHandler implements OutboxHandler {
             continue
           }
 
-          // Dispatch to pg-boss
+          // Dispatch to queue
           await this.jobQueue.send(JobQueues.NAMING_GENERATE, {
             workspaceId: stream.workspaceId,
             streamId,

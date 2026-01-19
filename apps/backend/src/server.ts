@@ -84,7 +84,7 @@ export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
   // Create separated connection pools:
-  // - main: services, workers, pg-boss, HTTP handlers (30 connections)
+  // - main: services, workers, queue system, HTTP handlers (30 connections)
   // - listen: OutboxListener LISTEN connections (12 connections)
   const pools = createDatabasePools(config.databaseUrl)
   const pool = pools.main // Alias for backwards compatibility during transition

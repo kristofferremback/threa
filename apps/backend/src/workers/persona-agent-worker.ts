@@ -22,7 +22,7 @@ export interface PersonaAgentWorkerDeps {
 }
 
 /**
- * Create the persona agent job handler for pg-boss.
+ * Create the persona agent job handler for queue system.
  *
  * This is a thin wrapper that extracts job data and delegates to the persona agent.
  * All business logic lives in the agent module for reusability and testability.
@@ -50,7 +50,7 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
     })
 
     if (result.status === "failed") {
-      // Re-throw to trigger pg-boss retry
+      // Re-throw to trigger queue system retry
       throw new Error(`Persona agent failed for session ${result.sessionId}`)
     }
 

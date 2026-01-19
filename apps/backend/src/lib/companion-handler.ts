@@ -41,7 +41,7 @@ const DEFAULT_CONFIG = {
  * 1. Message arrives (via outbox)
  * 2. Check if it's a user message (not persona response)
  * 3. Check if stream has companion mode = 'on'
- * 4. Dispatch pg-boss job for persona agent
+ * 4. Dispatch queue job for persona agent
  *
  * Uses time-based cursor locking for exclusive access without
  * holding database connections during processing.

@@ -36,7 +36,7 @@ const DEFAULT_CONFIG = {
  * Flow:
  * 1. Message arrives (via outbox)
  * 2. Check if it's a user message (persona messages can be added later)
- * 3. Dispatch pg-boss job for LLM processing
+ * 3. Dispatch queue job for LLM processing
  */
 export class BoundaryExtractionHandler implements OutboxHandler {
   readonly listenerId = "boundary-extraction"
