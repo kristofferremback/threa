@@ -247,7 +247,8 @@ export class QueueManager {
     // Only lease tokens for queues we have handlers for
     const queueNames = Array.from(this.handlers.keys())
     if (queueNames.length === 0) {
-      return // No handlers registered
+      logger.debug("No handlers registered yet, skipping tick")
+      return
     }
 
     const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
@@ -375,6 +376,7 @@ export class QueueManager {
 
     // 2. Set up message renewal timer for ALL messages
     const messageIds = messages.map((m) => m.id)
+    const completedMessageIds = new Set<string>()
     let messageRenewalInProgress = false
 
     const messageRenewTimer = setInterval(async () => {
@@ -383,12 +385,18 @@ export class QueueManager {
         return
       }
 
+      // Filter out completed messages from renewal
+      const idsToRenew = messageIds.filter((id) => !completedMessageIds.has(id))
+      if (idsToRenew.length === 0) {
+        return
+      }
+
       messageRenewalInProgress = true
       try {
-        const renewed = await this.batchRenewClaims(messageIds, workerIdValue)
-        logger.debug({ renewedCount: renewed, totalMessages: messageIds.length }, "Batch renewed claims")
+        const renewed = await this.batchRenewClaims(idsToRenew, workerIdValue)
+        logger.debug({ renewedCount: renewed, totalMessages: idsToRenew.length }, "Batch renewed claims")
       } catch (err) {
-        logger.warn({ messageIds, err }, "Failed to batch renew claims")
+        logger.warn({ messageIds: idsToRenew, err }, "Failed to batch renew claims")
       } finally {
         messageRenewalInProgress = false
       }
@@ -402,7 +410,7 @@ export class QueueManager {
         messages.map((message) =>
           limit(async () => {
             try {
-              await this.processMessage(message, workerIdValue)
+              await this.processMessage(message, workerIdValue, completedMessageIds)
             } catch (err) {
               // Error already logged and handled in processMessage
               // Continue processing other messages
@@ -450,7 +458,8 @@ export class QueueManager {
    */
   private async processMessage(
     message: { id: string; queueName: string; payload: unknown; failedCount: number },
-    workerId: string
+    workerId: string,
+    completedMessageIds: Set<string>
   ): Promise<void> {
     // Handler must exist - we only lease tokens for queues with registered handlers
     const handler = this.handlers.get(message.queueName)!
@@ -465,6 +474,7 @@ export class QueueManager {
 
       // Success - complete message
       await this.completeMessage(message.id, workerId)
+      completedMessageIds.add(message.id)
 
       logger.debug({ messageId: message.id, queueName: message.queueName }, "Message completed")
     } catch (err) {
@@ -478,6 +488,7 @@ export class QueueManager {
       if (newFailedCount >= this.maxRetries) {
         // Move to DLQ
         await this.moveMessageToDlq(message.id, workerId, error.message)
+        completedMessageIds.add(message.id)
 
         logger.error(
           { messageId: message.id, queueName: message.queueName },

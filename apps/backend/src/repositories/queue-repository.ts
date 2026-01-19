@@ -256,6 +256,8 @@ export const QueueRepository = {
         SET claimed_until = ${params.claimedUntil}
         WHERE id = ANY(${params.messageIds})
           AND claimed_by = ${params.claimedBy}
+          AND completed_at IS NULL
+          AND dlq_at IS NULL
       `
     )
 
