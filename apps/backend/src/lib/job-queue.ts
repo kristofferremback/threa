@@ -4,16 +4,11 @@ import { withClient } from "../db"
 import { logger } from "./logger"
 
 /**
- * Job queue built on pg-boss for durable, retriable job execution.
+ * Job queue types and legacy pg-boss implementation.
  *
- * Why pg-boss instead of just the outbox pattern?
- * - Outbox is for event dispatch (low-latency, many listeners)
- * - pg-boss is for durable job execution (retries, persistence, long-running work)
- *
- * The companion flow uses both:
- * 1. Outbox listener triggers on message:created
- * 2. Listener dispatches a job to pg-boss
- * 3. pg-boss worker executes the agent (which can take 10-30+ seconds)
+ * NOTE: The pg-boss implementation (JobQueueManager) is being replaced by
+ * the custom QueueManager in queue-manager.ts. The types defined here
+ * (JobQueues, JobDataMap, JobHandler) are shared between both implementations.
  */
 
 // Job type definitions

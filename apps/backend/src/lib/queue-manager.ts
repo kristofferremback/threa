@@ -79,23 +79,39 @@ export class QueueManager {
   private readonly scheduledJobs = new Map<string, Timer>()
 
   constructor(config: QueueManagerConfig) {
-    this.pool = config.pool
-    this.queueRepo = config.queueRepository
-    this.tokenPoolRepo = config.tokenPoolRepository
-    this.lockDurationMs = config.lockDurationMs ?? DEFAULT_CONFIG.lockDurationMs
-    this.refreshIntervalMs = config.refreshIntervalMs ?? DEFAULT_CONFIG.refreshIntervalMs
-    this.maxRetries = config.maxRetries ?? DEFAULT_CONFIG.maxRetries
-    this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
-    this.scalingThreshold = config.scalingThreshold ?? DEFAULT_CONFIG.scalingThreshold
-    this.tokenBatchSize = config.tokenBatchSize ?? DEFAULT_CONFIG.tokenBatchSize
-    this.claimBatchSize = config.claimBatchSize ?? DEFAULT_CONFIG.claimBatchSize
-    this.processingConcurrency = config.processingConcurrency ?? DEFAULT_CONFIG.processingConcurrency
+    const {
+      pool,
+      queueRepository,
+      tokenPoolRepository,
+      lockDurationMs = DEFAULT_CONFIG.lockDurationMs,
+      refreshIntervalMs = DEFAULT_CONFIG.refreshIntervalMs,
+      maxRetries = DEFAULT_CONFIG.maxRetries,
+      baseBackoffMs = DEFAULT_CONFIG.baseBackoffMs,
+      scalingThreshold = DEFAULT_CONFIG.scalingThreshold,
+      tokenBatchSize = DEFAULT_CONFIG.tokenBatchSize,
+      claimBatchSize = DEFAULT_CONFIG.claimBatchSize,
+      processingConcurrency = DEFAULT_CONFIG.processingConcurrency,
+      tickIntervalMs = DEFAULT_CONFIG.tickIntervalMs,
+      maxConcurrency = DEFAULT_CONFIG.maxConcurrency,
+    } = config
+
+    this.pool = pool
+    this.queueRepo = queueRepository
+    this.tokenPoolRepo = tokenPoolRepository
+    this.lockDurationMs = lockDurationMs
+    this.refreshIntervalMs = refreshIntervalMs
+    this.maxRetries = maxRetries
+    this.baseBackoffMs = baseBackoffMs
+    this.scalingThreshold = scalingThreshold
+    this.tokenBatchSize = tokenBatchSize
+    this.claimBatchSize = claimBatchSize
+    this.processingConcurrency = processingConcurrency
 
     this.tickerId = `ticker_${ulid()}`
     this.ticker = new Ticker({
       name: "queue-manager",
-      intervalMs: config.tickIntervalMs ?? DEFAULT_CONFIG.tickIntervalMs,
-      maxConcurrency: config.maxConcurrency ?? DEFAULT_CONFIG.maxConcurrency,
+      intervalMs: tickIntervalMs,
+      maxConcurrency,
     })
   }
 
@@ -501,14 +517,11 @@ export class QueueManager {
    * All job types must include workspaceId.
    */
   private extractWorkspaceId(queueName: string, data: unknown): string {
-    if (!data || typeof data !== "object") {
-      throw new Error(`Invalid job data for queue ${queueName}: not an object`)
-    }
+    const isObject = data !== null && typeof data === "object"
+    const workspaceId = isObject ? (data as Record<string, unknown>).workspaceId : undefined
 
-    const workspaceId = (data as { workspaceId?: string }).workspaceId
-
-    if (!workspaceId || typeof workspaceId !== "string") {
-      throw new Error(`Invalid job data for queue ${queueName}: missing workspaceId`)
+    if (typeof workspaceId !== "string" || workspaceId === "") {
+      throw new Error(`Invalid job data for queue ${queueName}: missing or invalid workspaceId`)
     }
 
     return workspaceId

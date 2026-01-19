@@ -1,3 +1,5 @@
+import { logger } from "./logger"
+
 /**
  * Ticker - Generic interval runner with concurrency control
  *
@@ -42,8 +44,7 @@ export class Ticker {
 
       const promise = callback()
         .catch((err) => {
-          // Log error but don't crash ticker
-          console.error(`[Ticker ${this.config.name}] Callback error:`, err)
+          logger.error({ tickerName: this.config.name, err }, "Ticker callback error")
         })
         .finally(() => {
           this.inFlightCount--
