@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { serializeToMarkdown } from "@threa/prosemirror"
+import type { JSONContent } from "@threa/types"
 import {
   useWorkspaceBootstrap,
   useCreateStream,
@@ -57,8 +59,8 @@ function SidebarColorStrip() {
       </div>
       {/* Channels section */}
       <div className="flex-1 min-h-[60px]">
-        <div className="h-full bg-[hsl(200_60%_50%/0.3)] flex flex-col">
-          <div className="flex-1 bg-[hsl(200_60%_50%)]" />
+        <div className="h-full bg-activity-people/30 flex flex-col">
+          <div className="flex-1 bg-activity-people" />
           <div className="flex-1 bg-primary" />
         </div>
       </div>
@@ -374,9 +376,10 @@ function isRecentActivity(createdAt: string): boolean {
 }
 
 /** Truncate content for preview display */
-function truncateContent(content: string, maxLength: number = 50): string {
-  // Strip markdown formatting for cleaner preview
-  const stripped = content
+function truncateContent(content: JSONContent, maxLength: number = 50): string {
+  // Serialize ProseMirror JSON to markdown, then strip formatting for cleaner preview
+  const markdown = serializeToMarkdown(content)
+  const stripped = markdown
     .replace(/[*_~`#]/g, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // Links
     .replace(/\n+/g, " ")

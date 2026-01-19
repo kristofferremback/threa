@@ -84,7 +84,7 @@ function MessageLayout({
           {actions}
         </div>
         <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-          <MarkdownContent content={payload.content} className="text-sm leading-relaxed" />
+          <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
           {payload.attachments && payload.attachments.length > 0 && (
             <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
           )}

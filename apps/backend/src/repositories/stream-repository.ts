@@ -75,7 +75,7 @@ export interface UpdateStreamParams {
 export interface LastMessagePreview {
   authorId: string
   authorType: "user" | "persona"
-  content: string
+  content: any // ProseMirror JSONContent
   createdAt: Date
 }
 
@@ -110,7 +110,7 @@ function mapRowToStream(row: StreamRow): Stream {
 interface StreamWithPreviewRow extends StreamRow {
   last_message_author_id: string | null
   last_message_author_type: string | null
-  last_message_content: string | null
+  last_message_content: any | null // ProseMirror JSONContent
   last_message_at: Date | null
 }
 
@@ -273,7 +273,7 @@ export const StreamRepository = {
           stream_id,
           author_id,
           author_type,
-          content,
+          content_json,
           created_at
         FROM messages
         WHERE deleted_at IS NULL
@@ -285,7 +285,7 @@ export const StreamRepository = {
           .join(", s.")},
         lm.author_id as last_message_author_id,
         lm.author_type as last_message_author_type,
-        lm.content as last_message_content,
+        lm.content_json as last_message_content,
         lm.created_at as last_message_at
       FROM streams s
       LEFT JOIN last_messages lm ON lm.stream_id = s.id

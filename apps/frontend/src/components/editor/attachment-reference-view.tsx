@@ -52,8 +52,6 @@ export function AttachmentReferenceView({ node }: NodeViewProps) {
     if (attrs.status !== "uploaded") return
 
     // TODO: Open lightbox for images, trigger download for files
-    // For now, log the action - will be wired up in a later step
-    console.log("Attachment clicked:", attrs)
   }
 
   const content = (

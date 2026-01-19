@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/breadcrumb"
 import { useThreadAncestors } from "@/hooks"
 import { usePanel } from "@/contexts"
+import { AncestorBreadcrumbItem } from "./breadcrumb-helpers"
 
 interface ThreadHeaderStream {
   id: string
@@ -66,49 +67,15 @@ export function ThreadHeader({ workspaceId, stream, onBack, inPanel = false }: T
       <Breadcrumb className="min-w-0">
         <BreadcrumbList className="flex-nowrap">
           {/* Ancestor breadcrumb items */}
-          {ancestors.map((ancestor) => {
-            // For threads with no name, show "Thread"
-            // For channels, show #slug
-            // For other types, show displayName
-            const displayName =
-              ancestor.type === "thread"
-                ? ancestor.displayName || "Thread"
-                : ancestor.slug
-                  ? `#${ancestor.slug}`
-                  : ancestor.displayName || "..."
-
-            // If this ancestor is the main view stream, close panel instead of navigating
-            if (isMainViewStream(ancestor.id)) {
-              return (
-                <div key={ancestor.id} className="contents">
-                  <BreadcrumbItem className="max-w-[120px]">
-                    <BreadcrumbLink asChild>
-                      <button
-                        onClick={closePanel}
-                        className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
-                      >
-                        {displayName}
-                      </button>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                </div>
-              )
-            }
-
-            return (
-              <div key={ancestor.id} className="contents">
-                <BreadcrumbItem className="max-w-[120px]">
-                  <BreadcrumbLink asChild>
-                    <Link to={getNavigationUrl(ancestor.id)} className="truncate block">
-                      {displayName}
-                    </Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-              </div>
-            )
-          })}
+          {ancestors.map((ancestor) => (
+            <AncestorBreadcrumbItem
+              key={ancestor.id}
+              stream={ancestor}
+              isMainViewStream={isMainViewStream(ancestor.id)}
+              onClosePanel={closePanel}
+              getNavigationUrl={getNavigationUrl}
+            />
+          ))}
           {/* Current thread */}
           <BreadcrumbItem>
             <BreadcrumbPage className="truncate">Thread</BreadcrumbPage>

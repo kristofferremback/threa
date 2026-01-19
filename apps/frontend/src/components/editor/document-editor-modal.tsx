@@ -11,7 +11,6 @@ import {
   Braces,
   List,
   ListOrdered,
-  X,
   Heading1,
   Heading2,
   Heading3,
@@ -19,7 +18,6 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { createEditorExtensions } from "./editor-extensions"
 import { EditorBehaviors } from "./editor-behaviors"
@@ -27,6 +25,7 @@ import { serializeToMarkdown, parseMarkdown, type MentionTypeLookup } from "./ed
 import { useMentionSuggestion, useChannelSuggestion, useEmojiSuggestion } from "./triggers"
 import { useMentionables } from "@/hooks/use-mentionables"
 import { useWorkspaceEmoji } from "@/hooks/use-workspace-emoji"
+import { LinkEditor } from "./link-editor"
 import { cn } from "@/lib/utils"
 
 interface DocumentEditorModalProps {
@@ -368,97 +367,5 @@ function ToolbarButton({ onAction, icon: Icon, label, shortcut, isActive }: Tool
         </div>
       </TooltipContent>
     </Tooltip>
-  )
-}
-
-interface LinkEditorProps {
-  editor: ReturnType<typeof useEditor>
-  isActive: boolean
-  onClose: () => void
-}
-
-function LinkEditor({ editor, isActive, onClose }: LinkEditorProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const currentUrl = editor?.getAttributes("link").href || ""
-  const [url, setUrl] = useState(currentUrl)
-
-  useEffect(() => {
-    setUrl(currentUrl)
-    const timer = setTimeout(() => inputRef.current?.focus(), 0)
-    return () => clearTimeout(timer)
-  }, [currentUrl])
-
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault()
-      if (!editor) return
-      if (url.trim()) {
-        const finalUrl = url.startsWith("http") ? url : `https://${url}`
-        editor.chain().focus().extendMarkRange("link").setLink({ href: finalUrl }).run()
-      } else {
-        editor.chain().focus().extendMarkRange("link").unsetLink().run()
-      }
-      onClose()
-    },
-    [editor, url, onClose]
-  )
-
-  const handleRemoveLink = useCallback(() => {
-    if (!editor) return
-    editor.chain().focus().extendMarkRange("link").unsetLink().run()
-    onClose()
-  }, [editor, onClose])
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault()
-        onClose()
-        editor?.commands.focus()
-      }
-    },
-    [onClose, editor]
-  )
-
-  return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/20">
-      <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <form onSubmit={handleSubmit} className="flex flex-1 items-center gap-2">
-        <Input
-          ref={inputRef}
-          placeholder="https://example.com"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="h-7 flex-1 text-sm"
-        />
-        <Button type="submit" size="sm" className="h-7 px-3">
-          {isActive ? "Update" : "Add"}
-        </Button>
-        {isActive && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-destructive hover:text-destructive"
-            onClick={handleRemoveLink}
-          >
-            Remove
-          </Button>
-        )}
-      </form>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 shrink-0 p-0"
-        onClick={() => {
-          onClose()
-          editor?.commands.focus()
-        }}
-      >
-        <X className="h-4 w-4" />
-      </Button>
-    </div>
   )
 }

@@ -7,7 +7,7 @@ import { DocumentEditorModal } from "@/components/editor"
 import { commandsApi } from "@/api"
 import { isCommand } from "@/lib/commands"
 import { cn } from "@/lib/utils"
-import { serializeToMarkdown } from "@threa/prosemirror"
+import { serializeToMarkdown, parseMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 
 interface MessageInputProps {
@@ -112,7 +112,8 @@ export function MessageInput({
       setError(null)
 
       // Clear composer content immediately so it doesn't persist when modal closes
-      composer.setContent("")
+      const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+      composer.setContent(emptyDoc)
       composer.clearDraft()
 
       try {
@@ -133,7 +134,9 @@ export function MessageInput({
   // Sync content from doc editor back to composer when dismissed
   const handleDocEditorDismiss = useCallback(
     (content: string) => {
-      composer.setContent(content)
+      // Parse markdown back to ProseMirror JSON
+      const contentJson = parseMarkdown(content)
+      composer.setContent(contentJson)
     },
     [composer]
   )
@@ -183,7 +186,7 @@ export function MessageInput({
       <DocumentEditorModal
         open={docEditorOpen}
         onOpenChange={setDocEditorOpen}
-        initialContent={composer.content}
+        initialContent={serializeToMarkdown(composer.content)}
         onSend={handleDocEditorSend}
         onDismiss={handleDocEditorDismiss}
         streamName={streamName ?? "this stream"}

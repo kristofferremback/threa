@@ -1303,8 +1303,6 @@ describe("QuickSwitcher Integration Tests", () => {
 
         // Check what styles Radix Dialog applies to body
         const bodyStyle = window.getComputedStyle(document.body)
-        console.log("Body pointer-events:", bodyStyle.pointerEvents)
-        console.log("Body style attribute:", document.body.getAttribute("style"))
 
         // Document what we find (not asserting, just logging)
         // In real browser: pointer-events: none
@@ -1326,12 +1324,9 @@ describe("QuickSwitcher Integration Tests", () => {
 
         // Find where the suggestion list actually rendered (use aria-label to distinguish from ItemList)
         const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
-        console.log("Suggestion list parent:", suggestionList.parentElement?.tagName)
-        console.log("Is direct child of body:", suggestionList.parentElement === document.body)
 
         // Check if the suggestion list has pointer-events set
         const listStyle = window.getComputedStyle(suggestionList)
-        console.log("Suggestion list pointer-events:", listStyle.pointerEvents)
       })
 
       it("should verify that userEvent respects pointer-events:none", async () => {
@@ -1371,15 +1366,9 @@ describe("QuickSwitcher Integration Tests", () => {
         // At this point, popover should be active
         // Let's check the DOM state before pressing Escape
         const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
-        console.log("Popover visible before Escape:", !!suggestionList)
 
         // Press Escape
         await user.keyboard("{Escape}")
-
-        // What happened?
-        console.log("onOpenChange calls:", onOpenChange.mock.calls)
-        console.log("Dialog still exists:", !!screen.queryByRole("dialog"))
-        console.log("Popover still exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // Expected in real browser with bug:
         // - Dialog closes (onOpenChange called with false)
@@ -1408,18 +1397,8 @@ describe("QuickSwitcher Integration Tests", () => {
           expect(screen.getByText("Martin")).toBeInTheDocument()
         })
 
-        console.log("Before Enter:")
-        console.log("- Search results visible:", !!screen.queryByText("Hello from the search results"))
-        console.log("- Popover visible:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
-        console.log("- Editor content:", editor.textContent)
-
         // Press Enter
         await user.keyboard("{Enter}")
-
-        console.log("After Enter:")
-        console.log("- mockNavigate calls:", mockNavigate.mock.calls)
-        console.log("- Editor content:", editor.textContent)
-        console.log("- Popover still visible:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // If Enter was captured by popover: editor should contain @martin, navigate not called
         // If Enter was captured by list: navigate called, editor unchanged
@@ -1434,9 +1413,6 @@ describe("QuickSwitcher Integration Tests", () => {
         const editor = screen.getByLabelText("Search query input")
         await user.click(editor)
 
-        // Before typing @
-        console.log("Before @: popover listbox exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
-
         // Need to type text first, then @ - just @ after "? " doesn't trigger popover
         await user.type(editor, "test @")
 
@@ -1444,8 +1420,6 @@ describe("QuickSwitcher Integration Tests", () => {
         await waitFor(() => {
           expect(screen.getByRole("listbox", { name: /suggestions/i })).toBeInTheDocument()
         })
-
-        console.log("After @: popover listbox exists:", !!screen.queryByRole("listbox", { name: /suggestions/i }))
 
         // The question is: does the parent QuickSwitcher know the popover is active?
         // We can't directly check isSuggestionPopoverActive state, but we can

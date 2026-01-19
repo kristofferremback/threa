@@ -58,6 +58,9 @@ export default {
           4: "hsl(var(--chart-4))",
           5: "hsl(var(--chart-5))",
         },
+        activity: {
+          people: "hsl(var(--activity-people))",
+        },
       },
       borderRadius: {
         modal: "16px",

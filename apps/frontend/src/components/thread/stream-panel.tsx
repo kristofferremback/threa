@@ -34,6 +34,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
+import { AncestorBreadcrumbItem, getStreamBreadcrumbName } from "./breadcrumb-helpers"
 import { StreamTypes } from "@threa/types"
 
 interface StreamPanelProps {
@@ -167,46 +168,15 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
             <Breadcrumb className="min-w-0">
               <BreadcrumbList className="flex-nowrap">
                 {/* Ancestor breadcrumb items */}
-                {ancestors.map((ancestor) => {
-                  const displayName =
-                    ancestor.type === "thread"
-                      ? ancestor.displayName || "Thread"
-                      : ancestor.slug
-                        ? `#${ancestor.slug}`
-                        : ancestor.displayName || "..."
-
-                  // If this ancestor is the main view stream, close panel instead of navigating
-                  if (isMainViewStream(ancestor.id)) {
-                    return (
-                      <div key={ancestor.id} className="contents">
-                        <BreadcrumbItem className="max-w-[120px]">
-                          <BreadcrumbLink asChild>
-                            <button
-                              onClick={closePanel}
-                              className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
-                            >
-                              {displayName}
-                            </button>
-                          </BreadcrumbLink>
-                        </BreadcrumbItem>
-                        <BreadcrumbSeparator />
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div key={ancestor.id} className="contents">
-                      <BreadcrumbItem className="max-w-[120px]">
-                        <BreadcrumbLink asChild>
-                          <Link to={getPanelUrl(ancestor.id)} className="truncate block">
-                            {displayName}
-                          </Link>
-                        </BreadcrumbLink>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator />
-                    </div>
-                  )
-                })}
+                {ancestors.map((ancestor) => (
+                  <AncestorBreadcrumbItem
+                    key={ancestor.id}
+                    stream={ancestor}
+                    isMainViewStream={isMainViewStream(ancestor.id)}
+                    onClosePanel={closePanel}
+                    getNavigationUrl={getPanelUrl}
+                  />
+                ))}
                 {/* Parent stream */}
                 <BreadcrumbItem className="max-w-[120px]">
                   <BreadcrumbLink asChild>
@@ -215,15 +185,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
                         onClick={closePanel}
                         className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
                       >
-                        {parentBootstrap.stream.slug
-                          ? `#${parentBootstrap.stream.slug}`
-                          : parentBootstrap.stream.displayName || "Thread"}
+                        {getStreamBreadcrumbName(parentBootstrap.stream)}
                       </button>
                     ) : (
                       <Link to={getPanelUrl(draftInfo!.parentStreamId)} className="truncate block">
-                        {parentBootstrap.stream.slug
-                          ? `#${parentBootstrap.stream.slug}`
-                          : parentBootstrap.stream.displayName || "Thread"}
+                        {getStreamBreadcrumbName(parentBootstrap.stream)}
                       </Link>
                     )}
                   </BreadcrumbLink>
