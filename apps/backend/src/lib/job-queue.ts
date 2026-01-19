@@ -1,15 +1,17 @@
-import { PgBoss, type Job, type SendOptions, type WorkHandler } from "pg-boss"
-import type { Pool } from "pg"
-import { withClient } from "../db"
-import { logger } from "./logger"
+/**
+ * Job queue types for the custom queue system.
+ *
+ * These types are used by QueueManager (queue-manager.ts) and all job workers.
+ */
 
 /**
- * Job queue types and legacy pg-boss implementation.
- *
- * NOTE: The pg-boss implementation (JobQueueManager) is being replaced by
- * the custom QueueManager in queue-manager.ts. The types defined here
- * (JobQueues, JobDataMap, JobHandler) are shared between both implementations.
+ * Job object passed to handlers.
  */
+export interface Job<T = unknown> {
+  id: string
+  name: string
+  data: T
+}
 
 // Job type definitions
 export const JobQueues = {
@@ -92,131 +94,7 @@ export interface JobDataMap {
   [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
 }
 
-// Dead letter queue suffix - jobs that exhaust retries go here
-const DEAD_LETTER_SUFFIX = "__dlq"
-
-// Default options for jobs
-const DEFAULT_JOB_OPTIONS: SendOptions = {
-  retryLimit: 3,
-  retryDelay: 5,
-  retryBackoff: true,
-}
-
 /**
  * Handler for a single job. Returns void on success, throws on error.
  */
 export type JobHandler<T> = (job: Job<T>) => Promise<void>
-
-/**
- * Wrapper around pg-boss that provides typed job helpers.
- */
-export class JobQueueManager {
-  private boss: PgBoss
-  private handlers = new Map<string, JobHandler<unknown>>()
-
-  constructor(pool: Pool) {
-    this.boss = new PgBoss({
-      db: {
-        executeSql: async (text: string, values?: unknown[]): Promise<{ rows: unknown[] }> => {
-          const result = await withClient(pool, (client) => client.query(text, values as unknown[]))
-          // pg-boss only uses single-statement queries; handle multi-statement defensively
-          const rows = Array.isArray(result) ? (result[0]?.rows ?? []) : result.rows
-          return { rows }
-        },
-      },
-      schema: "pgboss",
-    })
-  }
-
-  async start(): Promise<void> {
-    // Register event listeners before starting
-    this.boss.on("error", (error) => {
-      logger.error({ err: error }, "pg-boss error")
-    })
-
-    await this.boss.start()
-    logger.info("Job queue started")
-
-    // Register handlers for each queue
-    for (const [queue, handler] of this.handlers) {
-      const dlq = `${queue}${DEAD_LETTER_SUFFIX}`
-
-      // Create dead letter queue first (must exist before referencing in deadLetter option)
-      await this.boss.createQueue(dlq)
-
-      // Create main queue with dead letter configuration
-      await this.boss.createQueue(queue, { deadLetter: dlq })
-
-      // pg-boss passes an array of jobs; we process them sequentially
-      await this.boss.work(
-        queue,
-        {
-          batchSize: 5, // Fetch up to 5 jobs per poll
-          pollingIntervalSeconds: 1, // Poll every 1 second instead of default 2
-        },
-        async (jobs: Job<unknown>[]) => {
-          for (const job of jobs) {
-            try {
-              await handler(job)
-            } catch (error) {
-              // Warn on failure - provides context when troubleshooting
-              logger.warn({ jobId: job.id, queue, err: error }, "Job failed, will retry if attempts remain")
-              throw error
-            }
-          }
-        }
-      )
-
-      // Dead letter handler - alert level, these need attention
-      await this.boss.work(dlq, async (jobs: Job<unknown>[]) => {
-        for (const job of jobs) {
-          logger.error(
-            { jobId: job.id, queue: dlq, data: job.data },
-            "Job moved to dead letter queue after exhausting retries"
-          )
-        }
-      })
-
-      logger.info({ queue, dlq }, "Job handler registered")
-    }
-  }
-
-  async stop(): Promise<void> {
-    await this.boss.stop({ graceful: true, timeout: 30000 })
-    logger.info("Job queue stopped")
-  }
-
-  /**
-   * Register a handler for a job queue. Must be called before start().
-   */
-  registerHandler<T extends JobQueueName>(queue: T, handler: JobHandler<JobDataMap[T]>): void {
-    this.handlers.set(queue, handler as JobHandler<unknown>)
-  }
-
-  /**
-   * Send a job to the queue.
-   */
-  async send<T extends JobQueueName>(queue: T, data: JobDataMap[T], options?: SendOptions): Promise<string | null> {
-    const mergedOptions = { ...DEFAULT_JOB_OPTIONS, ...options }
-    const jobId = await this.boss.send(queue, data, mergedOptions)
-    logger.debug({ queue, jobId, data }, "Job sent")
-    return jobId
-  }
-
-  /**
-   * Get the underlying pg-boss instance for advanced operations.
-   */
-  getBoss(): PgBoss {
-    return this.boss
-  }
-}
-
-/**
- * Create a job queue instance. The queue must be started with start() before use.
- */
-export function createJobQueue(pool: Pool): JobQueueManager {
-  return new JobQueueManager(pool)
-}
-
-// Re-export useful types
-export type { Job, SendOptions }
