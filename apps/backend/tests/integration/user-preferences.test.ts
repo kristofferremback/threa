@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient } from "../../src/db"
+import { withClient } from "./setup"
 import { UserPreferencesService } from "../../src/services/user-preferences-service"
 import { UserPreferencesRepository } from "../../src/repositories/user-preferences-repository"
 import { workspaceId, userId } from "../../src/lib/id"

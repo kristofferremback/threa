@@ -9,7 +9,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction, withClient } from "../../src/db"
+import { withTransaction, withClient } from "./setup"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"

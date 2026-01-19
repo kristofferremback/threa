@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTestTransaction } from "../../src/db"
+import { withTestTransaction } from "./setup"
 import { OutboxRepository } from "../../src/repositories"
 import { setupTestDatabase } from "./setup"
 

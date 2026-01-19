@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../../src/db"
+import { withClient, withTransaction } from "./setup"
 import { StreamService } from "../../src/services/stream-service"
 import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
