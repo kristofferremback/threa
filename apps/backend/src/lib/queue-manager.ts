@@ -295,9 +295,9 @@ export class QueueManager {
     const workerPromise = (async () => {
       // Set up token renewal timer (runs for entire worker lifetime)
       let tokenRenewalInProgress = false
+      let isShuttingDown = false
       const tokenRenewTimer = setInterval(async () => {
-        if (tokenRenewalInProgress) {
-          logger.debug({ tokenId: token.id }, "Skipping token renewal - previous renewal still in progress")
+        if (isShuttingDown || tokenRenewalInProgress) {
           return
         }
 
@@ -319,7 +319,15 @@ export class QueueManager {
       try {
         await this.processMessagesForToken(token)
       } finally {
+        // Signal shutdown and clear timer immediately to prevent new renewals
+        isShuttingDown = true
         clearInterval(tokenRenewTimer)
+
+        // Wait for any in-progress renewal to complete before releasing token
+        while (tokenRenewalInProgress) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+
         await this.releaseToken(token.id)
       }
     })()
@@ -444,17 +452,8 @@ export class QueueManager {
     message: { id: string; queueName: string; payload: unknown; failedCount: number },
     workerId: string
   ): Promise<void> {
-    const handler = this.handlers.get(message.queueName)
-
-    if (!handler) {
-      // This should NEVER happen - we only lease tokens for queues with registered handlers.
-      // If this occurs, it's a bug in the token leasing logic.
-      throw new Error(
-        `CRITICAL BUG: No handler registered for queue ${message.queueName}. ` +
-          `This should never happen as we filter tokens by registered handlers. ` +
-          `Registered queues: ${Array.from(this.handlers.keys()).join(", ")}`
-      )
-    }
+    // Handler must exist - we only lease tokens for queues with registered handlers
+    const handler = this.handlers.get(message.queueName)!
 
     try {
       // Execute handler

@@ -204,8 +204,6 @@ export const QueueRepository = {
           WHERE queue_name = ${params.queueName}
             AND workspace_id = ${params.workspaceId}
             AND process_after <= ${params.now}
-            AND dlq_at IS NULL
-            AND completed_at IS NULL
             AND (claimed_until IS NULL OR claimed_until < ${params.now})
           ORDER BY process_after ASC
           LIMIT ${params.limit}
@@ -258,8 +256,6 @@ export const QueueRepository = {
         SET claimed_until = ${params.claimedUntil}
         WHERE id = ANY(${params.messageIds})
           AND claimed_by = ${params.claimedBy}
-          AND completed_at IS NULL
-          AND dlq_at IS NULL
       `
     )
 
@@ -276,6 +272,7 @@ export const QueueRepository = {
         UPDATE queue_messages
         SET
           completed_at = ${params.completedAt},
+          process_after = NULL,
           claimed_by = NULL,
           claimed_until = NULL
         WHERE id = ${params.messageId}
@@ -331,6 +328,7 @@ export const QueueRepository = {
         SET
           dlq_at = ${params.dlqAt},
           last_error = ${params.error},
+          process_after = NULL,
           claimed_by = NULL,
           claimed_until = NULL
         WHERE id = ${params.messageId}

@@ -1,6 +1,6 @@
 import type { Querier } from "../db"
 import { sql } from "../db"
-import { ulid } from "ulid"
+import { tickId } from "../lib/id"
 
 // Internal row types (snake_case)
 interface CronScheduleRow {
@@ -199,7 +199,7 @@ export const CronRepository = {
           `$${tickIdx++}::timestamptz + (random() * 0.2 - 0.1) * ($${tickIdx++} || ' seconds')::interval, NOW())`
       )
       tickValues.push(
-        `tick_${ulid()}`,
+        tickId(),
         sched.scheduleId,
         sched.queueName,
         JSON.stringify(sched.payload),
