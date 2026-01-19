@@ -87,17 +87,23 @@ export class ScheduleManager {
         return
       }
 
-      // Convert to createTicks format
-      const ticksToCreate = schedules.map((schedule) => ({
-        scheduleId: schedule.id,
-        queueName: schedule.queueName,
-        payload: schedule.payload,
-        workspaceId: schedule.workspaceId,
-        executeAt: schedule.nextTickNeededAt,
-        intervalSeconds: schedule.intervalSeconds,
-      }))
+      // Convert to createTicks format with jitter
+      // Apply ±10% jitter to prevent thundering herd
+      const ticksToCreate = schedules.map((schedule) => {
+        const jitterMs = schedule.intervalSeconds * 1000 * (Math.random() * 0.2 - 0.1)
+        const executeAt = new Date(schedule.nextTickNeededAt.getTime() + jitterMs)
 
-      // Create tick tokens (with jitter applied in SQL)
+        return {
+          scheduleId: schedule.id,
+          queueName: schedule.queueName,
+          payload: schedule.payload,
+          workspaceId: schedule.workspaceId,
+          executeAt,
+          intervalSeconds: schedule.intervalSeconds,
+        }
+      })
+
+      // Create tick tokens
       const ticks = await CronRepository.createTicks(this.pool, {
         schedules: ticksToCreate,
       })

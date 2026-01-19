@@ -171,8 +171,7 @@ export const CronRepository = {
   },
 
   /**
-   * Create tick tokens for schedules with jitter.
-   * Applies ±10% jitter to execute_at to prevent thundering herd.
+   * Create tick tokens for schedules.
    * UNIQUE constraint on (schedule_id, execute_at) prevents duplicates.
    *
    * After creating ticks, updates each schedule's next_tick_needed_at.
@@ -193,10 +192,10 @@ export const CronRepository = {
     const scheduleIds: string[] = []
 
     for (const sched of params.schedules) {
-      // Generate tick with jitter: execute_at ± 10% of interval
+      // Generate tick (jitter applied by caller)
       tickPlaceholders.push(
         `($${tickIdx++}, $${tickIdx++}, $${tickIdx++}, $${tickIdx++}::jsonb, $${tickIdx++}, ` +
-          `$${tickIdx++}::timestamptz + (random() * 0.2 - 0.1) * ($${tickIdx++} || ' seconds')::interval, NOW())`
+          `$${tickIdx++}::timestamptz, NOW())`
       )
       tickValues.push(
         tickId(),
@@ -204,8 +203,7 @@ export const CronRepository = {
         sched.queueName,
         JSON.stringify(sched.payload),
         sched.workspaceId,
-        sched.executeAt,
-        sched.intervalSeconds
+        sched.executeAt
       )
 
       // Update schedule's next_tick_needed_at
