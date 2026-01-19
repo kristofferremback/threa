@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
@@ -34,7 +34,7 @@ describe("ConversationRepository", () => {
     testWorkspaceId = workspaceId()
     testStreamId = streamId()
 
-    await withTransaction(pool, async (client) => {
+    await withTestTransaction(pool, async (client) => {
       await UserRepository.insert(client, {
         id: testUserId,
         email: `conv-test-${testUserId}@test.com`,
@@ -67,7 +67,7 @@ describe("ConversationRepository", () => {
     test("creates conversation with minimal fields", async () => {
       const convId = conversationId()
 
-      const conversation = await withTransaction(pool, async (client) => {
+      const conversation = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -91,7 +91,7 @@ describe("ConversationRepository", () => {
       const convId = conversationId()
       const msgId = messageId()
 
-      const conversation = await withTransaction(pool, async (client) => {
+      const conversation = await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: testStreamId,
@@ -128,7 +128,7 @@ describe("ConversationRepository", () => {
     test("returns conversation when exists", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -137,7 +137,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const found = await withTransaction(pool, async (client) => {
+      const found = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findById(client, convId)
       })
 
@@ -147,7 +147,7 @@ describe("ConversationRepository", () => {
     })
 
     test("returns null when not exists", async () => {
-      const found = await withTransaction(pool, async (client) => {
+      const found = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findById(client, "conv_nonexistent")
       })
 
@@ -162,7 +162,7 @@ describe("ConversationRepository", () => {
       const conv2Id = conversationId()
 
       // Create stream first
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -174,7 +174,7 @@ describe("ConversationRepository", () => {
       })
 
       // Insert conversations in separate transactions so NOW() gives different times
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: conv1Id,
           streamId: localStreamId,
@@ -186,7 +186,7 @@ describe("ConversationRepository", () => {
       // Small delay between transactions
       await new Promise((r) => setTimeout(r, 10))
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: conv2Id,
           streamId: localStreamId,
@@ -195,7 +195,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const conversations = await withTransaction(pool, async (client) => {
+      const conversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findByStream(client, localStreamId)
       })
 
@@ -211,7 +211,7 @@ describe("ConversationRepository", () => {
       const activeConvId = conversationId()
       const stalledConvId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -236,7 +236,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const activeConversations = await withTransaction(pool, async (client) => {
+      const activeConversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findByStream(client, localStreamId, {
           status: ConversationStatuses.ACTIVE,
         })
@@ -254,7 +254,7 @@ describe("ConversationRepository", () => {
       const activeConvId = conversationId()
       const resolvedConvId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -279,7 +279,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const conversations = await withTransaction(pool, async (client) => {
+      const conversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findActiveByStream(client, localStreamId)
       })
 
@@ -294,7 +294,7 @@ describe("ConversationRepository", () => {
       const msgId = messageId()
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: testStreamId,
@@ -312,7 +312,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const conversations = await withTransaction(pool, async (client) => {
+      const conversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findByMessageId(client, msgId)
       })
 
@@ -320,7 +320,7 @@ describe("ConversationRepository", () => {
     })
 
     test("returns empty array when message not in any conversation", async () => {
-      const conversations = await withTransaction(pool, async (client) => {
+      const conversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findByMessageId(client, "msg_orphan")
       })
 
@@ -332,7 +332,7 @@ describe("ConversationRepository", () => {
     test("returns conversations for workspace", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -341,7 +341,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const conversations = await withTransaction(pool, async (client) => {
+      const conversations = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findByWorkspace(client, testWorkspaceId)
       })
 
@@ -353,7 +353,7 @@ describe("ConversationRepository", () => {
     test("updates completeness score and status", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -363,7 +363,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.update(client, convId, {
           completenessScore: 6,
           status: ConversationStatuses.RESOLVED,
@@ -377,7 +377,7 @@ describe("ConversationRepository", () => {
     test("updates topic summary", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -386,7 +386,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.update(client, convId, {
           topicSummary: "Updated topic",
         })
@@ -396,7 +396,7 @@ describe("ConversationRepository", () => {
     })
 
     test("returns null for non-existent conversation", async () => {
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.update(client, "conv_nonexistent", {
           completenessScore: 5,
         })
@@ -412,7 +412,7 @@ describe("ConversationRepository", () => {
       const msg1Id = messageId()
       const msg2Id = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: testStreamId,
@@ -439,14 +439,14 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const originalConv = await withTransaction(pool, async (client) => {
+      const originalConv = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findById(client, convId)
       })
 
       // Small delay to ensure different timestamps
       await new Promise((r) => setTimeout(r, 10))
 
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.addMessage(client, convId, msg2Id)
       })
 
@@ -460,7 +460,7 @@ describe("ConversationRepository", () => {
       const convId = conversationId()
       const user2Id = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: user2Id,
           email: `conv-participant-${user2Id}@test.com`,
@@ -476,7 +476,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.addParticipant(client, convId, user2Id)
       })
 
@@ -487,7 +487,7 @@ describe("ConversationRepository", () => {
     test("does not duplicate existing participant", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -496,7 +496,7 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const updated = await withTransaction(pool, async (client) => {
+      const updated = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.addParticipant(client, convId, testUserId)
       })
 
@@ -509,7 +509,7 @@ describe("ConversationRepository", () => {
     test("removes conversation and returns true", async () => {
       const convId = conversationId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await ConversationRepository.insert(client, {
           id: convId,
           streamId: testStreamId,
@@ -517,13 +517,13 @@ describe("ConversationRepository", () => {
         })
       })
 
-      const deleted = await withTransaction(pool, async (client) => {
+      const deleted = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.delete(client, convId)
       })
 
       expect(deleted).toBe(true)
 
-      const found = await withTransaction(pool, async (client) => {
+      const found = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findById(client, convId)
       })
 
@@ -531,7 +531,7 @@ describe("ConversationRepository", () => {
     })
 
     test("returns false for non-existent conversation", async () => {
-      const deleted = await withTransaction(pool, async (client) => {
+      const deleted = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.delete(client, "conv_nonexistent")
       })
 

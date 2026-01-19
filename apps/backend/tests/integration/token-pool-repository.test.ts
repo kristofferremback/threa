@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
 import { QueueRepository } from "../../src/repositories/queue-repository"
 import { TokenPoolRepository } from "../../src/repositories/token-pool-repository"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, withTestTransaction } from "./setup"
 
 describe("TokenPoolRepository", () => {
   let pool: Pool
@@ -24,7 +23,7 @@ describe("TokenPoolRepository", () => {
 
   describe("batchLeaseTokens", () => {
     test("should lease tokens for available (queue, workspace) pairs", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert messages for different (queue, workspace) pairs
@@ -63,7 +62,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should return empty array if no work available", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         const tokens = await TokenPoolRepository.batchLeaseTokens(client, {
@@ -79,7 +78,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should exclude pairs that already have active tokens", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -117,7 +116,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should allow leasing after tokens expire", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -153,7 +152,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should respect limit parameter", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert messages for 5 different workspaces
@@ -182,7 +181,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should prioritize earliest process_after (fairness)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert messages with different process_after times
@@ -233,7 +232,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should only include messages ready to process (processAfter <= now)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message ready now
@@ -272,7 +271,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should exclude completed messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and complete message
@@ -314,7 +313,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should exclude DLQ messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and move to DLQ
@@ -357,7 +356,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should include messages with expired claims", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -396,7 +395,7 @@ describe("TokenPoolRepository", () => {
 
   describe("renewLease", () => {
     test("should renew lease for active token", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message and lease token
@@ -433,7 +432,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should fail to renew with wrong leasedBy", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message and lease token
@@ -468,7 +467,7 @@ describe("TokenPoolRepository", () => {
 
   describe("deleteToken", () => {
     test("should delete token", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message and lease token
@@ -502,7 +501,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should throw if wrong leasedBy", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message and lease token
@@ -536,7 +535,7 @@ describe("TokenPoolRepository", () => {
 
   describe("deleteExpiredTokens", () => {
     test("should delete expired tokens", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
         const pastTime = new Date(now.getTime() - 10000)
 
@@ -587,7 +586,7 @@ describe("TokenPoolRepository", () => {
     })
 
     test("should not delete non-expired tokens", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message

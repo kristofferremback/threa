@@ -768,7 +768,7 @@ describe("Event Sourcing", () => {
       // Try to create a message with an invalid stream_id that would cause FK failure
       // Since we don't have FK constraints, we'll simulate by using a custom transaction
       try {
-        await withTransaction(pool, async (client) => {
+        await withTestTransaction(pool, async (client) => {
           // Insert event
           await StreamEventRepository.insert(client, {
             id: "evt_test",

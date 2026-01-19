@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
@@ -39,7 +39,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `thread-owner-${ownerId}@test.com`,
@@ -91,7 +91,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `nested-owner-${ownerId}@test.com`,
@@ -157,7 +157,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `deep-owner-${ownerId}@test.com`,
@@ -221,7 +221,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `scratch-thread-owner-${ownerId}@test.com`,
@@ -270,7 +270,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `thread-member-owner-${ownerId}@test.com`,
@@ -319,7 +319,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `invalid-thread-owner-${ownerId}@test.com`,
@@ -351,7 +351,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `idem-owner-${ownerId}@test.com`,
@@ -409,7 +409,7 @@ describe("Thread Graph", () => {
       const user2Id = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `idem-owner2-${ownerId}@test.com`,
@@ -482,7 +482,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `reply-count-owner-${ownerId}@test.com`,
@@ -557,7 +557,7 @@ describe("Thread Graph", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `nested-reply-owner-${ownerId}@test.com`,

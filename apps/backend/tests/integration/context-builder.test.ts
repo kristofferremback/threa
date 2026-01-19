@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
@@ -34,7 +34,7 @@ describe("Context Builder", () => {
 
   describe("Scratchpad Context", () => {
     test("should include conversation history", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const ownerId = userId()
         const wsId = workspaceId()
         const scratchpadId = streamId()
@@ -99,7 +99,7 @@ describe("Context Builder", () => {
 
   describe("Channel Context", () => {
     test("should include members and conversation", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const ownerId = userId()
         const memberId = userId()
         const wsId = workspaceId()
@@ -167,7 +167,7 @@ describe("Context Builder", () => {
 
   describe("Thread Context", () => {
     test("should include thread hierarchy path", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const ownerId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
@@ -253,7 +253,7 @@ describe("Context Builder", () => {
     })
 
     test("should handle deeply nested threads", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const ownerId = userId()
         const wsId = workspaceId()
         const channelId = streamId()
@@ -350,7 +350,7 @@ describe("Context Builder", () => {
 
   describe("DM Context", () => {
     test("should include both participants", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const user1Id = userId()
         const user2Id = userId()
         const wsId = workspaceId()

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { OutboxRepository } from "../../src/repositories"
 import { setupTestDatabase } from "./setup"
 
@@ -42,7 +42,7 @@ describe("OutboxRepository", () => {
     })
 
     test("should fetch events after cursor", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // Insert some test events
         await OutboxRepository.insert(client, "message:created", testEventPayload("stream_1"))
         const second = await OutboxRepository.insert(client, "message:created", testEventPayload("stream_2"))
@@ -57,7 +57,7 @@ describe("OutboxRepository", () => {
     })
 
     test("should respect limit parameter", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // Get baseline to avoid counting old events
         const maxResult = await client.query("SELECT COALESCE(MAX(id), 0) as max_id FROM outbox")
         const baselineId = BigInt(maxResult.rows[0].max_id)
@@ -74,7 +74,7 @@ describe("OutboxRepository", () => {
     })
 
     test("should return empty array when no events after cursor", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const events = await OutboxRepository.fetchAfterId(client, 999999999n)
         expect(events.length).toBe(0)
       })

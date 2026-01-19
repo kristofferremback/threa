@@ -1,5 +1,6 @@
 import type { Querier } from "../db"
 import { sql } from "../db"
+import { ulid } from "ulid"
 
 // Internal row type (snake_case)
 interface QueueTokenRow {
@@ -89,6 +90,10 @@ export const TokenPoolRepository = {
    * pending_count into multiple tokens.
    */
   async batchLeaseTokens(db: Querier, params: BatchLeaseTokensParams): Promise<QueueToken[]> {
+    // Pre-generate ULIDs (INV-2: all entity IDs must be prefix_ulid)
+    // Generate limit ULIDs upfront, actual usage will be limited by available pairs
+    const tokenIds = Array.from({ length: params.limit }, () => `token_${ulid()}`)
+
     const result = await db.query<QueueTokenRow>(
       sql`
         WITH available_pairs AS (
@@ -124,10 +129,17 @@ export const TokenPoolRepository = {
             queue_name,
             workspace_id,
             next_process_after,
-            pending_count
+            pending_count,
+            ROW_NUMBER() OVER (ORDER BY next_process_after ASC) AS rn
           FROM pairs_without_tokens
           ORDER BY next_process_after ASC
           LIMIT ${params.limit}
+        ),
+        token_ids AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER () AS rn
+          FROM unnest(${tokenIds}::text[]) AS id
         )
         INSERT INTO queue_tokens (
           id, queue_name, workspace_id,
@@ -135,15 +147,16 @@ export const TokenPoolRepository = {
           next_process_after, created_at
         )
         SELECT
-          'token_' || gen_random_uuid()::text,
-          queue_name,
-          workspace_id,
+          t.id,
+          sp.queue_name,
+          sp.workspace_id,
           ${params.leasedAt},
           ${params.leasedBy},
           ${params.leasedUntil},
-          next_process_after,
+          sp.next_process_after,
           ${params.leasedAt}
-        FROM selected_pairs
+        FROM selected_pairs sp
+        JOIN token_ids t ON t.rn = sp.rn
         RETURNING ${SELECT_FIELDS}
       `
     )

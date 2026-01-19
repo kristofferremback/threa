@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
@@ -66,7 +66,7 @@ describe("BoundaryExtractionService", () => {
     testWorkspaceId = workspaceId()
     testStreamId = streamId()
 
-    await withTransaction(pool, async (client) => {
+    await withTestTransaction(pool, async (client) => {
       await UserRepository.insert(client, {
         id: testUserId,
         email: `boundary-test-${testUserId}@test.com`,
@@ -112,7 +112,7 @@ describe("BoundaryExtractionService", () => {
     test("creates new conversation when extractor returns null conversationId", async () => {
       const msgId = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: testStreamId,
@@ -145,7 +145,7 @@ describe("BoundaryExtractionService", () => {
       const msg2Id = messageId()
 
       // Create existing conversation
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: testStreamId,
@@ -194,7 +194,7 @@ describe("BoundaryExtractionService", () => {
       const msg2Id = messageId()
       const msg3Id = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msg1Id,
           streamId: testStreamId,
@@ -250,7 +250,7 @@ describe("BoundaryExtractionService", () => {
       await service.processMessage(msg3Id, testStreamId, testWorkspaceId)
 
       // Check that conv1 was updated
-      const updatedConv = await withTransaction(pool, async (client) => {
+      const updatedConv = await withTestTransaction(pool, async (client) => {
         return ConversationRepository.findById(client, conv1Id)
       })
 
@@ -262,7 +262,7 @@ describe("BoundaryExtractionService", () => {
       const msgId = messageId()
       const localStreamId = streamId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -291,7 +291,7 @@ describe("BoundaryExtractionService", () => {
       const result = await service.processMessage(msgId, localStreamId, testWorkspaceId)
 
       // Check outbox for the event
-      const outboxEvents = await withTransaction(pool, async (client) => {
+      const outboxEvents = await withTestTransaction(pool, async (client) => {
         const res = await client.query(
           `SELECT * FROM outbox WHERE event_type = 'conversation:created' ORDER BY created_at DESC LIMIT 1`
         )
@@ -313,7 +313,7 @@ describe("BoundaryExtractionService", () => {
       const msg1Id = messageId()
       const msg2Id = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -357,7 +357,7 @@ describe("BoundaryExtractionService", () => {
       await service.processMessage(msg2Id, localStreamId, testWorkspaceId)
 
       // Check outbox for the event
-      const outboxEvents = await withTransaction(pool, async (client) => {
+      const outboxEvents = await withTestTransaction(pool, async (client) => {
         const res = await client.query(
           `SELECT * FROM outbox WHERE event_type = 'conversation:updated' ORDER BY created_at DESC LIMIT 1`
         )
@@ -378,7 +378,7 @@ describe("BoundaryExtractionService", () => {
     test("returns null for non-existent stream", async () => {
       const msgId = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msgId,
           streamId: testStreamId,
@@ -399,7 +399,7 @@ describe("BoundaryExtractionService", () => {
       const msg1Id = messageId()
       const msg2Id = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: user2Id,
           email: `boundary-test-user2-${user2Id}@test.com`,
@@ -451,7 +451,7 @@ describe("BoundaryExtractionService", () => {
       const localStreamId = streamId()
       const msgId = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -482,7 +482,7 @@ describe("BoundaryExtractionService", () => {
       const msg2Id = messageId()
       const msg3Id = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -510,7 +510,7 @@ describe("BoundaryExtractionService", () => {
       const conversationId1 = result1?.id
 
       // Add more messages
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await MessageRepository.insert(client, {
           id: msg2Id,
           streamId: localStreamId,
@@ -551,7 +551,7 @@ describe("BoundaryExtractionService", () => {
       const localStreamId = streamId()
       const msgId = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,
@@ -581,7 +581,7 @@ describe("BoundaryExtractionService", () => {
       const localStreamId = streamId()
       const msgId = messageId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamRepository.insert(client, {
           id: localStreamId,
           workspaceId: testWorkspaceId,

@@ -1,8 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
 import { QueueRepository } from "../../src/repositories/queue-repository"
-import { setupTestDatabase } from "./setup"
+import { setupTestDatabase, withTestTransaction } from "./setup"
 
 describe("QueueRepository", () => {
   let pool: Pool
@@ -23,7 +22,7 @@ describe("QueueRepository", () => {
 
   describe("insert", () => {
     test("should insert a message", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
         const message = await QueueRepository.insert(client, {
           id: "queue_test1",
@@ -54,7 +53,7 @@ describe("QueueRepository", () => {
 
   describe("claimNext", () => {
     test("should claim next available message", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert two messages
@@ -94,7 +93,7 @@ describe("QueueRepository", () => {
     })
 
     test("should return null if no messages available", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         const claimed = await QueueRepository.claimNext(client, {
@@ -111,7 +110,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip messages not ready yet (processAfter > now)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message scheduled for future
@@ -138,7 +137,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip messages with active claims", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim a message
@@ -177,7 +176,7 @@ describe("QueueRepository", () => {
     })
 
     test("should reclaim messages with expired claims", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -218,7 +217,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip completed messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -262,7 +261,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip DLQ messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -309,7 +308,7 @@ describe("QueueRepository", () => {
 
   describe("renewClaim", () => {
     test("should renew claim for active message", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim message
@@ -347,7 +346,7 @@ describe("QueueRepository", () => {
     })
 
     test("should fail to renew with wrong claimedBy", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim message
@@ -381,7 +380,7 @@ describe("QueueRepository", () => {
     })
 
     test("should fail to renew completed message", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert, claim, and complete message
@@ -423,7 +422,7 @@ describe("QueueRepository", () => {
 
   describe("complete", () => {
     test("should mark message as completed", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim message
@@ -461,7 +460,7 @@ describe("QueueRepository", () => {
     })
 
     test("should throw if wrong claimedBy", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim message
@@ -497,7 +496,7 @@ describe("QueueRepository", () => {
 
   describe("fail", () => {
     test("should record failure and set retry backoff", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
         const retryAfter = new Date(now.getTime() + 5000)
 
@@ -540,7 +539,7 @@ describe("QueueRepository", () => {
     })
 
     test("should increment failedCount on multiple failures", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert message
@@ -582,7 +581,7 @@ describe("QueueRepository", () => {
 
   describe("failDlq", () => {
     test("should move message to DLQ", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and claim message
@@ -624,7 +623,7 @@ describe("QueueRepository", () => {
 
   describe("unDlq", () => {
     test("should remove message from DLQ and reset for retry", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert, claim, and move to DLQ
@@ -671,7 +670,7 @@ describe("QueueRepository", () => {
 
   describe("batchClaimMessages", () => {
     test("should batch claim multiple messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 5 messages
@@ -709,7 +708,7 @@ describe("QueueRepository", () => {
     })
 
     test("should return empty array if no messages available", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         const claimed = await QueueRepository.batchClaimMessages(client, {
@@ -727,7 +726,7 @@ describe("QueueRepository", () => {
     })
 
     test("should return fewer messages than limit if not enough available", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 2 messages
@@ -758,7 +757,7 @@ describe("QueueRepository", () => {
     })
 
     test("should claim all ready messages regardless of insert order", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert messages with different processAfter timestamps
@@ -809,7 +808,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip messages not ready yet (processAfter > now)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 2 ready, 1 future
@@ -856,7 +855,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip messages with active claims", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 3 messages
@@ -899,7 +898,7 @@ describe("QueueRepository", () => {
     })
 
     test("should reclaim messages with expired claims", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 2 messages
@@ -943,7 +942,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip completed messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 3 messages
@@ -991,7 +990,7 @@ describe("QueueRepository", () => {
     })
 
     test("should skip DLQ messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 3 messages
@@ -1042,7 +1041,7 @@ describe("QueueRepository", () => {
 
   describe("batchRenewClaims", () => {
     test("should batch renew claims for all messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and batch claim 3 messages
@@ -1087,7 +1086,7 @@ describe("QueueRepository", () => {
     })
 
     test("should support partial success - skip completed messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and batch claim 3 messages
@@ -1137,7 +1136,7 @@ describe("QueueRepository", () => {
     })
 
     test("should support partial success - skip DLQ messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert and batch claim 3 messages
@@ -1184,7 +1183,7 @@ describe("QueueRepository", () => {
     })
 
     test("should verify claimedBy - only renew messages owned by worker", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Insert 2 messages
@@ -1231,7 +1230,7 @@ describe("QueueRepository", () => {
     })
 
     test("should return 0 if no messages renewed", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
 
         // Try to renew non-existent messages
@@ -1248,7 +1247,7 @@ describe("QueueRepository", () => {
 
   describe("deleteOldMessages", () => {
     test("should delete old completed messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
         const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
 
@@ -1320,7 +1319,7 @@ describe("QueueRepository", () => {
     })
 
     test("should delete old DLQ messages", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const now = new Date()
         const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
 

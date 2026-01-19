@@ -11,7 +11,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "../../src/db"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
@@ -45,7 +45,7 @@ describe("Access Control", () => {
       const user1Id = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: user1Id,
           email: `workspace-member-${user1Id}@test.com`,
@@ -71,7 +71,7 @@ describe("Access Control", () => {
       const nonMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `owner-${ownerId}@test.com`,
@@ -101,7 +101,7 @@ describe("Access Control", () => {
       const joiningUserId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `owner-join-${ownerId}@test.com`,
@@ -139,7 +139,7 @@ describe("Access Control", () => {
       const memberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `public-owner-${ownerId}@test.com`,
@@ -181,7 +181,7 @@ describe("Access Control", () => {
       const memberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `private-owner-${ownerId}@test.com`,
@@ -221,7 +221,7 @@ describe("Access Control", () => {
       const streamMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `priv-access-owner-${ownerId}@test.com`,
@@ -265,7 +265,7 @@ describe("Access Control", () => {
       const otherId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `scratch-owner-${ownerId}@test.com`,
@@ -314,7 +314,7 @@ describe("Access Control", () => {
       const user2Id = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: user1Id,
           email: `list-user1-${user1Id}@test.com`,
@@ -379,7 +379,7 @@ describe("Access Control", () => {
       const newMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `add-member-owner-${ownerId}@test.com`,
@@ -428,7 +428,7 @@ describe("Access Control", () => {
       const removedMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `rm-member-owner-${ownerId}@test.com`,
@@ -481,7 +481,7 @@ describe("Access Control", () => {
       const ws1Id = workspaceId()
       const ws2Id = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: user1Id,
           email: `cross-ws-user1-${user1Id}@test.com`,
@@ -534,7 +534,7 @@ describe("Access Control", () => {
       const memberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `thread-vis-owner-${ownerId}@test.com`,
@@ -597,7 +597,7 @@ describe("Access Control", () => {
       const memberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `deep-thread-owner-${ownerId}@test.com`,
@@ -689,7 +689,7 @@ describe("Access Control", () => {
       const nonMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `priv-thread-owner-${ownerId}@test.com`,
@@ -756,7 +756,7 @@ describe("Access Control", () => {
       const threadCreatorId = userId() // e.g., a persona
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: channelOwnerId,
           email: `thread-ismember-owner-${channelOwnerId}@test.com`,
@@ -820,7 +820,7 @@ describe("Access Control", () => {
       const newMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `thread-add-member-owner-${ownerId}@test.com`,
@@ -887,7 +887,7 @@ describe("Access Control", () => {
       const nonMemberId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `is-member-owner-${ownerId}@test.com`,
@@ -943,7 +943,7 @@ describe("Access Control", () => {
       const userBId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: userAId,
           email: `cmd-vis-userA-${userAId}@test.com`,
@@ -986,7 +986,7 @@ describe("Access Control", () => {
 
       // Create command events as User A (directly via repository for test control)
       const cmdId = commandId()
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamEventRepository.insert(client, {
           id: eventId(),
           streamId: channel.id,
@@ -1034,7 +1034,7 @@ describe("Access Control", () => {
       const userBId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: userAId,
           email: `cmd-fail-vis-userA-${userAId}@test.com`,
@@ -1067,7 +1067,7 @@ describe("Access Control", () => {
 
       // Create command_dispatched and command_failed events as User A
       const cmdId = commandId()
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamEventRepository.insert(client, {
           id: eventId(),
           streamId: channel.id,
