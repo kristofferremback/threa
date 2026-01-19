@@ -179,7 +179,11 @@ CREATE TABLE cron_ticks (
     leased_by TEXT,                         -- ticker_<ulid> identifier
     leased_until TIMESTAMPTZ,               -- Lock expires after this
 
-    created_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+
+    -- CRITICAL: Prevent duplicate tick generation
+    -- Schedule Manager runs on multiple workers - this ensures only one tick per execution
+    CONSTRAINT unique_schedule_execution UNIQUE (schedule_id, execute_at)
 );
 
 -- Hot path: Find ticks ready for execution
@@ -192,10 +196,79 @@ CREATE INDEX idx_cron_ticks_execute
 CREATE INDEX idx_cron_ticks_schedule
     ON cron_ticks (schedule_id, execute_at);
 
--- Cleanup expired ticks
+-- Cleanup expired ticks (ticks that failed and lease expired)
 CREATE INDEX idx_cron_ticks_cleanup
-    ON cron_ticks (leased_until);
+    ON cron_ticks (leased_until)
+    WHERE leased_until IS NOT NULL;
 ```
+
+### Execution Semantics
+
+**At-Most-Once Delivery**
+
+This system guarantees **at-most-once** execution per schedule interval:
+
+- **Success case**: Tick is leased, message sent, tick deleted → exactly once
+- **Failure case**: Tick lease expires, no retry attempted → zero times (skipped)
+
+**Why at-most-once?**
+
+1. **Simplicity**: No retry logic, no state tracking for retries
+2. **Cron nature**: Scheduled jobs are periodic - a missed execution is acceptable
+3. **Next execution**: If this tick fails, the next interval creates a new tick
+4. **Idempotency burden**: At-least-once requires downstream handlers to be idempotent
+
+**Tradeoffs:**
+
+- ✅ **Pro**: Simple, fast, no retry complexity
+- ✅ **Pro**: Failed ticks don't accumulate (cleanup is automatic)
+- ✅ **Pro**: No thundering herd from retry storms
+- ❌ **Con**: Critical jobs may be skipped if all execution attempts fail
+- ❌ **Con**: No visibility into skipped executions (unless you track tick history)
+
+**When this is acceptable:**
+
+- Periodic health checks (next check in 30s)
+- Aggregation jobs (next run catches up)
+- Notification jobs (next interval will send)
+
+**When this is NOT acceptable:**
+
+- Billing jobs (must execute exactly once)
+- Deadline-driven tasks (must execute before cutoff)
+- SLA-critical operations (cannot tolerate misses)
+
+For critical jobs, consider:
+
+- External monitoring (alert if tick not executed within 2× interval)
+- Explicit retry logic in the job handler itself
+- Separate "critical job" queue with at-least-once semantics
+
+### Failure Handling
+
+**Tick execution failures:**
+
+1. **Message send fails**: Tick is deleted, error logged, next interval creates new tick
+2. **Worker crashes mid-execution**: Tick lease expires, another worker may pick it up if still within lease window
+3. **Lease expires during execution**: Tick may be picked up by another worker (duplicate execution possible but rare)
+
+**To prevent duplicate execution on lease expiry:**
+
+- Set lease duration longer than typical execution time (default: 10s)
+- Monitor execution times and alert if approaching lease duration
+- If execution takes >10s, add renewal logic (similar to message token renewal)
+
+**Orphaned ticks (lease expired, never completed):**
+
+- Cleanup worker runs periodically (every 5 minutes)
+- Deletes ticks where `leased_until < NOW() - interval '5 minutes'`
+- These are "failed" executions - logged but not retried
+
+**Schedule Manager failures:**
+
+- Schedule Manager runs on all workers (no single point of failure)
+- If one crashes, others continue generating ticks
+- UNIQUE constraint prevents duplicate tick generation
 
 ### Algorithm: Two-Phase Execution
 
@@ -206,7 +279,8 @@ The system separates **tick generation** (infrequent) from **tick execution** (f
 Pre-generates tick tokens for schedules whose next tick is needed soon:
 
 ```sql
--- Find schedules that need tick generation in the next 2 minutes
+-- Find schedules that need tick generation in the configured lookahead window
+-- Default lookahead: 30-60 seconds (configurable per deployment)
 -- Uses next_tick_needed_at index - O(schedules needing work) not O(all schedules)
 WITH schedules_needing_ticks AS (
   SELECT
@@ -215,10 +289,13 @@ WITH schedules_needing_ticks AS (
     interval_seconds,
     payload,
     workspace_id,
-    next_tick_needed_at AS execute_at
+    -- Add jitter: ±10% of interval to prevent thundering herd
+    -- Example: 60s interval → jitter between -6s and +6s
+    next_tick_needed_at +
+      (random() * 0.2 - 0.1) * (interval_seconds || ' seconds')::interval AS execute_at
   FROM cron_schedules
   WHERE enabled = true
-    AND next_tick_needed_at <= NOW() + interval '2 minutes'
+    AND next_tick_needed_at <= NOW() + $lookahead_interval  -- e.g., '60 seconds'
   ORDER BY next_tick_needed_at ASC
   LIMIT 100  -- Process in batches
 ),
@@ -267,10 +344,11 @@ WHERE id = ANY($schedule_ids);
 
 **Key Properties:**
 
-- Only queries schedules with `next_tick_needed_at <= NOW() + 2 minutes`
-- For 10,000 uniformly distributed schedules: ~42 schedules per run
-- Creates ticks with future `execute_at` (e.g., 1 minute ahead)
+- Only queries schedules with `next_tick_needed_at <= NOW() + lookahead` (default: 60 seconds)
+- For 10,000 uniformly distributed schedules: ~21-42 schedules per run (depends on lookahead)
+- Creates ticks with future `execute_at` including jitter (e.g., 30-60s ahead ± 10%)
 - Batches to 100 schedules max per run
+- Jitter prevents thundering herd when many schedules share the same interval
 
 #### Phase 2: Message Ticker (existing, runs every 100ms)
 
@@ -317,16 +395,128 @@ RETURNING
 - Only one worker acquires each tick
 - Most ticks: No work available → fast query (index-only scan)
 
+### Cron Lifecycle Management
+
+**Creating schedules:**
+
+```typescript
+await queueManager.schedule({
+  queueName: JobQueues.MEMO_BATCH_CHECK,
+  intervalSeconds: 30,
+  payload: { workspaceId: "system" },
+  workspaceId: null, // System-wide cron
+})
+```
+
+**Disabling schedules (pause without deleting):**
+
+```sql
+UPDATE cron_schedules
+SET enabled = false, updated_at = NOW()
+WHERE id = $schedule_id;
+```
+
+- Schedule Manager skips disabled schedules (`WHERE enabled = true`)
+- Existing pending ticks remain and will be executed
+- To prevent pending ticks from executing, delete them:
+
+```sql
+DELETE FROM cron_ticks
+WHERE schedule_id = $schedule_id
+  AND leased_until IS NULL;  -- Don't delete currently executing ticks
+```
+
+**Re-enabling schedules:**
+
+```sql
+UPDATE cron_schedules
+SET
+  enabled = true,
+  next_tick_needed_at = NOW(),  -- Generate tick immediately
+  updated_at = NOW()
+WHERE id = $schedule_id;
+```
+
+**Deleting schedules (permanent removal):**
+
+```sql
+-- 1. Delete pending ticks first (not currently executing)
+DELETE FROM cron_ticks
+WHERE schedule_id = $schedule_id
+  AND leased_until IS NULL;
+
+-- 2. Delete the schedule
+DELETE FROM cron_schedules
+WHERE id = $schedule_id;
+```
+
+**Handling orphaned ticks:**
+
+When a schedule is deleted, ticks that are currently being executed (`leased_until IS NOT NULL`) remain until:
+
+1. Execution completes → worker deletes tick normally
+2. Lease expires → cleanup worker deletes orphaned tick
+
+The cleanup worker handles this:
+
+```sql
+-- Run every 5 minutes
+DELETE FROM cron_ticks
+WHERE leased_until IS NOT NULL
+  AND leased_until < NOW() - interval '5 minutes'
+  AND schedule_id NOT IN (SELECT id FROM cron_schedules);
+```
+
+**Updating schedule intervals:**
+
+```sql
+UPDATE cron_schedules
+SET
+  interval_seconds = $new_interval,
+  next_tick_needed_at = NOW(),  -- Regenerate tick with new interval
+  updated_at = NOW()
+WHERE id = $schedule_id;
+```
+
+Existing pending ticks use the old interval - they will execute, then new ticks use the new interval.
+
+**Workspace cleanup (when workspace deleted):**
+
+```sql
+-- 1. Delete all workspace schedules
+DELETE FROM cron_schedules
+WHERE workspace_id = $workspace_id;
+
+-- 2. Cleanup worker will delete orphaned ticks
+-- (or delete immediately if you want)
+DELETE FROM cron_ticks
+WHERE workspace_id = $workspace_id
+  AND leased_until IS NULL;
+```
+
 ### Tick Execution Flow
 
 ```typescript
+interface ScheduleManagerConfig {
+  lookaheadSeconds: number  // Default: 60 (generate ticks for next minute)
+  intervalMs: number         // Default: 10000 (run every 10 seconds)
+  batchSize: number          // Default: 100 (max schedules per run)
+}
+
 class ScheduleManager {
   private ticker: Ticker
 
-  constructor(private cronRepo: CronRepository, private config: ScheduleManagerConfig) {
+  constructor(
+    private cronRepo: CronRepository,
+    private config: ScheduleManagerConfig = {
+      lookaheadSeconds: 60,
+      intervalMs: 10000,
+      batchSize: 100
+    }
+  ) {
     this.ticker = new Ticker({
       name: "schedule-manager",
-      intervalMs: 10000,  // Run every 10 seconds
+      intervalMs: config.intervalMs,
       maxConcurrency: 1
     })
   }
@@ -336,18 +526,22 @@ class ScheduleManager {
   }
 
   private async generateTicks(): Promise<void> {
-    // Find schedules needing tick generation in next 2 minutes
+    // Find schedules needing tick generation in configured lookahead window
+    // Jitter is applied in the SQL query (±10% of interval)
     const schedules = await this.cronRepo.findSchedulesNeedingTicks({
-      lookaheadMinutes: 2,
-      limit: 100
+      lookaheadSeconds: this.config.lookaheadSeconds,
+      limit: this.config.batchSize
     })
 
     if (schedules.length === 0) return
 
-    // Create tick tokens with future execute_at
+    // Create tick tokens with future execute_at (including jitter)
     const ticks = await this.cronRepo.createTicks(schedules)
 
-    logger.debug({ tickCount: ticks.length }, "Generated cron ticks")
+    logger.debug(
+      { tickCount: ticks.length, lookaheadSeconds: this.config.lookaheadSeconds },
+      "Generated cron ticks"
+    )
   }
 }
 
@@ -611,6 +805,205 @@ GROUP BY bucket;
 - Schedule Manager: "Give me schedules in current bucket"
 - Refresh view periodically
 
+### Cleanup Worker
+
+A background worker runs periodically to clean up orphaned and expired ticks:
+
+```typescript
+class CleanupWorker {
+  private ticker: Ticker
+
+  constructor(
+    private cronRepo: CronRepository,
+    private config = { intervalMs: 300000 } // 5 minutes
+  ) {
+    this.ticker = new Ticker({
+      name: "cron-cleanup",
+      intervalMs: config.intervalMs,
+      maxConcurrency: 1,
+    })
+  }
+
+  start() {
+    this.ticker.start(() => this.cleanup())
+  }
+
+  private async cleanup(): Promise<void> {
+    // Delete ticks that failed and lease expired
+    const expiredCount = await this.cronRepo.deleteExpiredTicks({
+      expiredBefore: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+    })
+
+    // Delete orphaned ticks (schedule was deleted)
+    const orphanedCount = await this.cronRepo.deleteOrphanedTicks()
+
+    if (expiredCount > 0 || orphanedCount > 0) {
+      logger.info({ expiredCount, orphanedCount }, "Cleaned up cron ticks")
+    }
+  }
+}
+```
+
+**Cleanup queries:**
+
+```sql
+-- Delete expired ticks (lease expired, not completed)
+DELETE FROM cron_ticks
+WHERE leased_until IS NOT NULL
+  AND leased_until < $expired_before
+RETURNING id;
+
+-- Delete orphaned ticks (schedule deleted)
+DELETE FROM cron_ticks
+WHERE schedule_id NOT IN (SELECT id FROM cron_schedules)
+RETURNING id;
+```
+
+### Monitoring and Alerting
+
+**Key metrics to track:**
+
+1. **Tick generation rate**: Ticks created per minute
+2. **Tick execution latency**: `actual_execution_time - execute_at`
+3. **Tick lease duration**: Time from lease to completion
+4. **Orphaned tick count**: Ticks with expired leases
+5. **Schedule coverage**: Ratio of executed ticks to scheduled ticks
+
+**Critical alerts:**
+
+```typescript
+// Alert if tick execution latency exceeds lease duration
+if (executionTime > leaseDuration * 0.9) {
+  logger.warn(
+    { tickId, executionTime, leaseDuration },
+    "Tick execution approaching lease duration - risk of duplicate execution"
+  )
+}
+
+// Alert if schedule not executed within 2× interval
+if (lastExecutionTime && now - lastExecutionTime > interval * 2) {
+  logger.error({ scheduleId, interval, lastExecutionTime }, "Schedule execution missed - investigate worker health")
+}
+
+// Alert if orphaned tick count grows
+if (orphanedTickCount > 100) {
+  logger.warn({ orphanedTickCount }, "High orphaned tick count - cleanup worker may be failing")
+}
+```
+
+**Observability queries:**
+
+```sql
+-- Find schedules with no recent execution
+SELECT
+  s.id,
+  s.queue_name,
+  s.interval_seconds,
+  MAX(t.created_at) AS last_tick_created,
+  NOW() - MAX(t.created_at) AS time_since_last_tick
+FROM cron_schedules s
+LEFT JOIN cron_ticks t ON t.schedule_id = s.id
+WHERE s.enabled = true
+GROUP BY s.id
+HAVING NOW() - MAX(t.created_at) > (s.interval_seconds * 2 || ' seconds')::interval;
+
+-- Find slow tick executions
+SELECT
+  id,
+  schedule_id,
+  execute_at,
+  leased_at,
+  leased_until,
+  EXTRACT(EPOCH FROM (leased_until - leased_at)) AS lease_duration_seconds,
+  EXTRACT(EPOCH FROM (NOW() - leased_at)) AS execution_time_seconds
+FROM cron_ticks
+WHERE leased_at IS NOT NULL
+  AND NOW() - leased_at > interval '10 seconds';
+```
+
+**Performance verification with EXPLAIN ANALYZE:**
+
+```sql
+-- Verify tick lease query uses index
+EXPLAIN ANALYZE
+SELECT id, schedule_id, queue_name, payload, workspace_id, execute_at
+FROM cron_ticks
+WHERE execute_at <= NOW()
+  AND (leased_until IS NULL OR leased_until < NOW())
+ORDER BY execute_at ASC
+LIMIT 10
+FOR UPDATE SKIP LOCKED;
+
+-- Expected: Index Scan using idx_cron_ticks_execute
+```
+
+### Sharding Schedule Manager (for 100K+ schedules)
+
+For extreme scale, shard Schedule Manager by schedule ID:
+
+```typescript
+interface ScheduleManagerConfig {
+  lookaheadSeconds: number
+  intervalMs: number
+  batchSize: number
+  // NEW: Sharding config
+  shardCount: number // Total number of shards
+  shardId: number // This worker's shard (0 to shardCount-1)
+}
+
+class ScheduleManager {
+  private async generateTicks(): Promise<void> {
+    const schedules = await this.cronRepo.findSchedulesNeedingTicks({
+      lookaheadSeconds: this.config.lookaheadSeconds,
+      limit: this.config.batchSize,
+      // Only process schedules assigned to this shard
+      shardCount: this.config.shardCount,
+      shardId: this.config.shardId,
+    })
+    // ... rest of implementation
+  }
+}
+```
+
+**Sharding query:**
+
+```sql
+SELECT ...
+FROM cron_schedules
+WHERE enabled = true
+  AND next_tick_needed_at <= NOW() + $lookahead_interval
+  -- Stable hash-based sharding
+  AND (hashtext(id)::bigint & 2147483647) % $shard_count = $shard_id
+ORDER BY next_tick_needed_at ASC
+LIMIT $batch_size;
+```
+
+**Benefits:**
+
+- Each worker handles subset of schedules (e.g., 10 workers × 10K schedules = 100K total)
+- Linear scaling: Add workers to handle more schedules
+- No coordination needed: Hash-based assignment is deterministic
+
+**Coordinator assignment:**
+
+```typescript
+// In server.ts startup
+const workers = [
+  { id: "worker-1", shardId: 0 },
+  { id: "worker-2", shardId: 1 },
+  // ...
+]
+
+const myWorker = workers.find((w) => w.id === process.env.WORKER_ID)
+const scheduleManager = new ScheduleManager(cronRepo, {
+  lookaheadSeconds: 60,
+  intervalMs: 10000,
+  batchSize: 100,
+  shardCount: workers.length,
+  shardId: myWorker.shardId,
+})
+```
+
 ### Future Enhancements
 
 1. **Tick history**: Keep executed ticks for observability
@@ -622,25 +1015,21 @@ GROUP BY bucket;
    - Create ticks with past execute_at
    - Process immediately
 
-3. **Jitter**: Add random offset to prevent thundering herd
-   - Especially useful for daily/hourly crons
-   - `execute_at = base_time + random(0, 60s)`
-
-4. **Timezone support**: Schedule based on workspace timezone
+3. **Timezone support**: Schedule based on workspace timezone
    - Store `timezone` in cron_schedules
    - Calculate `next_tick_needed_at` in workspace timezone
    - Critical for daily reports, billing, etc.
 
-5. **Cron expressions**: Support cron syntax instead of fixed intervals
+4. **Cron expressions**: Support cron syntax instead of fixed intervals
    - Use cron parser library
    - Calculate next execution time dynamically
    - More flexible than fixed intervals
 
-6. **Dynamic intervals**: Adjust interval based on workspace activity
+5. **Dynamic intervals**: Adjust interval based on workspace activity
    - E.g., more active workspaces get more frequent checks
    - Store `dynamic_interval` that adjusts based on metrics
 
-7. **Priority scheduling**: Higher priority schedules execute first
+6. **Priority scheduling**: Higher priority schedules execute first
    - Add `priority` column to cron_schedules
    - Order by `priority DESC, execute_at ASC`
 
@@ -653,58 +1042,113 @@ GROUP BY bucket;
 - [ ] Create migration `028_cron_schedules.sql` with:
   - [ ] `cron_schedules` table with `next_tick_needed_at` column
   - [ ] `cron_ticks` table with denormalized payload
-  - [ ] Indexes for efficient querying
+  - [ ] **CRITICAL**: Add UNIQUE constraint on `(schedule_id, execute_at)` to prevent duplicate ticks
+  - [ ] Indexes for efficient querying (tick execution, schedule discovery, cleanup)
+  - [ ] Verify index usage with EXPLAIN ANALYZE on tick lease query
 
 ### Repository
 
 - [ ] Create `CronRepository` with:
   - [ ] `createSchedule()` - Insert into cron_schedules
-  - [ ] `findSchedulesNeedingTicks()` - Query by next_tick_needed_at
-  - [ ] `createTicks()` - Batch INSERT into cron_ticks
+  - [ ] `findSchedulesNeedingTicks()` - Query by next_tick_needed_at with configurable lookahead
+  - [ ] `createTicks()` - Batch INSERT with jitter (±10% of interval)
   - [ ] `batchLeaseTicks()` - Lease available ticks (mirrors `batchLeaseTokens()`)
   - [ ] `deleteTick()` - Delete after execution
-  - [ ] `deleteExpiredTicks()` - Cleanup orphaned ticks
+  - [ ] `deleteExpiredTicks()` - Cleanup ticks with expired leases
+  - [ ] `deleteOrphanedTicks()` - Cleanup ticks whose schedule was deleted
   - [ ] `updateNextTickNeeded()` - Update after tick creation
+  - [ ] `disableSchedule()` - Disable schedule without deleting
+  - [ ] `deleteSchedule()` - Permanently remove schedule
 
 ### Manager
 
 - [ ] Create `ScheduleManager` class with:
-  - [ ] Ticker-based polling (every 10s)
-  - [ ] Tick generation (find schedules + create ticks)
+  - [ ] Ticker-based polling (configurable, default 10s)
+  - [ ] Tick generation with jitter (find schedules + create ticks)
+  - [ ] Configurable lookahead window (default 60 seconds, not 2 minutes)
+  - [ ] Optional sharding support (for 100K+ schedules)
   - [ ] Graceful shutdown
-  - [ ] Configurable lookahead window (default 2 minutes)
+
+- [ ] Create `CleanupWorker` class with:
+  - [ ] Ticker-based polling (every 5 minutes)
+  - [ ] Delete expired ticks (lease expired, not completed)
+  - [ ] Delete orphaned ticks (schedule deleted)
+  - [ ] Log cleanup counts
 
 - [ ] Update `QueueManager` class with:
   - [ ] Add tick execution to existing `onTick()` method
   - [ ] Execute tick (send message + delete tick)
-  - [ ] Integrate ScheduleManager on startup
+  - [ ] Monitor execution time vs lease duration
+  - [ ] Alert if execution approaches lease duration (risk of duplicates)
+  - [ ] Integrate ScheduleManager and CleanupWorker on startup
 
 ### API Changes
 
 - [ ] Update `QueueManager.schedule()` to insert into cron_schedules
+- [ ] Add `disableSchedule()` method for pausing schedules
+- [ ] Add `deleteSchedule()` method for permanent removal
+- [ ] Add `updateScheduleInterval()` method for changing intervals
 - [ ] Remove old `scheduledJobs` Map and setInterval logic
-- [ ] Add graceful shutdown for ScheduleManager
+- [ ] Add graceful shutdown for ScheduleManager and CleanupWorker
+
+### Configuration
+
+- [ ] Add `ScheduleManagerConfig` with:
+  - [ ] `lookaheadSeconds` (default: 60)
+  - [ ] `intervalMs` (default: 10000)
+  - [ ] `batchSize` (default: 100)
+  - [ ] Optional: `shardCount` and `shardId` for extreme scale
+- [ ] Add `CleanupWorkerConfig` with:
+  - [ ] `intervalMs` (default: 300000 = 5 minutes)
+  - [ ] `expiredThresholdMs` (default: 300000 = 5 minutes)
 
 ### Testing
 
 - [ ] Unit tests for `CronRepository.findSchedulesNeedingTicks()`
-- [ ] Unit tests for `CronRepository.createTicks()` with deduplication
+- [ ] Unit tests for `CronRepository.createTicks()` with:
+  - [ ] Deduplication (UNIQUE constraint prevents duplicates)
+  - [ ] Jitter applied (execute_at varies within ±10%)
 - [ ] Integration tests for ScheduleManager tick generation
 - [ ] Integration tests for distributed tick execution
-- [ ] Verify only one worker executes per interval
+- [ ] Verify only one worker executes per interval (no duplicates)
 - [ ] Test lease expiration and failover
 - [ ] Test Schedule Manager failure (other workers continue)
+- [ ] Test cleanup worker (expired and orphaned ticks)
+- [ ] Test schedule lifecycle (create, disable, enable, delete)
 - [ ] Test scaling with 1,000+ schedules
+- [ ] Verify EXPLAIN ANALYZE shows index usage
+- [ ] Test at-most-once semantics (failed ticks not retried)
 
 ### Observability
 
-- [ ] Log schedule creation
-- [ ] Log tick generation (count, schedules)
-- [ ] Log tick execution with latency
-- [ ] Metrics for tick generation rate
-- [ ] Metrics for tick execution latency (execute_at vs actual)
-- [ ] Alert on consistently missed ticks
-- [ ] Dashboard showing active schedules and execution stats
+- [ ] Log schedule creation/deletion/updates
+- [ ] Log tick generation (count, schedules, lookahead)
+- [ ] Log tick execution with latency (execute_at vs actual)
+- [ ] Log cleanup operations (expired count, orphaned count)
+- [ ] **Metrics**:
+  - [ ] Tick generation rate (per minute)
+  - [ ] Tick execution latency (actual - execute_at)
+  - [ ] Tick lease duration (completion time)
+  - [ ] Orphaned tick count
+  - [ ] Schedule coverage (executed / scheduled)
+- [ ] **Alerts**:
+  - [ ] Tick execution approaching lease duration (>90%)
+  - [ ] Schedule not executed within 2× interval
+  - [ ] High orphaned tick count (>100)
+  - [ ] Cleanup worker failing
+- [ ] Dashboard queries:
+  - [ ] Schedules with no recent execution
+  - [ ] Slow tick executions
+  - [ ] Failed tick rate
+- [ ] EXPLAIN ANALYZE verification in CI/testing
+
+### Documentation
+
+- [ ] Document execution semantics (at-most-once, why, tradeoffs)
+- [ ] Document failure handling (tick failures, lease expiry, orphaned ticks)
+- [ ] Document cron lifecycle (create, disable, enable, delete, update interval)
+- [ ] Document monitoring queries and alerts
+- [ ] Document sharding approach for extreme scale
 
 ---
 
@@ -736,6 +1180,41 @@ GROUP BY bucket;
 - **Rejected**: Doesn't handle worker failures, manual rebalancing needed
 
 **Chosen approach** (tick tokens) is consistent with existing system, uses proven patterns, and scales naturally.
+
+---
+
+## Peer Review Recommendations Addressed
+
+This design incorporates the following critical fixes and improvements:
+
+### Critical Fixes
+
+1. **✓ UNIQUE constraint on (schedule_id, execute_at)**: Prevents duplicate tick generation when multiple Schedule Managers run concurrently
+2. **✓ Execution semantics documented**: At-most-once delivery explicitly stated with tradeoffs and rationale
+3. **✓ Cleanup worker**: Periodic cleanup of expired and orphaned ticks
+4. **✓ Jitter by default**: ±10% randomization of execute_at to prevent thundering herd
+5. **✓ Configurable lookahead**: Default 60 seconds (not 2 minutes), adjustable per deployment
+
+### Monitoring & Observability
+
+6. **✓ Execution time monitoring**: Alert when tick execution approaches lease duration (>90%)
+7. **✓ EXPLAIN ANALYZE verification**: Checklist includes index usage verification
+8. **✓ Comprehensive metrics**: Generation rate, execution latency, orphaned count, schedule coverage
+9. **✓ Critical alerts**: Missed executions, slow ticks, cleanup failures
+
+### Scalability
+
+10. **✓ Sharding Schedule Manager**: Hash-based sharding for 100K+ schedules with stable coordinator assignment
+
+### Lifecycle Management
+
+11. **✓ Cron removal documented**: Enable, disable, delete, update intervals with orphan cleanup
+12. **✓ Orphaned tick handling**: Cleanup worker removes ticks whose schedules were deleted
+
+### Recommendations NOT Implemented
+
+- **Gradual rollout/feature flags**: Not needed pre-production (can add later)
+- **Lease renewal for ticks**: Not needed - tick execution is fast (<1s typically), lease duration (10s) provides ample buffer
 
 ---
 
