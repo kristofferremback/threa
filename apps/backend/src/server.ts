@@ -64,7 +64,7 @@ import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
-import { createQueueManager, type QueueManager } from "./lib/queue-manager"
+import { QueueManager } from "./lib/queue-manager"
 import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
@@ -123,7 +123,7 @@ export async function startServer(): Promise<ServerInstance> {
   const searchService = new SearchService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.)
-  const jobQueue = createQueueManager({
+  const jobQueue = new QueueManager({
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,

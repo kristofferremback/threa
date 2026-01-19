@@ -1,13 +1,12 @@
 import type { Pool } from "pg"
-import { ulid } from "ulid"
 import pLimit from "p-limit"
-import { withClient } from "../db"
 import type { QueueRepository } from "../repositories/queue-repository"
 import type { TokenPoolRepository } from "../repositories/token-pool-repository"
 import { Ticker } from "./ticker"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
 import type { JobDataMap, JobQueueName, JobHandler } from "./job-queue"
+import { queueId, workerId, tickerId } from "./id"
 
 /**
  * Configuration for QueueManager
@@ -107,7 +106,7 @@ export class QueueManager {
     this.claimBatchSize = claimBatchSize
     this.processingConcurrency = processingConcurrency
 
-    this.tickerId = `ticker_${ulid()}`
+    this.tickerId = tickerId()
     this.ticker = new Ticker({
       name: "queue-manager",
       intervalMs: tickIntervalMs,
@@ -165,19 +164,17 @@ export class QueueManager {
     // Extract workspaceId from job data
     const workspaceId = this.extractWorkspaceId(queueName, data)
 
-    const messageId = `queue_${ulid()}`
+    const messageId = queueId()
     const now = new Date()
     const processAfter = options?.processAfter ?? now
 
-    await withClient(this.pool, async (client) => {
-      await this.queueRepo.insert(client, {
-        id: messageId,
-        queueName,
-        workspaceId,
-        payload: data,
-        processAfter,
-        insertedAt: now,
-      })
+    await this.queueRepo.insert(this.pool, {
+      id: messageId,
+      queueName,
+      workspaceId,
+      payload: data,
+      processAfter,
+      insertedAt: now,
     })
 
     logger.debug({ queueName, messageId, workspaceId }, "Message sent to queue")
@@ -255,14 +252,19 @@ export class QueueManager {
     const now = new Date()
 
     // 1. Batch lease tokens for available (queue, workspace) pairs
-    const tokens = await withClient(this.pool, async (client) => {
-      return await this.tokenPoolRepo.batchLeaseTokens(client, {
-        leasedBy: this.tickerId,
-        leasedAt: now,
-        leasedUntil: new Date(now.getTime() + this.lockDurationMs),
-        now,
-        limit: this.tokenBatchSize,
-      })
+    // Only lease tokens for queues we have handlers for
+    const queueNames = Array.from(this.handlers.keys())
+    if (queueNames.length === 0) {
+      return // No handlers registered
+    }
+
+    const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
+      leasedBy: this.tickerId,
+      leasedAt: now,
+      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
+      now,
+      limit: this.tokenBatchSize,
+      queueNames,
     })
 
     if (tokens.length === 0) {
@@ -282,26 +284,47 @@ export class QueueManager {
    * Optimized for throughput:
    * 1. Batch claim messages upfront (1 query instead of N)
    * 2. Process with controlled concurrency (processingConcurrency at a time)
-   * 3. Single renewal timer for all messages (1 periodic query instead of N)
+   * 3. Background renewal for both token AND messages (prevents expiration during long-running work)
    * 4. Complete messages immediately (no batching - good for observability)
    */
   private async processToken(token: { id: string; queueName: string; workspaceId: string }): Promise<void> {
-    const workerId = `worker_${ulid()}`
+    const workerIdValue = workerId()
     const workerPromise = (async () => {
+      // Set up token renewal timer (runs for entire worker lifetime)
+      let tokenRenewalInProgress = false
+      const tokenRenewTimer = setInterval(async () => {
+        if (tokenRenewalInProgress) {
+          logger.debug({ tokenId: token.id }, "Skipping token renewal - previous renewal still in progress")
+          return
+        }
+
+        tokenRenewalInProgress = true
+        try {
+          const renewed = await this.renewTokenLease(token.id)
+          if (!renewed) {
+            logger.warn({ tokenId: token.id }, "Failed to renew token lease - may have been taken by another worker")
+          } else {
+            logger.debug({ tokenId: token.id }, "Token lease renewed")
+          }
+        } catch (err) {
+          logger.warn({ tokenId: token.id, err }, "Failed to renew token lease")
+        } finally {
+          tokenRenewalInProgress = false
+        }
+      }, this.refreshIntervalMs)
+
       try {
         const now = new Date()
 
         // 1. Batch claim messages upfront
-        const messages = await withClient(this.pool, async (client) => {
-          return await this.queueRepo.batchClaimMessages(client, {
-            queueName: token.queueName,
-            workspaceId: token.workspaceId,
-            claimedBy: workerId,
-            claimedAt: now,
-            claimedUntil: new Date(now.getTime() + this.lockDurationMs),
-            now,
-            limit: this.claimBatchSize,
-          })
+        const messages = await this.queueRepo.batchClaimMessages(this.pool, {
+          queueName: token.queueName,
+          workspaceId: token.workspaceId,
+          claimedBy: workerIdValue,
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + this.lockDurationMs),
+          now,
+          limit: this.claimBatchSize,
         })
 
         if (messages.length === 0) {
@@ -313,24 +336,24 @@ export class QueueManager {
           "Batch claimed messages"
         )
 
-        // 2. Set up single renewal timer for ALL messages
+        // 2. Set up message renewal timer for ALL messages
         const messageIds = messages.map((m) => m.id)
-        let renewalInProgress = false
+        let messageRenewalInProgress = false
 
-        const renewTimer = setInterval(async () => {
-          if (renewalInProgress) {
+        const messageRenewTimer = setInterval(async () => {
+          if (messageRenewalInProgress) {
             logger.debug({ messageIds }, "Skipping batch renewal - previous renewal still in progress")
             return
           }
 
-          renewalInProgress = true
+          messageRenewalInProgress = true
           try {
-            const renewed = await this.batchRenewClaims(messageIds, workerId)
+            const renewed = await this.batchRenewClaims(messageIds, workerIdValue)
             logger.debug({ renewedCount: renewed, totalMessages: messageIds.length }, "Batch renewed claims")
           } catch (err) {
             logger.warn({ messageIds, err }, "Failed to batch renew claims")
           } finally {
-            renewalInProgress = false
+            messageRenewalInProgress = false
           }
         }, this.refreshIntervalMs)
 
@@ -342,7 +365,7 @@ export class QueueManager {
             messages.map((message) =>
               limit(async () => {
                 try {
-                  await this.processMessage(message, workerId)
+                  await this.processMessage(message, workerIdValue)
                 } catch (err) {
                   // Error already logged and handled in processMessage
                   // Continue processing other messages
@@ -351,9 +374,10 @@ export class QueueManager {
             )
           )
         } finally {
-          clearInterval(renewTimer)
+          clearInterval(messageRenewTimer)
         }
       } finally {
+        clearInterval(tokenRenewTimer)
         // Always release token
         await this.releaseToken(token.id)
       }
@@ -368,17 +392,29 @@ export class QueueManager {
   }
 
   /**
+   * Renew token lease.
+   * Returns false if lease lost.
+   */
+  private async renewTokenLease(tokenId: string): Promise<boolean> {
+    const now = new Date()
+
+    return await this.tokenPoolRepo.renewLease(this.pool, {
+      tokenId,
+      leasedBy: this.tickerId,
+      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
+    })
+  }
+
+  /**
    * Batch renew claims for multiple messages.
    */
   private async batchRenewClaims(messageIds: string[], workerId: string): Promise<number> {
     const now = new Date()
 
-    return await withClient(this.pool, async (client) => {
-      return await this.queueRepo.batchRenewClaims(client, {
-        messageIds,
-        claimedBy: workerId,
-        claimedUntil: new Date(now.getTime() + this.lockDurationMs),
-      })
+    return await this.queueRepo.batchRenewClaims(this.pool, {
+      messageIds,
+      claimedBy: workerId,
+      claimedUntil: new Date(now.getTime() + this.lockDurationMs),
     })
   }
 
@@ -395,10 +431,13 @@ export class QueueManager {
     const handler = this.handlers.get(message.queueName)
 
     if (!handler) {
-      logger.error({ queueName: message.queueName }, "No handler registered for queue")
-      // Move to DLQ - this is a configuration error
-      await this.moveMessageToDlq(message.id, workerId, "No handler registered")
-      return
+      // This should NEVER happen - we only lease tokens for queues with registered handlers.
+      // If this occurs, it's a bug in the token leasing logic.
+      throw new Error(
+        `CRITICAL BUG: No handler registered for queue ${message.queueName}. ` +
+          `This should never happen as we filter tokens by registered handlers. ` +
+          `Registered queues: ${Array.from(this.handlers.keys()).join(", ")}`
+      )
     }
 
     try {
@@ -449,12 +488,10 @@ export class QueueManager {
   private async completeMessage(messageId: string, workerId: string): Promise<void> {
     const now = new Date()
 
-    await withClient(this.pool, async (client) => {
-      await this.queueRepo.complete(client, {
-        messageId,
-        claimedBy: workerId,
-        completedAt: now,
-      })
+    await this.queueRepo.complete(this.pool, {
+      messageId,
+      claimedBy: workerId,
+      completedAt: now,
     })
   }
 
@@ -473,14 +510,12 @@ export class QueueManager {
       retryCount: newFailedCount,
     })
 
-    await withClient(this.pool, async (client) => {
-      await this.queueRepo.fail(client, {
-        messageId,
-        claimedBy: workerId,
-        error,
-        processAfter: new Date(now.getTime() + backoffMs),
-        now,
-      })
+    await this.queueRepo.fail(this.pool, {
+      messageId,
+      claimedBy: workerId,
+      error,
+      processAfter: new Date(now.getTime() + backoffMs),
+      now,
     })
   }
 
@@ -490,13 +525,11 @@ export class QueueManager {
   private async moveMessageToDlq(messageId: string, workerId: string, error: string): Promise<void> {
     const now = new Date()
 
-    await withClient(this.pool, async (client) => {
-      await this.queueRepo.failDlq(client, {
-        messageId,
-        claimedBy: workerId,
-        error,
-        dlqAt: now,
-      })
+    await this.queueRepo.failDlq(this.pool, {
+      messageId,
+      claimedBy: workerId,
+      error,
+      dlqAt: now,
     })
   }
 
@@ -504,11 +537,9 @@ export class QueueManager {
    * Release a token.
    */
   private async releaseToken(tokenId: string): Promise<void> {
-    await withClient(this.pool, async (client) => {
-      await this.tokenPoolRepo.deleteToken(client, {
-        tokenId,
-        leasedBy: this.tickerId,
-      })
+    await this.tokenPoolRepo.deleteToken(this.pool, {
+      tokenId,
+      leasedBy: this.tickerId,
     })
   }
 
@@ -526,11 +557,4 @@ export class QueueManager {
 
     return workspaceId
   }
-}
-
-/**
- * Create a queue manager instance.
- */
-export function createQueueManager(config: QueueManagerConfig): QueueManager {
-  return new QueueManager(config)
 }

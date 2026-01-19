@@ -57,13 +57,6 @@ export interface ClaimNextParams {
   now: Date
 }
 
-// Renew claim params
-export interface RenewClaimParams {
-  messageId: string
-  claimedBy: string
-  claimedUntil: Date
-}
-
 // Batch renew claims params
 export interface BatchRenewClaimsParams {
   messageIds: string[]
@@ -160,39 +153,39 @@ export const QueueRepository = {
   },
 
   /**
-   * Claim next available message for (queue, workspace) pair.
-   * Returns null if no messages available.
-   *
-   * CRITICAL: Uses FOR UPDATE SKIP LOCKED for concurrency.
-   * Only one worker can claim the same message.
+   * Batch insert multiple messages.
+   * More efficient than calling insert() multiple times.
    */
-  async claimNext(db: Querier, params: ClaimNextParams): Promise<QueueMessage | null> {
+  async batchInsert(db: Querier, messages: InsertQueueMessageParams[]): Promise<QueueMessage[]> {
+    if (messages.length === 0) {
+      return []
+    }
+
+    // Build placeholders and values array for batch insert
+    const placeholders: string[] = []
+    const values: unknown[] = []
+    let idx = 1
+
+    for (const msg of messages) {
+      placeholders.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}::jsonb, $${idx++}, $${idx++})`)
+      values.push(msg.id, msg.queueName, msg.workspaceId, JSON.stringify(msg.payload), msg.processAfter, msg.insertedAt)
+    }
+
     const result = await db.query<QueueMessageRow>(
-      sql`
-        UPDATE queue_messages
-        SET
-          claimed_at = ${params.claimedAt},
-          claimed_by = ${params.claimedBy},
-          claimed_until = ${params.claimedUntil},
-          claimed_count = claimed_count + 1
-        WHERE id = (
-          SELECT id
-          FROM queue_messages
-          WHERE queue_name = ${params.queueName}
-            AND workspace_id = ${params.workspaceId}
-            AND process_after <= ${params.now}
-            AND dlq_at IS NULL
-            AND completed_at IS NULL
-            AND (claimed_until IS NULL OR claimed_until < ${params.now})
-          ORDER BY process_after ASC
-          LIMIT 1
-          FOR UPDATE SKIP LOCKED
-        )
-        RETURNING ${SELECT_FIELDS}
-      `
+      `INSERT INTO queue_messages (
+        id, queue_name, workspace_id, payload,
+        process_after, inserted_at
+      ) VALUES ${placeholders.join(", ")}
+      RETURNING
+        id, queue_name, workspace_id, payload,
+        process_after, inserted_at,
+        claimed_at, claimed_by, claimed_until, claimed_count,
+        failed_count, last_error,
+        dlq_at, completed_at`,
+      values
     )
 
-    return result.rows[0] ? mapRowToMessage(result.rows[0]) : null
+    return result.rows.map(mapRowToMessage)
   },
 
   /**
@@ -252,27 +245,6 @@ export const QueueRepository = {
   },
 
   /**
-   * Renew claim for a message.
-   * Returns false if claim lost (message completed elsewhere, wrong claimedBy).
-   *
-   * Verifies claimedBy to prevent race conditions.
-   */
-  async renewClaim(db: Querier, params: RenewClaimParams): Promise<boolean> {
-    const result = await db.query(
-      sql`
-        UPDATE queue_messages
-        SET claimed_until = ${params.claimedUntil}
-        WHERE id = ${params.messageId}
-          AND claimed_by = ${params.claimedBy}
-          AND completed_at IS NULL
-          AND dlq_at IS NULL
-      `
-    )
-
-    return (result.rowCount ?? 0) > 0
-  },
-
-  /**
    * Batch renew claims for multiple messages.
    * Returns count of successfully renewed claims.
    *
@@ -305,7 +277,8 @@ export const QueueRepository = {
         SET
           completed_at = ${params.completedAt},
           claimed_by = NULL,
-          claimed_until = NULL
+          claimed_until = NULL,
+          process_after = NULL
         WHERE id = ${params.messageId}
           AND claimed_by = ${params.claimedBy}
           AND completed_at IS NULL
@@ -360,7 +333,8 @@ export const QueueRepository = {
           dlq_at = ${params.dlqAt},
           last_error = ${params.error},
           claimed_by = NULL,
-          claimed_until = NULL
+          claimed_until = NULL,
+          process_after = NULL
         WHERE id = ${params.messageId}
           AND claimed_by = ${params.claimedBy}
           AND completed_at IS NULL

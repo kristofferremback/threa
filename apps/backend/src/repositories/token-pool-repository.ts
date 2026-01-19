@@ -1,6 +1,6 @@
 import type { Querier } from "../db"
 import { sql } from "../db"
-import { ulid } from "ulid"
+import { tokenId } from "../lib/id"
 
 // Internal row type (snake_case)
 interface QueueTokenRow {
@@ -33,6 +33,7 @@ export interface BatchLeaseTokensParams {
   leasedUntil: Date
   now: Date
   limit: number
+  queueNames: string[] // Only lease tokens for these queues
 }
 
 // Renew lease params
@@ -92,7 +93,7 @@ export const TokenPoolRepository = {
   async batchLeaseTokens(db: Querier, params: BatchLeaseTokensParams): Promise<QueueToken[]> {
     // Pre-generate ULIDs (INV-2: all entity IDs must be prefix_ulid)
     // Generate limit ULIDs upfront, actual usage will be limited by available pairs
-    const tokenIds = Array.from({ length: params.limit }, () => `token_${ulid()}`)
+    const tokenIds = Array.from({ length: params.limit }, () => tokenId())
 
     const result = await db.query<QueueTokenRow>(
       sql`
@@ -107,6 +108,7 @@ export const TokenPoolRepository = {
             AND dlq_at IS NULL
             AND completed_at IS NULL
             AND (claimed_until IS NULL OR claimed_until < ${params.now})
+            AND queue_name = ANY(${params.queueNames})
           GROUP BY queue_name, workspace_id
         ),
         pairs_without_tokens AS (
