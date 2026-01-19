@@ -277,8 +277,7 @@ export const QueueRepository = {
         SET
           completed_at = ${params.completedAt},
           claimed_by = NULL,
-          claimed_until = NULL,
-          process_after = NULL
+          claimed_until = NULL
         WHERE id = ${params.messageId}
           AND claimed_by = ${params.claimedBy}
           AND completed_at IS NULL
@@ -321,7 +320,7 @@ export const QueueRepository = {
 
   /**
    * Move message to DLQ.
-   * Sets dlq_at, clears process_after, releases claim.
+   * Sets dlq_at, releases claim.
    *
    * Verifies claimedBy to prevent race conditions.
    */
@@ -333,8 +332,7 @@ export const QueueRepository = {
           dlq_at = ${params.dlqAt},
           last_error = ${params.error},
           claimed_by = NULL,
-          claimed_until = NULL,
-          process_after = NULL
+          claimed_until = NULL
         WHERE id = ${params.messageId}
           AND claimed_by = ${params.claimedBy}
           AND completed_at IS NULL
