@@ -150,6 +150,54 @@ export const CronRepository = {
   },
 
   /**
+   * Ensure a cron schedule exists (atomic upsert).
+   * Creates new schedule or updates interval if exists.
+   * Uses INSERT ... ON CONFLICT to avoid race conditions.
+   *
+   * Returns: { schedule, created: boolean }
+   */
+  async ensureSchedule(
+    db: Querier,
+    params: CreateScheduleParams
+  ): Promise<{ schedule: CronSchedule; created: boolean }> {
+    const result = await db.query<CronScheduleRow & { xmax: string }>(
+      sql`
+        INSERT INTO cron_schedules (
+          id, queue_name, interval_seconds, payload, workspace_id
+        ) VALUES (
+          ${params.id},
+          ${params.queueName},
+          ${params.intervalSeconds},
+          ${JSON.stringify(params.payload)},
+          ${params.workspaceId}
+        )
+        ON CONFLICT (queue_name, workspace_id) DO UPDATE
+        SET
+          interval_seconds = EXCLUDED.interval_seconds,
+          next_tick_needed_at = CASE
+            WHEN cron_schedules.interval_seconds <> EXCLUDED.interval_seconds
+            THEN NOW()
+            ELSE cron_schedules.next_tick_needed_at
+          END,
+          updated_at = NOW()
+        RETURNING
+          id, queue_name, interval_seconds, payload, workspace_id,
+          next_tick_needed_at, enabled, created_at, updated_at,
+          (xmax = 0) AS created
+      `
+    )
+
+    const row = result.rows[0]
+    // xmax = 0 means INSERT (new row), xmax > 0 means UPDATE (existing row)
+    const created = row.xmax === "0"
+
+    return {
+      schedule: mapRowToSchedule(row),
+      created,
+    }
+  },
+
+  /**
    * Find schedules that need tick generation soon.
    * Only returns enabled schedules whose next_tick_needed_at is within lookahead window.
    */

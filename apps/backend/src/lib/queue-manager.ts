@@ -124,9 +124,9 @@ export class QueueManager {
   }
 
   /**
-   * Schedule a recurring job (idempotent).
-   * Finds existing schedule or creates a new one for (queueName, workspaceId).
-   * Updates interval if existing schedule has different interval.
+   * Schedule a recurring job (idempotent, atomic).
+   * Creates new schedule or updates interval if exists.
+   * Uses INSERT ... ON CONFLICT to avoid race conditions.
    *
    * @param queueName - Queue to send messages to
    * @param intervalSeconds - Interval in seconds between job runs
@@ -139,26 +139,8 @@ export class QueueManager {
     data: JobDataMap[T],
     workspaceId: string | null = null
   ): Promise<void> {
-    // Check if schedule already exists (find-or-create pattern)
-    const existing = await CronRepository.getScheduleByQueueAndWorkspace(this.pool, queueName, workspaceId)
-
-    if (existing) {
-      // Schedule exists - update interval if changed
-      if (existing.intervalSeconds !== intervalSeconds) {
-        await CronRepository.updateScheduleInterval(this.pool, existing.id, intervalSeconds)
-        logger.info(
-          { scheduleId: existing.id, queueName, oldInterval: existing.intervalSeconds, newInterval: intervalSeconds },
-          "Cron schedule interval updated"
-        )
-      } else {
-        logger.debug({ scheduleId: existing.id, queueName, intervalSeconds }, "Cron schedule already exists")
-      }
-      return
-    }
-
-    // Create new schedule
     const scheduleId = cronId()
-    await CronRepository.createSchedule(this.pool, {
+    const { schedule, created } = await CronRepository.ensureSchedule(this.pool, {
       id: scheduleId,
       queueName,
       intervalSeconds,
@@ -166,7 +148,11 @@ export class QueueManager {
       workspaceId,
     })
 
-    logger.info({ scheduleId, queueName, intervalSeconds, workspaceId }, "Cron schedule created")
+    if (created) {
+      logger.info({ scheduleId: schedule.id, queueName, intervalSeconds, workspaceId }, "Cron schedule created")
+    } else {
+      logger.debug({ scheduleId: schedule.id, queueName, intervalSeconds }, "Cron schedule already exists")
+    }
   }
 
   /**
