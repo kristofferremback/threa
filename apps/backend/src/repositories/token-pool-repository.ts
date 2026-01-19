@@ -102,13 +102,22 @@ export const TokenPoolRepository = {
             AND dlq_at IS NULL
             AND completed_at IS NULL
             AND (claimed_until IS NULL OR claimed_until < ${params.now})
-            AND NOT EXISTS (
-              SELECT 1 FROM queue_tokens
-              WHERE queue_tokens.queue_name = queue_messages.queue_name
-                AND queue_tokens.workspace_id = queue_messages.workspace_id
-                AND queue_tokens.leased_until > ${params.now}
-            )
           GROUP BY queue_name, workspace_id
+        ),
+        pairs_without_tokens AS (
+          -- Exclude pairs that already have active tokens
+          -- Use LEFT JOIN instead of NOT EXISTS for better performance
+          SELECT
+            ap.queue_name,
+            ap.workspace_id,
+            ap.next_process_after,
+            ap.pending_count
+          FROM available_pairs ap
+          LEFT JOIN queue_tokens qt ON
+            qt.queue_name = ap.queue_name
+            AND qt.workspace_id = ap.workspace_id
+            AND qt.leased_until > ${params.now}
+          WHERE qt.id IS NULL
         ),
         selected_pairs AS (
           SELECT
@@ -116,7 +125,7 @@ export const TokenPoolRepository = {
             workspace_id,
             next_process_after,
             pending_count
-          FROM available_pairs
+          FROM pairs_without_tokens
           ORDER BY next_process_after ASC
           LIMIT ${params.limit}
         )

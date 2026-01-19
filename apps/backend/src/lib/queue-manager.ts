@@ -23,6 +23,7 @@ export interface QueueManagerConfig {
   baseBackoffMs?: number // Default 500
   scalingThreshold?: number // Default 50 (TODO: implement chunking)
   tokenBatchSize?: number // Default 10 (tokens to lease per tick)
+  messageBatchSize?: number // Default 10 (messages to process per token before releasing)
 
   // Ticker config
   tickIntervalMs?: number // Default 100 (tick every 100ms)
@@ -36,6 +37,7 @@ const DEFAULT_CONFIG = {
   baseBackoffMs: 500,
   scalingThreshold: 50,
   tokenBatchSize: 10,
+  messageBatchSize: 10,
   tickIntervalMs: 100,
   maxConcurrency: 10,
 }
@@ -59,6 +61,7 @@ export class QueueManager {
   private readonly baseBackoffMs: number
   private readonly scalingThreshold: number
   private readonly tokenBatchSize: number
+  private readonly messageBatchSize: number
   private readonly handlers = new Map<string, JobHandler<unknown>>()
   private readonly ticker: Ticker
   private readonly tickerId: string
@@ -81,6 +84,7 @@ export class QueueManager {
     this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
     this.scalingThreshold = config.scalingThreshold ?? DEFAULT_CONFIG.scalingThreshold
     this.tokenBatchSize = config.tokenBatchSize ?? DEFAULT_CONFIG.tokenBatchSize
+    this.messageBatchSize = config.messageBatchSize ?? DEFAULT_CONFIG.messageBatchSize
 
     this.tickerId = `ticker_${ulid()}`
     this.ticker = new Ticker({
@@ -252,14 +256,15 @@ export class QueueManager {
   }
 
   /**
-   * Process all messages for a token.
+   * Process messages for a token (up to messageBatchSize).
    */
   private async processToken(token: { id: string; queueName: string; workspaceId: string }): Promise<void> {
     const workerId = `worker_${ulid()}`
     const workerPromise = (async () => {
       try {
-        // Process messages until exhausted
-        while (!this.isStopping) {
+        // Process up to messageBatchSize messages before releasing token
+        let processedCount = 0
+        while (!this.isStopping && processedCount < this.messageBatchSize) {
           const message = await this.claimNextMessage(token, workerId)
 
           if (!message) {
@@ -267,6 +272,7 @@ export class QueueManager {
           }
 
           await this.processMessage(message, workerId)
+          processedCount++
         }
       } finally {
         // Always release token
@@ -329,11 +335,23 @@ export class QueueManager {
     }
 
     // Set up claim renewal timer
+    // Use a flag to prevent overlapping renewal calls if database is slow
+    let renewalInProgress = false
     const renewTimer = setInterval(async () => {
-      const renewed = await this.renewMessageClaim(message.id, workerId)
-      if (!renewed) {
-        logger.warn({ messageId: message.id }, "Failed to renew claim, aborting")
-        clearInterval(renewTimer)
+      if (renewalInProgress) {
+        logger.debug({ messageId: message.id }, "Skipping renewal - previous renewal still in progress")
+        return
+      }
+
+      renewalInProgress = true
+      try {
+        const renewed = await this.renewMessageClaim(message.id, workerId)
+        if (!renewed) {
+          logger.warn({ messageId: message.id }, "Failed to renew claim, aborting")
+          clearInterval(renewTimer)
+        }
+      } finally {
+        renewalInProgress = false
       }
     }, this.refreshIntervalMs)
 

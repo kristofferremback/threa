@@ -127,6 +127,11 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
+    // Limit concurrent ticks to prevent connection pool exhaustion
+    // With maxConcurrency=2 and tokenBatchSize=10, max 20 concurrent workers
+    // Each worker needs ~2 connections (claim + renewal), so ~40 connections max
+    // But since operations are quick, actual usage is much lower (~10-15)
+    maxConcurrency: 2,
   })
 
   // Create helpers for agents
