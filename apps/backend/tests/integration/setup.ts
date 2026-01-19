@@ -7,6 +7,9 @@ import { Pool, type PoolClient } from "pg"
 import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
 
+// Re-export production helpers for tests that need to persist data
+export { withClient, withTransaction } from "../../src/db"
+
 const ADMIN_DATABASE_URL = "postgresql://threa:threa@localhost:5454/postgres"
 const TEST_DATABASE_URL = "postgresql://threa:threa@localhost:5454/threa_test"
 
