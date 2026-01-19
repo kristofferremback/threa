@@ -64,6 +64,13 @@ export interface RenewClaimParams {
   claimedUntil: Date
 }
 
+// Batch renew claims params
+export interface BatchRenewClaimsParams {
+  messageIds: string[]
+  claimedBy: string
+  claimedUntil: Date
+}
+
 // Complete params
 export interface CompleteParams {
   messageId: string
@@ -189,6 +196,62 @@ export const QueueRepository = {
   },
 
   /**
+   * Batch claim multiple messages for (queue, workspace) pair.
+   * Returns array of claimed messages (may be fewer than limit if not enough available).
+   *
+   * CRITICAL: Uses FOR UPDATE SKIP LOCKED for concurrency.
+   * Only one worker can claim the same message.
+   */
+  async batchClaimMessages(db: Querier, params: ClaimNextParams & { limit: number }): Promise<QueueMessage[]> {
+    const result = await db.query<QueueMessageRow>(
+      sql`
+        WITH selected AS (
+          SELECT id
+          FROM queue_messages
+          WHERE queue_name = ${params.queueName}
+            AND workspace_id = ${params.workspaceId}
+            AND process_after <= ${params.now}
+            AND dlq_at IS NULL
+            AND completed_at IS NULL
+            AND (claimed_until IS NULL OR claimed_until < ${params.now})
+          ORDER BY process_after ASC
+          LIMIT ${params.limit}
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE queue_messages
+        SET
+          claimed_at = ${params.claimedAt},
+          claimed_by = ${params.claimedBy},
+          claimed_until = ${params.claimedUntil},
+          claimed_count = claimed_count + 1
+        FROM selected
+        WHERE queue_messages.id = selected.id
+        RETURNING
+          queue_messages.id,
+          queue_messages.queue_name,
+          queue_messages.workspace_id,
+          queue_messages.payload,
+          queue_messages.process_after,
+          queue_messages.inserted_at,
+          queue_messages.claimed_at,
+          queue_messages.claimed_by,
+          queue_messages.claimed_until,
+          queue_messages.claimed_count,
+          queue_messages.failed_count,
+          queue_messages.last_error,
+          queue_messages.dlq_at,
+          queue_messages.completed_at
+      `
+    )
+
+    // Sort by process_after for consistent ordering (though parallel processing means completion order varies)
+    const messages = result.rows.map(mapRowToMessage)
+    messages.sort((a, b) => a.processAfter.getTime() - b.processAfter.getTime())
+
+    return messages
+  },
+
+  /**
    * Renew claim for a message.
    * Returns false if claim lost (message completed elsewhere, wrong claimedBy).
    *
@@ -207,6 +270,28 @@ export const QueueRepository = {
     )
 
     return (result.rowCount ?? 0) > 0
+  },
+
+  /**
+   * Batch renew claims for multiple messages.
+   * Returns count of successfully renewed claims.
+   *
+   * Messages that have been completed or moved to DLQ will not be renewed.
+   * This supports partial success - some messages may complete while others are still processing.
+   */
+  async batchRenewClaims(db: Querier, params: BatchRenewClaimsParams): Promise<number> {
+    const result = await db.query(
+      sql`
+        UPDATE queue_messages
+        SET claimed_until = ${params.claimedUntil}
+        WHERE id = ANY(${params.messageIds})
+          AND claimed_by = ${params.claimedBy}
+          AND completed_at IS NULL
+          AND dlq_at IS NULL
+      `
+    )
+
+    return result.rowCount ?? 0
   },
 
   /**

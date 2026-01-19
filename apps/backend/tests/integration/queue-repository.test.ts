@@ -669,6 +669,583 @@ describe("QueueRepository", () => {
     })
   })
 
+  describe("batchClaimMessages", () => {
+    test("should batch claim multiple messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 5 messages
+        for (let i = 1; i <= 5; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Batch claim 3 messages
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 3,
+        })
+
+        // Don't assert specific order since parallel processing makes order non-deterministic
+        expect(claimed.length).toBe(3)
+        expect(claimed.every((m) => m.claimedBy === "worker_test")).toBe(true)
+        expect(claimed.every((m) => m.claimedCount === 1)).toBe(true)
+
+        // Verify the claimed messages are distinct
+        const claimedIds = claimed.map((m) => m.id)
+        expect(new Set(claimedIds).size).toBe(3) // No duplicates
+      })
+    })
+
+    test("should return empty array if no messages available", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(claimed.length).toBe(0)
+      })
+    })
+
+    test("should return fewer messages than limit if not enough available", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 2 messages
+        for (let i = 1; i <= 2; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Request 10 but only 2 available
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(claimed.length).toBe(2)
+      })
+    })
+
+    test("should claim all ready messages regardless of insert order", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert messages with different processAfter timestamps
+        const messageIds = ["queue_old", "queue_middle", "queue_recent"]
+        await QueueRepository.insert(client, {
+          id: "queue_old",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 1 },
+          processAfter: new Date(now.getTime() - 1000),
+          insertedAt: now,
+        })
+
+        await QueueRepository.insert(client, {
+          id: "queue_middle",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 2 },
+          processAfter: new Date(now.getTime() - 500),
+          insertedAt: now,
+        })
+
+        await QueueRepository.insert(client, {
+          id: "queue_recent",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 3 },
+          processAfter: now,
+          insertedAt: now,
+        })
+
+        // Batch claim - all are ready
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        // Should get all 3 (order doesn't matter for parallel processing)
+        expect(claimed.length).toBe(3)
+        const claimedIds = claimed.map((m) => m.id).sort()
+        expect(claimedIds).toEqual(messageIds.sort())
+      })
+    })
+
+    test("should skip messages not ready yet (processAfter > now)", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 2 ready, 1 future
+        await QueueRepository.insert(client, {
+          id: "queue_ready1",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 1 },
+          processAfter: now,
+          insertedAt: now,
+        })
+
+        await QueueRepository.insert(client, {
+          id: "queue_future",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 2 },
+          processAfter: new Date(now.getTime() + 60000), // Future
+          insertedAt: now,
+        })
+
+        await QueueRepository.insert(client, {
+          id: "queue_ready2",
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          payload: { order: 3 },
+          processAfter: now,
+          insertedAt: now,
+        })
+
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(claimed.length).toBe(2)
+        expect(claimed.some((m) => m.id === "queue_future")).toBe(false)
+      })
+    })
+
+    test("should skip messages with active claims", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Worker 1 claims first message
+        await QueueRepository.claimNext(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_1",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+        })
+
+        // Worker 2 batch claims (should skip the one worker 1 has)
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_2",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(claimed.length).toBe(2)
+        expect(claimed.some((m) => m.id === "queue_test1")).toBe(false)
+        expect(claimed.every((m) => m.claimedBy === "worker_2")).toBe(true)
+      })
+    })
+
+    test("should reclaim messages with expired claims", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 2 messages
+        for (let i = 1; i <= 2; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Claim with expired claimedUntil
+        await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_1",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() - 1000), // Already expired
+          now,
+          limit: 10,
+        })
+
+        // Should be able to reclaim
+        const reclaimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_2",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(reclaimed.length).toBe(2)
+        expect(reclaimed.every((m) => m.claimedBy === "worker_2")).toBe(true)
+        expect(reclaimed.every((m) => m.claimedCount === 2)).toBe(true) // Incremented on reclaim
+      })
+    })
+
+    test("should skip completed messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Claim and complete first message
+        const claimed = await QueueRepository.claimNext(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_1",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+        })
+
+        await QueueRepository.complete(client, {
+          messageId: claimed!.id,
+          claimedBy: "worker_1",
+          completedAt: now,
+        })
+
+        // Batch claim (should not get completed message)
+        const batchClaimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_2",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(batchClaimed.length).toBe(2)
+        expect(batchClaimed.some((m) => m.id === "queue_test1")).toBe(false)
+      })
+    })
+
+    test("should skip DLQ messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Claim and DLQ first message
+        const claimed = await QueueRepository.claimNext(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_1",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+        })
+
+        await QueueRepository.failDlq(client, {
+          messageId: claimed!.id,
+          claimedBy: "worker_1",
+          error: "test error",
+          dlqAt: now,
+        })
+
+        // Batch claim (should not get DLQ message)
+        const batchClaimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_2",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        expect(batchClaimed.length).toBe(2)
+        expect(batchClaimed.some((m) => m.id === "queue_test1")).toBe(false)
+      })
+    })
+  })
+
+  describe("batchRenewClaims", () => {
+    test("should batch renew claims for all messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert and batch claim 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        const messageIds = claimed.map((m) => m.id)
+
+        // Batch renew all claims
+        const renewed = await QueueRepository.batchRenewClaims(client, {
+          messageIds,
+          claimedBy: "worker_test",
+          claimedUntil: new Date(now.getTime() + 20000),
+        })
+
+        expect(renewed).toBe(3)
+
+        // Verify all claims were extended
+        for (const id of messageIds) {
+          const message = await QueueRepository.getById(client, id)
+          expect(message!.claimedUntil).toEqual(new Date(now.getTime() + 20000))
+        }
+      })
+    })
+
+    test("should support partial success - skip completed messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert and batch claim 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        const messageIds = claimed.map((m) => m.id)
+
+        // Complete first message (simulating concurrent processing)
+        await QueueRepository.complete(client, {
+          messageId: "queue_test1",
+          claimedBy: "worker_test",
+          completedAt: now,
+        })
+
+        // Batch renew - should only renew the 2 remaining
+        const renewed = await QueueRepository.batchRenewClaims(client, {
+          messageIds,
+          claimedBy: "worker_test",
+          claimedUntil: new Date(now.getTime() + 20000),
+        })
+
+        expect(renewed).toBe(2) // Only 2 renewed (1 was completed)
+
+        // Verify completed message not renewed
+        const completedMsg = await QueueRepository.getById(client, "queue_test1")
+        expect(completedMsg!.claimedUntil).toBeNull() // Still null (completed messages clear claimedUntil)
+      })
+    })
+
+    test("should support partial success - skip DLQ messages", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert and batch claim 3 messages
+        for (let i = 1; i <= 3; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        const claimed = await QueueRepository.batchClaimMessages(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_test",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+          limit: 10,
+        })
+
+        const messageIds = claimed.map((m) => m.id)
+
+        // Move first message to DLQ
+        await QueueRepository.failDlq(client, {
+          messageId: "queue_test1",
+          claimedBy: "worker_test",
+          error: "fatal error",
+          dlqAt: now,
+        })
+
+        // Batch renew - should only renew the 2 remaining
+        const renewed = await QueueRepository.batchRenewClaims(client, {
+          messageIds,
+          claimedBy: "worker_test",
+          claimedUntil: new Date(now.getTime() + 20000),
+        })
+
+        expect(renewed).toBe(2) // Only 2 renewed (1 in DLQ)
+      })
+    })
+
+    test("should verify claimedBy - only renew messages owned by worker", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Insert 2 messages
+        for (let i = 1; i <= 2; i++) {
+          await QueueRepository.insert(client, {
+            id: `queue_test${i}`,
+            queueName: "test.queue",
+            workspaceId: "ws_test",
+            payload: { order: i },
+            processAfter: now,
+            insertedAt: now,
+          })
+        }
+
+        // Worker 1 claims first message
+        await QueueRepository.claimNext(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_1",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+        })
+
+        // Worker 2 claims second message
+        await QueueRepository.claimNext(client, {
+          queueName: "test.queue",
+          workspaceId: "ws_test",
+          claimedBy: "worker_2",
+          claimedAt: now,
+          claimedUntil: new Date(now.getTime() + 10000),
+          now,
+        })
+
+        // Worker 1 tries to renew both (should only renew their own)
+        const renewed = await QueueRepository.batchRenewClaims(client, {
+          messageIds: ["queue_test1", "queue_test2"],
+          claimedBy: "worker_1",
+          claimedUntil: new Date(now.getTime() + 20000),
+        })
+
+        expect(renewed).toBe(1) // Only renewed their own message
+      })
+    })
+
+    test("should return 0 if no messages renewed", async () => {
+      await withTransaction(pool, async (client) => {
+        const now = new Date()
+
+        // Try to renew non-existent messages
+        const renewed = await QueueRepository.batchRenewClaims(client, {
+          messageIds: ["queue_fake1", "queue_fake2"],
+          claimedBy: "worker_test",
+          claimedUntil: new Date(now.getTime() + 20000),
+        })
+
+        expect(renewed).toBe(0)
+      })
+    })
+  })
+
   describe("deleteOldMessages", () => {
     test("should delete old completed messages", async () => {
       await withTransaction(pool, async (client) => {

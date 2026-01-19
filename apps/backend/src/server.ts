@@ -127,10 +127,16 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
-    // Limit concurrent ticks to prevent connection pool exhaustion
-    // With maxConcurrency=2 and tokenBatchSize=10, max 20 concurrent workers
-    // Each worker needs ~2 connections (claim + renewal), so ~40 connections max
-    // But since operations are quick, actual usage is much lower (~10-15)
+    // Optimized for throughput with batch operations:
+    // - maxConcurrency=2: max 2 ticks running in parallel
+    // - tokenBatchSize=10: each tick leases up to 10 tokens (queue,workspace pairs)
+    // - claimBatchSize=20: each token claims up to 20 messages in one query
+    // - processingConcurrency=5: process 5 messages in parallel per token
+    //
+    // Max workers: 2 ticks × 10 tokens = 20 workers
+    // Max parallel processing: 20 workers × 5 concurrent = 100 messages
+    // Connection usage: batch operations reduce queries by 10-20x vs serial
+    // Peak connections: ~10-15 (operations are fast, connections released immediately)
     maxConcurrency: 2,
   })
 

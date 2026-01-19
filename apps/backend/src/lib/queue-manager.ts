@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
 import { ulid } from "ulid"
+import pLimit from "p-limit"
 import { withClient } from "../db"
 import type { QueueRepository } from "../repositories/queue-repository"
 import type { TokenPoolRepository } from "../repositories/token-pool-repository"
@@ -23,7 +24,8 @@ export interface QueueManagerConfig {
   baseBackoffMs?: number // Default 500
   scalingThreshold?: number // Default 50 (TODO: implement chunking)
   tokenBatchSize?: number // Default 10 (tokens to lease per tick)
-  messageBatchSize?: number // Default 10 (messages to process per token before releasing)
+  claimBatchSize?: number // Default 20 (messages to claim per token)
+  processingConcurrency?: number // Default 5 (parallel message processing per worker)
 
   // Ticker config
   tickIntervalMs?: number // Default 100 (tick every 100ms)
@@ -37,7 +39,8 @@ const DEFAULT_CONFIG = {
   baseBackoffMs: 500,
   scalingThreshold: 50,
   tokenBatchSize: 10,
-  messageBatchSize: 10,
+  claimBatchSize: 20,
+  processingConcurrency: 5,
   tickIntervalMs: 100,
   maxConcurrency: 10,
 }
@@ -61,7 +64,8 @@ export class QueueManager {
   private readonly baseBackoffMs: number
   private readonly scalingThreshold: number
   private readonly tokenBatchSize: number
-  private readonly messageBatchSize: number
+  private readonly claimBatchSize: number
+  private readonly processingConcurrency: number
   private readonly handlers = new Map<string, JobHandler<unknown>>()
   private readonly ticker: Ticker
   private readonly tickerId: string
@@ -84,7 +88,8 @@ export class QueueManager {
     this.baseBackoffMs = config.baseBackoffMs ?? DEFAULT_CONFIG.baseBackoffMs
     this.scalingThreshold = config.scalingThreshold ?? DEFAULT_CONFIG.scalingThreshold
     this.tokenBatchSize = config.tokenBatchSize ?? DEFAULT_CONFIG.tokenBatchSize
-    this.messageBatchSize = config.messageBatchSize ?? DEFAULT_CONFIG.messageBatchSize
+    this.claimBatchSize = config.claimBatchSize ?? DEFAULT_CONFIG.claimBatchSize
+    this.processingConcurrency = config.processingConcurrency ?? DEFAULT_CONFIG.processingConcurrency
 
     this.tickerId = `ticker_${ulid()}`
     this.ticker = new Ticker({
@@ -256,23 +261,81 @@ export class QueueManager {
   }
 
   /**
-   * Process messages for a token (up to messageBatchSize).
+   * Process messages for a token.
+   *
+   * Optimized for throughput:
+   * 1. Batch claim messages upfront (1 query instead of N)
+   * 2. Process with controlled concurrency (processingConcurrency at a time)
+   * 3. Single renewal timer for all messages (1 periodic query instead of N)
+   * 4. Complete messages immediately (no batching - good for observability)
    */
   private async processToken(token: { id: string; queueName: string; workspaceId: string }): Promise<void> {
     const workerId = `worker_${ulid()}`
     const workerPromise = (async () => {
       try {
-        // Process up to messageBatchSize messages before releasing token
-        let processedCount = 0
-        while (!this.isStopping && processedCount < this.messageBatchSize) {
-          const message = await this.claimNextMessage(token, workerId)
+        const now = new Date()
 
-          if (!message) {
-            break // No more messages for this pair
+        // 1. Batch claim messages upfront
+        const messages = await withClient(this.pool, async (client) => {
+          return await this.queueRepo.batchClaimMessages(client, {
+            queueName: token.queueName,
+            workspaceId: token.workspaceId,
+            claimedBy: workerId,
+            claimedAt: now,
+            claimedUntil: new Date(now.getTime() + this.lockDurationMs),
+            now,
+            limit: this.claimBatchSize,
+          })
+        })
+
+        if (messages.length === 0) {
+          return // No work for this token
+        }
+
+        logger.debug(
+          { messageCount: messages.length, queueName: token.queueName, workspaceId: token.workspaceId },
+          "Batch claimed messages"
+        )
+
+        // 2. Set up single renewal timer for ALL messages
+        const messageIds = messages.map((m) => m.id)
+        let renewalInProgress = false
+
+        const renewTimer = setInterval(async () => {
+          if (renewalInProgress) {
+            logger.debug({ messageIds }, "Skipping batch renewal - previous renewal still in progress")
+            return
           }
 
-          await this.processMessage(message, workerId)
-          processedCount++
+          renewalInProgress = true
+          try {
+            const renewed = await this.batchRenewClaims(messageIds, workerId)
+            logger.debug({ renewedCount: renewed, totalMessages: messageIds.length }, "Batch renewed claims")
+          } catch (err) {
+            logger.warn({ messageIds, err }, "Failed to batch renew claims")
+          } finally {
+            renewalInProgress = false
+          }
+        }, this.refreshIntervalMs)
+
+        try {
+          // 3. Process with controlled concurrency (processingConcurrency at a time)
+          const limit = pLimit(this.processingConcurrency)
+
+          await Promise.all(
+            messages.map((message) =>
+              limit(async () => {
+                try {
+                  await this.processMessage(message, workerId)
+                } catch (err) {
+                  // Error already logged and handled in processMessage
+                  // Continue processing other messages
+                }
+              })
+            )
+          )
+        } finally {
+          clearInterval(renewTimer)
         }
       } finally {
         // Always release token
@@ -289,37 +352,25 @@ export class QueueManager {
   }
 
   /**
-   * Claim next message for a token.
+   * Batch renew claims for multiple messages.
    */
-  private async claimNextMessage(
-    token: { queueName: string; workspaceId: string },
-    workerId: string
-  ): Promise<{ id: string; queueName: string; payload: unknown; failedCount: number } | null> {
+  private async batchRenewClaims(messageIds: string[], workerId: string): Promise<number> {
     const now = new Date()
 
     return await withClient(this.pool, async (client) => {
-      const message = await this.queueRepo.claimNext(client, {
-        queueName: token.queueName,
-        workspaceId: token.workspaceId,
+      return await this.queueRepo.batchRenewClaims(client, {
+        messageIds,
         claimedBy: workerId,
-        claimedAt: now,
         claimedUntil: new Date(now.getTime() + this.lockDurationMs),
-        now,
       })
-
-      return message
-        ? {
-            id: message.id,
-            queueName: message.queueName,
-            payload: message.payload,
-            failedCount: message.failedCount,
-          }
-        : null
     })
   }
 
   /**
    * Process a single message.
+   *
+   * Note: Renewal is handled at the batch level by processToken(),
+   * not per-message, to reduce database queries.
    */
   private async processMessage(
     message: { id: string; queueName: string; payload: unknown; failedCount: number },
@@ -333,27 +384,6 @@ export class QueueManager {
       await this.moveMessageToDlq(message.id, workerId, "No handler registered")
       return
     }
-
-    // Set up claim renewal timer
-    // Use a flag to prevent overlapping renewal calls if database is slow
-    let renewalInProgress = false
-    const renewTimer = setInterval(async () => {
-      if (renewalInProgress) {
-        logger.debug({ messageId: message.id }, "Skipping renewal - previous renewal still in progress")
-        return
-      }
-
-      renewalInProgress = true
-      try {
-        const renewed = await this.renewMessageClaim(message.id, workerId)
-        if (!renewed) {
-          logger.warn({ messageId: message.id }, "Failed to renew claim, aborting")
-          clearInterval(renewTimer)
-        }
-      } finally {
-        renewalInProgress = false
-      }
-    }, this.refreshIntervalMs)
 
     try {
       // Execute handler - create minimal Job object compatible with pg-boss Job type
@@ -394,24 +424,7 @@ export class QueueManager {
           "Message scheduled for retry"
         )
       }
-    } finally {
-      clearInterval(renewTimer)
     }
-  }
-
-  /**
-   * Renew claim for a message.
-   */
-  private async renewMessageClaim(messageId: string, workerId: string): Promise<boolean> {
-    const now = new Date()
-
-    return await withClient(this.pool, async (client) => {
-      return await this.queueRepo.renewClaim(client, {
-        messageId,
-        claimedBy: workerId,
-        claimedUntil: new Date(now.getTime() + this.lockDurationMs),
-      })
-    })
   }
 
   /**
