@@ -2,11 +2,12 @@ import type { Pool } from "pg"
 import pLimit from "p-limit"
 import type { QueueRepository } from "../repositories/queue-repository"
 import type { TokenPoolRepository } from "../repositories/token-pool-repository"
+import { CronRepository, type CronTick } from "../repositories/cron-repository"
 import { Ticker } from "./ticker"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
 import type { JobDataMap, JobQueueName, JobHandler } from "./job-queue"
-import { queueId, workerId, tickerId } from "./id"
+import { queueId, workerId, tickerId, cronId } from "./id"
 
 /**
  * Configuration for QueueManager
@@ -74,9 +75,6 @@ export class QueueManager {
   // Track active workers for graceful shutdown
   private readonly activeWorkers = new Set<Promise<void>>()
 
-  // Track scheduled jobs
-  private readonly scheduledJobs = new Map<string, Timer>()
-
   constructor(config: QueueManagerConfig) {
     const {
       pool,
@@ -127,29 +125,30 @@ export class QueueManager {
 
   /**
    * Schedule a recurring job.
-   * Simple replacement for pg-boss schedule() using setInterval.
+   * Creates a cron schedule in the database for distributed execution.
    *
    * @param queueName - Queue to send messages to
    * @param intervalSeconds - Interval in seconds between job runs
    * @param data - Job data to send
+   * @param workspaceId - Optional workspace ID (null = system-wide)
    */
-  schedule<T extends JobQueueName>(queueName: T, intervalSeconds: number, data: JobDataMap[T]): void {
-    if (this.scheduledJobs.has(queueName)) {
-      throw new Error(`Job ${queueName} is already scheduled`)
-    }
+  async schedule<T extends JobQueueName>(
+    queueName: T,
+    intervalSeconds: number,
+    data: JobDataMap[T],
+    workspaceId: string | null = null
+  ): Promise<void> {
+    const scheduleId = cronId()
 
-    const timer = setInterval(async () => {
-      try {
-        await this.send(queueName, data)
-        logger.debug({ queueName }, "Scheduled job sent")
-      } catch (err) {
-        logger.error({ queueName, err }, "Failed to send scheduled job")
-      }
-    }, intervalSeconds * 1000)
+    await CronRepository.createSchedule(this.pool, {
+      id: scheduleId,
+      queueName,
+      intervalSeconds,
+      payload: data,
+      workspaceId,
+    })
 
-    this.scheduledJobs.set(queueName, timer)
-
-    logger.info({ queueName, intervalSeconds }, "Job scheduled")
+    logger.info({ scheduleId, queueName, intervalSeconds, workspaceId }, "Cron schedule created")
   }
 
   /**
@@ -210,13 +209,6 @@ export class QueueManager {
     this.isStopping = true
     logger.info("QueueManager stopping...")
 
-    // Stop scheduled jobs
-    for (const [queueName, timer] of this.scheduledJobs) {
-      clearInterval(timer)
-      logger.debug({ queueName }, "Scheduled job stopped")
-    }
-    this.scheduledJobs.clear()
-
     // Stop ticker (no new work)
     this.ticker.stop()
 
@@ -267,15 +259,28 @@ export class QueueManager {
       queueNames,
     })
 
-    if (tokens.length === 0) {
-      return // No work available
-    }
-
     logger.debug({ tokenCount: tokens.length }, "Leased tokens")
 
     // 2. For each token, spawn worker in parallel
     const workers = tokens.map((token) => this.processToken(token))
-    await Promise.all(workers)
+
+    // 3. Lease and execute cron ticks (runs in parallel with message processing)
+    const ticks = await CronRepository.batchLeaseTicks(this.pool, {
+      leasedBy: this.tickerId,
+      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
+      limit: 10,
+      now,
+    })
+
+    if (ticks.length > 0) {
+      logger.debug({ tickCount: ticks.length }, "Leased cron ticks")
+      const tickWorkers = ticks.map((tick) => this.executeTick(tick))
+      workers.push(...tickWorkers)
+    }
+
+    if (workers.length > 0) {
+      await Promise.all(workers)
+    }
   }
 
   /**
@@ -550,6 +555,49 @@ export class QueueManager {
       tokenId,
       leasedBy: this.tickerId,
     })
+  }
+
+  /**
+   * Execute a cron tick.
+   * Sends message to queue and deletes tick.
+   */
+  private async executeTick(tick: CronTick): Promise<void> {
+    const workerPromise = (async () => {
+      try {
+        // Send message to queue (tick payload already denormalized)
+        await this.queueRepo.insert(this.pool, {
+          id: queueId(),
+          queueName: tick.queueName,
+          workspaceId: tick.workspaceId || "system",
+          payload: tick.payload,
+          processAfter: tick.executeAt,
+          insertedAt: new Date(),
+        })
+
+        logger.info(
+          { scheduleId: tick.scheduleId, queueName: tick.queueName, executeAt: tick.executeAt },
+          "Cron tick executed"
+        )
+      } catch (err) {
+        logger.error({ scheduleId: tick.scheduleId, err }, "Failed to execute cron tick")
+      } finally {
+        // Always delete tick (release schedule)
+        try {
+          await CronRepository.deleteTick(this.pool, {
+            tickId: tick.id,
+            leasedBy: this.tickerId,
+          })
+        } catch (err) {
+          // Log but don't throw - tick may have already been deleted or lease lost
+          logger.warn({ tickId: tick.id, err }, "Failed to delete cron tick")
+        }
+      }
+    })()
+
+    this.activeWorkers.add(workerPromise)
+    workerPromise.finally(() => this.activeWorkers.delete(workerPromise))
+
+    await workerPromise
   }
 
   /**

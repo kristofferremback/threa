@@ -65,6 +65,8 @@ import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
 import { QueueManager } from "./lib/queue-manager"
+import { ScheduleManager } from "./lib/schedule-manager"
+import { CleanupWorker } from "./lib/cleanup-worker"
 import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
@@ -138,6 +140,19 @@ export async function startServer(): Promise<ServerInstance> {
     // Connection usage: batch operations reduce queries by 10-20x vs serial
     // Peak connections: ~10-15 (operations are fast, connections released immediately)
     maxConcurrency: 2,
+  })
+
+  // Schedule manager for cron tick generation
+  const scheduleManager = new ScheduleManager(pool, {
+    lookaheadSeconds: 60, // Generate ticks for next minute
+    intervalMs: 10000, // Check every 10 seconds
+    batchSize: 100, // Process up to 100 schedules per run
+  })
+
+  // Cleanup worker for expired and orphaned cron ticks
+  const cleanupWorker = new CleanupWorker(pool, {
+    intervalMs: 300000, // Run every 5 minutes
+    expiredThresholdMs: 300000, // Delete ticks expired for 5+ minutes
   })
 
   // Create helpers for agents
@@ -286,8 +301,12 @@ export async function startServer(): Promise<ServerInstance> {
   // Register handlers before starting
   await jobQueue.start()
 
+  // Start schedule manager and cleanup worker
+  scheduleManager.start()
+  cleanupWorker.start()
+
   // Schedule memo batch check cron job (every 30 seconds)
-  jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" })
+  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" })
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
@@ -341,6 +360,8 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     orphanSessionCleanup.stop()
+    await scheduleManager.stop()
+    await cleanupWorker.stop()
     await outboxDispatcher.stop()
     await jobQueue.stop()
     logger.info("Closing socket.io...")
