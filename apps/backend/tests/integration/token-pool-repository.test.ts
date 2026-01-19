@@ -52,6 +52,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(2)
@@ -71,6 +72,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(0)
@@ -98,6 +100,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(firstBatch.length).toBe(1)
@@ -109,6 +112,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(secondBatch.length).toBe(0)
@@ -136,6 +140,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() - 1000), // Already expired
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Should be able to lease again
@@ -145,6 +150,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(1)
@@ -174,6 +180,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 3,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(3)
@@ -220,6 +227,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(3)
@@ -262,6 +270,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Should only get token for ready message
@@ -284,17 +293,18 @@ describe("TokenPoolRepository", () => {
           insertedAt: now,
         })
 
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await QueueRepository.batchClaimMessages(client, {
           queueName: "test.queue",
           workspaceId: "ws_test1",
           claimedBy: "worker_test",
           claimedAt: now,
           claimedUntil: new Date(now.getTime() + 10000),
           now,
+          limit: 1,
         })
 
         await QueueRepository.complete(client, {
-          messageId: claimed!.id,
+          messageId: claimed[0].id,
           claimedBy: "worker_test",
           completedAt: now,
         })
@@ -306,6 +316,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(0)
@@ -326,17 +337,18 @@ describe("TokenPoolRepository", () => {
           insertedAt: now,
         })
 
-        const claimed = await QueueRepository.claimNext(client, {
+        const claimed = await QueueRepository.batchClaimMessages(client, {
           queueName: "test.queue",
           workspaceId: "ws_test1",
           claimedBy: "worker_test",
           claimedAt: now,
           claimedUntil: new Date(now.getTime() + 10000),
           now,
+          limit: 1,
         })
 
         await QueueRepository.failDlq(client, {
-          messageId: claimed!.id,
+          messageId: claimed[0].id,
           claimedBy: "worker_test",
           error: "test error",
           dlqAt: now,
@@ -349,6 +361,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(0)
@@ -370,13 +383,14 @@ describe("TokenPoolRepository", () => {
         })
 
         // Claim with expired claim
-        await QueueRepository.claimNext(client, {
+        await QueueRepository.batchClaimMessages(client, {
           queueName: "test.queue",
           workspaceId: "ws_test1",
           claimedBy: "worker_test",
           claimedAt: now,
           claimedUntil: new Date(now.getTime() - 1000), // Already expired
           now,
+          limit: 1,
         })
 
         // Lease tokens (should include message with expired claim)
@@ -386,6 +400,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(tokens.length).toBe(1)
@@ -414,6 +429,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Renew lease
@@ -451,6 +467,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Try to renew with different leasedBy
@@ -486,6 +503,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Delete token
@@ -520,6 +538,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000),
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Try to delete with different leasedBy
@@ -565,6 +584,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(pastTime.getTime() + 5000), // Expired relative to now
           now: pastTime,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         expect(allTokens.length).toBe(2)
@@ -606,6 +626,7 @@ describe("TokenPoolRepository", () => {
           leasedUntil: new Date(now.getTime() + 10000), // Not expired
           now,
           limit: 10,
+          queueNames: ["test.queue"],
         })
 
         // Delete expired tokens
