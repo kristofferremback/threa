@@ -431,6 +431,29 @@ export const CronRepository = {
   },
 
   /**
+   * Get schedule by queue name and workspace ID.
+   * Used for find-or-create pattern to prevent duplicates.
+   */
+  async getScheduleByQueueAndWorkspace(
+    db: Querier,
+    queueName: string,
+    workspaceId: string | null
+  ): Promise<CronSchedule | null> {
+    const result = await db.query<CronScheduleRow>(
+      sql`
+        SELECT
+          id, queue_name, interval_seconds, payload, workspace_id,
+          next_tick_needed_at, enabled, created_at, updated_at
+        FROM cron_schedules
+        WHERE queue_name = ${queueName}
+          AND workspace_id IS NOT DISTINCT FROM ${workspaceId}
+      `
+    )
+
+    return result.rows[0] ? mapRowToSchedule(result.rows[0]) : null
+  },
+
+  /**
    * Get tick by ID (for testing/debugging).
    */
   async getTickById(db: Querier, id: string): Promise<CronTick | null> {

@@ -124,8 +124,9 @@ export class QueueManager {
   }
 
   /**
-   * Schedule a recurring job.
-   * Creates a cron schedule in the database for distributed execution.
+   * Schedule a recurring job (idempotent).
+   * Finds existing schedule or creates a new one for (queueName, workspaceId).
+   * Updates interval if existing schedule has different interval.
    *
    * @param queueName - Queue to send messages to
    * @param intervalSeconds - Interval in seconds between job runs
@@ -138,8 +139,25 @@ export class QueueManager {
     data: JobDataMap[T],
     workspaceId: string | null = null
   ): Promise<void> {
-    const scheduleId = cronId()
+    // Check if schedule already exists (find-or-create pattern)
+    const existing = await CronRepository.getScheduleByQueueAndWorkspace(this.pool, queueName, workspaceId)
 
+    if (existing) {
+      // Schedule exists - update interval if changed
+      if (existing.intervalSeconds !== intervalSeconds) {
+        await CronRepository.updateScheduleInterval(this.pool, existing.id, intervalSeconds)
+        logger.info(
+          { scheduleId: existing.id, queueName, oldInterval: existing.intervalSeconds, newInterval: intervalSeconds },
+          "Cron schedule interval updated"
+        )
+      } else {
+        logger.debug({ scheduleId: existing.id, queueName, intervalSeconds }, "Cron schedule already exists")
+      }
+      return
+    }
+
+    // Create new schedule
+    const scheduleId = cronId()
     await CronRepository.createSchedule(this.pool, {
       id: scheduleId,
       queueName,
