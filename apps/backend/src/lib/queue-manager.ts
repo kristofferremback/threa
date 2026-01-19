@@ -588,7 +588,7 @@ export class QueueManager {
           insertedAt: new Date(),
         })
 
-        logger.info(
+        logger.debug(
           { scheduleId: tick.scheduleId, queueName: tick.queueName, executeAt: tick.executeAt },
           "Cron tick executed"
         )
