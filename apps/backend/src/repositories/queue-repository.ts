@@ -7,7 +7,7 @@ interface QueueMessageRow {
   queue_name: string
   workspace_id: string
   payload: unknown
-  process_after: Date
+  process_after: Date | null
   inserted_at: Date
   claimed_at: Date | null
   claimed_by: string | null
@@ -25,7 +25,7 @@ export interface QueueMessage {
   queueName: string
   workspaceId: string
   payload: unknown
-  processAfter: Date
+  processAfter: Date | null
   insertedAt: Date
   claimedAt: Date | null
   claimedBy: string | null
@@ -205,6 +205,8 @@ export const QueueRepository = {
             AND workspace_id = ${params.workspaceId}
             AND process_after <= ${params.now}
             AND (claimed_until IS NULL OR claimed_until < ${params.now})
+            AND completed_at IS NULL
+            AND dlq_at IS NULL
           ORDER BY process_after ASC
           LIMIT ${params.limit}
           FOR UPDATE SKIP LOCKED
@@ -237,7 +239,13 @@ export const QueueRepository = {
 
     // Sort by process_after for consistent ordering (though parallel processing means completion order varies)
     const messages = result.rows.map(mapRowToMessage)
-    messages.sort((a, b) => a.processAfter.getTime() - b.processAfter.getTime())
+    messages.sort((a, b) => {
+      // processAfter should never be null for claimed messages (only completed/DLQ have null)
+      // but handle it for type safety
+      if (!a.processAfter) return 1
+      if (!b.processAfter) return -1
+      return a.processAfter.getTime() - b.processAfter.getTime()
+    })
 
     return messages
   },
