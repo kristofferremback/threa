@@ -108,10 +108,15 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
-      // The hint is shown as a separate element, not in the placeholder
-      // Look for the hint text about Enter to send
-      await expect(page.getByText("Enter to send")).toBeVisible()
-      await expect(page.getByText("Shift+Enter for new line")).toBeVisible()
+      // Hover over the expand button to reveal the tooltip with the send hint
+      const expandButton = page
+        .getByRole("button")
+        .filter({ has: page.locator(".lucide-expand") })
+        .first()
+      await expandButton.hover()
+
+      // The hint is shown as a combined string with a middle dot separator
+      await expect(page.getByText("Enter to send · Shift+Enter for new line")).toBeVisible({ timeout: 2000 })
     })
 
     test("Cmd+Enter should also send in enter mode", async ({ page }) => {
@@ -176,9 +181,15 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
+      // Hover over the expand button to reveal the tooltip with the send hint
+      const expandButton = page
+        .getByRole("button")
+        .filter({ has: page.locator(".lucide-expand") })
+        .first()
+      await expandButton.hover()
+
       // The hint should show Cmd+Enter (or ⌘Enter on Mac)
-      // Look for text containing "Enter to send" with the modifier
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
     })
   })
 
@@ -417,8 +428,15 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
+      // Hover over the expand button to reveal the tooltip
+      const expandButton = page
+        .getByRole("button")
+        .filter({ has: page.locator(".lucide-expand") })
+        .first()
+      await expandButton.hover()
+
       // Verify hint shows Cmd+Enter
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
 
       // Reload page
       await page.reload()
@@ -430,8 +448,15 @@ test.describe("Message Send Mode", () => {
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
 
+      // Hover over the expand button to reveal the tooltip
+      const expandButtonAfterReload = page
+        .getByRole("button")
+        .filter({ has: page.locator(".lucide-expand") })
+        .first()
+      await expandButtonAfterReload.hover()
+
       // Verify hint still shows Cmd+Enter after reload (preference persisted)
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible()
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
     })
   })
 })

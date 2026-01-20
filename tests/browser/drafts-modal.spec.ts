@@ -410,16 +410,16 @@ test.describe("Drafts Page", () => {
     // Wait for the message to be sent and appear in the timeline
     await expect(page.getByText(`Parent message ${testId}`)).toBeVisible({ timeout: 5000 })
 
-    // Click the reply button to start a thread draft (hover to reveal the button)
+    // Click "Reply in thread" link to start a thread draft (appears on hover)
     const messageContainer = page
       .locator(".group")
       .filter({ hasText: `Parent message ${testId}` })
       .first()
     await messageContainer.hover()
 
-    // Click the reply button (MessageSquareReply icon button)
-    const replyButton = messageContainer.getByRole("button")
-    await replyButton.click()
+    // Click the "Reply in thread" link (appears on hover for messages without threads)
+    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
+    await replyLink.click()
 
     // Wait for draft thread panel to appear
     await expect(page.getByText("Write your reply below")).toBeVisible({ timeout: 3000 })
