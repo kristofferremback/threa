@@ -65,6 +65,8 @@ export type {
   Workspace,
   WorkspaceMember,
   Stream,
+  LastMessagePreview,
+  StreamWithPreview,
   StreamMember,
   Message,
   StreamEvent,

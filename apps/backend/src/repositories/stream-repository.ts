@@ -71,6 +71,19 @@ export interface UpdateStreamParams {
   displayNameGeneratedAt?: Date | null
 }
 
+/** Preview of the last message in a stream for sidebar display */
+export interface LastMessagePreview {
+  authorId: string
+  authorType: "user" | "persona"
+  content: any // ProseMirror JSONContent
+  createdAt: Date
+}
+
+/** Stream with optional last message preview, for sidebar listing */
+export interface StreamWithPreview extends Stream {
+  lastMessagePreview: LastMessagePreview | null
+}
+
 function mapRowToStream(row: StreamRow): Stream {
   return {
     id: row.id,
@@ -90,6 +103,32 @@ function mapRowToStream(row: StreamRow): Stream {
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
     displayNameGeneratedAt: row.display_name_generated_at,
+  }
+}
+
+/** Row type for stream with last message preview (from CTE query) */
+interface StreamWithPreviewRow extends StreamRow {
+  last_message_author_id: string | null
+  last_message_author_type: string | null
+  last_message_content: any | null // ProseMirror JSONContent
+  last_message_at: Date | null
+}
+
+function mapRowToStreamWithPreview(row: StreamWithPreviewRow): StreamWithPreview {
+  const stream = mapRowToStream(row)
+  const lastMessagePreview: LastMessagePreview | null =
+    row.last_message_author_id && row.last_message_content && row.last_message_at
+      ? {
+          authorId: row.last_message_author_id,
+          authorType: row.last_message_author_type as "user" | "persona",
+          content: row.last_message_content,
+          createdAt: row.last_message_at,
+        }
+      : null
+
+  return {
+    ...stream,
+    lastMessagePreview,
   }
 }
 
@@ -206,6 +245,94 @@ export const StreamRepository = {
           ORDER BY created_at DESC`
     )
     return result.rows.map(mapRowToStream)
+  },
+
+  /**
+   * List streams with last message preview, ordered by most recent activity.
+   * Uses a CTE for efficient fetching of last message per stream.
+   */
+  async listWithPreviews(
+    db: Querier,
+    workspaceId: string,
+    filters?: {
+      types?: StreamType[]
+      userMembershipStreamIds?: string[]
+      archiveStatus?: ArchiveStatus[]
+    }
+  ): Promise<StreamWithPreview[]> {
+    const types = filters?.types
+    const userMembershipStreamIds = filters?.userMembershipStreamIds
+    const archiveStatus = filters?.archiveStatus
+
+    const { includeActive, includeArchived, filterAll } = parseArchiveStatusFilter(archiveStatus)
+
+    // CTE to get last message per stream
+    const SELECT_WITH_PREVIEW = `
+      WITH last_messages AS (
+        SELECT DISTINCT ON (stream_id)
+          stream_id,
+          author_id,
+          author_type,
+          content_json,
+          created_at
+        FROM messages
+        WHERE deleted_at IS NULL
+        ORDER BY stream_id, created_at DESC
+      )
+      SELECT
+        s.${SELECT_FIELDS.split(",")
+          .map((f) => f.trim())
+          .join(", s.")},
+        lm.author_id as last_message_author_id,
+        lm.author_type as last_message_author_type,
+        lm.content_json as last_message_content,
+        lm.created_at as last_message_at
+      FROM streams s
+      LEFT JOIN last_messages lm ON lm.stream_id = s.id
+    `
+
+    // Build query with visibility filter if user's membership stream IDs provided
+    if (userMembershipStreamIds !== undefined) {
+      if (types && types.length > 0) {
+        const result = await db.query<StreamWithPreviewRow>(
+          sql`${sql.raw(SELECT_WITH_PREVIEW)}
+              WHERE s.workspace_id = ${workspaceId}
+                AND s.type = ANY(${types})
+                AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
+                AND (s.visibility = 'public' OR s.id = ANY(${userMembershipStreamIds}))
+              ORDER BY COALESCE(lm.created_at, s.created_at) DESC`
+        )
+        return result.rows.map(mapRowToStreamWithPreview)
+      }
+
+      const result = await db.query<StreamWithPreviewRow>(
+        sql`${sql.raw(SELECT_WITH_PREVIEW)}
+            WHERE s.workspace_id = ${workspaceId}
+              AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
+              AND (s.visibility = 'public' OR s.id = ANY(${userMembershipStreamIds}))
+            ORDER BY COALESCE(lm.created_at, s.created_at) DESC`
+      )
+      return result.rows.map(mapRowToStreamWithPreview)
+    }
+
+    if (types && types.length > 0) {
+      const result = await db.query<StreamWithPreviewRow>(
+        sql`${sql.raw(SELECT_WITH_PREVIEW)}
+            WHERE s.workspace_id = ${workspaceId}
+              AND s.type = ANY(${types})
+              AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
+            ORDER BY COALESCE(lm.created_at, s.created_at) DESC`
+      )
+      return result.rows.map(mapRowToStreamWithPreview)
+    }
+
+    const result = await db.query<StreamWithPreviewRow>(
+      sql`${sql.raw(SELECT_WITH_PREVIEW)}
+          WHERE s.workspace_id = ${workspaceId}
+            AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
+          ORDER BY COALESCE(lm.created_at, s.created_at) DESC`
+    )
+    return result.rows.map(mapRowToStreamWithPreview)
   },
 
   async insert(db: Querier, params: InsertStreamParams): Promise<Stream> {

@@ -26,6 +26,7 @@ export interface VirtualStream {
   id: string
   workspaceId: string
   type: StreamType
+  slug?: string | null
   displayName: string | null
   companionMode: CompanionMode
   isDraft: boolean
@@ -162,6 +163,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         id: bootstrap.stream.id,
         workspaceId: bootstrap.stream.workspaceId,
         type: bootstrap.stream.type,
+        slug: bootstrap.stream.slug,
         displayName: bootstrap.stream.displayName,
         companionMode: bootstrap.stream.companionMode,
         isDraft: false,

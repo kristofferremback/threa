@@ -6,14 +6,15 @@ import { MENTION_PATTERN, isValidSlug } from "@threa/types"
 
 /**
  * Styles for different trigger types.
+ * Colors match the design system kitchen sink.
  */
 const triggerStyles = {
-  user: "bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200",
+  user: "bg-[hsl(200_70%_50%/0.1)] text-[hsl(200_70%_50%)]",
   persona: "bg-primary/10 text-primary",
-  broadcast: "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-200",
-  channel: "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
-  command: "bg-muted text-primary font-mono font-bold",
-  me: "bg-blue-100 text-primary dark:bg-blue-900/50 dark:text-primary",
+  broadcast: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  channel: "bg-muted text-foreground",
+  command: "bg-[hsl(280_60%_55%/0.15)] text-[hsl(280_60%_55%)] font-mono",
+  me: "bg-[hsl(200_70%_50%/0.15)] text-primary font-semibold",
 }
 
 interface TriggerChipProps {
@@ -45,7 +46,7 @@ function TriggerChip({ type, text }: TriggerChipProps) {
   }
 
   return (
-    <span className={cn("inline-flex items-center rounded px-1 py-0.5", style)}>
+    <span className={cn("inline px-1 py-px rounded font-medium cursor-pointer", style)}>
       {prefix}
       {text}
     </span>

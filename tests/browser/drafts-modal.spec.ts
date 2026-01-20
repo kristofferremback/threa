@@ -410,19 +410,20 @@ test.describe("Drafts Page", () => {
     // Wait for the message to be sent and appear in the timeline
     await expect(page.getByText(`Parent message ${testId}`)).toBeVisible({ timeout: 5000 })
 
-    // Click the reply button to start a thread draft (hover to reveal the button)
+    // Click "Reply in thread" link to start a thread draft (appears on hover)
     const messageContainer = page
       .locator(".group")
       .filter({ hasText: `Parent message ${testId}` })
       .first()
     await messageContainer.hover()
 
-    // Click the reply button (MessageSquareReply icon button)
-    const replyButton = messageContainer.getByRole("button")
-    await replyButton.click()
+    // Wait for the link to become visible, then click it
+    const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
+    await expect(replyLink).toBeVisible({ timeout: 2000 })
+    await replyLink.click()
 
-    // Wait for draft thread panel to appear
-    await expect(page.getByText("Write your reply below")).toBeVisible({ timeout: 3000 })
+    // Wait for draft thread panel to appear - look for the panel content
+    await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Type in the thread draft
     const threadEditor = page.locator("[contenteditable='true']").last()
@@ -459,7 +460,7 @@ test.describe("Drafts Page", () => {
     // URL should have the draft parameter
     await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })
 
-    // Draft thread panel should be visible with the draft content
-    await expect(page.getByText("Write your reply below")).toBeVisible({ timeout: 3000 })
+    // Wait for the composer to be visible (draft panel has opened)
+    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
   })
 })

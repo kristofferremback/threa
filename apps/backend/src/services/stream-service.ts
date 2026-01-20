@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { Pool } from "pg"
 import { withClient, withTransaction } from "../db"
-import { StreamRepository, Stream } from "../repositories/stream-repository"
+import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from "../repositories/stream-repository"
 import { StreamMemberRepository, StreamMember } from "../repositories/stream-member-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { MessageRepository } from "../repositories/message-repository"
@@ -130,6 +130,27 @@ export class StreamService {
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.list(client, workspaceId, {
+        types: filters?.types,
+        archiveStatus: filters?.archiveStatus,
+        userMembershipStreamIds: memberStreamIds,
+      })
+    })
+  }
+
+  /**
+   * List streams with last message preview for sidebar display.
+   * Ordered by most recent activity (last message or stream creation).
+   */
+  async listWithPreviews(
+    workspaceId: string,
+    userId: string,
+    filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
+  ): Promise<StreamWithPreview[]> {
+    return withClient(this.pool, async (client) => {
+      const memberships = await StreamMemberRepository.list(client, { userId })
+      const memberStreamIds = memberships.map((m) => m.streamId)
+
+      return StreamRepository.listWithPreviews(client, workspaceId, {
         types: filters?.types,
         archiveStatus: filters?.archiveStatus,
         userMembershipStreamIds: memberStreamIds,

@@ -51,6 +51,21 @@ threa/
 - UI Components: Shadcn UI (Golden Thread theme)
 - Styling: Tailwind CSS
 
+## Design System References
+
+**Primary documentation:**
+
+- `docs/design-system.md` - Comprehensive design system guide (typography, colors, components, patterns)
+- `docs/design-system-kitchen-sink.html` - Interactive reference with all UI components and patterns
+
+**When implementing UI components:**
+
+1. Check `docs/design-system.md` for design decisions and patterns
+2. Reference `docs/design-system-kitchen-sink.html` for visual examples and CSS implementation
+3. When adding new components or patterns, update BOTH files to keep them in sync
+
+The kitchen sink is a living reference - update it whenever you add new components, patterns, or styling. It serves as both documentation and a visual regression test.
+
 ## Shadcn UI Reference
 
 Shadcn UI is a collection of accessible components built on Radix UI primitives and Tailwind CSS. Components are copied into the codebase (not imported from npm), allowing full customization.
@@ -181,6 +196,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-27** | Prefer Generic Repository Methods    | Don't add single-use repository methods when a generic method can be reused. If you need `getRecentScratchpadDisplayNames`, check if `list()` with filters covers the use case. Repositories should be powerful and composable, not cluttered with specialized variants. When ten ways exist to get the same data, it's unclear which to use.                                                      |
 | **INV-28** | Use AI Wrapper, Not Raw SDK          | Never import `generateText`, `generateObject`, `embed`, or `embedMany` directly from the `ai` module. Always use the `AI` wrapper (`createAI()`) which provides: clean telemetry API without `experimental_` prefixes, automatic repair functions for structured output, consistent `{ value, response }` return types, and model string parsing. Pass the `AI` instance via dependency injection. |
 | **INV-29** | Extract Variance, Share Behavior     | When handling variants (e.g., different stream types), extract only the decision logic into small functions returning a common shape. Keep one code path for shared behavior. Don't create separate code paths that "should behave the same" - they will drift. Example: `const decision = isA ? decideForA() : decideForB()` then one shared flow using `decision`.                               |
+| **INV-30** | Links Are Links, Buttons Are Buttons | Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, open modal, delete). Links navigate (change URL, open new tab with cmd+click). If it changes the URL, it's a link. If cmd+click should work, it's a link. Buttons break browser navigation, link previews, and accessibility.                                |
 
 When introducing a new invariant:
 
@@ -561,3 +577,17 @@ it("should call onSelect when selected", () => {
 3. Verify the test fails (if it passes, your test is wrong)
 4. Fix the bug
 5. Verify the test passes
+
+### Always use `bun run test`, not `bun test`
+
+When running tests in any workspace (backend or frontend), always use `bun run test` instead of `bun test`. The `bun run test` command executes the test script defined in package.json, which may include important configuration or setup that `bun test` bypasses.
+
+```bash
+# Correct
+cd apps/backend && bun run test
+cd apps/frontend && bun run test
+
+# Incorrect
+cd apps/backend && bun test  # ❌ May skip test setup
+cd apps/frontend && bun test  # ❌ May use wrong test environment
+```

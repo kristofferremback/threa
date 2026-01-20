@@ -12,30 +12,43 @@ vi.mock("@/components/editor", () => ({
     onSubmit,
     placeholder,
     disabled,
+    showFormattingToolbar,
+    onAttachClick,
   }: {
     value: JSONContent
     onChange: (v: JSONContent) => void
     onSubmit: () => void
     placeholder: string
     disabled: boolean
+    showFormattingToolbar?: boolean
+    onAttachClick?: () => void
   }) => (
-    <textarea
-      data-testid="rich-editor"
-      data-content-type="json"
-      onChange={(e) => {
-        // Simulate content change by creating a simple doc with the text
-        const text = e.target.value
-        onChange({
-          type: "doc",
-          content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
-        })
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.metaKey) onSubmit()
-      }}
-      placeholder={placeholder}
-      disabled={disabled}
-    />
+    <div data-testid="rich-editor-wrapper">
+      {showFormattingToolbar && (
+        <div data-testid="formatting-toolbar">
+          <button type="button" onClick={onAttachClick} disabled={disabled} aria-label="Attach files">
+            Attach
+          </button>
+        </div>
+      )}
+      <textarea
+        data-testid="rich-editor"
+        data-content-type="json"
+        onChange={(e) => {
+          // Simulate content change by creating a simple doc with the text
+          const text = e.target.value
+          onChange({
+            type: "doc",
+            content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : undefined }],
+          })
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.metaKey) onSubmit()
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    </div>
   ),
 }))
 
@@ -63,7 +76,8 @@ describe("MessageComposer", () => {
     it("should render the upload button", () => {
       render(<MessageComposer {...defaultProps} />)
 
-      expect(screen.getByTitle("Attach files")).toBeInTheDocument()
+      // Upload button has aria-label "Attach files" via tooltip
+      expect(screen.getByRole("button", { name: /attach files/i })).toBeInTheDocument()
     })
 
     it("should render the submit button with default label", () => {
@@ -123,7 +137,7 @@ describe("MessageComposer", () => {
     it("should disable upload button when disabled is true", () => {
       render(<MessageComposer {...defaultProps} disabled={true} />)
 
-      expect(screen.getByTitle("Attach files")).toBeDisabled()
+      expect(screen.getByRole("button", { name: /attach files/i })).toBeDisabled()
     })
 
     it("should disable editor when isSubmitting is true", () => {

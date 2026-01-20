@@ -270,7 +270,7 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={dialogRef}
-        className="overflow-hidden p-0 shadow-lg !fixed !top-[20%] !translate-y-0"
+        className="overflow-hidden p-0 !fixed !top-[20%] !translate-y-0 max-w-[600px] rounded-2xl shadow-lg"
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking on suggestion popover (rendered via portal)
           const target = e.target as HTMLElement
@@ -356,48 +356,50 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         }}
       >
         {/* Input area */}
-        <div className="flex items-center border-b px-3">
-          <ModeIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-          {inputRequest ? (
-            // Plain input for command input requests (e.g., "Enter channel name")
-            <input
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              placeholder={inputRequest.placeholder}
-              className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              autoFocus
-              aria-label="Command input"
-            />
-          ) : (
-            // RichInput for all modes - triggers only enabled for search mode
-            <RichInput
-              ref={richInputRef}
-              value={query}
-              onChange={(value) => {
-                // Normalize the query in two steps:
-                // 1. Remove redundant prefixes: "? ? foo" → "? foo", "> > bar" → "> bar"
-                // 2. Ensure space after prefix: "?foo" → "? foo" (TipTap strips trailing whitespace)
-                const withoutRedundant = value.replace(/^([?>])\s*\1/, "$1")
-                const normalized = withoutRedundant.replace(/^([?>])(?=\S)/, "$1 ")
-                setQuery(normalized)
-                setSelectedIndex(0)
-              }}
-              onSubmit={(withModifier) => {
-                // Enter pressed with no popover open - select current item
-                const item = items[selectedIndex]
-                if (item) {
-                  handleSelectItem(item, withModifier)
-                }
-              }}
-              onPopoverActiveChange={handlePopoverActiveChange}
-              triggers={triggers}
-              placeholder={MODE_PLACEHOLDERS[mode]}
-              ariaLabel={mode === "search" ? "Search query input" : "Quick switcher input"}
-              autoFocus
-            />
-          )}
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-[10px] border border-border bg-background transition-all focus-within:border-primary/60 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]">
+            <ModeIcon className="h-4 w-4 shrink-0 opacity-50" />
+            {inputRequest ? (
+              // Plain input for command input requests (e.g., "Enter channel name")
+              <input
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                placeholder={inputRequest.placeholder}
+                className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                autoFocus
+                aria-label="Command input"
+              />
+            ) : (
+              // RichInput for all modes - triggers only enabled for search mode
+              <RichInput
+                ref={richInputRef}
+                value={query}
+                onChange={(value) => {
+                  // Normalize the query in two steps:
+                  // 1. Remove redundant prefixes: "? ? foo" → "? foo", "> > bar" → "> bar"
+                  // 2. Ensure space after prefix: "?foo" → "? foo" (TipTap strips trailing whitespace)
+                  const withoutRedundant = value.replace(/^([?>])\s*\1/, "$1")
+                  const normalized = withoutRedundant.replace(/^([?>])(?=\S)/, "$1 ")
+                  setQuery(normalized)
+                  setSelectedIndex(0)
+                }}
+                onSubmit={(withModifier) => {
+                  // Enter pressed with no popover open - select current item
+                  const item = items[selectedIndex]
+                  if (item) {
+                    handleSelectItem(item, withModifier)
+                  }
+                }}
+                onPopoverActiveChange={handlePopoverActiveChange}
+                triggers={triggers}
+                placeholder={MODE_PLACEHOLDERS[mode]}
+                ariaLabel={mode === "search" ? "Search query input" : "Quick switcher input"}
+                autoFocus
+              />
+            )}
+          </div>
         </div>
 
         {/* Mode tabs - only show when not in input request mode */}
@@ -412,7 +414,9 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
         )}
 
         {/* Hint from input request */}
-        {inputRequest && <div className="px-3 py-2 text-xs text-muted-foreground border-b">{inputRequest.hint}</div>}
+        {inputRequest && (
+          <div className="px-4 py-3 text-xs text-muted-foreground border-b border-border">{inputRequest.hint}</div>
+        )}
 
         {/* Mode-specific header (e.g., search filters) */}
         {!inputRequest && currentResult.header}
@@ -427,6 +431,26 @@ export function QuickSwitcher({ workspaceId, open, onOpenChange, initialMode }: 
             isLoading={currentResult.isLoading}
             emptyMessage={currentResult.emptyMessage}
           />
+        )}
+
+        {/* Keyboard hints footer */}
+        {!inputRequest && (
+          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-[11px] text-muted-foreground">
+            <div className="flex gap-4">
+              <span>
+                <kbd className="kbd-hint">↑↓</kbd> Navigate
+              </span>
+              <span>
+                <kbd className="kbd-hint">↵</kbd> Open
+              </span>
+              <span>
+                <kbd className="kbd-hint">{navigator.platform.includes("Mac") ? "⌘" : "Ctrl+"}↵</kbd> New tab
+              </span>
+            </div>
+            <span>
+              <kbd className="kbd-hint">esc</kbd> Close
+            </span>
+          </div>
         )}
 
         {/* Escape hint - shown after 2s to help users with Vimium or similar */}

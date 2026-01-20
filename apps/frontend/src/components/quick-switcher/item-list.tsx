@@ -67,7 +67,7 @@ export function ItemList({
   }
 
   return (
-    <div ref={listRef} role="listbox" className="max-h-[400px] overflow-y-auto p-1">
+    <div ref={listRef} role="listbox" className="max-h-[400px] overflow-y-auto p-2">
       {Object.entries(groups).map(([groupName, groupItems]) => (
         <div key={groupName || "_ungrouped"} role="group" aria-label={groupName || undefined} className="mb-1">
           {groupName && <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{groupName}</div>}
@@ -104,8 +104,8 @@ export function ItemList({
             )
 
             const className = cn(
-              "group relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none",
-              isSelected && "bg-accent text-accent-foreground"
+              "group relative flex cursor-default select-none items-center gap-3 rounded-[10px] px-3 py-3 text-sm outline-none transition-colors",
+              isSelected ? "bg-muted" : "hover:bg-muted"
             )
 
             if (item.href) {

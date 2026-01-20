@@ -22,6 +22,7 @@ vi.mock("@/contexts", () => ({
     getPanelUrl: (streamId: string) => `/panel/${streamId}`,
     openThreadDraft: vi.fn(),
   }),
+  createDraftPanelId: (parentStreamId: string, parentMessageId: string) => `draft:${parentStreamId}:${parentMessageId}`,
 }))
 
 vi.mock("@/components/ui/avatar", () => ({
@@ -167,6 +168,67 @@ describe("MessageEvent", () => {
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       expect(screen.getByText("US")).toBeInTheDocument()
+    })
+  })
+
+  describe("AI message styling", () => {
+    it("should apply enhanced gold styling to persona messages", () => {
+      const event: StreamEvent = {
+        ...createMessageEvent("msg_123", "AI response"),
+        actorType: "persona",
+      }
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).toHaveClass("border-l-[3px]")
+      expect(messageContainer).toHaveClass("border-l-primary")
+      expect(messageContainer).toHaveClass("bg-gradient-to-r")
+      expect(messageContainer).toHaveClass("from-primary/[0.06]")
+    })
+
+    it("should not apply gold border to user messages", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).not.toHaveClass("border-l-[3px]")
+      expect(messageContainer).not.toHaveClass("border-l-primary")
+    })
+
+    it("should not apply background to user messages", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const messageContainer = container.querySelector(".group")
+      expect(messageContainer).not.toHaveClass("bg-gradient-to-br")
+      expect(messageContainer).not.toHaveClass("bg-gradient-to-r")
+      expect(messageContainer).not.toHaveClass("from-muted/[0.03]")
+    })
+
+    it("should apply gold background to persona avatar", () => {
+      const event: StreamEvent = {
+        ...createMessageEvent("msg_123", "AI response"),
+        actorType: "persona",
+      }
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const avatarFallback = container.querySelector("span")
+      expect(avatarFallback).toHaveClass("bg-primary")
+      expect(avatarFallback).toHaveClass("text-primary-foreground")
+    })
+
+    it("should apply muted background to user avatar", () => {
+      const event = createMessageEvent("msg_123", "User message")
+
+      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+
+      const avatarFallback = container.querySelector("span")
+      expect(avatarFallback).toHaveClass("bg-muted")
+      expect(avatarFallback).toHaveClass("text-foreground")
     })
   })
 })

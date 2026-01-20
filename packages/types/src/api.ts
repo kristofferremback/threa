@@ -4,9 +4,18 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode } from "./constants"
+import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
 import type { JSONContent } from "./prosemirror"
-import type { Stream, StreamEvent, StreamMember, Workspace, WorkspaceMember, User, Persona } from "./domain"
+import type {
+  Stream,
+  StreamWithPreview,
+  StreamEvent,
+  StreamMember,
+  Workspace,
+  WorkspaceMember,
+  User,
+  Persona,
+} from "./domain"
 import type { UserPreferences } from "./preferences"
 
 // ============================================================================
@@ -125,7 +134,7 @@ export interface CommandInfo {
 export interface WorkspaceBootstrap {
   workspace: Workspace
   members: WorkspaceMember[]
-  streams: Stream[]
+  streams: StreamWithPreview[]
   streamMemberships: StreamMember[]
   users: User[]
   personas: Persona[]

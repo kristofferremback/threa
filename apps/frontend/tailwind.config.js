@@ -4,6 +4,9 @@ export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Space Grotesk", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -55,8 +58,18 @@ export default {
           4: "hsl(var(--chart-4))",
           5: "hsl(var(--chart-5))",
         },
+        activity: {
+          people: "hsl(var(--activity-people))",
+        },
       },
       borderRadius: {
+        modal: "16px",
+        card: "12px",
+        input: "12px",
+        button: "10px",
+        item: "8px",
+        avatar: "8px",
+        pill: "20px",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
@@ -94,12 +107,21 @@ export default {
             backgroundColor: "transparent",
           },
         },
+        "activity-pulse": {
+          "0%, 100%": {
+            opacity: "1",
+          },
+          "50%": {
+            opacity: "0.4",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in-delayed": "fade-in 0.2s ease-out 0.5s forwards",
         "highlight-flash": "highlight-flash 2s ease-out forwards",
+        "activity-pulse": "activity-pulse 2s ease-in-out infinite",
       },
     },
   },

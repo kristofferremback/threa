@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { usePendingMessages, usePanel } from "@/contexts"
+import { usePendingMessages, usePanel, createDraftPanelId } from "@/contexts"
 import { useActors } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
@@ -64,25 +64,27 @@ function MessageLayout({
     <div
       ref={containerRef}
       className={cn(
-        "message-item group flex gap-3 py-2",
-        isPersona && "bg-muted/30 -mx-4 px-4 rounded-lg",
+        "message-item group flex gap-[14px] mb-5",
+        // AI/Persona messages get full-width gradient with gold accent
+        isPersona &&
+          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
-      <Avatar className="message-avatar h-8 w-8 shrink-0">
-        <AvatarFallback className={cn(isPersona && "bg-primary text-primary-foreground")}>
+      <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+        <AvatarFallback className={cn("bg-muted text-foreground", isPersona && "bg-primary text-primary-foreground")}>
           {actorInitials}
         </AvatarFallback>
       </Avatar>
       <div className="message-content flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="font-medium text-sm">{actorName}</span>
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>
           {statusIndicator}
           {actions}
         </div>
         <AttachmentProvider workspaceId={workspaceId} attachments={payload.attachments ?? []}>
-          <MarkdownContent content={payload.contentMarkdown} className="mt-0.5 text-sm" />
+          <MarkdownContent content={payload.contentMarkdown} className="text-sm leading-relaxed" />
           {payload.attachments && payload.attachments.length > 0 && (
             <AttachmentList attachments={payload.attachments} workspaceId={workspaceId} />
           )}
@@ -114,7 +116,7 @@ function SentMessageEvent({
   hideActions,
   isHighlighted,
 }: MessageEventInnerProps) {
-  const { openPanels, getPanelUrl, openThreadDraft } = usePanel()
+  const { panelId, getPanelUrl } = usePanel()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -127,16 +129,16 @@ function SentMessageEvent({
   }, [isHighlighted])
 
   // Don't show reply button if we're viewing this message as the thread parent
-  const isParentOfCurrentThread = openPanels.some((p) => p.streamId === threadId)
+  const isParentOfCurrentThread = panelId === threadId
 
-  const handleReplyClick = () => {
-    // Only used when no thread exists yet - opens draft UI
-    openThreadDraft(streamId, payload.messageId)
-  }
+  // Create draft panel URL for messages that don't have a thread yet
+  const draftPanelId = createDraftPanelId(streamId, payload.messageId)
+  const draftPanelUrl = getPanelUrl(draftPanelId)
 
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
-  const threadFooter =
-    !hideActions && threadId ? (
+  // Shows on hover when no thread exists yet, or always when thread exists
+  const threadFooter = !hideActions ? (
+    threadId ? (
       replyCount > 0 ? (
         <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} className="mt-1" />
       ) : (
@@ -147,7 +149,16 @@ function SentMessageEvent({
           Reply in thread
         </Link>
       )
-    ) : null
+    ) : (
+      // Show "Reply in thread" on hover when no thread exists - opens draft panel
+      <Link
+        to={draftPanelUrl}
+        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        Reply in thread
+      </Link>
+    )
+  ) : null
 
   return (
     <MessageLayout
@@ -158,21 +169,18 @@ function SentMessageEvent({
       actorInitials={actorInitials}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
+        // Only show the icon button when thread exists (to open it)
+        // For messages without threads, we show "Reply in thread" text in footer on hover
         !hideActions &&
-        !isParentOfCurrentThread && (
+        !isParentOfCurrentThread &&
+        threadId && (
           <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-            {threadId ? (
-              <Link
-                to={getPanelUrl(threadId)}
-                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
-              >
-                <MessageSquareReply className="h-4 w-4" />
-              </Link>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={handleReplyClick}>
-                <MessageSquareReply className="h-4 w-4" />
-              </Button>
-            )}
+            <Link
+              to={getPanelUrl(threadId)}
+              className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
+            >
+              <MessageSquareReply className="h-4 w-4" />
+            </Link>
           </div>
         )
       }

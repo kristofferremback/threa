@@ -75,6 +75,19 @@ export interface Stream {
   archivedAt: string | null
 }
 
+/** Preview of the last message in a stream for sidebar display */
+export interface LastMessagePreview {
+  authorId: string
+  authorType: AuthorType
+  content: string
+  createdAt: string
+}
+
+/** Stream with optional last message preview, for sidebar listing */
+export interface StreamWithPreview extends Stream {
+  lastMessagePreview: LastMessagePreview | null
+}
+
 export interface StreamMember {
   streamId: string
   userId: string

@@ -18,7 +18,7 @@ interface StreamContentShellProps {
 export function StreamContentShell({ header, content, footer }: StreamContentShellProps) {
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-4">{header}</header>
+      <header className="flex h-11 items-center justify-between border-b px-4">{header}</header>
       <main className="flex-1 overflow-hidden">{content}</main>
       <div className="border-t p-4">{footer}</div>
     </div>

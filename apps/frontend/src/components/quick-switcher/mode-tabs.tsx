@@ -73,7 +73,7 @@ export function ModeTabs({
   }
 
   return (
-    <div className="flex" role="tablist" aria-label="Quick switcher modes">
+    <div className="flex gap-1 p-2 border-b" role="tablist" aria-label="Quick switcher modes">
       {MODES.map(({ mode, label, shortcut }, index) => {
         const isSelected = mode === currentMode
 
@@ -101,11 +101,11 @@ export function ModeTabs({
               })
             }}
             className={cn(
-              "flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2",
+              "px-3 py-1.5 text-xs font-medium transition-colors rounded-pill",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               isSelected
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                ? "bg-primary/15 text-primary border border-primary/40"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent"
             )}
           >
             {shortcut && <span className="text-muted-foreground mr-1">({shortcut})</span>}

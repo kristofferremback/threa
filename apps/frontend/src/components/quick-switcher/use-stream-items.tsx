@@ -47,6 +47,21 @@ function getStreamDisplayName(stream: Stream): string {
   return stream.displayName || "Untitled"
 }
 
+function getStreamTypeLabel(type: StreamType): string {
+  switch (type) {
+    case StreamTypes.SCRATCHPAD:
+      return "Scratchpad"
+    case StreamTypes.CHANNEL:
+      return "Channel"
+    case StreamTypes.DM:
+      return "Direct Message"
+    case StreamTypes.THREAD:
+      return "Thread"
+    default:
+      return type
+  }
+}
+
 export function useStreamItems(context: ModeContext): ModeResult {
   const { streams: activeStreams, query, onQueryChange, workspaceId, navigate, closeDialog } = context
 
@@ -141,10 +156,12 @@ export function useStreamItems(context: ModeContext): ModeResult {
       .map(({ stream }): QuickSwitcherItem => {
         const href = `/w/${workspaceId}/s/${stream.id}`
         const isArchived = stream.archivedAt != null
+        const typeLabel = getStreamTypeLabel(stream.type)
+        const description = isArchived ? `${typeLabel} • Archived` : typeLabel
         return {
           id: stream.id,
           label: getStreamDisplayName(stream),
-          description: isArchived ? "Archived" : undefined,
+          description,
           icon: STREAM_ICONS[stream.type],
           href,
           onSelect: () => {

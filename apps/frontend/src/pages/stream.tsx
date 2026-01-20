@@ -1,4 +1,4 @@
-import { useState, useRef, Fragment } from "react"
+import { useState, useRef } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MoreHorizontal, Pencil, Archive, MessageCircle, X, ArchiveX } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,16 +16,31 @@ import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError } from "@/hooks"
 import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
-import { StreamPanel, ThreadDraftPanel, ThreadHeader } from "@/components/thread"
+import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
 import { StreamErrorView } from "@/components/stream-error-view"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, type StreamType } from "@threa/types"
+
+function getStreamTypeLabel(type: StreamType): string {
+  switch (type) {
+    case StreamTypes.SCRATCHPAD:
+      return "Scratchpad"
+    case StreamTypes.CHANNEL:
+      return "Channel"
+    case StreamTypes.DM:
+      return "DM"
+    case StreamTypes.THREAD:
+      return "Thread"
+    default:
+      return type
+  }
+}
 
 export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const { openPanels, draftReply, closePanel, closeAllPanels, transitionDraftToPanel } = usePanel()
+  const { isPanelOpen, closePanel } = usePanel()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -47,14 +62,6 @@ export function StreamPage() {
   const isThread = stream?.type === StreamTypes.THREAD
   const isChannel = stream?.type === StreamTypes.CHANNEL
 
-  const handleCloseDraft = () => {
-    closeAllPanels() // This also clears draftReply
-  }
-
-  const handleThreadCreated = (threadId: string) => {
-    transitionDraftToPanel(threadId)
-  }
-
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -70,7 +77,11 @@ export function StreamPage() {
 
   const isScratchpad = isDraft || stream?.type === StreamTypes.SCRATCHPAD
   const isArchived = stream?.archivedAt != null
-  const streamName = stream?.displayName || (isDraft ? "New scratchpad" : isThread ? "Thread" : "Stream")
+  const streamName = stream?.slug
+    ? `#${stream.slug}`
+    : stream?.displayName ||
+      (isDraft ? "New scratchpad" : isThread ? "Thread" : isScratchpad ? "New scratchpad" : "Stream")
+  const isUnnamedScratchpad = isScratchpad && !stream?.displayName
 
   const handleStartRename = () => {
     setEditValue(stream?.displayName || "")
@@ -104,7 +115,7 @@ export function StreamPage() {
 
   const mainStreamContent = (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 items-center justify-between border-b px-4">
+      <header className="flex h-11 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 flex-1">
           {isEditing ? (
             <Input
@@ -132,6 +143,9 @@ export function StreamPage() {
             </div>
           ) : (
             <h1 className="font-semibold">{streamName}</h1>
+          )}
+          {stream && !isThread && !isDraft && !isChannel && !isUnnamedScratchpad && (
+            <Badge variant="secondary">{getStreamTypeLabel(stream.type)}</Badge>
           )}
           {isArchived && (
             <Badge variant="secondary" className="gap-1">
@@ -187,8 +201,6 @@ export function StreamPage() {
     </div>
   )
 
-  const hasSidePanel = openPanels.length > 0 || draftReply !== null
-
   // Conversation side panel - only shown for channels
   const conversationPanel = isChannel && (
     <>
@@ -225,58 +237,31 @@ export function StreamPage() {
     </>
   )
 
-  // When no panels open, render just the main stream
-  if (!hasSidePanel) {
+  // Panel open: resizable side-by-side layout
+  if (isPanelOpen) {
     return (
       <>
-        {mainStreamContent}
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <ResizablePanel id="main" defaultSize={60} minSize={30}>
+            {mainStreamContent}
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          <ResizablePanel id="panel" defaultSize={40} minSize={30}>
+            {/* StreamPanel handles both regular streams and drafts */}
+            <StreamPanel workspaceId={workspaceId} onClose={closePanel} />
+          </ResizablePanel>
+        </ResizablePanelGroup>
         {conversationPanel}
       </>
     )
   }
 
-  // Calculate panel count for sizing
-  const totalPanels = 1 + (draftReply ? 1 : 0) + openPanels.length
-  const panelSize = Math.floor(100 / totalPanels)
-
-  // When panels are open, use resizable layout
+  // Default: main content without panels
   return (
     <>
-      <ResizablePanelGroup orientation="horizontal" className="h-full">
-        <ResizablePanel id="main" defaultSize={panelSize} minSize={20}>
-          {mainStreamContent}
-        </ResizablePanel>
-
-        {/* Stream panels */}
-        {openPanels.map((panel) => (
-          <Fragment key={panel.streamId}>
-            <ResizableHandle withHandle />
-            <ResizablePanel id={panel.streamId} defaultSize={panelSize} minSize={20}>
-              <StreamPanel
-                workspaceId={workspaceId}
-                streamId={panel.streamId}
-                onClose={() => closePanel(panel.streamId)}
-              />
-            </ResizablePanel>
-          </Fragment>
-        ))}
-
-        {/* Draft panel for creating new threads (appears rightmost) */}
-        {draftReply && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="draft" defaultSize={panelSize} minSize={20}>
-              <ThreadDraftPanel
-                workspaceId={workspaceId}
-                parentStreamId={draftReply.parentStreamId}
-                parentMessageId={draftReply.parentMessageId}
-                onClose={handleCloseDraft}
-                onThreadCreated={handleThreadCreated}
-              />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+      {mainStreamContent}
       {conversationPanel}
     </>
   )

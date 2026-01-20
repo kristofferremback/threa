@@ -27,6 +27,8 @@ interface StreamContentProps {
   isDraft?: boolean
   /** Pre-fetched stream data from parent - avoids duplicate bootstrap call */
   stream?: Stream
+  /** Auto-focus the message input when mounted */
+  autoFocus?: boolean
 }
 
 export function StreamContent({
@@ -35,6 +37,7 @@ export function StreamContent({
   highlightMessageId,
   isDraft = false,
   stream: streamFromProps,
+  autoFocus,
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
@@ -126,7 +129,11 @@ export function StreamContent({
     <MentionableMarkdownWrapper mentionables={mentionables}>
       <WorkspaceEmojiProvider workspaceId={workspaceId}>
         <div className="flex h-full flex-col">
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto mb-4" onScroll={handleScroll}>
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden mb-4"
+            onScroll={handleScroll}
+          >
             {/* Show parent message for threads */}
             {isThread && parentMessage && parentStreamId && (
               <ThreadParentMessage
@@ -166,10 +173,12 @@ export function StreamContent({
           <MessageInput
             workspaceId={workspaceId}
             streamId={streamId}
+            streamName={stream?.displayName ?? undefined}
             disabled={isArchived}
             disabledReason={
               isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
             }
+            autoFocus={autoFocus}
           />
         </div>
       </WorkspaceEmojiProvider>
