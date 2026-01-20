@@ -7,7 +7,7 @@ import { registerRoutes } from "./routes"
 import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, type DatabasePools } from "./db"
-import { createMigrator } from "./db/migrations"
+import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
 import { UserService } from "./services/user-service"
@@ -90,9 +90,7 @@ export async function startServer(): Promise<ServerInstance> {
   const pools = createDatabasePools(config.databaseUrl)
   const pool = pools.main // Alias for backwards compatibility during transition
 
-  const migrator = createMigrator(pool)
-  await migrator.up()
-  logger.info("Database migrations complete")
+  await runMigrations(pool)
 
   // Initialize LangGraph checkpointer (creates tables in langgraph schema)
   const checkpointer = await createPostgresCheckpointer(pool)

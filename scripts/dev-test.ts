@@ -54,8 +54,34 @@ async function main() {
     console.log(`  - Frontend: http://localhost:3000`)
     console.log(`  - Backend: http://localhost:3001\n`)
 
-    // Run the dev script with test environment
-    await $`bun scripts/dev.ts`.env(env)
+    // Run backend without --hot (more stable for testing)
+    const backend = Bun.spawn(["bun", "apps/backend/src/index.ts"], {
+      stdout: "inherit",
+      stderr: "inherit",
+      env,
+    })
+
+    const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+
+    // Handle shutdown
+    let isShuttingDown = false
+    const shutdown = async () => {
+      if (isShuttingDown) return
+      isShuttingDown = true
+      console.log("\nShutting down test server...")
+      backend.kill("SIGKILL")
+      frontend.kill("SIGKILL")
+      await Promise.all([backend.exited, frontend.exited])
+      process.exit(0)
+    }
+
+    process.on("SIGINT", shutdown)
+    process.on("SIGTERM", shutdown)
+
+    await Promise.all([backend.exited, frontend.exited])
   } catch (err) {
     console.error("Failed to start test server:", err)
     process.exit(1)
