@@ -35,7 +35,8 @@ import { MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
 import { AncestorBreadcrumbItem, getStreamBreadcrumbName } from "./breadcrumb-helpers"
-import { StreamTypes } from "@threa/types"
+import { StreamTypes, type JSONContent } from "@threa/types"
+import { serializeToMarkdown } from "@threa/prosemirror"
 
 interface StreamPanelProps {
   workspaceId: string
@@ -106,8 +107,11 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const handleSubmit = useCallback(async () => {
     if (!draftInfo || !composer.canSend) return
 
-    const trimmed = composer.content.trim()
     composer.setIsSending(true)
+
+    // Capture content before clearing
+    const contentJson = composer.content
+    const contentMarkdown = serializeToMarkdown(contentJson)
 
     // Capture full attachment info BEFORE clearing for optimistic UI
     const attachmentIds = composer.uploadedIds
@@ -116,7 +120,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes }))
 
     // Clear input immediately for responsiveness
-    composer.setContent("")
+    const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
+    composer.setContent(emptyDoc)
     composer.clearDraft()
     composer.clearAttachments()
 
@@ -131,8 +136,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       // Send the first message with attachments
       const message = await messageService.create(workspaceId, thread.id, {
         streamId: thread.id,
-        content: trimmed || " ", // Backend requires content
-        contentFormat: "markdown",
+        contentJson,
+        contentMarkdown,
         attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       })
 
@@ -142,8 +147,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         createOptimisticBootstrap({
           stream: thread,
           message,
-          content: trimmed || " ",
-          contentFormat: "markdown",
+          contentMarkdown,
           attachments: attachments.length > 0 ? attachments : undefined,
         })
       )
