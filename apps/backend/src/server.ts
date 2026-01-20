@@ -362,11 +362,10 @@ export async function startServer(): Promise<ServerInstance> {
     // In fast shutdown mode, skip graceful shutdown for immediate termination
     if (config.fastShutdown) {
       logger.info("Fast shutdown mode - skipping graceful shutdown")
-      // Force close everything immediately
+      // Force close everything immediately without waiting
       server.close()
       io.close()
-      await pools.listen.end()
-      await pools.main.end()
+      // Skip pool cleanup entirely - process exit will terminate connections
       return
     }
 
