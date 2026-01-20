@@ -359,6 +359,17 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   const stop = async () => {
+    // In development mode, skip graceful shutdown for immediate termination
+    if (config.isDevelopment) {
+      logger.info("Development mode - skipping graceful shutdown")
+      // Force close everything immediately
+      server.close()
+      io.close()
+      await pools.listen.end()
+      await pools.main.end()
+      return
+    }
+
     logger.info("Shutting down server...")
     orphanSessionCleanup.stop()
     await scheduleManager.stop()
