@@ -76,8 +76,8 @@ Keep in CLAUDE.md:
 
 ## Status
 
-**Status**: ✅ COMPLETED
-**Progress**: 13/13 sections complete
+**Status**: ✅ Phase 1 COMPLETED, ✅ Phase 2 COMPLETED
+**Progress**: Phase 1: 13/13 sections, Phase 2: Documentation extraction complete
 
 ## Summary of Changes
 
@@ -129,3 +129,55 @@ Keep in CLAUDE.md:
 - Compressed Shadcn UI section by ~75%
 - Removed entire Agent Workflow section
 - Streamlined all sections for clarity
+
+---
+
+## Phase 2: Documentation Extraction (COMPLETED)
+
+**Principle established**: "Would I think to look for it if I know about it?" → extract with summary. "Would I not know to look for it?" → keep in CLAUDE.md. Lessons Learned stays because they are "unknown unknowns from past mistakes."
+
+### Documents Extracted
+
+1. **`docs/core-concepts.md` (240 lines)** - Detailed explanations of:
+   - Streams (4 types: scratchpad, channel, dm, thread)
+   - Memos/GAM (philosophy, 5-step pipeline, types, lifecycle)
+   - Personas (system vs workspace, invocation methods, enabled tools)
+   - Relationships between concepts
+   - Implementation notes (database tables, constraints, event-driven architecture)
+
+2. **`docs/architecture.md` (727 lines)** - Comprehensive patterns with code examples:
+   - Repository Pattern (with anti-patterns)
+   - Service Layer (withTransaction vs withClient vs direct pool)
+   - Outbox Pattern + Listeners (architecture diagram, cursor-based processing)
+   - Event Sourcing + Projections
+   - Job Queue + Workers
+   - Middleware Composition
+   - Handler Factory Pattern
+   - Database Pool Separation
+   - Cursor Lock + Time-Based Locking
+
+### CLAUDE.md Updates
+
+**Core Concepts**: Compressed from 47 lines to 5 lines
+
+- Preserved all keywords: scratchpad, channel, dm, thread, visibility, companionMode, MemoAccumulator, Classifier, Memorizer, Enrichment, enabledTools, Ariadne
+- Added reference: "See: `docs/core-concepts.md`"
+
+**Architecture Patterns**: Compressed from 123 lines to 11 lines
+
+- Preserved all pattern names and key concepts
+- Added reference: "See: `docs/architecture.md`"
+
+**Invariants Format**: Converted table to list (commit 3c56ac3)
+
+- Replaced 3-column table with bold list items: `**INV-X: Name** - Description`
+- Reduced horizontal whitespace from column padding
+- Prettier added blank lines between items for visual clarity
+- Improved scannability and readability
+
+### Results
+
+- **CLAUDE.md**: 404 lines → 441 lines (slight increase due to Prettier formatting, but much more readable)
+- **Documentation**: Two new comprehensive reference docs (967 total lines of detailed patterns and explanations)
+- **Keyword preservation**: All searchable terms remain in CLAUDE.md for "aha!" moments
+- **Unknown unknowns**: Lessons Learned section kept in CLAUDE.md as requested
