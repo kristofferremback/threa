@@ -31,8 +31,8 @@ export interface S3Config {
 export interface Config {
   port: number
   databaseUrl: string
-  /** Development mode - skips graceful shutdown for faster restarts */
-  isDevelopment: boolean
+  /** Skip graceful shutdown for immediate termination (dev/test environments) */
+  fastShutdown: boolean
   useStubAuth: boolean
   useStubCompanion: boolean
   useStubBoundaryExtraction: boolean
@@ -61,12 +61,12 @@ export function loadConfig(): Config {
   const useStubCompanion = process.env.USE_STUB_COMPANION === "true"
   const useStubBoundaryExtraction = process.env.USE_STUB_BOUNDARY_EXTRACTION === "true"
   const useStubAI = process.env.USE_STUB_AI === "true"
-  const isDevelopment = process.env.NODE_ENV === "development"
+  const fastShutdown = process.env.FAST_SHUTDOWN === "true"
 
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
-    isDevelopment,
+    fastShutdown,
     useStubAuth,
     useStubCompanion,
     useStubBoundaryExtraction,

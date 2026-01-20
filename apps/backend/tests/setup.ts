@@ -29,7 +29,7 @@ beforeAll(async () => {
 })
 
 // Global teardown - runs once after all test files
-// Development mode enables immediate shutdown, so no long timeout needed
+// Fast shutdown mode enables immediate shutdown, so no long timeout needed
 afterAll(async () => {
   if (testServer) {
     console.log("Stopping test server...")

@@ -279,7 +279,7 @@ async function main() {
     env: {
       ...process.env,
       ...backendEnv,
-      NODE_ENV: "development",
+      FAST_SHUTDOWN: "true",
       // Fallback DATABASE_URL only if not in .env
       DATABASE_URL:
         backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa",
@@ -290,10 +290,6 @@ async function main() {
   const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
     stdout: "inherit",
     stderr: "inherit",
-    env: {
-      ...process.env,
-      NODE_ENV: "development",
-    },
   })
 
   // Track if we're shutting down to avoid double-kill

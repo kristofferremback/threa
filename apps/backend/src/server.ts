@@ -77,7 +77,7 @@ export interface ServerInstance {
   pools: DatabasePools
   jobQueue: QueueManager
   port: number
-  isDevelopment: boolean
+  fastShutdown: boolean
   stop: () => Promise<void>
 }
 
@@ -359,9 +359,9 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   const stop = async () => {
-    // In development mode, skip graceful shutdown for immediate termination
-    if (config.isDevelopment) {
-      logger.info("Development mode - skipping graceful shutdown")
+    // In fast shutdown mode, skip graceful shutdown for immediate termination
+    if (config.fastShutdown) {
+      logger.info("Fast shutdown mode - skipping graceful shutdown")
       // Force close everything immediately
       server.close()
       io.close()
@@ -401,5 +401,5 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Server stopped")
   }
 
-  return { server, io, pools, jobQueue, port: config.port, isDevelopment: config.isDevelopment, stop }
+  return { server, io, pools, jobQueue, port: config.port, fastShutdown: config.fastShutdown, stop }
 }
