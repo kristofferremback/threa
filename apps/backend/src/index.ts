@@ -5,13 +5,24 @@ initLangfuse()
 import { startServer } from "./server"
 import { logger } from "./lib/logger"
 
-const { server, stop } = await startServer()
+const { server, stop, isDevelopment } = await startServer()
+
+if (isDevelopment) {
+  logger.info("Running in development mode - graceful shutdown disabled")
+}
 
 // Prevent multiple shutdown attempts
 let isShuttingDown = false
 async function shutdown(code: number) {
   if (isShuttingDown) return
   isShuttingDown = true
+
+  // In development mode, skip graceful shutdown for immediate termination
+  if (isDevelopment) {
+    logger.info("Development mode - skipping graceful shutdown")
+    process.exit(code)
+  }
+
   await stop()
   await shutdownLangfuse()
   process.exit(code)

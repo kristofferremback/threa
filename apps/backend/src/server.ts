@@ -77,6 +77,7 @@ export interface ServerInstance {
   pools: DatabasePools
   jobQueue: QueueManager
   port: number
+  isDevelopment: boolean
   stop: () => Promise<void>
 }
 
@@ -389,5 +390,5 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Server stopped")
   }
 
-  return { server, io, pools, jobQueue, port: config.port, stop }
+  return { server, io, pools, jobQueue, port: config.port, isDevelopment: config.isDevelopment, stop }
 }

@@ -279,6 +279,7 @@ async function main() {
     env: {
       ...process.env,
       ...backendEnv,
+      NODE_ENV: "development",
       // Fallback DATABASE_URL only if not in .env
       DATABASE_URL:
         backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa",
@@ -289,20 +290,32 @@ async function main() {
   const frontend = Bun.spawn(["bun", "run", "--cwd", "apps/frontend", "dev"], {
     stdout: "inherit",
     stderr: "inherit",
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+    },
   })
 
-  process.on("SIGINT", () => {
+  // Track if we're shutting down to avoid double-kill
+  let isShuttingDown = false
+
+  const shutdown = async () => {
+    if (isShuttingDown) return
+    isShuttingDown = true
+
     console.log("\nShutting down...")
-    backend.kill()
-    frontend.kill()
-    process.exit(0)
-  })
 
-  process.on("SIGTERM", () => {
-    backend.kill()
-    frontend.kill()
+    // Use SIGKILL for immediate termination in development
+    backend.kill("SIGKILL")
+    frontend.kill("SIGKILL")
+
+    // Wait for processes to fully terminate
+    await Promise.all([backend.exited, frontend.exited])
     process.exit(0)
-  })
+  }
+
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
 
   await Promise.all([backend.exited, frontend.exited])
 }
