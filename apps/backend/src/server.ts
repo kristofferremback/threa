@@ -77,6 +77,7 @@ export interface ServerInstance {
   pools: DatabasePools
   jobQueue: QueueManager
   port: number
+  fastShutdown: boolean
   stop: () => Promise<void>
 }
 
@@ -358,6 +359,16 @@ export async function startServer(): Promise<ServerInstance> {
   })
 
   const stop = async () => {
+    // In fast shutdown mode, skip graceful shutdown for immediate termination
+    if (config.fastShutdown) {
+      logger.info("Fast shutdown mode - skipping graceful shutdown")
+      // Force close everything immediately without waiting
+      server.close()
+      io.close()
+      // Skip pool cleanup entirely - process exit will terminate connections
+      return
+    }
+
     logger.info("Shutting down server...")
     orphanSessionCleanup.stop()
     await scheduleManager.stop()
@@ -389,5 +400,5 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Server stopped")
   }
 
-  return { server, io, pools, jobQueue, port: config.port, stop }
+  return { server, io, pools, jobQueue, port: config.port, fastShutdown: config.fastShutdown, stop }
 }

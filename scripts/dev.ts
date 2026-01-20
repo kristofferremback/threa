@@ -279,6 +279,7 @@ async function main() {
     env: {
       ...process.env,
       ...backendEnv,
+      FAST_SHUTDOWN: "true",
       // Fallback DATABASE_URL only if not in .env
       DATABASE_URL:
         backendEnv.DATABASE_URL ?? process.env.DATABASE_URL ?? "postgresql://threa:threa@localhost:5454/threa",
@@ -291,18 +292,26 @@ async function main() {
     stderr: "inherit",
   })
 
-  process.on("SIGINT", () => {
-    console.log("\nShutting down...")
-    backend.kill()
-    frontend.kill()
-    process.exit(0)
-  })
+  // Track if we're shutting down to avoid double-kill
+  let isShuttingDown = false
 
-  process.on("SIGTERM", () => {
-    backend.kill()
-    frontend.kill()
+  const shutdown = async () => {
+    if (isShuttingDown) return
+    isShuttingDown = true
+
+    console.log("\nShutting down...")
+
+    // Use SIGKILL for immediate termination in development
+    backend.kill("SIGKILL")
+    frontend.kill("SIGKILL")
+
+    // Wait for processes to fully terminate
+    await Promise.all([backend.exited, frontend.exited])
     process.exit(0)
-  })
+  }
+
+  process.on("SIGINT", shutdown)
+  process.on("SIGTERM", shutdown)
 
   await Promise.all([backend.exited, frontend.exited])
 }

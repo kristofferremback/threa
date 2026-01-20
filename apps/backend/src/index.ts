@@ -5,13 +5,24 @@ initLangfuse()
 import { startServer } from "./server"
 import { logger } from "./lib/logger"
 
-const { server, stop } = await startServer()
+const { server, stop, fastShutdown } = await startServer()
+
+if (fastShutdown) {
+  logger.info("Fast shutdown enabled - graceful shutdown disabled")
+}
 
 // Prevent multiple shutdown attempts
 let isShuttingDown = false
 async function shutdown(code: number) {
   if (isShuttingDown) return
   isShuttingDown = true
+
+  // In fast shutdown mode, skip graceful shutdown for immediate termination
+  if (fastShutdown) {
+    logger.info("Fast shutdown - skipping graceful shutdown")
+    process.exit(code)
+  }
+
   await stop()
   await shutdownLangfuse()
   process.exit(code)
