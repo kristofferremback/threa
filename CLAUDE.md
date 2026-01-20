@@ -66,7 +66,6 @@ threa/
 - Editor: Tiptap (ProseMirror)
 - Testing: Vitest + Testing Library
 
-<<<<<<< HEAD
 ## Design System References
 
 **Primary documentation:**
@@ -82,10 +81,7 @@ threa/
 
 The kitchen sink is a living reference - update it whenever you add new components, patterns, or styling. It serves as both documentation and a visual regression test.
 
-## Shadcn UI Reference
-=======
 ## Local Development (Agent-Friendly)
->>>>>>> 870d9b7 (docs: revise and compact CLAUDE.md)
 
 For browser automation testing with Chrome DevTools MCP:
 
@@ -335,7 +331,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 | **INV-37** | Extend Abstractions, Don't Duplicate | When adding functionality, check if existing abstractions can be extended. Creating parallel implementations (e.g., new provider when one exists) violates DRY and confuses readers about which to use. The question "why are there two ways to do this?" should never arise. One abstraction per concern.                                                                                                                                                    |
 | **INV-38** | Delete Dead Code Immediately         | Code "kept as reference" is noise. It confuses reviewers, adds cognitive load, and suggests unreliability. Git has history - delete unused code. If needed later, recover from version control. Commented-out code is dead code. Delete it.                                                                                                                                                                                                                   |
 | **INV-39** | Frontend Integration Tests           | Frontend tests must mount real components and simulate real user behavior. Unit tests that mock too much miss real bugs (event propagation, focus management, z-index issues). Use `render(<Component />)` and `userEvent` to interact. Test observable behavior, not implementation. Write tests that fail when the bug exists.                                                                                                                              |
-| **INV-40** | Links Are Links, Buttons Are Buttons | Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, open modal, delete). Links navigate (change URL, open new tab with cmd+click). If it changes the URL, it's a link. If cmd+click should work, it's a link. Buttons break browser navigation, link previews, and accessibility.                                                                                         |
+| **INV-40** | Links Are Links, Buttons Are Buttons | Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, open modal, delete). Links navigate (change URL, open new tab with cmd+click). If it changes the URL, it's a link. If cmd+click should work, it's a link. Buttons break browser navigation, link previews, and accessibility.                                                                                           |
 
 When introducing a new invariant:
 
@@ -542,88 +538,3 @@ When a class has multiple similar resources (clients, connections), initialize t
 ### Abstractions should fully own their domain
 
 A helper that extracts part of a workflow but leaves the caller managing the rest adds indirection without reducing complexity. If you're creating an abstraction for session lifecycle, it should handle find/create, run work, AND track status - not just find/create while the caller still manages status with separate calls. Partial abstractions can be worse than no abstraction because they add a layer of indirection while still requiring the caller to understand the full workflow.
-<<<<<<< HEAD
-
-### Always use current-generation Claude models
-
-When specifying Claude models, always use the latest generation:
-
-- **Haiku**: `anthropic/claude-haiku-4.5` (not `claude-3-haiku`)
-- **Sonnet**: `anthropic/claude-sonnet-4.5` or `anthropic/claude-sonnet-4-20250514` (not `claude-3-sonnet` or `claude-3.5-sonnet`)
-- **Opus**: `anthropic/claude-opus-4.5` (not `claude-3-opus`)
-
-The "3" and "3.5" series are deprecated. Always default to 4.5 generation models. Check model defaults in `env.ts`, database seeds, and any hardcoded model strings when touching AI-related code.
-
-### Frontend tests must be integration tests that mount real components
-
-Unit tests for frontend components are nearly useless for catching real bugs. When fixing bugs or adding features:
-
-1. **Write integration tests first** - Mount the actual component with `render(<Component />)`
-2. **Simulate real user behavior** - Use `userEvent` to type, click, and press keys
-3. **Tests must fail before fixing** - If you can't make a test fail for the bug, you don't understand the bug
-4. **Test the observable behavior** - What does the user see? What happens when they interact?
-
-```tsx
-// Good - integration test that catches real bugs
-it("should select popover item with Enter, not the list item behind it", async () => {
-  const user = userEvent.setup()
-  render(<QuickSwitcher {...defaultProps} />)
-
-  // Open popover by typing trigger
-  const input = screen.getByPlaceholderText("Search...")
-  await user.type(input, "@")
-
-  // Wait for popover
-  await waitFor(() => {
-    expect(screen.getByText("Martin")).toBeInTheDocument()
-  })
-
-  // Press Enter - should select popover item
-  await user.keyboard("{Enter}")
-
-  // Verify popover item was selected, not list item
-  expect(input).toHaveValue("@martin ")
-  expect(mockNavigate).not.toHaveBeenCalled() // list item would navigate
-})
-
-// Bad - unit test that misses real bugs
-it("should call onSelect when selected", () => {
-  const onSelect = vi.fn()
-  render(<PopoverItem onSelect={onSelect} />)
-  fireEvent.click(screen.getByRole("option"))
-  expect(onSelect).toHaveBeenCalled()
-  // This passes but the bug is in how keyboard events propagate between components
-})
-```
-
-**Why unit tests fail to catch UI bugs:**
-
-- They test components in isolation, missing interaction between layers
-- They mock too much, hiding the real behavior
-- They don't catch event propagation issues (Enter key handled by wrong component)
-- They don't catch focus management bugs
-- They don't catch z-index/pointer-events issues
-
-**The TDD cycle for bug fixes:**
-
-1. Reproduce the bug manually
-2. Write a test that simulates the user's actions
-3. Verify the test fails (if it passes, your test is wrong)
-4. Fix the bug
-5. Verify the test passes
-
-### Always use `bun run test`, not `bun test`
-
-When running tests in any workspace (backend or frontend), always use `bun run test` instead of `bun test`. The `bun run test` command executes the test script defined in package.json, which may include important configuration or setup that `bun test` bypasses.
-
-```bash
-# Correct
-cd apps/backend && bun run test
-cd apps/frontend && bun run test
-
-# Incorrect
-cd apps/backend && bun test  # ❌ May skip test setup
-cd apps/frontend && bun test  # ❌ May use wrong test environment
-```
-=======
->>>>>>> 870d9b7 (docs: revise and compact CLAUDE.md)
