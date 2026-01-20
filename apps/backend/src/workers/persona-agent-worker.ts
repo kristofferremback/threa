@@ -1,6 +1,7 @@
 import type { Pool } from "pg"
-import type { PersonaAgentJobData, JobHandler, JobQueueManager } from "../lib/job-queue"
+import type { PersonaAgentJobData, JobHandler } from "../lib/job-queue"
 import { JobQueues } from "../lib/job-queue"
+import type { QueueManager } from "../lib/queue-manager"
 import type { PersonaAgentInput, PersonaAgentResult } from "../agents/persona-agent"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { withClient } from "../db"
@@ -17,11 +18,11 @@ export interface PersonaAgentWorkerDeps {
   /** Pool for checking unseen messages after job completion */
   pool: Pool
   /** Job queue for dispatching follow-up jobs */
-  jobQueue: JobQueueManager
+  jobQueue: QueueManager
 }
 
 /**
- * Create the persona agent job handler for pg-boss.
+ * Create the persona agent job handler for queue system.
  *
  * This is a thin wrapper that extracts job data and delegates to the persona agent.
  * All business logic lives in the agent module for reusability and testability.
@@ -49,7 +50,7 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
     })
 
     if (result.status === "failed") {
-      // Re-throw to trigger pg-boss retry
+      // Re-throw to trigger queue system retry
       throw new Error(`Persona agent failed for session ${result.sessionId}`)
     }
 
@@ -82,7 +83,7 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
  */
 async function checkForUnseenMessages(params: {
   pool: Pool
-  jobQueue: JobQueueManager
+  jobQueue: QueueManager
   workspaceId: string
   streamId: string
   personaId: string

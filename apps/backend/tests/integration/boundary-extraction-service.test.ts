@@ -9,9 +9,9 @@
  * 5. Participant is added to conversation
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTransaction } from "./setup"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
@@ -61,7 +61,7 @@ describe("BoundaryExtractionService", () => {
   beforeAll(async () => {
     pool = await setupTestDatabase()
 
-    // Create shared test data
+    // Create shared test data - use withTransaction (commits) not withTransaction (rolls back)
     testUserId = userId()
     testWorkspaceId = workspaceId()
     testStreamId = streamId()
@@ -96,6 +96,17 @@ describe("BoundaryExtractionService", () => {
 
   afterAll(async () => {
     await pool.end()
+  })
+
+  afterEach(async () => {
+    // Clean up test data after each test
+    await withTransaction(pool, async (client) => {
+      // Clean up in reverse dependency order
+      await client.query("DELETE FROM outbox")
+      await client.query("DELETE FROM conversations")
+      await client.query("DELETE FROM messages")
+      await client.query(`DELETE FROM streams WHERE id != '${testStreamId}'`)
+    })
   })
 
   beforeEach(() => {

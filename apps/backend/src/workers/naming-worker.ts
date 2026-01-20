@@ -11,7 +11,7 @@ export interface NamingWorkerDeps {
 }
 
 /**
- * Create the naming job handler for pg-boss.
+ * Create the naming job handler for queue system.
  *
  * This is a thin wrapper that extracts job data and delegates to the naming service.
  * All business logic lives in the service for reusability and testability.

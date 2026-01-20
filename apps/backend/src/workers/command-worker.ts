@@ -24,7 +24,7 @@ export interface CommandWorkerDeps {
 }
 
 /**
- * Create the command execution job handler for pg-boss.
+ * Create the command execution job handler for queue system.
  *
  * Executes a command and creates completion/failure events.
  */

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../../src/db"
+import { withClient, withTransaction, withTestTransaction } from "./setup"
 import { StreamService } from "../../src/services/stream-service"
 import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
@@ -42,7 +42,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
 
       // Create a stream and add a message
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -73,7 +73,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -121,7 +121,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [testStreamId, testWorkspaceId, testUserId]
@@ -153,7 +153,7 @@ describe("Unread Counts", () => {
       const otherUserId = userId()
 
       // Create a stream with two members
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'channel', 'private', $3)`,
           [testStreamId, testWorkspaceId, authorId]
@@ -197,7 +197,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -259,7 +259,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
       const otherUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -320,7 +320,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, testWorkspaceId, testUserId]
@@ -360,7 +360,7 @@ describe("Unread Counts", () => {
       const testUserId = userId()
       const otherUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await client.query(
           `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
           [stream1, workspace1, testUserId]
@@ -412,7 +412,7 @@ describe("Unread Counts", () => {
       const testWorkspaceId = workspaceId()
       const testUserId = userId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         for (const id of [stream1, stream2, stream3]) {
           await client.query(
             `INSERT INTO streams (id, workspace_id, type, visibility, created_by) VALUES ($1, $2, 'scratchpad', 'private', $3)`,
@@ -443,7 +443,7 @@ describe("Unread Counts", () => {
         [stream3, eventIds[2]],
       ])
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await StreamMemberRepository.batchUpdateLastReadEventId(client, testUserId, updates)
       })
 

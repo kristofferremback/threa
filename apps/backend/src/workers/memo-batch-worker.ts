@@ -1,12 +1,7 @@
 import type { Pool } from "pg"
 import { withClient } from "../db"
-import {
-  JobQueues,
-  type JobHandler,
-  type JobQueueManager,
-  type MemoBatchCheckJobData,
-  type MemoBatchProcessJobData,
-} from "../lib/job-queue"
+import { JobQueues, type JobHandler, type MemoBatchCheckJobData, type MemoBatchProcessJobData } from "../lib/job-queue"
+import type { QueueManager } from "../lib/queue-manager"
 import { StreamStateRepository } from "../repositories"
 import type { MemoServiceLike } from "../services/memo-service"
 import { logger } from "../lib/logger"
@@ -17,7 +12,7 @@ const BATCH_QUIET_INTERVAL_SECONDS = 30 // 30 seconds
 export interface MemoBatchWorkerDeps {
   pool: Pool
   memoService: MemoServiceLike
-  jobQueue: JobQueueManager
+  jobQueue: QueueManager
 }
 
 /**
@@ -85,21 +80,4 @@ export function createMemoBatchProcessWorker(deps: MemoBatchWorkerDeps): JobHand
   }
 }
 
-/**
- * Schedule the memo batch check job to run periodically.
- * Uses pg-boss's schedule feature for reliable cron-like execution.
- */
-export async function scheduleMemoBatchCheck(jobQueue: JobQueueManager): Promise<void> {
-  const boss = jobQueue.getBoss()
-
-  await boss.schedule(
-    JobQueues.MEMO_BATCH_CHECK,
-    "*/30 * * * * *",
-    {},
-    {
-      tz: "UTC",
-    }
-  )
-
-  logger.info("Memo batch check scheduled (every 30 seconds)")
-}
+// scheduleMemoBatchCheck moved to server.ts - uses QueueManager.schedule()

@@ -29,7 +29,8 @@ beforeAll(async () => {
 })
 
 // Global teardown - runs once after all test files
-// Timeout increased because pg-boss shutdown can take up to 30s for graceful cleanup
+// Timeout increased because queue system shutdown can take up to 30s for graceful cleanup
+// (workers + schedule manager + cleanup worker + socket.io)
 // CI environments may be slower due to resource contention
 afterAll(async () => {
   if (testServer) {
@@ -37,4 +38,4 @@ afterAll(async () => {
     await testServer.stop()
     testServer = null
   }
-}, 60000)
+}, 90000)

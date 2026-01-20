@@ -9,7 +9,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient } from "../../src/db"
+import { withClient } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { StreamPersonaParticipantRepository } from "../../src/repositories/stream-persona-participant-repository"
 import { SearchRepository } from "../../src/repositories/search-repository"

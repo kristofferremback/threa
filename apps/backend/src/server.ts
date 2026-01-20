@@ -48,11 +48,7 @@ import { Researcher } from "./agents/researcher"
 import { createNamingWorker } from "./workers/naming-worker"
 import { createEmbeddingWorker } from "./workers/embedding-worker"
 import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
-import {
-  createMemoBatchCheckWorker,
-  createMemoBatchProcessWorker,
-  scheduleMemoBatchCheck,
-} from "./workers/memo-batch-worker"
+import { createMemoBatchCheckWorker, createMemoBatchProcessWorker } from "./workers/memo-batch-worker"
 import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
@@ -68,14 +64,18 @@ import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
-import { createJobQueue, type JobQueueManager } from "./lib/job-queue"
+import { QueueManager } from "./lib/queue-manager"
+import { ScheduleManager } from "./lib/schedule-manager"
+import { CleanupWorker } from "./lib/cleanup-worker"
+import { QueueRepository } from "./repositories/queue-repository"
+import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 
 export interface ServerInstance {
   server: Server
   io: SocketIOServer
   pools: DatabasePools
-  jobQueue: JobQueueManager
+  jobQueue: QueueManager
   port: number
   stop: () => Promise<void>
 }
@@ -84,7 +84,7 @@ export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
   // Create separated connection pools:
-  // - main: services, workers, pg-boss, HTTP handlers (30 connections)
+  // - main: services, workers, queue system, HTTP handlers (30 connections)
   // - listen: OutboxListener LISTEN connections (12 connections)
   const pools = createDatabasePools(config.databaseUrl)
   const pool = pools.main // Alias for backwards compatibility during transition
@@ -125,7 +125,35 @@ export async function startServer(): Promise<ServerInstance> {
   const searchService = new SearchService({ pool, embeddingService })
 
   // Job queue for durable background work (companion responses, etc.)
-  const jobQueue = createJobQueue(pool)
+  const jobQueue = new QueueManager({
+    pool,
+    queueRepository: QueueRepository,
+    tokenPoolRepository: TokenPoolRepository,
+    // Optimized for throughput with batch operations:
+    // - maxConcurrency=2: max 2 ticks running in parallel
+    // - tokenBatchSize=10: each tick leases up to 10 tokens (queue,workspace pairs)
+    // - claimBatchSize=20: each token claims up to 20 messages in one query
+    // - processingConcurrency=5: process 5 messages in parallel per token
+    //
+    // Max workers: 2 ticks × 10 tokens = 20 workers
+    // Max parallel processing: 20 workers × 5 concurrent = 100 messages
+    // Connection usage: batch operations reduce queries by 10-20x vs serial
+    // Peak connections: ~10-15 (operations are fast, connections released immediately)
+    maxConcurrency: 2,
+  })
+
+  // Schedule manager for cron tick generation
+  const scheduleManager = new ScheduleManager(pool, {
+    lookaheadSeconds: 60, // Generate ticks for next minute
+    intervalMs: 10000, // Check every 10 seconds
+    batchSize: 100, // Process up to 100 schedules per run
+  })
+
+  // Cleanup worker for expired and orphaned cron ticks
+  const cleanupWorker = new CleanupWorker(pool, {
+    intervalMs: 300000, // Run every 5 minutes
+    expiredThresholdMs: 300000, // Delete ticks expired for 5+ minutes
+  })
 
   // Create helpers for agents
   // This adapter accepts markdown content and converts to JSON+markdown format
@@ -270,10 +298,15 @@ export async function startServer(): Promise<ServerInstance> {
   const commandWorker = createCommandWorker({ pool, commandRegistry })
   jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
 
+  // Register handlers before starting
   await jobQueue.start()
 
+  // Start schedule manager and cleanup worker
+  scheduleManager.start()
+  cleanupWorker.start()
+
   // Schedule memo batch check cron job (every 30 seconds)
-  await scheduleMemoBatchCheck(jobQueue)
+  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" })
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
@@ -327,6 +360,8 @@ export async function startServer(): Promise<ServerInstance> {
   const stop = async () => {
     logger.info("Shutting down server...")
     orphanSessionCleanup.stop()
+    await scheduleManager.stop()
+    await cleanupWorker.stop()
     await outboxDispatcher.stop()
     await jobQueue.stop()
     logger.info("Closing socket.io...")

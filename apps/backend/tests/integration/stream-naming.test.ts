@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "./setup"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
@@ -267,7 +267,7 @@ describe("Stream Naming", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `name-update-owner-${ownerId}@test.com`,
@@ -303,7 +303,7 @@ describe("Stream Naming", () => {
       const ownerId = userId()
       const wsId = workspaceId()
 
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         await UserRepository.insert(client, {
           id: ownerId,
           email: `manual-name-owner-${ownerId}@test.com`,

@@ -11,7 +11,7 @@ export interface EmbeddingWorkerDeps {
 }
 
 /**
- * Create the embedding job handler for pg-boss.
+ * Create the embedding job handler for queue system.
  *
  * Generates embeddings for messages and stores them in the database.
  * Embeddings are used for semantic search.

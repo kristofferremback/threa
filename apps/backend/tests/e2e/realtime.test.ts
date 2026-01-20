@@ -338,6 +338,15 @@ describe("Real-time Events", () => {
       const stream1 = await createScratchpad(client, workspaceId)
       const stream2 = await createScratchpad(client, workspaceId)
 
+      // Disable companion mode for both streams to prevent companion job dispatch
+      // This test is about room scoping, not companion behavior
+      await client.patch(`/api/workspaces/${workspaceId}/streams/${stream1.id}/companion`, {
+        companionMode: "off",
+      })
+      await client.patch(`/api/workspaces/${workspaceId}/streams/${stream2.id}/companion`, {
+        companionMode: "off",
+      })
+
       // Only join stream1
       socket.emit("join", `ws:${workspaceId}:stream:${stream1.id}`)
 

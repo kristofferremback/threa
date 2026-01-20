@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient } from "../../src/db"
+import { withClient } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { AgentSessionRepository, SessionStatuses } from "../../src/repositories/agent-session-repository"

@@ -5,7 +5,8 @@ import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { needsAutoNaming } from "./display-name"
 import { logger } from "./logger"
 import { AuthorTypes } from "@threa/types"
-import { JobQueueManager, JobQueues } from "./job-queue"
+import { JobQueues } from "./job-queue"
+import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
@@ -46,12 +47,12 @@ export class NamingHandler implements OutboxHandler {
   readonly listenerId = "naming"
 
   private readonly db: Pool
-  private readonly jobQueue: JobQueueManager
+  private readonly jobQueue: QueueManager
   private readonly cursorLock: CursorLock
   private readonly debouncer: DebounceWithMaxWait
   private readonly batchSize: number
 
-  constructor(db: Pool, jobQueue: JobQueueManager, config?: NamingHandlerConfig) {
+  constructor(db: Pool, jobQueue: QueueManager, config?: NamingHandlerConfig) {
     this.db = db
     this.jobQueue = jobQueue
     this.batchSize = config?.batchSize ?? DEFAULT_CONFIG.batchSize
@@ -134,8 +135,9 @@ export class NamingHandler implements OutboxHandler {
             continue
           }
 
-          // Dispatch to pg-boss
+          // Dispatch to queue
           await this.jobQueue.send(JobQueues.NAMING_GENERATE, {
+            workspaceId: stream.workspaceId,
             streamId,
             requireName: isAgentMessage,
           })

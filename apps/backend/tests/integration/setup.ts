@@ -3,9 +3,12 @@
  * Ensures the test database exists and provides connection helpers.
  */
 
-import { Pool } from "pg"
+import { Pool, type PoolClient } from "pg"
 import { createDatabasePool } from "../../src/db"
 import { createMigrator } from "../../src/db/migrations"
+
+// Re-export production helpers for tests that need to persist data
+export { withClient, withTransaction } from "../../src/db"
 
 const ADMIN_DATABASE_URL = "postgresql://threa:threa@localhost:5454/postgres"
 const TEST_DATABASE_URL = "postgresql://threa:threa@localhost:5454/threa_test"
@@ -44,6 +47,29 @@ export async function setupTestDatabase(): Promise<Pool> {
   const migrator = createMigrator(pool)
   await migrator.up()
   return pool
+}
+
+/**
+ * Test transaction wrapper that ALWAYS rolls back.
+ * Use this instead of withTransaction in tests to ensure data isolation.
+ *
+ * Unlike the production withTransaction which commits on success,
+ * this always rolls back to prevent test data pollution.
+ */
+export async function withTestTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect()
+  try {
+    await client.query("BEGIN")
+    const result = await callback(client)
+    // Always rollback, even on success - tests should not persist data
+    await client.query("ROLLBACK")
+    return result
+  } catch (error) {
+    await client.query("ROLLBACK")
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 /**

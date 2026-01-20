@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction } from "../../src/db"
+import { withTestTransaction } from "./setup"
 import { UserRepository } from "../../src/repositories/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
@@ -33,7 +33,7 @@ describe("Trigram Search", () => {
     // Use unique suffix to avoid collisions with previous test runs
     const suffix = testWorkspaceId.slice(-8)
 
-    await withTransaction(pool, async (client) => {
+    await withTestTransaction(pool, async (client) => {
       // Create users with various names for fuzzy matching tests
       await UserRepository.insert(client, {
         id: testUserIds[0],
@@ -108,7 +108,7 @@ describe("Trigram Search", () => {
 
   describe("UserRepository.searchByNameOrEmail", () => {
     test("finds user by exact name", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "John Smith", 10)
 
         expect(results.length).toBeGreaterThan(0)
@@ -117,7 +117,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds user by partial name (ILIKE fallback)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "john", 10)
 
         expect(results.length).toBeGreaterThan(0)
@@ -126,7 +126,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds user with typo in name (trigram similarity)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // "Jonh" (transposition typo) should match "John" via trigram similarity
         // Note: very short strings like "jhon" vs "john" may not meet the 0.3 threshold
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "John Smth", 10)
@@ -137,7 +137,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds user with typo in longer name", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // "kristofer" should match "Kristoffer" via trigram similarity
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "kristofer", 10)
 
@@ -147,7 +147,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds user by email (partial)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // Email has unique suffix but "kristoffer" should still match
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "kristoffer", 10)
 
@@ -157,7 +157,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds user by slug (partial)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // Slug has unique suffix but "jane-doe" should still match
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "jane-doe", 10)
 
@@ -167,7 +167,7 @@ describe("Trigram Search", () => {
     })
 
     test("returns empty array for no matches", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await UserRepository.searchByNameOrEmail(client, testWorkspaceId, "zzzznotauser", 10)
 
         expect(results).toEqual([])
@@ -177,7 +177,7 @@ describe("Trigram Search", () => {
 
   describe("StreamRepository.searchByName", () => {
     test("finds stream by exact name", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "General Discussion",
@@ -189,7 +189,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds stream by partial name (ILIKE fallback)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "general",
@@ -201,7 +201,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds stream with typo in name (trigram similarity)", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // "generl" (missing 'a') should match "General" via trigram similarity
         // Note: "genral" has similarity ~0.29 which is below the 0.3 threshold
         const results = await StreamRepository.searchByName(client, {
@@ -215,7 +215,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds stream with typo - projct matches project", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "projct",
@@ -227,7 +227,7 @@ describe("Trigram Search", () => {
     })
 
     test("finds stream by slug", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "engineering",
@@ -239,7 +239,7 @@ describe("Trigram Search", () => {
     })
 
     test("respects type filter", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "general",
@@ -251,7 +251,7 @@ describe("Trigram Search", () => {
     })
 
     test("respects streamIds access control", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         // Only pass first stream ID - should not find other streams
         const results = await StreamRepository.searchByName(client, {
           streamIds: [testStreamIds[0]],
@@ -263,7 +263,7 @@ describe("Trigram Search", () => {
     })
 
     test("returns empty array for no matches", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: testStreamIds,
           query: "zzzznotastream",
@@ -274,7 +274,7 @@ describe("Trigram Search", () => {
     })
 
     test("returns empty array for empty streamIds", async () => {
-      await withTransaction(pool, async (client) => {
+      await withTestTransaction(pool, async (client) => {
         const results = await StreamRepository.searchByName(client, {
           streamIds: [],
           query: "general",
