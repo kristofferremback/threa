@@ -422,7 +422,7 @@ test.describe("Drafts Page", () => {
     await replyLink.click()
 
     // Wait for draft thread panel to appear
-    await expect(page.getByText("Write your reply below")).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/Write your reply below/)).toBeVisible({ timeout: 3000 })
 
     // Type in the thread draft
     const threadEditor = page.locator("[contenteditable='true']").last()
@@ -460,6 +460,6 @@ test.describe("Drafts Page", () => {
     await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })
 
     // Draft thread panel should be visible with the draft content
-    await expect(page.getByText("Write your reply below")).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/Write your reply below/)).toBeVisible({ timeout: 3000 })
   })
 })

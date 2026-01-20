@@ -115,8 +115,8 @@ test.describe("Message Send Mode", () => {
         .first()
       await expandButton.hover()
 
-      // The hint is shown as a combined string with a middle dot separator
-      await expect(page.getByText("Enter to send · Shift+Enter for new line")).toBeVisible({ timeout: 2000 })
+      // The hint is shown as a combined string with a middle dot separator (use .first() to avoid strict mode error)
+      await expect(page.getByText("Enter to send · Shift+Enter for new line").first()).toBeVisible({ timeout: 2000 })
     })
 
     test("Cmd+Enter should also send in enter mode", async ({ page }) => {
