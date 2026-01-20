@@ -24,27 +24,21 @@ Remove grammatical fluff, simplify language, eliminate redundancy.
 
 ### ✅ Completed Sections
 
-(none yet)
-
-### 🔄 Current Section
-
-**Section 1: "What Is This?"** (lines 1-8)
-
-### ⏳ Remaining Sections
-
-1. Runtime & Build (lines 9-18)
-2. Project Structure (lines 20-31)
-3. Tech Stack (lines 33-52)
-4. Shadcn UI Reference (lines 54-86)
-5. Core Concepts (lines 87-111)
-6. Architecture Patterns (lines 113-141)
-7. Database Philosophy (lines 142-148)
-8. Project Invariants (lines 149-189)
-9. Service Guidelines (lines 191-196)
-10. AI Integration (lines 198-205)
-11. Development (lines 207-274)
-12. Agent Workflow (lines 276-356)
-13. Lessons Learned (lines 357-564)
+1. What Is This? - Kept as-is
+2. Runtime & Build - Updated `bun test` → `bun run test`
+3. Project Structure - Updated structure
+4. Tech Stack - Comprehensive update
+5. Local Development (Agent-Friendly) - NEW section added
+6. Shadcn UI - Compressed
+7. Core Concepts - Expanded with accurate details
+8. Architecture Patterns - Massively expanded
+9. Database Philosophy - Kept as-is
+10. Project Invariants - Added INV-30 through INV-40
+11. Backend Architecture (Quick Reference) - NEW section replacing Service Guidelines
+12. AI Integration - Updated with wrapper details
+13. Development - Restructured for primary folder vs worktrees
+14. Agent Workflow - REMOVED entirely
+15. Lessons Learned - Cleaned up (removed duplicates)
 
 ---
 
@@ -82,5 +76,56 @@ Keep in CLAUDE.md:
 
 ## Status
 
-**Current**: Section 1 - "What Is This?"
-**Progress**: 0/13 sections complete
+**Status**: ✅ COMPLETED
+**Progress**: 13/13 sections complete
+
+## Summary of Changes
+
+### Sections Updated
+
+1. ✅ Runtime & Build - Fixed `bun test` → `bun run test`
+2. ✅ Project Structure - Updated to include packages/, scripts/, tests/
+3. ✅ Tech Stack - Comprehensive update with accurate tech list
+4. ✅ Local Development - NEW section for agent-friendly stub auth mode
+5. ✅ Shadcn UI - Compressed from ~30 lines to ~8 lines
+6. ✅ Core Concepts - Expanded with accurate Streams/Memos/Personas details
+7. ✅ Architecture Patterns - Massively expanded from 4 to 9+ patterns
+8. ✅ Database Philosophy - Kept as-is
+9. ✅ Project Invariants - Added INV-30 through INV-40
+10. ✅ Backend Architecture - NEW compact section replacing Service Guidelines
+11. ✅ AI Integration - Updated with wrapper details and cost tracking
+12. ✅ Development - Restructured to emphasize primary folder vs worktrees
+13. ✅ Agent Workflow - REMOVED (divergence protocol was failed experiment)
+14. ✅ Lessons Learned - Removed 13 lessons now covered by invariants
+
+### Documentation Created
+
+- `docs/preferred-models.md` - AI model recommendations with pricing
+- `docs/agent-testing-guide.md` - Comprehensive browser testing guide (668 lines)
+- `docs/agent-testing-quick-reference.md` - Quick reference for testing (161 lines)
+- `.claude/skills/search-model/SKILL.md` - OpenRouter API search skill
+
+### Invariants Added
+
+- **INV-30**: No withClient for Single Queries
+- **INV-31**: Derive Types from Schemas
+- **INV-32**: Errors Carry HTTP Semantics
+- **INV-33**: No Magic Strings
+- **INV-34**: Thin Handlers and Workers
+- **INV-35**: Use Existing Helpers Consistently
+- **INV-36**: No Speculative Features
+- **INV-37**: Extend Abstractions, Don't Duplicate
+- **INV-38**: Delete Dead Code Immediately
+- **INV-39**: Frontend Integration Tests
+- **INV-40**: Links Are Links, Buttons Are Buttons (from main branch merge)
+
+### Invariants Updated
+
+- **INV-16**: Extended to reference `docs/preferred-models.md` with AI assistant note
+
+### Compression Results
+
+- Removed 13 duplicate lessons (now covered by invariants)
+- Compressed Shadcn UI section by ~75%
+- Removed entire Agent Workflow section
+- Streamlined all sections for clarity
