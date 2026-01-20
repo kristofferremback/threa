@@ -461,9 +461,10 @@ test.describe("Drafts Page", () => {
     await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })
 
     // Wait for the composer to be visible (panel has loaded)
-    await expect(page.locator("[contenteditable='true']")).toBeVisible({ timeout: 5000 })
+    const composer = page.locator("[contenteditable='true']")
+    await expect(composer).toBeVisible({ timeout: 5000 })
 
-    // Draft thread panel should be visible with the draft content
-    await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
+    // Draft content should be restored in the composer
+    await expect(composer).toContainText(threadDraftContent, { timeout: 3000 })
   })
 })
