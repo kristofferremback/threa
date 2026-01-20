@@ -76,8 +76,8 @@ Keep in CLAUDE.md:
 
 ## Status
 
-**Status**: ✅ Phase 1 COMPLETED, ✅ Phase 2 COMPLETED
-**Progress**: Phase 1: 13/13 sections, Phase 2: Documentation extraction complete
+**Status**: ✅ Phase 1 COMPLETED, ✅ Phase 2 COMPLETED, ✅ Phase 3 COMPLETED
+**Progress**: All three phases complete
 
 ## Summary of Changes
 
@@ -181,3 +181,71 @@ Keep in CLAUDE.md:
 - **Documentation**: Two new comprehensive reference docs (967 total lines of detailed patterns and explanations)
 - **Keyword preservation**: All searchable terms remain in CLAUDE.md for "aha!" moments
 - **Unknown unknowns**: Lessons Learned section kept in CLAUDE.md as requested
+
+---
+
+## Phase 3: Compression (COMPLETED)
+
+**Goal**: Remove filler words, simplify language, eliminate redundancy while preserving all information.
+
+### Compression Strategy
+
+Systematically removed:
+
+- Unnecessary articles ("the", "a") where meaning remains clear
+- Filler words that don't change meaning ("and" → "," in many contexts)
+- Redundant phrases ("for reusability" when implied)
+- Verbose constructions ("which provides" → "providing")
+- Unnecessary qualifiers ("actually", "really")
+
+### Sections Compressed
+
+**What Is This** - Removed "around your organization", changed "The core differentiator is" → "Core differentiator:"
+
+**Design System References** - "When implementing UI components:" → "Implementing UI components:", "The kitchen sink is a living reference" → "Kitchen sink is living reference"
+
+**Local Development** - "For browser automation testing with" → "Browser automation testing", "All features work except production auth flows" → "All features work except production auth"
+
+**Architecture Patterns** - "Workers are thin wrappers calling service methods for reusability" → "Workers are thin wrappers calling service methods"
+
+**Project Invariants (INV-9 through INV-40)** - Extensive compression:
+
+- INV-9: "and side-effect-free" → ", side-effect-free"
+- INV-13: Removed "Instead," and "just"
+- INV-14: "Install missing components via" → "Install missing components:"
+- INV-17: "Migrations that have been committed are immutable - they may have already run on databases" → "Committed migrations are immutable - may have already run"
+- INV-18: "This isn't" → "Not", "A `sidebar.tsx` should contain" → "`sidebar.tsx` contains"
+- INV-19: "This enables" → "Enables", "The `functionId` should describe" → "`functionId` describes"
+- INV-20: "Never do SELECT-then-UPDATE/INSERT without proper concurrency control. This pattern has race conditions" → "Never SELECT-then-UPDATE/INSERT without concurrency control. Has race conditions"
+- INV-22: "A failing test means one of:" → "Failing test means:", "and didn't realize it" → removed
+- INV-23: "the number of events emitted" → "event count", "Instead, verify that" → "Verify"
+- INV-24: "of the same object" → "of same object", "and compare with" → ", compare with"
+- INV-25: "Future readers don't care what the code used to be" → "Future readers don't care what code used to be"
+- INV-26: "If a test cannot be made to pass" → "If test can't pass"
+- INV-27: "when a generic method can be reused" → "when generic method can be reused"
+- INV-28: "or `embedMany`" → `, `embedMany`", "which provides:" → "providing:"
+- INV-29: "(e.g., different stream types)" → "(e.g., stream types)"
+- INV-30: "only when multiple queries need" → "only for multiple queries needing"
+- INV-32: "and `code`" → ", `code`", ", not response formatting" → removed
+- INV-33: "or enums" → "/enums", "and import them" → ", import them"
+- INV-35: "either the helper is inadequate" → "means helper is inadequate"
+- INV-36: "A comment about hypothetical modes creates confusion" → "Comments about hypothetical modes create confusion"
+- INV-37: "and confuses readers about which to use" → ", confuses readers", "The question" → removed
+- INV-39: "Unit tests that mock too much" → "Unit tests mocking too much"
+- INV-40: "(submit, open modal, delete)" → "(submit, modal, delete)"
+
+**Backend Architecture** - "format responses" → "format response", "from starving" → "starving"
+
+**AI Integration** - "as unified billing interface" → "for unified billing", "which provides:" → "providing:"
+
+**Development** - "Database and infrastructure" → "Database, infrastructure", "let migrations run, then kill" → "wait for migrations, kill", "or `langfuse:start`" → ", `langfuse:start`", "All feature work happens in worktrees to keep branches isolated" → "All feature work in worktrees for branch isolation", "Provides visibility" → "Visibility", "to automatically trace LangChain and Vercel" → "to auto-trace LangChain, Vercel"
+
+**Lessons Learned** - Multiple compressions: "Routes, schemas, and core abstractions" → "Routes, schemas, core abstractions", ", even if it leaks no information" → removed, "and tests (14 files)" → ", tests (14 files)", "and is easier" → ", easier", "The first thing you do when" → "First thing when", "When a class has" → "When class has", "and make the code" → ", make code", "A helper that extracts" → "Helper extracting", "If you're creating" → "Creating", "because they add a layer" → "- they add"
+
+### Results
+
+- **98 word-level changes** (49 insertions, 49 deletions)
+- **Character count**: 26,685 → 25,214 characters (1,471 characters removed, 5.5% compression)
+- **Line count**: 441 lines (unchanged)
+- **All information preserved** - compression achieved through removing filler, not content
+- **Improved scannability** - more direct, concise statements
