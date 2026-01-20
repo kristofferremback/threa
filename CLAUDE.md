@@ -113,171 +113,35 @@ bunx shadcn@latest add <component-name>
 
 ## Core Concepts
 
-### Streams
+**Streams** - Everything that can send messages. Types: scratchpad (personal notes + AI companion, auto-named), channel (team chat, unique slug), dm (two members, computed display name), thread (nested discussions, unlimited depth, inherits visibility from rootStreamId). All have visibility (public/private), companionMode (on/off), optional companionPersonaId.
 
-Everything that can send messages is a stream. Types:
+**Memos (GAM)** - Semantic pointers preserving knowledge without copying. Store abstract + sourceMessageIds for navigation. Pipeline: message arrival → MemoAccumulator (30s debounce, 5min max) → Classifier (knowledge-worthiness) → Memorizer (title, abstract, keyPoints, tags, sourceMessageIds) → Enrichment (embeddings). Types: decision, learning, procedure, context, reference. Lifecycle: draft → active → archived | superseded.
 
-- `scratchpad` - Personal notes + AI companion (primary for solo users). Auto-named from first message.
-- `channel` - Public/private team channels. Requires unique slug per workspace.
-- `dm` - Direct messages (exactly two members, or self). Created via special flow, not standard API. Display name computed from participants.
-- `thread` - Nested discussions (unlimited depth, graph structure). Visibility inherited from `rootStreamId` (topmost non-thread ancestor).
+**Personas** - Data-driven AI agents (not hardcoded). System personas (workspaceId=NULL, available to all) vs Workspace personas (single workspace). Invocation: companion mode (stream-level), mentions (@persona-slug), agent sessions. Each has enabledTools[] (send_message, web_search, read_url, create_memo, search_memos). Default: Ariadne (persona_system_ariadne).
 
-All streams have `visibility` (public/private), `companionMode` (on/off), and optional `companionPersonaId`.
-
-### Memos (GAM)
-
-Memos are semantic pointers that preserve knowledge without copying. Store abstracts + `sourceMessageIds[]` arrays for navigation to originals.
-
-**Pipeline:**
-
-1. Message arrives → outbox event
-2. MemoAccumulator queues items (30s debounce, max 5min)
-3. Classifier determines knowledge-worthiness (temperature 0.1)
-4. Memorizer extracts: title, abstract, keyPoints, tags, sourceMessageIds (temperature 0.3)
-5. Enrichment generates embeddings for semantic search
-
-**Memo types:** decision, learning, procedure, context, reference
-
-**Status lifecycle:** draft → active → archived | superseded (versioning for revisions)
-
-### Personas
-
-AI agents are data-driven personas, not hardcoded. Ariadne is default system persona (`persona_system_ariadne`).
-
-**System vs Workspace:**
-
-- System: `workspaceId=NULL`, `managedBy="system"`, available to all workspaces
-- Workspace: scoped to single workspace, `managedBy="workspace"`
-
-**Invocation:**
-
-- Stream-level companion mode: `companionMode="on"` + `companionPersonaId`
-- Mention-based: `@persona-slug` in messages
-- Agent sessions: explicit invocation
-
-Each persona has `enabledTools[]` controlling available capabilities (send_message, web_search, read_url, etc.).
+**See:** `docs/core-concepts.md` for detailed explanations, pipelines, and implementation notes.
 
 ## Architecture Patterns
 
-### Repository Pattern
+**Repository Pattern** - Static methods with Querier (Pool | PoolClient) first parameter. Pure data access, snake_case → camelCase mapping, template tag SQL (squid/pg). No transactions, no business logic.
 
-- Each repository is namespace with static-like methods
-- All methods take `Querier` (Pool or PoolClient) as first parameter
-- Internal row types (snake_case) mapped to domain types (camelCase)
-- Pure data access - no side effects, no business logic
-- Use template tag SQL (`squid/pg`) for type safety
+**Service Layer** - Classes with Pool in constructor. Manage transaction boundaries (withTransaction, withClient). Coordinate repositories. Business logic lives here. Handlers are thin orchestrators.
 
-### Service Layer
+**Outbox Pattern** - Real-time events through outbox table. Publishing: insert in transaction → automatic NOTIFY. Processing: OutboxDispatcher (NOTIFY/LISTEN on separate pool) → handlers (cursor-based, time-locked via CursorLock, debounced). Event scoping: stream/workspace/author. Handlers: BroadcastHandler, NamingHandler, CompanionHandler, EmojiUsageHandler, EmbeddingHandler, BoundaryExtractionHandler, MemoAccumulatorHandler.
 
-Services manage transaction boundaries and coordinate repositories. Take `Pool` in constructor, use `withTransaction()` or `withClient()` for lifecycle.
+**Event Sourcing + Projections** - stream_events (append-only source of truth) + projections (denormalized for queries). Both updated in same transaction. Per-stream atomic sequences via INSERT ... ON CONFLICT DO UPDATE.
 
-```typescript
-async create(params) {
-  return withTransaction(this.pool, async (client) => {
-    const stream = await StreamRepository.insert(client, params)
-    await StreamMemberRepository.insert(client, {...})
-    await OutboxRepository.insert(client, "stream:created", {...})
-    return stream
-  })
-}
-```
+**Job Queue + Workers** - PostgreSQL-backed queue. Workers are thin wrappers calling service methods for reusability. Workers: Naming, Companion, Embedding, BoundaryExtraction, MemoBatch, Command, PersonaAgent.
 
-Business logic in services; handlers are thin orchestrators.
+**Middleware Composition** - Factory functions accept dependencies, return Express middleware. Compose for flexible permissions: compose(auth, workspaceMember).
 
-### Outbox Pattern + Listeners
+**Handler Factory Pattern** - createHandlers({ deps }) returns object with route handler methods. Explicit dependency injection.
 
-Real-time events flow through outbox with per-listener cursor tracking.
+**Database Pool Separation** - main pool (30 conns: HTTP, services, workers), listen pool (12 conns: NOTIFY/LISTEN, long-held). Prevents resource starvation.
 
-**Publishing (in transaction):** `OutboxRepository.insert(client, eventType, payload)` → automatic NOTIFY
+**Cursor Lock** - Time-based locking (locked_until timestamp, auto-refresh every 5s). Process events without holding connections. Automatic failover on crash.
 
-**Processing (out-of-transaction):**
-
-- **OutboxDispatcher**: Single NOTIFY/LISTEN connection (separate pool) notifies all handlers
-- **Handlers**: Implement `OutboxHandler` interface with cursor-based processing
-- **CursorLock**: Time-based lock (not transaction-level) for exclusive cursor access
-- **Debouncing**: Prevents rapid re-runs on multiple NOTIFYs
-
-**Event scoping:**
-
-- Stream-scoped: broadcast to `ws:{workspaceId}:stream:{streamId}`
-- Workspace-scoped: broadcast to `ws:{workspaceId}`
-- Author-scoped: only to author's sockets
-
-**Handlers:** BroadcastHandler, NamingHandler, CompanionHandler, EmojiUsageHandler, EmbeddingHandler, BoundaryExtractionHandler, MemoAccumulatorHandler
-
-### Event Sourcing + Projections
-
-Events in `stream_events` are source of truth. Projections are denormalized copies for query performance. Both updated in same transaction.
-
-**Sequence:** Per-stream atomic counter via `INSERT ... ON CONFLICT DO UPDATE` on `stream_sequences`.
-
-### Job Queue + Workers
-
-Background work via PostgreSQL queue with typed job handlers.
-
-```typescript
-export function createNamingWorker(deps): JobHandler<NamingJobData> {
-  return async (job) => {
-    await streamNamingService.attemptAutoNaming(job.data.streamId)
-  }
-}
-```
-
-Workers are thin; business logic in services for reusability across HTTP and async contexts.
-
-**Workers:** Naming, Companion, Embedding, BoundaryExtraction, MemoBatch, Command, PersonaAgent
-
-### Middleware Composition
-
-Middleware factories accept dependencies, return Express middleware. Enables composition for flexible permissions.
-
-```typescript
-export function createAuthMiddleware({ authService, userService }) {
-  return async (req, res, next) => {
-    /* ... */
-  }
-}
-
-// Usage
-app.use(createAuthMiddleware({ authService, userService }))
-app.use(compose(auth, workspaceMember))
-```
-
-### Handler Factory Pattern
-
-```typescript
-export function createStreamHandlers({ streamService, eventService }) {
-  return {
-    async list(req, res) {
-      /* ... */
-    },
-    async create(req, res) {
-      /* ... */
-    },
-  }
-}
-```
-
-### Database Pool Separation
-
-Multiple pools prevent one concern from starving another:
-
-- `main` (30 max): HTTP handlers, services, workers
-- `listen` (12 max): NOTIFY/LISTEN connections (long-held)
-
-### Cursor Lock + Time-Based Locking
-
-Outbox handlers use time-based locks to prevent connection pool exhaustion:
-
-```typescript
-await cursorLock.run(async (cursor) => {
-  // Lock held via locked_until timestamp
-  // Refreshed every 5s automatically
-  const events = await OutboxRepository.fetchAfterId(client, cursor, batch)
-  // Process without holding connection
-  return { status: "processed", newCursor }
-})
-```
+**See:** `docs/architecture.md` for detailed patterns, code examples, and anti-patterns to avoid.
 
 ## Database Philosophy
 
