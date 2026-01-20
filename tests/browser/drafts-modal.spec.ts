@@ -417,12 +417,13 @@ test.describe("Drafts Page", () => {
       .first()
     await messageContainer.hover()
 
-    // Click the "Reply in thread" link (appears on hover for messages without threads)
+    // Wait for the link to become visible, then click it
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
+    await expect(replyLink).toBeVisible({ timeout: 2000 })
     await replyLink.click()
 
-    // Wait for draft thread panel to appear
-    await expect(page.getByText(/Write your reply below/)).toBeVisible({ timeout: 3000 })
+    // Wait for draft thread panel to appear - look for the panel content
+    await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
 
     // Type in the thread draft
     const threadEditor = page.locator("[contenteditable='true']").last()
@@ -460,6 +461,6 @@ test.describe("Drafts Page", () => {
     await expect(page).toHaveURL(/[?&]draft=/, { timeout: 5000 })
 
     // Draft thread panel should be visible with the draft content
-    await expect(page.getByText(/Write your reply below/)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
   })
 })

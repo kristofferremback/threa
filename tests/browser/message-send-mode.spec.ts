@@ -189,7 +189,7 @@ test.describe("Message Send Mode", () => {
       await expandButton.hover()
 
       // The hint should show Cmd+Enter (or ⌘Enter on Mac)
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
     })
   })
 
@@ -436,7 +436,7 @@ test.describe("Message Send Mode", () => {
       await expandButton.hover()
 
       // Verify hint shows Cmd+Enter
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
 
       // Reload page
       await page.reload()
@@ -456,7 +456,7 @@ test.describe("Message Send Mode", () => {
       await expandButtonAfterReload.hover()
 
       // Verify hint still shows Cmd+Enter after reload (preference persisted)
-      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/)).toBeVisible({ timeout: 2000 })
+      await expect(page.getByText(/⌘Enter to send|Ctrl\+Enter to send/).first()).toBeVisible({ timeout: 2000 })
     })
   })
 })
