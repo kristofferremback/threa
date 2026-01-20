@@ -22,6 +22,7 @@ vi.mock("@/contexts", () => ({
     getPanelUrl: (streamId: string) => `/panel/${streamId}`,
     openThreadDraft: vi.fn(),
   }),
+  createDraftPanelId: (parentStreamId: string, parentMessageId: string) => `draft:${parentStreamId}:${parentMessageId}`,
 }))
 
 vi.mock("@/components/ui/avatar", () => ({

@@ -577,3 +577,17 @@ it("should call onSelect when selected", () => {
 3. Verify the test fails (if it passes, your test is wrong)
 4. Fix the bug
 5. Verify the test passes
+
+### Always use `bun run test`, not `bun test`
+
+When running tests in any workspace (backend or frontend), always use `bun run test` instead of `bun test`. The `bun run test` command executes the test script defined in package.json, which may include important configuration or setup that `bun test` bypasses.
+
+```bash
+# Correct
+cd apps/backend && bun run test
+cd apps/frontend && bun run test
+
+# Incorrect
+cd apps/backend && bun test  # ❌ May skip test setup
+cd apps/frontend && bun test  # ❌ May use wrong test environment
+```
