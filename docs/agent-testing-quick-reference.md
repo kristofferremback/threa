@@ -78,7 +78,7 @@ This command:
 
 ## Database Management
 
-Test database persists between runs. To start fresh:
+Test database persists between runs (this is normal). Rarely needed, but to reset completely:
 
 ```bash
 # Stop server (Ctrl+C)
@@ -116,7 +116,9 @@ await page.waitForSelector("text=Hello world")
 - Verify backend running: `curl http://localhost:3001/health`
 - Check USE_STUB_AUTH is enabled (automatic with `bun run dev:test`)
 
-**Database errors:**
+**Database errors (corrupted state):**
+
+If you suspect corrupted data and need to start completely fresh:
 
 ```bash
 docker exec threa-postgres-1 psql -U threa -d postgres -c "DROP DATABASE IF EXISTS threa_test"

@@ -134,9 +134,9 @@ await page.getByText("Hello from agent test!").waitFor()
 
 ## Database Management
 
-The test database (`threa_test`) is isolated from the main development database. It persists between test runs.
+The test database (`threa_test`) is isolated from the main development database and **persists between test runs by design**. Migrations handle schema updates automatically, so you typically don't need to recreate it.
 
-**To start fresh with empty database:**
+**Only if you need to start completely fresh** (rare - usually only for debugging corrupted state):
 
 ```bash
 # Stop server (Ctrl+C)
