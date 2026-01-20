@@ -2,18 +2,27 @@
 
 > For full details, see [agent-testing-guide.md](./agent-testing-guide.md)
 
+**Target audience**: AI agents performing automated browser testing
+
 ## Quick Start
 
 ```bash
-# 1. Setup environment
-echo "USE_STUB_AUTH=true" >> apps/backend/.env
-
-# 2. Start services
-bun run dev
-
-# 3. Navigate to app
-# http://localhost:3000/login
+# Single command - sets up everything
+bun run dev:test
 ```
+
+This command:
+
+- Creates isolated test database (`threa_test`)
+- Enables stub auth automatically
+- Starts backend + frontend
+- Runs migrations
+
+## Access
+
+- **Frontend**: http://localhost:3000
+- **Backend**: http://localhost:3001
+- **Database**: `threa_test` (isolated from development)
 
 ## Login Flow
 
@@ -24,13 +33,10 @@ bun run dev
 4. Lands on: http://localhost:3000/workspaces
 ```
 
-## Key URLs
+## Preset Users
 
-- **Login**: http://localhost:3000/login
-- **Stub Auth**: http://localhost:3000/test-auth-login
-- **Workspaces**: http://localhost:3000/workspaces
-- **Workspace**: http://localhost:3000/w/[workspace-id]
-- **Stream**: http://localhost:3000/w/[workspace-id]/streams/[stream-id]
+- Alice Anderson (alice@example.com)
+- Bob Builder (bob@example.com)
 
 ## Common Actions
 
@@ -63,39 +69,24 @@ bun run dev
 3. Click: "Send"
 ```
 
-## Stub Modes
+## Key Gotchas
 
-| Variable                  | Effect               | Use When                       |
-| ------------------------- | -------------------- | ------------------------------ |
-| `USE_STUB_AUTH=true`      | Simple login page    | **Required** for agent testing |
-| `USE_STUB_COMPANION=true` | No AI responses      | Saving API costs               |
-| `USE_STUB_AI=true`        | No embeddings/naming | Saving API costs               |
+1. **Editor is `contenteditable`**, not `<input>` or `<textarea>`
+2. **Channel creation uses browser `prompt()`** - set up dialog handler first
+3. **Real-time updates have ~100-500ms delay** (Socket.io)
+4. **Use unique test IDs**: `const testId = Date.now().toString(36)`
 
-## Preset Users
+## Database Management
 
-- Alice Anderson (alice@example.com)
-- Bob Builder (bob@example.com)
+Test database persists between runs. To start fresh:
 
-Or use custom email/name in form.
+```bash
+# Stop server (Ctrl+C)
+docker exec threa-postgres-1 psql -U threa -d postgres -c "DROP DATABASE IF EXISTS threa_test"
+bun run dev:test
+```
 
-## Services & Ports
-
-| Service    | Port | URL                   |
-| ---------- | ---- | --------------------- |
-| Frontend   | 3000 | http://localhost:3000 |
-| Backend    | 3001 | http://localhost:3001 |
-| PostgreSQL | 5454 | localhost:5454        |
-| MinIO      | 9000 | http://localhost:9000 |
-
-## Gotchas
-
-- **Editor is `contenteditable`**, not `<input>` or `<textarea>`
-- **Channel creation uses browser `prompt()`**, set up dialog handler first
-- **Real-time updates have ~100-500ms delay** (Socket.io)
-- **Use unique test IDs** to avoid conflicts: `const testId = Date.now().toString(36)`
-- **No passwords in stub auth** - anyone can login as anyone
-
-## Example: Complete User Journey
+## Complete Example
 
 ```typescript
 // Login
@@ -120,19 +111,19 @@ await page.waitForSelector("text=Hello world")
 
 ## Troubleshooting
 
-**Login redirect fails**:
+**Login redirect fails:**
 
-- Check `USE_STUB_AUTH=true` in `apps/backend/.env`
-- Verify backend running on port 3001
+- Verify backend running: `curl http://localhost:3001/health`
+- Check USE_STUB_AUTH is enabled (automatic with `bun run dev:test`)
 
-**Database errors**:
+**Database errors:**
 
 ```bash
-bun run db:reset  # Nuclear option
-bun run dev
+docker exec threa-postgres-1 psql -U threa -d postgres -c "DROP DATABASE IF EXISTS threa_test"
+bun run dev:test
 ```
 
-**Session not persisting**:
+**Session not persisting:**
 
 - Use `localhost`, not `127.0.0.1`
 - Check `wos_session` cookie exists
@@ -152,17 +143,10 @@ POST /api/dev/workspaces/:workspaceId/join
 POST /api/dev/workspaces/:workspaceId/streams/:streamId/join
 ```
 
-## Testing Workflow
+## What `bun run dev:test` Does
 
-```bash
-# 1. Start fresh
-bun run db:reset
-bun run dev
-
-# 2. Run agent tests
-# (navigate, click, type, verify)
-
-# 3. Check logs
-# Backend logs appear in terminal
-# Frontend logs in browser console
-```
+1. Creates `threa_test` database if it doesn't exist
+2. Sets `USE_STUB_AUTH=true` (automatic, no .env editing needed)
+3. Sets `DATABASE_URL` to use test database
+4. Starts frontend and backend
+5. Runs migrations on startup
