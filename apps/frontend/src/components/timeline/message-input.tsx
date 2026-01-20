@@ -111,6 +111,9 @@ export function MessageInput({
 
       setError(null)
 
+      // Parse markdown to ProseMirror JSON for sending
+      const contentJson = parseMarkdown(trimmed)
+
       // Clear composer content immediately so it doesn't persist when modal closes
       const emptyDoc: JSONContent = { type: "doc", content: [{ type: "paragraph" }] }
       composer.setContent(emptyDoc)
@@ -118,8 +121,7 @@ export function MessageInput({
 
       try {
         const result = await sendMessage({
-          content: trimmed,
-          contentFormat: "markdown",
+          contentJson,
         })
         if (result.navigateTo) {
           navigate(result.navigateTo, { replace: result.replace ?? false })
