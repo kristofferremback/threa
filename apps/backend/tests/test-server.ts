@@ -120,6 +120,7 @@ export async function startTestServer(): Promise<TestServer> {
   const port = await findAvailablePort()
 
   // Configure environment for test server
+  process.env.NODE_ENV = "development" // Fast shutdown for tests
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test"
   process.env.PORT = String(port)
   process.env.USE_STUB_AUTH = "true"

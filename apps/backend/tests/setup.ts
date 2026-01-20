@@ -29,13 +29,11 @@ beforeAll(async () => {
 })
 
 // Global teardown - runs once after all test files
-// Timeout increased because queue system shutdown can take up to 30s for graceful cleanup
-// (workers + schedule manager + cleanup worker + socket.io)
-// CI environments may be slower due to resource contention
+// Development mode enables immediate shutdown, so no long timeout needed
 afterAll(async () => {
   if (testServer) {
     console.log("Stopping test server...")
     await testServer.stop()
     testServer = null
   }
-}, 90000)
+})
