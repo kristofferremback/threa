@@ -6,7 +6,7 @@ This guide explains how to run Threa in agent-friendly mode for browser automati
 
 ## Quick Start
 
-### 1. Start Test Environment
+### Start Test Environment
 
 ```bash
 # From project root
@@ -25,13 +25,6 @@ This single command:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:3001
 - PostgreSQL: localhost:5454 (database: `threa_test`)
-
-### 2. Verify Server is Ready
-
-```bash
-curl http://localhost:3001/health
-# Should return: {"status":"ok"}
-```
 
 ## Authentication Flow
 
