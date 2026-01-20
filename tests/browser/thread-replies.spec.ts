@@ -241,7 +241,7 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply1)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply1)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(reply1).first()).toBeVisible({ timeout: 5000 })
 
     // Close the thread panel
     await page.keyboard.press("Escape")
@@ -255,7 +255,7 @@ test.describe("Thread Replies", () => {
     await expect(threadIndicator).toBeVisible({ timeout: 3000 })
     await threadIndicator.click()
 
-    // Thread should reopen with existing reply visible (use first to avoid strict mode)
+    // Thread should reopen with existing reply visible
     await expect(page.getByText(reply1).first()).toBeVisible({ timeout: 3000 })
 
     // Send another reply
@@ -264,11 +264,11 @@ test.describe("Thread Replies", () => {
     await page.keyboard.type(reply2)
     await page.keyboard.press("Meta+Enter")
 
-    await expect(page.getByText(reply2)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(reply2).first()).toBeVisible({ timeout: 5000 })
 
     // Both replies should be visible
-    await expect(page.getByText(reply1)).toBeVisible()
-    await expect(page.getByText(reply2)).toBeVisible()
+    await expect(page.getByText(reply1).first()).toBeVisible()
+    await expect(page.getByText(reply2).first()).toBeVisible()
 
     // Close and verify reply count updated to 2
     await page.keyboard.press("Escape")

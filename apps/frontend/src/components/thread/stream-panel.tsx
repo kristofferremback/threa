@@ -152,6 +152,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         })
       )
 
+      // Invalidate parent stream's bootstrap to refetch with updated reply counts
+      // This ensures that when navigating back via breadcrumbs, the parent shows
+      // the correct reply count for messages that now have nested threads
+      queryClient.invalidateQueries({
+        queryKey: streamKeys.bootstrap(workspaceId, draftInfo.parentStreamId),
+      })
+
       // Transition: open the new thread panel (replaces draft panel)
       openPanel(thread.id)
     } catch (error) {
