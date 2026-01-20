@@ -11,7 +11,7 @@ Threa tackles "Slack, where critical information comes to die" by building a kno
 Default to Bun instead of Node.js:
 
 - `bun <file>` instead of `node <file>` or `ts-node <file>`
-- `bun test` instead of `jest` or `vitest`
+- `bun run test` instead of `jest` or `vitest`
 - `bun build <file>` instead of `webpack` or `esbuild`
 - `bun install` instead of `npm install`
 - `bun run <script>` instead of `npm run <script>`
@@ -24,8 +24,13 @@ Monorepo with Bun workspaces:
 ```
 threa/
 ├── apps/
-│   ├── backend/     # Express API + Socket.io
-│   └── frontend/    # React 19 + Vite
+│   ├── backend/     # Express API + Socket.io + Workers
+│   └── frontend/    # React 19 + Vite + Shadcn UI
+├── packages/
+│   ├── types/       # Shared domain types and API contracts
+│   └── prosemirror/ # Editor state wrapper
+├── scripts/         # Dev orchestration and utilities
+├── tests/           # Cross-app tests (Playwright)
 ├── docs/            # Design docs and exploration notes
 └── package.json     # Root workspace config
 ```
@@ -35,12 +40,19 @@ threa/
 **Backend:**
 
 - Runtime: Bun
-- Framework: Express.js
-- Database: PostgreSQL via `pg` + `squid` (template tags)
+- Framework: Express.js v5
+- Database: PostgreSQL via `pg` + `squid` (template tag SQL)
+- Migrations: Umzug
 - WebSocket: Socket.io with `@socket.io/postgres-adapter`
-- Auth: WorkOS AuthKit
+- Auth: WorkOS AuthKit (production) + stub (dev/testing)
+- Job Queue: Custom PostgreSQL queue (replaced pg-boss)
+- Storage: S3-compatible (MinIO for local)
 - IDs: ULID (prefixed, sortable)
 - Logging: Pino
+- AI: Vercel AI SDK + LangChain/LangGraph + OpenRouter
+- Observability: Langfuse + OpenTelemetry
+- Schema: Zod
+- Testing: Bun test + Playwright
 
 **Frontend:**
 
@@ -48,9 +60,13 @@ threa/
 - Build: Vite
 - Routing: react-router-dom v7
 - Real-time: socket.io-client
-- UI Components: Shadcn UI (Golden Thread theme)
+- State: TanStack Query + Dexie (IndexedDB)
+- UI Components: Shadcn UI (Radix primitives)
 - Styling: Tailwind CSS
+- Editor: Tiptap (ProseMirror)
+- Testing: Vitest + Testing Library
 
+<<<<<<< HEAD
 ## Design System References
 
 **Primary documentation:**
@@ -67,37 +83,37 @@ threa/
 The kitchen sink is a living reference - update it whenever you add new components, patterns, or styling. It serves as both documentation and a visual regression test.
 
 ## Shadcn UI Reference
+=======
+## Local Development (Agent-Friendly)
+>>>>>>> 870d9b7 (docs: revise and compact CLAUDE.md)
 
-Shadcn UI is a collection of accessible components built on Radix UI primitives and Tailwind CSS. Components are copied into the codebase (not imported from npm), allowing full customization.
+For browser automation testing with Chrome DevTools MCP:
 
-**Installation:**
+```bash
+# Start services with stub auth
+bun run dev:test
+
+# Access at http://localhost:5173
+# Stub auth: any email works, no password required
+# Default workspace auto-created on first access
+```
+
+Stub mode bypasses WorkOS, creates test users on-demand. All features work except production auth flows.
+
+**See:** `docs/agent-testing-guide.md` for comprehensive testing workflows and `docs/agent-testing-quick-reference.md` for quick patterns.
+
+## Shadcn UI
+
+Always use Shadcn UI components (INV-14). Components copied into codebase, not imported from npm.
+
+**Add components:**
 
 ```bash
 cd apps/frontend
 bunx shadcn@latest add <component-name>
 ```
 
-**Installed components** (`apps/frontend/src/components/ui/`):
-accordion, alert, alert-dialog, aspect-ratio, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, context-menu, dialog, drawer, dropdown-menu, form, hover-card, input, input-otp, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner, switch, table, tabs, textarea, toggle, toggle-group, tooltip
-
-All core Shadcn components are installed. If a new component is added to shadcn/ui, install via `bunx shadcn@latest add <component>`.
-
-**Usage pattern:**
-
-```tsx
-import { Button } from "@/components/ui/button"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-;<Card>
-  <CardHeader>
-    <CardTitle>Title</CardTitle>
-  </CardHeader>
-  <CardContent>
-    <Button>Click me</Button>
-  </CardContent>
-</Card>
-```
-
-**Golden Thread theme**: The custom theme uses warm neutrals with gold accents. Primary color is gold (`--primary: 38 65% 50%`). Use sparingly for key UI moments. Custom utilities available: `thread-gradient`, `text-thread`, `border-thread`, `thread-glow`.
+**Golden Thread theme**: Warm neutrals + gold accents. Use gold sparingly. Custom utilities: `thread-gradient`, `text-thread`, `border-thread`, `thread-glow`.
 
 ## Core Concepts
 
@@ -105,54 +121,167 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
 Everything that can send messages is a stream. Types:
 
-- `scratchpad` - Personal notes + AI companion (primary for solo users)
-- `channel` - Public/private team channels
-- `dm` - Direct messages (exactly two members)
-- `thread` - Nested discussions (unlimited depth, graph structure)
+- `scratchpad` - Personal notes + AI companion (primary for solo users). Auto-named from first message.
+- `channel` - Public/private team channels. Requires unique slug per workspace.
+- `dm` - Direct messages (exactly two members, or self). Created via special flow, not standard API. Display name computed from participants.
+- `thread` - Nested discussions (unlimited depth, graph structure). Visibility inherited from `rootStreamId` (topmost non-thread ancestor).
+
+All streams have `visibility` (public/private), `companionMode` (on/off), and optional `companionPersonaId`.
 
 ### Memos (GAM)
 
-Memos are semantic pointers to valuable conversations - they link to source messages, not copy content. Created via:
+Memos are semantic pointers that preserve knowledge without copying. Store abstracts + `sourceMessageIds[]` arrays for navigation to originals.
 
-1. Message arrives
-2. Classification worker (cheap model) determines if knowledge-worthy
-3. Memorizer extracts key info into memo
-4. Enrichment adds summary, tags, embedding
+**Pipeline:**
+
+1. Message arrives → outbox event
+2. MemoAccumulator queues items (30s debounce, max 5min)
+3. Classifier determines knowledge-worthiness (temperature 0.1)
+4. Memorizer extracts: title, abstract, keyPoints, tags, sourceMessageIds (temperature 0.3)
+5. Enrichment generates embeddings for semantic search
+
+**Memo types:** decision, learning, procedure, context, reference
+
+**Status lifecycle:** draft → active → archived | superseded (versioning for revisions)
 
 ### Personas
 
-AI agents are data-driven personas, not hardcoded entities. Ariadne is the default system persona. All code paths treat personas uniformly - no special-casing.
+AI agents are data-driven personas, not hardcoded. Ariadne is default system persona (`persona_system_ariadne`).
 
-Schema uses `managed_by` enum (`system` | `workspace`), not `is_system` boolean.
+**System vs Workspace:**
+
+- System: `workspaceId=NULL`, `managedBy="system"`, available to all workspaces
+- Workspace: scoped to single workspace, `managedBy="workspace"`
+
+**Invocation:**
+
+- Stream-level companion mode: `companionMode="on"` + `companionPersonaId`
+- Mention-based: `@persona-slug` in messages
+- Agent sessions: explicit invocation
+
+Each persona has `enabledTools[]` controlling available capabilities (send_message, web_search, read_url, etc.).
 
 ## Architecture Patterns
 
 ### Repository Pattern
 
-- Each repository is a namespace with static-like methods
-- All methods take `PoolClient` as first parameter (transaction control)
+- Each repository is namespace with static-like methods
+- All methods take `Querier` (Pool or PoolClient) as first parameter
 - Internal row types (snake_case) mapped to domain types (camelCase)
-- Pure data access - no side effects
+- Pure data access - no side effects, no business logic
+- Use template tag SQL (`squid/pg`) for type safety
 
-### Outbox Pattern
+### Service Layer
 
-- Real-time events go through outbox table
-- `publishOutboxEvent()` called within transactions
-- Listener polls outbox, publishes to Socket.io
-- Ensures exactly-once delivery
+Services manage transaction boundaries and coordinate repositories. Take `Pool` in constructor, use `withTransaction()` or `withClient()` for lifecycle.
+
+```typescript
+async create(params) {
+  return withTransaction(this.pool, async (client) => {
+    const stream = await StreamRepository.insert(client, params)
+    await StreamMemberRepository.insert(client, {...})
+    await OutboxRepository.insert(client, "stream:created", {...})
+    return stream
+  })
+}
+```
+
+Business logic in services; handlers are thin orchestrators.
+
+### Outbox Pattern + Listeners
+
+Real-time events flow through outbox with per-listener cursor tracking.
+
+**Publishing (in transaction):** `OutboxRepository.insert(client, eventType, payload)` → automatic NOTIFY
+
+**Processing (out-of-transaction):**
+
+- **OutboxDispatcher**: Single NOTIFY/LISTEN connection (separate pool) notifies all handlers
+- **Handlers**: Implement `OutboxHandler` interface with cursor-based processing
+- **CursorLock**: Time-based lock (not transaction-level) for exclusive cursor access
+- **Debouncing**: Prevents rapid re-runs on multiple NOTIFYs
+
+**Event scoping:**
+
+- Stream-scoped: broadcast to `ws:{workspaceId}:stream:{streamId}`
+- Workspace-scoped: broadcast to `ws:{workspaceId}`
+- Author-scoped: only to author's sockets
+
+**Handlers:** BroadcastHandler, NamingHandler, CompanionHandler, EmojiUsageHandler, EmbeddingHandler, BoundaryExtractionHandler, MemoAccumulatorHandler
+
+### Event Sourcing + Projections
+
+Events in `stream_events` are source of truth. Projections are denormalized copies for query performance. Both updated in same transaction.
+
+**Sequence:** Per-stream atomic counter via `INSERT ... ON CONFLICT DO UPDATE` on `stream_sequences`.
+
+### Job Queue + Workers
+
+Background work via PostgreSQL queue with typed job handlers.
+
+```typescript
+export function createNamingWorker(deps): JobHandler<NamingJobData> {
+  return async (job) => {
+    await streamNamingService.attemptAutoNaming(job.data.streamId)
+  }
+}
+```
+
+Workers are thin; business logic in services for reusability across HTTP and async contexts.
+
+**Workers:** Naming, Companion, Embedding, BoundaryExtraction, MemoBatch, Command, PersonaAgent
+
+### Middleware Composition
+
+Middleware factories accept dependencies, return Express middleware. Enables composition for flexible permissions.
+
+```typescript
+export function createAuthMiddleware({ authService, userService }) {
+  return async (req, res, next) => {
+    /* ... */
+  }
+}
+
+// Usage
+app.use(createAuthMiddleware({ authService, userService }))
+app.use(compose(auth, workspaceMember))
+```
 
 ### Handler Factory Pattern
 
 ```typescript
-createStreamHandlers({ pool, authService, ...deps })
-// Returns object of handlers
+export function createStreamHandlers({ streamService, eventService }) {
+  return {
+    async list(req, res) {
+      /* ... */
+    },
+    async create(req, res) {
+      /* ... */
+    },
+  }
+}
 ```
 
-### Event Sourcing + Projections
+### Database Pool Separation
 
-- Events are source of truth (audit, sync, undo)
-- Projections for query performance
-- Both tables updated in same transaction
+Multiple pools prevent one concern from starving another:
+
+- `main` (30 max): HTTP handlers, services, workers
+- `listen` (12 max): NOTIFY/LISTEN connections (long-held)
+
+### Cursor Lock + Time-Based Locking
+
+Outbox handlers use time-based locks to prevent connection pool exhaustion:
+
+```typescript
+await cursorLock.run(async (cursor) => {
+  // Lock held via locked_until timestamp
+  // Refreshed every 5s automatically
+  const events = await OutboxRepository.fetchAfterId(client, cursor, batch)
+  // Process without holding connection
+  return { status: "processed", newCursor }
+})
+```
 
 ## Database Philosophy
 
@@ -165,38 +294,48 @@ createStreamHandlers({ pool, authService, ...deps })
 
 Invariants are constraints that must hold across the entire codebase. Reference them by ID when planning or reviewing changes.
 
-| ID         | Name                                 | Rule                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **INV-1**  | No Foreign Keys                      | Application manages relationships, not database                                                                                                                                                                                                                                                                                                                                                    |
-| **INV-2**  | Prefixed ULIDs                       | All entity IDs use format `prefix_ulid` (e.g., `stream_xxx`, `user_xxx`)                                                                                                                                                                                                                                                                                                                           |
-| **INV-3**  | No DB Enums                          | Use TEXT columns, validate in application code                                                                                                                                                                                                                                                                                                                                                     |
-| **INV-4**  | Outbox for Real-time                 | All real-time events go through the outbox table                                                                                                                                                                                                                                                                                                                                                   |
-| **INV-5**  | Repository Pattern                   | Data access through repositories with `PoolClient` first parameter                                                                                                                                                                                                                                                                                                                                 |
-| **INV-6**  | Transactions in Services             | Services manage transaction boundaries, not handlers                                                                                                                                                                                                                                                                                                                                               |
-| **INV-7**  | Events + Projections                 | Events are source of truth; projections for queries; both updated in same transaction                                                                                                                                                                                                                                                                                                              |
-| **INV-8**  | Workspace Scoping                    | Resources belong to workspaces; workspace is the sharding boundary                                                                                                                                                                                                                                                                                                                                 |
-| **INV-9**  | No Singletons                        | Pass dependencies explicitly; no module-level state or `getInstance()` patterns. Exceptions: (1) Logger (Pino) - stateless and side-effect-free. (2) Langfuse/OTEL SDK - must initialize before any LangChain imports to instrument them; this constraint forces module-level state.                                                                                                               |
-| **INV-10** | Self-Describing Dependencies         | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`)                                                                                                                                                                                                                                                                                                                |
-| **INV-11** | No Silent Fallbacks                  | Fail loudly on misconfiguration; don't paper over missing data with defaults                                                                                                                                                                                                                                                                                                                       |
-| **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies.                                                                                                                                                                                                                                 |
-| **INV-13** | Construct, Don't Assemble            | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies.                                                                                                                                             |
-| **INV-14** | Shadcn UI Components                 | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components.                                                                                        |
-| **INV-15** | Dumb Components                      | React components handle UI rendering and local state only. No direct database access (`@/db`), no persistence logic, no business rules. Components receive capabilities via props/context (e.g., `sendMessage`) and call them without knowing implementation. Enforced by ESLint `no-restricted-imports`.                                                                                          |
-| **INV-16** | No Claude 3 Models                   | Never use Claude 3 models (claude-3-haiku, claude-3-sonnet, claude-3-opus). Always use Claude 4+ models. For OpenRouter: `openrouter:anthropic/claude-haiku-4.5`, `openrouter:anthropic/claude-sonnet-4`. The model ID format is `provider:modelPath`.                                                                                                                                             |
-| **INV-17** | Immutable Migrations                 | Never modify existing migration files. Migrations that have been committed are immutable - they may have already run on databases. To change schema, add a new migration file with the next sequence number. Modifying existing migrations causes schema drift between environments.                                                                                                               |
-| **INV-18** | No Inline Components                 | Never define React components inside other components. Extract them to separate files. This isn't about reusability—it's about codebase maneuverability. Files should be what they say they are. A `sidebar.tsx` should contain sidebar logic, not theme picker logic. Colocation of unrelated concerns makes code harder to find and maintain.                                                    |
-| **INV-19** | AI Telemetry Required                | All AI wrapper calls (`ai.generateText`, `ai.generateObject`, `ai.embed`, `ai.embedMany`) must include `telemetry: { functionId: "<descriptive-id>", metadata: { ...contextual-data } }`. This enables Langfuse observability. The `functionId` should describe the operation (e.g., "stream-naming", "memo-classify-message"). Include relevant IDs in metadata for traceability.                 |
-| **INV-20** | No Select-Then-Update                | Never do SELECT-then-UPDATE/INSERT without proper concurrency control. This pattern has race conditions. Use atomic operations instead: `INSERT ... ON CONFLICT DO UPDATE` for upserts, `UPDATE ... WHERE` with row-level conditions, or explicit locking (`SELECT FOR UPDATE`). If you must check-then-act, use serializable transactions or optimistic locking with version columns.             |
-| **INV-21** | No Layout Shift from Hints           | Hints, tooltips, and popups must use absolute/fixed positioning and never shift surrounding content. Use `position: absolute` with appropriate z-index, not inline elements that push content around.                                                                                                                                                                                              |
-| **INV-22** | Always Fix Failing Tests             | Never dismiss test failures as "pre-existing" or "unrelated". A failing test means one of: (1) you broke something and didn't realize it, (2) a flaky test that needs fixing, or (3) a failing test was merged to main (which is bad). Always investigate and fix. If truly unrelated to your changes, fix in a separate commit.                                                                   |
-| **INV-23** | Don't Assert Event Count             | Tests should NOT assert the number of events emitted after an operation. Event count is an implementation detail that changes as features evolve. Instead, verify that specific event types you care about are present and have correct payloads. Use `.find()` or filtering to locate expected events.                                                                                            |
-| **INV-24** | No Assert Chains                     | Avoid sequential `expect()` calls checking properties of the same object. Use object comparison instead: build a `want` object and compare with `expect(got).toMatchObject(want)` or `expect(got).toEqual(want)`. Assert chains obscure relationships, make failures harder to diagnose, and clutter tests.                                                                                        |
-| **INV-25** | No Change Justification Comments     | Comments like `// INV-24: refactored to use toMatchObject` or `// Uses X instead of Y` reference refactoring decisions, not current behavior. Future readers don't care what the code used to be. Put change justifications in commit messages; code comments explain WHY the current code works this way, not how it differs from a previous version.                                             |
-| **INV-26** | No TODO Tests                        | Never leave tests as `.todo()` or `.skip()`. Tests must either pass or be deleted. If a test cannot be made to pass in the current environment (e.g., jsdom limitations), either refactor the test to verify the behavior differently or remove it and document why in a comment. TODO tests are technical debt that never gets paid.                                                              |
-| **INV-27** | Prefer Generic Repository Methods    | Don't add single-use repository methods when a generic method can be reused. If you need `getRecentScratchpadDisplayNames`, check if `list()` with filters covers the use case. Repositories should be powerful and composable, not cluttered with specialized variants. When ten ways exist to get the same data, it's unclear which to use.                                                      |
-| **INV-28** | Use AI Wrapper, Not Raw SDK          | Never import `generateText`, `generateObject`, `embed`, or `embedMany` directly from the `ai` module. Always use the `AI` wrapper (`createAI()`) which provides: clean telemetry API without `experimental_` prefixes, automatic repair functions for structured output, consistent `{ value, response }` return types, and model string parsing. Pass the `AI` instance via dependency injection. |
-| **INV-29** | Extract Variance, Share Behavior     | When handling variants (e.g., different stream types), extract only the decision logic into small functions returning a common shape. Keep one code path for shared behavior. Don't create separate code paths that "should behave the same" - they will drift. Example: `const decision = isA ? decideForA() : decideForB()` then one shared flow using `decision`.                               |
-| **INV-30** | Links Are Links, Buttons Are Buttons | Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, open modal, delete). Links navigate (change URL, open new tab with cmd+click). If it changes the URL, it's a link. If cmd+click should work, it's a link. Buttons break browser navigation, link previews, and accessibility.                                |
+| ID         | Name                                 | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **INV-1**  | No Foreign Keys                      | Application manages relationships, not database                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **INV-2**  | Prefixed ULIDs                       | All entity IDs use format `prefix_ulid` (e.g., `stream_xxx`, `user_xxx`)                                                                                                                                                                                                                                                                                                                                                                                      |
+| **INV-3**  | No DB Enums                          | Use TEXT columns, validate in application code                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **INV-4**  | Outbox for Real-time                 | All real-time events go through the outbox table                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **INV-5**  | Repository Pattern                   | Data access through repositories with `PoolClient` first parameter                                                                                                                                                                                                                                                                                                                                                                                            |
+| **INV-6**  | Transactions in Services             | Services manage transaction boundaries, not handlers                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **INV-7**  | Events + Projections                 | Events are source of truth; projections for queries; both updated in same transaction                                                                                                                                                                                                                                                                                                                                                                         |
+| **INV-8**  | Workspace Scoping                    | Resources belong to workspaces; workspace is the sharding boundary                                                                                                                                                                                                                                                                                                                                                                                            |
+| **INV-9**  | No Singletons                        | Pass dependencies explicitly; no module-level state or `getInstance()` patterns. Exceptions: (1) Logger (Pino) - stateless and side-effect-free. (2) Langfuse/OTEL SDK - must initialize before any LangChain imports to instrument them; this constraint forces module-level state.                                                                                                                                                                          |
+| **INV-10** | Self-Describing Dependencies         | Dependencies must be clear about what they are (e.g., `modelRegistry` not `apiKey`)                                                                                                                                                                                                                                                                                                                                                                           |
+| **INV-11** | No Silent Fallbacks                  | Fail loudly on misconfiguration; don't paper over missing data with defaults                                                                                                                                                                                                                                                                                                                                                                                  |
+| **INV-12** | Pass Dependencies, Not Configuration | Pass constructed objects (`pool`, `registry`), not raw config (`connectionString`, `apiKey`). Config only goes to factories/constructors that create dependencies.                                                                                                                                                                                                                                                                                            |
+| **INV-13** | Construct, Don't Assemble            | Never `doThing(deps, params)` where caller assembles deps. Instead, construct objects with their deps at startup (`new Thing(deps)`), then callers just call `thing.doThing(params)`. Callers should know interfaces, not implementation dependencies.                                                                                                                                                                                                        |
+| **INV-14** | Shadcn UI Components                 | Always use Shadcn UI for frontend components. Never build custom buttons, inputs, dialogs, etc. from scratch. Install missing components via `bunx shadcn@latest add <component>`. Components live in `apps/frontend/src/components/ui/`. See "Shadcn UI Reference" section below for available components.                                                                                                                                                   |
+| **INV-15** | Dumb Components                      | React components handle UI rendering and local state only. No direct database access (`@/db`), no persistence logic, no business rules. Components receive capabilities via props/context (e.g., `sendMessage`) and call them without knowing implementation. Enforced by ESLint `no-restricted-imports`.                                                                                                                                                     |
+| **INV-16** | Preferred AI Models                  | Always use current-generation models. Never use Claude 3 models (claude-3-haiku, claude-3-sonnet, claude-3-opus) or the gpt-4o family. See `docs/preferred-models.md` for up-to-date model recommendations. **For AI assistants:** If you encounter a model ID not in your knowledge base, check preferred-models.md first - it may exist and be preferred. Don't assume it doesn't exist or downgrade to older models. Model format is `provider:modelPath`. |
+| **INV-17** | Immutable Migrations                 | Never modify existing migration files. Migrations that have been committed are immutable - they may have already run on databases. To change schema, add a new migration file with the next sequence number. Modifying existing migrations causes schema drift between environments.                                                                                                                                                                          |
+| **INV-18** | No Inline Components                 | Never define React components inside other components. Extract them to separate files. This isn't about reusability—it's about codebase maneuverability. Files should be what they say they are. A `sidebar.tsx` should contain sidebar logic, not theme picker logic. Colocation of unrelated concerns makes code harder to find and maintain.                                                                                                               |
+| **INV-19** | AI Telemetry Required                | All AI wrapper calls (`ai.generateText`, `ai.generateObject`, `ai.embed`, `ai.embedMany`) must include `telemetry: { functionId: "<descriptive-id>", metadata: { ...contextual-data } }`. This enables Langfuse observability. The `functionId` should describe the operation (e.g., "stream-naming", "memo-classify-message"). Include relevant IDs in metadata for traceability.                                                                            |
+| **INV-20** | No Select-Then-Update                | Never do SELECT-then-UPDATE/INSERT without proper concurrency control. This pattern has race conditions. Use atomic operations instead: `INSERT ... ON CONFLICT DO UPDATE` for upserts, `UPDATE ... WHERE` with row-level conditions, or explicit locking (`SELECT FOR UPDATE`). If you must check-then-act, use serializable transactions or optimistic locking with version columns.                                                                        |
+| **INV-21** | No Layout Shift from Hints           | Hints, tooltips, and popups must use absolute/fixed positioning and never shift surrounding content. Use `position: absolute` with appropriate z-index, not inline elements that push content around.                                                                                                                                                                                                                                                         |
+| **INV-22** | Always Fix Failing Tests             | Never dismiss test failures as "pre-existing" or "unrelated". A failing test means one of: (1) you broke something and didn't realize it, (2) a flaky test that needs fixing, or (3) a failing test was merged to main (which is bad). Always investigate and fix. If truly unrelated to your changes, fix in a separate commit.                                                                                                                              |
+| **INV-23** | Don't Assert Event Count             | Tests should NOT assert the number of events emitted after an operation. Event count is an implementation detail that changes as features evolve. Instead, verify that specific event types you care about are present and have correct payloads. Use `.find()` or filtering to locate expected events.                                                                                                                                                       |
+| **INV-24** | No Assert Chains                     | Avoid sequential `expect()` calls checking properties of the same object. Use object comparison instead: build a `want` object and compare with `expect(got).toMatchObject(want)` or `expect(got).toEqual(want)`. Assert chains obscure relationships, make failures harder to diagnose, and clutter tests.                                                                                                                                                   |
+| **INV-25** | No Change Justification Comments     | Comments like `// INV-24: refactored to use toMatchObject` or `// Uses X instead of Y` reference refactoring decisions, not current behavior. Future readers don't care what the code used to be. Put change justifications in commit messages; code comments explain WHY the current code works this way, not how it differs from a previous version.                                                                                                        |
+| **INV-26** | No TODO Tests                        | Never leave tests as `.todo()` or `.skip()`. Tests must either pass or be deleted. If a test cannot be made to pass in the current environment (e.g., jsdom limitations), either refactor the test to verify the behavior differently or remove it and document why in a comment. TODO tests are technical debt that never gets paid.                                                                                                                         |
+| **INV-27** | Prefer Generic Repository Methods    | Don't add single-use repository methods when a generic method can be reused. If you need `getRecentScratchpadDisplayNames`, check if `list()` with filters covers the use case. Repositories should be powerful and composable, not cluttered with specialized variants. When ten ways exist to get the same data, it's unclear which to use.                                                                                                                 |
+| **INV-28** | Use AI Wrapper, Not Raw SDK          | Never import `generateText`, `generateObject`, `embed`, or `embedMany` directly from the `ai` module. Always use the `AI` wrapper (`createAI()`) which provides: clean telemetry API without `experimental_` prefixes, automatic repair functions for structured output, consistent `{ value, response }` return types, and model string parsing. Pass the `AI` instance via dependency injection.                                                            |
+| **INV-29** | Extract Variance, Share Behavior     | When handling variants (e.g., different stream types), extract only the decision logic into small functions returning a common shape. Keep one code path for shared behavior. Don't create separate code paths that "should behave the same" - they will drift. Example: `const decision = isA ? decideForA() : decideForB()` then one shared flow using `decision`.                                                                                          |
+| **INV-30** | No withClient for Single Queries     | Don't wrap single repository calls in `withClient`. Repositories accept `Querier` (Pool or PoolClient). Bad: `withClient(pool, client => repo.doThing(client, opts))`. Good: `repo.doThing(pool, opts)`. Use `withClient` only when multiple queries need the same connection or for connection affinity across calls.                                                                                                                                        |
+| **INV-31** | Derive Types from Schemas            | Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift. Example: `const TYPES = ["a", "b"] as const; const schema = z.enum(TYPES); type Type = z.infer<typeof schema>`. Never maintain parallel type definitions.                                                                                                                                                     |
+| **INV-32** | Errors Carry HTTP Semantics          | Use `HttpError` base class with `status` and `code`. Let handlers just `throw`. Centralized error handler middleware formats responses. Handlers focus on business logic, not response formatting. Errors know their own HTTP status codes.                                                                                                                                                                                                                   |
+| **INV-33** | No Magic Strings                     | Don't scatter string literals like `companionMode === "on"` throughout code. Define constants or enums at source of truth and import them. Catches typos at compile time, makes valid values discoverable. Magic strings hide knowledge that should be explicit.                                                                                                                                                                                              |
+| **INV-34** | Thin Handlers and Workers            | HTTP handlers and job workers are infrastructure. They receive input, delegate to domain logic (services, agents), and return results. Business logic belongs in dedicated modules that are reusable across contexts (API + worker + eval harness), independently testable, and focused on domain concerns.                                                                                                                                                   |
+| **INV-35** | Use Existing Helpers Consistently    | If a helper exists (`withClient`, `withTransaction`, utility function), use it everywhere. Bypassing helpers with raw operations suggests either the helper is inadequate (fix it) or the code is inconsistent (fix that). Don't create parallel implementations of the same behavior.                                                                                                                                                                        |
+| **INV-36** | No Speculative Features              | Don't add features, comments, or design for imagined requirements. YAGNI applies to code AND comments. A comment about hypothetical modes creates confusion about what's actually supported. Build what's needed now. Future requirements will be clearer when they actually arrive.                                                                                                                                                                          |
+| **INV-37** | Extend Abstractions, Don't Duplicate | When adding functionality, check if existing abstractions can be extended. Creating parallel implementations (e.g., new provider when one exists) violates DRY and confuses readers about which to use. The question "why are there two ways to do this?" should never arise. One abstraction per concern.                                                                                                                                                    |
+| **INV-38** | Delete Dead Code Immediately         | Code "kept as reference" is noise. It confuses reviewers, adds cognitive load, and suggests unreliability. Git has history - delete unused code. If needed later, recover from version control. Commented-out code is dead code. Delete it.                                                                                                                                                                                                                   |
+| **INV-39** | Frontend Integration Tests           | Frontend tests must mount real components and simulate real user behavior. Unit tests that mock too much miss real bugs (event propagation, focus management, z-index issues). Use `render(<Component />)` and `userEvent` to interact. Test observable behavior, not implementation. Write tests that fail when the bug exists.                                                                                                                              |
+| **INV-40** | Links Are Links, Buttons Are Buttons | Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, open modal, delete). Links navigate (change URL, open new tab with cmd+click). If it changes the URL, it's a link. If cmd+click should work, it's a link. Buttons break browser navigation, link previews, and accessibility.                                                                                         |
 
 When introducing a new invariant:
 
@@ -204,171 +343,126 @@ When introducing a new invariant:
 2. Add tests that enforce it
 3. Reference it in related code comments if non-obvious
 
-## Service Guidelines
+## Backend Architecture (Quick Reference)
 
-- Services <500 lines
-- Split when too large: StreamService (CRUD), EventService, MembershipService
-- Use repositories for data access
-- Manage transactions in services
+**Three-layer model:**
+
+- **Handlers** (factories returning route handlers): Validate input, check auth, delegate to services, format responses
+- **Services** (classes with Pool in constructor): Orchestrate business logic, manage transaction boundaries via `withTransaction`/`withClient`
+- **Repositories** (static objects with static methods): Pure data access, first param is `Querier` (Pool or PoolClient), snake_case ↔ camelCase mapping
+
+**Key patterns:**
+
+- Factory pattern for handlers/middleware (dependency injection)
+- `withTransaction` for multi-step writes, `withClient` for simple reads (INV-30: don't wrap single queries)
+- Two pools: main (30 conns), listen (12 conns) - prevents LISTEN from starving transactional work
+- Handlers throw `HttpError` subclasses; error handler middleware catches and formats
+- Outbox pattern: events written in transaction, OutboxDispatcher publishes async
+
+**See:** `docs/backend/` for detailed guides on handlers, services, repositories, middleware, testing, and request flows.
 
 ## AI Integration
 
-Multi-provider system with `provider:model` format:
+Multi-provider system using **OpenRouter** as unified billing interface. All AI calls go through the wrapper (`createAI()`) which provides:
 
-- `openrouter:anthropic/claude-sonnet-4-20250514`
-- `openrouter:openai/gpt-4o-mini`
+- Clean telemetry API (no `experimental_` prefixes)
+- Automatic structured output repair (markdown fences, field normalization)
+- Unified `{ value, response, usage }` return types
+- Cost tracking (recorded to `ai_usage_records` when context provided)
+- Thread-safe cost tracking for LangChain/LangGraph via `CostTracker` + `CostTrackingCallback`
 
-All AI calls go through OpenRouter for unified billing and model access.
+**Model format:** `provider:modelPath` (e.g., `openrouter:anthropic/claude-haiku-4.5`)
+
+**Usage:**
+
+```typescript
+const { value } = await ai.generateObject({
+  model: "openrouter:anthropic/claude-haiku-4.5",
+  schema: mySchema,
+  messages: [...],
+  telemetry: { functionId: "memo-classify", metadata: {...} },  // INV-19: required
+  context: { workspaceId, userId }  // For cost tracking
+})
+```
+
+Always use Claude 4.5+ models (INV-16). All AI wrapper calls require `telemetry.functionId` (INV-19).
+
+**See:** `docs/backend/ai-integration.md` for configuration, cost tracking, repair functions, and LangChain integration.
 
 ## Development
 
-```bash
-# Start everything
-bun run dev
+### Primary Folder Workflow (`/threa`)
 
-# Start database
+**Database and infrastructure run ONLY in primary folder:**
+
+```bash
+# First time: Start database
 bun run db:start
 
-# Reset database
+# Run migrations (start app, let migrations run, then kill)
+bun run dev
+# Ctrl+C after migrations complete
+
+# Optional: Start Langfuse for AI observability
+bun run langfuse:start
+
+# Reset database (destroys data)
 bun run db:reset
+```
+
+**IMPORTANT:** Never run `db:start`, `db:reset`, or `langfuse:start` from worktrees. Infrastructure lives in primary folder only.
+
+### Git Worktrees (Feature Development)
+
+All feature work happens in worktrees to keep branches isolated:
+
+```bash
+# In primary /threa folder: create worktree
+git worktree add ../threa-feature-xyz feature/xyz
+cd ../threa-feature-xyz
+
+# Set up worktree (copies .env, installs packages, creates branched database, copies Claude config)
+bun run setup:worktree
+
+# Start development (uses database from primary folder's postgres)
+bun run dev
+```
+
+**How it works:**
+
+- Worktree gets its own database (e.g., `threa_feature_xyz`)
+- Database branches from primary folder's current state
+- Shares same postgres container (no new docker services)
+- Independent .env, node_modules, .claude config
+
+**Testing in worktrees:**
+
+```bash
+cd apps/backend
+bun run test              # All tests
+bun run test:unit         # Unit tests (fast, no db)
+bun run test:integration  # Integration tests (with test db)
+bun run test:e2e          # E2E tests
 ```
 
 ### Langfuse (AI Observability)
 
-Langfuse provides visibility into LLM calls, costs, and performance. Optional but recommended for development.
+Optional. Provides visibility into LLM calls, costs, performance.
 
 ```bash
-# Start Langfuse stack (postgres, redis, clickhouse, minio)
+# In primary /threa folder only:
 docker compose -f docker-compose.langfuse.yml up -d
 
 # UI at http://localhost:3100
-# Create account, then create a project and copy keys to .env:
+# Create account, create project, copy keys to .env:
 #   LANGFUSE_SECRET_KEY=sk-lf-...
 #   LANGFUSE_PUBLIC_KEY=pk-lf-...
 #   LANGFUSE_BASE_URL=http://localhost:3100
 
 # Restart backend to enable tracing
-bun run dev
 ```
 
-Langfuse uses OpenTelemetry to automatically trace LangChain and Vercel AI SDK calls. No code changes needed in AI call sites.
-
-### Testing
-
-Tests are organized by type:
-
-- **Unit tests** (`src/**/*.test.ts`) - Pure unit tests, no external dependencies
-- **Integration tests** (`tests/integration/`) - Tests requiring database
-- **E2E tests** (`tests/e2e/`) - Full HTTP API tests
-
-```bash
-cd apps/backend
-
-bun test              # All tests
-bun test:unit         # Unit tests only (fast, no db needed)
-bun test:integration  # Integration tests (needs postgres)
-bun test:e2e          # E2E tests (needs server + postgres)
-bun test:watch        # Watch mode for TDD
-```
-
-### Git Worktrees
-
-For working on multiple branches simultaneously:
-
-```bash
-# Create a new worktree
-git worktree add ../threa-feature-xyz feature/xyz
-cd ../threa-feature-xyz
-
-# Set up the worktree (copies .env, creates database)
-bun run setup:worktree
-
-# Start development
-bun run dev
-```
-
-Each worktree gets its own database (e.g., `threa_feature_xyz`) while sharing the same postgres container.
-
-## Agent Workflow
-
-### Task Tracking with Linear
-
-All tasks, features, and improvements are tracked in Linear (team: Threa). Use the Linear MCP tools to:
-
-- **View issues**: `list_issues` with filters (assignee, state, label, etc.)
-- **Create issues**: `create_issue` with title, description, team, labels, state
-- **Update issues**: `update_issue` to change state, add comments, etc.
-- **Add comments**: `create_comment` for session logs and progress updates
-
-**Labels**:
-
-- `Feature` - New functionality
-- `Improvement` - Enhancements to existing features
-- `Bug` - Defects to fix
-
-**States**: Backlog → Todo → In Progress → In Review → Done
-
-### Divergence Protocol
-
-After significant implementation milestones, explicitly compare plan vs. reality:
-
-```
-PLAN SAID: [what the plan/task specified]
-ACTUALLY DID: [what was implemented]
-DIVERGENCE: [none | description of difference]
-REASON: [why divergence occurred, if any]
-```
-
-If there was meaningful divergence:
-
-1. Stop and surface it before continuing
-2. Assess whether the divergence was correct (better approach discovered) or a mistake
-3. Update the Linear issue if the divergence should be preserved
-4. Get confirmation before proceeding
-
-**Key prompt**: "Did you follow the plan so far, or did you diverge? If you diverged, how and why?"
-
-### Work Notes for Multi-Session Tasks
-
-For features spanning multiple sessions, add session logs as **comments on the Linear issue**. This keeps all context in one place and visible to anyone viewing the issue.
-
-**Session log format** (add as Linear comment):
-
-```markdown
-## Session: <date> - <Focus Area>
-
-**Context reviewed**:
-
-- Read <file> - understood <what>
-
-**Applicable invariants**: INV-X, INV-Y
-
-**Completed**:
-
-- [x] <task>
-
-**Discovered**:
-
-- <insight or issue found>
-
-**Next steps**:
-
-1. <next task>
-```
-
-**Key decisions** should be added to the issue description or as a dedicated comment.
-
-### Request Protocol for Blockers
-
-When blocked by tech debt or a bug that's outside current scope:
-
-1. Create a new Linear issue with label `Improvement` or `Bug`
-2. Include: problem statement, proposed solution, affected files, acceptance criteria
-3. Link it to the parent issue if relevant
-4. Continue with workaround if possible, or stop and surface to Kris
-5. When the fix lands, update the original issue and continue
-
-This enables parallel work: one agent continues on the feature, another fixes the blocker.
+Langfuse uses OpenTelemetry to automatically trace LangChain and Vercel AI SDK calls.
 
 ## Lessons Learned
 
@@ -416,54 +510,9 @@ Adding `workspaceId` to paths touched routes, handlers, services, outbox events,
 - Routes can use different combinations
 - Adding new checks is additive, not invasive
 
-### Derive types from schemas, not alongside them
-
-Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift:
-
-```typescript
-const STREAM_TYPES = ["scratchpad", "channel"] as const
-const streamTypeSchema = z.enum(STREAM_TYPES)
-type StreamType = z.infer<typeof streamTypeSchema>
-```
-
-### Errors should carry their own HTTP semantics
-
-An `HttpError` base class with `status` and `code` lets handlers just `throw`. Centralized error handler middleware formats the response. Handlers focus on business logic, not response formatting.
-
 ### Prefer iteration over recursion for middleware chains
 
 Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, and is easier to debug. The middleware pattern is inherently iterative anyway.
-
-### Comments justifying changes belong in commit messages, not code
-
-Comments like "Uses composition instead of inheritance" reference a previous design that no longer exists. Future readers won't know or care about the old approach. Put change justifications in commit messages where they provide context for reviewers; code comments should explain the current design's "why", not contrast with history.
-
-### Extend existing abstractions instead of creating parallel ones
-
-When adding new functionality, check if existing abstractions can be extended. Creating parallel implementations (e.g., a new `langchain-provider.ts` when `ProviderRegistry` already exists) violates DRY and confuses readers about which to use. The question "why are there two ways to do this?" should never arise.
-
-### Dependencies should be self-describing
-
-A parameter named `apiKey` is ambiguous - OpenRouter? Anthropic? Gmail? Pass a `modelRegistry` that knows how to create models, not a string that could mean anything. The type and name should tell you what it is without reading the implementation.
-
-### Pass dependencies, not configuration
-
-Configuration values (`apiKey`, `connectionString`, `port`) go to factories that construct dependencies. After construction, pass the dependency itself:
-
-```typescript
-// Bad - passing config through layers
-function createWorker(apiKey: string) { ... }
-
-// Good - config used at construction, dependency passed thereafter
-const registry = new ModelRegistry({ openrouter: { apiKey } })
-function createWorker(registry: ModelRegistry) { ... }
-```
-
-This makes the dependency graph explicit and testable. Workers don't need to know about API keys - they need models.
-
-### Delete dead code immediately
-
-Code "kept as reference" is noise. It confuses reviewers, adds cognitive load, and suggests the codebase is unreliable. Git has history - delete unused code. If it's needed later, recover it from version control.
 
 ### Avoid nested ternaries
 
@@ -486,29 +535,14 @@ switch (true) {
 }
 ```
 
-### Magic strings should be constants or enums
-
-Checking `companionMode === "on"` scatters knowledge about valid modes throughout the codebase. Define constants or enums at the source of truth and import them. This catches typos at compile time and makes valid values discoverable.
-
-### Workers and handlers should be thin
-
-Workers (job handlers) and HTTP handlers are infrastructure code. They should receive input, delegate to domain logic, and return results. Business logic belongs in dedicated modules (agents, services) that are reusable across invocation contexts, independently testable, and focused on domain concerns. Think: "Would I want to duplicate this logic if I needed to call it from an API endpoint AND a job worker AND an eval harness?"
-
 ### Be consistent in initialization patterns
 
 When a class has multiple similar resources (clients, connections), initialize them the same way. Mixed patterns (some eager, some lazy) create confusion about expected behavior and make the code harder to reason about.
 
-### Use existing helpers consistently
-
-If a helper exists (`withClient`, `withTransaction`), use it everywhere. Bypassing it with raw operations suggests either the helper is inadequate or the code is inconsistent. Both are problems worth fixing.
-
-### Don't add speculative features
-
-Don't add comments about features that weren't requested, and don't design for imagined requirements. YAGNI applies to comments too - a comment about a hypothetical mode creates confusion about what's actually supported.
-
 ### Abstractions should fully own their domain
 
 A helper that extracts part of a workflow but leaves the caller managing the rest adds indirection without reducing complexity. If you're creating an abstraction for session lifecycle, it should handle find/create, run work, AND track status - not just find/create while the caller still manages status with separate calls. Partial abstractions can be worse than no abstraction because they add a layer of indirection while still requiring the caller to understand the full workflow.
+<<<<<<< HEAD
 
 ### Always use current-generation Claude models
 
@@ -591,3 +625,5 @@ cd apps/frontend && bun run test
 cd apps/backend && bun test  # ❌ May skip test setup
 cd apps/frontend && bun test  # ❌ May use wrong test environment
 ```
+=======
+>>>>>>> 870d9b7 (docs: revise and compact CLAUDE.md)
