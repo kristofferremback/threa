@@ -282,7 +282,7 @@ const { value } = await ai.generateObject({
 })
 ```
 
-Always use Claude 4.5+ models (INV-16). All AI wrapper calls require `telemetry.functionId` (INV-19).
+See `docs/model-reference.md` for recommended models (INV-16). All AI wrapper calls require `telemetry.functionId` (INV-19).
 
 **See:** `docs/backend/ai-integration.md` for configuration, cost tracking, repair functions, and LangChain integration.
 
