@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg"
-import { withTransaction } from "../db"
+import { withTransaction, withClient } from "../db"
 import {
   MemoRepository,
   PendingItemRepository,
@@ -9,6 +9,7 @@ import {
   OutboxRepository,
   type Memo,
   type PendingMemoItem,
+  type Message,
 } from "../repositories"
 import { MemoClassifier } from "../lib/memo/classifier"
 import { Memorizer } from "../lib/memo/memorizer"
@@ -24,6 +25,43 @@ export interface ProcessResult {
   processed: number
   memosCreated: number
   memosRevised: number
+}
+
+/** Data prepared for memo creation (before DB insert) */
+interface MemoToCreate {
+  id: string
+  workspaceId: string
+  memoType: import("@threa/types").MemoType
+  sourceMessageId?: string
+  sourceConversationId?: string
+  title: string
+  abstract: string
+  keyPoints: string[]
+  sourceMessageIds: string[]
+  participantIds: string[]
+  knowledgeType: import("@threa/types").KnowledgeType
+  tags: string[]
+  status: import("@threa/types").MemoStatus
+  version?: number
+  embedding: number[]
+}
+
+/** Outbox event to insert after memo creation */
+interface OutboxEvent {
+  eventType: "memo:created" | "memo:revised"
+  payload: {
+    workspaceId: string
+    memoId: string
+    previousMemoId?: string
+    memo: import("@threa/types").Memo
+    revisionReason?: string
+  }
+}
+
+/** Memo supersession to perform */
+interface MemoSupersession {
+  memoId: string
+  reason: string
 }
 
 /** Interface for memo service implementations */
@@ -52,13 +90,14 @@ export class MemoService implements MemoServiceLike {
   }
 
   async processBatch(workspaceId: string, streamId: string): Promise<ProcessResult> {
-    return withTransaction(this.pool, async (client) => {
+    // Phase 1: Fetch all data with withClient (no transaction, fast reads)
+    const fetchedData = await withClient(this.pool, async (client) => {
       const pending = await PendingItemRepository.findUnprocessed(client, workspaceId, streamId, {
         limit: 50,
       })
 
       if (pending.length === 0) {
-        return { processed: 0, memosCreated: 0, memosRevised: 0 }
+        return null
       }
 
       const existingMemos = await MemoRepository.findByStream(client, streamId, {
@@ -66,303 +105,315 @@ export class MemoService implements MemoServiceLike {
         limit: MEMORY_CONTEXT_LIMIT,
         orderBy: "createdAt",
       })
-      const memoryContext = existingMemos.map((m) => m.abstract)
 
       const existingTags = await MemoRepository.getAllTags(client, workspaceId)
 
-      let memosCreated = 0
-      let memosRevised = 0
-      let itemsFailed = 0
+      // Fetch all messages for message items
+      const messageItemIds = pending.filter((p) => p.itemType === "message").map((p) => p.itemId)
+      const messages = messageItemIds.length > 0 ? await MessageRepository.findByIds(client, messageItemIds) : new Map()
 
-      const messageItems = pending.filter((p) => p.itemType === "message")
-      for (const item of messageItems) {
-        try {
-          const result = await this.processMessage(client, item, memoryContext, existingTags, workspaceId)
-          if (result) memosCreated++
-        } catch (error) {
-          itemsFailed++
-          logger.error({ error, messageId: item.itemId, workspaceId, streamId }, "Failed to process message for memo")
+      // Fetch all conversations and their messages for conversation items
+      const conversationItemIds = pending.filter((p) => p.itemType === "conversation").map((p) => p.itemId)
+      const conversations = new Map<string, NonNullable<Awaited<ReturnType<typeof ConversationRepository.findById>>>>()
+      const conversationMessages = new Map<string, Map<string, Message | null>>()
+      const existingConversationMemos = new Map<string, Memo | null>()
+
+      for (const convId of conversationItemIds) {
+        const conv = await ConversationRepository.findById(client, convId)
+        if (conv) {
+          conversations.set(convId, conv)
+          const msgs = await MessageRepository.findByIds(client, conv.messageIds)
+          conversationMessages.set(convId, msgs)
+          const existingMemo = await MemoRepository.findActiveByConversation(client, convId)
+          existingConversationMemos.set(convId, existingMemo)
         }
       }
 
-      const convItems = pending.filter((p) => p.itemType === "conversation")
-      for (const item of convItems) {
-        try {
-          const result = await this.processConversation(client, item, memoryContext, existingTags, workspaceId)
-          if (result === "created") memosCreated++
-          if (result === "revised") memosRevised++
-        } catch (error) {
-          itemsFailed++
-          logger.error(
-            { error, conversationId: item.itemId, workspaceId, streamId },
-            "Failed to process conversation for memo"
+      return {
+        pending,
+        existingMemos,
+        existingTags,
+        messages,
+        conversations,
+        conversationMessages,
+        existingConversationMemos,
+      }
+    })
+
+    if (!fetchedData) {
+      return { processed: 0, memosCreated: 0, memosRevised: 0 }
+    }
+
+    // Phase 2: AI processing (no connection held, can take seconds/minutes)
+    const memoryContext = fetchedData.existingMemos.map((m) => m.abstract)
+    const memosToCreate: MemoToCreate[] = []
+    const outboxEvents: OutboxEvent[] = []
+    const supersessions: MemoSupersession[] = []
+    let memosCreated = 0
+    let memosRevised = 0
+    let itemsFailed = 0
+
+    // Process message items
+    const messageItems = fetchedData.pending.filter((p) => p.itemType === "message")
+    for (const item of messageItems) {
+      try {
+        const message = fetchedData.messages.get(item.itemId)
+        if (!message) {
+          logger.warn({ messageId: item.itemId }, "Message not found for memo processing")
+          continue
+        }
+
+        if (message.authorType !== "user") {
+          continue
+        }
+
+        // AI calls (no connection held)
+        const classification = await this.classifier.classifyMessage(message, { workspaceId })
+        if (!classification.isGem || !classification.knowledgeType) {
+          continue
+        }
+
+        logger.debug(
+          { messageId: message.id, knowledgeType: classification.knowledgeType, confidence: classification.confidence },
+          "Message classified as gem"
+        )
+
+        const content = await this.memorizer.memorizeMessage({
+          memoryContext,
+          content: message,
+          existingTags: fetchedData.existingTags,
+          workspaceId,
+        })
+
+        const embedding = await this.embeddingService.embed(content.abstract, {
+          workspaceId,
+          functionId: "memo-embedding",
+        })
+
+        const memo: MemoToCreate = {
+          id: memoId(),
+          workspaceId,
+          memoType: MemoTypes.MESSAGE,
+          sourceMessageId: message.id,
+          title: content.title,
+          abstract: content.abstract,
+          keyPoints: content.keyPoints,
+          sourceMessageIds: content.sourceMessageIds,
+          participantIds: [message.authorId],
+          knowledgeType: classification.knowledgeType,
+          tags: content.tags,
+          status: MemoStatuses.ACTIVE,
+          embedding,
+        }
+
+        memosToCreate.push(memo)
+        outboxEvents.push({
+          eventType: "memo:created",
+          payload: {
+            workspaceId,
+            memoId: memo.id,
+            memo: this.toWireMemoFromData(memo),
+          },
+        })
+        memosCreated++
+      } catch (error) {
+        itemsFailed++
+        logger.error({ error, messageId: item.itemId, workspaceId, streamId }, "Failed to process message for memo")
+      }
+    }
+
+    // Process conversation items
+    const convItems = fetchedData.pending.filter((p) => p.itemType === "conversation")
+    for (const item of convItems) {
+      try {
+        const conversation = fetchedData.conversations.get(item.itemId)
+        if (!conversation) {
+          logger.warn({ conversationId: item.itemId }, "Conversation not found for memo processing")
+          continue
+        }
+
+        if (conversation.messageIds.length < MIN_CONVERSATION_MESSAGES) {
+          continue
+        }
+
+        const messages = fetchedData.conversationMessages.get(item.itemId)
+        if (!messages) {
+          logger.warn({ conversationId: conversation.id }, "No messages found for conversation")
+          continue
+        }
+
+        const messagesArray = Array.from(messages.values()).filter((m): m is Message => m !== null)
+        if (messagesArray.length === 0) {
+          logger.warn({ conversationId: conversation.id }, "No messages found for conversation")
+          continue
+        }
+
+        const existingMemo = fetchedData.existingConversationMemos.get(item.itemId)
+
+        // AI call (no connection held)
+        const classification = await this.classifier.classifyConversation(
+          null as any, // classifier doesn't actually use client parameter for queries
+          conversation,
+          messagesArray,
+          existingMemo ?? undefined,
+          { workspaceId }
+        )
+
+        if (!classification.isKnowledgeWorthy || !classification.knowledgeType) {
+          continue
+        }
+
+        if (existingMemo && classification.shouldReviseExisting) {
+          // Prepare revision
+          const content = await this.memorizer.reviseMemo(null as any, {
+            memoryContext,
+            content: messagesArray,
+            existingMemo,
+            existingTags: fetchedData.existingTags,
+            workspaceId,
+          })
+
+          const embedding = await this.embeddingService.embed(content.abstract, {
+            workspaceId,
+            functionId: "memo-embedding",
+          })
+
+          const newMemo: MemoToCreate = {
+            id: memoId(),
+            workspaceId,
+            memoType: MemoTypes.CONVERSATION,
+            sourceConversationId: conversation.id,
+            title: content.title,
+            abstract: content.abstract,
+            keyPoints: content.keyPoints,
+            sourceMessageIds: content.sourceMessageIds,
+            participantIds: conversation.participantIds,
+            knowledgeType: existingMemo.knowledgeType,
+            tags: content.tags,
+            status: MemoStatuses.ACTIVE,
+            version: existingMemo.version + 1,
+            embedding,
+          }
+
+          supersessions.push({
+            memoId: existingMemo.id,
+            reason: classification.revisionReason ?? "Content updated",
+          })
+          memosToCreate.push(newMemo)
+          outboxEvents.push({
+            eventType: "memo:revised",
+            payload: {
+              workspaceId,
+              memoId: newMemo.id,
+              previousMemoId: existingMemo.id,
+              memo: this.toWireMemoFromData(newMemo),
+              revisionReason: classification.revisionReason ?? "Content updated",
+            },
+          })
+          memosRevised++
+
+          logger.info(
+            {
+              conversationId: conversation.id,
+              previousMemoId: existingMemo.id,
+              newMemoId: newMemo.id,
+              version: existingMemo.version + 1,
+            },
+            "Memo revised"
           )
-        }
-      }
+        } else if (!existingMemo) {
+          // Create new memo
+          const content = await this.memorizer.memorizeConversation(null as any, {
+            memoryContext,
+            content: messagesArray,
+            existingTags: fetchedData.existingTags,
+            workspaceId,
+          })
 
-      if (itemsFailed > 0) {
-        logger.warn(
-          { workspaceId, streamId, itemsFailed, totalItems: pending.length },
-          "Some items failed during memo batch processing"
+          const embedding = await this.embeddingService.embed(content.abstract, {
+            workspaceId,
+            functionId: "memo-embedding",
+          })
+
+          const memo: MemoToCreate = {
+            id: memoId(),
+            workspaceId,
+            memoType: MemoTypes.CONVERSATION,
+            sourceConversationId: conversation.id,
+            title: content.title,
+            abstract: content.abstract,
+            keyPoints: content.keyPoints,
+            sourceMessageIds: content.sourceMessageIds,
+            participantIds: conversation.participantIds,
+            knowledgeType: classification.knowledgeType,
+            tags: content.tags,
+            status: MemoStatuses.ACTIVE,
+            embedding,
+          }
+
+          memosToCreate.push(memo)
+          outboxEvents.push({
+            eventType: "memo:created",
+            payload: {
+              workspaceId,
+              memoId: memo.id,
+              memo: this.toWireMemoFromData(memo),
+            },
+          })
+          memosCreated++
+
+          logger.info({ conversationId: conversation.id, memoId: memo.id }, "Conversation memo created")
+        }
+      } catch (error) {
+        itemsFailed++
+        logger.error(
+          { error, conversationId: item.itemId, workspaceId, streamId },
+          "Failed to process conversation for memo"
         )
       }
+    }
 
+    if (itemsFailed > 0) {
+      logger.warn(
+        { workspaceId, streamId, itemsFailed, totalItems: fetchedData.pending.length },
+        "Some items failed during memo batch processing"
+      )
+    }
+
+    // Phase 3: Save all results in ONE transaction (fast, ~200ms instead of 10-50 seconds)
+    await withTransaction(this.pool, async (client) => {
+      // Perform supersessions
+      for (const supersession of supersessions) {
+        await MemoRepository.supersede(client, supersession.memoId, supersession.reason)
+      }
+
+      // Insert all memos
+      for (const memoData of memosToCreate) {
+        const { embedding, ...memoFields } = memoData
+        await MemoRepository.insert(client, memoFields)
+        await MemoRepository.updateEmbedding(client, memoData.id, embedding)
+      }
+
+      // Insert all outbox events
+      for (const event of outboxEvents) {
+        await OutboxRepository.insert(client, event.eventType, event.payload)
+      }
+
+      // Mark all items processed
       await PendingItemRepository.markProcessed(
         client,
-        pending.map((p) => p.id)
+        fetchedData.pending.map((p) => p.id)
       )
 
       await StreamStateRepository.markProcessed(client, workspaceId, streamId)
-
-      logger.info(
-        { workspaceId, streamId, processed: pending.length, memosCreated, memosRevised },
-        "Memo batch processed"
-      )
-
-      return { processed: pending.length, memosCreated, memosRevised }
-    })
-  }
-
-  private async processMessage(
-    client: PoolClient,
-    item: PendingMemoItem,
-    memoryContext: string[],
-    existingTags: string[],
-    workspaceId: string
-  ): Promise<Memo | null> {
-    const message = await MessageRepository.findById(client, item.itemId)
-    if (!message) {
-      logger.warn({ messageId: item.itemId }, "Message not found for memo processing")
-      return null
-    }
-
-    if (message.authorType !== "user") {
-      return null
-    }
-
-    const classification = await this.classifier.classifyMessage(message, { workspaceId })
-    if (!classification.isGem || !classification.knowledgeType) {
-      return null
-    }
-
-    logger.debug(
-      { messageId: message.id, knowledgeType: classification.knowledgeType, confidence: classification.confidence },
-      "Message classified as gem"
-    )
-
-    const content = await this.memorizer.memorizeMessage({
-      memoryContext,
-      content: message,
-      existingTags,
-      workspaceId,
-    })
-
-    const memo = await MemoRepository.insert(client, {
-      id: memoId(),
-      workspaceId,
-      memoType: MemoTypes.MESSAGE,
-      sourceMessageId: message.id,
-      title: content.title,
-      abstract: content.abstract,
-      keyPoints: content.keyPoints,
-      sourceMessageIds: content.sourceMessageIds,
-      participantIds: [message.authorId],
-      knowledgeType: classification.knowledgeType,
-      tags: content.tags,
-      status: MemoStatuses.ACTIVE,
-    })
-
-    const embedding = await this.embeddingService.embed(memo.abstract, {
-      workspaceId,
-      functionId: "memo-embedding",
-    })
-    await MemoRepository.updateEmbedding(client, memo.id, embedding)
-
-    await OutboxRepository.insert(client, "memo:created", {
-      workspaceId,
-      memoId: memo.id,
-      memo: this.toWireMemo(memo),
-    })
-
-    return memo
-  }
-
-  private async processConversation(
-    client: PoolClient,
-    item: PendingMemoItem,
-    memoryContext: string[],
-    existingTags: string[],
-    workspaceId: string
-  ): Promise<"created" | "revised" | null> {
-    const conversation = await ConversationRepository.findById(client, item.itemId)
-    if (!conversation) {
-      logger.warn({ conversationId: item.itemId }, "Conversation not found for memo processing")
-      return null
-    }
-
-    if (conversation.messageIds.length < MIN_CONVERSATION_MESSAGES) {
-      return null
-    }
-
-    const messages = await MessageRepository.findByIds(client, conversation.messageIds)
-    const messagesArray = Array.from(messages.values())
-
-    if (messagesArray.length === 0) {
-      logger.warn({ conversationId: conversation.id }, "No messages found for conversation")
-      return null
-    }
-
-    const existingMemo = await MemoRepository.findActiveByConversation(client, conversation.id)
-
-    const classification = await this.classifier.classifyConversation(
-      client,
-      conversation,
-      messagesArray,
-      existingMemo ?? undefined,
-      { workspaceId }
-    )
-
-    if (!classification.isKnowledgeWorthy || !classification.knowledgeType) {
-      return null
-    }
-
-    if (existingMemo && classification.shouldReviseExisting) {
-      return this.reviseMemo(
-        client,
-        existingMemo,
-        conversation,
-        messagesArray,
-        memoryContext,
-        existingTags,
-        workspaceId,
-        classification.revisionReason ?? "Content updated"
-      )
-    }
-
-    if (!existingMemo) {
-      return this.createConversationMemo(
-        client,
-        conversation,
-        messagesArray,
-        memoryContext,
-        existingTags,
-        workspaceId,
-        classification.knowledgeType
-      )
-    }
-
-    return null
-  }
-
-  private async createConversationMemo(
-    client: PoolClient,
-    conversation: ReturnType<typeof ConversationRepository.findById> extends Promise<infer T> ? NonNullable<T> : never,
-    messages: Awaited<ReturnType<typeof MessageRepository.findById>>[],
-    memoryContext: string[],
-    existingTags: string[],
-    workspaceId: string,
-    knowledgeType: import("@threa/types").KnowledgeType
-  ): Promise<"created"> {
-    const content = await this.memorizer.memorizeConversation(client, {
-      memoryContext,
-      content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
-      existingTags,
-      workspaceId,
-    })
-
-    const memo = await MemoRepository.insert(client, {
-      id: memoId(),
-      workspaceId,
-      memoType: MemoTypes.CONVERSATION,
-      sourceConversationId: conversation.id,
-      title: content.title,
-      abstract: content.abstract,
-      keyPoints: content.keyPoints,
-      sourceMessageIds: content.sourceMessageIds,
-      participantIds: conversation.participantIds,
-      knowledgeType,
-      tags: content.tags,
-      status: MemoStatuses.ACTIVE,
-    })
-
-    const embedding = await this.embeddingService.embed(memo.abstract, {
-      workspaceId,
-      functionId: "memo-embedding",
-    })
-    await MemoRepository.updateEmbedding(client, memo.id, embedding)
-
-    await OutboxRepository.insert(client, "memo:created", {
-      workspaceId,
-      memoId: memo.id,
-      memo: this.toWireMemo(memo),
-    })
-
-    logger.info({ conversationId: conversation.id, memoId: memo.id }, "Conversation memo created")
-
-    return "created"
-  }
-
-  private async reviseMemo(
-    client: PoolClient,
-    existingMemo: Memo,
-    conversation: ReturnType<typeof ConversationRepository.findById> extends Promise<infer T> ? NonNullable<T> : never,
-    messages: Awaited<ReturnType<typeof MessageRepository.findById>>[],
-    memoryContext: string[],
-    existingTags: string[],
-    workspaceId: string,
-    revisionReason: string
-  ): Promise<"revised"> {
-    await MemoRepository.supersede(client, existingMemo.id, revisionReason)
-
-    const content = await this.memorizer.reviseMemo(client, {
-      memoryContext,
-      content: messages.filter((m): m is NonNullable<typeof m> => m !== null),
-      existingMemo,
-      existingTags,
-      workspaceId,
-    })
-
-    const newMemo = await MemoRepository.insert(client, {
-      id: memoId(),
-      workspaceId,
-      memoType: MemoTypes.CONVERSATION,
-      sourceConversationId: conversation.id,
-      title: content.title,
-      abstract: content.abstract,
-      keyPoints: content.keyPoints,
-      sourceMessageIds: content.sourceMessageIds,
-      participantIds: conversation.participantIds,
-      knowledgeType: existingMemo.knowledgeType,
-      tags: content.tags,
-      status: MemoStatuses.ACTIVE,
-      version: existingMemo.version + 1,
-    })
-
-    const embedding = await this.embeddingService.embed(newMemo.abstract, {
-      workspaceId,
-      functionId: "memo-embedding",
-    })
-    await MemoRepository.updateEmbedding(client, newMemo.id, embedding)
-
-    await OutboxRepository.insert(client, "memo:revised", {
-      workspaceId,
-      memoId: newMemo.id,
-      previousMemoId: existingMemo.id,
-      memo: this.toWireMemo(newMemo),
-      revisionReason,
     })
 
     logger.info(
-      {
-        conversationId: conversation.id,
-        previousMemoId: existingMemo.id,
-        newMemoId: newMemo.id,
-        version: existingMemo.version + 1,
-      },
-      "Memo revised"
+      { workspaceId, streamId, processed: fetchedData.pending.length, memosCreated, memosRevised },
+      "Memo batch processed"
     )
 
-    return "revised"
+    return { processed: fetchedData.pending.length, memosCreated, memosRevised }
   }
 
   private toWireMemo(memo: Memo): import("@threa/types").Memo {
@@ -386,6 +437,32 @@ export class MemoService implements MemoServiceLike {
       createdAt: memo.createdAt.toISOString(),
       updatedAt: memo.updatedAt.toISOString(),
       archivedAt: memo.archivedAt?.toISOString() ?? null,
+    }
+  }
+
+  /** Convert MemoToCreate data to wire format (before DB insert, so use current timestamp) */
+  private toWireMemoFromData(memoData: MemoToCreate): import("@threa/types").Memo {
+    const now = new Date().toISOString()
+    return {
+      id: memoData.id,
+      workspaceId: memoData.workspaceId,
+      memoType: memoData.memoType,
+      sourceMessageId: memoData.sourceMessageId ?? null,
+      sourceConversationId: memoData.sourceConversationId ?? null,
+      title: memoData.title,
+      abstract: memoData.abstract,
+      keyPoints: memoData.keyPoints,
+      sourceMessageIds: memoData.sourceMessageIds,
+      participantIds: memoData.participantIds,
+      knowledgeType: memoData.knowledgeType,
+      tags: memoData.tags,
+      parentMemoId: null,
+      status: memoData.status,
+      version: memoData.version ?? 1,
+      revisionReason: null,
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
     }
   }
 }

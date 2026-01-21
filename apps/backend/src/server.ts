@@ -356,7 +356,9 @@ export async function startServer(): Promise<ServerInstance> {
   cleanupWorker.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
-  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, {}, "system")
+  // workspaceId in payload: "system" for system-wide batch check
+  // workspaceId in schedule: null for global (not workspace-specific) schedule
+  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" }, null)
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })
