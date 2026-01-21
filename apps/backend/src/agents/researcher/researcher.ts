@@ -236,15 +236,13 @@ export class Researcher {
     // Uses pool.query for individual DB operations (fast, ~10-50ms each)
     const result = await this.runDecisionLoop(pool, input, fetchedData.accessSpec, fetchedData.accessibleStreamIds)
 
-    // Phase 3: Save cache result with withClient (~50ms)
-    await withClient(pool, async (client) => {
-      await ResearcherCache.set(client, {
-        workspaceId,
-        messageId: triggerMessage.id,
-        streamId,
-        accessSpec: fetchedData.accessSpec!,
-        result: this.toResearcherCachedResult(result),
-      })
+    // Phase 3: Save cache result (single query, INV-30)
+    await ResearcherCache.set(pool, {
+      workspaceId,
+      messageId: triggerMessage.id,
+      streamId,
+      accessSpec: fetchedData.accessSpec!,
+      result: this.toResearcherCachedResult(result),
     })
 
     return result
@@ -533,14 +531,12 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     if (query.type === "semantic") {
       try {
         const embedding = await embeddingService.embed(query.query)
-        // DB search (fast, ~10-50ms)
-        const results = await withClient(pool, async (client) => {
-          return MemoRepository.semanticSearch(client, {
-            workspaceId,
-            embedding,
-            streamIds: accessibleStreamIds,
-            limit: MAX_RESULTS_PER_SEARCH,
-          })
+        // DB search (single query, INV-30)
+        const results = await MemoRepository.semanticSearch(pool, {
+          workspaceId,
+          embedding,
+          streamIds: accessibleStreamIds,
+          limit: MAX_RESULTS_PER_SEARCH,
         })
 
         return results.map((r) => ({
@@ -554,15 +550,13 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       }
     }
 
-    // For exact search, use full-text search (DB only, fast ~10-50ms)
+    // For exact search, use full-text search (single query, INV-30)
     try {
-      const results = await withClient(pool, async (client) => {
-        return MemoRepository.fullTextSearch(client, {
-          workspaceId,
-          query: query.query,
-          streamIds: accessibleStreamIds,
-          limit: MAX_RESULTS_PER_SEARCH,
-        })
+      const results = await MemoRepository.fullTextSearch(pool, {
+        workspaceId,
+        query: query.query,
+        streamIds: accessibleStreamIds,
+        limit: MAX_RESULTS_PER_SEARCH,
       })
 
       return results.map((r) => ({

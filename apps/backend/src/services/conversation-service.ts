@@ -20,26 +20,22 @@ export class ConversationService {
   constructor(private pool: Pool) {}
 
   async getById(conversationId: string): Promise<ConversationWithStaleness | null> {
-    return withClient(this.pool, async (client) => {
-      const conversation = await ConversationRepository.findById(client, conversationId)
-      if (!conversation) return null
-      return addStalenessFields(conversation)
-    })
+    // Single query, INV-30
+    const conversation = await ConversationRepository.findById(this.pool, conversationId)
+    if (!conversation) return null
+    return addStalenessFields(conversation)
   }
 
   async listByStream(streamId: string, options?: ListConversationsOptions): Promise<ConversationWithStaleness[]> {
-    return withClient(this.pool, async (client) => {
-      // Include conversations from child threads - for discoverability
-      const conversations = await ConversationRepository.findByStreamIncludingThreads(client, streamId, options)
-      return conversations.map(addStalenessFields)
-    })
+    // Single query, INV-30
+    const conversations = await ConversationRepository.findByStreamIncludingThreads(this.pool, streamId, options)
+    return conversations.map(addStalenessFields)
   }
 
   async listByMessage(messageId: string): Promise<ConversationWithStaleness[]> {
-    return withClient(this.pool, async (client) => {
-      const conversations = await ConversationRepository.findByMessageId(client, messageId)
-      return conversations.map(addStalenessFields)
-    })
+    // Single query, INV-30
+    const conversations = await ConversationRepository.findByMessageId(this.pool, messageId)
+    return conversations.map(addStalenessFields)
   }
 
   async getMessages(conversationId: string): Promise<Message[]> {

@@ -164,12 +164,11 @@ export class AIBudgetService implements AIBudgetServiceLike {
   }
 
   async setMonthlyBudget(workspaceId: string, budgetUsd: number): Promise<void> {
-    await withClient(this.pool, async (client) => {
-      await AIBudgetRepository.upsert(client, {
-        id: aiBudgetId(),
-        workspaceId,
-        monthlyBudgetUsd: budgetUsd,
-      })
+    // Single upsert query, INV-30
+    await AIBudgetRepository.upsert(this.pool, {
+      id: aiBudgetId(),
+      workspaceId,
+      monthlyBudgetUsd: budgetUsd,
     })
   }
 

@@ -178,9 +178,8 @@ export class EmojiUsageHandler implements OutboxHandler {
       sourceId: payload.event.payload.messageId,
     }))
 
-    await withClient(this.db, async (client) => {
-      await EmojiUsageRepository.insertBatch(client, items)
-    })
+    // Single batch insert query, INV-30
+    await EmojiUsageRepository.insertBatch(this.db, items)
 
     logger.debug(
       {
@@ -210,16 +209,15 @@ export class EmojiUsageHandler implements OutboxHandler {
       return
     }
 
-    await withClient(this.db, async (client) => {
-      await EmojiUsageRepository.insert(client, {
-        id: emojiUsageId(),
-        workspaceId: payload.workspaceId,
-        userId: payload.userId,
-        interactionType: "message_reaction",
-        shortcode,
-        occurrenceCount: 1,
-        sourceId: payload.messageId,
-      })
+    // Single insert query, INV-30
+    await EmojiUsageRepository.insert(this.db, {
+      id: emojiUsageId(),
+      workspaceId: payload.workspaceId,
+      userId: payload.userId,
+      interactionType: "message_reaction",
+      shortcode,
+      occurrenceCount: 1,
+      sourceId: payload.messageId,
     })
 
     logger.debug(

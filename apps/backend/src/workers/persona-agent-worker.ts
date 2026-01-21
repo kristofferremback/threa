@@ -4,7 +4,6 @@ import { JobQueues } from "../lib/job-queue"
 import type { QueueManager } from "../lib/queue-manager"
 import type { PersonaAgentInput, PersonaAgentResult } from "../agents/persona-agent"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
-import { withClient } from "../db"
 import { logger } from "../lib/logger"
 
 /** Interface for any agent that can handle persona agent jobs */
@@ -93,10 +92,8 @@ async function checkForUnseenMessages(params: {
 }): Promise<void> {
   const { pool, jobQueue, workspaceId, streamId, personaId, lastSeenSequence, trigger, previousJobId } = params
 
-  // Only check for USER messages - ignore persona responses to avoid infinite loops
-  const latestUserMessageSequence = await withClient(pool, async (client) => {
-    return StreamEventRepository.getLatestUserMessageSequence(client, streamId)
-  })
+  // Only check for USER messages - ignore persona responses to avoid infinite loops (single query, INV-30)
+  const latestUserMessageSequence = await StreamEventRepository.getLatestUserMessageSequence(pool, streamId)
 
   // No user messages at all, or no new user messages since we last checked
   if (!latestUserMessageSequence || latestUserMessageSequence <= lastSeenSequence) {
