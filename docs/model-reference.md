@@ -55,6 +55,46 @@ All models use `provider:modelPath` format:
 
 ---
 
+### openrouter:openai/gpt-5-mini
+
+**Name:** GPT-5 Mini
+
+**Description:** Cost-effective model from OpenAI's GPT-5 generation. Good balance of performance and cost for general tasks.
+
+**Typical cost:** ~$0.40 per 1M input tokens, ~$1.60 per 1M output tokens
+
+**When to use:**
+
+- Classification and extraction tasks
+- General reasoning and chat
+- Structured output generation
+- Tasks where GPT ecosystem is preferred
+- Cost-sensitive applications
+
+**Use instead of:** `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`
+
+---
+
+### openrouter:openai/gpt-5-nano
+
+**Name:** GPT-5 Nano
+
+**Description:** Ultra-fast, cost-effective model from OpenAI's GPT-5 generation. Optimized for high-throughput tasks.
+
+**Typical cost:** ~$0.10 per 1M input tokens, ~$0.40 per 1M output tokens
+
+**When to use:**
+
+- High-volume batch operations
+- Simple classification tasks
+- Fast response requirements
+- Extremely cost-sensitive workloads
+- Tasks where speed matters more than nuance
+
+**Use instead of:** `gpt-3.5-turbo`, `gpt-4o-mini`
+
+---
+
 ## Embedding Models
 
 ### openrouter:openai/text-embedding-3-small
@@ -87,8 +127,8 @@ All models use `provider:modelPath` format:
 
 **OpenAI Legacy:**
 
-- ❌ `openrouter:openai/gpt-3.5-turbo` → Use Claude Haiku 4.5 for cost-effective tasks
-- ❌ `openrouter:openai/gpt-4o` → Use Claude models instead
-- ❌ `openrouter:openai/gpt-4o-mini` → Use Claude Haiku 4.5 instead
+- ❌ `openrouter:openai/gpt-3.5-turbo` → Use `openrouter:openai/gpt-5-nano` or `openrouter:openai/gpt-5-mini`
+- ❌ `openrouter:openai/gpt-4o` → Use `openrouter:openai/gpt-5` or `openrouter:openai/gpt-5-mini`
+- ❌ `openrouter:openai/gpt-4o-mini` → Use `openrouter:openai/gpt-5-nano` or `openrouter:openai/gpt-5-mini`
 
-**Why deprecated:** Claude 3 series, GPT-3.5, and GPT-4o family are outdated or not preferred. Claude 4.5 generation offers better reasoning, structured output, and reliability for our use cases.
+**Why deprecated:** These are superseded by newer model generations with improved capabilities and pricing.
