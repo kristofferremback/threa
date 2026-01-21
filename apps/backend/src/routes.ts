@@ -13,6 +13,7 @@ import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { createCommandHandlers } from "./handlers/command-handlers"
 import { createUserPreferencesHandlers } from "./handlers/user-preferences-handlers"
 import { createAIUsageHandlers } from "./handlers/ai-usage-handlers"
+import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
@@ -85,51 +86,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
   const preferences = createUserPreferencesHandlers({ userPreferencesService })
   const aiUsage = createAIUsageHandlers({ pool })
+  const debug = createDebugHandlers({ pool, poolMonitor })
 
   // Health check endpoint - no auth required
-  app.get("/health", (req, res) => {
-    const poolStats = poolMonitor.getAllPoolStats()
-    res.json({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-      pools: poolStats,
-    })
-  })
+  app.get("/health", debug.health)
 
   // Debug endpoint - inspect pool internal state
-  app.get("/debug/pool", (req, res) => {
-    const mainPool = pool as any
-
-    const clients =
-      mainPool._clients?.map((client: any, index: number) => ({
-        index,
-        connected: client._connected,
-        connecting: client._connecting,
-        ending: client._ending,
-        queryable: client._queryable,
-        lastQueryText: client._lastQuery?.text?.substring(0, 100),
-      })) ?? []
-
-    const idle =
-      mainPool._idle?.map((item: any) => ({
-        connected: item.client._connected,
-      })) ?? []
-
-    res.json({
-      publicStats: {
-        totalCount: mainPool.totalCount,
-        idleCount: mainPool.idleCount,
-        waitingCount: mainPool.waitingCount,
-      },
-      internals: {
-        _clients_length: mainPool._clients?.length,
-        _idle_length: mainPool._idle?.length,
-        _pendingQueue_length: mainPool._pendingQueue?.length,
-      },
-      clients,
-      idle,
-    })
-  })
+  app.get("/debug/pool", debug.poolState)
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -212,11 +175,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
 
   // Prometheus metrics endpoint (unauthenticated for scraping)
-  app.get("/metrics", async (_req, res) => {
-    const { registry } = await import("./lib/metrics")
-    res.set("Content-Type", registry.contentType)
-    res.end(await registry.metrics())
-  })
+  app.get("/metrics", debug.metrics)
 
   app.use(errorHandler)
 }

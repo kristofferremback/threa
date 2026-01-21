@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from "pg"
+import type { Pool } from "pg"
 import { z } from "zod"
 import type { RunnableConfig } from "@langchain/core/runnables"
 import type { ChatOpenAI } from "@langchain/openai"
@@ -20,7 +20,7 @@ import {
 import { logger } from "../../lib/logger"
 
 // Model for researcher decisions - use fast model for structured output
-const RESEARCHER_MODEL = "openrouter:openai/gpt-5-mini"
+const RESEARCHER_MODEL = "openrouter:openai/gpt-oss-120b"
 
 // Maximum iterations for additional queries
 const MAX_ITERATIONS = 5

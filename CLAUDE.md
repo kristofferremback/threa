@@ -212,58 +212,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-29: Extract Variance, Share Behavior** - When handling variants (e.g., stream types), extract only decision logic into small functions returning common shape. Keep one code path for shared behavior. Don't create separate code paths that "should behave the same" - they drift. Example: `const decision = isA ? decideForA() : decideForB()` then one shared flow.
 
-**INV-30: No withClient for Single Queries** - Don't wrap single repository calls in `withClient`. Repositories accept `Querier` (Pool | PoolClient), so pass `pool` directly for single queries. Use `withClient` ONLY when you need:
-
-- Multiple queries that benefit from connection reuse (e.g., fetch conversation + fetch messages)
-- Conditional queries where connection affinity matters (e.g., check-then-insert pattern)
-
-**Anti-patterns (violate INV-30):**
-
-```typescript
-// ❌ Single query wrapped in withClient
-await withClient(pool, async (client) => {
-  return Repository.findById(client, id)
-})
-
-// ❌ Single query + synchronous mapping/transform
-await withClient(pool, async (client) => {
-  const items = await Repository.findAll(client)
-  return items.map(transform) // No DB work, just mapping
-})
-
-// ❌ Single insert/update/upsert
-await withClient(pool, async (client) => {
-  await Repository.insert(client, data)
-})
-```
-
-**Correct patterns:**
-
-```typescript
-// ✅ Single query - pass pool directly
-const item = await Repository.findById(pool, id)
-
-// ✅ Single query with mapping - pass pool directly
-const items = await Repository.findAll(pool)
-return items.map(transform)
-
-// ✅ Multiple related queries - use withClient
-await withClient(pool, async (client) => {
-  const conv = await ConversationRepository.findById(client, id)
-  if (!conv) return []
-  return MessageRepository.findByIds(client, conv.messageIds)
-})
-
-// ✅ Check-then-act with conditional logic - use withClient
-await withClient(pool, async (client) => {
-  const existing = await Repository.find(client, key)
-  if (!existing) {
-    await Repository.create(client, data)
-  }
-})
-```
-
-When in doubt: if you're calling only ONE repository method, pass `pool` directly.
+**INV-30: No withClient for Single Queries** - Don't wrap single repository calls in `withClient`. Repositories accept `Querier` (Pool | PoolClient). One query? Pass `pool` directly. Use `withClient` only for multiple related queries or check-then-act patterns needing connection affinity.
 
 **INV-31: Derive Types from Schemas** - Define constants as `as const` arrays, create Zod schemas from them, derive TypeScript types with `z.infer<>`. One source of truth, zero drift. Example: `const TYPES = ["a", "b"] as const; const schema = z.enum(TYPES); type Type = z.infer<typeof schema>`. Never maintain parallel type definitions.
 
@@ -494,3 +443,7 @@ When class has multiple similar resources (clients, connections), initialize the
 ### Abstractions should fully own their domain
 
 Helper extracting part of workflow but leaving caller managing rest adds indirection without reducing complexity. Creating abstraction for session lifecycle? It should handle find/create, run work, AND track status - not just find/create while caller manages status with separate calls. Partial abstractions can be worse than none - they add indirection while requiring caller understand full workflow.
+
+### withClient is for connection affinity, not "being safe"
+
+`withClient` doesn't make code safer - it holds a connection. Single query? Pass `pool` directly; it auto-acquires and releases. `withClient` is for when you need the _same_ connection: multiple queries benefiting from reuse, or check-then-act needing consistency. Wrapping single calls wastes connections and obscures intent.
