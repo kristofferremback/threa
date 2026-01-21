@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg"
-import { sql, withTransaction } from "../db"
+import { sql, withTransaction, withClient } from "../db"
 import { ConversationRepository, type Conversation } from "../repositories/conversation-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { StreamRepository, type Stream } from "../repositories/stream-repository"
@@ -29,25 +29,147 @@ export class BoundaryExtractionService {
     private extractor: BoundaryExtractor
   ) {}
 
+  /**
+   * Process a message for boundary extraction.
+   *
+   * IMPORTANT: This method uses the three-phase pattern to avoid holding database
+   * connections during AI calls (which can take 1-5+ seconds):
+   *
+   * Phase 1: Fetch all data with withClient (~100-200ms)
+   * Phase 2: AI extraction with no database connection held (1-5+ seconds for channels/threads)
+   * Phase 3: Save result with withTransaction, re-checking state for scratchpads (~100ms)
+   *
+   * For scratchpads: No AI call needed, simple find-or-create logic
+   * For channels/threads: AI extraction determines conversation boundaries
+   */
   async processMessage(messageId: string, streamId: string, workspaceId: string): Promise<Conversation | null> {
-    return withTransaction(this.pool, async (client) => {
+    // Phase 1: Fetch all data with withClient (no transaction, fast reads ~100-200ms)
+    const fetchedData = await withClient(this.pool, async (client) => {
       const message = await MessageRepository.findById(client, messageId)
       if (!message) {
-        logger.warn({ messageId }, "Message not found for boundary extraction")
-        return null
+        return { message: null, stream: null, extractionContext: null }
       }
 
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
-        logger.warn({ streamId }, "Stream not found for boundary extraction")
+        return { message: null, stream: null, extractionContext: null }
+      }
+
+      // For scratchpads: Just fetch existing conversations (no AI needed)
+      if (stream.type === StreamTypes.SCRATCHPAD) {
+        const existingConversations = await ConversationRepository.findByStream(client, stream.id)
+        return {
+          message,
+          stream,
+          extractionContext: null,
+          scratchpadConversations: existingConversations,
+        }
+      }
+
+      // For channels/threads: Fetch all context needed for AI extraction
+      const surroundingMessages = await MessageRepository.findSurrounding(
+        client,
+        message.id,
+        stream.id,
+        MESSAGES_BEFORE,
+        MESSAGES_AFTER
+      )
+
+      const threadRootIds = surroundingMessages.filter((m) => m.replyCount > 0).map((m) => m.id)
+      const threadMessagesByParent = await MessageRepository.findThreadMessages(client, threadRootIds)
+      const allThreadMessages = Array.from(threadMessagesByParent.values()).flat()
+
+      const allContextMessages = [...surroundingMessages, ...allThreadMessages]
+      const allContextMessageIds = allContextMessages.map((m) => m.id)
+
+      const relevantConversations = await ConversationRepository.findByMessageIds(client, allContextMessageIds)
+
+      let parentMessageConversations: Conversation[] = []
+      if (stream.type === StreamTypes.THREAD && stream.parentMessageId) {
+        parentMessageConversations = await ConversationRepository.findByMessageId(client, stream.parentMessageId)
+      }
+
+      // Build conversation summaries
+      const activeConversations = await this.buildConversationSummaries(
+        client,
+        relevantConversations,
+        allContextMessages
+      )
+      const parentConversations =
+        parentMessageConversations.length > 0
+          ? await this.buildConversationSummaries(client, parentMessageConversations, [])
+          : undefined
+
+      const extractionContext: ExtractionContext = {
+        newMessage: message,
+        recentMessages: allContextMessages,
+        activeConversations,
+        streamType: stream.type,
+        parentMessageConversations: parentConversations,
+        workspaceId: stream.workspaceId,
+      }
+
+      return {
+        message,
+        stream,
+        extractionContext,
+        validUpdateTargets: new Set(relevantConversations.map((c) => c.id)),
+      }
+    })
+
+    // Early exit if message or stream not found
+    if (!fetchedData.message || !fetchedData.stream) {
+      logger.warn({ messageId, streamId }, "Message or stream not found for boundary extraction")
+      return null
+    }
+
+    const { message, stream, extractionContext, scratchpadConversations, validUpdateTargets } = fetchedData
+
+    // Phase 2: Determine conversation (AI call only for channels/threads, 1-5+ seconds!)
+    let decision: ConversationDecision
+
+    if (stream.type === StreamTypes.SCRATCHPAD) {
+      // Scratchpads: Simple logic, no AI call
+      const activeConversation = scratchpadConversations?.find((c) => c.status === ConversationStatuses.ACTIVE)
+      decision = activeConversation
+        ? { conversationId: activeConversation.id, confidence: 1.0 }
+        : {
+            conversationId: null,
+            newTopic: stream.displayName ?? "Scratchpad",
+            confidence: 1.0,
+          }
+    } else {
+      // Channels/threads: AI extraction (1-5+ seconds, no DB connection held!)
+      if (!extractionContext) {
+        logger.error({ messageId, streamId }, "Missing extraction context for channel/thread")
         return null
       }
 
-      // Determine which conversation this message belongs to
-      const decision =
-        stream.type === StreamTypes.SCRATCHPAD
-          ? await this.determineScratchpadConversation(client, stream)
-          : await this.determineConversationViaExtractor(client, message, stream)
+      const result = await this.extractor.extract(extractionContext)
+      decision = {
+        conversationId: result.conversationId,
+        newTopic: result.newConversationTopic ?? undefined,
+        confidence: result.confidence,
+        completenessUpdates: result.completenessUpdates,
+        validUpdateTargets,
+      }
+    }
+
+    // Phase 3: Save result in ONE transaction (fast, ~100ms)
+    return withTransaction(this.pool, async (client) => {
+      // For scratchpads: Re-check conversation exists (another process may have created it)
+      // Lock the stream row to prevent race conditions (INV-20)
+      if (stream.type === StreamTypes.SCRATCHPAD && !decision.conversationId) {
+        await client.query(sql`SELECT id FROM streams WHERE id = ${stream.id} FOR UPDATE`)
+
+        const existingConversations = await ConversationRepository.findByStream(client, stream.id)
+        const activeConversation = existingConversations.find((c) => c.status === ConversationStatuses.ACTIVE)
+
+        if (activeConversation) {
+          // Another process created the conversation while we were processing
+          decision.conversationId = activeConversation.id
+        }
+      }
 
       // Create or update the conversation
       let conversation: Conversation
@@ -126,92 +248,6 @@ export class BoundaryExtractionService {
 
       return conversation
     })
-  }
-
-  /**
-   * Scratchpads have one conversation - find it or signal to create one.
-   */
-  private async determineScratchpadConversation(client: PoolClient, stream: Stream): Promise<ConversationDecision> {
-    // Lock the stream row to prevent race conditions when multiple messages
-    // arrive simultaneously for the same scratchpad (INV-20)
-    await client.query(sql`SELECT id FROM streams WHERE id = ${stream.id} FOR UPDATE`)
-
-    const existingConversations = await ConversationRepository.findByStream(client, stream.id)
-    const activeConversation = existingConversations.find((c) => c.status === ConversationStatuses.ACTIVE)
-
-    if (activeConversation) {
-      return {
-        conversationId: activeConversation.id,
-        confidence: 1.0,
-      }
-    }
-
-    return {
-      conversationId: null,
-      newTopic: stream.displayName ?? "Scratchpad",
-      confidence: 1.0,
-    }
-  }
-
-  /**
-   * Channels/threads use LLM extraction to determine conversation boundaries.
-   */
-  private async determineConversationViaExtractor(
-    client: PoolClient,
-    message: Message,
-    stream: Stream
-  ): Promise<ConversationDecision> {
-    // Get messages surrounding the target message (not just recent)
-    // This ensures correct behavior for queue catch-up, replays, and historic processing
-    const surroundingMessages = await MessageRepository.findSurrounding(
-      client,
-      message.id,
-      stream.id,
-      MESSAGES_BEFORE,
-      MESSAGES_AFTER
-    )
-
-    // For surrounding messages that are thread roots, also fetch their thread messages
-    // This handles cases where someone replies flat in channel when others are in a thread
-    const threadRootIds = surroundingMessages.filter((m) => m.replyCount > 0).map((m) => m.id)
-    const threadMessagesByParent = await MessageRepository.findThreadMessages(client, threadRootIds)
-    const allThreadMessages = Array.from(threadMessagesByParent.values()).flat()
-
-    // Combine surrounding + thread messages for conversation lookup
-    const allContextMessages = [...surroundingMessages, ...allThreadMessages]
-    const allContextMessageIds = allContextMessages.map((m) => m.id)
-
-    // Find conversations based on all context messages (not all active in stream)
-    // This scopes context to temporally relevant conversations
-    const relevantConversations = await ConversationRepository.findByMessageIds(client, allContextMessageIds)
-
-    // For threads, look up conversations containing the parent message
-    let parentMessageConversations: Conversation[] = []
-    if (stream.type === StreamTypes.THREAD && stream.parentMessageId) {
-      parentMessageConversations = await ConversationRepository.findByMessageId(client, stream.parentMessageId)
-    }
-
-    const context: ExtractionContext = {
-      newMessage: message,
-      recentMessages: allContextMessages,
-      activeConversations: await this.buildConversationSummaries(client, relevantConversations, allContextMessages),
-      streamType: stream.type,
-      parentMessageConversations:
-        parentMessageConversations.length > 0
-          ? await this.buildConversationSummaries(client, parentMessageConversations, [])
-          : undefined,
-      workspaceId: stream.workspaceId,
-    }
-
-    const result = await this.extractor.extract(context)
-
-    return {
-      conversationId: result.conversationId,
-      newTopic: result.newConversationTopic ?? undefined,
-      confidence: result.confidence,
-      completenessUpdates: result.completenessUpdates,
-      validUpdateTargets: new Set(relevantConversations.map((c) => c.id)),
-    }
   }
 
   private async buildConversationSummaries(
