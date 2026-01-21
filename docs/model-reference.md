@@ -1,6 +1,6 @@
 # AI Model Reference
 
-**Last updated:** 2026-01-20
+**Last updated:** 2026-01-21
 
 This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
 
@@ -92,6 +92,28 @@ All models use `provider:modelPath` format:
 - Tasks where speed matters more than nuance
 
 **Use instead of:** `gpt-3.5-turbo`, `gpt-4o-mini`
+
+---
+
+### openrouter:openai/gpt-oss-120b
+
+**Name:** GPT-OSS 120B
+
+**Description:** Open-weight 117B-parameter MoE model from OpenAI (Apache 2.0). Activates 5.1B params per forward pass, optimized for single H100 with native MXFP4 quantization. Supports configurable reasoning depth, chain-of-thought, and native tool use.
+
+**Context:** 131K tokens (400K available on some providers)
+
+**Typical cost:** ~$0.04 per 1M input tokens, ~$0.19 per 1M output tokens
+
+**When to use:**
+
+- Research and context retrieval (Researcher agent)
+- High-volume reasoning tasks
+- Cost-sensitive workloads requiring good quality
+- Agentic workflows with tool use
+- Tasks where open-weight licensing matters
+
+**Use instead of:** `gpt-5-mini` for cost-sensitive tasks, `gpt-5-nano` when more capability needed
 
 ---
 

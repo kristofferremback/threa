@@ -13,6 +13,7 @@ import { createConversationHandlers } from "./handlers/conversation-handlers"
 import { createCommandHandlers } from "./handlers/command-handlers"
 import { createUserPreferencesHandlers } from "./handlers/user-preferences-handlers"
 import { createAIUsageHandlers } from "./handlers/ai-usage-handlers"
+import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
@@ -28,9 +29,11 @@ import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./commands"
 import type { UserPreferencesService } from "./services/user-preferences-service"
 import type { Pool } from "pg"
+import type { PoolMonitor } from "./lib/pool-monitor"
 
 interface Dependencies {
   pool: Pool
+  poolMonitor: PoolMonitor
   authService: AuthService
   userService: UserService
   workspaceService: WorkspaceService
@@ -47,6 +50,7 @@ interface Dependencies {
 export function registerRoutes(app: Express, deps: Dependencies) {
   const {
     pool,
+    poolMonitor,
     authService,
     userService,
     workspaceService,
@@ -82,6 +86,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const command = createCommandHandlers({ pool, commandRegistry, streamService })
   const preferences = createUserPreferencesHandlers({ userPreferencesService })
   const aiUsage = createAIUsageHandlers({ pool })
+  const debug = createDebugHandlers({ pool, poolMonitor })
+
+  // Health check endpoint - no auth required
+  app.get("/health", debug.health)
+
+  // Debug endpoint - inspect pool internal state
+  app.get("/debug/pool", debug.poolState)
 
   app.get("/api/auth/login", authHandlers.login)
   app.all("/api/auth/callback", authHandlers.callback)
@@ -162,6 +173,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
+
+  // Prometheus metrics endpoint (unauthenticated for scraping)
+  app.get("/metrics", debug.metrics)
 
   app.use(errorHandler)
 }

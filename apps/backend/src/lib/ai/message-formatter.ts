@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg"
+import type { Querier } from "../../db"
 import type { Message } from "../../repositories/message-repository"
 import { UserRepository } from "../../repositories/user-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
@@ -14,7 +14,7 @@ function escapeXmlAttr(s: string): string {
 /**
  * Formats messages for use in AI prompts with author names resolved from the database.
  *
- * Methods accept PoolClient to participate in the caller's transaction rather than
+ * Methods accept Querier to participate in the caller's transaction rather than
  * managing their own connections.
  */
 export class MessageFormatter {
@@ -29,7 +29,7 @@ export class MessageFormatter {
    * // <message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2021-01-01T00:00:01Z">Hi there!</message>
    * // </messages>
    */
-  async formatMessages(client: PoolClient, messages: Message[]): Promise<string> {
+  async formatMessages(client: Querier, messages: Message[]): Promise<string> {
     if (messages.length === 0) return "<messages></messages>"
 
     const nameById = await this.resolveAuthorNames(client, messages)
@@ -43,7 +43,7 @@ export class MessageFormatter {
    * Batch-resolve author names for a set of messages.
    * Returns a map from authorId to name.
    */
-  private async resolveAuthorNames(client: PoolClient, messages: Message[]): Promise<Map<string, string>> {
+  private async resolveAuthorNames(client: Querier, messages: Message[]): Promise<Map<string, string>> {
     const userIds = new Set<string>()
     const personaIds = new Set<string>()
 
@@ -91,7 +91,7 @@ export class MessageFormatter {
    * // [ID:msg_456] [2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!
    */
   async formatMessagesInline(
-    client: PoolClient,
+    client: Querier,
     messages: Message[],
     options?: { includeIds?: boolean }
   ): Promise<string> {

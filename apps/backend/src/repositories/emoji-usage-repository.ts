@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 
 type InteractionType = "message" | "message_reaction"
 
@@ -55,10 +54,10 @@ export const EmojiUsageRepository = {
    * Insert multiple emoji usage records at once.
    * Used when processing a message with multiple different emojis.
    */
-  async insertBatch(client: PoolClient, items: InsertEmojiUsageParams[]): Promise<EmojiUsage[]> {
+  async insertBatch(db: Querier, items: InsertEmojiUsageParams[]): Promise<EmojiUsage[]> {
     if (items.length === 0) return []
 
-    const result = await client.query<EmojiUsageRow>(sql`
+    const result = await db.query<EmojiUsageRow>(sql`
       INSERT INTO emoji_usage (id, workspace_id, user_id, interaction_type, shortcode, occurrence_count, source_id)
       SELECT * FROM UNNEST(
         ${items.map((i) => i.id)}::text[],
@@ -78,8 +77,8 @@ export const EmojiUsageRepository = {
    * Insert a single emoji usage record.
    * Used for reactions.
    */
-  async insert(client: PoolClient, params: InsertEmojiUsageParams): Promise<EmojiUsage> {
-    const result = await client.query<EmojiUsageRow>(sql`
+  async insert(db: Querier, params: InsertEmojiUsageParams): Promise<EmojiUsage> {
+    const result = await db.query<EmojiUsageRow>(sql`
       INSERT INTO emoji_usage (id, workspace_id, user_id, interaction_type, shortcode, occurrence_count, source_id)
       VALUES (${params.id}, ${params.workspaceId}, ${params.userId}, ${params.interactionType}, ${params.shortcode}, ${params.occurrenceCount}, ${params.sourceId})
       RETURNING ${sql.raw(SELECT_FIELDS)}
@@ -92,8 +91,8 @@ export const EmojiUsageRepository = {
    * Uses the last 100 usages per interaction type to compute weights.
    * Weight = sum of occurrence counts for each emoji across recent usages.
    */
-  async getWeights(client: PoolClient, workspaceId: string, userId: string): Promise<Record<string, number>> {
-    const result = await client.query<{ shortcode: string; weight: string }>(sql`
+  async getWeights(db: Querier, workspaceId: string, userId: string): Promise<Record<string, number>> {
+    const result = await db.query<{ shortcode: string; weight: string }>(sql`
       WITH recent_usage AS (
         SELECT
           shortcode,

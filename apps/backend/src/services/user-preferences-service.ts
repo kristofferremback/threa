@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../db"
+import { withTransaction } from "../db"
 import { UserPreferencesRepository } from "../repositories/user-preferences-repository"
 import { OutboxRepository } from "../repositories"
 import {
@@ -116,10 +116,9 @@ export class UserPreferencesService {
    * Get user preferences for a workspace, merging overrides with defaults.
    */
   async getPreferences(workspaceId: string, userId: string): Promise<UserPreferences> {
-    return withClient(this.pool, async (client) => {
-      const overrides = await UserPreferencesRepository.findOverrides(client, workspaceId, userId)
-      return mergeOverrides(workspaceId, userId, overrides)
-    })
+    // Single query, INV-30
+    const overrides = await UserPreferencesRepository.findOverrides(this.pool, workspaceId, userId)
+    return mergeOverrides(workspaceId, userId, overrides)
   }
 
   /**

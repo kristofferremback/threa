@@ -1,5 +1,4 @@
 import { z } from "zod"
-import type { PoolClient } from "pg"
 import type { AI } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
@@ -149,7 +148,7 @@ export class Memorizer {
     }
   }
 
-  async memorizeConversation(client: PoolClient, context: MemorizerContext): Promise<MemoContent> {
+  async memorizeConversation(formattedMessages: string, context: MemorizerContext): Promise<MemoContent> {
     const messages = context.content as Message[]
 
     const memoryContextText =
@@ -157,14 +156,14 @@ export class Memorizer {
         ? context.memoryContext.map((a, i) => `${i + 1}. ${a}`).join("\n")
         : "No prior memos in this stream yet."
 
-    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages, { includeIds: true })
-
     const existingTagsSection = context.existingTags?.length
       ? EXISTING_TAGS_TEMPLATE.replace("{{TAGS}}", context.existingTags.join(", "))
       : ""
 
+    const messageCount = formattedMessages.split("<message").length - 1
+
     const prompt = CONVERSATION_MEMO_PROMPT.replace("{{MEMORY_CONTEXT}}", memoryContextText)
-      .replace("{{MESSAGES}}", messagesText)
+      .replace("{{MESSAGES}}", formattedMessages)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({
@@ -177,7 +176,7 @@ export class Memorizer {
       temperature: 0.3,
       telemetry: {
         functionId: "memorize-conversation",
-        metadata: { messageCount: messages.length },
+        metadata: { messageCount },
       },
       context: { workspaceId: context.workspaceId, origin: "system" },
     })
@@ -193,7 +192,7 @@ export class Memorizer {
     }
   }
 
-  async reviseMemo(client: PoolClient, context: MemorizerContext): Promise<MemoContent> {
+  async reviseMemo(formattedMessages: string, context: MemorizerContext): Promise<MemoContent> {
     const messages = context.content as Message[]
     const existingMemo = context.existingMemo!
 
@@ -202,19 +201,19 @@ export class Memorizer {
         ? context.memoryContext.map((a, i) => `${i + 1}. ${a}`).join("\n")
         : "No prior memos in this stream yet."
 
-    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages, { includeIds: true })
-
     const keyPointsText = existingMemo.keyPoints.map((kp, i) => `${i + 1}. ${kp}`).join("\n")
 
     const existingTagsSection = context.existingTags?.length
       ? EXISTING_TAGS_TEMPLATE.replace("{{TAGS}}", context.existingTags.join(", "))
       : ""
 
+    const messageCount = formattedMessages.split("<message").length - 1
+
     const prompt = REVISION_PROMPT.replace("{{MEMORY_CONTEXT}}", memoryContextText)
       .replace("{{MEMO_TITLE}}", existingMemo.title)
       .replace("{{MEMO_ABSTRACT}}", existingMemo.abstract)
       .replace("{{MEMO_KEY_POINTS}}", keyPointsText)
-      .replace("{{MESSAGES}}", messagesText)
+      .replace("{{MESSAGES}}", formattedMessages)
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({
@@ -229,7 +228,7 @@ export class Memorizer {
         functionId: "revise-memo",
         metadata: {
           memoId: existingMemo.id,
-          messageCount: messages.length,
+          messageCount,
         },
       },
       context: { workspaceId: context.workspaceId, origin: "system" },

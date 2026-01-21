@@ -23,11 +23,82 @@ export interface Querier {
 
 /**
  * Default pool configuration.
+ *
+ * IMPORTANT: connectionTimeoutMillis must be long enough to handle thundering herd
+ * at startup when 15+ workers simultaneously request connections from an empty pool.
+ * With 2000ms timeout, connection establishment fails and creates phantom connections.
  */
 const DEFAULT_POOL_CONFIG: Partial<PoolConfig> = {
   max: 30,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // 10 seconds - was 2000ms, too short for startup stampede
+}
+
+/**
+ * Alive bypass window for connection validation (inspired by HikariCP).
+ * If a connection was used within this window, skip validation (assume it's alive).
+ *
+ * This optimization prevents validating every connection on every borrow while
+ * still catching stale connections that PostgreSQL killed (e.g., idle_session_timeout).
+ *
+ * @see https://github.com/brettwooldridge/HikariCP/issues/1050
+ */
+const ALIVE_BYPASS_WINDOW_MS = 500
+
+/**
+ * Validates a PoolClient before use.
+ *
+ * @param client The PoolClient to validate
+ * @param pool The pool for retry logic
+ * @returns Validated client (or new client if stale)
+ */
+async function validateClient(client: PoolClient, pool: Pool): Promise<PoolClient> {
+  // Check if connection needs validation based on last use
+  const now = Date.now()
+  const lastQueryTime = (client as any)._validatedAt || 0
+  const idleTime = now - lastQueryTime
+
+  // Only validate if connection hasn't been validated recently
+  if (idleTime > ALIVE_BYPASS_WINDOW_MS) {
+    try {
+      // Validate with simple query
+      await client.query("SELECT 1")
+      // Mark validation time
+      ;(client as any)._validatedAt = Date.now()
+    } catch (err) {
+      // Connection is stale - destroy it and retry
+      logger.debug({ err, idleMs: idleTime }, "Stale connection detected, destroying and retrying")
+      client.release(true) // true = destroy, don't return to pool
+      return pool.connect() // Recursive retry will go through validation again
+    }
+  }
+
+  return client
+}
+
+/**
+ * Wraps a pool to validate connections before use (HikariCP pattern).
+ *
+ * Problem: PostgreSQL can kill connections server-side (idle_session_timeout),
+ * but pg-pool's client._connected flag stays true. When code tries to use the
+ * "connected" client, queries fail with "timeout exceeded" or connection errors.
+ *
+ * Solution: Validate connections on borrow with an optimization - skip validation
+ * if the connection was used recently (< 500ms ago). This catches stale connections
+ * without impacting performance for active workloads.
+ *
+ * @param pool Pool to wrap with validation
+ * @returns Pool with transparent connection validation
+ */
+function wrapPoolWithValidation(pool: Pool): Pool {
+  const originalConnect = pool.connect.bind(pool)
+
+  // Override connect() with validation
+  pool.connect = function (): Promise<PoolClient> {
+    return originalConnect().then((client) => validateClient(client, pool))
+  }
+
+  return pool
 }
 
 export function createDatabasePool(connectionString: string, config?: Partial<PoolConfig>): Pool {
@@ -38,11 +109,20 @@ export function createDatabasePool(connectionString: string, config?: Partial<Po
   })
 
   pool.on("error", (err: Error & { code?: string }) => {
-    // 57P05 = admin_shutdown/idle-session timeout - expected during shutdown
+    // 57P05 = idle-session timeout - PostgreSQL killed an idle connection
+    // This is NORMAL behavior with idle_session_timeout configured
+    // pg-pool will automatically remove the dead connection from the pool
     if (err.code === "57P05") {
-      logger.debug({ err }, "Database connection terminated (expected during shutdown)")
+      logger.info(
+        {
+          code: err.code,
+          message: err.message,
+        },
+        "Connection killed by PostgreSQL idle-session timeout (expected with idle_session_timeout=60s)"
+      )
       return
     }
+
     logger.error({ err, code: err.code }, "Unexpected database pool error")
   })
 
@@ -89,26 +169,106 @@ export function createDatabasePools(connectionString: string): DatabasePools {
   return { main, listen }
 }
 
+/**
+ * Check if an error is a recoverable connection error that warrants a retry.
+ */
+function isRecoverableConnectionError(err: unknown): boolean {
+  const error = err as Error & { code?: string }
+  // 57P05 = idle-session timeout - connection was killed, can retry with new connection
+  // ECONNRESET = connection reset - network issue, can retry
+  return error.code === "57P05" || error.code === "ECONNRESET"
+}
+
 export async function withTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
-  try {
-    await client.query("BEGIN")
-    const result = await callback(client)
-    await client.query("COMMIT")
-    return result
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    client.release()
+  let lastError: unknown
+
+  // Retry once on recoverable connection errors
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const client = await pool.connect()
+    try {
+      await client.query("BEGIN")
+      const result = await callback(client)
+      await client.query("COMMIT")
+      return result
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {
+        // Ignore rollback errors (connection might be dead)
+      })
+
+      lastError = error
+
+      // Only retry on recoverable connection errors, and only on first attempt
+      if (attempt === 0 && isRecoverableConnectionError(error)) {
+        logger.debug(
+          { err: error, attempt: attempt + 1 },
+          "Transaction failed with recoverable connection error, retrying..."
+        )
+        client.release(true) // Destroy the bad connection
+        continue
+      }
+
+      throw error
+    } finally {
+      client.release()
+    }
   }
+
+  throw lastError
 }
 
 export async function withClient<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
+  let lastError: unknown
+
+  // Retry once on recoverable connection errors
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const client = await pool.connect()
+    try {
+      return await callback(client)
+    } catch (error) {
+      lastError = error
+
+      // Only retry on recoverable connection errors, and only on first attempt
+      if (attempt === 0 && isRecoverableConnectionError(error)) {
+        logger.debug(
+          { err: error, attempt: attempt + 1 },
+          "Query failed with recoverable connection error, retrying..."
+        )
+        client.release(true) // Destroy the bad connection
+        continue
+      }
+
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  throw lastError
+}
+
+/**
+ * Pre-warm pool by creating initial connections.
+ *
+ * Prevents "thundering herd" at startup where 15+ workers simultaneously
+ * request connections from an empty pool, causing timeouts and phantom connections.
+ *
+ * @param pool Pool to warm
+ * @param count Number of connections to pre-create (default: 10)
+ */
+export async function warmPool(pool: Pool, count: number = 10): Promise<void> {
+  const clients: PoolClient[] = []
+
   try {
-    return await callback(client)
+    // Acquire connections one at a time to avoid overwhelming PostgreSQL
+    for (let i = 0; i < count; i++) {
+      const client = await pool.connect()
+      clients.push(client)
+    }
+
+    // Validate connections
+    await Promise.all(clients.map((client) => client.query("SELECT 1")))
   } finally {
-    client.release()
+    // Release all connections back to pool
+    clients.forEach((client) => client.release())
   }
 }

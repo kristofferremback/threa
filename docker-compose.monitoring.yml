@@ -1,11 +1,14 @@
-# Langfuse local development setup
-# Run with: docker compose -f docker-compose.langfuse.yml up -d
-# UI available at: http://localhost:3100
+# Monitoring stack for local development
+# Includes: Langfuse (AI observability), Prometheus (metrics), Grafana (dashboards)
 #
-# After starting, create an account and project in the UI, then copy the keys to .env:
-#   LANGFUSE_SECRET_KEY=sk-lf-...
-#   LANGFUSE_PUBLIC_KEY=pk-lf-...
-#   LANGFUSE_BASE_URL=http://localhost:3100
+# Run with: docker compose -f docker-compose.monitoring.yml up -d
+# Stop with: docker compose -f docker-compose.monitoring.yml stop
+# Remove: docker compose -f docker-compose.monitoring.yml down -v
+#
+# Access:
+#   - Langfuse: http://localhost:3100
+#   - Prometheus: http://localhost:9090
+#   - Grafana: http://localhost:3200 (admin/admin)
 
 x-langfuse-env: &langfuse-env
   DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
@@ -42,6 +45,9 @@ x-langfuse-env: &langfuse-env
   LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
 
 services:
+  # ==============================================================================
+  # Langfuse - AI Observability
+  # ==============================================================================
   langfuse-web:
     image: langfuse/langfuse:3
     container_name: threa-langfuse-web
@@ -145,9 +151,52 @@ services:
       retries: 5
       start_period: 1s
 
+  # ==============================================================================
+  # Prometheus - Metrics Collection
+  # ==============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: threa-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==============================================================================
+  # Grafana - Dashboards & Visualization
+  # ==============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: threa-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3200:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
 volumes:
   langfuse-postgres-data:
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:
   langfuse-redis-data:
   langfuse-minio-data:
+  prometheus-data:
+  grafana-data:

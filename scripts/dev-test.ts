@@ -40,9 +40,26 @@ async function main() {
     // Create test database if it doesn't exist
     await createTestDatabase()
 
+    // Load backend .env file explicitly (Bun only auto-loads from CWD)
+    const backendEnvPath = path.join(process.cwd(), "apps/backend/.env")
+    let backendEnv: Record<string, string> = {}
+
+    if (fs.existsSync(backendEnvPath)) {
+      const envContent = fs.readFileSync(backendEnvPath, "utf-8")
+      for (const line of envContent.split("\n")) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith("#")) continue
+        const [key, ...valueParts] = trimmed.split("=")
+        if (key && valueParts.length > 0) {
+          backendEnv[key] = valueParts.join("=")
+        }
+      }
+    }
+
     // Set environment variables for test mode
     const env = {
-      ...process.env,
+      ...backendEnv, // Load from apps/backend/.env
+      ...process.env, // Override with process env
       DATABASE_URL: `postgresql://threa:threa@localhost:5454/${TEST_DB_NAME}`,
       USE_STUB_AUTH: "true",
       FAST_SHUTDOWN: "true",

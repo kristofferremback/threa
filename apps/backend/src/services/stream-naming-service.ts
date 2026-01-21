@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../db"
+import { withTransaction, withClient } from "../db"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
@@ -45,24 +45,32 @@ export class StreamNamingService {
   /**
    * Attempts to auto-generate a display name for a stream.
    * Called after each message is created in scratchpads/threads.
-   * Uses SELECT FOR UPDATE SKIP LOCKED to prevent concurrent LLM calls.
+   *
+   * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
+   * database connections during AI calls (which can take 1-5+ seconds):
+   *
+   * Phase 1: Fetch all data (stream, messages, names) with withClient (~100-200ms)
+   * Phase 2: AI call with no database connection held (1-5+ seconds)
+   * Phase 3: Save result with withTransaction, re-checking stream state (~100ms)
+   *
+   * The re-check in Phase 3 handles the race condition where another process
+   * names the stream while we're generating. This wastes one AI call but prevents
+   * pool exhaustion from holding connections during AI operations.
    *
    * @param requireName If true, must generate a name (throws if NOT_ENOUGH_CONTEXT).
    *                    Set to true for agent messages, false for user messages.
-   * @returns true if a name was successfully generated.
+   * @returns true if a name was successfully generated and saved.
    */
   async attemptAutoNaming(streamId: string, requireName: boolean): Promise<boolean> {
-    return withTransaction(this.pool, async (client) => {
-      // Lock the stream row - if another transaction is already naming, skip
-      const stream = await StreamRepository.findByIdForUpdate(client, streamId)
+    // Phase 1: Fetch all data with withClient (no transaction, fast reads ~100-200ms)
+    const fetchedData = await withClient(this.pool, async (client) => {
+      const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
-        // Either not found or locked by another transaction
-        logger.debug({ streamId }, "Stream not found or locked, skipping auto-naming")
-        return false
+        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
       }
 
       if (!needsAutoNaming(stream)) {
-        return false
+        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
       }
 
       // Fetch recent messages to build context
@@ -71,60 +79,88 @@ export class StreamNamingService {
       })
 
       if (messages.length === 0) {
-        return false
+        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
       }
 
       // Fetch existing stream names to avoid duplicates
       const otherStreams = await StreamRepository.list(client, stream.workspaceId, { types: [stream.type] })
-      const existingNames = otherStreams
-        .filter((s) => s.displayName && s.id !== streamId)
-        .slice(0, MAX_EXISTING_NAMES)
-        .map((s) => s.displayName!)
 
-      // Build conversation context for LLM
-      // Messages are already in chronological order (repository reverses the DESC query)
+      // Format messages (needs to resolve author names via DB)
       const conversationText = await this.messageFormatter.formatMessages(client, messages)
-      const systemPrompt = buildSystemPrompt(existingNames, requireName)
 
-      // Call LLM
-      let generatedName: string | null = null
-      try {
-        const { value } = await this.ai.generateText({
-          model: this.namingModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: conversationText },
-          ],
-          temperature: 0.3,
-          telemetry: {
-            functionId: "stream-naming",
-            metadata: { streamId, requireName },
-          },
-          context: { workspaceId: stream.workspaceId, origin: "system" },
-        })
-        generatedName = value?.trim() || null
-      } catch (err) {
-        logger.error({ err, streamId }, "Failed to generate stream name")
-        throw err
+      return { stream, messages, otherStreams, conversationText }
+    })
+
+    // Early exit if nothing to do
+    if (!fetchedData.stream) {
+      return false
+    }
+
+    const { stream, messages, otherStreams, conversationText } = fetchedData
+
+    // Phase 2: AI processing (no connection held, 1-5+ seconds!)
+    const existingNames = otherStreams
+      .filter((s) => s.displayName && s.id !== streamId)
+      .slice(0, MAX_EXISTING_NAMES)
+      .map((s) => s.displayName!)
+
+    const systemPrompt = buildSystemPrompt(existingNames, requireName)
+
+    // Call LLM (1-5+ seconds, no DB connection held!)
+    let generatedName: string | null = null
+    try {
+      const { value } = await this.ai.generateText({
+        model: this.namingModel,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: conversationText },
+        ],
+        temperature: 0.3,
+        telemetry: {
+          functionId: "stream-naming",
+          metadata: { streamId, requireName },
+        },
+        context: { workspaceId: stream.workspaceId, origin: "system" },
+      })
+      generatedName = value?.trim() || null
+    } catch (err) {
+      logger.error({ err, streamId }, "Failed to generate stream name")
+      throw err
+    }
+
+    if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
+      if (requireName) {
+        // Agent message - must generate a name, throw to trigger job retry
+        throw new Error("Failed to generate required name: NOT_ENOUGH_CONTEXT returned")
       }
+      logger.debug({ streamId, messageCount: messages.length }, "Not enough context for auto-naming yet")
+      return false
+    }
 
-      if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
-        if (requireName) {
-          // Agent message - must generate a name, throw to trigger job retry
-          throw new Error("Failed to generate required name: NOT_ENOUGH_CONTEXT returned")
-        }
-        logger.debug({ streamId, messageCount: messages.length }, "Not enough context for auto-naming yet")
+    // Clean up the response (remove quotes, trim)
+    const cleanName = generatedName.replace(/^["']|["']$/g, "").trim()
+
+    if (cleanName.length === 0 || cleanName.length > 100) {
+      logger.warn({ streamId, generatedName }, "Invalid generated name")
+      if (requireName) {
+        throw new Error(`Failed to generate required name: invalid response "${generatedName}"`)
+      }
+      return false
+    }
+
+    // Phase 3: Save result in ONE transaction (fast, ~100ms)
+    // Re-check that stream still needs naming (another process may have named it)
+    return withTransaction(this.pool, async (client) => {
+      // Lock the stream row to ensure atomicity
+      const currentStream = await StreamRepository.findByIdForUpdate(client, streamId)
+      if (!currentStream) {
+        logger.debug({ streamId }, "Stream disappeared during naming, skipping")
         return false
       }
 
-      // Clean up the response (remove quotes, trim)
-      const cleanName = generatedName.replace(/^["']|["']$/g, "").trim()
-
-      if (cleanName.length === 0 || cleanName.length > 100) {
-        logger.warn({ streamId, generatedName }, "Invalid generated name")
-        if (requireName) {
-          throw new Error(`Failed to generate required name: invalid response "${generatedName}"`)
-        }
+      // Re-check: another process might have named it while we were generating
+      if (!needsAutoNaming(currentStream)) {
+        logger.debug({ streamId }, "Stream was named by another process, skipping")
         return false
       }
 

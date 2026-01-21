@@ -1,5 +1,4 @@
 import type { Pool } from "pg"
-import { withClient } from "../db"
 import { JobQueues, type JobHandler, type MemoBatchCheckJobData, type MemoBatchProcessJobData } from "../lib/job-queue"
 import type { QueueManager } from "../lib/queue-manager"
 import { StreamStateRepository } from "../repositories"
@@ -31,11 +30,10 @@ export function createMemoBatchCheckWorker(deps: MemoBatchWorkerDeps): JobHandle
   return async (job) => {
     logger.debug({ jobId: job.id }, "Checking for streams ready for memo processing")
 
-    const streamsToProcess = await withClient(pool, async (client) => {
-      return StreamStateRepository.findStreamsReadyToProcess(client, {
-        capIntervalSeconds: BATCH_CAP_INTERVAL_SECONDS,
-        quietIntervalSeconds: BATCH_QUIET_INTERVAL_SECONDS,
-      })
+    // Single query, INV-30
+    const streamsToProcess = await StreamStateRepository.findStreamsReadyToProcess(pool, {
+      capIntervalSeconds: BATCH_CAP_INTERVAL_SECONDS,
+      quietIntervalSeconds: BATCH_QUIET_INTERVAL_SECONDS,
     })
 
     if (streamsToProcess.length === 0) {

@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 
 interface StreamStateRow {
   workspace_id: string
@@ -32,8 +31,8 @@ function mapRowToStreamState(row: StreamStateRow): MemoStreamState {
 const SELECT_FIELDS = `workspace_id, stream_id, last_processed_at, last_activity_at`
 
 export const StreamStateRepository = {
-  async findByStream(client: PoolClient, workspaceId: string, streamId: string): Promise<MemoStreamState | null> {
-    const result = await client.query<StreamStateRow>(sql`
+  async findByStream(db: Querier, workspaceId: string, streamId: string): Promise<MemoStreamState | null> {
+    const result = await db.query<StreamStateRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM memo_stream_state
       WHERE workspace_id = ${workspaceId} AND stream_id = ${streamId}
     `)
@@ -41,8 +40,8 @@ export const StreamStateRepository = {
     return mapRowToStreamState(result.rows[0])
   },
 
-  async upsertActivity(client: PoolClient, workspaceId: string, streamId: string): Promise<void> {
-    await client.query(sql`
+  async upsertActivity(db: Querier, workspaceId: string, streamId: string): Promise<void> {
+    await db.query(sql`
       INSERT INTO memo_stream_state (workspace_id, stream_id, last_activity_at)
       VALUES (${workspaceId}, ${streamId}, NOW())
       ON CONFLICT (workspace_id, stream_id) DO UPDATE
@@ -50,8 +49,8 @@ export const StreamStateRepository = {
     `)
   },
 
-  async markProcessed(client: PoolClient, workspaceId: string, streamId: string): Promise<void> {
-    await client.query(sql`
+  async markProcessed(db: Querier, workspaceId: string, streamId: string): Promise<void> {
+    await db.query(sql`
       INSERT INTO memo_stream_state (workspace_id, stream_id, last_processed_at, last_activity_at)
       VALUES (${workspaceId}, ${streamId}, NOW(), NOW())
       ON CONFLICT (workspace_id, stream_id) DO UPDATE
@@ -71,13 +70,13 @@ export const StreamStateRepository = {
    *    - Last activity >= 30s ago (quiet period elapsed)
    */
   async findStreamsReadyToProcess(
-    client: PoolClient,
+    db: Querier,
     options?: { capIntervalSeconds?: number; quietIntervalSeconds?: number }
   ): Promise<StreamReadyToProcess[]> {
     const capInterval = options?.capIntervalSeconds ?? 300 // 5 minutes
     const quietInterval = options?.quietIntervalSeconds ?? 30 // 30 seconds
 
-    const result = await client.query<{ workspace_id: string; stream_id: string }>(sql`
+    const result = await db.query<{ workspace_id: string; stream_id: string }>(sql`
       SELECT DISTINCT p.workspace_id, p.stream_id
       FROM memo_pending_items p
       LEFT JOIN memo_stream_state s
