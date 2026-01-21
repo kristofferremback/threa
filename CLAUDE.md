@@ -113,7 +113,7 @@ bunx shadcn@latest add <component-name>
 
 ## Core Concepts
 
-**Streams** - Everything that can send messages. Types: scratchpad (personal notes + AI companion, auto-named), channel (team chat, unique slug), dm (two members, computed display name), thread (nested discussions, unlimited depth, inherits visibility from rootStreamId). All have visibility (public/private), companionMode (on/off), optional companionPersonaId.
+**Streams** - Everything that can send messages. Types: scratchpad (personal notes + AI companion, auto-named), channel (team chat, unique slug), dm (two or more members, computed display name, supports group DMs), thread (nested discussions, unlimited depth, inherits visibility from rootStreamId). All have visibility (public/private), companionMode (on/off), optional companionPersonaId.
 
 **Memos (GAM)** - Semantic pointers preserving knowledge without copying. Store abstract + sourceMessageIds for navigation. Pipeline: message arrival → MemoAccumulator (30s debounce, 5min max) → Classifier (knowledge-worthiness) → Memorizer (title, abstract, keyPoints, tags, sourceMessageIds) → Enrichment (embeddings). Types: decision, learning, procedure, context, reference. Lifecycle: draft → active → archived | superseded.
 

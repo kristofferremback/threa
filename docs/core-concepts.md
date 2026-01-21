@@ -26,13 +26,14 @@ Everything that can send messages is a stream. Streams are the fundamental commu
 
 #### DM (Direct Message)
 
-- **Purpose**: One-on-one or self-conversations
-- **Members**: Exactly two members (or self-DM with same user twice)
-- **Naming**: Display name computed from participants (e.g., "You and Alice")
+- **Purpose**: Private conversations between members
+- **Members**: Two or more members (typically two, supports group DMs)
+- **Naming**: Display name computed from participants (e.g., "You and Alice" or "You, Alice, and Bob")
 - **Creation**: Special flow, not standard stream creation API
 - **Visibility**: Always private
 - **Companion**: Can have AI companion
-- **Use case**: Private conversations between two people
+- **Use case**: Private one-on-one or small group conversations
+- **Future**: Support converting group DMs to channels
 
 #### Thread
 
