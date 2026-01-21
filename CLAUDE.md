@@ -314,9 +314,9 @@ bun run db:reset
 All feature work in worktrees for branch isolation:
 
 ```bash
-# In primary /threa folder: create worktree
-git worktree add ../threa-feature-xyz feature/xyz
-cd ../threa-feature-xyz
+# From /threa (on main): create worktree with brace expansion
+git worktree add -b {,~/dev/personal/threa.}feature-name main
+cd ~/dev/personal/threa.feature-name
 
 # Set up worktree (copies .env, installs packages, creates branched database, copies Claude config)
 bun run setup:worktree
@@ -325,9 +325,11 @@ bun run setup:worktree
 bun run dev
 ```
 
+**Brace expansion explained:** `{,~/dev/personal/threa.}feature-name` expands to create branch `feature-name` at path `~/dev/personal/threa.feature-name`.
+
 **How it works:**
 
-- Worktree gets its own database (e.g., `threa_feature_xyz`)
+- Worktree gets its own database (e.g., `threa_feature_name`)
 - Database branches from primary folder's current state
 - Shares same postgres container (no new docker services)
 - Independent .env, node_modules, .claude config
