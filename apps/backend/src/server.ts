@@ -170,17 +170,25 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
-    // Optimized for throughput with batch operations:
-    // - maxConcurrency=2: max 2 ticks running in parallel
-    // - tokenBatchSize=10: each tick leases up to 10 tokens (queue,workspace pairs)
-    // - claimBatchSize=20: each token claims up to 20 messages in one query
-    // - processingConcurrency=5: process 5 messages in parallel per token
+    // CONSERVATIVE concurrency to prevent pool exhaustion:
+    // - Pool size: 30 connections
+    // - Reserved: ~5 (monitor, schedule manager, cleanup, misc)
+    // - Available: 25 for queue processing
     //
-    // Max workers: 2 ticks × 10 tokens = 20 workers
-    // Max parallel processing: 20 workers × 5 concurrent = 100 messages
-    // Connection usage: batch operations reduce queries by 10-20x vs serial
-    // Peak connections: ~10-15 (operations are fast, connections released immediately)
-    maxConcurrency: 2,
+    // Configuration:
+    // - maxConcurrency=1: only 1 tick runs at a time
+    // - tokenBatchSize=3: max 3 workers per tick
+    // - processingConcurrency=3: max 3 messages per worker
+    //
+    // Max concurrent handlers: 1 × 3 × 3 = 9 handlers
+    // Each handler holds 1 connection for duration (AI calls can be slow)
+    // Peak connections: ~9-10 (safe for 30 connection pool)
+    //
+    // NOTE: This is conservative because memo processing holds transactions
+    // during AI calls. Should be refactored to not hold connections during AI.
+    maxConcurrency: 1,
+    tokenBatchSize: 3,
+    processingConcurrency: 3,
   })
 
   // Schedule manager for cron tick generation
