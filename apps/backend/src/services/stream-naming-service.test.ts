@@ -35,6 +35,7 @@ const mockMessages = [
   },
 ]
 
+const mockFindById = mock(() => Promise.resolve(mockStream))
 const mockFindByIdForUpdate = mock(() => Promise.resolve(mockStream))
 const mockMessageList = mock(() => Promise.resolve(mockMessages))
 const mockStreamList = mock(() => Promise.resolve([] as { id: string; displayName: string | null }[]))
@@ -43,6 +44,7 @@ const mockOutboxInsert = mock(() => Promise.resolve())
 
 mock.module("../repositories/stream-repository", () => ({
   StreamRepository: {
+    findById: mockFindById,
     findByIdForUpdate: mockFindByIdForUpdate,
     list: mockStreamList,
     update: mockStreamUpdate,
@@ -62,6 +64,7 @@ mock.module("../repositories/outbox-repository", () => ({
 }))
 
 mock.module("../db", () => ({
+  withClient: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
   withTransaction: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
 }))
 
@@ -81,6 +84,7 @@ describe("StreamNamingService", () => {
   let service: StreamNamingService
 
   beforeEach(() => {
+    mockFindById.mockReset()
     mockFindByIdForUpdate.mockReset()
     mockMessageList.mockReset()
     mockStreamList.mockReset()
@@ -89,6 +93,7 @@ describe("StreamNamingService", () => {
     mockGenerateText.mockReset()
     mockFormatMessages.mockReset()
 
+    mockFindById.mockResolvedValue(mockStream)
     mockFindByIdForUpdate.mockResolvedValue(mockStream)
     mockMessageList.mockResolvedValue(mockMessages)
     mockFormatMessages.mockResolvedValue("<messages></messages>")
