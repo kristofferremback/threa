@@ -6,7 +6,7 @@ import { createApp } from "./app"
 import { registerRoutes } from "./routes"
 import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
-import { createDatabasePools, type DatabasePools } from "./db"
+import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -70,12 +70,14 @@ import { CleanupWorker } from "./lib/cleanup-worker"
 import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
+import { PoolMonitor } from "./lib/pool-monitor"
 
 export interface ServerInstance {
   server: Server
   io: SocketIOServer
   pools: DatabasePools
   jobQueue: QueueManager
+  poolMonitor: PoolMonitor
   port: number
   fastShutdown: boolean
   stop: () => Promise<void>
@@ -84,13 +86,53 @@ export interface ServerInstance {
 export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
+  // Handle PostgreSQL idle-session timeout errors globally
+  // These are EXPECTED with idle_session_timeout=60s - don't crash the process
+  process.on("uncaughtException", (err: Error & { code?: string }) => {
+    if (err.code === "57P05") {
+      logger.warn(
+        {
+          code: err.code,
+          message: err.message,
+          stack: err.stack,
+        },
+        "Uncaught idle-session timeout error - connection was killed by PostgreSQL (expected with 60s timeout)"
+      )
+      // Don't exit - this is expected behavior, connection will be removed from pool
+      return
+    }
+
+    // For all other uncaught exceptions, log and exit
+    logger.fatal({ err }, "Uncaught exception")
+    process.exit(1)
+  })
+
   // Create separated connection pools:
   // - main: services, workers, queue system, HTTP handlers (30 connections)
   // - listen: OutboxListener LISTEN connections (12 connections)
   const pools = createDatabasePools(config.databaseUrl)
   const pool = pools.main // Alias for backwards compatibility during transition
 
+  // Start monitoring pool health
+  const poolMonitor = new PoolMonitor(
+    { main: pools.main, listen: pools.listen },
+    {
+      logIntervalMs: 30000, // Log every 30 seconds
+      logLevel: "info", // Use info level to make it more visible
+      warnThreshold: 80, // Warn when 80% utilized
+    }
+  )
+  poolMonitor.start()
+
   await runMigrations(pool)
+  logger.info("Database migrations complete")
+
+  // Pre-warm pool before starting workers to prevent thundering herd
+  // When 15+ workers start simultaneously, they all try to connect at once
+  // which can overwhelm an empty pool and cause phantom connections
+  logger.info("Pre-warming connection pool...")
+  await warmPool(pools.main, 15) // Pre-create 15 connections for workers
+  logger.info("Connection pool pre-warmed")
 
   // Initialize LangGraph checkpointer (creates tables in langgraph schema)
   const checkpointer = await createPostgresCheckpointer(pool)
@@ -202,6 +244,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   registerRoutes(app, {
     pool,
+    poolMonitor,
     authService,
     userService,
     workspaceService,
@@ -368,6 +411,7 @@ export async function startServer(): Promise<ServerInstance> {
     }
 
     logger.info("Shutting down server...")
+    poolMonitor.stop()
     orphanSessionCleanup.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()
@@ -398,5 +442,5 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Server stopped")
   }
 
-  return { server, io, pools, jobQueue, port: config.port, fastShutdown: config.fastShutdown, stop }
+  return { server, io, pools, jobQueue, poolMonitor, port: config.port, fastShutdown: config.fastShutdown, stop }
 }
