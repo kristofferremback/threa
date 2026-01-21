@@ -1,6 +1,6 @@
 # AI Model Reference
 
-**Last updated:** 2026-01-20
+**Last updated:** 2026-01-21
 
 This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
 
@@ -92,6 +92,25 @@ All models use `provider:modelPath` format:
 - Tasks where speed matters more than nuance
 
 **Use instead of:** `gpt-3.5-turbo`, `gpt-4o-mini`
+
+---
+
+### openrouter:openai/gpt-oss-120b
+
+**Name:** GPT-OSS 120B
+
+**Description:** Open-source 120B parameter model, extremely fast and cost-effective. Good for research and retrieval augmentation tasks.
+
+**Typical cost:** Very low (check OpenRouter for current pricing)
+
+**When to use:**
+
+- Research and context retrieval (Researcher agent)
+- High-volume reasoning tasks
+- Cost-sensitive workloads requiring decent quality
+- Tasks where speed is critical
+
+**Use instead of:** `gpt-5-mini` for cost-sensitive research tasks
 
 ---
 
