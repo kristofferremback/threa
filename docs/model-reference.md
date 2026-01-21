@@ -99,18 +99,21 @@ All models use `provider:modelPath` format:
 
 **Name:** GPT-OSS 120B
 
-**Description:** Open-source 120B parameter model, extremely fast and cost-effective. Good for research and retrieval augmentation tasks.
+**Description:** Open-weight 117B-parameter MoE model from OpenAI (Apache 2.0). Activates 5.1B params per forward pass, optimized for single H100 with native MXFP4 quantization. Supports configurable reasoning depth, chain-of-thought, and native tool use.
 
-**Typical cost:** Very low (check OpenRouter for current pricing)
+**Context:** 131K tokens (400K available on some providers)
+
+**Typical cost:** ~$0.04 per 1M input tokens, ~$0.19 per 1M output tokens
 
 **When to use:**
 
 - Research and context retrieval (Researcher agent)
 - High-volume reasoning tasks
-- Cost-sensitive workloads requiring decent quality
-- Tasks where speed is critical
+- Cost-sensitive workloads requiring good quality
+- Agentic workflows with tool use
+- Tasks where open-weight licensing matters
 
-**Use instead of:** `gpt-5-mini` for cost-sensitive research tasks
+**Use instead of:** `gpt-5-mini` for cost-sensitive tasks, `gpt-5-nano` when more capability needed
 
 ---
 
