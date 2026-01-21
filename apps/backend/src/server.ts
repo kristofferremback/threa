@@ -119,12 +119,14 @@ export async function startServer(): Promise<ServerInstance> {
   const pool = pools.main // Alias for backwards compatibility during transition
 
   // Start monitoring pool health
+  // Note: Logging disabled - use Grafana dashboard for monitoring
+  // Will still log warnings for high utilization or waiting connections
   const poolMonitor = new PoolMonitor(
     { main: pools.main, listen: pools.listen },
     {
-      logIntervalMs: 30000, // Log every 30 seconds
-      logLevel: "info", // Use info level to make it more visible
+      logIntervalMs: 30000, // Update metrics every 30 seconds
       warnThreshold: 80, // Warn when 80% utilized
+      disableLogging: true, // Disable periodic console logs (use Grafana instead)
     }
   )
   poolMonitor.start()

@@ -19,6 +19,8 @@ export interface PoolMonitorOptions {
   logLevel?: "debug" | "info" | "warn"
   /** Warn threshold for utilization percent. Default: 80 */
   warnThreshold?: number
+  /** Disable console logging (still exports metrics to Prometheus). Default: false */
+  disableLogging?: boolean
 }
 
 /**
@@ -41,6 +43,7 @@ export class PoolMonitor {
       logIntervalMs: options.logIntervalMs ?? 30000,
       logLevel: options.logLevel ?? "debug",
       warnThreshold: options.warnThreshold ?? 80,
+      disableLogging: options.disableLogging ?? false,
     }
   }
 
@@ -162,16 +165,14 @@ export class PoolMonitor {
         )
       }
 
-      // Escalate log level if pool is under pressure
+      // Always log warnings/errors even if logging is disabled
       if (hasWaiting) {
         logger.warn(logData, `Pool '${stats.poolName}' has ${stats.waitingCount} waiting client(s)`)
       } else if (isHighUtilization) {
         logger.warn(logData, `Pool '${stats.poolName}' utilization at ${stats.utilizationPercent}%`)
-      } else {
-        // Skip debug logging for listen pool - it's stable and just noise
-        if (stats.poolName !== "listen") {
-          logger[this.options.logLevel](logData, `Pool stats for '${stats.poolName}'`)
-        }
+      } else if (!this.options.disableLogging) {
+        // Only log normal stats if logging is enabled
+        logger[this.options.logLevel](logData, `Pool stats for '${stats.poolName}'`)
       }
     }
   }
