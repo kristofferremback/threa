@@ -86,6 +86,11 @@ export interface ServerInstance {
 export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
+  // Initialize Prometheus metrics collection
+  const { collectDefaultMetrics } = await import("./lib/metrics")
+  collectDefaultMetrics()
+  logger.info("Prometheus metrics collection initialized")
+
   // Handle PostgreSQL idle-session timeout errors globally
   // These are EXPECTED with idle_session_timeout=60s - don't crash the process
   process.on("uncaughtException", (err: Error & { code?: string }) => {

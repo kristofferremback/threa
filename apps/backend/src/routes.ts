@@ -211,5 +211,12 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
 
+  // Prometheus metrics endpoint (unauthenticated for scraping)
+  app.get("/metrics", async (_req, res) => {
+    const { registry } = await import("./lib/metrics")
+    res.set("Content-Type", registry.contentType)
+    res.end(await registry.metrics())
+  })
+
   app.use(errorHandler)
 }

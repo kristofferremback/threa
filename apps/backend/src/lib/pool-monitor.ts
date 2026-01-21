@@ -1,5 +1,6 @@
 import { Pool } from "pg"
 import { logger } from "./logger"
+import { poolConnectionsTotal, poolConnectionsIdle, poolConnectionsWaiting, poolUtilizationPercent } from "./metrics"
 
 export interface PoolStats {
   poolName: string
@@ -136,6 +137,12 @@ export class PoolMonitor {
         waiting: stats.waitingCount,
         utilizationPercent: stats.utilizationPercent,
       }
+
+      // Export metrics to Prometheus
+      poolConnectionsTotal.set({ pool: stats.poolName }, stats.totalCount)
+      poolConnectionsIdle.set({ pool: stats.poolName }, stats.idleCount)
+      poolConnectionsWaiting.set({ pool: stats.poolName }, stats.waitingCount)
+      poolUtilizationPercent.set({ pool: stats.poolName }, stats.utilizationPercent)
 
       // Detect phantom connection state: high total count with persistent waiters suggests
       // pool corruption where connections exist in _clients but aren't actually connected
