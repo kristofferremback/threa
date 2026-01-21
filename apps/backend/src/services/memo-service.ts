@@ -89,6 +89,16 @@ export class MemoService implements MemoServiceLike {
     this.embeddingService = config.embeddingService
   }
 
+  /**
+   * Process accumulated messages to extract knowledge-worthy memos.
+   *
+   * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
+   * database connections during AI calls (which can take 1-5+ seconds):
+   *
+   * Phase 1: Fetch messages with withClient (~100-200ms)
+   * Phase 2: AI classification and memorization with no database connection held (1-5+ seconds)
+   * Phase 3: Save memos with withTransaction (~100ms)
+   */
   async processBatch(workspaceId: string, streamId: string): Promise<ProcessResult> {
     // Phase 1: Fetch all data with withClient (no transaction, fast reads)
     const fetchedData = await withClient(this.pool, async (client) => {

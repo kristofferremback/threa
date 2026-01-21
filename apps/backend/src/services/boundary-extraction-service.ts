@@ -32,8 +32,8 @@ export class BoundaryExtractionService {
   /**
    * Process a message for boundary extraction.
    *
-   * IMPORTANT: This method uses the three-phase pattern to avoid holding database
-   * connections during AI calls (which can take 1-5+ seconds):
+   * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
+   * database connections during AI calls (which can take 1-5+ seconds):
    *
    * Phase 1: Fetch all data with withClient (~100-200ms)
    * Phase 2: AI extraction with no database connection held (1-5+ seconds for channels/threads)

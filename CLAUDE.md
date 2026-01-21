@@ -234,6 +234,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-40: Links Are Links, Buttons Are Buttons** - Never use `<button onClick={navigate}>` for navigation. Use `<Link to={url}>` from react-router-dom. Buttons trigger actions (submit, modal, delete). Links navigate (URL change, cmd+click). Changes URL? It's a link. cmd+click should work? It's a link. Buttons break navigation, previews, accessibility.
 
+**INV-41: Three-Phase Pattern for Slow Operations** - NEVER hold database connections (withTransaction or withClient) during slow operations like AI/LLM calls (1-5+ seconds). This causes pool exhaustion. Use three-phase pattern: **Phase 1**: Fetch all needed data with withClient (fast reads, ~100-200ms). **Phase 2**: Perform slow operation with NO database connection held (AI calls, external APIs, heavy computation). **Phase 3**: Save results with withTransaction, re-checking state to handle race conditions (fast writes, ~100ms). Re-checking prevents corruption when another process modified data during Phase 2. Accept wasted work (e.g., discarded AI call) to prevent pool exhaustion - holding connections blocks all concurrent requests. Examples: stream-naming-service.ts, boundary-extraction-service.ts, memo-service.ts.
+
 When introducing a new invariant:
 
 1. Document it here with next available ID

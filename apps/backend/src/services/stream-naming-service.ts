@@ -46,8 +46,8 @@ export class StreamNamingService {
    * Attempts to auto-generate a display name for a stream.
    * Called after each message is created in scratchpads/threads.
    *
-   * IMPORTANT: This method uses the three-phase pattern to avoid holding database
-   * connections during AI calls (which can take 1-5+ seconds):
+   * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
+   * database connections during AI calls (which can take 1-5+ seconds):
    *
    * Phase 1: Fetch all data (stream, messages, names) with withClient (~100-200ms)
    * Phase 2: AI call with no database connection held (1-5+ seconds)
