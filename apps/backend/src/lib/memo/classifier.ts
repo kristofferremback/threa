@@ -198,7 +198,7 @@ export class MemoClassifier {
         functionId: "memo-classify-conversation",
         metadata: {
           conversationId: conversation.id,
-          messageCount: messages.length,
+          messageCount,
           hasExistingMemo: !!existingMemo,
         },
       },
