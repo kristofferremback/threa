@@ -2620,7 +2620,7 @@ The key addition is `related_stream_ids` - when a conversation spans main channe
 **Stream Types:**
 
 1. Channels (public/private with slugs)
-2. DMs (exactly two members)
+2. DMs (two or more members, supports group DMs)
 3. Threads (nested under messages)
 
 **Team Features:** 4. Invitations and workspace membership 5. @mentions in messages 6. Presence indicators 7. Unread counts and notifications
