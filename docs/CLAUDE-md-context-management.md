@@ -29,7 +29,7 @@ Review each section for outdated or incorrect information. Update to reflect cur
 
 **Documentation created:**
 
-- `docs/preferred-models.md` - AI model recommendations with pricing
+- `docs/model-reference.md` - AI model recommendations with pricing
 - `docs/agent-testing-guide.md` - Comprehensive browser testing guide (668 lines)
 - `docs/agent-testing-quick-reference.md` - Quick reference for testing (161 lines)
 - `.claude/skills/search-model/SKILL.md` - OpenRouter API search skill

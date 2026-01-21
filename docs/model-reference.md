@@ -1,8 +1,8 @@
-# Preferred AI Models
+# AI Model Reference
 
 **Last updated:** 2026-01-20
 
-This document lists recommended AI models for different task types. Always verify against this file when working with AI integration.
+This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
 
 ## Model Format
 

@@ -184,7 +184,7 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-15: Dumb Components** - React components handle UI rendering and local state only. No direct database access (`@/db`), no persistence logic, no business rules. Components receive capabilities via props/context (e.g., `sendMessage`) and call them without knowing implementation. Enforced by ESLint `no-restricted-imports`.
 
-**INV-16: Preferred AI Models** - Always use current-generation models. Never use Claude 3 models (claude-3-haiku, claude-3-sonnet, claude-3-opus) or the gpt-4o family. See `docs/preferred-models.md` for up-to-date model recommendations. **For AI assistants:** If you encounter a model ID not in your knowledge base, check preferred-models.md first - it may exist and be preferred. Don't assume it doesn't exist or downgrade to older models. Model format is `provider:modelPath`.
+**INV-16: Preferred AI Models** - Always use current-generation models. Never use Claude 3 models (claude-3-haiku, claude-3-sonnet, claude-3-opus) or the gpt-4o family. See `docs/model-reference.md` for up-to-date model recommendations. **For AI assistants:** If you encounter a model ID not in your knowledge base, check model-reference.md first - it may exist and be preferred. Don't assume it doesn't exist or downgrade to older models. Model format is `provider:modelPath`.
 
 **INV-17: Immutable Migrations** - Never modify existing migration files. Committed migrations are immutable - may have already run. To change schema, add new migration with next sequence number. Modifying existing migrations causes schema drift.
 

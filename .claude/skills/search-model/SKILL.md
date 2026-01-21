@@ -1,11 +1,11 @@
 ---
 name: search-model
-description: Search OpenRouter API for AI models and get pricing/capability details for preferred-models.md
+description: Search OpenRouter API for AI models and get pricing/capability details for model-reference.md
 ---
 
 # Search OpenRouter Models
 
-Search the OpenRouter API for AI models and retrieve detailed information including pricing, context length, and capabilities. Use this to research models before adding them to `docs/preferred-models.md`.
+Search the OpenRouter API for AI models and retrieve detailed information including pricing, context length, and capabilities. Use this to research models before adding them to `docs/model-reference.md`.
 
 ## Instructions
 
@@ -91,7 +91,7 @@ curl -s https://openrouter.ai/api/v1/models | jq '
 '
 ```
 
-## Output Format for preferred-models.md
+## Output Format for model-reference.md
 
 When you find a model to add, format it like this:
 
@@ -206,7 +206,7 @@ curl -s https://openrouter.ai/api/v1/models | jq '
    cat /tmp/openrouter-models.json | jq '.data[] | select(.id | contains("claude"))'
    ```
 
-2. **Check model availability** before adding to preferred-models.md
+2. **Check model availability** before adding to model-reference.md
 
 3. **Round pricing** to 2 decimal places for readability:
 
@@ -214,13 +214,13 @@ curl -s https://openrouter.ai/api/v1/models | jq '
    jq '(.pricing.prompt | tonumber * 1000000 * 100 | round / 100)'
    ```
 
-4. **Model ID format** in preferred-models.md is always `openrouter:provider/model-name`
+4. **Model ID format** in model-reference.md is always `openrouter:provider/model-name`
 
 ## After Finding a Model
 
 1. Note the exact model ID (e.g., `anthropic/claude-opus-4.5`)
 2. Calculate pricing per 1M tokens
 3. Read the description to understand use cases
-4. Manually add entry to `docs/preferred-models.md` using the format above
+4. Manually add entry to `docs/model-reference.md` using the format above
 5. Consider what older models it should replace (add to "Use instead of")
-6. Update the "Last updated" date in preferred-models.md
+6. Update the "Last updated" date in model-reference.md

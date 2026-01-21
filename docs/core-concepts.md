@@ -256,7 +256,7 @@ Ariadne (`persona_system_ariadne`) is the default system persona:
 
 - Workspace is the sharding boundary (all resources scoped to workspace)
 - Stream slugs must be unique within workspace
-- DMs have exactly 2 members
+- DMs have 2 or more members (typically 2, supports group DMs)
 - Thread visibility always matches root stream
 - System personas have `workspaceId=NULL`
 

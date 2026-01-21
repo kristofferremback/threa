@@ -100,7 +100,7 @@ Keep in CLAUDE.md:
 
 ### Documentation Created
 
-- `docs/preferred-models.md` - AI model recommendations with pricing
+- `docs/model-reference.md` - AI model recommendations with pricing
 - `docs/agent-testing-guide.md` - Comprehensive browser testing guide (668 lines)
 - `docs/agent-testing-quick-reference.md` - Quick reference for testing (161 lines)
 - `.claude/skills/search-model/SKILL.md` - OpenRouter API search skill
@@ -121,7 +121,7 @@ Keep in CLAUDE.md:
 
 ### Invariants Updated
 
-- **INV-16**: Extended to reference `docs/preferred-models.md` with AI assistant note
+- **INV-16**: Extended to reference `docs/model-reference.md` with AI assistant note
 
 ### Compression Results
 
