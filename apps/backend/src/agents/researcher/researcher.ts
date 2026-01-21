@@ -154,23 +154,33 @@ export class Researcher {
    * Run the researcher for a trigger message.
    * Returns cached result if available, otherwise runs the full decision loop.
    */
+  /**
+   * Research entry point.
+   *
+   * IMPORTANT: Uses three-phase pattern (INV-41) to avoid holding database
+   * connections during AI calls (which can take 10-30+ seconds total):
+   *
+   * Phase 1: Fetch all setup data with withClient (~100-200ms)
+   * Phase 2: AI decision loop with no connection held (10-30+ seconds)
+   *          Uses pool.query for individual DB operations (fast)
+   * Phase 3: Save cache result with withClient (~50ms)
+   */
   async research(input: ResearcherInput): Promise<ResearcherResult> {
     const { pool } = this.deps
     const { workspaceId, streamId, triggerMessage, invokingUserId, dmParticipantIds } = input
 
-    return withClient(pool, async (client) => {
+    // Phase 1: Fetch all setup data with withClient (no transaction, fast reads ~100-200ms)
+    const fetchedData = await withClient(pool, async (client) => {
       // Check cache first
       const cached = await ResearcherCache.findByMessage(client, triggerMessage.id)
       if (cached) {
-        logger.debug({ messageId: triggerMessage.id }, "Researcher cache hit")
-        return this.cachedResultToResearcherResult(cached.result)
+        return { cached: cached.result, stream: null, accessSpec: null, accessibleStreamIds: null }
       }
 
       // Compute access spec for this invocation context
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
-        logger.warn({ streamId }, "Stream not found for researcher")
-        return this.emptyResult()
+        return { cached: null, stream: null, accessSpec: null, accessibleStreamIds: null }
       }
 
       const accessSpec = await computeAgentAccessSpec(client, {
@@ -182,37 +192,83 @@ export class Researcher {
       const effectiveAccessSpec: AgentAccessSpec =
         stream.type === "dm" && dmParticipantIds ? { type: "user_union", userIds: dmParticipantIds } : accessSpec
 
-      // Run the decision loop
-      const result = await this.runDecisionLoop(client, input, effectiveAccessSpec)
+      // Get accessible streams for searches
+      const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
+        client,
+        effectiveAccessSpec,
+        workspaceId
+      )
 
-      // Cache the result
+      return { cached: null, stream, accessSpec: effectiveAccessSpec, accessibleStreamIds }
+    })
+
+    // Return cached result if available
+    if (fetchedData.cached) {
+      logger.debug({ messageId: triggerMessage.id }, "Researcher cache hit")
+      return this.cachedResultToResearcherResult(fetchedData.cached)
+    }
+
+    // Return empty if stream not found
+    if (!fetchedData.stream || !fetchedData.accessSpec || !fetchedData.accessibleStreamIds) {
+      logger.warn({ streamId }, "Stream not found for researcher")
+      return this.emptyResult()
+    }
+
+    logger.info(
+      {
+        messageId: triggerMessage.id,
+        accessSpecType: fetchedData.accessSpec.type,
+        accessibleStreamCount: fetchedData.accessibleStreamIds.length,
+        accessibleStreamIds: fetchedData.accessibleStreamIds.slice(0, 10),
+      },
+      "Researcher computed access"
+    )
+
+    if (fetchedData.accessibleStreamIds.length === 0) {
+      logger.warn(
+        { messageId: triggerMessage.id, accessSpec: fetchedData.accessSpec },
+        "No accessible streams for researcher"
+      )
+      return this.emptyResult()
+    }
+
+    // Phase 2: Run decision loop (AI calls + DB queries, no connection held, 10-30+ seconds)
+    // Uses pool.query for individual DB operations (fast, ~10-50ms each)
+    const result = await this.runDecisionLoop(pool, input, fetchedData.accessSpec, fetchedData.accessibleStreamIds)
+
+    // Phase 3: Save cache result with withClient (~50ms)
+    await withClient(pool, async (client) => {
       await ResearcherCache.set(client, {
         workspaceId,
         messageId: triggerMessage.id,
         streamId,
-        accessSpec: effectiveAccessSpec,
+        accessSpec: fetchedData.accessSpec!,
         result: this.toResearcherCachedResult(result),
       })
-
-      return result
     })
+
+    return result
   }
 
   /**
    * Main decision loop: decide → search → evaluate → maybe search more.
+   *
+   * Uses pool.query for individual DB operations instead of holding a connection
+   * through the entire loop (which includes AI calls taking 10-30+ seconds).
    */
   private async runDecisionLoop(
-    client: PoolClient,
+    pool: Pool,
     input: ResearcherInput,
-    accessSpec: AgentAccessSpec
+    accessSpec: AgentAccessSpec,
+    accessibleStreamIds: string[]
   ): Promise<ResearcherResult> {
     const { ai, embeddingService } = this.deps
-    const { workspaceId, triggerMessage, conversationHistory, langchainConfig } = input
+    const { workspaceId, triggerMessage, conversationHistory, langchainConfig, invokingUserId } = input
 
     // Get LangChain model for structured output calls
     const model = getResearcherModel(ai)
 
-    // Step 1: Decide if search is needed AND generate queries in one call
+    // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
     const decision = await this.decideAndGenerateQueries(model, contextSummary, langchainConfig)
 
@@ -224,25 +280,6 @@ export class Researcher {
       return this.emptyResult()
     }
 
-    // Get accessible streams for searches
-    const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(client, accessSpec, workspaceId)
-
-    logger.info(
-      {
-        messageId: triggerMessage.id,
-        accessSpecType: accessSpec.type,
-        accessSpec,
-        accessibleStreamCount: accessibleStreamIds.length,
-        accessibleStreamIds: accessibleStreamIds.slice(0, 10), // Log first 10
-      },
-      "Researcher computed access"
-    )
-
-    if (accessibleStreamIds.length === 0) {
-      logger.warn({ messageId: triggerMessage.id, accessSpec }, "No accessible streams for researcher")
-      return this.emptyResult()
-    }
-
     const initialQueries = decision.queries
 
     // Execute searches and collect results
@@ -250,14 +287,14 @@ export class Researcher {
     let allMessages: EnrichedMessageResult[] = []
     const searchesPerformed: ResearcherCachedResult["searchesPerformed"] = []
 
-    // Execute initial queries
+    // Execute initial queries (uses pool.query for DB operations, fast ~50-100ms)
     const initialResults = await this.executeQueries(
-      client,
+      pool,
       initialQueries,
       workspaceId,
       accessibleStreamIds,
       embeddingService,
-      input.invokingUserId
+      invokingUserId
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
@@ -266,6 +303,7 @@ export class Researcher {
     // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
     let iteration = 0
     while (iteration < MAX_ITERATIONS) {
+      // AI evaluation (no DB, 1-5 seconds)
       const evaluation = await this.evaluateResults(model, contextSummary, allMemos, allMessages, langchainConfig)
 
       if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
@@ -276,14 +314,14 @@ export class Researcher {
         break
       }
 
-      // Execute additional queries
+      // Execute additional queries (uses pool.query, fast ~50-100ms)
       const additionalResults = await this.executeQueries(
-        client,
+        pool,
         evaluation.additionalQueries,
         workspaceId,
         accessibleStreamIds,
         embeddingService,
-        input.invokingUserId
+        invokingUserId
       )
 
       // Deduplicate results
@@ -419,9 +457,10 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
 
   /**
    * Execute a set of search queries in parallel.
+   * Uses pool.query for individual DB operations (fast, ~10-50ms each).
    */
   private async executeQueries(
-    client: PoolClient,
+    pool: Pool,
     queries: SearchQuery[],
     workspaceId: string,
     accessibleStreamIds: string[],
@@ -436,7 +475,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     const results = await Promise.all(
       queries.map(async (query) => {
         if (query.target === "memos") {
-          const memoResults = await this.searchMemos(client, query, workspaceId, accessibleStreamIds, embeddingService)
+          const memoResults = await this.searchMemos(pool, query, workspaceId, accessibleStreamIds, embeddingService)
           return {
             type: "memos" as const,
             memos: memoResults,
@@ -449,7 +488,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             },
           }
         } else {
-          const messageResults = await this.searchMessages(client, query, workspaceId, accessibleStreamIds)
+          const messageResults = await this.searchMessages(pool, query, workspaceId, accessibleStreamIds)
           return {
             type: "messages" as const,
             memos: [] as EnrichedMemoResult[],
@@ -481,23 +520,27 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
 
   /**
    * Search memos with a query.
+   * Uses withClient for DB operations (fast, ~10-50ms).
    */
   private async searchMemos(
-    client: PoolClient,
+    pool: Pool,
     query: SearchQuery,
     workspaceId: string,
     accessibleStreamIds: string[],
     embeddingService: EmbeddingServiceLike
   ): Promise<EnrichedMemoResult[]> {
-    // For semantic search, generate embedding
+    // For semantic search, generate embedding (AI, no DB, ~200-500ms)
     if (query.type === "semantic") {
       try {
         const embedding = await embeddingService.embed(query.query)
-        const results = await MemoRepository.semanticSearch(client, {
-          workspaceId,
-          embedding,
-          streamIds: accessibleStreamIds,
-          limit: MAX_RESULTS_PER_SEARCH,
+        // DB search (fast, ~10-50ms)
+        const results = await withClient(pool, async (client) => {
+          return MemoRepository.semanticSearch(client, {
+            workspaceId,
+            embedding,
+            streamIds: accessibleStreamIds,
+            limit: MAX_RESULTS_PER_SEARCH,
+          })
         })
 
         return results.map((r) => ({
@@ -511,13 +554,15 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       }
     }
 
-    // For exact search, use full-text search
+    // For exact search, use full-text search (DB only, fast ~10-50ms)
     try {
-      const results = await MemoRepository.fullTextSearch(client, {
-        workspaceId,
-        query: query.query,
-        streamIds: accessibleStreamIds,
-        limit: MAX_RESULTS_PER_SEARCH,
+      const results = await withClient(pool, async (client) => {
+        return MemoRepository.fullTextSearch(client, {
+          workspaceId,
+          query: query.query,
+          streamIds: accessibleStreamIds,
+          limit: MAX_RESULTS_PER_SEARCH,
+        })
       })
 
       return results.map((r) => ({
@@ -533,9 +578,10 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
 
   /**
    * Search messages with a query and enrich results.
+   * Uses withClient for DB operations (fast, ~10-50ms).
    */
   private async searchMessages(
-    client: PoolClient,
+    pool: Pool,
     query: SearchQuery,
     workspaceId: string,
     accessibleStreamIds: string[]
@@ -546,7 +592,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     const searchQuery = query.type === "exact" ? `"${query.query}"` : query.query
 
     try {
-      // Generate embedding for semantic search (outside DB transaction)
+      // Generate embedding for semantic search (AI, no DB, ~200-500ms)
       let embedding: number[] = []
       if (searchQuery.trim()) {
         try {
@@ -556,39 +602,41 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
         }
       }
 
-      // Use SearchRepository directly with existing client (avoids nested withClient)
-      const filters = {}
-      let results
+      // DB search (fast, ~10-50ms)
+      return await withClient(pool, async (client) => {
+        const filters = {}
+        let results
 
-      if (!searchQuery.trim()) {
-        // No search terms - return recent messages
-        results = await SearchRepository.fullTextSearch(client, {
-          query: "",
-          streamIds: accessibleStreamIds,
-          filters,
-          limit: MAX_RESULTS_PER_SEARCH,
-        })
-      } else if (embedding.length === 0) {
-        // No embedding - keyword-only search
-        results = await SearchRepository.fullTextSearch(client, {
-          query: searchQuery,
-          streamIds: accessibleStreamIds,
-          filters,
-          limit: MAX_RESULTS_PER_SEARCH,
-        })
-      } else {
-        // Hybrid search with RRF ranking
-        results = await SearchRepository.hybridSearch(client, {
-          query: searchQuery,
-          embedding,
-          streamIds: accessibleStreamIds,
-          filters,
-          limit: MAX_RESULTS_PER_SEARCH,
-        })
-      }
+        if (!searchQuery.trim()) {
+          // No search terms - return recent messages
+          results = await SearchRepository.fullTextSearch(client, {
+            query: "",
+            streamIds: accessibleStreamIds,
+            filters,
+            limit: MAX_RESULTS_PER_SEARCH,
+          })
+        } else if (embedding.length === 0) {
+          // No embedding - keyword-only search
+          results = await SearchRepository.fullTextSearch(client, {
+            query: searchQuery,
+            streamIds: accessibleStreamIds,
+            filters,
+            limit: MAX_RESULTS_PER_SEARCH,
+          })
+        } else {
+          // Hybrid search with RRF ranking
+          results = await SearchRepository.hybridSearch(client, {
+            query: searchQuery,
+            embedding,
+            streamIds: accessibleStreamIds,
+            filters,
+            limit: MAX_RESULTS_PER_SEARCH,
+          })
+        }
 
-      // Enrich results with author names and stream names
-      return enrichMessageSearchResults(client, results)
+        // Enrich results with author names and stream names
+        return enrichMessageSearchResults(client, results)
+      })
     } catch (error) {
       logger.warn({ error, query: query.query }, "Message search failed")
       return []
