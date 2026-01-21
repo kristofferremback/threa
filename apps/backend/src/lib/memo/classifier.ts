@@ -1,5 +1,4 @@
 import { z } from "zod"
-import type { PoolClient } from "pg"
 import type { AI } from "../ai/ai"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
