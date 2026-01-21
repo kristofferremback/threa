@@ -168,7 +168,10 @@ export class PoolMonitor {
       } else if (isHighUtilization) {
         logger.warn(logData, `Pool '${stats.poolName}' utilization at ${stats.utilizationPercent}%`)
       } else {
-        logger[this.options.logLevel](logData, `Pool stats for '${stats.poolName}'`)
+        // Skip debug logging for listen pool - it's stable and just noise
+        if (stats.poolName !== "listen") {
+          logger[this.options.logLevel](logData, `Pool stats for '${stats.poolName}'`)
+        }
       }
     }
   }
