@@ -19,9 +19,8 @@ import {
 } from "./context-formatter"
 import { logger } from "../../lib/logger"
 
-// Model for researcher decisions. Could be worth it testing out "openrouter:minimax/minimax-m2.1" in the future.
-// const RESEARCHER_MODEL = "openrouter:openai/gpt-5-mini"
-const RESEARCHER_MODEL = "openrouter:minimax/minimax-m2.1"
+// Model for researcher decisions - use fast model for structured output
+const RESEARCHER_MODEL = "openrouter:openai/gpt-5-mini"
 
 // Maximum iterations for additional queries
 const MAX_ITERATIONS = 5
