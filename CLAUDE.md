@@ -251,7 +251,7 @@ When introducing a new invariant:
 **Key patterns:**
 
 - Factory pattern for handlers/middleware (dependency injection)
-- `withTransaction` for multi-step writes, `withClient` for simple reads (INV-30: don't wrap single queries)
+- Single query: pass `pool`. Multiple reads: `withClient`. Multi-op writes: `withTransaction` (INV-30)
 - Two pools: main (30 conns), listen (12 conns) - prevents LISTEN starving transactional work
 - Handlers throw `HttpError` subclasses; error handler middleware catches and formats
 - Outbox pattern: events written in transaction, OutboxDispatcher publishes async
