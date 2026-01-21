@@ -340,6 +340,7 @@ export async function startServer(): Promise<ServerInstance> {
         classifier: new MemoClassifier(ai, config.ai.memoModel, messageFormatter),
         memorizer: new Memorizer(ai, config.ai.memoModel, messageFormatter),
         embeddingService,
+        messageFormatter,
       })
   const memoBatchCheckWorker = createMemoBatchCheckWorker({ pool, memoService, jobQueue })
   const memoBatchProcessWorker = createMemoBatchProcessWorker({ pool, memoService, jobQueue })

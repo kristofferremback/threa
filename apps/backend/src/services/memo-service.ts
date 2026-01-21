@@ -13,6 +13,7 @@ import {
 } from "../repositories"
 import { MemoClassifier } from "../lib/memo/classifier"
 import { Memorizer } from "../lib/memo/memorizer"
+import { MessageFormatter } from "../lib/ai/message-formatter"
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { memoId } from "../lib/id"
 import { logger } from "../lib/logger"
@@ -74,6 +75,7 @@ export interface MemoServiceConfig {
   classifier: MemoClassifier
   memorizer: Memorizer
   embeddingService: EmbeddingServiceLike
+  messageFormatter: MessageFormatter
 }
 
 export class MemoService implements MemoServiceLike {
@@ -81,12 +83,14 @@ export class MemoService implements MemoServiceLike {
   private classifier: MemoClassifier
   private memorizer: Memorizer
   private embeddingService: EmbeddingServiceLike
+  private messageFormatter: MessageFormatter
 
   constructor(config: MemoServiceConfig) {
     this.pool = config.pool
     this.classifier = config.classifier
     this.memorizer = config.memorizer
     this.embeddingService = config.embeddingService
+    this.messageFormatter = config.messageFormatter
   }
 
   /**
