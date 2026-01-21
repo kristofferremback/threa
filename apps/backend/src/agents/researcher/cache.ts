@@ -1,5 +1,4 @@
-import type { PoolClient } from "pg"
-import { sql } from "../../db"
+import { sql, type Querier } from "../../db"
 import { researcherCacheId } from "../../lib/id"
 import type { AgentAccessSpec } from "./access-spec"
 
@@ -69,8 +68,8 @@ export const ResearcherCache = {
    * Find cached research result for a message.
    * Returns null if no cache entry exists or if expired.
    */
-  async findByMessage(client: PoolClient, messageId: string): Promise<ResearcherCacheEntry | null> {
-    const result = await client.query<CacheRow>(sql`
+  async findByMessage(db: Querier, messageId: string): Promise<ResearcherCacheEntry | null> {
+    const result = await db.query<CacheRow>(sql`
       SELECT id, workspace_id, message_id, stream_id, access_spec, result, created_at, expires_at
       FROM researcher_cache
       WHERE message_id = ${messageId}
@@ -86,7 +85,7 @@ export const ResearcherCache = {
    * Uses INSERT ON CONFLICT to handle concurrent inserts for the same message.
    */
   async set(
-    client: PoolClient,
+    db: Querier,
     params: {
       workspaceId: string
       messageId: string
@@ -101,7 +100,7 @@ export const ResearcherCache = {
     const id = researcherCacheId()
     const expiresAt = new Date(Date.now() + ttlMs)
 
-    const queryResult = await client.query<CacheRow>(sql`
+    const queryResult = await db.query<CacheRow>(sql`
       INSERT INTO researcher_cache (id, workspace_id, message_id, stream_id, access_spec, result, expires_at)
       VALUES (
         ${id},
@@ -126,8 +125,8 @@ export const ResearcherCache = {
    * Delete expired cache entries.
    * Call periodically to keep the table clean.
    */
-  async deleteExpired(client: PoolClient): Promise<number> {
-    const result = await client.query(sql`
+  async deleteExpired(db: Querier): Promise<number> {
+    const result = await db.query(sql`
       DELETE FROM researcher_cache
       WHERE expires_at < NOW()
     `)
@@ -138,8 +137,8 @@ export const ResearcherCache = {
    * Invalidate cache for a specific message.
    * Use when the message content changes.
    */
-  async invalidate(client: PoolClient, messageId: string): Promise<boolean> {
-    const result = await client.query(sql`
+  async invalidate(db: Querier, messageId: string): Promise<boolean> {
+    const result = await db.query(sql`
       DELETE FROM researcher_cache
       WHERE message_id = ${messageId}
     `)
@@ -150,8 +149,8 @@ export const ResearcherCache = {
    * Invalidate all cache entries for a workspace.
    * Use when workspace settings change.
    */
-  async invalidateWorkspace(client: PoolClient, workspaceId: string): Promise<number> {
-    const result = await client.query(sql`
+  async invalidateWorkspace(db: Querier, workspaceId: string): Promise<number> {
+    const result = await db.query(sql`
       DELETE FROM researcher_cache
       WHERE workspace_id = ${workspaceId}
     `)

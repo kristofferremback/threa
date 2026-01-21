@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 
 /**
  * Internal row type for preference overrides (snake_case)
@@ -26,8 +25,8 @@ export const UserPreferencesRepository = {
    * Fetch all preference overrides for a workspace/user.
    * Returns only the overrides - merge with defaults in service layer.
    */
-  async findOverrides(client: PoolClient, workspaceId: string, userId: string): Promise<PreferenceOverrideRecord[]> {
-    const result = await client.query<PreferenceOverrideRow>(sql`
+  async findOverrides(db: Querier, workspaceId: string, userId: string): Promise<PreferenceOverrideRecord[]> {
+    const result = await db.query<PreferenceOverrideRow>(sql`
       SELECT key, value
       FROM user_preference_overrides
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
@@ -42,14 +41,8 @@ export const UserPreferencesRepository = {
    * Set a single preference override.
    * Uses upsert to handle both insert and update.
    */
-  async setOverride(
-    client: PoolClient,
-    workspaceId: string,
-    userId: string,
-    key: string,
-    value: unknown
-  ): Promise<void> {
-    await client.query(sql`
+  async setOverride(db: Querier, workspaceId: string, userId: string, key: string, value: unknown): Promise<void> {
+    await db.query(sql`
       INSERT INTO user_preference_overrides (workspace_id, user_id, key, value)
       VALUES (${workspaceId}, ${userId}, ${key}, ${JSON.stringify(value)}::jsonb)
       ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET
@@ -61,8 +54,8 @@ export const UserPreferencesRepository = {
   /**
    * Remove a preference override (revert to default).
    */
-  async deleteOverride(client: PoolClient, workspaceId: string, userId: string, key: string): Promise<void> {
-    await client.query(sql`
+  async deleteOverride(db: Querier, workspaceId: string, userId: string, key: string): Promise<void> {
+    await db.query(sql`
       DELETE FROM user_preference_overrides
       WHERE workspace_id = ${workspaceId}
         AND user_id = ${userId}
@@ -75,7 +68,7 @@ export const UserPreferencesRepository = {
    * For each key: if value differs from default, upsert; if matches default, delete.
    */
   async bulkSetOverrides(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     userId: string,
     overrides: Array<{ key: string; value: unknown }>
@@ -92,7 +85,7 @@ export const UserPreferencesRepository = {
       values.push(workspaceId, userId, key, JSON.stringify(value))
     }
 
-    await client.query(
+    await db.query(
       `INSERT INTO user_preference_overrides (workspace_id, user_id, key, value)
        VALUES ${placeholders.join(", ")}
        ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET
@@ -105,10 +98,10 @@ export const UserPreferencesRepository = {
   /**
    * Delete multiple overrides by key.
    */
-  async bulkDeleteOverrides(client: PoolClient, workspaceId: string, userId: string, keys: string[]): Promise<void> {
+  async bulkDeleteOverrides(db: Querier, workspaceId: string, userId: string, keys: string[]): Promise<void> {
     if (keys.length === 0) return
 
-    await client.query(sql`
+    await db.query(sql`
       DELETE FROM user_preference_overrides
       WHERE workspace_id = ${workspaceId}
         AND user_id = ${userId}
@@ -119,8 +112,8 @@ export const UserPreferencesRepository = {
   /**
    * Delete all overrides for a user in a workspace (reset to defaults).
    */
-  async deleteAllOverrides(client: PoolClient, workspaceId: string, userId: string): Promise<void> {
-    await client.query(sql`
+  async deleteAllOverrides(db: Querier, workspaceId: string, userId: string): Promise<void> {
+    await db.query(sql`
       DELETE FROM user_preference_overrides
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)

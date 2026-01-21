@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 import type { ConversationStatus } from "@threa/types"
 
 interface ConversationRow {
@@ -86,8 +85,8 @@ const SELECT_FIELDS = `
 `
 
 export const ConversationRepository = {
-  async findById(client: PoolClient, id: string): Promise<Conversation | null> {
-    const result = await client.query<ConversationRow>(
+  async findById(db: Querier, id: string): Promise<Conversation | null> {
+    const result = await db.query<ConversationRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations WHERE id = ${id}`
     )
     if (!result.rows[0]) return null
@@ -95,14 +94,14 @@ export const ConversationRepository = {
   },
 
   async findByStream(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     options?: { status?: ConversationStatus; limit?: number }
   ): Promise<Conversation[]> {
     const limit = options?.limit ?? 50
 
     if (options?.status) {
-      const result = await client.query<ConversationRow>(sql`
+      const result = await db.query<ConversationRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
         WHERE stream_id = ${streamId} AND status = ${options.status}
         ORDER BY last_activity_at DESC
@@ -111,7 +110,7 @@ export const ConversationRepository = {
       return result.rows.map(mapRowToConversation)
     }
 
-    const result = await client.query<ConversationRow>(sql`
+    const result = await db.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE stream_id = ${streamId}
       ORDER BY last_activity_at DESC
@@ -125,14 +124,14 @@ export const ConversationRepository = {
    * Child threads are streams where parent_message_id belongs to a message in the given stream.
    */
   async findByStreamIncludingThreads(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     options?: { status?: ConversationStatus; limit?: number }
   ): Promise<Conversation[]> {
     const limit = options?.limit ?? 50
 
     if (options?.status) {
-      const result = await client.query<ConversationRow>(sql`
+      const result = await db.query<ConversationRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
         WHERE (
           stream_id = ${streamId}
@@ -151,7 +150,7 @@ export const ConversationRepository = {
       return result.rows.map(mapRowToConversation)
     }
 
-    const result = await client.query<ConversationRow>(sql`
+    const result = await db.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE stream_id = ${streamId}
          OR stream_id IN (
@@ -167,8 +166,8 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
-  async findActiveByStream(client: PoolClient, streamId: string, limit = 50): Promise<Conversation[]> {
-    const result = await client.query<ConversationRow>(sql`
+  async findActiveByStream(db: Querier, streamId: string, limit = 50): Promise<Conversation[]> {
+    const result = await db.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE stream_id = ${streamId} AND status = 'active'
       ORDER BY last_activity_at DESC
@@ -177,8 +176,8 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
-  async findByMessageId(client: PoolClient, messageId: string): Promise<Conversation[]> {
-    const result = await client.query<ConversationRow>(sql`
+  async findByMessageId(db: Querier, messageId: string): Promise<Conversation[]> {
+    const result = await db.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE ${messageId} = ANY(message_ids)
       ORDER BY last_activity_at DESC
@@ -190,10 +189,10 @@ export const ConversationRepository = {
    * Find conversations that contain any of the given message IDs.
    * Returns unique conversations, deduplicated by ID.
    */
-  async findByMessageIds(client: PoolClient, messageIds: string[]): Promise<Conversation[]> {
+  async findByMessageIds(db: Querier, messageIds: string[]): Promise<Conversation[]> {
     if (messageIds.length === 0) return []
 
-    const result = await client.query<ConversationRow>(sql`
+    const result = await db.query<ConversationRow>(sql`
       SELECT DISTINCT ON (id) ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE message_ids && ${messageIds}
       ORDER BY id, last_activity_at DESC
@@ -202,14 +201,14 @@ export const ConversationRepository = {
   },
 
   async findByWorkspace(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     options?: { status?: ConversationStatus; limit?: number }
   ): Promise<Conversation[]> {
     const limit = options?.limit ?? 50
 
     if (options?.status) {
-      const result = await client.query<ConversationRow>(sql`
+      const result = await db.query<ConversationRow>(sql`
         SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
         WHERE workspace_id = ${workspaceId} AND status = ${options.status}
         ORDER BY last_activity_at DESC
@@ -218,7 +217,7 @@ export const ConversationRepository = {
       return result.rows.map(mapRowToConversation)
     }
 
-    const result = await client.query<ConversationRow>(sql`
+    const result = await db.query<ConversationRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM conversations
       WHERE workspace_id = ${workspaceId}
       ORDER BY last_activity_at DESC
@@ -227,8 +226,8 @@ export const ConversationRepository = {
     return result.rows.map(mapRowToConversation)
   },
 
-  async insert(client: PoolClient, params: InsertConversationParams): Promise<Conversation> {
-    const result = await client.query<ConversationRow>(sql`
+  async insert(db: Querier, params: InsertConversationParams): Promise<Conversation> {
+    const result = await db.query<ConversationRow>(sql`
       INSERT INTO conversations (
         id, stream_id, workspace_id, message_ids, participant_ids,
         topic_summary, completeness_score, confidence, status, parent_conversation_id
@@ -250,7 +249,7 @@ export const ConversationRepository = {
     return mapRowToConversation(result.rows[0])
   },
 
-  async update(client: PoolClient, id: string, params: UpdateConversationParams): Promise<Conversation | null> {
+  async update(db: Querier, id: string, params: UpdateConversationParams): Promise<Conversation | null> {
     const updates: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -285,7 +284,7 @@ export const ConversationRepository = {
     }
 
     if (updates.length === 0) {
-      return this.findById(client, id)
+      return this.findById(db, id)
     }
 
     updates.push(`updated_at = NOW()`)
@@ -298,13 +297,13 @@ export const ConversationRepository = {
       RETURNING ${SELECT_FIELDS}
     `
 
-    const result = await client.query<ConversationRow>(query, values)
+    const result = await db.query<ConversationRow>(query, values)
     if (!result.rows[0]) return null
     return mapRowToConversation(result.rows[0])
   },
 
-  async addMessage(client: PoolClient, id: string, messageId: string): Promise<Conversation | null> {
-    const result = await client.query<ConversationRow>(sql`
+  async addMessage(db: Querier, id: string, messageId: string): Promise<Conversation | null> {
+    const result = await db.query<ConversationRow>(sql`
       UPDATE conversations
       SET message_ids = array_append(message_ids, ${messageId}),
           last_activity_at = NOW(),
@@ -316,8 +315,8 @@ export const ConversationRepository = {
     return mapRowToConversation(result.rows[0])
   },
 
-  async addParticipant(client: PoolClient, id: string, participantId: string): Promise<Conversation | null> {
-    const result = await client.query<ConversationRow>(sql`
+  async addParticipant(db: Querier, id: string, participantId: string): Promise<Conversation | null> {
+    const result = await db.query<ConversationRow>(sql`
       UPDATE conversations
       SET participant_ids = CASE
             WHEN ${participantId} = ANY(participant_ids) THEN participant_ids
@@ -331,8 +330,8 @@ export const ConversationRepository = {
     return mapRowToConversation(result.rows[0])
   },
 
-  async delete(client: PoolClient, id: string): Promise<boolean> {
-    const result = await client.query(sql`DELETE FROM conversations WHERE id = ${id}`)
+  async delete(db: Querier, id: string): Promise<boolean> {
+    const result = await db.query(sql`DELETE FROM conversations WHERE id = ${id}`)
     return result.rowCount !== null && result.rowCount > 0
   },
 }

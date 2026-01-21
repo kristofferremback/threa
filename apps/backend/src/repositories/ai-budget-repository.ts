@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 
 interface AIBudgetRow {
   id: string
@@ -155,8 +154,8 @@ const QUOTA_FIELDS = `id, workspace_id, user_id, monthly_quota_usd, created_at, 
 const ALERT_FIELDS = `id, workspace_id, user_id, alert_type, threshold_percent, period_start, created_at`
 
 export const AIBudgetRepository = {
-  async findByWorkspace(client: PoolClient, workspaceId: string): Promise<AIBudget | null> {
-    const result = await client.query<AIBudgetRow>(sql`
+  async findByWorkspace(db: Querier, workspaceId: string): Promise<AIBudget | null> {
+    const result = await db.query<AIBudgetRow>(sql`
       SELECT ${sql.raw(BUDGET_FIELDS)} FROM ai_budgets
       WHERE workspace_id = ${workspaceId}
     `)
@@ -164,8 +163,8 @@ export const AIBudgetRepository = {
     return mapRowToBudget(result.rows[0])
   },
 
-  async upsert(client: PoolClient, params: UpsertAIBudgetParams): Promise<AIBudget> {
-    const result = await client.query<AIBudgetRow>(sql`
+  async upsert(db: Querier, params: UpsertAIBudgetParams): Promise<AIBudget> {
+    const result = await db.query<AIBudgetRow>(sql`
       INSERT INTO ai_budgets (
         id, workspace_id, monthly_budget_usd,
         alert_threshold_50, alert_threshold_80, alert_threshold_100,
@@ -203,7 +202,7 @@ export const AIBudgetRepository = {
    *
    * This is atomic and avoids race conditions from find-then-update patterns.
    */
-  async upsertPartial(client: PoolClient, params: UpsertAIBudgetParams): Promise<AIBudget> {
+  async upsertPartial(db: Querier, params: UpsertAIBudgetParams): Promise<AIBudget> {
     // Use null-or-value to distinguish "not provided" from explicit values
     const monthlyBudgetUsd = params.monthlyBudgetUsd ?? null
     const alertThreshold50 = params.alertThreshold50 ?? null
@@ -213,7 +212,7 @@ export const AIBudgetRepository = {
     const hardLimitEnabled = params.hardLimitEnabled ?? null
     const hardLimitPercent = params.hardLimitPercent ?? null
 
-    const result = await client.query<AIBudgetRow>(sql`
+    const result = await db.query<AIBudgetRow>(sql`
       INSERT INTO ai_budgets (
         id, workspace_id, monthly_budget_usd,
         alert_threshold_50, alert_threshold_80, alert_threshold_100,
@@ -244,7 +243,7 @@ export const AIBudgetRepository = {
     return mapRowToBudget(result.rows[0])
   },
 
-  async update(client: PoolClient, workspaceId: string, params: UpdateAIBudgetParams): Promise<AIBudget | null> {
+  async update(db: Querier, workspaceId: string, params: UpdateAIBudgetParams): Promise<AIBudget | null> {
     const updates: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -279,7 +278,7 @@ export const AIBudgetRepository = {
     }
 
     if (updates.length === 0) {
-      return this.findByWorkspace(client, workspaceId)
+      return this.findByWorkspace(db, workspaceId)
     }
 
     updates.push(`updated_at = NOW()`)
@@ -292,14 +291,14 @@ export const AIBudgetRepository = {
       RETURNING ${BUDGET_FIELDS}
     `
 
-    const result = await client.query<AIBudgetRow>(query, values)
+    const result = await db.query<AIBudgetRow>(query, values)
     if (!result.rows[0]) return null
     return mapRowToBudget(result.rows[0])
   },
 
   // User quotas
-  async findUserQuota(client: PoolClient, workspaceId: string, userId: string): Promise<AIUserQuota | null> {
-    const result = await client.query<AIUserQuotaRow>(sql`
+  async findUserQuota(db: Querier, workspaceId: string, userId: string): Promise<AIUserQuota | null> {
+    const result = await db.query<AIUserQuotaRow>(sql`
       SELECT ${sql.raw(QUOTA_FIELDS)} FROM ai_user_quotas
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)
@@ -307,8 +306,8 @@ export const AIBudgetRepository = {
     return mapRowToQuota(result.rows[0])
   },
 
-  async listUserQuotas(client: PoolClient, workspaceId: string): Promise<AIUserQuota[]> {
-    const result = await client.query<AIUserQuotaRow>(sql`
+  async listUserQuotas(db: Querier, workspaceId: string): Promise<AIUserQuota[]> {
+    const result = await db.query<AIUserQuotaRow>(sql`
       SELECT ${sql.raw(QUOTA_FIELDS)} FROM ai_user_quotas
       WHERE workspace_id = ${workspaceId}
       ORDER BY user_id
@@ -316,8 +315,8 @@ export const AIBudgetRepository = {
     return result.rows.map(mapRowToQuota)
   },
 
-  async upsertUserQuota(client: PoolClient, params: UpsertAIUserQuotaParams): Promise<AIUserQuota> {
-    const result = await client.query<AIUserQuotaRow>(sql`
+  async upsertUserQuota(db: Querier, params: UpsertAIUserQuotaParams): Promise<AIUserQuota> {
+    const result = await db.query<AIUserQuotaRow>(sql`
       INSERT INTO ai_user_quotas (id, workspace_id, user_id, monthly_quota_usd)
       VALUES (${params.id}, ${params.workspaceId}, ${params.userId}, ${params.monthlyQuotaUsd})
       ON CONFLICT (workspace_id, user_id) DO UPDATE SET
@@ -328,8 +327,8 @@ export const AIBudgetRepository = {
     return mapRowToQuota(result.rows[0])
   },
 
-  async deleteUserQuota(client: PoolClient, workspaceId: string, userId: string): Promise<boolean> {
-    const result = await client.query(sql`
+  async deleteUserQuota(db: Querier, workspaceId: string, userId: string): Promise<boolean> {
+    const result = await db.query(sql`
       DELETE FROM ai_user_quotas
       WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
     `)
@@ -338,13 +337,13 @@ export const AIBudgetRepository = {
 
   // Alerts
   async findAlert(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     alertType: string,
     periodStart: Date,
     userId?: string
   ): Promise<AIAlert | null> {
-    const result = await client.query<AIAlertRow>(sql`
+    const result = await db.query<AIAlertRow>(sql`
       SELECT ${sql.raw(ALERT_FIELDS)} FROM ai_alerts
       WHERE workspace_id = ${workspaceId}
         AND alert_type = ${alertType}
@@ -355,8 +354,8 @@ export const AIBudgetRepository = {
     return mapRowToAlert(result.rows[0])
   },
 
-  async insertAlert(client: PoolClient, params: InsertAIAlertParams): Promise<AIAlert> {
-    const result = await client.query<AIAlertRow>(sql`
+  async insertAlert(db: Querier, params: InsertAIAlertParams): Promise<AIAlert> {
+    const result = await db.query<AIAlertRow>(sql`
       INSERT INTO ai_alerts (id, workspace_id, user_id, alert_type, threshold_percent, period_start)
       VALUES (
         ${params.id},
@@ -372,13 +371,13 @@ export const AIBudgetRepository = {
   },
 
   async listAlerts(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     periodStart: Date,
     options?: { userId?: string }
   ): Promise<AIAlert[]> {
     if (options?.userId) {
-      const result = await client.query<AIAlertRow>(sql`
+      const result = await db.query<AIAlertRow>(sql`
         SELECT ${sql.raw(ALERT_FIELDS)} FROM ai_alerts
         WHERE workspace_id = ${workspaceId}
           AND period_start = ${periodStart}
@@ -388,7 +387,7 @@ export const AIBudgetRepository = {
       return result.rows.map(mapRowToAlert)
     }
 
-    const result = await client.query<AIAlertRow>(sql`
+    const result = await db.query<AIAlertRow>(sql`
       SELECT ${sql.raw(ALERT_FIELDS)} FROM ai_alerts
       WHERE workspace_id = ${workspaceId}
         AND period_start = ${periodStart}

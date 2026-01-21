@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 import type { MemoType, KnowledgeType, MemoStatus } from "@threa/types"
 
 interface MemoRow {
@@ -145,14 +144,14 @@ const SELECT_FIELDS_PREFIXED = `
 `
 
 export const MemoRepository = {
-  async findById(client: PoolClient, id: string): Promise<Memo | null> {
-    const result = await client.query<MemoRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM memos WHERE id = ${id}`)
+  async findById(db: Querier, id: string): Promise<Memo | null> {
+    const result = await db.query<MemoRow>(sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM memos WHERE id = ${id}`)
     if (!result.rows[0]) return null
     return mapRowToMemo(result.rows[0])
   },
 
   async findByWorkspace(
-    client: PoolClient,
+    db: Querier,
     workspaceId: string,
     options?: { status?: MemoStatus; type?: MemoType; limit?: number }
   ): Promise<Memo[]> {
@@ -179,12 +178,12 @@ export const MemoRepository = {
       LIMIT $${paramIndex}
     `
 
-    const result = await client.query<MemoRow>(query, values)
+    const result = await db.query<MemoRow>(query, values)
     return result.rows.map(mapRowToMemo)
   },
 
   async findByStream(
-    client: PoolClient,
+    db: Querier,
     streamId: string,
     options?: { status?: MemoStatus; limit?: number; orderBy?: "createdAt" | "updatedAt" }
   ): Promise<Memo[]> {
@@ -220,12 +219,12 @@ export const MemoRepository = {
       LIMIT $${paramIndex}
     `
 
-    const result = await client.query<MemoRow>(query, values)
+    const result = await db.query<MemoRow>(query, values)
     return result.rows.map(mapRowToMemo)
   },
 
-  async findBySourceMessage(client: PoolClient, messageId: string): Promise<Memo | null> {
-    const result = await client.query<MemoRow>(sql`
+  async findBySourceMessage(db: Querier, messageId: string): Promise<Memo | null> {
+    const result = await db.query<MemoRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM memos
       WHERE source_message_id = ${messageId}
     `)
@@ -233,8 +232,8 @@ export const MemoRepository = {
     return mapRowToMemo(result.rows[0])
   },
 
-  async findBySourceConversation(client: PoolClient, conversationId: string): Promise<Memo[]> {
-    const result = await client.query<MemoRow>(sql`
+  async findBySourceConversation(db: Querier, conversationId: string): Promise<Memo[]> {
+    const result = await db.query<MemoRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM memos
       WHERE source_conversation_id = ${conversationId}
       ORDER BY version DESC
@@ -242,8 +241,8 @@ export const MemoRepository = {
     return result.rows.map(mapRowToMemo)
   },
 
-  async findActiveByConversation(client: PoolClient, conversationId: string): Promise<Memo | null> {
-    const result = await client.query<MemoRow>(sql`
+  async findActiveByConversation(db: Querier, conversationId: string): Promise<Memo | null> {
+    const result = await db.query<MemoRow>(sql`
       SELECT ${sql.raw(SELECT_FIELDS)} FROM memos
       WHERE source_conversation_id = ${conversationId} AND status = 'active'
       ORDER BY version DESC
@@ -253,8 +252,8 @@ export const MemoRepository = {
     return mapRowToMemo(result.rows[0])
   },
 
-  async insert(client: PoolClient, params: InsertMemoParams): Promise<Memo> {
-    const result = await client.query<MemoRow>(sql`
+  async insert(db: Querier, params: InsertMemoParams): Promise<Memo> {
+    const result = await db.query<MemoRow>(sql`
       INSERT INTO memos (
         id, workspace_id, memo_type, source_message_id, source_conversation_id,
         title, abstract, key_points, source_message_ids, participant_ids,
@@ -282,7 +281,7 @@ export const MemoRepository = {
     return mapRowToMemo(result.rows[0])
   },
 
-  async update(client: PoolClient, id: string, params: UpdateMemoParams): Promise<Memo | null> {
+  async update(db: Querier, id: string, params: UpdateMemoParams): Promise<Memo | null> {
     const updates: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -333,7 +332,7 @@ export const MemoRepository = {
     }
 
     if (updates.length === 0) {
-      return this.findById(client, id)
+      return this.findById(db, id)
     }
 
     updates.push(`updated_at = NOW()`)
@@ -346,13 +345,13 @@ export const MemoRepository = {
       RETURNING ${SELECT_FIELDS}
     `
 
-    const result = await client.query<MemoRow>(query, values)
+    const result = await db.query<MemoRow>(query, values)
     if (!result.rows[0]) return null
     return mapRowToMemo(result.rows[0])
   },
 
-  async updateEmbedding(client: PoolClient, id: string, embedding: number[]): Promise<void> {
-    await client.query(sql`
+  async updateEmbedding(db: Querier, id: string, embedding: number[]): Promise<void> {
+    await db.query(sql`
       UPDATE memos
       SET embedding = ${JSON.stringify(embedding)}::vector,
           updated_at = NOW()
@@ -360,8 +359,8 @@ export const MemoRepository = {
     `)
   },
 
-  async supersede(client: PoolClient, id: string, reason: string): Promise<Memo | null> {
-    const result = await client.query<MemoRow>(sql`
+  async supersede(db: Querier, id: string, reason: string): Promise<Memo | null> {
+    const result = await db.query<MemoRow>(sql`
       UPDATE memos
       SET status = 'superseded',
           revision_reason = ${reason},
@@ -373,8 +372,8 @@ export const MemoRepository = {
     return mapRowToMemo(result.rows[0])
   },
 
-  async archive(client: PoolClient, id: string): Promise<Memo | null> {
-    const result = await client.query<MemoRow>(sql`
+  async archive(db: Querier, id: string): Promise<Memo | null> {
+    const result = await db.query<MemoRow>(sql`
       UPDATE memos
       SET status = 'archived',
           archived_at = NOW(),
@@ -386,8 +385,8 @@ export const MemoRepository = {
     return mapRowToMemo(result.rows[0])
   },
 
-  async getAllTags(client: PoolClient, workspaceId: string): Promise<string[]> {
-    const result = await client.query<{ tag: string }>(sql`
+  async getAllTags(db: Querier, workspaceId: string): Promise<string[]> {
+    const result = await db.query<{ tag: string }>(sql`
       SELECT DISTINCT unnest(tags) as tag
       FROM memos
       WHERE workspace_id = ${workspaceId} AND status = 'active'
@@ -403,7 +402,7 @@ export const MemoRepository = {
    * Optionally filters to memos linked to specific streams.
    * Returns memos with their source stream info for navigation.
    */
-  async semanticSearch(client: PoolClient, params: SemanticSearchParams): Promise<MemoSearchResult[]> {
+  async semanticSearch(db: Querier, params: SemanticSearchParams): Promise<MemoSearchResult[]> {
     const { workspaceId, embedding, streamIds, limit = 10, threshold = 0.8 } = params
     const hasStreamFilter = streamIds && streamIds.length > 0
 
@@ -417,7 +416,7 @@ export const MemoRepository = {
     }
 
     // Join through either source_message_id or source_conversation_id to get stream info
-    const result = await client.query<SearchResultRow>(sql`
+    const result = await db.query<SearchResultRow>(sql`
       WITH memo_with_stream AS (
         SELECT
           ${sql.raw(SELECT_FIELDS_PREFIXED)},
@@ -461,7 +460,7 @@ export const MemoRepository = {
    * Optionally filters to memos linked to specific streams.
    * Returns memos with their source stream info for navigation.
    */
-  async fullTextSearch(client: PoolClient, params: FullTextSearchParams): Promise<MemoSearchResult[]> {
+  async fullTextSearch(db: Querier, params: FullTextSearchParams): Promise<MemoSearchResult[]> {
     const { workspaceId, query, streamIds, limit = 10 } = params
     const hasStreamFilter = streamIds && streamIds.length > 0
 
@@ -474,7 +473,7 @@ export const MemoRepository = {
 
     // Convert query to tsquery - plainto_tsquery handles most cases,
     // but we use websearch_to_tsquery for phrase support
-    const result = await client.query<SearchResultRow>(sql`
+    const result = await db.query<SearchResultRow>(sql`
       WITH memo_with_stream AS (
         SELECT
           ${sql.raw(SELECT_FIELDS_PREFIXED)},
