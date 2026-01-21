@@ -167,14 +167,11 @@ export class MemoClassifier {
   }
 
   async classifyConversation(
-    client: PoolClient,
     conversation: Conversation,
-    messages: Message[],
+    formattedMessages: string,
     existingMemo: Memo | undefined,
     context: ClassifierContext
   ): Promise<ConversationClassification> {
-    const messagesText = await this.messageFormatter.formatMessagesInline(client, messages)
-
     const existingMemoSection = existingMemo
       ? EXISTING_MEMO_TEMPLATE.replace("{{MEMO_TITLE}}", existingMemo.title)
           .replace("{{MEMO_ABSTRACT}}", existingMemo.abstract)
@@ -182,10 +179,12 @@ export class MemoClassifier {
           .replace("{{MEMO_CREATED}}", existingMemo.createdAt.toISOString())
       : ""
 
+    const messageCount = formattedMessages.split("<message").length - 1
+
     const prompt = CONVERSATION_PROMPT.replace("{{TOPIC}}", conversation.topicSummary ?? "No topic set")
       .replace("{{PARTICIPANTS}}", conversation.participantIds.map((id) => id.slice(-8)).join(", "))
-      .replace("{{MESSAGE_COUNT}}", String(messages.length))
-      .replace("{{MESSAGES}}", messagesText)
+      .replace("{{MESSAGE_COUNT}}", String(messageCount))
+      .replace("{{MESSAGES}}", formattedMessages)
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
 
     const { value } = await this.ai.generateObject({

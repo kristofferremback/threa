@@ -139,6 +139,17 @@ export class MemoService implements MemoServiceLike {
         }
       }
 
+      // Pre-format all messages while we have database access (INV-41)
+      // Formatting requires resolving author names from the database
+      const formattedConversations = new Map<string, string>()
+      for (const [convId, msgs] of conversationMessages) {
+        const messagesArray = Array.from(msgs.values()).filter((m): m is Message => m !== null)
+        if (messagesArray.length > 0) {
+          const formatted = await this.messageFormatter.formatMessages(client, messagesArray)
+          formattedConversations.set(convId, formatted)
+        }
+      }
+
       return {
         pending,
         existingMemos,
@@ -147,6 +158,7 @@ export class MemoService implements MemoServiceLike {
         conversations,
         conversationMessages,
         existingConversationMemos,
+        formattedConversations,
       }
     })
 
@@ -258,13 +270,19 @@ export class MemoService implements MemoServiceLike {
           continue
         }
 
+        // Get pre-formatted messages from Phase 1 (formatted with database access)
+        const formattedMessages = fetchedData.formattedConversations.get(item.itemId)
+        if (!formattedMessages) {
+          logger.warn({ conversationId: conversation.id }, "No formatted messages found")
+          continue
+        }
+
         const existingMemo = fetchedData.existingConversationMemos.get(item.itemId)
 
         // AI call (no connection held)
         const classification = await this.classifier.classifyConversation(
-          null as any, // classifier doesn't actually use client parameter for queries
           conversation,
-          messagesArray,
+          formattedMessages,
           existingMemo ?? undefined,
           { workspaceId }
         )
@@ -275,7 +293,7 @@ export class MemoService implements MemoServiceLike {
 
         if (existingMemo && classification.shouldReviseExisting) {
           // Prepare revision
-          const content = await this.memorizer.reviseMemo(null as any, {
+          const content = await this.memorizer.reviseMemo(formattedMessages, {
             memoryContext,
             content: messagesArray,
             existingMemo,
@@ -333,7 +351,7 @@ export class MemoService implements MemoServiceLike {
           )
         } else if (!existingMemo) {
           // Create new memo
-          const content = await this.memorizer.memorizeConversation(null as any, {
+          const content = await this.memorizer.memorizeConversation(formattedMessages, {
             memoryContext,
             content: messagesArray,
             existingTags: fetchedData.existingTags,
