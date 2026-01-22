@@ -178,24 +178,17 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
-    // CONSERVATIVE concurrency to prevent pool exhaustion:
-    // - Pool size: 30 connections
-    // - Reserved: ~5 (monitor, schedule manager, cleanup, misc)
-    // - Available: 25 for queue processing
+    // Adaptive polling with bounded parallelism:
+    // - pollIntervalMs=500: sleep 500ms between cycles when idle
+    // - refillDebounceMs=100: debounce before fetching more tokens
+    // - maxActiveTokens=3: max 3 tokens in flight at once
+    // - processingConcurrency=3: max 3 messages per token
     //
-    // Configuration:
-    // - maxConcurrency=1: only 1 tick runs at a time
-    // - tokenBatchSize=3: max 3 workers per tick
-    // - processingConcurrency=3: max 3 messages per worker
-    //
-    // Max concurrent handlers: 1 × 3 × 3 = 9 handlers
-    // Each handler holds 1 connection for duration (AI calls can be slow)
+    // Max concurrent handlers: 3 × 3 = 9 handlers
     // Peak connections: ~9-10 (safe for 30 connection pool)
-    //
-    // NOTE: This is conservative because memo processing holds transactions
-    // during AI calls. Should be refactored to not hold connections during AI.
-    maxConcurrency: 1,
-    tokenBatchSize: 3,
+    pollIntervalMs: 500,
+    refillDebounceMs: 100,
+    maxActiveTokens: 3,
     processingConcurrency: 3,
   })
 

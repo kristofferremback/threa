@@ -12,7 +12,7 @@ interface SessionCountRow {
 interface CompletedSessionRow {
   workspace_id: string
   status: string
-  duration_seconds: number
+  duration_seconds: string // PostgreSQL EXTRACT returns numeric as string
 }
 
 /**
@@ -92,7 +92,10 @@ export class AgentSessionMetricsCollector {
       `)
 
       for (const row of durationResult.rows) {
-        agentSessionDuration.observe({ workspace_id: row.workspace_id, status: row.status }, row.duration_seconds)
+        agentSessionDuration.observe(
+          { workspace_id: row.workspace_id, status: row.status },
+          parseFloat(row.duration_seconds)
+        )
       }
     }
 
