@@ -7,6 +7,7 @@ import {
   ConversationRepository,
   MessageRepository,
   OutboxRepository,
+  UserRepository,
   type Memo,
   type PendingMemoItem,
   type Message,
@@ -154,6 +155,28 @@ export class MemoService implements MemoServiceLike {
         }
       }
 
+      // Fetch author timezones for date anchoring in memos
+      // Collect all unique user IDs from messages and conversation participants
+      const authorIds = new Set<string>()
+      for (const msg of messages.values()) {
+        if (msg && msg.authorType === "user") {
+          authorIds.add(msg.authorId)
+        }
+      }
+      for (const conv of conversations.values()) {
+        for (const participantId of conv.participantIds) {
+          authorIds.add(participantId)
+        }
+      }
+
+      const authorTimezones = new Map<string, string | null>()
+      if (authorIds.size > 0) {
+        const users = await UserRepository.findByIds(client, Array.from(authorIds))
+        for (const user of users) {
+          authorTimezones.set(user.id, user.timezone)
+        }
+      }
+
       return {
         pending,
         existingMemos,
@@ -163,6 +186,7 @@ export class MemoService implements MemoServiceLike {
         conversationMessages,
         existingConversationMemos,
         formattedConversations,
+        authorTimezones,
       }
     })
 
@@ -209,6 +233,7 @@ export class MemoService implements MemoServiceLike {
           content: message,
           existingTags: fetchedData.existingTags,
           workspaceId,
+          authorTimezone: fetchedData.authorTimezones.get(message.authorId) ?? undefined,
         })
 
         const embedding = await this.embeddingService.embed(content.abstract, {
@@ -296,6 +321,12 @@ export class MemoService implements MemoServiceLike {
         }
 
         if (existingMemo && classification.shouldReviseExisting) {
+          // Use the first user message author's timezone for date anchoring
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
+          const authorTimezone = firstUserMsg
+            ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
+            : undefined
+
           // Prepare revision
           const content = await this.memorizer.reviseMemo(formattedMessages, {
             memoryContext,
@@ -303,6 +334,7 @@ export class MemoService implements MemoServiceLike {
             existingMemo,
             existingTags: fetchedData.existingTags,
             workspaceId,
+            authorTimezone,
           })
 
           const embedding = await this.embeddingService.embed(content.abstract, {
@@ -354,12 +386,19 @@ export class MemoService implements MemoServiceLike {
             "Memo revised"
           )
         } else if (!existingMemo) {
+          // Use the first user message author's timezone for date anchoring
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
+          const authorTimezone = firstUserMsg
+            ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
+            : undefined
+
           // Create new memo
           const content = await this.memorizer.memorizeConversation(formattedMessages, {
             memoryContext,
             content: messagesArray,
             existingTags: fetchedData.existingTags,
             workspaceId,
+            authorTimezone,
           })
 
           const embedding = await this.embeddingService.embed(content.abstract, {

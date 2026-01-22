@@ -236,6 +236,8 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-41: Three-Phase Pattern for Slow Operations** - NEVER hold database connections (withTransaction or withClient) during slow operations like AI/LLM calls (1-5+ seconds). This causes pool exhaustion. Use three-phase pattern: **Phase 1**: Fetch all needed data with withClient (fast reads, ~100-200ms). **Phase 2**: Perform slow operation with NO database connection held (AI calls, external APIs, heavy computation). **Phase 3**: Save results with withTransaction, re-checking state to handle race conditions (fast writes, ~100ms). Re-checking prevents corruption when another process modified data during Phase 2. Accept wasted work (e.g., discarded AI call) to prevent pool exhaustion - holding connections blocks all concurrent requests. Examples: stream-naming-service.ts, boundary-extraction-service.ts, memo-service.ts.
 
+**INV-42: User Timezone for Dates** - NEVER use server time (`new Date()`) or assume local timezone when displaying or anchoring dates for users. ALWAYS resolve timezone from the relevant user(s). For single-user context (messages, scratchpads): use the author's timezone. For multi-user context (conversations, channels): use the first user message author's timezone, or canonical invoking user. Store timezone on User (`user.timezone`), pass through context, and use `formatDate(date, timezone, format)` from `lib/temporal.ts`. Dates like "tomorrow" should resolve to the user's tomorrow, not the server's.
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
