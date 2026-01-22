@@ -71,6 +71,7 @@ import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/pool-monitor"
+import { AgentSessionMetricsCollector } from "./lib/agent-session-metrics"
 
 export interface ServerInstance {
   server: Server
@@ -177,24 +178,17 @@ export async function startServer(): Promise<ServerInstance> {
     pool,
     queueRepository: QueueRepository,
     tokenPoolRepository: TokenPoolRepository,
-    // CONSERVATIVE concurrency to prevent pool exhaustion:
-    // - Pool size: 30 connections
-    // - Reserved: ~5 (monitor, schedule manager, cleanup, misc)
-    // - Available: 25 for queue processing
+    // Adaptive polling with bounded parallelism:
+    // - pollIntervalMs=500: sleep 500ms between cycles when idle
+    // - refillDebounceMs=100: debounce before fetching more tokens
+    // - maxActiveTokens=3: max 3 tokens in flight at once
+    // - processingConcurrency=3: max 3 messages per token
     //
-    // Configuration:
-    // - maxConcurrency=1: only 1 tick runs at a time
-    // - tokenBatchSize=3: max 3 workers per tick
-    // - processingConcurrency=3: max 3 messages per worker
-    //
-    // Max concurrent handlers: 1 × 3 × 3 = 9 handlers
-    // Each handler holds 1 connection for duration (AI calls can be slow)
+    // Max concurrent handlers: 3 × 3 = 9 handlers
     // Peak connections: ~9-10 (safe for 30 connection pool)
-    //
-    // NOTE: This is conservative because memo processing holds transactions
-    // during AI calls. Should be refactored to not hold connections during AI.
-    maxConcurrency: 1,
-    tokenBatchSize: 3,
+    pollIntervalMs: 500,
+    refillDebounceMs: 100,
+    maxActiveTokens: 3,
     processingConcurrency: 3,
   })
 
@@ -210,6 +204,9 @@ export async function startServer(): Promise<ServerInstance> {
     intervalMs: 300000, // Run every 5 minutes
     expiredThresholdMs: 300000, // Delete ticks expired for 5+ minutes
   })
+
+  // Agent session metrics collector
+  const agentSessionMetrics = new AgentSessionMetricsCollector(pool)
 
   // Create helpers for agents
   // This adapter accepts markdown content and converts to JSON+markdown format
@@ -359,9 +356,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Register handlers before starting
   await jobQueue.start()
 
-  // Start schedule manager and cleanup worker
+  // Start schedule manager, cleanup worker, and metrics collectors
   scheduleManager.start()
   cleanupWorker.start()
+  agentSessionMetrics.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
   // workspaceId in payload: "system" for system-wide batch check
@@ -431,6 +429,7 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Shutting down server...")
     poolMonitor.stop()
     orphanSessionCleanup.stop()
+    agentSessionMetrics.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()
     await outboxDispatcher.stop()

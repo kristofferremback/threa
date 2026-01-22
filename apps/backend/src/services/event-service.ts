@@ -9,6 +9,7 @@ import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamPersonaParticipantRepository } from "../repositories/stream-persona-participant-repository"
 import { eventId, messageId } from "../lib/id"
 import { serializeBigInt } from "../lib/serialization"
+import { messagesTotal } from "../lib/metrics"
 import type { JSONContent } from "@threa/types"
 
 // Event payloads
@@ -105,6 +106,17 @@ export class EventService {
       const msgId = messageId()
       const evtId = eventId()
 
+      // 0. Get stream for metrics and thread handling
+      const stream = await StreamRepository.findById(client, params.streamId)
+      const streamType = stream?.type || "unknown"
+
+      // Increment message counter
+      messagesTotal.inc({
+        workspace_id: params.workspaceId,
+        stream_type: streamType,
+        author_type: params.authorType,
+      })
+
       // 1. Validate and prepare attachments FIRST (before creating event)
       let attachmentSummaries: AttachmentSummary[] | undefined
       if (params.attachmentIds && params.attachmentIds.length > 0) {
@@ -195,7 +207,6 @@ export class EventService {
       })
 
       // 9. If this is a thread, update parent message's reply count
-      const stream = await StreamRepository.findById(client, params.streamId)
       if (stream?.parentMessageId && stream?.parentStreamId) {
         await MessageRepository.incrementReplyCount(client, stream.parentMessageId)
 

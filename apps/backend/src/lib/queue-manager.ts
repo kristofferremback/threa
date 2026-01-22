@@ -3,11 +3,11 @@ import pLimit from "p-limit"
 import type { QueueRepository } from "../repositories/queue-repository"
 import type { TokenPoolRepository } from "../repositories/token-pool-repository"
 import { CronRepository, type CronTick } from "../repositories/cron-repository"
-import { Ticker } from "./ticker"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
 import type { JobDataMap, JobQueueName, JobHandler } from "./job-queue"
 import { queueId, workerId, tickerId, cronId } from "./id"
+import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "./metrics"
 
 /**
  * Configuration for QueueManager
@@ -23,13 +23,13 @@ export interface QueueManagerConfig {
   maxRetries?: number // Default 5
   baseBackoffMs?: number // Default 500
   scalingThreshold?: number // Default 50 (TODO: implement chunking)
-  tokenBatchSize?: number // Default 10 (tokens to lease per tick)
   claimBatchSize?: number // Default 20 (messages to claim per token)
   processingConcurrency?: number // Default 5 (parallel message processing per worker)
 
-  // Ticker config
-  tickIntervalMs?: number // Default 100 (tick every 100ms)
-  maxConcurrency?: number // Default 10 (max parallel workers)
+  // Adaptive polling config
+  pollIntervalMs?: number // Default 500 (sleep between cycles when idle)
+  refillDebounceMs?: number // Default 100 (debounce before fetching more tokens)
+  maxActiveTokens?: number // Default 5 (max tokens in flight at once)
 }
 
 const DEFAULT_CONFIG = {
@@ -38,11 +38,11 @@ const DEFAULT_CONFIG = {
   maxRetries: 5,
   baseBackoffMs: 500,
   scalingThreshold: 50,
-  tokenBatchSize: 10,
   claimBatchSize: 20,
   processingConcurrency: 5,
-  tickIntervalMs: 100,
-  maxConcurrency: 10,
+  pollIntervalMs: 500,
+  refillDebounceMs: 100,
+  maxActiveTokens: 5,
 }
 
 /**
@@ -63,17 +63,25 @@ export class QueueManager {
   private readonly maxRetries: number
   private readonly baseBackoffMs: number
   private readonly scalingThreshold: number
-  private readonly tokenBatchSize: number
   private readonly claimBatchSize: number
   private readonly processingConcurrency: number
+  private readonly pollIntervalMs: number
+  private readonly refillDebounceMs: number
+  private readonly maxActiveTokens: number
   private readonly handlers = new Map<string, JobHandler<unknown>>()
-  private readonly ticker: Ticker
-  private readonly tickerId: string
+  private readonly managerId: string
   private isStarted = false
   private isStopping = false
 
-  // Track active workers for graceful shutdown
-  private readonly activeWorkers = new Set<Promise<void>>()
+  // Adaptive polling state
+  private pollTimer: Timer | null = null
+  private readonly activeTokens = new Map<string, Promise<void>>()
+  private refillTimer: Timer | null = null
+  private cycleExhausted = false
+  private cycleStart = 0
+
+  // Track cron tick workers for graceful shutdown (separate from token processing)
+  private readonly activeCronWorkers = new Set<Promise<void>>()
 
   constructor(config: QueueManagerConfig) {
     const {
@@ -85,11 +93,11 @@ export class QueueManager {
       maxRetries = DEFAULT_CONFIG.maxRetries,
       baseBackoffMs = DEFAULT_CONFIG.baseBackoffMs,
       scalingThreshold = DEFAULT_CONFIG.scalingThreshold,
-      tokenBatchSize = DEFAULT_CONFIG.tokenBatchSize,
       claimBatchSize = DEFAULT_CONFIG.claimBatchSize,
       processingConcurrency = DEFAULT_CONFIG.processingConcurrency,
-      tickIntervalMs = DEFAULT_CONFIG.tickIntervalMs,
-      maxConcurrency = DEFAULT_CONFIG.maxConcurrency,
+      pollIntervalMs = DEFAULT_CONFIG.pollIntervalMs,
+      refillDebounceMs = DEFAULT_CONFIG.refillDebounceMs,
+      maxActiveTokens = DEFAULT_CONFIG.maxActiveTokens,
     } = config
 
     this.pool = pool
@@ -100,16 +108,13 @@ export class QueueManager {
     this.maxRetries = maxRetries
     this.baseBackoffMs = baseBackoffMs
     this.scalingThreshold = scalingThreshold
-    this.tokenBatchSize = tokenBatchSize
     this.claimBatchSize = claimBatchSize
     this.processingConcurrency = processingConcurrency
+    this.pollIntervalMs = pollIntervalMs
+    this.refillDebounceMs = refillDebounceMs
+    this.maxActiveTokens = maxActiveTokens
 
-    this.tickerId = tickerId()
-    this.ticker = new Ticker({
-      name: "queue-manager",
-      intervalMs: tickIntervalMs,
-      maxConcurrency,
-    })
+    this.managerId = tickerId()
   }
 
   /**
@@ -180,13 +185,14 @@ export class QueueManager {
       insertedAt: now,
     })
 
+    queueMessagesEnqueued.inc({ queue: queueName, workspace_id: workspaceId })
     logger.debug({ queueName, messageId, workspaceId }, "Message sent to queue")
 
     return messageId
   }
 
   /**
-   * Start processing.
+   * Start processing with adaptive polling.
    */
   start(): void {
     if (this.isStarted) {
@@ -194,16 +200,17 @@ export class QueueManager {
     }
 
     this.isStarted = true
-    this.ticker.start(() => this.onTick())
+    this.runCycle()
 
     logger.info("QueueManager started")
   }
 
   /**
    * Graceful shutdown.
-   * 1. Stop ticker (no new work)
-   * 2. Wait for in-flight work with timeout
-   * 3. Close resources
+   * 1. Stop polling (no new cycles)
+   * 2. Clear refill timer
+   * 3. Wait for in-flight tokens with timeout
+   * 4. Wait for cron workers
    */
   async stop(): Promise<void> {
     if (this.isStopping) {
@@ -213,23 +220,34 @@ export class QueueManager {
     this.isStopping = true
     logger.info("QueueManager stopping...")
 
-    // Stop ticker (no new work)
-    this.ticker.stop()
+    // Stop polling (no new cycles)
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer)
+      this.pollTimer = null
+    }
 
-    // Wait for in-flight ticker callbacks
-    await this.ticker.drain()
+    // Stop refill timer
+    if (this.refillTimer) {
+      clearTimeout(this.refillTimer)
+      this.refillTimer = null
+    }
 
-    // Wait for active workers with timeout
-    if (this.activeWorkers.size > 0) {
-      logger.info({ activeWorkers: this.activeWorkers.size }, "Waiting for active workers to complete")
+    // Wait for active tokens with timeout
+    const allActive = [...this.activeTokens.values(), ...this.activeCronWorkers]
+    if (allActive.length > 0) {
+      logger.info(
+        { activeTokens: this.activeTokens.size, activeCron: this.activeCronWorkers.size },
+        "Waiting for active work to complete"
+      )
 
       const timeout = new Promise((resolve) => setTimeout(resolve, 30000))
-      const allWorkers = Promise.all(Array.from(this.activeWorkers))
+      const allWorkers = Promise.all(allActive)
 
       await Promise.race([allWorkers, timeout])
 
-      if (this.activeWorkers.size > 0) {
-        logger.warn({ remainingWorkers: this.activeWorkers.size }, "Some workers did not complete within timeout")
+      const remaining = this.activeTokens.size + this.activeCronWorkers.size
+      if (remaining > 0) {
+        logger.warn({ remainingWork: remaining }, "Some work did not complete within timeout")
       }
     }
 
@@ -237,41 +255,169 @@ export class QueueManager {
   }
 
   /**
-   * Called on each ticker interval.
-   * Batch leases tokens and spawns workers.
+   * Run a single polling cycle.
+   *
+   * Algorithm:
+   * 1. Record cycle start time
+   * 2. Fetch initial tokens (up to maxActiveTokens)
+   * 3. Process tokens, refilling slots as they complete (debounced)
+   * 4. Process cron ticks
+   * 5. Sleep remaining time to reach pollIntervalMs
    */
-  private async onTick(): Promise<void> {
+  private async runCycle(): Promise<void> {
+    if (this.isStopping) {
+      return
+    }
+
+    this.cycleStart = Date.now()
+    this.cycleExhausted = false
+
+    const queueNames = Array.from(this.handlers.keys())
+    if (queueNames.length === 0) {
+      logger.debug("No handlers registered yet, scheduling next cycle")
+      this.scheduleNextCycle(0)
+      return
+    }
+
+    // Fetch initial tokens and start processing
+    await this.fillSlots()
+
+    // Process cron ticks (runs in parallel with token processing)
+    await this.processCronTicks()
+
+    // Wait for all active tokens to complete before sleeping
+    await this.waitForCycleComplete()
+
+    // Schedule next cycle after sleeping remaining time
+    const elapsed = Date.now() - this.cycleStart
+    this.scheduleNextCycle(elapsed)
+  }
+
+  /**
+   * Fill available token slots.
+   * Fetches tokens up to (maxActiveTokens - current active count).
+   * Sets cycleExhausted=true when no more tokens available.
+   */
+  private async fillSlots(): Promise<void> {
+    if (this.isStopping || this.cycleExhausted) {
+      return
+    }
+
+    const availableSlots = this.maxActiveTokens - this.activeTokens.size
+    if (availableSlots <= 0) {
+      return
+    }
+
+    const queueNames = Array.from(this.handlers.keys())
+    const now = new Date()
+
+    const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
+      leasedBy: this.managerId,
+      leasedAt: now,
+      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
+      now,
+      limit: availableSlots,
+      queueNames,
+    })
+
+    if (tokens.length === 0) {
+      this.cycleExhausted = true
+      logger.debug("Queue exhausted for this cycle")
+      return
+    }
+
+    logger.debug({ tokenCount: tokens.length, activeTokens: this.activeTokens.size }, "Leased tokens")
+
+    // Start processing each token
+    for (const token of tokens) {
+      const promise = this.processToken(token).finally(() => {
+        this.activeTokens.delete(token.id)
+        this.debouncedFillSlots()
+      })
+      this.activeTokens.set(token.id, promise)
+    }
+  }
+
+  /**
+   * Debounced fill slots - waits refillDebounceMs before fetching more tokens.
+   * Prevents hammering the database when multiple tokens complete quickly.
+   */
+  private debouncedFillSlots(): void {
+    if (this.isStopping || this.cycleExhausted) {
+      return
+    }
+
+    // Clear existing timer
+    if (this.refillTimer) {
+      clearTimeout(this.refillTimer)
+    }
+
+    // Schedule refill after debounce delay
+    this.refillTimer = setTimeout(() => {
+      this.refillTimer = null
+      this.fillSlots().catch((err) => {
+        logger.error({ err }, "Error filling slots, marking cycle exhausted")
+        // Stop refilling this cycle to prevent hammering on persistent errors
+        this.cycleExhausted = true
+      })
+    }, this.refillDebounceMs)
+  }
+
+  /**
+   * Wait for all active tokens in current cycle to complete.
+   * Times out after lockDurationMs to prevent infinite waiting.
+   */
+  private async waitForCycleComplete(): Promise<void> {
+    const deadline = Date.now() + this.lockDurationMs
+
+    while (this.activeTokens.size > 0) {
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) {
+        logger.warn(
+          { activeTokens: this.activeTokens.size },
+          "waitForCycleComplete timed out, proceeding to next cycle"
+        )
+        break
+      }
+
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
+      await Promise.race([...this.activeTokens.values(), timeout])
+    }
+  }
+
+  /**
+   * Schedule the next polling cycle.
+   * Sleeps remaining time to reach pollIntervalMs.
+   */
+  private scheduleNextCycle(elapsedMs: number): void {
+    if (this.isStopping) {
+      return
+    }
+
+    const sleepMs = Math.max(0, this.pollIntervalMs - elapsedMs)
+    logger.debug({ elapsedMs, sleepMs }, "Scheduling next cycle")
+
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null
+      this.runCycle().catch((err) => {
+        logger.error({ err }, "Error in polling cycle")
+        // Schedule next cycle anyway to recover
+        this.scheduleNextCycle(0)
+      })
+    }, sleepMs)
+  }
+
+  /**
+   * Process cron ticks in the current cycle.
+   */
+  private async processCronTicks(): Promise<void> {
     if (this.isStopping) {
       return
     }
 
     const now = new Date()
-
-    // 1. Batch lease tokens for available (queue, workspace) pairs
-    // Only lease tokens for queues we have handlers for
-    const queueNames = Array.from(this.handlers.keys())
-    if (queueNames.length === 0) {
-      logger.debug("No handlers registered yet, skipping tick")
-      return
-    }
-
-    const tokens = await this.tokenPoolRepo.batchLeaseTokens(this.pool, {
-      leasedBy: this.tickerId,
-      leasedAt: now,
-      leasedUntil: new Date(now.getTime() + this.lockDurationMs),
-      now,
-      limit: this.tokenBatchSize,
-      queueNames,
-    })
-
-    logger.debug({ tokenCount: tokens.length }, "Leased tokens")
-
-    // 2. For each token, spawn worker in parallel
-    const workers = tokens.map((token) => this.processToken(token))
-
-    // 3. Lease and execute cron ticks (runs in parallel with message processing)
     const ticks = await CronRepository.batchLeaseTicks(this.pool, {
-      leasedBy: this.tickerId,
+      leasedBy: this.managerId,
       leasedUntil: new Date(now.getTime() + this.lockDurationMs),
       limit: 10,
       now,
@@ -279,12 +425,9 @@ export class QueueManager {
 
     if (ticks.length > 0) {
       logger.debug({ tickCount: ticks.length }, "Leased cron ticks")
-      const tickWorkers = ticks.map((tick) => this.executeTick(tick))
-      workers.push(...tickWorkers)
-    }
-
-    if (workers.length > 0) {
-      await Promise.all(workers)
+      for (const tick of ticks) {
+        this.executeTick(tick)
+      }
     }
   }
 
@@ -295,54 +438,47 @@ export class QueueManager {
    * 1. Sets up background token renewal timer
    * 2. Delegates message processing to processMessagesForToken()
    * 3. Cleans up timer and releases token
+   *
+   * Note: Tracking is handled by fillSlots() via activeTokens Map.
    */
   private async processToken(token: { id: string; queueName: string; workspaceId: string }): Promise<void> {
-    const workerPromise = (async () => {
-      // Set up token renewal timer (runs for entire worker lifetime)
-      let tokenRenewalInProgress = false
-      let isShuttingDown = false
-      const tokenRenewTimer = setInterval(async () => {
-        if (isShuttingDown || tokenRenewalInProgress) {
-          return
-        }
-
-        tokenRenewalInProgress = true
-        try {
-          const renewed = await this.renewTokenLease(token.id)
-          if (!renewed) {
-            logger.warn({ tokenId: token.id }, "Failed to renew token lease - may have been taken by another worker")
-          } else {
-            logger.debug({ tokenId: token.id }, "Token lease renewed")
-          }
-        } catch (err) {
-          logger.warn({ tokenId: token.id, err }, "Failed to renew token lease")
-        } finally {
-          tokenRenewalInProgress = false
-        }
-      }, this.refreshIntervalMs)
-
-      try {
-        await this.processMessagesForToken(token)
-      } finally {
-        // Signal shutdown and clear timer immediately to prevent new renewals
-        isShuttingDown = true
-        clearInterval(tokenRenewTimer)
-
-        // Wait for any in-progress renewal to complete before releasing token
-        while (tokenRenewalInProgress) {
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-
-        await this.releaseToken(token.id)
+    // Set up token renewal timer (runs for entire worker lifetime)
+    let tokenRenewalInProgress = false
+    let isShuttingDown = false
+    const tokenRenewTimer = setInterval(async () => {
+      if (isShuttingDown || tokenRenewalInProgress) {
+        return
       }
-    })()
 
-    this.activeWorkers.add(workerPromise)
-    workerPromise.finally(() => {
-      this.activeWorkers.delete(workerPromise)
-    })
+      tokenRenewalInProgress = true
+      try {
+        const renewed = await this.renewTokenLease(token.id)
+        if (!renewed) {
+          logger.warn({ tokenId: token.id }, "Failed to renew token lease - may have been taken by another worker")
+        } else {
+          logger.debug({ tokenId: token.id }, "Token lease renewed")
+        }
+      } catch (err) {
+        logger.warn({ tokenId: token.id, err }, "Failed to renew token lease")
+      } finally {
+        tokenRenewalInProgress = false
+      }
+    }, this.refreshIntervalMs)
 
-    await workerPromise
+    try {
+      await this.processMessagesForToken(token)
+    } finally {
+      // Signal shutdown and clear timer immediately to prevent new renewals
+      isShuttingDown = true
+      clearInterval(tokenRenewTimer)
+
+      // Wait for any in-progress renewal to complete before releasing token
+      while (tokenRenewalInProgress) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+
+      await this.releaseToken(token.id)
+    }
   }
 
   /**
@@ -414,7 +550,7 @@ export class QueueManager {
         messages.map((message) =>
           limit(async () => {
             try {
-              await this.processMessage(message, workerIdValue, completedMessageIds)
+              await this.processMessage(message, workerIdValue, completedMessageIds, token.workspaceId)
             } catch (err) {
               // Error already logged and handled in processMessage
               // Continue processing other messages
@@ -436,7 +572,7 @@ export class QueueManager {
 
     return await this.tokenPoolRepo.renewLease(this.pool, {
       tokenId,
-      leasedBy: this.tickerId,
+      leasedBy: this.managerId,
       leasedUntil: new Date(now.getTime() + this.lockDurationMs),
     })
   }
@@ -463,10 +599,14 @@ export class QueueManager {
   private async processMessage(
     message: { id: string; queueName: string; payload: unknown; failedCount: number },
     workerId: string,
-    completedMessageIds: Set<string>
+    completedMessageIds: Set<string>,
+    workspaceId: string
   ): Promise<void> {
     // Handler must exist - we only lease tokens for queues with registered handlers
     const handler = this.handlers.get(message.queueName)!
+
+    const startTime = process.hrtime.bigint()
+    queueMessagesInFlight.inc({ queue: message.queueName })
 
     try {
       // Execute handler
@@ -480,9 +620,18 @@ export class QueueManager {
       await this.completeMessage(message.id, workerId)
       completedMessageIds.add(message.id)
 
+      const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9
+      queueMessagesInFlight.dec({ queue: message.queueName })
+      queueMessagesProcessed.inc({ queue: message.queueName, status: "success", workspace_id: workspaceId })
+      queueMessageDuration.observe({ queue: message.queueName, workspace_id: workspaceId }, durationSeconds)
+
       logger.debug({ messageId: message.id, queueName: message.queueName }, "Message completed")
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
+
+      const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9
+      queueMessagesInFlight.dec({ queue: message.queueName })
+      queueMessageDuration.observe({ queue: message.queueName, workspace_id: workspaceId }, durationSeconds)
 
       logger.warn({ messageId: message.id, queueName: message.queueName, err: error }, "Message processing failed")
 
@@ -494,6 +643,7 @@ export class QueueManager {
         await this.moveMessageToDlq(message.id, workerId, error.message)
         completedMessageIds.add(message.id)
 
+        queueMessagesProcessed.inc({ queue: message.queueName, status: "dlq", workspace_id: workspaceId })
         logger.error(
           { messageId: message.id, queueName: message.queueName },
           "Message moved to DLQ after exhausting retries"
@@ -502,6 +652,7 @@ export class QueueManager {
         // Retry with backoff
         await this.retryMessage(message.id, workerId, error.message, newFailedCount)
 
+        queueMessagesProcessed.inc({ queue: message.queueName, status: "failed", workspace_id: workspaceId })
         logger.debug(
           { messageId: message.id, queueName: message.queueName, retryCount: newFailedCount },
           "Message scheduled for retry"
@@ -567,15 +718,16 @@ export class QueueManager {
   private async releaseToken(tokenId: string): Promise<void> {
     await this.tokenPoolRepo.deleteToken(this.pool, {
       tokenId,
-      leasedBy: this.tickerId,
+      leasedBy: this.managerId,
     })
   }
 
   /**
    * Execute a cron tick.
    * Sends message to queue and deletes tick.
+   * Runs in background - does not block the polling cycle.
    */
-  private async executeTick(tick: CronTick): Promise<void> {
+  private executeTick(tick: CronTick): void {
     const workerPromise = (async () => {
       try {
         // Send message to queue (tick payload already denormalized)
@@ -599,7 +751,7 @@ export class QueueManager {
         try {
           await CronRepository.deleteTick(this.pool, {
             tickId: tick.id,
-            leasedBy: this.tickerId,
+            leasedBy: this.managerId,
           })
         } catch (err) {
           // Log but don't throw - tick may have already been deleted or lease lost
@@ -608,10 +760,8 @@ export class QueueManager {
       }
     })()
 
-    this.activeWorkers.add(workerPromise)
-    workerPromise.finally(() => this.activeWorkers.delete(workerPromise))
-
-    await workerPromise
+    this.activeCronWorkers.add(workerPromise)
+    workerPromise.finally(() => this.activeCronWorkers.delete(workerPromise))
   }
 
   /**
