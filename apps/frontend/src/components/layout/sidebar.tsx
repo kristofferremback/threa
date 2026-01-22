@@ -1,16 +1,16 @@
-import { useState, useRef, useEffect, useMemo, type ReactNode } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import {
   MoreHorizontal,
   Pencil,
   Archive,
   Search as SearchIcon,
-  CheckCheck,
   FileEdit,
   DollarSign,
   RefreshCw,
   Hash,
   User,
+  MessageSquareText,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
+import { getThreadDisplayName } from "@/components/thread/breadcrumb-helpers"
 import {
   useWorkspaceBootstrap,
   useCreateStream,
@@ -36,10 +37,10 @@ import {
   workspaceKeys,
   useActors,
 } from "@/hooks"
-import { useQuickSwitcher, useCoordinatedLoading, useSidebar } from "@/contexts"
+import { useQuickSwitcher, useCoordinatedLoading, useSidebar, type ViewMode } from "@/contexts"
 import { UnreadBadge } from "@/components/unread-badge"
 import { RelativeTime } from "@/components/relative-time"
-import { StreamTypes, type StreamWithPreview } from "@threa/types"
+import { StreamTypes, AuthorTypes, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
 
@@ -47,7 +48,6 @@ import { ThemeDropdown } from "@/components/theme-dropdown"
 // Types & Constants
 // ============================================================================
 
-type ViewMode = "smart" | "all"
 type UrgencyLevel = "mentions" | "activity" | "quiet" | "ai"
 
 interface StreamItemData extends StreamWithPreview {
@@ -89,8 +89,8 @@ function calculateUrgency(stream: StreamWithPreview, unreadCount: number): Urgen
   if (stream.lastMessagePreview) {
     const diff = Date.now() - new Date(stream.lastMessagePreview.createdAt).getTime()
     if (diff < 5 * 60 * 1000) {
-      // For scratchpads, assume AI activity
-      if (stream.type === StreamTypes.SCRATCHPAD) return "ai"
+      // AI activity: last message was from a persona (gold color for all AI, not just scratchpads)
+      if (stream.lastMessagePreview.authorType === AuthorTypes.PERSONA) return "ai"
       return "activity"
     }
   }
@@ -137,35 +137,6 @@ function truncateContent(content: JSONContent, maxLength: number = 50): string {
 }
 
 // ============================================================================
-// Urgency Strip Component
-// ============================================================================
-
-interface UrgencyStripProps {
-  items: StreamItemData[]
-}
-
-/**
- * Dynamic urgency strip that scrolls with sidebar content.
- * Each segment's height matches its corresponding stream item.
- */
-function UrgencyStrip({ items }: UrgencyStripProps) {
-  return (
-    <div className="w-1.5 flex-shrink-0 flex flex-col">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="flex-shrink-0"
-          style={{
-            height: "40px", // Matches stream item height in comfortable mode
-            backgroundColor: URGENCY_COLORS[item.urgency],
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-// ============================================================================
 // Header Component
 // ============================================================================
 
@@ -173,19 +144,9 @@ interface SidebarHeaderProps {
   workspaceName: string
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
-  totalUnread: number
-  onMarkAllAsRead: () => void
-  isMarkingAllAsRead: boolean
 }
 
-function SidebarHeader({
-  workspaceName,
-  viewMode,
-  onViewModeChange,
-  totalUnread,
-  onMarkAllAsRead,
-  isMarkingAllAsRead,
-}: SidebarHeaderProps) {
+function SidebarHeader({ workspaceName, viewMode, onViewModeChange }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
 
   return (
@@ -195,21 +156,7 @@ function SidebarHeader({
         <Link to="/workspaces" className="font-semibold hover:underline truncate text-sm">
           {workspaceName}
         </Link>
-        <div className="flex items-center gap-1">
-          {totalUnread > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onMarkAllAsRead}
-              disabled={isMarkingAllAsRead}
-              title="Mark all as read"
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <ThemeDropdown />
-        </div>
+        <ThemeDropdown />
       </div>
 
       {/* Search box */}
@@ -218,7 +165,7 @@ function SidebarHeader({
         className="w-full flex items-center gap-2 px-3 py-2 bg-background border border-border rounded-lg text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
       >
         <SearchIcon className="h-3.5 w-3.5" />
-        <span>Search or ⌘K</span>
+        <span>Search messages</span>
       </button>
 
       {/* View toggle */}
@@ -243,45 +190,40 @@ function SidebarHeader({
             All
           </button>
         </div>
-        {totalUnread > 0 && (
-          <div className="flex-1 text-right text-xs text-muted-foreground">Unread: {totalUnread}</div>
-        )}
       </div>
     </div>
   )
 }
 
 // ============================================================================
-// Section Component
+// Section Components (unified for Smart and All views)
 // ============================================================================
 
-interface SmartSectionProps {
-  section: "important" | "recent" | "pinned" | "other"
-  items: StreamItemData[]
-  workspaceId: string
-  activeStreamId?: string
-  getUnreadCount: (streamId: string) => number
-  isCollapsed?: boolean
+interface SectionHeaderProps {
+  label: string
+  icon?: string
+  /** Total unread count for the section (sum of all item unreads) */
+  unreadCount?: number
+  isCollapsible?: boolean
   onToggle?: () => void
 }
 
-function SmartSection({
-  section,
-  items,
-  workspaceId,
-  activeStreamId,
-  getUnreadCount,
-  isCollapsed = false,
-  onToggle,
-}: SmartSectionProps) {
-  if (items.length === 0 && section !== "other") return null
+/** Section header with consistent styling across all views */
+function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle }: SectionHeaderProps) {
+  const content = (
+    <>
+      <span>
+        {icon && `${icon} `}
+        {label}
+      </span>
+      {unreadCount !== undefined && unreadCount > 0 && (
+        <span className="px-2 py-0.5 bg-muted rounded-full text-[10px]">{unreadCount}</span>
+      )}
+    </>
+  )
 
-  const icon = SECTION_ICONS[section]
-  const label = SECTION_LABELS[section]
-
-  return (
-    <div className="mb-4">
-      {/* Section header */}
+  if (isCollapsible && onToggle) {
+    return (
       <button
         onClick={onToggle}
         className={cn(
@@ -290,11 +232,64 @@ function SmartSection({
           "hover:bg-muted/50 transition-colors"
         )}
       >
-        <span>
-          {icon} {label}
-        </span>
-        <span className="px-2 py-0.5 bg-muted rounded-full text-[10px]">{items.length}</span>
+        {content}
       </button>
+    )
+  }
+
+  return (
+    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center justify-between">
+      {content}
+    </div>
+  )
+}
+
+interface StreamSectionProps {
+  label: string
+  icon?: string
+  items: StreamItemData[]
+  allStreams: StreamItemData[]
+  workspaceId: string
+  activeStreamId?: string
+  getUnreadCount: (streamId: string) => number
+  isCollapsed?: boolean
+  onToggle?: () => void
+  showCollapsedHint?: boolean
+  action?: ReactNode
+  /** Show compact view (title only, no preview) */
+  compact?: boolean
+  /** Reference to scroll container for position tracking */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>
+}
+
+/** Stream section that composes SectionHeader + items + optional action */
+function StreamSection({
+  label,
+  icon,
+  items,
+  allStreams,
+  workspaceId,
+  activeStreamId,
+  getUnreadCount,
+  isCollapsed = false,
+  onToggle,
+  showCollapsedHint = false,
+  action,
+  compact = false,
+  scrollContainerRef,
+}: StreamSectionProps) {
+  // Sum up unread counts for all items in this section
+  const totalUnreadCount = items.reduce((sum, item) => sum + getUnreadCount(item.id), 0)
+
+  return (
+    <div className="mb-4">
+      <SectionHeader
+        label={label}
+        icon={icon}
+        unreadCount={totalUnreadCount}
+        isCollapsible={!!onToggle}
+        onToggle={onToggle}
+      />
 
       {/* Section items */}
       {!isCollapsed && (
@@ -306,17 +301,75 @@ function SmartSection({
               stream={stream}
               isActive={stream.id === activeStreamId}
               unreadCount={getUnreadCount(stream.id)}
-              urgency={stream.urgency}
+              allStreams={allStreams}
+              compact={compact}
+              scrollContainerRef={scrollContainerRef}
             />
           ))}
         </div>
       )}
 
-      {/* Everything Else collapsed state */}
-      {section === "other" && isCollapsed && items.length > 0 && (
-        <p className="text-center text-xs text-muted-foreground italic px-4 py-2">Click to expand or use search</p>
+      {/* Collapsed hint for "Everything Else" style sections */}
+      {showCollapsedHint && isCollapsed && items.length > 0 && (
+        <div className="mx-3 mt-1 px-3 py-2 rounded-md bg-muted/30 border border-dashed border-border/50">
+          <p className="text-center text-xs text-muted-foreground">
+            {items.length} more stream{items.length !== 1 ? "s" : ""} — click to expand or use{" "}
+            <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">⌘K</kbd>
+          </p>
+        </div>
       )}
+
+      {/* Optional action (like "+ New Scratchpad" button) */}
+      {!isCollapsed && action}
     </div>
+  )
+}
+
+interface SmartSectionProps {
+  section: "important" | "recent" | "pinned" | "other"
+  items: StreamItemData[]
+  allStreams: StreamItemData[]
+  workspaceId: string
+  activeStreamId?: string
+  getUnreadCount: (streamId: string) => number
+  isCollapsed?: boolean
+  onToggle?: () => void
+  /** Reference to scroll container for position tracking */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>
+}
+
+/** Smart view section wrapper - uses StreamSection with smart view specific settings */
+function SmartSection({
+  section,
+  items,
+  allStreams,
+  workspaceId,
+  activeStreamId,
+  getUnreadCount,
+  isCollapsed = false,
+  onToggle,
+  scrollContainerRef,
+}: SmartSectionProps) {
+  if (items.length === 0 && section !== "other") return null
+
+  const icon = SECTION_ICONS[section]
+  const label = SECTION_LABELS[section]
+
+  return (
+    <StreamSection
+      label={label}
+      icon={icon}
+      items={items}
+      allStreams={allStreams}
+      workspaceId={workspaceId}
+      activeStreamId={activeStreamId}
+      getUnreadCount={getUnreadCount}
+      isCollapsed={isCollapsed}
+      onToggle={onToggle}
+      showCollapsedHint={section === "other"}
+      compact={section !== "important"}
+      scrollContainerRef={scrollContainerRef}
+    />
   )
 }
 
@@ -329,13 +382,54 @@ interface StreamItemProps {
   stream: StreamItemData
   isActive: boolean
   unreadCount: number
-  urgency: UrgencyLevel
+  allStreams: StreamItemData[]
+  showUrgencyStrip?: boolean
+  /** Show compact view (title only, no preview) */
+  compact?: boolean
+  /** Reference to scroll container for position tracking */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>
 }
 
-function StreamItem({ workspaceId, stream, isActive, unreadCount, urgency }: StreamItemProps) {
+function StreamItem({
+  workspaceId,
+  stream,
+  isActive,
+  unreadCount,
+  allStreams,
+  showUrgencyStrip = true,
+  compact = false,
+  scrollContainerRef,
+}: StreamItemProps) {
   const { getActorName } = useActors(workspaceId)
+  const { setUrgencyBlock, sidebarHeight, scrollContainerOffset } = useSidebar()
+  const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
+
+  // Track position for collapsed urgency strip
+  useLayoutEffect(() => {
+    const el = itemRef.current
+    const container = scrollContainerRef?.current
+    if (!el || !container || sidebarHeight === 0) return
+
+    // Only track items with meaningful urgency
+    if (stream.urgency === "quiet") {
+      setUrgencyBlock(stream.id, null)
+      return
+    }
+
+    // Calculate position as fraction of sidebar height, accounting for header/quicklinks offset
+    const position = (scrollContainerOffset + el.offsetTop) / sidebarHeight
+    const height = el.offsetHeight / sidebarHeight
+
+    setUrgencyBlock(stream.id, {
+      position,
+      height,
+      color: URGENCY_COLORS[stream.urgency],
+    })
+
+    return () => setUrgencyBlock(stream.id, null)
+  }, [stream.id, stream.urgency, scrollContainerRef, sidebarHeight, scrollContainerOffset, setUrgencyBlock])
 
   // Determine avatar content based on stream type
   const getAvatar = () => {
@@ -351,6 +445,12 @@ function StreamItem({ workspaceId, stream, isActive, unreadCount, urgency }: Str
         className: "bg-primary/10 text-primary",
       }
     }
+    if (stream.type === StreamTypes.THREAD) {
+      return {
+        icon: <MessageSquareText className="h-3.5 w-3.5" />,
+        className: "bg-muted text-muted-foreground",
+      }
+    }
     // DM
     return {
       icon: <User className="h-3.5 w-3.5" />,
@@ -359,7 +459,13 @@ function StreamItem({ workspaceId, stream, isActive, unreadCount, urgency }: Str
   }
 
   const avatar = getAvatar()
-  const name = stream.slug ? `#${stream.slug}` : stream.displayName || "Untitled"
+  // Use getThreadDisplayName for threads, otherwise use slug or displayName
+  const name =
+    stream.type === StreamTypes.THREAD
+      ? getThreadDisplayName(stream, allStreams)
+      : stream.slug
+        ? `#${stream.slug}`
+        : stream.displayName || "Untitled"
 
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
@@ -369,46 +475,74 @@ function StreamItem({ workspaceId, stream, isActive, unreadCount, urgency }: Str
         stream={stream}
         isActive={isActive}
         unreadCount={unreadCount}
-        urgency={urgency}
+        compact={compact}
+        showUrgencyStrip={showUrgencyStrip}
+        scrollContainerRef={scrollContainerRef}
       />
     )
   }
 
   return (
     <Link
+      ref={itemRef}
       to={`/w/${workspaceId}/s/${stream.id}`}
       className={cn(
-        "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+        "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",
-        hasUnread && !isActive && "font-medium"
+        hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10"
       )}
     >
-      {/* Avatar */}
-      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", avatar.className)}>
-        {avatar.icon}
-      </div>
+      {/* Inline urgency strip - left edge indicator */}
+      {showUrgencyStrip && (
+        <div className="w-1 flex-shrink-0 rounded-l-lg" style={{ backgroundColor: URGENCY_COLORS[stream.urgency] }} />
+      )}
 
-      {/* Content */}
-      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-medium text-sm">{name}</span>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Activity dot */}
-            {urgency !== "quiet" && (
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: URGENCY_COLORS[urgency] }} />
-            )}
+      {/* Main content wrapper */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
+        {/* Avatar */}
+        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", avatar.className)}>
+          {avatar.icon}
+        </div>
+
+        {/* Content */}
+        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+          <div className="flex items-center gap-2 pr-8">
+            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>{name}</span>
             <UnreadBadge count={unreadCount} />
           </div>
+          {!compact && preview && preview.content && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="truncate flex-1">
+                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
+              </span>
+              <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
+            </div>
+          )}
         </div>
-        {preview && preview.content && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="truncate flex-1">
-              {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
-            </span>
-            <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
-          </div>
-        )}
       </div>
+
+      {/* Context menu - top-right positioned */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuItem disabled className="text-muted-foreground">
+            <Pencil className="mr-2 h-4 w-4" />
+            Settings (coming soon)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </Link>
   )
 }
@@ -422,7 +556,11 @@ interface ScratchpadItemProps {
   stream: StreamItemData
   isActive: boolean
   unreadCount: number
-  urgency: UrgencyLevel
+  showUrgencyStrip?: boolean
+  /** Show compact view (title only, no preview) */
+  compact?: boolean
+  /** Reference to scroll container for position tracking */
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>
 }
 
 function ScratchpadItem({
@@ -430,10 +568,14 @@ function ScratchpadItem({
   stream: streamWithPreview,
   isActive,
   unreadCount,
-  urgency,
+  showUrgencyStrip = true,
+  compact = false,
+  scrollContainerRef,
 }: ScratchpadItemProps) {
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
   const { getActorName } = useActors(workspaceId)
+  const { setUrgencyBlock, sidebarHeight, scrollContainerOffset } = useSidebar()
+  const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
@@ -441,6 +583,38 @@ function ScratchpadItem({
 
   const name = stream?.displayName || "New scratchpad"
   const preview = streamWithPreview.lastMessagePreview
+
+  // Track position for collapsed urgency strip
+  useLayoutEffect(() => {
+    const el = itemRef.current
+    const container = scrollContainerRef?.current
+    if (!el || !container || sidebarHeight === 0) return
+
+    // Only track items with meaningful urgency
+    if (streamWithPreview.urgency === "quiet") {
+      setUrgencyBlock(streamWithPreview.id, null)
+      return
+    }
+
+    // Calculate position as fraction of sidebar height, accounting for header/quicklinks offset
+    const position = (scrollContainerOffset + el.offsetTop) / sidebarHeight
+    const height = el.offsetHeight / sidebarHeight
+
+    setUrgencyBlock(streamWithPreview.id, {
+      position,
+      height,
+      color: URGENCY_COLORS[streamWithPreview.urgency],
+    })
+
+    return () => setUrgencyBlock(streamWithPreview.id, null)
+  }, [
+    streamWithPreview.id,
+    streamWithPreview.urgency,
+    scrollContainerRef,
+    sidebarHeight,
+    scrollContainerOffset,
+    setUrgencyBlock,
+  ])
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -490,69 +664,91 @@ function ScratchpadItem({
   }
 
   return (
-    <div
+    <Link
+      ref={itemRef}
+      to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
       className={cn(
-        "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+        "group relative flex items-stretch rounded-lg text-sm transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/50",
-        hasUnread && !isActive && "font-medium"
+        hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10"
       )}
     >
-      {/* Avatar */}
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary">
-        <FileEdit className="h-3.5 w-3.5" />
+      {/* Inline urgency strip - left edge indicator */}
+      {showUrgencyStrip && (
+        <div
+          className="w-1 flex-shrink-0 rounded-l-lg"
+          style={{ backgroundColor: URGENCY_COLORS[streamWithPreview.urgency] }}
+        />
+      )}
+
+      {/* Main content wrapper */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
+        {/* Avatar */}
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary">
+          <FileEdit className="h-3.5 w-3.5" />
+        </div>
+
+        {/* Content */}
+        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+          <div className="flex items-center gap-2 pr-8">
+            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+              {name}
+              {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
+            </span>
+            <UnreadBadge count={unreadCount} />
+          </div>
+          {!compact && preview && preview.content && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="truncate flex-1">
+                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
+              </span>
+              <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <Link to={`/w/${workspaceId}/s/${streamWithPreview.id}`} className="flex-1 truncate font-medium text-sm">
-            {name}
-            {isDraft && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(draft)</span>}
-          </Link>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Activity dot */}
-            {urgency !== "quiet" && (
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: URGENCY_COLORS[urgency] }} />
-            )}
-            <UnreadBadge count={unreadCount} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-                  onClick={(e) => e.preventDefault()}
-                >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={handleStartRename}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleArchive} className="text-destructive">
-                  <Archive className="mr-2 h-4 w-4" />
-                  {isDraft ? "Delete" : "Archive"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        {preview && preview.content && (
-          <Link
-            to={`/w/${workspaceId}/s/${streamWithPreview.id}`}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      {/* Context menu - top-right positioned */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
           >
-            <span className="truncate flex-1">
-              {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
-            </span>
-            <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
-          </Link>
-        )}
-      </div>
-    </div>
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleStartRename()
+            }}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleArchive()
+            }}
+            className="text-destructive"
+          >
+            <Archive className="mr-2 h-4 w-4" />
+            {isDraft ? "Delete" : "Archive"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Link>
   )
 }
 
@@ -562,58 +758,32 @@ function ScratchpadItem({
 
 interface SidebarShellProps {
   header: ReactNode
-  draftsLink: ReactNode
+  quickLinks: ReactNode
   streamList: ReactNode
   footer?: ReactNode
+  /** Ref for measuring sidebar dimensions */
+  sidebarRef?: React.RefObject<HTMLDivElement | null>
 }
 
 /**
- * Sidebar structural shell with dynamic urgency strip.
- * Content fades in/out based on sidebar state.
+ * Sidebar structural shell.
+ * Note: Collapsed state is handled by app-shell.tsx which clips the sidebar to 6px.
+ * This component just renders content - no need to react to collapse state.
  */
-export function SidebarShell({ header, draftsLink, streamList, footer }: SidebarShellProps) {
-  const { state } = useSidebar()
-  const isCollapsed = state === "collapsed"
-
+export function SidebarShell({ header, quickLinks, streamList, footer, sidebarRef }: SidebarShellProps) {
   return (
-    <div className="flex h-full flex-col">
-      {/* Header - fades out when collapsed */}
-      <div
-        className={cn(
-          "transition-opacity duration-150",
-          isCollapsed && "pointer-events-none opacity-0",
-          !isCollapsed && "pointer-events-auto opacity-100"
-        )}
-      >
-        {header}
-      </div>
+    <div ref={sidebarRef} className="relative flex h-full flex-col">
+      {/* Header */}
+      <div>{header}</div>
 
-      {/* Drafts link - fades out when collapsed */}
-      <div
-        className={cn(
-          "border-b px-2 py-2 transition-opacity duration-150",
-          isCollapsed && "pointer-events-none opacity-0 h-0 overflow-hidden py-0",
-          !isCollapsed && "pointer-events-auto opacity-100"
-        )}
-      >
-        {draftsLink}
-      </div>
+      {/* Quick links (Drafts, Threads) */}
+      <div className="border-b px-2 py-2">{quickLinks}</div>
 
-      {/* Body with scrollable content + urgency strip */}
-      <div className="flex-1 flex overflow-hidden">{streamList}</div>
+      {/* Body with scrollable content */}
+      <div className="flex-1 overflow-hidden">{streamList}</div>
 
-      {/* Footer - fades out when collapsed */}
-      {footer && (
-        <div
-          className={cn(
-            "border-t px-2 py-2 transition-opacity duration-150",
-            isCollapsed && "pointer-events-none opacity-0 h-0 overflow-hidden py-0",
-            !isCollapsed && "pointer-events-auto opacity-100"
-          )}
-        >
-          {footer}
-        </div>
-      )}
+      {/* Footer */}
+      {footer && <div className="border-t px-2 py-2">{footer}</div>}
     </div>
   )
 }
@@ -640,30 +810,30 @@ function HeaderSkeleton() {
   )
 }
 
-function DraftsLinkSkeleton() {
-  return <Skeleton className="h-9 w-full rounded-md" />
+function QuickLinksSkeleton() {
+  return (
+    <div className="space-y-1">
+      <Skeleton className="h-9 w-full rounded-md" />
+      <Skeleton className="h-9 w-full rounded-md" />
+    </div>
+  )
 }
 
 function StreamListSkeleton() {
   return (
-    <div className="flex flex-1">
-      {/* Urgency strip */}
-      <div className="w-1.5 flex-shrink-0 bg-muted" />
-      {/* Content */}
-      <div className="flex-1 p-2">
-        <div className="mb-4">
-          <Skeleton className="mb-2 h-6 w-28 px-3" />
-          <div className="space-y-1">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
-          </div>
+    <div className="flex-1 p-2">
+      <div className="mb-4">
+        <Skeleton className="mb-2 h-6 w-28 px-3" />
+        <div className="space-y-1">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
         </div>
-        <div>
-          <Skeleton className="mb-2 h-6 w-20 px-3" />
-          <div className="space-y-1">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
-          </div>
+      </div>
+      <div>
+        <Skeleton className="mb-2 h-6 w-20 px-3" />
+        <div className="space-y-1">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
         </div>
       </div>
     </div>
@@ -680,19 +850,23 @@ interface SidebarProps {
 
 export function Sidebar({ workspaceId }: SidebarProps) {
   const { isLoading: coordinatedLoading } = useCoordinatedLoading()
+  const {
+    viewMode,
+    setViewMode,
+    collapsedSections,
+    toggleSectionCollapsed,
+    setSidebarHeight,
+    setScrollContainerOffset,
+  } = useSidebar()
   const { streamId: activeStreamId, "*": splat } = useParams<{ streamId: string; "*": string }>()
   const { data: bootstrap, isLoading, error, retryBootstrap } = useWorkspaceBootstrap(workspaceId)
   const createStream = useCreateStream(workspaceId)
   const { createDraft } = useDraftScratchpads(workspaceId)
-  const { getUnreadCount, getTotalUnreadCount, markAllAsRead, isMarkingAllAsRead } = useUnreadCounts(workspaceId)
+  const { getUnreadCount } = useUnreadCounts(workspaceId)
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const [viewMode, setViewMode] = useState<ViewMode>("smart")
-  const [everythingElseCollapsed, setEverythingElseCollapsed] = useState(true)
-
-  const totalUnread = getTotalUnreadCount()
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
 
@@ -780,12 +954,45 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return { scratchpads, channels, dms }
   }, [processedStreams])
 
+  const isOtherCollapsed = collapsedSections.includes("other")
+
+  // Track sidebar and scroll container dimensions for position calculations
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    const sidebar = sidebarRef.current
+    if (!container || !sidebar) return
+
+    const updateDimensions = () => {
+      // Get sidebar total height
+      setSidebarHeight(sidebar.offsetHeight)
+
+      // Calculate scroll container offset from sidebar top
+      // This accounts for header + quick links sections
+      const containerRect = container.getBoundingClientRect()
+      const sidebarRect = sidebar.getBoundingClientRect()
+      setScrollContainerOffset(containerRect.top - sidebarRect.top)
+    }
+
+    // Initial measurement
+    updateDimensions()
+
+    // Observe size changes on both elements
+    const observer = new ResizeObserver(updateDimensions)
+    observer.observe(container)
+    observer.observe(sidebar)
+
+    return () => observer.disconnect()
+  }, [setSidebarHeight, setScrollContainerOffset])
+
   // During coordinated loading, show skeleton
   if (coordinatedLoading) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
-        draftsLink={<DraftsLinkSkeleton />}
+        quickLinks={<QuickLinksSkeleton />}
         streamList={<StreamListSkeleton />}
       />
     )
@@ -796,7 +1003,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
-        draftsLink={null}
+        quickLinks={null}
         streamList={
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-sm text-muted-foreground mb-3">Failed to load workspace</p>
@@ -830,112 +1037,104 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     navigate(`/w/${workspaceId}/s/${stream.id}`)
   }
 
-  // Get the ordered list of items for urgency strip (visible items only)
-  const visibleItems = useMemo(() => {
-    if (viewMode === "smart") {
-      const items = [...streamsBySection.important, ...streamsBySection.recent, ...streamsBySection.pinned]
-      if (!everythingElseCollapsed) {
-        items.push(...streamsBySection.other)
-      }
-      return items
-    } else {
-      // All view
-      return [...streamsByType.scratchpads, ...streamsByType.channels, ...streamsByType.dms]
-    }
-  }, [viewMode, streamsBySection, streamsByType, everythingElseCollapsed])
-
   return (
     <SidebarShell
+      sidebarRef={sidebarRef}
       header={
         <SidebarHeader
           workspaceName={bootstrap?.workspace.name ?? "Loading..."}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          totalUnread={totalUnread}
-          onMarkAllAsRead={markAllAsRead}
-          isMarkingAllAsRead={isMarkingAllAsRead}
         />
       }
-      draftsLink={
-        <Link
-          to={`/w/${workspaceId}/drafts`}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-            isDraftsPage ? "bg-primary/10" : "hover:bg-muted/50",
-            !isDraftsPage && draftCount === 0 && "text-muted-foreground"
-          )}
-        >
-          <FileEdit className="h-4 w-4" />
-          Drafts
-          {draftCount > 0 && <span className="ml-auto text-xs text-muted-foreground">({draftCount})</span>}
-        </Link>
+      quickLinks={
+        <div className="space-y-1">
+          <Link
+            to={`/w/${workspaceId}/drafts`}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              isDraftsPage ? "bg-primary/10" : "hover:bg-muted/50",
+              !isDraftsPage && draftCount === 0 && "text-muted-foreground"
+            )}
+          >
+            <FileEdit className="h-4 w-4" />
+            Drafts
+            {draftCount > 0 && <span className="ml-auto text-xs text-muted-foreground">({draftCount})</span>}
+          </Link>
+          <Link
+            to={`/w/${workspaceId}/threads`}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              "hover:bg-muted/50 text-muted-foreground"
+            )}
+          >
+            <MessageSquareText className="h-4 w-4" />
+            Threads
+          </Link>
+        </div>
       }
       streamList={
-        <div className="flex flex-1 overflow-hidden">
-          {/* Urgency strip - scrolls with content */}
-          <UrgencyStrip items={visibleItems} />
-
-          {/* Streams content - scrollable */}
-          <ScrollArea className="flex-1">
-            <div className="p-2">
-              {isLoading ? (
-                <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
-              ) : error ? (
-                <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
-              ) : viewMode === "smart" ? (
-                <>
-                  {/* Smart View */}
-                  <SmartSection
-                    section="important"
-                    items={streamsBySection.important}
+        <ScrollArea className="flex-1 [&>div>div]:!block [&>div>div]:!w-full">
+          <div ref={scrollContainerRef} className="p-2">
+            {isLoading ? (
+              <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
+            ) : error ? (
+              <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
+            ) : viewMode === "smart" ? (
+              <>
+                {/* Smart View */}
+                <SmartSection
+                  section="important"
+                  items={streamsBySection.important}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  scrollContainerRef={scrollContainerRef}
+                />
+                <SmartSection
+                  section="recent"
+                  items={streamsBySection.recent}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  scrollContainerRef={scrollContainerRef}
+                />
+                <SmartSection
+                  section="pinned"
+                  items={streamsBySection.pinned}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  scrollContainerRef={scrollContainerRef}
+                />
+                <SmartSection
+                  section="other"
+                  items={streamsBySection.other}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  isCollapsed={isOtherCollapsed}
+                  onToggle={() => toggleSectionCollapsed("other")}
+                  scrollContainerRef={scrollContainerRef}
+                />
+              </>
+            ) : (
+              <>
+                {/* All View - Type-based sections */}
+                {streamsByType.scratchpads.length > 0 && (
+                  <StreamSection
+                    label="Scratchpads"
+                    items={streamsByType.scratchpads}
+                    allStreams={processedStreams}
                     workspaceId={workspaceId}
                     activeStreamId={activeStreamId}
                     getUnreadCount={getUnreadCount}
-                  />
-                  <SmartSection
-                    section="recent"
-                    items={streamsBySection.recent}
-                    workspaceId={workspaceId}
-                    activeStreamId={activeStreamId}
-                    getUnreadCount={getUnreadCount}
-                  />
-                  <SmartSection
-                    section="pinned"
-                    items={streamsBySection.pinned}
-                    workspaceId={workspaceId}
-                    activeStreamId={activeStreamId}
-                    getUnreadCount={getUnreadCount}
-                  />
-                  <SmartSection
-                    section="other"
-                    items={streamsBySection.other}
-                    workspaceId={workspaceId}
-                    activeStreamId={activeStreamId}
-                    getUnreadCount={getUnreadCount}
-                    isCollapsed={everythingElseCollapsed}
-                    onToggle={() => setEverythingElseCollapsed(!everythingElseCollapsed)}
-                  />
-                </>
-              ) : (
-                <>
-                  {/* All View - Type-based sections */}
-                  {streamsByType.scratchpads.length > 0 && (
-                    <div className="mb-4">
-                      <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Scratchpads
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        {streamsByType.scratchpads.map((stream) => (
-                          <StreamItem
-                            key={stream.id}
-                            workspaceId={workspaceId}
-                            stream={stream}
-                            isActive={stream.id === activeStreamId}
-                            unreadCount={getUnreadCount(stream.id)}
-                            urgency={stream.urgency}
-                          />
-                        ))}
-                      </div>
+                    scrollContainerRef={scrollContainerRef}
+                    action={
                       <Button
                         variant="ghost"
                         size="sm"
@@ -944,26 +1143,20 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                       >
                         + New Scratchpad
                       </Button>
-                    </div>
-                  )}
+                    }
+                  />
+                )}
 
-                  {streamsByType.channels.length > 0 && (
-                    <div className="mb-4">
-                      <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Channels
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        {streamsByType.channels.map((stream) => (
-                          <StreamItem
-                            key={stream.id}
-                            workspaceId={workspaceId}
-                            stream={stream}
-                            isActive={stream.id === activeStreamId}
-                            unreadCount={getUnreadCount(stream.id)}
-                            urgency={stream.urgency}
-                          />
-                        ))}
-                      </div>
+                {streamsByType.channels.length > 0 && (
+                  <StreamSection
+                    label="Channels"
+                    items={streamsByType.channels}
+                    allStreams={processedStreams}
+                    workspaceId={workspaceId}
+                    activeStreamId={activeStreamId}
+                    getUnreadCount={getUnreadCount}
+                    scrollContainerRef={scrollContainerRef}
+                    action={
                       <Button
                         variant="ghost"
                         size="sm"
@@ -973,25 +1166,25 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                       >
                         + New Channel
                       </Button>
-                    </div>
-                  )}
+                    }
+                  />
+                )}
 
-                  {streamsByType.scratchpads.length === 0 && streamsByType.channels.length === 0 && (
-                    <div className="px-4 py-8 text-center">
-                      <p className="text-sm text-muted-foreground mb-4">No streams yet</p>
-                      <Button variant="outline" size="sm" onClick={handleCreateScratchpad} className="mr-2">
-                        New Scratchpad
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={handleCreateChannel}>
-                        New Channel
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
+                {streamsByType.scratchpads.length === 0 && streamsByType.channels.length === 0 && (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-sm text-muted-foreground mb-4">No streams yet</p>
+                    <Button variant="outline" size="sm" onClick={handleCreateScratchpad} className="mr-2">
+                      New Scratchpad
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleCreateChannel}>
+                      New Channel
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </ScrollArea>
       }
       footer={
         <Link

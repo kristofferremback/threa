@@ -4,6 +4,7 @@ import { WorkspaceSelectPage } from "@/pages/workspace-select"
 import { WorkspaceLayout } from "@/pages/workspace-layout"
 import { StreamPage } from "@/pages/stream"
 import { DraftsPage } from "@/pages/drafts"
+import { ThreadsPage } from "@/pages/threads"
 import { AIUsageAdminPage } from "@/pages/ai-usage-admin"
 import { ErrorBoundary } from "@/components/error-boundary"
 
@@ -35,6 +36,10 @@ export const router = createBrowserRouter([
       {
         path: "drafts",
         element: <DraftsPage />,
+      },
+      {
+        path: "threads",
+        element: <ThreadsPage />,
       },
       {
         path: "s/:streamId",

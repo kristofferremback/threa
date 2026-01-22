@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback } from "react"
+import { type ReactNode, useCallback, useEffect, useRef } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher } from "@/contexts"
 import { Button } from "@/components/ui/button"
@@ -74,32 +74,91 @@ interface AppShellProps {
  *
  * Sidebar states:
  * - collapsed: 6px color strip only, 30px hover margin for "magnetic" feel
- * - preview: 260px, positioned absolute, doesn't push content (hover state)
- * - pinned: 260px, positioned normal, pushes content
+ * - preview: user-defined width, positioned absolute, doesn't push content (hover state)
+ * - pinned: user-defined width, positioned normal, pushes content
  */
 export function AppShell({ sidebar, children }: AppShellProps) {
-  const { state, setHovering, pin, togglePinned } = useSidebar()
+  const {
+    state,
+    width,
+    isMobile,
+    isResizing,
+    urgencyBlocks,
+    setHovering,
+    pin,
+    collapse,
+    togglePinned,
+    startResizing,
+    stopResizing,
+    setWidth,
+  } = useSidebar()
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   const isCollapsed = state === "collapsed"
   const isPreview = state === "preview"
   const isPinned = state === "pinned"
+  const isOpen = isPreview || isPinned
 
-  // Handle mouse enter on hover margin or sidebar
+  // Handle mouse enter on hover margin or sidebar (disabled on mobile - touch devices don't hover)
   const handleMouseEnter = useCallback(() => {
-    setHovering(true)
-  }, [setHovering])
+    if (!isMobile) {
+      setHovering(true)
+    }
+  }, [setHovering, isMobile])
 
   // Handle mouse leave from sidebar
   const handleMouseLeave = useCallback(() => {
-    setHovering(false)
-  }, [setHovering])
+    if (!isMobile) {
+      setHovering(false)
+    }
+  }, [setHovering, isMobile])
 
-  // Click on sidebar pins it (from preview or collapsed)
+  // Click on sidebar pins it (from preview or collapsed) - on mobile this just keeps it open
   const handleSidebarClick = useCallback(() => {
-    if (!isPinned) {
+    if (!isPinned && !isMobile) {
       pin()
     }
-  }, [isPinned, pin])
+  }, [isPinned, pin, isMobile])
+
+  // Close backdrop on mobile
+  const handleBackdropClick = useCallback(() => {
+    collapse()
+  }, [collapse])
+
+  // Resize handlers
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      resizeRef.current = { startX: e.clientX, startWidth: width }
+      startResizing()
+    },
+    [width, startResizing]
+  )
+
+  // Global mouse move/up handlers for resizing
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return
+      const delta = e.clientX - resizeRef.current.startX
+      setWidth(resizeRef.current.startWidth + delta)
+    }
+
+    const handleMouseUp = () => {
+      resizeRef.current = null
+      stopResizing()
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isResizing, setWidth, stopResizing])
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
@@ -108,19 +167,64 @@ export function AppShell({ sidebar, children }: AppShellProps) {
 
       {/* Main area with sidebar and content */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Mobile backdrop - shown when sidebar is open on mobile */}
+        {isMobile && isOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 transition-opacity duration-200"
+            onClick={handleBackdropClick}
+            aria-hidden="true"
+          />
+        )}
+
         {/* Sidebar wrapper - handles positioning */}
         <div
           className={cn(
             "relative z-40 flex flex-shrink-0 flex-col",
-            // Width transitions
-            isCollapsed && "w-1.5",
-            isPreview && "w-1.5", // Wrapper stays narrow, sidebar is absolute
-            isPinned && "w-64",
-            "transition-[width] duration-200 ease-out"
+            // Transitions - disable during resize for smooth dragging
+            !isResizing && "transition-[width] duration-200 ease-out",
+            // On mobile, sidebar is always overlay (no wrapper width)
+            isMobile && "w-0"
           )}
+          style={{
+            // Wrapper width: collapsed = 6px, preview = 6px (sidebar absolute), pinned = sidebar width
+            // On mobile: always 0 (overlay mode)
+            width: isMobile ? "0px" : isCollapsed ? "6px" : isPreview ? "6px" : `${width}px`,
+          }}
         >
-          {/* Hover margin - 30px invisible zone for "magnetic" feel (only in collapsed state) */}
-          {isCollapsed && (
+          {/* Urgency strip - always visible on left edge (6px wide) */}
+          {!isMobile && (
+            <div
+              className="absolute left-0 top-0 h-full w-[6px] z-50 pointer-events-none"
+              style={{
+                // Clip right edge to prevent blur bleeding into sidebar/content
+                // Let blur extend left (off-screen), up, and down for soft glow
+                clipPath: "inset(-50px 0 -50px -50px)",
+              }}
+              aria-hidden="true"
+            >
+              {/* Grey baseline - always visible */}
+              <div className="absolute inset-0" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
+              {/* Activity blocks - single blurred bar per stream */}
+              {Array.from(urgencyBlocks.entries()).map(([streamId, block]) => (
+                <div
+                  key={streamId}
+                  className="absolute"
+                  style={{
+                    left: "0px",
+                    width: "6px",
+                    top: `${block.position * 100}%`,
+                    height: `${Math.max(block.height * 100, 2)}%`,
+                    backgroundColor: block.color,
+                    filter: "blur(6px)",
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Hover margin - invisible zone for "magnetic" feel (collapsed state only, not on mobile) */}
+          {/* 30px zone to trigger preview when collapsed */}
+          {isCollapsed && !isMobile && (
             <div
               className="absolute left-full top-0 z-30 h-full w-[30px]"
               onMouseEnter={handleMouseEnter}
@@ -128,25 +232,63 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             />
           )}
 
-          {/* Sidebar container */}
+          {/* Coyote Time zone - extends beyond sidebar in preview mode for comfortable resizing */}
+          {/* Positioned outside aside (which has overflow-hidden) at sidebar's right edge */}
+          {isPreview && !isMobile && (
+            <div
+              className="absolute top-0 z-50 h-full w-[30px]"
+              style={{ left: `${width}px` }}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Sidebar container - clips content for reveal effect */}
           <aside
             className={cn(
-              "flex h-full flex-col border-r bg-background overflow-hidden",
-              // Width
-              isCollapsed && "w-1.5",
-              (isPreview || isPinned) && "w-64",
-              // Positioning - preview is absolute but within this container
-              isPreview && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
-              // Transitions
-              "transition-[width,box-shadow] duration-200 ease-out"
+              "relative flex h-full flex-col border-r bg-background overflow-hidden z-40",
+              // Positioning - preview is absolute, or always absolute on mobile
+              (isPreview || isMobile) && "absolute left-0 top-0 shadow-[4px_0_24px_hsl(var(--foreground)/0.08)]",
+              // Transitions - disable during resize for smooth dragging
+              !isResizing && "transition-[width,box-shadow] duration-200 ease-out"
             )}
+            style={{
+              // On mobile: use 85% of screen width when open, 0 when collapsed
+              width: isMobile ? (isOpen ? "85vw" : "0px") : isCollapsed ? "6px" : `${width}px`,
+              maxWidth: isMobile ? "320px" : undefined,
+            }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
             onClick={handleSidebarClick}
             role="navigation"
             aria-label="Sidebar navigation"
           >
-            {sidebar}
+            {/* Inner container maintains full width for reveal animation (prevents text reflow) */}
+            <div
+              className="h-full flex-1 flex flex-col overflow-hidden"
+              style={{
+                width: isMobile ? "85vw" : `${width}px`,
+                minWidth: isMobile ? undefined : `${width}px`,
+                maxWidth: isMobile ? "320px" : undefined,
+              }}
+            >
+              {sidebar}
+            </div>
+
+            {/* Resize handle - only visible when not collapsed and not on mobile */}
+            {!isCollapsed && !isMobile && (
+              <div
+                className={cn(
+                  "absolute right-0 top-0 h-full w-1 cursor-col-resize",
+                  "hover:bg-primary/20 active:bg-primary/30",
+                  "transition-colors duration-150",
+                  isResizing && "bg-primary/30"
+                )}
+                onMouseDown={handleResizeStart}
+                aria-label="Resize sidebar"
+              />
+            )}
           </aside>
         </div>
 

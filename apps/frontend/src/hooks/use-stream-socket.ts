@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
-import type { StreamEvent, Stream } from "@threa/types"
+import { workspaceKeys } from "./use-workspaces"
+import type { StreamEvent, Stream, WorkspaceBootstrap, LastMessagePreview } from "@threa/types"
 
 interface MessageEventPayload {
   workspaceId: string
@@ -92,8 +93,9 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       if (payload.streamId !== streamId) return
 
       const newEvent = payload.event
-      const newPayload = newEvent.payload as { content: string }
+      const newPayload = newEvent.payload as { contentJson: unknown; contentMarkdown: string }
 
+      // Update stream bootstrap cache
       queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as StreamBootstrap
@@ -105,8 +107,8 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
         // Remove only the first match so sending identical messages quickly still works
         const matchingOptimisticIdx = bootstrap.events.findIndex((e) => {
           if (!e.id.startsWith("temp_")) return false
-          const existingPayload = e.payload as { content: string }
-          return e.actorId === newEvent.actorId && existingPayload.content === newPayload.content
+          const existingPayload = e.payload as { contentMarkdown: string }
+          return e.actorId === newEvent.actorId && existingPayload.contentMarkdown === newPayload.contentMarkdown
         })
 
         let events = bootstrap.events
@@ -122,6 +124,24 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
           ...bootstrap,
           events: [...events, newEvent],
           latestSequence: newEvent.sequence,
+        }
+      })
+
+      // Update workspace bootstrap cache's stream preview for sidebar
+      queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          streams: old.streams.map((stream) => {
+            if (stream.id !== streamId) return stream
+            const newPreview: LastMessagePreview = {
+              authorId: newEvent.actorId,
+              authorType: newEvent.actorType,
+              content: newPayload.contentJson as string, // ProseMirror JSONContent stored as string
+              createdAt: newEvent.createdAt,
+            }
+            return { ...stream, lastMessagePreview: newPreview }
+          }),
         }
       })
 
