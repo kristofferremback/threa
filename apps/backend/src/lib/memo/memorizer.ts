@@ -51,22 +51,9 @@ The abstract should be 1-2 paragraphs that could stand alone as organizational m
 
 Output ONLY valid JSON matching the schema.`
 
-let cachedPrompt: string | null = null
-let cachedDate: string | null = null
-
 export function getSystemPrompt(): string {
   const today = new Date().toISOString().split("T")[0]
-  if (cachedDate !== today) {
-    cachedDate = today
-    cachedPrompt = SYSTEM_PROMPT_TEMPLATE.replace("{{CURRENT_DATE}}", today)
-  }
-  return cachedPrompt!
-}
-
-/** Reset cache - exported for testing only */
-export function _resetSystemPromptCache(): void {
-  cachedPrompt = null
-  cachedDate = null
+  return SYSTEM_PROMPT_TEMPLATE.replace("{{CURRENT_DATE}}", today)
 }
 
 const MESSAGE_MEMO_PROMPT = `Create a memo for this standalone message.
