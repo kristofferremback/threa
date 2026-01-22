@@ -71,6 +71,7 @@ import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/pool-monitor"
+import { AgentSessionMetricsCollector } from "./lib/agent-session-metrics"
 
 export interface ServerInstance {
   server: Server
@@ -210,6 +211,9 @@ export async function startServer(): Promise<ServerInstance> {
     intervalMs: 300000, // Run every 5 minutes
     expiredThresholdMs: 300000, // Delete ticks expired for 5+ minutes
   })
+
+  // Agent session metrics collector
+  const agentSessionMetrics = new AgentSessionMetricsCollector(pool)
 
   // Create helpers for agents
   // This adapter accepts markdown content and converts to JSON+markdown format
@@ -359,9 +363,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Register handlers before starting
   await jobQueue.start()
 
-  // Start schedule manager and cleanup worker
+  // Start schedule manager, cleanup worker, and metrics collectors
   scheduleManager.start()
   cleanupWorker.start()
+  agentSessionMetrics.start()
 
   // Schedule memo batch check cron job (every 30 seconds)
   // workspaceId in payload: "system" for system-wide batch check
@@ -431,6 +436,7 @@ export async function startServer(): Promise<ServerInstance> {
     logger.info("Shutting down server...")
     poolMonitor.stop()
     orphanSessionCleanup.stop()
+    agentSessionMetrics.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()
     await outboxDispatcher.stop()

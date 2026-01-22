@@ -1,4 +1,4 @@
-import type { Server } from "socket.io"
+import type { Server, Socket } from "socket.io"
 import { parseCookies } from "./lib/cookies"
 import type { AuthService } from "./services/auth-service"
 import type { UserService } from "./services/user-service"
@@ -6,8 +6,40 @@ import type { StreamService } from "./services/stream-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { logger } from "./lib/logger"
+import { wsConnectionsActive, wsConnectionDuration } from "./lib/metrics"
 
 const SESSION_COOKIE_NAME = "wos_session"
+
+/**
+ * Normalize room to pattern for metrics.
+ * - ws:abc123 -> ws:{workspaceId}
+ * - ws:abc123:stream:xyz789 -> ws:{workspaceId}:stream:{streamId}
+ */
+function normalizeRoomPattern(room: string): string {
+  if (room.match(/^ws:[^:]+:stream:.+$/)) {
+    return "ws:{workspaceId}:stream:{streamId}"
+  }
+  if (room.match(/^ws:[^:]+$/)) {
+    return "ws:{workspaceId}"
+  }
+  return "unknown"
+}
+
+/**
+ * Extract workspaceId from room string.
+ */
+function extractWorkspaceId(room: string): string {
+  const match = room.match(/^ws:([^:]+)/)
+  return match ? match[1] : "-"
+}
+
+/**
+ * Track per-socket state for metrics.
+ */
+interface SocketMetricsState {
+  connectTime: bigint
+  joinedRooms: Map<string, { workspaceId: string; roomPattern: string }>
+}
 
 interface Dependencies {
   authService: AuthService
@@ -53,6 +85,12 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     userSocketRegistry.register(userId, socket)
     logger.debug({ userId, socketId: socket.id }, "Socket connected")
 
+    // Initialize metrics state for this socket
+    const metricsState: SocketMetricsState = {
+      connectTime: process.hrtime.bigint(),
+      joinedRooms: new Map(),
+    }
+
     // =========================================================================
     // Room management
     // =========================================================================
@@ -67,6 +105,12 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           return
         }
         socket.join(room)
+
+        // Track metrics
+        const roomPattern = normalizeRoomPattern(room)
+        wsConnectionsActive.inc({ workspace_id: workspaceId, room_pattern: roomPattern })
+        metricsState.joinedRooms.set(room, { workspaceId, roomPattern })
+
         logger.debug({ userId, room }, "Joined workspace room")
         return
       }
@@ -74,13 +118,19 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       // Stream room: ws:${workspaceId}:stream:${streamId}
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
-        const [, , streamId] = streamMatch
+        const [, workspaceId, streamId] = streamMatch
         const isMember = await streamService.isMember(streamId, userId)
         if (!isMember) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           return
         }
         socket.join(room)
+
+        // Track metrics
+        const roomPattern = normalizeRoomPattern(room)
+        wsConnectionsActive.inc({ workspace_id: workspaceId, room_pattern: roomPattern })
+        metricsState.joinedRooms.set(room, { workspaceId, roomPattern })
+
         logger.debug({ userId, room }, "Joined stream room")
         return
       }
@@ -91,6 +141,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
     socket.on("leave", (room: string) => {
       socket.leave(room)
+
+      // Track metrics
+      const roomInfo = metricsState.joinedRooms.get(room)
+      if (roomInfo) {
+        wsConnectionsActive.dec({ workspace_id: roomInfo.workspaceId, room_pattern: roomInfo.roomPattern })
+        metricsState.joinedRooms.delete(room)
+      }
+
       logger.debug({ userId, room }, "Left room")
     })
 
@@ -100,6 +158,22 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
     socket.on("disconnect", () => {
       userSocketRegistry.unregister(userId, socket)
+
+      // Clean up metrics for all joined rooms
+      const connectionDurationSeconds = Number(process.hrtime.bigint() - metricsState.connectTime) / 1e9
+      const workspaceIds = new Set<string>()
+
+      for (const [, roomInfo] of metricsState.joinedRooms) {
+        wsConnectionsActive.dec({ workspace_id: roomInfo.workspaceId, room_pattern: roomInfo.roomPattern })
+        workspaceIds.add(roomInfo.workspaceId)
+      }
+
+      // Observe duration per unique workspace
+      for (const workspaceId of workspaceIds) {
+        wsConnectionDuration.observe({ workspace_id: workspaceId }, connectionDurationSeconds)
+      }
+
+      metricsState.joinedRooms.clear()
       logger.debug({ userId, socketId: socket.id }, "Socket disconnected")
     })
   })

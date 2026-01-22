@@ -5,12 +5,16 @@ import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
 import { bigIntReplacer } from "./lib/serialization"
+import { metricsMiddleware } from "./middleware/metrics"
 
 export function createApp(): Express {
   const app = express()
 
   // Configure JSON serialization to handle BigInt values
   app.set("json replacer", bigIntReplacer)
+
+  // Metrics middleware (before everything else to capture all requests)
+  app.use(metricsMiddleware)
 
   app.use(cors({ origin: true, credentials: true }))
   app.use(cookieParser())

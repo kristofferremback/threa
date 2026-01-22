@@ -8,6 +8,7 @@ import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
 import type { JobDataMap, JobQueueName, JobHandler } from "./job-queue"
 import { queueId, workerId, tickerId, cronId } from "./id"
+import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "./metrics"
 
 /**
  * Configuration for QueueManager
@@ -180,6 +181,7 @@ export class QueueManager {
       insertedAt: now,
     })
 
+    queueMessagesEnqueued.inc({ queue: queueName, workspace_id: workspaceId })
     logger.debug({ queueName, messageId, workspaceId }, "Message sent to queue")
 
     return messageId
@@ -414,7 +416,7 @@ export class QueueManager {
         messages.map((message) =>
           limit(async () => {
             try {
-              await this.processMessage(message, workerIdValue, completedMessageIds)
+              await this.processMessage(message, workerIdValue, completedMessageIds, token.workspaceId)
             } catch (err) {
               // Error already logged and handled in processMessage
               // Continue processing other messages
@@ -463,10 +465,14 @@ export class QueueManager {
   private async processMessage(
     message: { id: string; queueName: string; payload: unknown; failedCount: number },
     workerId: string,
-    completedMessageIds: Set<string>
+    completedMessageIds: Set<string>,
+    workspaceId: string
   ): Promise<void> {
     // Handler must exist - we only lease tokens for queues with registered handlers
     const handler = this.handlers.get(message.queueName)!
+
+    const startTime = process.hrtime.bigint()
+    queueMessagesInFlight.inc({ queue: message.queueName })
 
     try {
       // Execute handler
@@ -480,9 +486,18 @@ export class QueueManager {
       await this.completeMessage(message.id, workerId)
       completedMessageIds.add(message.id)
 
+      const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9
+      queueMessagesInFlight.dec({ queue: message.queueName })
+      queueMessagesProcessed.inc({ queue: message.queueName, status: "success", workspace_id: workspaceId })
+      queueMessageDuration.observe({ queue: message.queueName, workspace_id: workspaceId }, durationSeconds)
+
       logger.debug({ messageId: message.id, queueName: message.queueName }, "Message completed")
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
+
+      const durationSeconds = Number(process.hrtime.bigint() - startTime) / 1e9
+      queueMessagesInFlight.dec({ queue: message.queueName })
+      queueMessageDuration.observe({ queue: message.queueName, workspace_id: workspaceId }, durationSeconds)
 
       logger.warn({ messageId: message.id, queueName: message.queueName, err: error }, "Message processing failed")
 
@@ -494,6 +509,7 @@ export class QueueManager {
         await this.moveMessageToDlq(message.id, workerId, error.message)
         completedMessageIds.add(message.id)
 
+        queueMessagesProcessed.inc({ queue: message.queueName, status: "dlq", workspace_id: workspaceId })
         logger.error(
           { messageId: message.id, queueName: message.queueName },
           "Message moved to DLQ after exhausting retries"
@@ -502,6 +518,7 @@ export class QueueManager {
         // Retry with backoff
         await this.retryMessage(message.id, workerId, error.message, newFailedCount)
 
+        queueMessagesProcessed.inc({ queue: message.queueName, status: "failed", workspace_id: workspaceId })
         logger.debug(
           { messageId: message.id, queueName: message.queueName, retryCount: newFailedCount },
           "Message scheduled for retry"
