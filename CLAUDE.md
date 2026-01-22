@@ -279,6 +279,8 @@ Signs of sprawl (stop and refactor):
 
 The fix: Create a config object or lookup table at the top. Each variant's complete behavior visible in one block. Shared code receives config, doesn't compute it.
 
+**INV-44: AI Config Co-location** - Each AI component (classifier, memorizer, naming, etc.) must have a `config.ts` file co-located with its implementation. Config exports: model ID constant, system prompts, schemas, temperature settings. Production code and evals import from the same config file - no hardcoded duplicates. This ensures evals test the actual production configuration. Example: `lib/memo/config.ts` exports `MEMO_MODEL_ID`, `MEMO_TEMPERATURES`, prompts, schemas; both `classifier.ts` and `evals/suites/memo-classifier/suite.ts` import from it.
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
