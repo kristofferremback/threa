@@ -11,6 +11,7 @@ import {
   Hash,
   User,
   MessageSquareText,
+  Plus,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -144,9 +145,11 @@ interface SidebarHeaderProps {
   workspaceName: string
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
+  /** Hide the view toggle (e.g., when no streams exist) */
+  hideViewToggle?: boolean
 }
 
-function SidebarHeader({ workspaceName, viewMode, onViewModeChange }: SidebarHeaderProps) {
+function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewToggle }: SidebarHeaderProps) {
   const { openSwitcher } = useQuickSwitcher()
 
   return (
@@ -168,29 +171,31 @@ function SidebarHeader({ workspaceName, viewMode, onViewModeChange }: SidebarHea
         <span>Search messages</span>
       </button>
 
-      {/* View toggle */}
-      <div className="flex items-center gap-2 mt-3">
-        <div className="flex gap-1 bg-muted rounded-md p-0.5">
-          <button
-            onClick={() => onViewModeChange("smart")}
-            className={cn(
-              "px-2 py-1 rounded text-xs font-medium transition-all",
-              viewMode === "smart" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Smart
-          </button>
-          <button
-            onClick={() => onViewModeChange("all")}
-            className={cn(
-              "px-2 py-1 rounded text-xs font-medium transition-all",
-              viewMode === "all" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            All
-          </button>
+      {/* View toggle - hidden when no streams */}
+      {!hideViewToggle && (
+        <div className="flex items-center gap-2 mt-3">
+          <div className="flex gap-1 bg-muted rounded-md p-0.5">
+            <button
+              onClick={() => onViewModeChange("smart")}
+              className={cn(
+                "px-2 py-1 rounded text-xs font-medium transition-all",
+                viewMode === "smart" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Smart
+            </button>
+            <button
+              onClick={() => onViewModeChange("all")}
+              className={cn(
+                "px-2 py-1 rounded text-xs font-medium transition-all",
+                viewMode === "all" ? "bg-card text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              All
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -206,20 +211,39 @@ interface SectionHeaderProps {
   unreadCount?: number
   isCollapsible?: boolean
   onToggle?: () => void
+  /** Add button callback - shows plus icon on hover */
+  onAdd?: () => void
+  /** Tooltip for add button */
+  addTooltip?: string
 }
 
 /** Section header with consistent styling across all views */
-function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle }: SectionHeaderProps) {
-  const content = (
-    <>
-      <span>
-        {icon && `${icon} `}
-        {label}
-      </span>
+function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+  const leftContent = (
+    <span>
+      {icon && `${icon} `}
+      {label}
+    </span>
+  )
+
+  const rightContent = (
+    <div className="flex items-center gap-1">
       {unreadCount !== undefined && unreadCount > 0 && (
         <span className="px-2 py-0.5 bg-muted rounded-full text-[10px]">{unreadCount}</span>
       )}
-    </>
+      {onAdd && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onAdd()
+          }}
+          className="h-5 w-5 flex items-center justify-center rounded opacity-0 group-hover/section:opacity-100 hover:bg-muted transition-all"
+          title={addTooltip}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   )
 
   if (isCollapsible && onToggle) {
@@ -227,19 +251,21 @@ function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle }: Se
       <button
         onClick={onToggle}
         className={cn(
-          "w-full flex items-center justify-between px-3 py-2 rounded-md",
+          "group/section w-full flex items-center justify-between px-3 py-2 rounded-md",
           "text-xs font-semibold uppercase tracking-wide text-muted-foreground",
           "hover:bg-muted/50 transition-colors"
         )}
       >
-        {content}
+        {leftContent}
+        {rightContent}
       </button>
     )
   }
 
   return (
-    <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center justify-between">
-      {content}
+    <div className="group/section px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center justify-between">
+      {leftContent}
+      {rightContent}
     </div>
   )
 }
@@ -260,6 +286,10 @@ interface StreamSectionProps {
   compact?: boolean
   /** Reference to scroll container for position tracking */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
+  /** Add button callback - shows plus icon in header */
+  onAdd?: () => void
+  /** Tooltip for add button */
+  addTooltip?: string
 }
 
 /** Stream section that composes SectionHeader + items + optional action */
@@ -277,6 +307,8 @@ function StreamSection({
   action,
   compact = false,
   scrollContainerRef,
+  onAdd,
+  addTooltip,
 }: StreamSectionProps) {
   // Sum up unread counts for all items in this section
   const totalUnreadCount = items.reduce((sum, item) => sum + getUnreadCount(item.id), 0)
@@ -289,6 +321,8 @@ function StreamSection({
         unreadCount={totalUnreadCount}
         isCollapsible={!!onToggle}
         onToggle={onToggle}
+        onAdd={onAdd}
+        addTooltip={addTooltip}
       />
 
       {/* Section items */}
@@ -1045,6 +1079,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           workspaceName={bootstrap?.workspace.name ?? "Loading..."}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          hideViewToggle={processedStreams.length === 0}
         />
       }
       quickLinks={
@@ -1080,6 +1115,17 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
             ) : error ? (
               <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
+            ) : processedStreams.length === 0 ? (
+              /* Empty state - shown in both views when no streams */
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-muted-foreground mb-4">No streams yet</p>
+                <Button variant="outline" size="sm" onClick={handleCreateScratchpad} className="mr-2">
+                  + New Scratchpad
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleCreateChannel}>
+                  + New Channel
+                </Button>
+              </div>
             ) : viewMode === "smart" ? (
               <>
                 {/* Smart View */}
@@ -1124,63 +1170,30 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               </>
             ) : (
               <>
-                {/* All View - Type-based sections */}
-                {streamsByType.scratchpads.length > 0 && (
-                  <StreamSection
-                    label="Scratchpads"
-                    items={streamsByType.scratchpads}
-                    allStreams={processedStreams}
-                    workspaceId={workspaceId}
-                    activeStreamId={activeStreamId}
-                    getUnreadCount={getUnreadCount}
-                    scrollContainerRef={scrollContainerRef}
-                    action={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-1 w-full justify-start text-xs"
-                        onClick={handleCreateScratchpad}
-                      >
-                        + New Scratchpad
-                      </Button>
-                    }
-                  />
-                )}
+                {/* All View - Always show section headers with plus buttons */}
+                <StreamSection
+                  label="Scratchpads"
+                  items={streamsByType.scratchpads}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  scrollContainerRef={scrollContainerRef}
+                  onAdd={handleCreateScratchpad}
+                  addTooltip="+ New Scratchpad"
+                />
 
-                {streamsByType.channels.length > 0 && (
-                  <StreamSection
-                    label="Channels"
-                    items={streamsByType.channels}
-                    allStreams={processedStreams}
-                    workspaceId={workspaceId}
-                    activeStreamId={activeStreamId}
-                    getUnreadCount={getUnreadCount}
-                    scrollContainerRef={scrollContainerRef}
-                    action={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-1 w-full justify-start text-xs"
-                        onClick={handleCreateChannel}
-                        disabled={createStream.isPending}
-                      >
-                        + New Channel
-                      </Button>
-                    }
-                  />
-                )}
-
-                {streamsByType.scratchpads.length === 0 && streamsByType.channels.length === 0 && (
-                  <div className="px-4 py-8 text-center">
-                    <p className="text-sm text-muted-foreground mb-4">No streams yet</p>
-                    <Button variant="outline" size="sm" onClick={handleCreateScratchpad} className="mr-2">
-                      New Scratchpad
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleCreateChannel}>
-                      New Channel
-                    </Button>
-                  </div>
-                )}
+                <StreamSection
+                  label="Channels"
+                  items={streamsByType.channels}
+                  allStreams={processedStreams}
+                  workspaceId={workspaceId}
+                  activeStreamId={activeStreamId}
+                  getUnreadCount={getUnreadCount}
+                  scrollContainerRef={scrollContainerRef}
+                  onAdd={handleCreateChannel}
+                  addTooltip="+ New Channel"
+                />
               </>
             )}
           </div>
