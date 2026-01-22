@@ -6,7 +6,7 @@ import type { StreamService } from "./services/stream-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { logger } from "./lib/logger"
-import { wsConnectionsActive, wsConnectionDuration } from "./lib/metrics"
+import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/metrics"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
@@ -95,21 +95,30 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // Room management
     // =========================================================================
     socket.on("join", async (room: string) => {
+      const workspaceId = extractWorkspaceId(room)
+      const roomPattern = normalizeRoomPattern(room)
+      wsMessagesTotal.inc({
+        workspace_id: workspaceId,
+        direction: "received",
+        event_type: "join",
+        room_pattern: roomPattern,
+      })
+
       // Workspace room: ws:${workspaceId}
       const workspaceMatch = room.match(/^ws:([^:]+)$/)
       if (workspaceMatch) {
-        const workspaceId = workspaceMatch[1]
-        const isMember = await workspaceService.isMember(workspaceId, userId)
+        const wsId = workspaceMatch[1]
+        const isMember = await workspaceService.isMember(wsId, userId)
         if (!isMember) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           return
         }
         socket.join(room)
 
         // Track metrics
-        const roomPattern = normalizeRoomPattern(room)
-        wsConnectionsActive.inc({ workspace_id: workspaceId, room_pattern: roomPattern })
-        metricsState.joinedRooms.set(room, { workspaceId, roomPattern })
+        wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
+        metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
         logger.debug({ userId, room }, "Joined workspace room")
         return
@@ -118,18 +127,18 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       // Stream room: ws:${workspaceId}:stream:${streamId}
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
-        const [, workspaceId, streamId] = streamMatch
+        const [, wsId, streamId] = streamMatch
         const isMember = await streamService.isMember(streamId, userId)
         if (!isMember) {
           socket.emit("error", { message: "Not authorized to join this stream" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           return
         }
         socket.join(room)
 
         // Track metrics
-        const roomPattern = normalizeRoomPattern(room)
-        wsConnectionsActive.inc({ workspace_id: workspaceId, room_pattern: roomPattern })
-        metricsState.joinedRooms.set(room, { workspaceId, roomPattern })
+        wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
+        metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
         logger.debug({ userId, room }, "Joined stream room")
         return
@@ -137,9 +146,24 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
 
       // Unknown room format
       socket.emit("error", { message: "Invalid room format" })
+      wsMessagesTotal.inc({
+        workspace_id: workspaceId,
+        direction: "sent",
+        event_type: "error",
+        room_pattern: roomPattern,
+      })
     })
 
     socket.on("leave", (room: string) => {
+      const workspaceId = extractWorkspaceId(room)
+      const roomPattern = normalizeRoomPattern(room)
+      wsMessagesTotal.inc({
+        workspace_id: workspaceId,
+        direction: "received",
+        event_type: "leave",
+        room_pattern: roomPattern,
+      })
+
       socket.leave(room)
 
       // Track metrics
