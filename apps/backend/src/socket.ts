@@ -12,17 +12,16 @@ const SESSION_COOKIE_NAME = "wos_session"
 
 /**
  * Normalize room to pattern for metrics.
+ * Replaces IDs with placeholders section-by-section:
  * - ws:abc123 -> ws:{workspaceId}
  * - ws:abc123:stream:xyz789 -> ws:{workspaceId}:stream:{streamId}
+ * - ws:abc123:stream:xyz789:thread:def456 -> ws:{workspaceId}:stream:{streamId}:thread:{threadId}
  */
 function normalizeRoomPattern(room: string): string {
-  if (room.match(/^ws:[^:]+:stream:.+$/)) {
-    return "ws:{workspaceId}:stream:{streamId}"
-  }
-  if (room.match(/^ws:[^:]+$/)) {
-    return "ws:{workspaceId}"
-  }
-  return "unknown"
+  return room
+    .replace(/^ws:[\w]+/, "ws:{workspaceId}")
+    .replace(/stream:[\w]+/, "stream:{streamId}")
+    .replace(/thread:[\w]+/, "thread:{threadId}")
 }
 
 /**
