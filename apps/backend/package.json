@@ -10,7 +10,8 @@
     "test:unit": "bun test src/",
     "test:integration": "bun test tests/integration/",
     "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
-    "test:watch": "bun test --watch src/"
+    "test:watch": "bun test --watch src/",
+    "eval": "bun run evals/run.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.956.0",
@@ -21,6 +22,7 @@
     "@langchain/openai": "^1.2.0",
     "@langfuse/langchain": "^4.5.1",
     "@langfuse/otel": "^4.5.1",
+    "langfuse": "^3.38.6",
     "@msgpack/msgpack": "^3.1.2",
     "@openrouter/ai-sdk-provider": "^1.5.4",
     "@opentelemetry/api": "^1.9.0",

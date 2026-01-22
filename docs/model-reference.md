@@ -1,6 +1,6 @@
 # AI Model Reference
 
-**Last updated:** 2026-01-21
+**Last updated:** 2026-01-22
 
 This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
 
@@ -107,13 +107,14 @@ All models use `provider:modelPath` format:
 
 **When to use:**
 
+- Classification and extraction (MemoClassifier, Memorizer)
 - Research and context retrieval (Researcher agent)
 - High-volume reasoning tasks
 - Cost-sensitive workloads requiring good quality
 - Agentic workflows with tool use
 - Tasks where open-weight licensing matters
 
-**Use instead of:** `gpt-5-mini` for cost-sensitive tasks, `gpt-5-nano` when more capability needed
+**Use instead of:** `gpt-5-mini` for most structured output tasks - comparable quality at ~10x lower cost
 
 ---
 
