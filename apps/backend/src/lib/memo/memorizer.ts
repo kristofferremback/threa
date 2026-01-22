@@ -37,17 +37,24 @@ const memoContentSchema = z.object({
   sourceMessageIds: z.array(z.string()).describe("IDs of messages that contain the key information"),
 })
 
-const SYSTEM_PROMPT = `You are a knowledge preservation specialist for a team chat application. You create concise, self-contained memos that capture valuable information from conversations.
+const SYSTEM_PROMPT_TEMPLATE = `You are a knowledge preservation specialist for a team chat application. You create concise, self-contained memos that capture valuable information from conversations.
 
 Your memos should:
 1. Be SELF-CONTAINED - a reader should understand the memo without seeing the original messages
 2. Preserve ALL important information - decisions, rationale, context, participants
 3. Be FACTUAL - no meta-commentary like "this memo captures..." or "the team discussed..."
 4. Use consistent vocabulary with prior memos when similar concepts appear
+5. RESOLVE PRONOUNS when possible - If you can determine who "he/she/they" refers to from the conversation, use their actual name. If unclear (e.g., conversation continues from offline), leave the pronoun. When in doubt, preserve the original wording.
+6. ANCHOR DATES when possible - Convert relative dates ("yesterday", "next week") to actual dates using today's date: {{CURRENT_DATE}}. If ambiguous, leave as-is.
 
 The abstract should be 1-2 paragraphs that could stand alone as organizational memory.
 
 Output ONLY valid JSON matching the schema.`
+
+function getSystemPrompt(): string {
+  const today = new Date().toISOString().split("T")[0]
+  return SYSTEM_PROMPT_TEMPLATE.replace("{{CURRENT_DATE}}", today)
+}
 
 const MESSAGE_MEMO_PROMPT = `Create a memo for this standalone message.
 
@@ -128,7 +135,7 @@ export class Memorizer {
       model: this.modelId,
       schema: memoContentSchema,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt() },
         { role: "user", content: prompt },
       ],
       temperature: 0.3,
@@ -170,7 +177,7 @@ export class Memorizer {
       model: this.modelId,
       schema: memoContentSchema,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt() },
         { role: "user", content: prompt },
       ],
       temperature: 0.3,
@@ -220,7 +227,7 @@ export class Memorizer {
       model: this.modelId,
       schema: memoContentSchema,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt() },
         { role: "user", content: prompt },
       ],
       temperature: 0.3,
