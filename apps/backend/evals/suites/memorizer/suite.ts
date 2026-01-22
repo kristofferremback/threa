@@ -18,6 +18,7 @@ import type {
 import { containsEvaluator, fieldContainsEvaluator } from "../../framework/evaluators/contains"
 import { llmJudgeEvaluator } from "../../framework/evaluators/llm-judge"
 import { Memorizer, type MemoContent } from "../../../src/lib/memo/memorizer"
+import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/lib/memo/config"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 import { memorizerCases, createTestMessage, type MemorizerInput, type MemorizerExpected } from "./cases"
 import { messageId } from "../../../src/lib/id"
@@ -224,8 +225,8 @@ export const memorizerSuite: EvalSuite<MemorizerInput, MemoContent, MemorizerExp
 
   defaultPermutations: [
     {
-      model: "openrouter:openai/gpt-oss-120b",
-      temperature: 0.3,
+      model: MEMO_MODEL_ID,
+      temperature: MEMO_TEMPERATURES.memorization,
     },
   ],
 }

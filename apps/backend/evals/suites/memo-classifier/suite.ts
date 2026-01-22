@@ -8,6 +8,7 @@
 import type { EvalSuite, EvalContext, RunEvaluator, CaseResult } from "../../framework/types"
 import { binaryClassificationEvaluator, categoricalEvaluator } from "../../framework/evaluators/classification"
 import { MemoClassifier, type MessageClassification } from "../../../src/lib/memo/classifier"
+import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/lib/memo/config"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 import { classifierCases, createTestMessage, type ClassifierInput, type ClassifierExpected } from "./cases"
 import { messageId } from "../../../src/lib/id"
@@ -134,8 +135,8 @@ export const memoClassifierSuite: EvalSuite<ClassifierInput, MessageClassificati
 
   defaultPermutations: [
     {
-      model: "openrouter:openai/gpt-oss-120b",
-      temperature: 0.1,
+      model: MEMO_MODEL_ID,
+      temperature: MEMO_TEMPERATURES.classification,
     },
   ],
 }
