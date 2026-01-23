@@ -368,20 +368,8 @@ export class QueueManager {
    * Times out after lockDurationMs to prevent infinite waiting.
    */
   private async waitForCycleComplete(): Promise<void> {
-    const deadline = Date.now() + this.lockDurationMs
-
     while (this.activeTokens.size > 0) {
-      const remainingMs = deadline - Date.now()
-      if (remainingMs <= 0) {
-        logger.warn(
-          { activeTokens: this.activeTokens.size },
-          "waitForCycleComplete timed out, proceeding to next cycle"
-        )
-        break
-      }
-
-      const timeout = new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
-      await Promise.race([...this.activeTokens.values(), timeout])
+      await Promise.race(this.activeTokens)
     }
   }
 
