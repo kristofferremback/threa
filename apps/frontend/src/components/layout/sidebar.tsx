@@ -25,7 +25,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useUser } from "@/auth"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
 import { getThreadDisplayName } from "@/components/thread/breadcrumb-helpers"
@@ -82,25 +81,14 @@ const SECTION_LABELS = {
 // Helper Functions
 // ============================================================================
 
-/** Calculate urgency level for a stream */
-function calculateUrgency(stream: StreamWithPreview, unreadCount: number, currentUserId?: string): UrgencyLevel {
+/** Calculate urgency level for a stream based on unread state */
+function calculateUrgency(stream: StreamWithPreview, unreadCount: number): UrgencyLevel {
   // TODO: Check for mentions - for now use unread count as proxy
   if (unreadCount > 5) return "mentions"
 
-  // AI activity: last message was from a persona - always gold when there are unreads or recent
-  if (stream.lastMessagePreview?.authorType === AuthorTypes.PERSONA) {
-    if (unreadCount > 0) return "ai"
-    const diff = Date.now() - new Date(stream.lastMessagePreview.createdAt).getTime()
-    if (diff < 5 * 60 * 1000) return "ai"
-  }
-
-  // Check for recent activity (within 5 minutes) from other users
-  if (stream.lastMessagePreview) {
-    const diff = Date.now() - new Date(stream.lastMessagePreview.createdAt).getTime()
-    if (diff < 5 * 60 * 1000) {
-      // Skip marking own messages as activity
-      if (stream.lastMessagePreview.authorId !== currentUserId) return "activity"
-    }
+  // AI activity: last message was from a persona with unread messages
+  if (stream.lastMessagePreview?.authorType === AuthorTypes.PERSONA && unreadCount > 0) {
+    return "ai"
   }
 
   // Any unread messages should show activity
@@ -901,7 +889,6 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   const { drafts: allDrafts } = useAllDrafts(workspaceId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const currentUser = useUser()
 
   const draftCount = allDrafts.length
   const isDraftsPage = splat === "drafts" || window.location.pathname.endsWith("/drafts")
@@ -912,7 +899,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
 
     return bootstrap.streams.map((stream): StreamItemData => {
       const unreadCount = getUnreadCount(stream.id)
-      const urgency = calculateUrgency(stream, unreadCount, currentUser?.id)
+      const urgency = calculateUrgency(stream, unreadCount)
       const section = categorizeStream(stream, unreadCount, urgency)
 
       return {
@@ -921,7 +908,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         section,
       }
     })
-  }, [bootstrap?.streams, getUnreadCount, currentUser?.id])
+  }, [bootstrap?.streams, getUnreadCount])
 
   // Organize streams by section
   const streamsBySection = useMemo(() => {

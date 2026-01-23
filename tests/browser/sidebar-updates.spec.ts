@@ -144,11 +144,12 @@ test.describe("Sidebar Updates", () => {
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type("Test urgency message")
       await page.getByRole("button", { name: "Send" }).click()
-      await expect(page.getByText("Test urgency message")).toBeVisible({ timeout: 5000 })
+      // Wait for message in content area (use first() since sidebar preview may also match)
+      await expect(page.getByText("Test urgency message").first()).toBeVisible({ timeout: 5000 })
 
       // Navigate away
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+      await expect(page.getByText(/Type a message|No messages yet/).first()).toBeVisible({ timeout: 5000 })
 
       // Own messages should NOT trigger urgency
       const channelLink = page.getByRole("link", { name: `#${channelName}` })
@@ -156,18 +157,14 @@ test.describe("Sidebar Updates", () => {
 
       // Navigate back to the channel (marks as read)
       await channelLink.click()
-      await expect(page.getByText("Test urgency message")).toBeVisible()
+      await expect(page.getByText("Test urgency message").first()).toBeVisible()
 
       // Navigate away again
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
 
       // After reading, the channel should have no urgency indicator
-      // BUG: Currently calculateUrgency has a 5-minute time-based fallback that
-      // shows activity for recent messages regardless of read state.
-      // This test documents the expected behavior.
-
-      // Verify channel link is visible (basic functionality)
+      // (urgency is now purely based on unread count, not time-based)
       await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible()
     })
   })
