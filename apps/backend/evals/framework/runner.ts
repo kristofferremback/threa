@@ -224,6 +224,20 @@ async function runPermutation<TInput, TOutput, TExpected>(
         ? `${colors.green}PASS${colors.reset}`
         : `${colors.red}FAIL${colors.reset}`
     console.log(`${status} ${colors.dim}(${formatDuration(result.durationMs)})${colors.reset}`)
+
+    // Show inline details for failures
+    if (result.error) {
+      console.log(`    ${colors.red}${result.error.message}${colors.reset}`)
+      if (NoObjectGeneratedError.isInstance(result.error) && result.error.text) {
+        console.log(`    ${colors.dim}Raw response: ${formatValue(result.error.text, 200)}${colors.reset}`)
+      }
+    } else if (!passed) {
+      for (const evaluation of result.evaluations.filter((e) => !e.passed)) {
+        console.log(
+          `    ${colors.yellow}${evaluation.name}: ${evaluation.details || `score=${evaluation.score}`}${colors.reset}`
+        )
+      }
+    }
   }
 
   // Run suite teardown if provided
