@@ -7,7 +7,7 @@
  *   bun run evals/run.ts -s memo-classifier      # Run specific suite
  *   bun run evals/run.ts -s memorizer -c date-norm-001  # Run specific case
  *   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini  # Override model
- *   bun run evals/run.ts --use-test-db --no-langfuse  # Fast iteration
+ *   bun run evals/run.ts --no-langfuse           # Skip Langfuse recording
  */
 
 import { parseArgs } from "util"
@@ -30,7 +30,6 @@ Options:
   -c, --case <id>      Run specific case(s), comma-separated
   -m, --model <id>     Override model (e.g., openrouter:anthropic/claude-haiku-4.5)
   -t, --temperature <n> Override temperature (0.0-1.0)
-  --use-test-db        Reuse test database (faster, no isolation)
   --no-langfuse        Disable Langfuse recording
   -v, --verbose        Verbose output
 
@@ -47,8 +46,8 @@ Examples:
   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini
     Override model for all suites
 
-  bun run evals/run.ts --use-test-db --no-langfuse -v
-    Fast iteration mode with verbose output
+  bun run evals/run.ts --no-langfuse -v
+    Run with verbose output, skip Langfuse recording
 
 Available Suites:
   memo-classifier  - Tests message classification (gem detection)
@@ -57,7 +56,7 @@ Available Suites:
 }
 
 async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
+  const { values } = parseArgs({
     args: Bun.argv.slice(2),
     options: {
       help: { type: "boolean", short: "h" },
@@ -65,7 +64,6 @@ async function main(): Promise<void> {
       case: { type: "string", short: "c" },
       model: { type: "string", short: "m" },
       temperature: { type: "string", short: "t" },
-      "use-test-db": { type: "boolean" },
       "no-langfuse": { type: "boolean" },
       verbose: { type: "boolean", short: "v" },
     },
@@ -90,7 +88,6 @@ async function main(): Promise<void> {
     cases: values.case?.split(",").map((c) => c.trim()),
     model: values.model,
     temperature: values.temperature ? parseFloat(values.temperature) : undefined,
-    useTestDb: values["use-test-db"],
     noLangfuse: values["no-langfuse"],
     verbose: values.verbose,
   }
@@ -122,16 +119,13 @@ async function main(): Promise<void> {
     console.log(`Model override: ${options.model}`)
   }
 
-  if (options.useTestDb) {
-    console.log("Using test database (no isolation)")
-  }
-
   if (options.noLangfuse) {
     console.log("Langfuse recording disabled")
   }
 
   try {
-    // Cast to any to work around generic type mismatch between different suite types
+    // Safe cast: runSuites accepts EvalSuite<unknown, unknown, unknown>[] but TypeScript
+    // can't unify different generic instantiations. Each suite is processed independently.
     const results = await runSuites(allSuites as any, options)
 
     // Determine exit code based on results

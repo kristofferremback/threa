@@ -6,10 +6,8 @@
  */
 
 import { Langfuse } from "langfuse"
-import type { EvalPermutation, CaseResult, EvaluatorResult, LangfuseOptions } from "./types"
+import type { EvalPermutation, CaseResult, EvaluatorResult } from "./types"
 import { logger } from "../../src/lib/logger"
-
-let langfuseClient: Langfuse | null = null
 
 /**
  * Check if Langfuse is configured and available.
@@ -19,23 +17,19 @@ export function isLangfuseConfigured(): boolean {
 }
 
 /**
- * Get or create the Langfuse client.
+ * Create a Langfuse client if configured.
  * Returns null if Langfuse is not configured.
  */
-function getLangfuseClient(): Langfuse | null {
+export function createLangfuseClient(): Langfuse | null {
   if (!isLangfuseConfigured()) {
     return null
   }
 
-  if (!langfuseClient) {
-    langfuseClient = new Langfuse({
-      secretKey: process.env.LANGFUSE_SECRET_KEY!,
-      publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
-      baseUrl: process.env.LANGFUSE_BASE_URL || "http://localhost:3100",
-    })
-  }
-
-  return langfuseClient
+  return new Langfuse({
+    secretKey: process.env.LANGFUSE_SECRET_KEY!,
+    publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
+    baseUrl: process.env.LANGFUSE_BASE_URL || "http://localhost:3100",
+  })
 }
 
 /**
@@ -47,23 +41,13 @@ function getLangfuseClient(): Langfuse | null {
  * - Scores for each evaluator result
  */
 export async function recordEvalRun<TOutput, TExpected>(params: {
+  client: Langfuse
   suiteName: string
   permutation: EvalPermutation
   cases: CaseResult<TOutput, TExpected>[]
   runEvaluations: EvaluatorResult[]
-  options: LangfuseOptions
-}): Promise<string | undefined> {
-  const { suiteName, permutation, cases, runEvaluations, options } = params
-
-  if (!options.enabled) {
-    return undefined
-  }
-
-  const client = getLangfuseClient()
-  if (!client) {
-    logger.warn("Langfuse not configured, skipping experiment recording")
-    return undefined
-  }
+}): Promise<string> {
+  const { client, suiteName, permutation, cases, runEvaluations } = params
 
   // Create permutation label for trace name
   const permutationLabel = [
@@ -127,15 +111,4 @@ export async function recordEvalRun<TOutput, TExpected>(params: {
   logger.info({ traceId: trace.id, suiteName, permutationLabel }, "Recorded eval run to Langfuse")
 
   return trace.id
-}
-
-/**
- * Shutdown Langfuse client gracefully.
- * Call this before process exit.
- */
-export async function shutdownLangfuse(): Promise<void> {
-  if (langfuseClient) {
-    await langfuseClient.shutdownAsync()
-    langfuseClient = null
-  }
 }

@@ -2,7 +2,6 @@
  * Database isolation for AI evaluations.
  *
  * Each eval run gets a fresh database to ensure isolation.
- * Supports --use-test-db flag for faster iteration.
  */
 
 import { Pool } from "pg"
@@ -12,7 +11,6 @@ import { createDatabasePool } from "../../src/db"
 import type { DatabaseOptions } from "./types"
 
 const ADMIN_DATABASE_URL = "postgresql://threa:threa@localhost:5454/postgres"
-const TEST_DATABASE_URL = "postgresql://threa:threa@localhost:5454/threa_test"
 const DATABASE_HOST = "postgresql://threa:threa@localhost:5454"
 
 /**
@@ -110,23 +108,6 @@ async function dropEvalDatabase(name: string): Promise<void> {
 }
 
 /**
- * Ensure the test database exists for --use-test-db mode.
- */
-async function ensureTestDatabaseExists(): Promise<void> {
-  const adminPool = new Pool({ connectionString: ADMIN_DATABASE_URL })
-
-  try {
-    const result = await adminPool.query("SELECT 1 FROM pg_database WHERE datname = 'threa_test'")
-
-    if (result.rows.length === 0) {
-      await adminPool.query("CREATE DATABASE threa_test")
-    }
-  } finally {
-    await adminPool.end()
-  }
-}
-
-/**
  * Result from setting up an eval database.
  */
 export interface EvalDatabaseResult {
@@ -141,27 +122,9 @@ export interface EvalDatabaseResult {
 /**
  * Set up an isolated database for eval runs.
  *
- * When useTestDb is true, reuses the existing test database (faster but no isolation).
- * Otherwise creates a fresh database with unique name.
+ * Creates a fresh database with unique name for full isolation.
  */
 export async function setupEvalDatabase(options: DatabaseOptions = {}): Promise<EvalDatabaseResult> {
-  if (options.useTestDb) {
-    // Fast path: reuse test database
-    await ensureTestDatabaseExists()
-    const pool = createDatabasePool(process.env.TEST_DATABASE_URL ?? TEST_DATABASE_URL)
-    const migrator = createQuietMigrator(pool)
-    await migrator.up()
-
-    return {
-      pool,
-      databaseName: "threa_test",
-      cleanup: async () => {
-        await pool.end()
-      },
-    }
-  }
-
-  // Isolated path: create fresh database
   const databaseName = generateEvalDatabaseName(options.label)
   await createEvalDatabase(databaseName)
 
@@ -180,22 +143,4 @@ export async function setupEvalDatabase(options: DatabaseOptions = {}): Promise<
       await dropEvalDatabase(databaseName)
     },
   }
-}
-
-/**
- * Truncate all tables in the database.
- * Useful for resetting state between test cases when using --use-test-db.
- */
-export async function truncateAllTables(pool: Pool): Promise<void> {
-  const result = await pool.query<{ tablename: string }>(`
-    SELECT tablename
-    FROM pg_tables
-    WHERE schemaname = 'public'
-      AND tablename != 'umzug_migrations'
-  `)
-
-  if (result.rows.length === 0) return
-
-  const tables = result.rows.map((r) => `"${r.tablename}"`).join(", ")
-  await pool.query(`TRUNCATE ${tables} CASCADE`)
 }

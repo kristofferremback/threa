@@ -10,6 +10,7 @@
  * 6. Clean up
  */
 
+import type { Langfuse } from "langfuse"
 import type {
   EvalSuite,
   EvalContext,
@@ -19,8 +20,8 @@ import type {
   SuiteResult,
   RunnerOptions,
 } from "./types"
-import { setupEvalDatabase, truncateAllTables, type EvalDatabaseResult } from "./database"
-import { recordEvalRun, shutdownLangfuse, isLangfuseConfigured } from "./langfuse"
+import { setupEvalDatabase, type EvalDatabaseResult } from "./database"
+import { recordEvalRun, createLangfuseClient } from "./langfuse"
 import { createAI, type AI } from "../../src/lib/ai/ai"
 import { createWorkspaceFixture, type WorkspaceFixture } from "../fixtures/workspace"
 
@@ -187,15 +188,6 @@ async function runPermutation<TInput, TOutput, TExpected>(
         ? `${colors.green}PASS${colors.reset}`
         : `${colors.red}FAIL${colors.reset}`
     console.log(`${status} ${colors.dim}(${formatDuration(result.durationMs)})${colors.reset}`)
-
-    // If using test db, truncate between cases for isolation
-    if (options.useTestDb) {
-      await truncateAllTables(dbResult.pool)
-      // Re-create fixture for next case
-      const newFixture = await createWorkspaceFixture(dbResult.pool)
-      ctx.workspaceId = newFixture.workspaceId
-      ctx.userId = newFixture.userId
-    }
   }
 
   // Run suite teardown if provided
@@ -293,13 +285,13 @@ export async function runSuite<TInput, TOutput, TExpected>(
   }
 
   // Set up database
-  const dbResult = await setupEvalDatabase({
-    label: suite.name,
-    useTestDb: options.useTestDb,
-  })
+  const dbResult = await setupEvalDatabase({ label: suite.name })
 
   // Create AI wrapper
   const ai = createEvalAI()
+
+  // Create Langfuse client if enabled
+  const langfuseClient = options.noLangfuse ? null : createLangfuseClient()
 
   // Create initial fixture
   const fixture = await createWorkspaceFixture(dbResult.pool)
@@ -328,20 +320,22 @@ export async function runSuite<TInput, TOutput, TExpected>(
       permutationResults.push(permResult)
 
       // Record to Langfuse if enabled
-      if (!options.noLangfuse && isLangfuseConfigured()) {
+      if (langfuseClient) {
         lastTraceId = await recordEvalRun({
+          client: langfuseClient,
           suiteName: suite.name,
           permutation,
           cases: permResult.cases,
           runEvaluations: permResult.runEvaluations,
-          options: { enabled: true },
         })
       }
     }
   } finally {
     // Clean up
     await dbResult.cleanup()
-    await shutdownLangfuse()
+    if (langfuseClient) {
+      await langfuseClient.shutdownAsync()
+    }
   }
 
   const result: SuiteResult<TOutput, TExpected> = {

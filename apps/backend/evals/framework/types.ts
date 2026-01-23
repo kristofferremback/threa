@@ -208,8 +208,6 @@ export interface RunnerOptions {
   model?: string
   /** Override default temperature */
   temperature?: number
-  /** Use existing test database instead of creating fresh one */
-  useTestDb?: boolean
   /** Disable Langfuse recording */
   noLangfuse?: boolean
   /** Verbose output */
@@ -226,18 +224,4 @@ export interface RunnerOptions {
 export interface DatabaseOptions {
   /** Label for the database (used in name) */
   label?: string
-  /** Reuse existing test database */
-  useTestDb?: boolean
-}
-
-// -----------------------------------------------------------------------------
-// Langfuse Options
-// -----------------------------------------------------------------------------
-
-/**
- * Options for Langfuse recording.
- */
-export interface LangfuseOptions {
-  /** Whether Langfuse recording is enabled */
-  enabled: boolean
 }
