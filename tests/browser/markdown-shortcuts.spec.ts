@@ -35,7 +35,7 @@ test.describe("Formatting Shortcuts", () => {
     }
 
     // Wait for sidebar to be visible
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
 
     // Create a scratchpad to test in
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()

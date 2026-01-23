@@ -44,7 +44,7 @@ test.describe("User Journey", () => {
     await page.getByRole("button", { name: "Create Workspace" }).click()
 
     // Step 7: Should enter the workspace - verify sidebar is visible
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible()
 
     // Step 8: Set up dialog handler BEFORE clicking (dialog appears synchronously)

@@ -288,9 +288,26 @@ export function AppShell({ sidebar, children }: AppShellProps) {
                   "absolute right-0 top-0 h-full w-1 cursor-col-resize",
                   "hover:bg-primary/20 active:bg-primary/30",
                   "transition-colors duration-150",
+                  "focus-visible:bg-primary/30 focus-visible:outline-none",
                   isResizing && "bg-primary/30"
                 )}
                 onMouseDown={handleResizeStart}
+                onKeyDown={(e) => {
+                  const step = e.shiftKey ? 50 : 10
+                  if (e.key === "ArrowLeft") {
+                    e.preventDefault()
+                    setWidth(width - step)
+                  } else if (e.key === "ArrowRight") {
+                    e.preventDefault()
+                    setWidth(width + step)
+                  }
+                }}
+                tabIndex={0}
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuenow={width}
+                aria-valuemin={200}
+                aria-valuemax={400}
                 aria-label="Resize sidebar"
               />
             )}

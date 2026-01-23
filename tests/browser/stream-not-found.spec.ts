@@ -42,7 +42,7 @@ test.describe("Stream Not Found", () => {
     }
 
     // Wait for sidebar to be visible (we're in a workspace)
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
 
     // Get the current URL to extract workspaceId
     const url = page.url()
@@ -74,7 +74,7 @@ test.describe("Stream Not Found", () => {
 
     // Verify we can navigate back to a working page (Button asChild wraps a Link, so role is "link")
     await page.getByRole("link", { name: "Return to Workspace" }).click()
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
   })
 
   test("should handle 404 in side panel without affecting main stream", async ({ page }) => {
@@ -102,7 +102,7 @@ test.describe("Stream Not Found", () => {
     }
 
     // Wait for sidebar and create a scratchpad
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
 
     // Wait for scratchpad to load
