@@ -11,6 +11,7 @@
  */
 
 import type { Langfuse } from "langfuse"
+import { NoObjectGeneratedError } from "ai"
 import type {
   EvalSuite,
   EvalContext,
@@ -244,6 +245,16 @@ function printSummary<TOutput, TExpected>(result: SuiteResult<TOutput, TExpected
         console.log(`    ${colors.red}✗${colors.reset} ${caseResult.caseName}`)
         if (caseResult.error) {
           console.log(`      ${colors.red}Error: ${caseResult.error.message}${colors.reset}`)
+
+          // Show raw model response for parsing errors
+          if (NoObjectGeneratedError.isInstance(caseResult.error) && caseResult.error.text) {
+            const truncatedText =
+              caseResult.error.text.length > 500
+                ? caseResult.error.text.slice(0, 500) + "... (truncated)"
+                : caseResult.error.text
+            console.log(`      ${colors.dim}Raw response:${colors.reset}`)
+            console.log(`        ${colors.dim}${truncatedText.replace(/\n/g, "\n        ")}${colors.reset}`)
+          }
         }
         for (const evaluation of caseResult.evaluations.filter((e) => !e.passed)) {
           console.log(`      ${colors.yellow}${evaluation.name}: ${evaluation.score}${colors.reset}`)
