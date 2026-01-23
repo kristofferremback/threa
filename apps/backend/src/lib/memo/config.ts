@@ -99,6 +99,11 @@ NOT gems:
 - Questions without answers
 - Status updates without context ("done", "working on it")
 - Incomplete thoughts that need conversation context
+- Messages from AI/personas (when "From: persona") - we preserve human knowledge, not AI-generated content
+
+IMPORTANT:
+- If isGem is false, knowledgeType MUST be null
+- Only set knowledgeType when isGem is true
 
 Output ONLY valid JSON matching the schema. Keep reasoning to ONE brief sentence.`
 
