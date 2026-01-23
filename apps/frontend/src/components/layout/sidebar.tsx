@@ -60,7 +60,7 @@ interface StreamItemData extends StreamWithPreview {
 const URGENCY_COLORS = {
   mentions: "hsl(0 90% 55%)", // Vibrant red
   activity: "hsl(210 100% 55%)", // Bright blue
-  quiet: "hsl(var(--muted-foreground) / 0.3)", // Gray (slightly more visible)
+  quiet: "transparent", // Hidden when no activity
   ai: "hsl(45 100% 50%)", // Bright gold/amber
 } as const
 
@@ -538,7 +538,10 @@ function StreamItem({
     >
       {/* Inline urgency strip - left edge indicator */}
       {showUrgencyStrip && (
-        <div className="w-1 flex-shrink-0 rounded-l-lg" style={{ backgroundColor: URGENCY_COLORS[stream.urgency] }} />
+        <div
+          className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
+          style={{ backgroundColor: URGENCY_COLORS[stream.urgency] }}
+        />
       )}
 
       {/* Main content wrapper */}
@@ -720,7 +723,7 @@ function ScratchpadItem({
       {/* Inline urgency strip - left edge indicator */}
       {showUrgencyStrip && (
         <div
-          className="w-1 flex-shrink-0 rounded-l-lg"
+          className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
           style={{ backgroundColor: URGENCY_COLORS[streamWithPreview.urgency] }}
         />
       )}

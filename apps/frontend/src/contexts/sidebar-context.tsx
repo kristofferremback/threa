@@ -21,6 +21,8 @@ interface UrgencyBlock {
   height: number
   /** CSS color for this urgency level */
   color: string
+  /** Opacity for fade transitions (0-1) */
+  opacity: number
 }
 
 /** Persisted sidebar state (single localStorage key) */
@@ -87,8 +89,8 @@ interface SidebarContextValue {
   setViewMode: (mode: ViewMode) => void
   /** Toggle a section's collapsed state */
   toggleSectionCollapsed: (section: string) => void
-  /** Set urgency block for a stream item */
-  setUrgencyBlock: (streamId: string, block: UrgencyBlock | null) => void
+  /** Set urgency block for a stream item (opacity is added automatically) */
+  setUrgencyBlock: (streamId: string, block: Omit<UrgencyBlock, "opacity"> | null) => void
   /** Set sidebar height */
   setSidebarHeight: (height: number) => void
   /** Set scroll container offset from sidebar top */
@@ -149,6 +151,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [scrollContainerOffset, setScrollContainerOffset] = useState(0)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fadeOutTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // Persist state changes
   const updatePersistedState = useCallback((updates: Partial<SidebarPersistedState>) => {
@@ -311,25 +314,55 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [])
 
-  // Urgency block registration for position-matched strip
-  const setUrgencyBlock = useCallback((streamId: string, block: UrgencyBlock | null) => {
-    setUrgencyBlocks((current) => {
-      const next = new Map(current)
-      if (block === null) {
-        next.delete(streamId)
-      } else {
-        next.set(streamId, block)
-      }
-      return next
-    })
+  // Urgency block registration for position-matched strip with fade transitions
+  const setUrgencyBlock = useCallback((streamId: string, block: Omit<UrgencyBlock, "opacity"> | null) => {
+    // Clear any existing fade-out timeout for this stream
+    const existingTimeout = fadeOutTimeoutsRef.current.get(streamId)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+      fadeOutTimeoutsRef.current.delete(streamId)
+    }
+
+    if (block === null) {
+      // Fade out: set opacity to 0, then remove after transition
+      setUrgencyBlocks((current) => {
+        const existing = current.get(streamId)
+        if (!existing) return current
+
+        const next = new Map(current)
+        next.set(streamId, { ...existing, opacity: 0 })
+        return next
+      })
+
+      // Schedule removal after fade transition completes
+      const timeout = setTimeout(() => {
+        setUrgencyBlocks((current) => {
+          const next = new Map(current)
+          next.delete(streamId)
+          return next
+        })
+        fadeOutTimeoutsRef.current.delete(streamId)
+      }, 300)
+      fadeOutTimeoutsRef.current.set(streamId, timeout)
+    } else {
+      // Fade in: set block with full opacity
+      setUrgencyBlocks((current) => {
+        const next = new Map(current)
+        next.set(streamId, { ...block, opacity: 1 })
+        return next
+      })
+    }
   }, [])
 
-  // Cleanup timeout on unmount
+  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (hideTimeoutRef.current) {
         clearTimeout(hideTimeoutRef.current)
       }
+      // Clean up all fade-out timeouts
+      fadeOutTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout))
+      fadeOutTimeoutsRef.current.clear()
     }
   }, [])
 

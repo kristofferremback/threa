@@ -211,7 +211,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
                 return (
                   <div
                     key={streamId}
-                    className="absolute"
+                    className="absolute transition-opacity duration-300"
                     style={{
                       left: "-4px",
                       width: "14px",
@@ -219,6 +219,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
                       height: `${Math.max(expandedHeight * 100, 4)}%`,
                       backgroundColor: block.color,
                       filter: "blur(12px)",
+                      opacity: block.opacity,
                     }}
                   />
                 )
