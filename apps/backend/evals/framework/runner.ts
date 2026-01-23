@@ -21,7 +21,7 @@ import type {
   SuiteResult,
   RunnerOptions,
 } from "./types"
-import { setupEvalDatabase, type EvalDatabaseResult } from "./database"
+import { setupEvalDatabase, setupEvalTemplate, type EvalDatabaseResult, type EvalTemplateResult } from "./database"
 import { recordEvalRun, createLangfuseClient } from "./langfuse"
 import { createAI, type AI } from "../../src/lib/ai/ai"
 import { createWorkspaceFixture, type WorkspaceFixture } from "../fixtures/workspace"
@@ -257,6 +257,86 @@ async function runPermutation<TInput, TOutput, TExpected>(
 }
 
 /**
+ * Run a permutation with its own isolated database (for parallel execution).
+ */
+async function runPermutationIsolated<TInput, TOutput, TExpected>(
+  suite: EvalSuite<TInput, TOutput, TExpected>,
+  permutation: EvalPermutation,
+  template: EvalTemplateResult,
+  ai: AI,
+  options: RunnerOptions,
+  langfuseClient: Langfuse | null
+): Promise<{ result: PermutationResult<TOutput, TExpected>; traceId?: string }> {
+  // Clone database from template
+  const modelLabel = permutation.model.split("/").pop() || permutation.model
+  const dbResult = await template.clone(modelLabel)
+
+  try {
+    // Create fixture for this permutation
+    const fixture = await createWorkspaceFixture(dbResult.pool)
+
+    console.log(`\n${colors.yellow}Permutation: ${permutation.model}${colors.reset}`)
+
+    const result = await runPermutation(suite, permutation, dbResult, ai, fixture, options)
+
+    // Record to Langfuse if enabled
+    let traceId: string | undefined
+    if (langfuseClient) {
+      traceId = await recordEvalRun({
+        client: langfuseClient,
+        suiteName: suite.name,
+        permutation,
+        cases: result.cases,
+        runEvaluations: result.runEvaluations,
+      })
+    }
+
+    return { result, traceId }
+  } finally {
+    await dbResult.cleanup()
+  }
+}
+
+/**
+ * Print comparison table for multiple permutations.
+ */
+function printComparisonTable<TOutput, TExpected>(results: PermutationResult<TOutput, TExpected>[]): void {
+  if (results.length < 2) return
+
+  console.log("\n" + "=".repeat(80))
+  console.log(`${colors.cyan}Model Comparison${colors.reset}`)
+  console.log("=".repeat(80))
+
+  // Header
+  console.log(
+    `${"Model".padEnd(40)} ${"Pass".padStart(6)} ${"Fail".padStart(6)} ${"Rate".padStart(8)} ${"Time".padStart(10)}`
+  )
+  console.log("-".repeat(80))
+
+  // Sort by pass rate descending
+  const sorted = [...results].sort((a, b) => {
+    const aRate = a.cases.filter((c) => !c.error && c.evaluations.every((e) => e.passed)).length / a.cases.length
+    const bRate = b.cases.filter((c) => !c.error && c.evaluations.every((e) => e.passed)).length / b.cases.length
+    return bRate - aRate
+  })
+
+  for (const permResult of sorted) {
+    const passed = permResult.cases.filter((c) => !c.error && c.evaluations.every((e) => e.passed)).length
+    const failed = permResult.cases.length - passed
+    const rate = ((passed / permResult.cases.length) * 100).toFixed(1) + "%"
+    const model = permResult.permutation.model.split("/").pop() || permResult.permutation.model
+
+    const rateColor = passed === permResult.cases.length ? colors.green : passed > failed ? colors.yellow : colors.red
+
+    console.log(
+      `${model.padEnd(40)} ${String(passed).padStart(6)} ${String(failed).padStart(6)} ${rateColor}${rate.padStart(8)}${colors.reset} ${formatDuration(permResult.totalDurationMs).padStart(10)}`
+    )
+  }
+
+  console.log("=".repeat(80))
+}
+
+/**
  * Print summary of evaluation results.
  */
 function printSummary<TOutput, TExpected>(result: SuiteResult<TOutput, TExpected>): void {
@@ -356,57 +436,90 @@ export async function runSuite<TInput, TOutput, TExpected>(
     console.log(`${colors.dim}${suite.description}${colors.reset}`)
   }
 
-  // Set up database
-  const dbResult = await setupEvalDatabase({ label: suite.name })
-
   // Create AI wrapper
   const ai = createEvalAI()
 
   // Create Langfuse client if enabled
   const langfuseClient = options.noLangfuse ? null : createLangfuseClient()
 
-  // Create initial fixture
-  const fixture = await createWorkspaceFixture(dbResult.pool)
-
   // Determine permutations to run
   let permutations = suite.defaultPermutations
   if (options.model) {
-    // Override with CLI model
-    permutations = [
-      {
-        model: options.model,
-        temperature: options.temperature,
-      },
-    ]
+    // Support comma-separated models for comparison
+    const models = options.model.split(",").map((m) => m.trim())
+    permutations = models.map((model) => ({
+      model,
+      temperature: options.temperature,
+    }))
   }
 
   const permutationResults: PermutationResult<TOutput, TExpected>[] = []
   let lastTraceId: string | undefined
 
-  try {
-    // Run each permutation
-    for (const permutation of permutations) {
-      console.log(`\n${colors.yellow}Permutation: ${permutation.model}${colors.reset}`)
+  // Use parallel execution with template DBs if multiple permutations
+  const useParallel = permutations.length > 1 && (options.parallel ?? 1) > 1
 
-      const permResult = await runPermutation(suite, permutation, dbResult, ai, fixture, options)
-      permutationResults.push(permResult)
+  if (useParallel) {
+    // Create template DB once with migrations
+    console.log(`\n${colors.dim}Setting up template database...${colors.reset}`)
+    const template = await setupEvalTemplate(suite.name)
 
-      // Record to Langfuse if enabled
+    try {
+      // Run permutations in parallel (limited concurrency)
+      const concurrency = Math.min(options.parallel ?? 4, permutations.length)
+      console.log(
+        `${colors.dim}Running ${permutations.length} permutations with ${concurrency} parallel workers${colors.reset}`
+      )
+
+      const chunks: EvalPermutation[][] = []
+      for (let i = 0; i < permutations.length; i += concurrency) {
+        chunks.push(permutations.slice(i, i + concurrency))
+      }
+
+      for (const chunk of chunks) {
+        const results = await Promise.all(
+          chunk.map((permutation) => runPermutationIsolated(suite, permutation, template, ai, options, langfuseClient))
+        )
+
+        for (const { result, traceId } of results) {
+          permutationResults.push(result)
+          if (traceId) lastTraceId = traceId
+        }
+      }
+    } finally {
+      await template.cleanup()
       if (langfuseClient) {
-        lastTraceId = await recordEvalRun({
-          client: langfuseClient,
-          suiteName: suite.name,
-          permutation,
-          cases: permResult.cases,
-          runEvaluations: permResult.runEvaluations,
-        })
+        await langfuseClient.shutdownAsync()
       }
     }
-  } finally {
-    // Clean up
-    await dbResult.cleanup()
-    if (langfuseClient) {
-      await langfuseClient.shutdownAsync()
+  } else {
+    // Sequential execution with single database
+    const dbResult = await setupEvalDatabase({ label: suite.name })
+    const fixture = await createWorkspaceFixture(dbResult.pool)
+
+    try {
+      for (const permutation of permutations) {
+        console.log(`\n${colors.yellow}Permutation: ${permutation.model}${colors.reset}`)
+
+        const permResult = await runPermutation(suite, permutation, dbResult, ai, fixture, options)
+        permutationResults.push(permResult)
+
+        // Record to Langfuse if enabled
+        if (langfuseClient) {
+          lastTraceId = await recordEvalRun({
+            client: langfuseClient,
+            suiteName: suite.name,
+            permutation,
+            cases: permResult.cases,
+            runEvaluations: permResult.runEvaluations,
+          })
+        }
+      }
+    } finally {
+      await dbResult.cleanup()
+      if (langfuseClient) {
+        await langfuseClient.shutdownAsync()
+      }
     }
   }
 
@@ -418,6 +531,9 @@ export async function runSuite<TInput, TOutput, TExpected>(
 
   // Print summary
   printSummary(result)
+
+  // Print comparison table if multiple permutations
+  printComparisonTable(permutationResults)
 
   return result
 }

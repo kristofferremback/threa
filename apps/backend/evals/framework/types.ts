@@ -134,6 +134,12 @@ export interface PermutationResult<TOutput, TExpected> {
   runEvaluations: EvaluatorResult[]
   /** Total duration in milliseconds */
   totalDurationMs: number
+  /** Token usage stats */
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    totalCost?: number
+  }
 }
 
 /**
@@ -204,10 +210,12 @@ export interface RunnerOptions {
   suite?: string
   /** Filter to specific case IDs */
   cases?: string[]
-  /** Override default permutations with custom model */
+  /** Override default permutations with custom model(s) - comma-separated for comparison */
   model?: string
   /** Override default temperature */
   temperature?: number
+  /** Number of parallel workers (default: 1) */
+  parallel?: number
   /** Disable Langfuse recording */
   noLangfuse?: boolean
   /** Verbose output */

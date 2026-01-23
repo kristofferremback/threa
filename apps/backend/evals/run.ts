@@ -28,8 +28,9 @@ Options:
   -h, --help           Show this help message
   -s, --suite <name>   Run specific suite (memo-classifier, memorizer)
   -c, --case <id>      Run specific case(s), comma-separated
-  -m, --model <id>     Override model (e.g., openrouter:anthropic/claude-haiku-4.5)
+  -m, --model <ids>    Override model(s), comma-separated for comparison
   -t, --temperature <n> Override temperature (0.0-1.0)
+  -p, --parallel <n>   Number of parallel workers (default: 1)
   --no-langfuse        Disable Langfuse recording
   -v, --verbose        Verbose output
 
@@ -45,6 +46,9 @@ Examples:
 
   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini
     Override model for all suites
+
+  bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini,openrouter:anthropic/claude-haiku-4.5 -p 2
+    Compare models in parallel
 
   bun run evals/run.ts --no-langfuse -v
     Run with verbose output, skip Langfuse recording
@@ -64,6 +68,7 @@ async function main(): Promise<void> {
       case: { type: "string", short: "c" },
       model: { type: "string", short: "m" },
       temperature: { type: "string", short: "t" },
+      parallel: { type: "string", short: "p" },
       "no-langfuse": { type: "boolean" },
       verbose: { type: "boolean", short: "v" },
     },
@@ -88,6 +93,7 @@ async function main(): Promise<void> {
     cases: values.case?.split(",").map((c) => c.trim()),
     model: values.model,
     temperature: values.temperature ? parseFloat(values.temperature) : undefined,
+    parallel: values.parallel ? parseInt(values.parallel, 10) : undefined,
     noLangfuse: values["no-langfuse"],
     verbose: values.verbose,
   }
@@ -116,7 +122,16 @@ async function main(): Promise<void> {
   }
 
   if (options.model) {
-    console.log(`Model override: ${options.model}`)
+    const models = options.model.split(",").map((m) => m.trim())
+    if (models.length > 1) {
+      console.log(`Comparing ${models.length} models: ${models.map((m) => m.split("/").pop()).join(", ")}`)
+    } else {
+      console.log(`Model override: ${options.model}`)
+    }
+  }
+
+  if (options.parallel && options.parallel > 1) {
+    console.log(`Parallel workers: ${options.parallel}`)
   }
 
   if (options.noLangfuse) {

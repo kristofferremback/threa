@@ -1,7 +1,9 @@
 /**
  * Database isolation for AI evaluations.
  *
- * Each eval run gets a fresh database to ensure isolation.
+ * Supports two modes:
+ * 1. Single run: Create fresh database with migrations
+ * 2. Parallel runs: Create template once, clone for each worker
  */
 
 import { Pool } from "pg"
@@ -104,6 +106,85 @@ async function dropEvalDatabase(name: string): Promise<void> {
     await adminPool.query(`DROP DATABASE IF EXISTS "${name}"`)
   } finally {
     await adminPool.end()
+  }
+}
+
+/**
+ * Clone a database from a template.
+ * Much faster than creating + migrating since it copies all data.
+ */
+async function cloneFromTemplate(templateName: string, newName: string): Promise<void> {
+  const adminPool = new Pool({ connectionString: ADMIN_DATABASE_URL })
+
+  try {
+    // Must disconnect all connections from template before cloning
+    await adminPool.query(
+      `
+      SELECT pg_terminate_backend(pg_stat_activity.pid)
+      FROM pg_stat_activity
+      WHERE pg_stat_activity.datname = $1
+        AND pid <> pg_backend_pid()
+    `,
+      [templateName]
+    )
+
+    // Clone using template
+    await adminPool.query(`CREATE DATABASE "${newName}" TEMPLATE "${templateName}"`)
+  } finally {
+    await adminPool.end()
+  }
+}
+
+/**
+ * Result from setting up an eval template database.
+ */
+export interface EvalTemplateResult {
+  /** Template database name */
+  templateName: string
+  /** Clone a new database from this template */
+  clone: (label: string) => Promise<EvalDatabaseResult>
+  /** Clean up the template database */
+  cleanup: () => Promise<void>
+}
+
+/**
+ * Set up a template database for parallel eval runs.
+ *
+ * Creates one database with migrations, then clones can be made quickly.
+ * Use this when running multiple permutations in parallel.
+ */
+export async function setupEvalTemplate(label: string): Promise<EvalTemplateResult> {
+  const templateName = `threa_eval_template_${Date.now()}_${label.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`
+
+  // Create and migrate the template
+  await createEvalDatabase(templateName)
+  const templatePool = createDatabasePool(`${DATABASE_HOST}/${templateName}`)
+  const migrator = createQuietMigrator(templatePool)
+  await migrator.up()
+  await templatePool.end()
+
+  let cloneCounter = 0
+
+  return {
+    templateName,
+    clone: async (cloneLabel: string): Promise<EvalDatabaseResult> => {
+      const cloneName = `${templateName}_${++cloneCounter}_${cloneLabel.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`
+      await cloneFromTemplate(templateName, cloneName)
+
+      const pool = createDatabasePool(`${DATABASE_HOST}/${cloneName}`)
+
+      return {
+        pool,
+        databaseName: cloneName,
+        cleanup: async () => {
+          await pool.end()
+          await dropEvalDatabase(cloneName)
+        },
+      }
+    },
+    cleanup: async () => {
+      await dropEvalDatabase(templateName)
+    },
   }
 }
 
