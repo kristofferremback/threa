@@ -50,16 +50,16 @@ test.describe("Inline File Uploads", () => {
     await expect(createButton).toBeEnabled()
     await createButton.click()
 
-    // Wait for sidebar to be visible (workspace loaded)
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
+    // Wait for sidebar to be visible (empty state shows buttons)
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
 
-    // Create a channel for testing
+    // Create a channel for testing (creating navigates to it)
     const channelName = `upload-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
   })
 
   test("should insert [Image #1] reference when pasting an image with sequential name", async ({ page }) => {

@@ -265,11 +265,11 @@ interface SectionHeaderProps {
 
 /** Section header with consistent styling across all views */
 function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
-  const leftContent = (
-    <span>
+  const headingContent = (
+    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
       {icon && `${icon} `}
       {label}
-    </span>
+    </h3>
   )
 
   const rightContent = (
@@ -294,23 +294,30 @@ function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAd
 
   if (isCollapsible && onToggle) {
     return (
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
         className={cn(
-          "group/section w-full flex items-center justify-between px-3 py-2 rounded-md",
-          "text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+          "group/section w-full flex items-center justify-between px-3 py-2 rounded-md cursor-pointer",
           "hover:bg-muted/50 transition-colors"
         )}
       >
-        {leftContent}
+        {headingContent}
         {rightContent}
-      </button>
+      </div>
     )
   }
 
   return (
-    <div className="group/section px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center justify-between">
-      {leftContent}
+    <div className="group/section px-3 py-2 flex items-center justify-between">
+      {headingContent}
       {rightContent}
     </div>
   )

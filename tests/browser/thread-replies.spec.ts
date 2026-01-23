@@ -37,7 +37,7 @@ test.describe("Thread Replies", () => {
     await createButton.click()
 
     // Wait for sidebar to be visible (workspace loaded)
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
   })
 
   test("should send a reply in a thread", async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -97,7 +97,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -144,7 +144,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -215,7 +215,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")

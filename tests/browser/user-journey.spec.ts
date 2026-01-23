@@ -43,9 +43,9 @@ test.describe("User Journey", () => {
     await page.getByPlaceholder("New workspace name").fill(workspaceName)
     await page.getByRole("button", { name: "Create Workspace" }).click()
 
-    // Step 7: Should enter the workspace - verify sidebar is visible
+    // Step 7: Should enter the workspace - verify sidebar is visible (empty state shows buttons)
     await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible()
 
     // Step 8: Set up dialog handler BEFORE clicking (dialog appears synchronously)
     page.once("dialog", async (dialog) => {
@@ -54,13 +54,11 @@ test.describe("User Journey", () => {
       await dialog.accept(channelName)
     })
 
-    // Step 9: Create a channel - this triggers the dialog
+    // Step 9: Create a channel - this triggers the dialog and navigates to the channel
     await page.getByRole("button", { name: "+ New Channel" }).click()
 
-    // Wait for the channel to appear in sidebar
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
-
-    // Step 10: Verify we're in the channel view
+    // Step 10: Verify we're in the channel view (channel heading and empty state)
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
     await expect(page.getByText("No messages yet")).toBeVisible()
 
     // Step 11: Send a message (rich text editor uses contenteditable, not input)
@@ -126,8 +124,8 @@ test.describe("User Journey", () => {
       await page.getByRole("button", { name: "Create Workspace" }).click()
     }
 
-    // Wait for sidebar to be visible
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible()
+    // Wait for sidebar to be visible (empty state shows buttons)
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible()
 
     // Create a channel with a unique name we can search for
     const quickSwitchChannel = `qs-test-${testId}`
@@ -136,8 +134,12 @@ test.describe("User Journey", () => {
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
 
-    // Wait for channel to appear in sidebar
-    await expect(page.getByRole("link", { name: `#${quickSwitchChannel}` })).toBeVisible({ timeout: 5000 })
+    // Creating a channel navigates to it - verify via main content heading
+    await expect(page.getByRole("heading", { name: `#${quickSwitchChannel}`, level: 1 })).toBeVisible({ timeout: 5000 })
+
+    // Switch to All view to access the "+ New Scratchpad" button (not visible in Smart view with content)
+    await page.getByRole("button", { name: "All" }).click()
+    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible({ timeout: 5000 })
 
     // Create a scratchpad to navigate away from the channel
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
