@@ -148,6 +148,42 @@ function truncateContent(content: JSONContent, maxLength: number = 50): string {
 }
 
 // ============================================================================
+// Hooks
+// ============================================================================
+
+/** Track item position for collapsed urgency strip */
+function useUrgencyTracking(
+  itemRef: React.RefObject<HTMLAnchorElement | null>,
+  streamId: string,
+  urgency: UrgencyLevel,
+  scrollContainerRef: React.RefObject<HTMLDivElement | null> | undefined
+) {
+  const { setUrgencyBlock, sidebarHeight, scrollContainerOffset } = useSidebar()
+
+  useLayoutEffect(() => {
+    const el = itemRef.current
+    const container = scrollContainerRef?.current
+    if (!el || !container || sidebarHeight === 0) return
+
+    if (urgency === "quiet") {
+      setUrgencyBlock(streamId, null)
+      return
+    }
+
+    const position = (scrollContainerOffset + el.offsetTop) / sidebarHeight
+    const height = el.offsetHeight / sidebarHeight
+
+    setUrgencyBlock(streamId, {
+      position,
+      height,
+      color: URGENCY_COLORS[urgency],
+    })
+
+    return () => setUrgencyBlock(streamId, null)
+  }, [streamId, urgency, scrollContainerRef, sidebarHeight, scrollContainerOffset, setUrgencyBlock, itemRef])
+}
+
+// ============================================================================
 // Header Component
 // ============================================================================
 
@@ -445,35 +481,11 @@ function StreamItem({
   scrollContainerRef,
 }: StreamItemProps) {
   const { getActorName } = useActors(workspaceId)
-  const { setUrgencyBlock, sidebarHeight, scrollContainerOffset } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const preview = stream.lastMessagePreview
 
-  // Track position for collapsed urgency strip
-  useLayoutEffect(() => {
-    const el = itemRef.current
-    const container = scrollContainerRef?.current
-    if (!el || !container || sidebarHeight === 0) return
-
-    // Only track items with meaningful urgency
-    if (stream.urgency === "quiet") {
-      setUrgencyBlock(stream.id, null)
-      return
-    }
-
-    // Calculate position as fraction of sidebar height, accounting for header/quicklinks offset
-    const position = (scrollContainerOffset + el.offsetTop) / sidebarHeight
-    const height = el.offsetHeight / sidebarHeight
-
-    setUrgencyBlock(stream.id, {
-      position,
-      height,
-      color: URGENCY_COLORS[stream.urgency],
-    })
-
-    return () => setUrgencyBlock(stream.id, null)
-  }, [stream.id, stream.urgency, scrollContainerRef, sidebarHeight, scrollContainerOffset, setUrgencyBlock])
+  useUrgencyTracking(itemRef, stream.id, stream.urgency, scrollContainerRef)
 
   // Determine avatar content based on stream type
   const getAvatar = () => {
@@ -621,7 +633,6 @@ function ScratchpadItem({
 }: ScratchpadItemProps) {
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
   const { getActorName } = useActors(workspaceId)
-  const { setUrgencyBlock, sidebarHeight, scrollContainerOffset } = useSidebar()
   const itemRef = useRef<HTMLAnchorElement>(null)
   const hasUnread = unreadCount > 0
   const [isEditing, setIsEditing] = useState(false)
@@ -631,37 +642,7 @@ function ScratchpadItem({
   const name = stream?.displayName || "New scratchpad"
   const preview = streamWithPreview.lastMessagePreview
 
-  // Track position for collapsed urgency strip
-  useLayoutEffect(() => {
-    const el = itemRef.current
-    const container = scrollContainerRef?.current
-    if (!el || !container || sidebarHeight === 0) return
-
-    // Only track items with meaningful urgency
-    if (streamWithPreview.urgency === "quiet") {
-      setUrgencyBlock(streamWithPreview.id, null)
-      return
-    }
-
-    // Calculate position as fraction of sidebar height, accounting for header/quicklinks offset
-    const position = (scrollContainerOffset + el.offsetTop) / sidebarHeight
-    const height = el.offsetHeight / sidebarHeight
-
-    setUrgencyBlock(streamWithPreview.id, {
-      position,
-      height,
-      color: URGENCY_COLORS[streamWithPreview.urgency],
-    })
-
-    return () => setUrgencyBlock(streamWithPreview.id, null)
-  }, [
-    streamWithPreview.id,
-    streamWithPreview.urgency,
-    scrollContainerRef,
-    sidebarHeight,
-    scrollContainerOffset,
-    setUrgencyBlock,
-  ])
+  useUrgencyTracking(itemRef, streamWithPreview.id, streamWithPreview.urgency, scrollContainerRef)
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
