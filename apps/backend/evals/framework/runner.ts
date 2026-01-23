@@ -48,6 +48,41 @@ function formatDuration(ms: number): string {
 }
 
 /**
+ * Format a value for display, with optional truncation.
+ */
+function formatValue(value: unknown, maxLength = 300): string {
+  if (value === undefined) return "undefined"
+  if (value === null) return "null"
+
+  let str: string
+  if (typeof value === "string") {
+    str = value
+  } else {
+    try {
+      str = JSON.stringify(value, null, 2)
+    } catch {
+      str = String(value)
+    }
+  }
+
+  if (str.length > maxLength) {
+    return str.slice(0, maxLength) + "... (truncated)"
+  }
+  return str
+}
+
+/**
+ * Indent each line of a string.
+ */
+function indent(str: string, spaces: number): string {
+  const pad = " ".repeat(spaces)
+  return str
+    .split("\n")
+    .map((line) => pad + line)
+    .join("\n")
+}
+
+/**
  * Create AI wrapper with eval configuration.
  */
 function createEvalAI(): AI {
@@ -243,24 +278,36 @@ function printSummary<TOutput, TExpected>(result: SuiteResult<TOutput, TExpected
       } else {
         // Failed case - detailed output
         console.log(`    ${colors.red}✗${colors.reset} ${caseResult.caseName}`)
+
         if (caseResult.error) {
           console.log(`      ${colors.red}Error: ${caseResult.error.message}${colors.reset}`)
 
           // Show raw model response for parsing errors
           if (NoObjectGeneratedError.isInstance(caseResult.error) && caseResult.error.text) {
-            const truncatedText =
-              caseResult.error.text.length > 500
-                ? caseResult.error.text.slice(0, 500) + "... (truncated)"
-                : caseResult.error.text
             console.log(`      ${colors.dim}Raw response:${colors.reset}`)
-            console.log(`        ${colors.dim}${truncatedText.replace(/\n/g, "\n        ")}${colors.reset}`)
+            console.log(`${colors.dim}${indent(formatValue(caseResult.error.text, 500), 8)}${colors.reset}`)
           }
-        }
-        for (const evaluation of caseResult.evaluations.filter((e) => !e.passed)) {
-          console.log(`      ${colors.yellow}${evaluation.name}: ${evaluation.score}${colors.reset}`)
-          if (evaluation.details) {
-            console.log(`        ${colors.dim}${evaluation.details}${colors.reset}`)
+
+          // Show input that caused the error
+          console.log(`      ${colors.dim}Input:${colors.reset}`)
+          console.log(`${colors.dim}${indent(formatValue(caseResult.input), 8)}${colors.reset}`)
+        } else {
+          // Evaluation failures (not errors) - show input, output, expected
+          for (const evaluation of caseResult.evaluations.filter((e) => !e.passed)) {
+            console.log(`      ${colors.yellow}${evaluation.name}: ${evaluation.score}${colors.reset}`)
+            if (evaluation.details) {
+              console.log(`        ${colors.dim}${evaluation.details}${colors.reset}`)
+            }
           }
+
+          console.log(`      ${colors.dim}Input:${colors.reset}`)
+          console.log(`${colors.dim}${indent(formatValue(caseResult.input), 8)}${colors.reset}`)
+
+          console.log(`      ${colors.dim}Output:${colors.reset}`)
+          console.log(`${colors.dim}${indent(formatValue(caseResult.output), 8)}${colors.reset}`)
+
+          console.log(`      ${colors.dim}Expected:${colors.reset}`)
+          console.log(`${colors.dim}${indent(formatValue(caseResult.expectedOutput), 8)}${colors.reset}`)
         }
       }
     }
