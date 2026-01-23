@@ -204,21 +204,25 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             >
               {/* Grey baseline - always visible */}
               <div className="absolute inset-0" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
-              {/* Activity blocks - single blurred bar per stream */}
-              {Array.from(urgencyBlocks.entries()).map(([streamId, block]) => (
-                <div
-                  key={streamId}
-                  className="absolute"
-                  style={{
-                    left: "0px",
-                    width: "6px",
-                    top: `${block.position * 100}%`,
-                    height: `${Math.max(block.height * 100, 2)}%`,
-                    backgroundColor: block.color,
-                    filter: "blur(6px)",
-                  }}
-                />
-              ))}
+              {/* Activity blocks - single blurred bar per stream, 150% height centered */}
+              {Array.from(urgencyBlocks.entries()).map(([streamId, block]) => {
+                const expandedHeight = block.height * 1.5
+                const centeredTop = block.position - block.height * 0.25
+                return (
+                  <div
+                    key={streamId}
+                    className="absolute"
+                    style={{
+                      left: "-4px",
+                      width: "14px",
+                      top: `${centeredTop * 100}%`,
+                      height: `${Math.max(expandedHeight * 100, 4)}%`,
+                      backgroundColor: block.color,
+                      filter: "blur(12px)",
+                    }}
+                  />
+                )
+              })}
             </div>
           )}
 
