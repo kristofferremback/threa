@@ -9,6 +9,41 @@ import type { Pool } from "pg"
 import type { AI } from "../../src/lib/ai/ai"
 
 // -----------------------------------------------------------------------------
+// Usage Tracking
+// -----------------------------------------------------------------------------
+
+/**
+ * Accumulates token usage and cost across AI calls.
+ * Call recordUsage() after each AI call to track costs.
+ */
+export interface UsageAccumulator {
+  /** Record usage from an AI call */
+  recordUsage(usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number; cost?: number }): void
+  /** Get accumulated totals */
+  getTotal(): { inputTokens: number; outputTokens: number; totalCost: number }
+}
+
+/**
+ * Create a new usage accumulator for tracking AI costs.
+ */
+export function createUsageAccumulator(): UsageAccumulator {
+  let inputTokens = 0
+  let outputTokens = 0
+  let totalCost = 0
+
+  return {
+    recordUsage(usage) {
+      inputTokens += usage.promptTokens ?? 0
+      outputTokens += usage.completionTokens ?? 0
+      totalCost += usage.cost ?? 0
+    },
+    getTotal() {
+      return { inputTokens, outputTokens, totalCost }
+    },
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Context
 // -----------------------------------------------------------------------------
 
@@ -22,6 +57,8 @@ export interface EvalContext {
   workspaceId: string
   userId: string
   permutation: EvalPermutation
+  /** Usage accumulator for tracking AI costs - call recordUsage() after AI calls */
+  usage: UsageAccumulator
 }
 
 // -----------------------------------------------------------------------------

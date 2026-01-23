@@ -21,9 +21,11 @@ import type {
   SuiteResult,
   RunnerOptions,
 } from "./types"
+import { createUsageAccumulator } from "./types"
 import { setupEvalDatabase, setupEvalTemplate, type EvalDatabaseResult, type EvalTemplateResult } from "./database"
 import { recordEvalRun, createLangfuseClient } from "./langfuse"
-import { createAI, type AI } from "../../src/lib/ai/ai"
+import { createAI, type AI, type GenerateObjectOptions, type GenerateTextOptions } from "../../src/lib/ai/ai"
+import type { UsageAccumulator } from "./types"
 import { createWorkspaceFixture, type WorkspaceFixture } from "../fixtures/workspace"
 
 /**
@@ -94,6 +96,26 @@ function createEvalAI(): AI {
   return createAI({
     openrouter: { apiKey },
   })
+}
+
+/**
+ * Wrap an AI instance to track usage in an accumulator.
+ * Intercepts generateText and generateObject to record usage.
+ */
+function createUsageTrackingAI(ai: AI, accumulator: UsageAccumulator): AI {
+  return {
+    ...ai,
+    async generateText(options: GenerateTextOptions) {
+      const result = await ai.generateText(options)
+      accumulator.recordUsage(result.usage)
+      return result
+    },
+    async generateObject<T extends import("zod").ZodType>(options: GenerateObjectOptions<T>) {
+      const result = await ai.generateObject(options)
+      accumulator.recordUsage(result.usage)
+      return result
+    },
+  }
 }
 
 /**
@@ -190,13 +212,20 @@ async function runPermutation<TInput, TOutput, TExpected>(
   // Filter cases if specified
   const casesToRun = options.cases ? suite.cases.filter((c) => options.cases!.includes(c.id)) : suite.cases
 
+  // Create usage accumulator for cost tracking
+  const usageAccumulator = createUsageAccumulator()
+
+  // Wrap AI to track usage
+  const trackingAI = createUsageTrackingAI(ai, usageAccumulator)
+
   // Create context for this permutation
   const ctx: EvalContext = {
     pool: dbResult.pool,
-    ai,
+    ai: trackingAI,
     workspaceId: fixture.workspaceId,
     userId: fixture.userId,
     permutation,
+    usage: usageAccumulator,
   }
 
   // Run suite setup if provided
@@ -248,11 +277,19 @@ async function runPermutation<TInput, TOutput, TExpected>(
   // Run run-level evaluators
   const runEvaluations = suite.runEvaluators ? await Promise.all(suite.runEvaluators.map((e) => e.evaluate(cases))) : []
 
+  // Get accumulated usage
+  const totalUsage = usageAccumulator.getTotal()
+
   return {
     permutation,
     cases,
     runEvaluations,
     totalDurationMs: Date.now() - startTime,
+    usage: {
+      inputTokens: totalUsage.inputTokens,
+      outputTokens: totalUsage.outputTokens,
+      totalCost: totalUsage.totalCost,
+    },
   }
 }
 
@@ -298,20 +335,30 @@ async function runPermutationIsolated<TInput, TOutput, TExpected>(
 }
 
 /**
+ * Format cost in USD.
+ */
+function formatCost(cost: number): string {
+  if (cost === 0) return "-"
+  if (cost < 0.001) return `$${cost.toFixed(6)}`
+  if (cost < 0.01) return `$${cost.toFixed(4)}`
+  return `$${cost.toFixed(3)}`
+}
+
+/**
  * Print comparison table for multiple permutations.
  */
 function printComparisonTable<TOutput, TExpected>(results: PermutationResult<TOutput, TExpected>[]): void {
   if (results.length < 2) return
 
-  console.log("\n" + "=".repeat(80))
+  console.log("\n" + "=".repeat(90))
   console.log(`${colors.cyan}Model Comparison${colors.reset}`)
-  console.log("=".repeat(80))
+  console.log("=".repeat(90))
 
   // Header
   console.log(
-    `${"Model".padEnd(40)} ${"Pass".padStart(6)} ${"Fail".padStart(6)} ${"Rate".padStart(8)} ${"Time".padStart(10)}`
+    `${"Model".padEnd(35)} ${"Pass".padStart(6)} ${"Fail".padStart(6)} ${"Rate".padStart(8)} ${"Time".padStart(10)} ${"Cost".padStart(12)}`
   )
-  console.log("-".repeat(80))
+  console.log("-".repeat(90))
 
   // Sort by pass rate descending
   const sorted = [...results].sort((a, b) => {
@@ -325,15 +372,16 @@ function printComparisonTable<TOutput, TExpected>(results: PermutationResult<TOu
     const failed = permResult.cases.length - passed
     const rate = ((passed / permResult.cases.length) * 100).toFixed(1) + "%"
     const model = permResult.permutation.model.split("/").pop() || permResult.permutation.model
+    const cost = permResult.usage?.totalCost ?? 0
 
     const rateColor = passed === permResult.cases.length ? colors.green : passed > failed ? colors.yellow : colors.red
 
     console.log(
-      `${model.padEnd(40)} ${String(passed).padStart(6)} ${String(failed).padStart(6)} ${rateColor}${rate.padStart(8)}${colors.reset} ${formatDuration(permResult.totalDurationMs).padStart(10)}`
+      `${model.padEnd(35)} ${String(passed).padStart(6)} ${String(failed).padStart(6)} ${rateColor}${rate.padStart(8)}${colors.reset} ${formatDuration(permResult.totalDurationMs).padStart(10)} ${formatCost(cost).padStart(12)}`
     )
   }
 
-  console.log("=".repeat(80))
+  console.log("=".repeat(90))
 }
 
 /**
