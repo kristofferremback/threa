@@ -58,64 +58,6 @@ export function fieldMatchEvaluator<TOutput extends Record<string, unknown>>(
 }
 
 /**
- * Options for multi-field classification.
- */
-export interface MultiFieldMatchOptions<T> {
-  /** Name for this evaluator */
-  name?: string
-  /** Fields to check in the output */
-  fields: Array<keyof T>
-  /** Whether all fields must match (default: true) */
-  requireAll?: boolean
-}
-
-/**
- * Create a classification evaluator that checks multiple fields at once.
- *
- * @example
- * multiFieldMatchEvaluator<ClassificationResult>({
- *   fields: ["isKnowledgeWorthy", "knowledgeType"],
- *   name: "full-classification",
- * })
- */
-export function multiFieldMatchEvaluator<TOutput extends Record<string, unknown>>(
-  options: MultiFieldMatchOptions<TOutput>
-): Evaluator<TOutput, TOutput> {
-  const { fields, name = `fields(${fields.map(String).join(",")})`, requireAll = true } = options
-
-  return {
-    name,
-    evaluate: (output: TOutput, expected: TOutput): EvaluatorResult => {
-      const results = fields.map((field) => ({
-        field: String(field),
-        actual: output[field],
-        expected: expected[field],
-        matched: output[field] === expected[field],
-      }))
-
-      const matchedCount = results.filter((r) => r.matched).length
-      const passed = requireAll ? matchedCount === fields.length : matchedCount > 0
-      const score = fields.length > 0 ? matchedCount / fields.length : 1
-
-      const mismatches = results.filter((r) => !r.matched)
-      const details =
-        mismatches.length > 0
-          ? mismatches
-              .map((r) => `${r.field}: expected ${JSON.stringify(r.expected)}, got ${JSON.stringify(r.actual)}`)
-              .join("; ")
-          : undefined
-
-      return {
-        name,
-        score,
-        passed,
-        details,
-      }
-    },
-  }
-}
-
-/**
  * Create a binary classification evaluator (true/false outcomes).
  *
  * Convenience wrapper for boolean field matching with clearer semantics.

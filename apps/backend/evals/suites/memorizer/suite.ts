@@ -15,7 +15,6 @@ import type {
   RunEvaluator,
   CaseResult,
 } from "../../framework/types"
-import { containsEvaluator, fieldContainsEvaluator } from "../../framework/evaluators/contains"
 import { llmJudgeEvaluator } from "../../framework/evaluators/llm-judge"
 import { Memorizer, type MemoContent } from "../../../src/lib/memo/memorizer"
 import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/lib/memo/config"

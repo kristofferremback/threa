@@ -156,32 +156,3 @@ export function containsEvaluator(options: ContainsEvaluatorOptions = {}): Evalu
     },
   }
 }
-
-/**
- * Create a contains evaluator that extracts a field from structured output before matching.
- *
- * @example
- * fieldContainsEvaluator("abstract", { transform: "date-resolve" })
- */
-export function fieldContainsEvaluator<T extends Record<string, unknown>>(
-  field: keyof T,
-  options: ContainsEvaluatorOptions = {}
-): Evaluator<T, string | string[]> {
-  const baseEvaluator = containsEvaluator(options)
-
-  return {
-    name: options.name ?? `contains(${String(field)})`,
-    evaluate: (output: T, expected: string | string[], ctx: EvalContext) => {
-      const fieldValue = output[field]
-      if (typeof fieldValue !== "string") {
-        return {
-          name: baseEvaluator.name,
-          score: 0,
-          passed: false,
-          details: `Field "${String(field)}" is not a string`,
-        }
-      }
-      return baseEvaluator.evaluate(fieldValue, expected, ctx)
-    },
-  }
-}
