@@ -1,6 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
-import { StreamEventRepository, EventType, StreamEvent } from "../repositories/stream-event-repository"
+import { StreamEventRepository, StreamEvent } from "../repositories/stream-event-repository"
+import type { EventType, SourceItem } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, Message } from "../repositories/message-repository"
@@ -18,11 +19,6 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
-}
-
-export interface SourceItem {
-  title: string
-  url: string
 }
 
 export interface MessageCreatedPayload {

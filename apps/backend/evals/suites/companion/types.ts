@@ -3,7 +3,7 @@
  */
 
 import type { CompanionInput, CompanionExpected } from "./cases"
-import type { SourceItem } from "../../../src/agents/tools"
+import type { SourceItem } from "@threa/types"
 
 /**
  * A message sent by the companion agent.

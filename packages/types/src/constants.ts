@@ -150,3 +150,12 @@ export const AgentToolNames = {
   SEARCH_USERS: "search_users",
   GET_STREAM_MESSAGES: "get_stream_messages",
 } as const satisfies Record<string, AgentToolName>
+
+// Source types for message citations
+export const SOURCE_TYPES = ["web", "workspace"] as const
+export type SourceType = (typeof SOURCE_TYPES)[number]
+
+export const SourceTypes = {
+  WEB: "web",
+  WORKSPACE: "workspace",
+} as const satisfies Record<string, SourceType>

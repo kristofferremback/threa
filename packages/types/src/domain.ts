@@ -25,6 +25,7 @@ import type {
   KnowledgeType,
   MemoStatus,
   PendingItemType,
+  SourceType,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -166,6 +167,21 @@ export interface AttachmentSummary {
   filename: string
   mimeType: string
   sizeBytes: number
+}
+
+/**
+ * Source reference for message citations.
+ * Used by agents to provide sources for their responses.
+ */
+export interface SourceItem {
+  /** Source type: web for external URLs, workspace for internal knowledge */
+  type?: SourceType
+  /** Display title of the source */
+  title: string
+  /** URL to the source (web URL or internal navigation link) */
+  url: string
+  /** Optional preview snippet of the source content */
+  snippet?: string
 }
 
 export interface Conversation {

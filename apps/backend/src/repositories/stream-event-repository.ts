@@ -1,5 +1,6 @@
 import type { Querier } from "../db"
 import { sql } from "../db"
+import { COMMAND_EVENT_TYPES, type EventType } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface StreamEventRow {
@@ -12,23 +13,6 @@ interface StreamEventRow {
   actor_type: string | null
   created_at: Date
 }
-
-// Domain type (camelCase, exported)
-export type EventType =
-  | "message_created"
-  | "message_edited"
-  | "message_deleted"
-  | "reaction_added"
-  | "reaction_removed"
-  | "member_joined"
-  | "member_left"
-  | "thread_created"
-  | "stream_archived"
-  | "stream_unarchived"
-  | "companion_response"
-  | "command_dispatched"
-  | "command_completed"
-  | "command_failed"
 
 export interface StreamEvent {
   id: string
@@ -108,7 +92,6 @@ export const StreamEventRepository = {
     // Command events are author-only: only visible to the actor who created them.
     // If viewerId is provided, filter out command events from other users.
     // If viewerId is not provided, return all events (backwards compatibility for internal use).
-    const COMMAND_EVENT_TYPES = ["command_dispatched", "command_completed", "command_failed"]
 
     // Build query dynamically to avoid 8 permutations of the same query
     const conditions: string[] = ["stream_id = $1"]

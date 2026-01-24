@@ -4,9 +4,9 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { AgentToolNames } from "@threa/types"
+import { AgentToolNames, type SourceItem } from "@threa/types"
 import { logger } from "../lib/logger"
-import type { SourceItem, SendMessageInputWithSources, SendMessageResult } from "./tools"
+import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
 import type { ResearcherResult } from "./researcher"
 
 const MAX_ITERATIONS = 20

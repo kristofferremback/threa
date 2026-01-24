@@ -1,6 +1,13 @@
 import type { Pool } from "pg"
 import { withClient, type Querier } from "../db"
-import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType, type UserPreferences } from "@threa/types"
+import {
+  AgentToolNames,
+  AuthorTypes,
+  StreamTypes,
+  type AuthorType,
+  type UserPreferences,
+  type SourceItem,
+} from "@threa/types"
 import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
@@ -14,7 +21,6 @@ import {
   isToolEnabled,
   type SendMessageInputWithSources,
   type SendMessageResult,
-  type SourceItem,
   type SearchToolsCallbacks,
   type MessageSearchResult,
   type StreamSearchResult,
