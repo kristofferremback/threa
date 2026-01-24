@@ -290,6 +290,16 @@ export function useSocketEvents(workspaceId: string) {
       // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
+      const isViewingStream = currentStreamIdRef.current === payload.streamId
+
+      // If not viewing this stream, invalidate its bootstrap cache so it refetches
+      // when the user navigates there. (If viewing, useStreamSocket handles updates.)
+      if (!isViewingStream) {
+        queryClient.invalidateQueries({
+          queryKey: streamKeys.bootstrap(workspaceId, payload.streamId),
+        })
+      }
+
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
@@ -301,7 +311,6 @@ export function useSocketEvents(workspaceId: string) {
         // - Not for own messages
         // - Not when currently viewing the stream
         const isOwnMessage = user && payload.authorId === user.id
-        const isViewingStream = currentStreamIdRef.current === payload.streamId
         const shouldIncrementUnread = !isOwnMessage && !isViewingStream
 
         return {
