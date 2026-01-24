@@ -53,7 +53,7 @@ type UrgencyLevel = "mentions" | "activity" | "quiet" | "ai"
 
 interface StreamItemData extends StreamWithPreview {
   urgency: UrgencyLevel
-  section: "important" | "recent" | "pinned" | "other"
+  section: SectionKey
 }
 
 const URGENCY_COLORS = {
@@ -63,19 +63,43 @@ const URGENCY_COLORS = {
   ai: "hsl(45 100% 50%)", // Bright gold/amber
 } as const
 
-const SECTION_ICONS = {
-  important: "⚡",
-  recent: "🕐",
-  pinned: "📌",
-  other: "📂",
+/** Smart view section configuration - single source of truth for section behavior */
+const SMART_SECTIONS = {
+  important: {
+    label: "Important",
+    icon: "⚡",
+    compact: false, // Shows full preview always
+    showPreviewOnHover: false,
+    collapsible: false,
+    showCollapsedHint: false,
+  },
+  recent: {
+    label: "Recent",
+    icon: "🕐",
+    compact: true,
+    showPreviewOnHover: true,
+    collapsible: false,
+    showCollapsedHint: false,
+  },
+  pinned: {
+    label: "Pinned",
+    icon: "📌",
+    compact: true,
+    showPreviewOnHover: true,
+    collapsible: false,
+    showCollapsedHint: false,
+  },
+  other: {
+    label: "Everything Else",
+    icon: "📂",
+    compact: true,
+    showPreviewOnHover: true,
+    collapsible: true,
+    showCollapsedHint: true,
+  },
 } as const
 
-const SECTION_LABELS = {
-  important: "Important",
-  recent: "Recent",
-  pinned: "Pinned",
-  other: "Everything Else",
-} as const
+type SectionKey = keyof typeof SMART_SECTIONS
 
 // ============================================================================
 // Helper Functions
@@ -98,11 +122,7 @@ function calculateUrgency(stream: StreamWithPreview, unreadCount: number): Urgen
 }
 
 /** Categorize stream into smart section */
-function categorizeStream(
-  stream: StreamWithPreview,
-  unreadCount: number,
-  urgency: UrgencyLevel
-): "important" | "recent" | "pinned" | "other" {
+function categorizeStream(stream: StreamWithPreview, unreadCount: number, urgency: UrgencyLevel): SectionKey {
   // TODO: Add pinned support when backend implements it
   // if (stream.isPinned && unreadCount > 0) return "important"
   // if (stream.isPinned) return "pinned"
@@ -406,7 +426,7 @@ function StreamSection({
 }
 
 interface SmartSectionProps {
-  section: "important" | "recent" | "pinned" | "other"
+  section: SectionKey
   items: StreamItemData[]
   allStreams: StreamItemData[]
   workspaceId: string
@@ -418,7 +438,7 @@ interface SmartSectionProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
 }
 
-/** Smart view section wrapper - uses StreamSection with smart view specific settings */
+/** Smart view section wrapper - uses StreamSection with config-driven settings */
 function SmartSection({
   section,
   items,
@@ -430,27 +450,25 @@ function SmartSection({
   onToggle,
   scrollContainerRef,
 }: SmartSectionProps) {
-  if (items.length === 0 && section !== "other") return null
+  const config = SMART_SECTIONS[section]
 
-  const icon = SECTION_ICONS[section]
-  const label = SECTION_LABELS[section]
-
-  const isCompact = section !== "important"
+  // Hide empty sections (except collapsible ones like "other" which show a hint)
+  if (items.length === 0 && !config.collapsible) return null
 
   return (
     <StreamSection
-      label={label}
-      icon={icon}
+      label={config.label}
+      icon={config.icon}
       items={items}
       allStreams={allStreams}
       workspaceId={workspaceId}
       activeStreamId={activeStreamId}
       getUnreadCount={getUnreadCount}
       isCollapsed={isCollapsed}
-      onToggle={onToggle}
-      showCollapsedHint={section === "other"}
-      compact={isCompact}
-      showPreviewOnHover={isCompact}
+      onToggle={config.collapsible ? onToggle : undefined}
+      showCollapsedHint={config.showCollapsedHint}
+      compact={config.compact}
+      showPreviewOnHover={config.showPreviewOnHover}
       scrollContainerRef={scrollContainerRef}
     />
   )
