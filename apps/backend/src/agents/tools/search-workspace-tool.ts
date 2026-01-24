@@ -1,5 +1,6 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
+import { STREAM_TYPES } from "@threa/types"
 import { logger } from "../../lib/logger"
 
 // Schema for search_messages tool
@@ -31,10 +32,7 @@ export interface MessageSearchResult {
 // Schema for search_streams tool
 const SearchStreamsSchema = z.object({
   query: z.string().describe("The search query to find streams by name or description"),
-  types: z
-    .array(z.enum(["scratchpad", "channel", "dm", "thread"]))
-    .optional()
-    .describe("Filter by stream types"),
+  types: z.array(z.enum(STREAM_TYPES)).optional().describe("Filter by stream types"),
 })
 
 export type SearchStreamsInput = z.infer<typeof SearchStreamsSchema>
