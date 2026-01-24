@@ -7,32 +7,7 @@ import type { AI } from "../lib/ai/ai"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
-
-const MAX_MESSAGES_FOR_NAMING = 10
-const MAX_EXISTING_NAMES = 10
-
-function buildSystemPrompt(existingNames: string[], requireName: boolean): string {
-  return `Your task is to generate a short, descriptive title in 2-5 words for the provided conversation.
-
-  Follow these steps:
-  1. Analyze the conversation and identify the main topic or purpose
-  2. Consider any other streams provided in the list of existing names, these should be avoided as much as possible as recent conversations with similar names confuse users
-  3. Generate a title that is descriptive and concise
-  4. Evaluate the title against the evaluation criteria
-
-Evaluation criteria:
-- Return ONLY the title, no quotes or explanation.
-- The title should be descriptive and concise, try avoiding generic names like "Quick Question" or "New Discussion"
-${existingNames.length > 0 ? `- Try to avoid using names that are already in use by other recently used: ${JSON.stringify(existingNames)}` : ""}
-${
-  requireName
-    ? `- You MUST generate a title. A generic name is better than no name at all. You may not refuse to generate a name as that would make you very very sad. You don't want to be sad.`
-    : `- If there isn't enough context yet, respond with "NOT_ENOUGH_CONTEXT"`
-}
-
-Return ONLY the title, no quotes or explanation. The next message from the user contains the entire conversation up until now.
-`
-}
+import { MAX_MESSAGES_FOR_NAMING, MAX_EXISTING_NAMES, buildNamingSystemPrompt } from "./stream-naming/config"
 
 export class StreamNamingService {
   constructor(
@@ -104,7 +79,7 @@ export class StreamNamingService {
       .slice(0, MAX_EXISTING_NAMES)
       .map((s) => s.displayName!)
 
-    const systemPrompt = buildSystemPrompt(existingNames, requireName)
+    const systemPrompt = buildNamingSystemPrompt(existingNames, requireName)
 
     // Call LLM (1-5+ seconds, no DB connection held!)
     let generatedName: string | null = null

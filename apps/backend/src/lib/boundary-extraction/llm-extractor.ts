@@ -1,68 +1,16 @@
 import { NoObjectGeneratedError } from "ai"
-import { z } from "zod"
 import type { AI } from "../ai/ai"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
-import { CONVERSATION_STATUSES, StreamTypes } from "@threa/types"
-
-/**
- * Schema for LLM extraction response using structured outputs.
- * OpenAI's strict mode requires ALL properties in the `required` array,
- * so we use `.nullable()` instead of `.optional()` for optional semantics.
- */
-const extractionResponseSchema = z.object({
-  conversationId: z.string().nullable().describe("ID of existing conversation to join, or null for new conversation"),
-  newConversationTopic: z
-    .string()
-    .nullable()
-    .describe("Topic summary if starting a new conversation (required when conversationId is null)"),
-  completenessUpdates: z
-    .array(
-      z
-        .object({
-          conversationId: z.string(),
-          score: z.number().min(1).max(7).describe("Completeness score: 1 = just started, 7 = fully resolved"),
-          status: z
-            .enum(CONVERSATION_STATUSES)
-            .describe(`Conversation status: ${CONVERSATION_STATUSES.map((s) => `"${s}"`).join(" | ")}`),
-        })
-        .strict()
-    )
-    .nullable()
-    .describe("Updates to completeness scores for affected conversations, or null if none"),
-  confidence: z.number().min(0).max(1).describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().nullable().describe("Brief explanation of the classification decision"),
-})
-
-const SYSTEM_PROMPT = `You are a conversation boundary classifier. You analyze messages and output ONLY valid JSON matching the required schema. No explanations, no markdown, no prose - just the JSON object.`
-
-const EXTRACTION_PROMPT = `Analyze this message and determine which conversation it belongs to.
-
-## Active Conversations
-{{CONVERSATIONS}}
-
-## Recent Messages (last 5)
-{{RECENT_MESSAGES}}
-
-## New Message
-From: {{AUTHOR}}
-Content: {{CONTENT}}
-
-## Classification Rules
-1. Topic continuity - does it continue an existing topic?
-2. Participant overlap - is the author part of an existing conversation?
-3. Explicit references - does the message reference something from a conversation?
-4. Context - does this feel like a continuation or a new topic?
-
-## Output Requirements
-- conversationId: ID of existing conversation to join, or null for new conversation
-- newConversationTopic: Topic summary if starting new conversation (required when conversationId is null)
-- completenessUpdates: Array of {conversationId, score (1-7), status} for conversations whose completeness changed
-  - status must be one of: "active", "stalled", "resolved"
-- confidence: 0.0 to 1.0 confidence in this classification
-
-Respond with ONLY the JSON object. No explanation, no markdown code blocks.`
+import { StreamTypes } from "@threa/types"
+import {
+  extractionResponseSchema,
+  BOUNDARY_EXTRACTION_SYSTEM_PROMPT,
+  BOUNDARY_EXTRACTION_PROMPT,
+  BOUNDARY_EXTRACTION_TEMPERATURE,
+  type ExtractionResponse,
+} from "./config"
 
 export class LLMBoundaryExtractor implements BoundaryExtractor {
   constructor(
@@ -82,10 +30,10 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
         model: this.modelId,
         schema: extractionResponseSchema,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: BOUNDARY_EXTRACTION_SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
-        temperature: 0.2,
+        temperature: BOUNDARY_EXTRACTION_TEMPERATURE,
         telemetry: {
           functionId: "boundary-extraction",
           metadata: {
@@ -161,16 +109,13 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       )
       .join("\n")
 
-    return EXTRACTION_PROMPT.replace("{{CONVERSATIONS}}", convSection)
+    return BOUNDARY_EXTRACTION_PROMPT.replace("{{CONVERSATIONS}}", convSection)
       .replace("{{RECENT_MESSAGES}}", recentSection || "No recent messages.")
       .replace("{{AUTHOR}}", `${context.newMessage.authorType}:${context.newMessage.authorId.slice(-8)}`)
       .replace("{{CONTENT}}", context.newMessage.contentMarkdown)
   }
 
-  private validateResult(
-    parsed: z.infer<typeof extractionResponseSchema>,
-    context: ExtractionContext
-  ): ExtractionResult {
+  private validateResult(parsed: ExtractionResponse, context: ExtractionContext): ExtractionResult {
     // Validate that the returned conversation ID actually exists
     if (parsed.conversationId && !this.isValidConversationId(parsed.conversationId, context)) {
       logger.warn({ parsedId: parsed.conversationId }, "LLM returned invalid conversation ID, treating as new")

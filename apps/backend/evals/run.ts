@@ -15,10 +15,12 @@ import { runSuites, runFromConfigFile, type RunnerOptions } from "./framework/ru
 import { memoClassifierSuite } from "./suites/memo-classifier/suite"
 import { memorizerSuite } from "./suites/memorizer/suite"
 import { companionSuite } from "./suites/companion/suite"
+import { streamNamingSuite } from "./suites/stream-naming/suite"
+import { boundaryExtractionSuite } from "./suites/boundary-extraction/suite"
 import { isConfigFilePath } from "./framework/config-loader"
 
 // All available suites
-const allSuites = [memoClassifierSuite, memorizerSuite, companionSuite]
+const allSuites = [memoClassifierSuite, memorizerSuite, companionSuite, streamNamingSuite, boundaryExtractionSuite]
 
 function printHelp(): void {
   const suiteNames = allSuites.map((s) => s.name).join(", ")
