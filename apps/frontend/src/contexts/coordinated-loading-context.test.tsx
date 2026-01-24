@@ -155,7 +155,6 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    // During initial load, streams report as idle (global phase handles skeletons)
     expect(screen.getByTestId("stream-state").textContent).toBe("idle")
   })
 

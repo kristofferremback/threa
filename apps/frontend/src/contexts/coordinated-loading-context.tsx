@@ -127,8 +127,8 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const getStreamState = useMemo(
     () =>
       (streamId: string): StreamState => {
-        // During initial load, report all streams as idle
-        // (the global phase handles showing skeletons)
+        // During initial load, all streams report "idle" - the global phase controls skeleton display.
+        // This is intentional: individual stream loading indicators only appear AFTER initial load.
         if (!isReady) return "idle"
 
         // Drafts are always idle (no server fetch)

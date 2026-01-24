@@ -36,7 +36,7 @@ export function StreamLoadingIndicator({ isLoading, className }: StreamLoadingIn
   return (
     <div
       data-testid="stream-loading-indicator"
-      className={cn("absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden bg-muted", className)}
+      className={cn("absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden", className)}
     >
       <div className="h-full w-1/3 animate-indeterminate-progress bg-primary/60" />
     </div>
