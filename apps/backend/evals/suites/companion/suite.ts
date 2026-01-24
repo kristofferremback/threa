@@ -320,6 +320,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
   const researcher = new Researcher({
     pool: ctx.pool,
     ai: ctx.ai,
+    configResolver: ctx.configResolver,
     embeddingService,
   })
 

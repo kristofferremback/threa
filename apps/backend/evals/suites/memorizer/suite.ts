@@ -27,7 +27,7 @@ import { messageId } from "../../../src/lib/id"
  */
 async function memorizeMessage(input: MemorizerInput, ctx: EvalContext): Promise<MemoContent> {
   const messageFormatter = new MessageFormatter()
-  const memorizer = new Memorizer(ctx.ai, ctx.permutation.model, messageFormatter)
+  const memorizer = new Memorizer(ctx.ai, ctx.configResolver, messageFormatter)
 
   // Create a test message from the input
   const message = createTestMessage(input.content, messageId(), ctx.userId)

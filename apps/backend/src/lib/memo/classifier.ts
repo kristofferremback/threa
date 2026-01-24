@@ -1,4 +1,6 @@
 import type { AI } from "../ai/ai"
+import type { ConfigResolver } from "../ai/config-resolver"
+import { COMPONENT_PATHS } from "../ai/config-resolver"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
@@ -12,7 +14,6 @@ import {
   CLASSIFIER_MESSAGE_PROMPT,
   CLASSIFIER_CONVERSATION_PROMPT,
   CLASSIFIER_EXISTING_MEMO_TEMPLATE,
-  MEMO_TEMPERATURES,
 } from "./config"
 
 /** Optional context for cost tracking */
@@ -46,23 +47,25 @@ export interface ConversationClassification {
 export class MemoClassifier {
   constructor(
     private ai: AI,
-    private modelId: string,
+    private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
 
   async classifyMessage(message: Message, context: ClassifierContext): Promise<MessageClassification> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_CLASSIFIER)
+
     const prompt = CLASSIFIER_MESSAGE_PROMPT.replace("{{AUTHOR_TYPE}}", message.authorType)
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
       .replace("{{CONTENT}}", message.contentMarkdown)
 
     const { value } = await this.ai.generateObject({
-      model: this.modelId,
+      model: config.modelId,
       schema: messageClassificationSchema,
       messages: [
         { role: "system", content: CLASSIFIER_MESSAGE_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      temperature: MEMO_TEMPERATURES.classification,
+      temperature: config.temperature,
       telemetry: {
         functionId: "memo-classify-message",
         metadata: { messageId: message.id },
@@ -84,6 +87,8 @@ export class MemoClassifier {
     existingMemo: Memo | undefined,
     context: ClassifierContext
   ): Promise<ConversationClassification> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_CLASSIFIER)
+
     const existingMemoSection = existingMemo
       ? CLASSIFIER_EXISTING_MEMO_TEMPLATE.replace("{{MEMO_TITLE}}", existingMemo.title)
           .replace("{{MEMO_ABSTRACT}}", existingMemo.abstract)
@@ -100,13 +105,13 @@ export class MemoClassifier {
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
 
     const { value } = await this.ai.generateObject({
-      model: this.modelId,
+      model: config.modelId,
       schema: conversationClassificationSchema,
       messages: [
         { role: "system", content: CLASSIFIER_CONVERSATION_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      temperature: MEMO_TEMPERATURES.classification,
+      temperature: config.temperature,
       telemetry: {
         functionId: "memo-classify-conversation",
         metadata: {

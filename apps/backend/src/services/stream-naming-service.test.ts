@@ -2,6 +2,7 @@ import { describe, test, expect, mock, beforeEach } from "bun:test"
 import { StreamNamingService } from "./stream-naming-service"
 import { MessageFormatter } from "../lib/ai/message-formatter"
 import type { AI } from "../lib/ai/ai"
+import type { ConfigResolver, ComponentConfig } from "../lib/ai/config-resolver"
 
 // Mock message formatter
 const mockFormatMessages = mock(() => Promise.resolve("<messages></messages>"))
@@ -78,6 +79,16 @@ const mockAI: Partial<AI> = {
   generateText: mockGenerateText as unknown as AI["generateText"],
 }
 
+// Mock ConfigResolver
+const mockConfigResolver: ConfigResolver = {
+  async resolve<T extends ComponentConfig>(): Promise<T> {
+    return {
+      modelId: "test-model",
+      temperature: 0.3,
+    } as T
+  },
+}
+
 const mockPool = {} as any
 
 describe("StreamNamingService", () => {
@@ -99,7 +110,7 @@ describe("StreamNamingService", () => {
     mockFormatMessages.mockResolvedValue("<messages></messages>")
     // Don't set default for mockStreamList - each test that needs it will set it
 
-    service = new StreamNamingService(mockPool, mockAI as AI, "test-model", mockMessageFormatter)
+    service = new StreamNamingService(mockPool, mockAI as AI, mockConfigResolver, mockMessageFormatter)
   })
 
   describe("attemptAutoNaming with requireName=false (user message)", () => {

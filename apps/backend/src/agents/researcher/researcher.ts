@@ -4,6 +4,8 @@ import type { RunnableConfig } from "@langchain/core/runnables"
 import type { ChatOpenAI } from "@langchain/openai"
 import { withClient } from "../../db"
 import type { AI } from "../../lib/ai/ai"
+import type { ConfigResolver, ResearcherConfig } from "../../lib/ai/config-resolver"
+import { COMPONENT_PATHS } from "../../lib/ai/config-resolver"
 import type { EmbeddingServiceLike } from "../../services/embedding-service"
 import type { Message } from "../../repositories/message-repository"
 import { MemoRepository, type MemoSearchResult } from "../../repositories/memo-repository"
@@ -18,12 +20,7 @@ import {
   type EnrichedMessageResult,
 } from "./context-formatter"
 import { logger } from "../../lib/logger"
-import {
-  RESEARCHER_MODEL_ID,
-  RESEARCHER_MAX_ITERATIONS,
-  RESEARCHER_MAX_RESULTS_PER_SEARCH,
-  RESEARCHER_SYSTEM_PROMPT,
-} from "./config"
+import { RESEARCHER_MAX_ITERATIONS, RESEARCHER_MAX_RESULTS_PER_SEARCH, RESEARCHER_SYSTEM_PROMPT } from "./config"
 
 /**
  * Source item for citation - extended to support workspace sources.
@@ -72,14 +69,8 @@ export interface ResearcherInput {
 export interface ResearcherDeps {
   pool: Pool
   ai: AI
+  configResolver: ConfigResolver
   embeddingService: EmbeddingServiceLike
-}
-
-/**
- * Get a LangChain model configured for the researcher's lightweight decision calls.
- */
-function getResearcherModel(ai: AI): ChatOpenAI {
-  return ai.getLangChainModel(RESEARCHER_MODEL_ID)
 }
 
 // Schema for combined decision + queries (single LLM call)
@@ -236,11 +227,14 @@ export class Researcher {
     accessSpec: AgentAccessSpec,
     accessibleStreamIds: string[]
   ): Promise<ResearcherResult> {
-    const { ai, embeddingService } = this.deps
+    const { ai, configResolver, embeddingService } = this.deps
     const { workspaceId, triggerMessage, conversationHistory, langchainConfig, invokingUserId } = input
 
+    // Resolve config for researcher
+    const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
+
     // Get LangChain model for structured output calls
-    const model = getResearcherModel(ai)
+    const model = ai.getLangChainModel(config.modelId)
 
     // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
@@ -275,8 +269,9 @@ export class Researcher {
     searchesPerformed.push(...initialResults.searches)
 
     // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
+    const maxIterations = config.maxIterations ?? RESEARCHER_MAX_ITERATIONS
     let iteration = 0
-    while (iteration < RESEARCHER_MAX_ITERATIONS) {
+    while (iteration < maxIterations) {
       // AI evaluation (no DB, 1-5 seconds)
       const evaluation = await this.evaluateResults(model, contextSummary, allMemos, allMessages, langchainConfig)
 

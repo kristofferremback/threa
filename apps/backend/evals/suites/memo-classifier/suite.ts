@@ -18,7 +18,7 @@ import { messageId } from "../../../src/lib/id"
  */
 async function classifyMessage(input: ClassifierInput, ctx: EvalContext): Promise<MessageClassification> {
   const messageFormatter = new MessageFormatter()
-  const classifier = new MemoClassifier(ctx.ai, ctx.permutation.model, messageFormatter)
+  const classifier = new MemoClassifier(ctx.ai, ctx.configResolver, messageFormatter)
 
   // Create a test message from the input
   const message = createTestMessage(input, messageId(), ctx.userId)

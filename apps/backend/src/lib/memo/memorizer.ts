@@ -1,4 +1,6 @@
 import type { AI } from "../ai/ai"
+import type { ConfigResolver } from "../ai/config-resolver"
+import { COMPONENT_PATHS } from "../ai/config-resolver"
 import { MessageFormatter } from "../ai/message-formatter"
 import type { Message } from "../../repositories/message-repository"
 import type { Memo } from "../../repositories/memo-repository"
@@ -9,7 +11,6 @@ import {
   MEMORIZER_CONVERSATION_PROMPT,
   MEMORIZER_REVISION_PROMPT,
   MEMORIZER_EXISTING_TAGS_TEMPLATE,
-  MEMO_TEMPERATURES,
 } from "./config"
 
 /**
@@ -42,11 +43,12 @@ export interface MemorizerContext {
 export class Memorizer {
   constructor(
     private ai: AI,
-    private modelId: string,
+    private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
 
   async memorizeMessage(context: MemorizerContext): Promise<MemoContent> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
     const message = context.content as Message
 
     const memoryContextText =
@@ -65,13 +67,13 @@ export class Memorizer {
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({
-      model: this.modelId,
+      model: config.modelId,
       schema: memoContentSchema,
       messages: [
         { role: "system", content: getMemorizerSystemPrompt(context.authorTimezone) },
         { role: "user", content: prompt },
       ],
-      temperature: MEMO_TEMPERATURES.memorization,
+      temperature: config.temperature,
       telemetry: {
         functionId: "memorize-message",
         metadata: { messageId: message.id },
@@ -89,6 +91,7 @@ export class Memorizer {
   }
 
   async memorizeConversation(formattedMessages: string, context: MemorizerContext): Promise<MemoContent> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
     const messages = context.content as Message[]
 
     const memoryContextText =
@@ -107,13 +110,13 @@ export class Memorizer {
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({
-      model: this.modelId,
+      model: config.modelId,
       schema: memoContentSchema,
       messages: [
         { role: "system", content: getMemorizerSystemPrompt(context.authorTimezone) },
         { role: "user", content: prompt },
       ],
-      temperature: MEMO_TEMPERATURES.memorization,
+      temperature: config.temperature,
       telemetry: {
         functionId: "memorize-conversation",
         metadata: { messageCount },
@@ -133,6 +136,7 @@ export class Memorizer {
   }
 
   async reviseMemo(formattedMessages: string, context: MemorizerContext): Promise<MemoContent> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.MEMO_MEMORIZER)
     const messages = context.content as Message[]
     const existingMemo = context.existingMemo!
 
@@ -157,13 +161,13 @@ export class Memorizer {
       .replace("{{EXISTING_TAGS_SECTION}}", existingTagsSection)
 
     const { value } = await this.ai.generateObject({
-      model: this.modelId,
+      model: config.modelId,
       schema: memoContentSchema,
       messages: [
         { role: "system", content: getMemorizerSystemPrompt(context.authorTimezone) },
         { role: "user", content: prompt },
       ],
-      temperature: MEMO_TEMPERATURES.memorization,
+      temperature: config.temperature,
       telemetry: {
         functionId: "revise-memo",
         metadata: {

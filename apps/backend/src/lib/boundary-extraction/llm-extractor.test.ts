@@ -14,6 +14,7 @@ import { LLMBoundaryExtractor } from "./llm-extractor"
 import type { ExtractionContext, ConversationSummary } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import type { AI } from "../ai/ai"
+import type { ConfigResolver, ComponentConfig } from "../ai/config-resolver"
 
 import { NoObjectGeneratedError } from "ai"
 
@@ -30,6 +31,17 @@ const mockGenerateObject = mock(
 // Mock AI instance
 const mockAI: Partial<AI> = {
   generateObject: mockGenerateObject as AI["generateObject"],
+}
+
+// Mock ConfigResolver
+const mockConfigResolver: ConfigResolver = {
+  async resolve<T extends ComponentConfig>(): Promise<T> {
+    return {
+      modelId: "openrouter:anthropic/claude-haiku-4.5",
+      temperature: 0.2,
+      systemPrompt: "You are a conversation boundary classifier.",
+    } as T
+  },
 }
 
 function createMockMessage(overrides: Partial<Message> = {}): Message {
@@ -79,7 +91,7 @@ describe("LLMBoundaryExtractor", () => {
 
   beforeEach(() => {
     mockGenerateObject.mockReset()
-    extractor = new LLMBoundaryExtractor(mockAI as AI, "openrouter:anthropic/claude-haiku-4.5")
+    extractor = new LLMBoundaryExtractor(mockAI as AI, mockConfigResolver)
   })
 
   describe("thread handling", () => {

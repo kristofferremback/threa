@@ -4,6 +4,8 @@ import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import type { AI } from "../lib/ai/ai"
+import type { ConfigResolver } from "../lib/ai/config-resolver"
+import { COMPONENT_PATHS } from "../lib/ai/config-resolver"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
@@ -13,7 +15,7 @@ export class StreamNamingService {
   constructor(
     private pool: Pool,
     private ai: AI,
-    private namingModel: string,
+    private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
 
@@ -74,6 +76,8 @@ export class StreamNamingService {
     const { stream, messages, otherStreams, conversationText } = fetchedData
 
     // Phase 2: AI processing (no connection held, 1-5+ seconds!)
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.STREAM_NAMING)
+
     const existingNames = otherStreams
       .filter((s) => s.displayName && s.id !== streamId)
       .slice(0, MAX_EXISTING_NAMES)
@@ -85,12 +89,12 @@ export class StreamNamingService {
     let generatedName: string | null = null
     try {
       const { value } = await this.ai.generateText({
-        model: this.namingModel,
+        model: config.modelId,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: conversationText },
         ],
-        temperature: 0.3,
+        temperature: config.temperature,
         telemetry: {
           functionId: "stream-naming",
           metadata: { streamId, requireName },

@@ -1,5 +1,7 @@
 import { NoObjectGeneratedError } from "ai"
 import type { AI } from "../ai/ai"
+import type { ConfigResolver } from "../ai/config-resolver"
+import { COMPONENT_PATHS } from "../ai/config-resolver"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
 import type { Message } from "../../repositories/message-repository"
 import { logger } from "../logger"
@@ -8,14 +10,13 @@ import {
   extractionResponseSchema,
   BOUNDARY_EXTRACTION_SYSTEM_PROMPT,
   BOUNDARY_EXTRACTION_PROMPT,
-  BOUNDARY_EXTRACTION_TEMPERATURE,
   type ExtractionResponse,
 } from "./config"
 
 export class LLMBoundaryExtractor implements BoundaryExtractor {
   constructor(
     private ai: AI,
-    private modelId: string
+    private configResolver: ConfigResolver
   ) {}
 
   async extract(context: ExtractionContext): Promise<ExtractionResult> {
@@ -23,17 +24,18 @@ export class LLMBoundaryExtractor implements BoundaryExtractor {
       return this.handleThreadMessage(context)
     }
 
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.BOUNDARY_EXTRACTION)
     const prompt = this.buildPrompt(context)
 
     try {
       const { value } = await this.ai.generateObject({
-        model: this.modelId,
+        model: config.modelId,
         schema: extractionResponseSchema,
         messages: [
-          { role: "system", content: BOUNDARY_EXTRACTION_SYSTEM_PROMPT },
+          { role: "system", content: config.systemPrompt ?? BOUNDARY_EXTRACTION_SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
-        temperature: BOUNDARY_EXTRACTION_TEMPERATURE,
+        temperature: config.temperature,
         telemetry: {
           functionId: "boundary-extraction",
           metadata: {

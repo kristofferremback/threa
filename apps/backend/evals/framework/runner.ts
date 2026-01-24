@@ -29,6 +29,8 @@ import type { UsageAccumulator } from "./types"
 import { createWorkspaceFixture, type WorkspaceFixture } from "../fixtures/workspace"
 import { loadConfigFile } from "./config-loader"
 import type { ComponentOverrides, EvalConfigFile, SuiteRunConfig } from "./config-types"
+import { createStaticConfigResolver } from "../../src/lib/ai/static-config-resolver"
+import { createEvalConfigResolverFromYaml } from "./eval-config-resolver"
 
 /**
  * Console output colors for terminal.
@@ -228,6 +230,11 @@ async function runPermutation<TInput, TOutput, TExpected>(
   // Wrap AI to track usage
   const trackingAI = createUsageTrackingAI(ai, usageAccumulator)
 
+  // Create config resolver with eval overrides applied
+  // Base resolver has production defaults; eval resolver applies componentOverrides
+  const baseResolver = createStaticConfigResolver()
+  const configResolver = createEvalConfigResolverFromYaml(baseResolver, options.componentOverrides)
+
   // Create context for this permutation
   const ctx: EvalContext = {
     pool: dbResult.pool,
@@ -237,6 +244,7 @@ async function runPermutation<TInput, TOutput, TExpected>(
     permutation,
     usage: usageAccumulator,
     componentOverrides: options.componentOverrides,
+    configResolver,
   }
 
   // Run suite setup if provided

@@ -7,6 +7,7 @@
 
 import type { Pool } from "pg"
 import type { AI } from "../../src/lib/ai/ai"
+import type { ConfigResolver } from "../../src/lib/ai/config-resolver"
 import type { ComponentOverrides } from "./config-types"
 
 // -----------------------------------------------------------------------------
@@ -62,6 +63,12 @@ export interface EvalContext {
   usage: UsageAccumulator
   /** Component-specific overrides from config file */
   componentOverrides?: ComponentOverrides
+  /**
+   * Config resolver for AI components.
+   * Use this to get model/temperature/prompt configs instead of importing from config.ts.
+   * Already has eval overrides applied from componentOverrides or permutation.
+   */
+  configResolver: ConfigResolver
 }
 
 // -----------------------------------------------------------------------------
