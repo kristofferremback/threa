@@ -11,6 +11,11 @@ import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
 import { MAX_MESSAGES_FOR_NAMING, MAX_EXISTING_NAMES, buildNamingSystemPrompt } from "./stream-naming/config"
 
+export interface GenerateNameResult {
+  name: string | null
+  notEnoughContext: boolean
+}
+
 export class StreamNamingService {
   constructor(
     private pool: Pool,
@@ -18,6 +23,61 @@ export class StreamNamingService {
     private configResolver: ConfigResolver,
     private messageFormatter: MessageFormatter
   ) {}
+
+  /**
+   * Generate a name for a conversation given formatted text.
+   * This is the pure naming logic without database integration.
+   * Used by attemptAutoNaming() and can be called directly for testing.
+   *
+   * @param conversationText Formatted conversation text
+   * @param existingNames Names to avoid duplicating
+   * @param requireName If true, NOT_ENOUGH_CONTEXT throws instead of returning null
+   * @param context Optional context for cost tracking
+   */
+  async generateName(
+    conversationText: string,
+    existingNames: string[],
+    requireName: boolean,
+    context?: { workspaceId: string }
+  ): Promise<GenerateNameResult> {
+    const config = await this.configResolver.resolve(COMPONENT_PATHS.STREAM_NAMING)
+    const systemPrompt = buildNamingSystemPrompt(existingNames, requireName)
+
+    const { value } = await this.ai.generateText({
+      model: config.modelId,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: conversationText },
+      ],
+      temperature: config.temperature,
+      telemetry: {
+        functionId: "stream-naming",
+        metadata: { requireName, existingNamesCount: existingNames.length },
+      },
+      context: context ? { workspaceId: context.workspaceId, origin: "system" } : undefined,
+    })
+
+    const rawName = value?.trim() || null
+
+    if (!rawName || rawName === "NOT_ENOUGH_CONTEXT") {
+      if (requireName) {
+        throw new Error("Failed to generate required name: NOT_ENOUGH_CONTEXT returned")
+      }
+      return { name: null, notEnoughContext: true }
+    }
+
+    // Clean up the response (remove quotes, trim)
+    const cleanName = rawName.replace(/^["']|["']$/g, "").trim()
+
+    if (cleanName.length === 0 || cleanName.length > 100) {
+      if (requireName) {
+        throw new Error(`Failed to generate required name: invalid response "${rawName}"`)
+      }
+      return { name: null, notEnoughContext: false }
+    }
+
+    return { name: cleanName, notEnoughContext: false }
+  }
 
   /**
    * Attempts to auto-generate a display name for a stream.
@@ -76,56 +136,28 @@ export class StreamNamingService {
     const { stream, messages, otherStreams, conversationText } = fetchedData
 
     // Phase 2: AI processing (no connection held, 1-5+ seconds!)
-    const config = await this.configResolver.resolve(COMPONENT_PATHS.STREAM_NAMING)
-
     const existingNames = otherStreams
       .filter((s) => s.displayName && s.id !== streamId)
       .slice(0, MAX_EXISTING_NAMES)
       .map((s) => s.displayName!)
 
-    const systemPrompt = buildNamingSystemPrompt(existingNames, requireName)
-
-    // Call LLM (1-5+ seconds, no DB connection held!)
-    let generatedName: string | null = null
+    // Call LLM via generateName() (1-5+ seconds, no DB connection held!)
+    let result: GenerateNameResult
     try {
-      const { value } = await this.ai.generateText({
-        model: config.modelId,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: conversationText },
-        ],
-        temperature: config.temperature,
-        telemetry: {
-          functionId: "stream-naming",
-          metadata: { streamId, requireName },
-        },
-        context: { workspaceId: stream.workspaceId, origin: "system" },
+      result = await this.generateName(conversationText, existingNames, requireName, {
+        workspaceId: stream.workspaceId,
       })
-      generatedName = value?.trim() || null
     } catch (err) {
       logger.error({ err, streamId }, "Failed to generate stream name")
       throw err
     }
 
-    if (!generatedName || generatedName === "NOT_ENOUGH_CONTEXT") {
-      if (requireName) {
-        // Agent message - must generate a name, throw to trigger job retry
-        throw new Error("Failed to generate required name: NOT_ENOUGH_CONTEXT returned")
-      }
+    if (!result.name) {
       logger.debug({ streamId, messageCount: messages.length }, "Not enough context for auto-naming yet")
       return false
     }
 
-    // Clean up the response (remove quotes, trim)
-    const cleanName = generatedName.replace(/^["']|["']$/g, "").trim()
-
-    if (cleanName.length === 0 || cleanName.length > 100) {
-      logger.warn({ streamId, generatedName }, "Invalid generated name")
-      if (requireName) {
-        throw new Error(`Failed to generate required name: invalid response "${generatedName}"`)
-      }
-      return false
-    }
+    const cleanName = result.name
 
     // Phase 3: Save result in ONE transaction (fast, ~100ms)
     // Re-check that stream still needs naming (another process may have named it)

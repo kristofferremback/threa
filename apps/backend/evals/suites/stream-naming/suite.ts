@@ -36,63 +36,47 @@ import {
   accuracyEvaluator,
   wordCountComplianceEvaluator,
 } from "./evaluators"
-import {
-  STREAM_NAMING_MODEL_ID,
-  STREAM_NAMING_TEMPERATURE,
-  buildNamingSystemPrompt,
-} from "../../../src/services/stream-naming/config"
-import { COMPONENT_PATHS } from "../../../src/lib/ai/config-resolver"
+import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../../src/services/stream-naming/config"
+import { StreamNamingService } from "../../../src/services/stream-naming-service"
+import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 
 /**
  * Task function that generates a stream name.
- * Uses ConfigResolver to get model/temperature, ensuring evals test production config.
+ * Uses the PRODUCTION StreamNamingService.generateName() method directly (INV-45).
  */
 async function runStreamNamingTask(input: StreamNamingInput, ctx: EvalContext): Promise<StreamNamingOutput> {
   const existingNames = input.existingNames ?? []
   const requireName = input.requireName ?? false
 
-  const config = await ctx.configResolver.resolve(COMPONENT_PATHS.STREAM_NAMING)
-  const systemPrompt = buildNamingSystemPrompt(existingNames, requireName)
+  // Use the production StreamNamingService
+  const messageFormatter = new MessageFormatter()
+  const namingService = new StreamNamingService(ctx.pool, ctx.ai, ctx.configResolver, messageFormatter)
 
   try {
-    const { value } = await ctx.ai.generateText({
-      model: config.modelId,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: input.conversationText },
-      ],
-      temperature: config.temperature,
-      telemetry: {
-        functionId: "stream-naming-eval",
-        metadata: { requireName, existingNamesCount: existingNames.length },
-      },
+    const result = await namingService.generateName(input.conversationText, existingNames, requireName, {
+      workspaceId: ctx.workspaceId,
     })
 
-    const rawName = value?.trim() || null
-
-    // Check for NOT_ENOUGH_CONTEXT
-    if (!rawName || rawName === "NOT_ENOUGH_CONTEXT") {
+    return {
+      input,
+      name: result.name,
+      notEnoughContext: result.notEnoughContext,
+    }
+  } catch (error) {
+    // requireName=true throws on NOT_ENOUGH_CONTEXT, which we catch and convert
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    if (errorMsg.includes("NOT_ENOUGH_CONTEXT")) {
       return {
         input,
         name: null,
         notEnoughContext: true,
       }
     }
-
-    // Clean up the response (remove quotes, trim)
-    const cleanName = rawName.replace(/^["']|["']$/g, "").trim()
-
-    return {
-      input,
-      name: cleanName,
-      notEnoughContext: false,
-    }
-  } catch (error) {
     return {
       input,
       name: null,
       notEnoughContext: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
     }
   }
 }

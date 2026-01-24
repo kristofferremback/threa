@@ -114,10 +114,10 @@ export const memoClassifierSuite: EvalSuite<ClassifierInput, MessageClassificati
 
   evaluators: [
     // Binary classification check (isGem matches expected)
-    binaryClassificationEvaluator<MessageClassification & ClassifierExpected>("isGem"),
+    binaryClassificationEvaluator<MessageClassification, ClassifierExpected, "isGem">("isGem"),
 
     // Knowledge type check (only evaluated when isGem is true)
-    categoricalEvaluator<MessageClassification & ClassifierExpected>({
+    categoricalEvaluator<MessageClassification, ClassifierExpected, "knowledgeType">({
       field: "knowledgeType",
       name: "knowledge-type",
       // Some knowledge types are related and can be interchangeable

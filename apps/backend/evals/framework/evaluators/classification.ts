@@ -9,13 +9,13 @@ import type { Evaluator, EvalContext, EvaluatorResult } from "../types"
 /**
  * Options for field matching.
  */
-export interface FieldMatchOptions<T> {
+export interface FieldMatchOptions<TOutput, TExpected, K extends keyof TOutput & keyof TExpected> {
   /** Name for this evaluator */
   name?: string
-  /** Field to check in the output */
-  field: keyof T
+  /** Field to check in both output and expected */
+  field: K
   /** Custom comparison function (default: strict equality) */
-  compare?: (actual: unknown, expected: unknown) => boolean
+  compare?: (actual: TOutput[K], expected: TExpected[K]) => boolean
 }
 
 /**
@@ -23,24 +23,24 @@ export interface FieldMatchOptions<T> {
  *
  * @example
  * // Check boolean classification
- * fieldMatchEvaluator<ClassificationResult>({
+ * fieldMatchEvaluator<Output, Expected, "isKnowledgeWorthy">({
  *   field: "isKnowledgeWorthy",
  * })
  *
  * // Check enum classification
- * fieldMatchEvaluator<ClassificationResult>({
+ * fieldMatchEvaluator<Output, Expected, "knowledgeType">({
  *   field: "knowledgeType",
  *   name: "knowledge-type-match",
  * })
  */
-export function fieldMatchEvaluator<TOutput extends Record<string, unknown>>(
-  options: FieldMatchOptions<TOutput>
-): Evaluator<TOutput, TOutput> {
+export function fieldMatchEvaluator<TOutput, TExpected, K extends keyof TOutput & keyof TExpected>(
+  options: FieldMatchOptions<TOutput, TExpected, K>
+): Evaluator<TOutput, TExpected> {
   const { field, name = `field(${String(field)})`, compare = (a, b) => a === b } = options
 
   return {
     name,
-    evaluate: (output: TOutput, expected: TOutput): EvaluatorResult => {
+    evaluate: (output: TOutput, expected: TExpected): EvaluatorResult => {
       const actualValue = output[field]
       const expectedValue = expected[field]
       const passed = compare(actualValue, expectedValue)
@@ -63,13 +63,13 @@ export function fieldMatchEvaluator<TOutput extends Record<string, unknown>>(
  * Convenience wrapper for boolean field matching with clearer semantics.
  *
  * @example
- * binaryClassificationEvaluator<ClassificationResult>("isKnowledgeWorthy")
+ * binaryClassificationEvaluator<Output, Expected, "isKnowledgeWorthy">("isKnowledgeWorthy")
  */
-export function binaryClassificationEvaluator<TOutput extends Record<string, unknown>>(
-  field: keyof TOutput,
+export function binaryClassificationEvaluator<TOutput, TExpected, K extends keyof TOutput & keyof TExpected>(
+  field: K,
   options: { name?: string } = {}
-): Evaluator<TOutput, TOutput> {
-  return fieldMatchEvaluator({
+): Evaluator<TOutput, TExpected> {
+  return fieldMatchEvaluator<TOutput, TExpected, K>({
     field,
     name: options.name ?? `binary(${String(field)})`,
   })
@@ -82,7 +82,7 @@ export function binaryClassificationEvaluator<TOutput extends Record<string, unk
  * Can optionally accept related categories (e.g., "decision" matching "context").
  *
  * @example
- * categoricalEvaluator<ClassificationResult>({
+ * categoricalEvaluator<Output, Expected, "knowledgeType">({
  *   field: "knowledgeType",
  *   // Decision and context are considered related
  *   relatedCategories: {
@@ -91,16 +91,16 @@ export function binaryClassificationEvaluator<TOutput extends Record<string, unk
  *   },
  * })
  */
-export function categoricalEvaluator<TOutput extends Record<string, unknown>>(options: {
-  field: keyof TOutput
+export function categoricalEvaluator<TOutput, TExpected, K extends keyof TOutput & keyof TExpected>(options: {
+  field: K
   name?: string
   relatedCategories?: Record<string, string[]>
-}): Evaluator<TOutput, TOutput> {
+}): Evaluator<TOutput, TExpected> {
   const { field, name = `category(${String(field)})`, relatedCategories = {} } = options
 
   return {
     name,
-    evaluate: (output: TOutput, expected: TOutput): EvaluatorResult => {
+    evaluate: (output: TOutput, expected: TExpected): EvaluatorResult => {
       const actualValue = output[field] as string
       const expectedValue = expected[field] as string
 

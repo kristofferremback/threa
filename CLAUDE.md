@@ -285,12 +285,20 @@ The fix: Create a config object or lookup table at the top. Each variant's compl
 
 Signs of violation:
 
+- Eval calls `ai.generateText()` or `ai.generateObject()` directly instead of the production class that wraps the AI call
 - Eval has its own `buildSystemPrompt()` or similar function
 - Eval calls `createGraph()` directly instead of the service/agent that wraps it
 - Eval duplicates schemas, prompts, or constants instead of reading from production sources
 - Eval creates "simplified" versions of production classes
 
 The fix: Find the production entry point. Wire up the dependencies it needs. Call it. If that's hard, the production code may need refactoring to be more testable - fix that, don't work around it in the eval.
+
+Examples of correct patterns:
+
+- `StreamNamingService.generateName()` not `ai.generateText()` with prompt
+- `MemoClassifier.classifyMessage()` not `ai.generateObject()` with schema
+- `LLMBoundaryExtractor.extract()` not manual graph invocation
+- `PersonaAgent.run()` not `createCompanionGraph()` directly
 
 When introducing a new invariant:
 

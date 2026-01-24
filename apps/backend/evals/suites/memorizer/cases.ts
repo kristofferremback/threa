@@ -8,7 +8,6 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { MemoContent } from "../../../src/lib/memo/memorizer"
 import type { Message } from "../../../src/repositories"
 
 /**
