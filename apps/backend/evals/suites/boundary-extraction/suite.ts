@@ -25,7 +25,12 @@
 
 import type { EvalSuite, EvalContext } from "../../framework/types"
 import { boundaryExtractionCases } from "./cases"
-import type { BoundaryExtractionInput, BoundaryExtractionOutput, BoundaryExtractionExpected } from "./types"
+import type {
+  BoundaryExtractionInput,
+  BoundaryExtractionOutput,
+  BoundaryExtractionExpected,
+  EvalMessage,
+} from "./types"
 import {
   conversationDecisionEvaluator,
   topicContainsEvaluator,
@@ -38,21 +43,20 @@ import {
 import {
   BOUNDARY_EXTRACTION_MODEL_ID,
   BOUNDARY_EXTRACTION_TEMPERATURE,
-  BOUNDARY_EXTRACTION_SYSTEM_PROMPT,
-  BOUNDARY_EXTRACTION_PROMPT,
-  extractionResponseSchema,
 } from "../../../src/lib/boundary-extraction/config"
+import { LLMBoundaryExtractor } from "../../../src/lib/boundary-extraction/llm-extractor"
+import type { ExtractionContext } from "../../../src/lib/boundary-extraction/types"
 import type { Message } from "../../../src/repositories/message-repository"
 import { ulid } from "ulid"
 
 /**
  * Convert eval message to production Message type.
  */
-function toMessage(evalMsg: BoundaryExtractionInput["newMessage"], streamId: string): Message {
+function toMessage(evalMsg: EvalMessage, streamId: string, sequence: number = 1): Message {
   return {
     id: `msg_${ulid()}`,
     streamId,
-    sequence: BigInt(1),
+    sequence: BigInt(sequence),
     authorId: evalMsg.authorId,
     authorType: evalMsg.authorType,
     contentJson: {
@@ -69,72 +73,39 @@ function toMessage(evalMsg: BoundaryExtractionInput["newMessage"], streamId: str
 }
 
 /**
- * Build prompt from input context.
+ * Build ExtractionContext from eval input.
  */
-function buildPrompt(input: BoundaryExtractionInput): string {
-  const conversations = input.activeConversations || []
-  const recentMessages = input.recentMessages || []
+function buildExtractionContext(input: BoundaryExtractionInput, workspaceId: string): ExtractionContext {
+  const streamId = `stream_${ulid()}`
 
-  const convSection =
-    conversations.length > 0
-      ? conversations
-          .map(
-            (c) =>
-              `- ${c.id}: "${c.topicSummary ?? "No topic yet"}" (${c.messageCount} messages, completeness: ${c.completenessScore}/7, participants: ${c.participantIds.length})`
-          )
-          .join("\n")
-      : "No active conversations in this stream yet."
-
-  const recentSection = recentMessages
-    .map(
-      (m) =>
-        `[${m.authorType}:${m.authorId.slice(-8)}]: ${m.contentMarkdown.slice(0, 200)}${m.contentMarkdown.length > 200 ? "..." : ""}`
-    )
-    .join("\n")
-
-  return BOUNDARY_EXTRACTION_PROMPT.replace("{{CONVERSATIONS}}", convSection)
-    .replace("{{RECENT_MESSAGES}}", recentSection || "No recent messages.")
-    .replace("{{AUTHOR}}", `${input.newMessage.authorType}:${input.newMessage.authorId.slice(-8)}`)
-    .replace("{{CONTENT}}", input.newMessage.contentMarkdown)
+  return {
+    newMessage: toMessage(input.newMessage, streamId, 1),
+    recentMessages: (input.recentMessages || []).map((m, i) => toMessage(m, streamId, i + 2)),
+    activeConversations: input.activeConversations || [],
+    streamType: input.streamType || "scratchpad",
+    workspaceId,
+  }
 }
 
 /**
- * Task function that runs boundary extraction.
+ * Task function that runs boundary extraction using the production LLMBoundaryExtractor.
  */
 async function runBoundaryExtractionTask(
   input: BoundaryExtractionInput,
   ctx: EvalContext
 ): Promise<BoundaryExtractionOutput> {
-  const prompt = buildPrompt(input)
+  const extractor = new LLMBoundaryExtractor(ctx.ai, ctx.configResolver)
+  const extractionContext = buildExtractionContext(input, ctx.workspaceId)
 
   try {
-    const { value } = await ctx.ai.generateObject({
-      model: ctx.permutation.model,
-      schema: extractionResponseSchema,
-      messages: [
-        { role: "system", content: BOUNDARY_EXTRACTION_SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      temperature: ctx.permutation.temperature ?? BOUNDARY_EXTRACTION_TEMPERATURE,
-      telemetry: {
-        functionId: "boundary-extraction-eval",
-        metadata: {
-          streamType: input.streamType,
-          activeConversationCount: input.activeConversations?.length ?? 0,
-        },
-      },
-    })
-
-    // Validate that returned conversation ID exists in active conversations
-    const validConvIds = new Set((input.activeConversations || []).map((c) => c.id))
-    const conversationId = value.conversationId && validConvIds.has(value.conversationId) ? value.conversationId : null
+    const result = await extractor.extract(extractionContext)
 
     return {
       input,
-      conversationId,
-      newConversationTopic: value.newConversationTopic ?? undefined,
-      completenessUpdates: value.completenessUpdates ?? undefined,
-      confidence: value.confidence,
+      conversationId: result.conversationId,
+      newConversationTopic: result.newConversationTopic,
+      completenessUpdates: result.completenessUpdates,
+      confidence: result.confidence,
     }
   } catch (error) {
     return {

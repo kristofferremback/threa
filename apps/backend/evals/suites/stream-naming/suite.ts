@@ -41,24 +41,27 @@ import {
   STREAM_NAMING_TEMPERATURE,
   buildNamingSystemPrompt,
 } from "../../../src/services/stream-naming/config"
+import { COMPONENT_PATHS } from "../../../src/lib/ai/config-resolver"
 
 /**
  * Task function that generates a stream name.
+ * Uses ConfigResolver to get model/temperature, ensuring evals test production config.
  */
 async function runStreamNamingTask(input: StreamNamingInput, ctx: EvalContext): Promise<StreamNamingOutput> {
   const existingNames = input.existingNames ?? []
   const requireName = input.requireName ?? false
 
+  const config = await ctx.configResolver.resolve(COMPONENT_PATHS.STREAM_NAMING)
   const systemPrompt = buildNamingSystemPrompt(existingNames, requireName)
 
   try {
     const { value } = await ctx.ai.generateText({
-      model: ctx.permutation.model,
+      model: config.modelId,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: input.conversationText },
       ],
-      temperature: ctx.permutation.temperature ?? STREAM_NAMING_TEMPERATURE,
+      temperature: config.temperature,
       telemetry: {
         functionId: "stream-naming-eval",
         metadata: { requireName, existingNamesCount: existingNames.length },
