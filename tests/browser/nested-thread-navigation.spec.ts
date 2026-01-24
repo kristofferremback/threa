@@ -56,7 +56,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 5000 })
 
     // Start a first-level thread by replying to the channel message
-    const messageContainer = page.locator(".group").filter({ hasText: channelMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -77,7 +77,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Now reply to the first-level thread reply to create a nested (second-level) thread
-    const firstReplyContainer = page.locator(".group").filter({ hasText: firstReply }).first()
+    const firstReplyContainer = page.getByRole("main").locator(".group").filter({ hasText: firstReply }).first()
     await firstReplyContainer.hover()
     const nestedReplyLink = firstReplyContainer.getByRole("link", { name: "Reply in thread" })
     await expect(nestedReplyLink).toBeVisible({ timeout: 2000 })
@@ -113,7 +113,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // CRITICAL: The firstReply message should show as having 1 reply (the nested thread)
     // This is the bug - it doesn't show the reply count after navigating back
-    const firstReplyInPanel = page.locator(".group").filter({ hasText: firstReply }).first()
+    const firstReplyInPanel = page.getByRole("main").locator(".group").filter({ hasText: firstReply }).first()
     await expect(firstReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
   })
 
@@ -136,7 +136,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 5000 })
 
     // Start a thread on the channel message
-    const messageContainer = page.locator(".group").filter({ hasText: channelMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -155,7 +155,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Reply to the thread reply to create a nested thread
-    const threadReplyContainer = page.locator(".group").filter({ hasText: threadReply }).first()
+    const threadReplyContainer = page.getByRole("main").locator(".group").filter({ hasText: threadReply }).first()
     await threadReplyContainer.hover()
     const nestedReplyLink = threadReplyContainer.getByRole("link", { name: "Reply in thread" })
     await expect(nestedReplyLink).toBeVisible({ timeout: 2000 })
@@ -180,7 +180,7 @@ test.describe("Nested Thread Navigation", () => {
     await page.waitForTimeout(500)
 
     // Reopen the first-level thread by clicking on the reply count in the main stream
-    const channelMessageInMain = page.locator(".group").filter({ hasText: channelMessage }).first()
+    const channelMessageInMain = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
     const threadIndicator = channelMessageInMain.getByText(/1 reply/i)
     await expect(threadIndicator).toBeVisible({ timeout: 3000 })
     await threadIndicator.click()
@@ -190,7 +190,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // CRITICAL: The threadReply message should show as having a nested thread (1 reply)
     // This is the bug - it doesn't show the reply indicator after reopening
-    const threadReplyInPanel = page.locator(".group").filter({ hasText: threadReply }).first()
+    const threadReplyInPanel = page.getByRole("main").locator(".group").filter({ hasText: threadReply }).first()
     await expect(threadReplyInPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
   })
 
@@ -212,7 +212,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(rootMessage)).toBeVisible({ timeout: 5000 })
 
     // Create first-level thread
-    const rootContainer = page.locator(".group").filter({ hasText: rootMessage }).first()
+    const rootContainer = page.getByRole("main").locator(".group").filter({ hasText: rootMessage }).first()
     await rootContainer.hover()
     await rootContainer.getByRole("link", { name: "Reply in thread" }).click()
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -226,7 +226,7 @@ test.describe("Nested Thread Navigation", () => {
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Create nested thread
-    const level1Container = page.locator(".group").filter({ hasText: level1Message }).first()
+    const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
     await level1Container.hover()
     await level1Container.getByRole("link", { name: "Reply in thread" }).click()
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -244,7 +244,7 @@ test.describe("Nested Thread Navigation", () => {
     await page.waitForTimeout(1000)
 
     // Verify reply count shows
-    const level1InPanel = page.locator(".group").filter({ hasText: level1Message }).first()
+    const level1InPanel = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
     await expect(level1InPanel.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
 
     // Navigate forward again by clicking the reply count

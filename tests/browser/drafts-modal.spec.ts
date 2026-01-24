@@ -434,7 +434,9 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(`Parent message ${testId}`)).toBeVisible({ timeout: 5000 })
 
     // Click "Reply in thread" link to start a thread draft (appears on hover)
+    // Scope to main content area to avoid matching sidebar preview
     const messageContainer = page
+      .getByRole("main")
       .locator(".group")
       .filter({ hasText: `Parent message ${testId}` })
       .first()

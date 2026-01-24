@@ -325,6 +325,8 @@ interface StreamSectionProps {
   action?: ReactNode
   /** Show compact view (title only, no preview) */
   compact?: boolean
+  /** Show preview on hover when compact (only works with compact=true) */
+  showPreviewOnHover?: boolean
   /** Reference to scroll container for position tracking */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   /** Add button callback - shows plus icon in header */
@@ -347,6 +349,7 @@ function StreamSection({
   showCollapsedHint = false,
   action,
   compact = false,
+  showPreviewOnHover = false,
   scrollContainerRef,
   onAdd,
   addTooltip,
@@ -378,6 +381,7 @@ function StreamSection({
               unreadCount={getUnreadCount(stream.id)}
               allStreams={allStreams}
               compact={compact}
+              showPreviewOnHover={showPreviewOnHover}
               scrollContainerRef={scrollContainerRef}
             />
           ))}
@@ -430,6 +434,8 @@ function SmartSection({
   const icon = SECTION_ICONS[section]
   const label = SECTION_LABELS[section]
 
+  const isCompact = section !== "important"
+
   return (
     <StreamSection
       label={label}
@@ -442,7 +448,8 @@ function SmartSection({
       isCollapsed={isCollapsed}
       onToggle={onToggle}
       showCollapsedHint={section === "other"}
-      compact={section !== "important"}
+      compact={isCompact}
+      showPreviewOnHover={isCompact}
       scrollContainerRef={scrollContainerRef}
     />
   )
@@ -461,6 +468,8 @@ interface StreamItemProps {
   showUrgencyStrip?: boolean
   /** Show compact view (title only, no preview) */
   compact?: boolean
+  /** Show preview on hover when compact (only works with compact=true) */
+  showPreviewOnHover?: boolean
   /** Reference to scroll container for position tracking */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
 }
@@ -473,6 +482,7 @@ function StreamItem({
   allStreams,
   showUrgencyStrip = true,
   compact = false,
+  showPreviewOnHover = false,
   scrollContainerRef,
 }: StreamItemProps) {
   const { getActorName } = useActors(workspaceId)
@@ -527,6 +537,7 @@ function StreamItem({
         isActive={isActive}
         unreadCount={unreadCount}
         compact={compact}
+        showPreviewOnHover={showPreviewOnHover}
         showUrgencyStrip={showUrgencyStrip}
         scrollContainerRef={scrollContainerRef}
       />
@@ -564,8 +575,14 @@ function StreamItem({
             <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>{name}</span>
             <UnreadBadge count={unreadCount} />
           </div>
-          {!compact && preview && preview.content && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {preview && preview.content && (
+            <div
+              className={cn(
+                "flex items-center gap-1.5 text-xs text-muted-foreground",
+                compact && !showPreviewOnHover && "hidden",
+                compact && showPreviewOnHover && "hidden group-hover:flex"
+              )}
+            >
               <span className="truncate flex-1">
                 {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
               </span>
@@ -613,6 +630,8 @@ interface ScratchpadItemProps {
   showUrgencyStrip?: boolean
   /** Show compact view (title only, no preview) */
   compact?: boolean
+  /** Show preview on hover when compact (only works with compact=true) */
+  showPreviewOnHover?: boolean
   /** Reference to scroll container for position tracking */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
 }
@@ -624,6 +643,7 @@ function ScratchpadItem({
   unreadCount,
   showUrgencyStrip = true,
   compact = false,
+  showPreviewOnHover = false,
   scrollContainerRef,
 }: ScratchpadItemProps) {
   const { stream, isDraft, rename, archive } = useStreamOrDraft(workspaceId, streamWithPreview.id)
@@ -720,8 +740,14 @@ function ScratchpadItem({
             </span>
             <UnreadBadge count={unreadCount} />
           </div>
-          {!compact && preview && preview.content && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {preview && preview.content && (
+            <div
+              className={cn(
+                "flex items-center gap-1.5 text-xs text-muted-foreground",
+                compact && !showPreviewOnHover && "hidden",
+                compact && showPreviewOnHover && "hidden group-hover:flex"
+              )}
+            >
               <span className="truncate flex-1">
                 {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
               </span>
@@ -1159,7 +1185,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               </>
             ) : (
               <>
-                {/* All View - Always show section headers with plus buttons */}
+                {/* All View - Always compact (no previews), show section headers with plus buttons */}
                 <StreamSection
                   label="Scratchpads"
                   items={streamsByType.scratchpads}
@@ -1170,6 +1196,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateScratchpad}
                   addTooltip="+ New Scratchpad"
+                  compact
+                  showPreviewOnHover
                 />
 
                 <StreamSection
@@ -1182,6 +1210,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateChannel}
                   addTooltip="+ New Channel"
+                  compact
+                  showPreviewOnHover
                 />
               </>
             )}

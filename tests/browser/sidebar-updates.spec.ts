@@ -109,7 +109,8 @@ test.describe("Sidebar Updates", () => {
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(uniqueTopic)
       await page.getByRole("button", { name: "Send" }).click()
-      await expect(page.getByText(uniqueTopic)).toBeVisible({ timeout: 5000 })
+      // Use first() since sidebar preview may also contain this text
+      await expect(page.getByText(uniqueTopic).first()).toBeVisible({ timeout: 5000 })
 
       // Get current URL to identify the stream
       const url = page.url()

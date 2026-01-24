@@ -284,32 +284,36 @@ export function useSocketEvents(workspaceId: string) {
       })
     })
 
-    // Handle unread increment (when a new message is created in any stream)
+    // Handle stream activity (when a new message is created in any stream)
+    // Always updates the preview, but only increments unread for others' messages
     socket.on("stream:activity", (payload: StreamActivityPayload) => {
       // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
-      // Skip if this is the current user's own message
-      if (user && payload.authorId === user.id) return
-
-      // Skip if user is currently viewing this stream (they'll see it immediately)
-      if (currentStreamIdRef.current === payload.streamId) return
-
       queryClient.setQueryData<WorkspaceBootstrap>(workspaceKeys.bootstrap(workspaceId), (old) => {
         if (!old) return old
 
-        // Only increment if user is a member of this stream
+        // Only update if user is a member of this stream
         const isMember = old.streamMemberships.some((m: StreamMember) => m.streamId === payload.streamId)
         if (!isMember) return old
 
+        // Determine if we should increment unread count:
+        // - Not for own messages
+        // - Not when currently viewing the stream
+        const isOwnMessage = user && payload.authorId === user.id
+        const isViewingStream = currentStreamIdRef.current === payload.streamId
+        const shouldIncrementUnread = !isOwnMessage && !isViewingStream
+
         return {
           ...old,
-          // Update unread count
-          unreadCounts: {
-            ...old.unreadCounts,
-            [payload.streamId]: (old.unreadCounts[payload.streamId] ?? 0) + 1,
-          },
-          // Update stream's lastMessagePreview for sidebar display
+          // Only increment unread count for others' messages when not viewing
+          unreadCounts: shouldIncrementUnread
+            ? {
+                ...old.unreadCounts,
+                [payload.streamId]: (old.unreadCounts[payload.streamId] ?? 0) + 1,
+              }
+            : old.unreadCounts,
+          // Always update stream's lastMessagePreview for sidebar display
           streams: old.streams.map((stream) =>
             stream.id === payload.streamId ? { ...stream, lastMessagePreview: payload.lastMessagePreview } : stream
           ),
