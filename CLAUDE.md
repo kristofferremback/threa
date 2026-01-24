@@ -410,6 +410,10 @@ docker compose -f docker-compose.langfuse.yml up -d
 
 Langfuse uses OpenTelemetry to auto-trace LangChain, Vercel AI SDK calls.
 
+Local credentials (safe to share):
+Email: dev@threa.local
+Password: threa-dev-password123
+
 ## Lessons Learned
 
 ### Foundation code requires more scrutiny than feature code
