@@ -40,7 +40,7 @@ export function StreamPage() {
   const { workspaceId, streamId } = useParams<{ workspaceId: string; streamId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
-  const { isPanelOpen, closePanel } = usePanel()
+  const { panelId, isPanelOpen, closePanel } = usePanel()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
@@ -250,7 +250,8 @@ export function StreamPage() {
 
           <ResizablePanel id="panel" defaultSize={40} minSize={30}>
             {/* StreamPanel handles both regular streams and drafts */}
-            <StreamPanel workspaceId={workspaceId} onClose={closePanel} />
+            {/* Key forces remount when panelId changes to ensure clean state */}
+            <StreamPanel key={panelId} workspaceId={workspaceId} onClose={closePanel} />
           </ResizablePanel>
         </ResizablePanelGroup>
         {conversationPanel}
