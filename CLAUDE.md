@@ -210,7 +210,37 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 
 **INV-28: Use AI Wrapper, Not Raw SDK** - Never import `generateText`, `generateObject`, `embed`, `embedMany` directly from `ai` module. Use `AI` wrapper (`createAI()`) providing: clean telemetry API (no `experimental_` prefixes), automatic repair for structured output, consistent `{ value, response }` return types, model string parsing. Pass `AI` instance via dependency injection.
 
-**INV-29: Extract Variance, Share Behavior** - When handling variants (e.g., stream types), extract only decision logic into small functions returning common shape. Keep one code path for shared behavior. Don't create separate code paths that "should behave the same" - they drift. Example: `const decision = isA ? decideForA() : decideForB()` then one shared flow.
+**INV-29: Extract Variance, Share Behavior** - When handling variants (e.g., stream types, section types), extract decision logic into config objects or small functions at the point of variance. Keep ONE code path for shared behavior.
+
+Anti-patterns:
+
+- Separate code paths that "should behave the same" (they drift)
+- Scattering `if (type === 'foo')` checks throughout shared code (config smeared across file)
+- Hundreds of lines between related variant decisions
+
+Pattern:
+
+```typescript
+// Good: All variant config in ONE place, then shared behavior
+const SECTION_CONFIG = {
+  favorites: { icon: Star, label: 'Favorites', canCreate: false },
+  channels: { icon: Hash, label: 'Channels', canCreate: true },
+} as const
+
+function Section({ type }: { type: SectionType }) {
+  const config = SECTION_CONFIG[type]  // One lookup
+  return <SidebarSection {...config} />  // Shared rendering
+}
+
+// Bad: Config scattered throughout - 200 lines of sprawl
+function Section({ type }: { type: SectionType }) {
+  const icon = type === 'favorites' ? Star : Hash  // line 50
+  // ... 100 lines of shared code ...
+  const label = type === 'favorites' ? 'Favorites' : 'Channels'  // line 150
+  // ... 50 more lines ...
+  const canCreate = type !== 'favorites'  // line 200
+}
+```
 
 **INV-30: No withClient for Single Queries** - Don't wrap single repository calls in `withClient`. Repositories accept `Querier` (Pool | PoolClient). One query? Pass `pool` directly. Use `withClient` only for multiple related queries or check-then-act patterns needing connection affinity.
 
@@ -237,6 +267,17 @@ Invariants are constraints that must hold across the entire codebase. Reference 
 **INV-41: Three-Phase Pattern for Slow Operations** - NEVER hold database connections (withTransaction or withClient) during slow operations like AI/LLM calls (1-5+ seconds). This causes pool exhaustion. Use three-phase pattern: **Phase 1**: Fetch all needed data with withClient (fast reads, ~100-200ms). **Phase 2**: Perform slow operation with NO database connection held (AI calls, external APIs, heavy computation). **Phase 3**: Save results with withTransaction, re-checking state to handle race conditions (fast writes, ~100ms). Re-checking prevents corruption when another process modified data during Phase 2. Accept wasted work (e.g., discarded AI call) to prevent pool exhaustion - holding connections blocks all concurrent requests. Examples: stream-naming-service.ts, boundary-extraction-service.ts, memo-service.ts.
 
 **INV-42: User Timezone for Dates** - NEVER use server time (`new Date()`) or assume local timezone when displaying or anchoring dates for users. ALWAYS resolve timezone from the relevant user(s). For single-user context (messages, scratchpads): use the author's timezone. For multi-user context (conversations, channels): use the first user message author's timezone, or canonical invoking user. Store timezone on User (`user.timezone`), pass through context, and use `formatDate(date, timezone, format)` from `lib/temporal.ts`. Dates like "tomorrow" should resolve to the user's tomorrow, not the server's.
+
+**INV-43: Colocate Variant Config** - When multiple variants differ in configuration, define ALL config for each variant in ONE place. Never scatter `if (type === X)` checks throughout a file. Sprawl is the enemy: 200 lines between related decisions makes behavior impossible to understand, review, or modify safely.
+
+Signs of sprawl (stop and refactor):
+
+- Can't see all variant behavior on one screen
+- Adding a new variant requires changes in 5+ locations
+- Reviewer must scroll hundreds of lines to understand one variant
+- `if/switch` on same discriminator appears multiple times in file
+
+The fix: Create a config object or lookup table at the top. Each variant's complete behavior visible in one block. Shared code receives config, doesn't compute it.
 
 When introducing a new invariant:
 
@@ -449,3 +490,7 @@ Helper extracting part of workflow but leaving caller managing rest adds indirec
 ### withClient is for connection affinity, not "being safe"
 
 `withClient` doesn't make code safer - it holds a connection. Single query? Pass `pool` directly; it auto-acquires and releases. `withClient` is for when you need the _same_ connection: multiple queries benefiting from reuse, or check-then-act needing consistency. Wrapping single calls wastes connections and obscures intent.
+
+### Config sprawl is a recurring agent failure mode
+
+Coding agents tend to scatter variant logic throughout files instead of colocating config. Results: 200+ line files where variant behavior is impossible to review, modify safely, or even understand. The fix is always the same: create a config object at the top where each variant's complete behavior is visible in one block. Shared code receives config, doesn't compute it. When reviewing agent output, check: "Can I see all behavior for one variant on one screen?" If not, request consolidation before merge.
