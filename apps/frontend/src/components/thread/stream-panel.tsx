@@ -52,13 +52,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const streamService = useStreamService()
   const messageService = useMessageService()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
-  const { isStreamLoading, hasCompletedInitialLoad } = useCoordinatedLoading()
+  const { getStreamState } = useCoordinatedLoading()
 
   // Get panel stream ID
   if (!panelId) return null
 
-  // Show loading indicator only after initial load and for non-drafts
-  const showLoadingIndicator = hasCompletedInitialLoad && !isDraftPanel(panelId) && isStreamLoading(panelId)
+  // Show loading indicator when stream is loading (getStreamState returns "idle" during initial load and for drafts)
+  const showLoadingIndicator = getStreamState(panelId) === "loading"
 
   // Check if a stream is the main view stream (to avoid duplicating it in panel)
   const isMainViewStream = (streamId: string) => {

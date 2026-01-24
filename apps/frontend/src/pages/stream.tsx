@@ -42,13 +42,13 @@ export function StreamPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { isPanelOpen, closePanel } = usePanel()
-  const { isStreamLoading, hasCompletedInitialLoad } = useCoordinatedLoading()
+  const { getStreamState } = useCoordinatedLoading()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
 
-  // Show loading indicator only after initial load and for non-drafts
-  const showLoadingIndicator = hasCompletedInitialLoad && !isDraft && !!streamId && isStreamLoading(streamId)
+  // Show loading indicator when stream is loading (getStreamState returns "idle" during initial load)
+  const showLoadingIndicator = streamId ? getStreamState(streamId) === "loading" : false
 
   const isConversationViewOpen = searchParams.get("convView") === "open"
 

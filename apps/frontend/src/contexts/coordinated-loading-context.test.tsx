@@ -9,6 +9,7 @@ import {
 
 let mockWorkspaceLoading = true
 let mockStreamsLoading = true
+let mockStreamResults: Array<{ isLoading: boolean; isError: boolean; error: Error | null }> = []
 
 vi.mock("@/hooks/use-workspaces", () => ({
   useWorkspaceBootstrap: () => ({
@@ -23,7 +24,7 @@ vi.mock("@/hooks/use-coordinated-stream-queries", () => ({
     isLoading: mockStreamsLoading,
     isError: false,
     errors: [],
-    results: [],
+    results: mockStreamResults,
   }),
 }))
 
@@ -32,11 +33,11 @@ vi.mock("@/components/loading", () => ({
 }))
 
 function TestConsumer() {
-  const { isLoading, showSkeleton } = useCoordinatedLoading()
+  const { phase, getStreamState } = useCoordinatedLoading()
   return (
     <div>
-      <span data-testid="is-loading">{String(isLoading)}</span>
-      <span data-testid="show-skeleton">{String(showSkeleton)}</span>
+      <span data-testid="phase">{phase}</span>
+      <span data-testid="stream-state">{getStreamState("stream_1")}</span>
     </div>
   )
 }
@@ -46,6 +47,7 @@ describe("CoordinatedLoadingProvider", () => {
     vi.useFakeTimers()
     mockWorkspaceLoading = true
     mockStreamsLoading = true
+    mockStreamResults = []
   })
 
   afterEach(() => {
@@ -53,57 +55,45 @@ describe("CoordinatedLoadingProvider", () => {
     vi.clearAllMocks()
   })
 
-  it("should report isLoading=true while loading", () => {
+  it("should report phase='loading' initially while loading", () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("is-loading").textContent).toBe("true")
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
   })
 
-  it("should not show skeleton initially while loading", () => {
+  it("should transition to phase='skeleton' after 1s if still loading", () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
-  })
-
-  it("should show skeleton after 1s if still loading", () => {
-    render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <TestConsumer />
-      </CoordinatedLoadingProvider>
-    )
-
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
 
     act(() => {
       vi.advanceTimersByTime(1000)
     })
 
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("true")
-    expect(screen.getByTestId("is-loading").textContent).toBe("true")
+    expect(screen.getByTestId("phase").textContent).toBe("skeleton")
   })
 
-  it("should not show skeleton when loading completes before 1s", () => {
+  it("should transition directly to phase='ready' when loading completes before 1s", () => {
     const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
       </CoordinatedLoadingProvider>
     )
 
-    // Advance 500ms (not yet at 1s threshold)
+    expect(screen.getByTestId("phase").textContent).toBe("loading")
+
     act(() => {
       vi.advanceTimersByTime(500)
     })
 
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
-
     // Simulate loading complete
     mockWorkspaceLoading = false
     mockStreamsLoading = false
@@ -114,11 +104,10 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("is-loading").textContent).toBe("false")
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("should hide skeleton when loading completes after 1s", () => {
+  it("should transition to phase='ready' when loading completes after 1s", () => {
     const { rerender } = render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <TestConsumer />
@@ -129,7 +118,7 @@ describe("CoordinatedLoadingProvider", () => {
       vi.advanceTimersByTime(1000)
     })
 
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("true")
+    expect(screen.getByTestId("phase").textContent).toBe("skeleton")
 
     // Simulate loading complete
     mockWorkspaceLoading = false
@@ -141,11 +130,10 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("is-loading").textContent).toBe("false")
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
   })
 
-  it("should be ready immediately when no data to load", () => {
+  it("should be phase='ready' immediately when no data to load", () => {
     mockWorkspaceLoading = false
     mockStreamsLoading = false
 
@@ -155,8 +143,45 @@ describe("CoordinatedLoadingProvider", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("is-loading").textContent).toBe("false")
-    expect(screen.getByTestId("show-skeleton").textContent).toBe("false")
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
+  })
+
+  it("should report stream state as 'idle' during initial load", () => {
+    mockStreamResults = [{ isLoading: true, isError: false, error: null }]
+
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    // During initial load, streams report as idle (global phase handles skeletons)
+    expect(screen.getByTestId("stream-state").textContent).toBe("idle")
+  })
+
+  it("should report stream state as 'loading' after initial load completes", () => {
+    mockWorkspaceLoading = false
+    mockStreamsLoading = false
+    mockStreamResults = [{ isLoading: true, isError: false, error: null }]
+
+    const { rerender } = render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    // Now simulate stream starts loading again after initial load
+    mockStreamsLoading = true
+
+    rerender(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <TestConsumer />
+      </CoordinatedLoadingProvider>
+    )
+
+    // After initial load, stream reports its actual loading state
+    expect(screen.getByTestId("phase").textContent).toBe("ready")
+    expect(screen.getByTestId("stream-state").textContent).toBe("loading")
   })
 })
 
@@ -165,6 +190,7 @@ describe("CoordinatedLoadingGate", () => {
     vi.useFakeTimers()
     mockWorkspaceLoading = true
     mockStreamsLoading = true
+    mockStreamResults = []
   })
 
   afterEach(() => {
@@ -172,7 +198,7 @@ describe("CoordinatedLoadingGate", () => {
     vi.clearAllMocks()
   })
 
-  it("should show nothing initially while loading (before 1s)", () => {
+  it("should show nothing during 'loading' phase", () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <CoordinatedLoadingGate>
@@ -184,7 +210,7 @@ describe("CoordinatedLoadingGate", () => {
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
   })
 
-  it("should render children after 1s if still loading (children handle skeleton)", () => {
+  it("should render children during 'skeleton' phase", () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <CoordinatedLoadingGate>
@@ -197,11 +223,10 @@ describe("CoordinatedLoadingGate", () => {
       vi.advanceTimersByTime(1000)
     })
 
-    // Gate now renders children - children are responsible for showing skeleton
     expect(screen.getByTestId("content")).toBeInTheDocument()
   })
 
-  it("should show children when ready", () => {
+  it("should render children during 'ready' phase", () => {
     mockWorkspaceLoading = false
     mockStreamsLoading = false
 
@@ -214,7 +239,6 @@ describe("CoordinatedLoadingGate", () => {
     )
 
     expect(screen.getByTestId("content")).toBeInTheDocument()
-    expect(screen.getByText("Actual Content")).toBeInTheDocument()
   })
 
   it("should switch from nothing to content when loading completes before 1s", () => {
@@ -226,10 +250,8 @@ describe("CoordinatedLoadingGate", () => {
       </CoordinatedLoadingProvider>
     )
 
-    // Nothing shown initially
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
-    // Simulate loading complete before 1s
     mockWorkspaceLoading = false
     mockStreamsLoading = false
 
@@ -241,38 +263,6 @@ describe("CoordinatedLoadingGate", () => {
       </CoordinatedLoadingProvider>
     )
 
-    expect(screen.getByTestId("content")).toBeInTheDocument()
-  })
-
-  it("should switch from children-with-skeleton to children-with-content when loading completes after 1s", () => {
-    const { rerender } = render(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <CoordinatedLoadingGate>
-          <div data-testid="content">Actual Content</div>
-        </CoordinatedLoadingGate>
-      </CoordinatedLoadingProvider>
-    )
-
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
-
-    // Children rendered (they would show skeleton based on context)
-    expect(screen.getByTestId("content")).toBeInTheDocument()
-
-    // Simulate loading complete
-    mockWorkspaceLoading = false
-    mockStreamsLoading = false
-
-    rerender(
-      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
-        <CoordinatedLoadingGate>
-          <div data-testid="content">Actual Content</div>
-        </CoordinatedLoadingGate>
-      </CoordinatedLoadingProvider>
-    )
-
-    // Children still rendered (now showing real content)
     expect(screen.getByTestId("content")).toBeInTheDocument()
   })
 })
@@ -282,6 +272,7 @@ describe("MainContentGate", () => {
     vi.useFakeTimers()
     mockWorkspaceLoading = true
     mockStreamsLoading = true
+    mockStreamResults = []
   })
 
   afterEach(() => {
@@ -289,7 +280,7 @@ describe("MainContentGate", () => {
     vi.clearAllMocks()
   })
 
-  it("should show stream content skeleton while loading", () => {
+  it("should show stream content skeleton during 'loading' phase", () => {
     render(
       <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
         <MainContentGate>
@@ -302,7 +293,24 @@ describe("MainContentGate", () => {
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
   })
 
-  it("should show children when ready", () => {
+  it("should show stream content skeleton during 'skeleton' phase", () => {
+    render(
+      <CoordinatedLoadingProvider workspaceId="workspace_1" streamIds={["stream_1"]}>
+        <MainContentGate>
+          <div data-testid="content">Actual Content</div>
+        </MainContentGate>
+      </CoordinatedLoadingProvider>
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
+    expect(screen.queryByTestId("content")).not.toBeInTheDocument()
+  })
+
+  it("should show children during 'ready' phase", () => {
     mockWorkspaceLoading = false
     mockStreamsLoading = false
 
@@ -330,7 +338,6 @@ describe("MainContentGate", () => {
     expect(screen.getByTestId("stream-content-skeleton")).toBeInTheDocument()
     expect(screen.queryByTestId("content")).not.toBeInTheDocument()
 
-    // Simulate loading complete
     mockWorkspaceLoading = false
     mockStreamsLoading = false
 
