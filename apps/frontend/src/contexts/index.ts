@@ -24,4 +24,4 @@ export {
   MainContentGate,
   useCoordinatedLoading,
 } from "./coordinated-loading-context"
-export { SidebarProvider, useSidebar } from "./sidebar-context"
+export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock } from "./sidebar-context"

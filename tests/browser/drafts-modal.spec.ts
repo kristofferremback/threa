@@ -22,6 +22,15 @@ test.describe("Drafts Page", () => {
   const testName = `Drafts Test ${testId}`
   const workspaceName = `Drafts Test WS ${testId}`
 
+  // Helper to switch to All view mode (needed to access section buttons in Smart view)
+  async function switchToAllView(page: import("@playwright/test").Page) {
+    const allButton = page.getByRole("button", { name: "All" })
+    if (await allButton.isVisible()) {
+      await allButton.click()
+      await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible({ timeout: 5000 })
+    }
+  }
+
   // Helper to create a test image as a buffer (1x1 red PNG)
   function createTestImage(): Buffer {
     return Buffer.from([
@@ -52,13 +61,13 @@ test.describe("Drafts Page", () => {
     await expect(createButton).toBeEnabled()
     await createButton.click()
 
-    // Wait for sidebar to be visible (workspace loaded)
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
+    // Wait for sidebar to be visible (empty state shows buttons)
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
   })
 
   test("should show greyed drafts link when no drafts exist", async ({ page }) => {
     // Verify Drafts link is visible but greyed out (has text-muted-foreground class)
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible()
     await expect(draftsLink).toHaveClass(/text-muted-foreground/)
   })
@@ -70,7 +79,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Type something in the editor to create a draft
     const editor = page.locator("[contenteditable='true']")
@@ -81,12 +90,15 @@ test.describe("Drafts Page", () => {
     // Wait for draft to be saved (debounced at 500ms)
     await page.waitForTimeout(700)
 
-    // Navigate away to another location (create scratchpad)
+    // Navigate away to another location (switch to All view to access button, then create scratchpad)
+    await switchToAllView(page)
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Type a message|No messages yet|Start a conversation/).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Verify Drafts link is highlighted (no longer greyed out)
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
   })
@@ -98,7 +110,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -107,12 +119,15 @@ test.describe("Drafts Page", () => {
     await page.keyboard.type(draftContent)
     await page.waitForTimeout(700)
 
-    // Navigate away
+    // Navigate away (switch to All view to access button)
+    await switchToAllView(page)
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Type a message|No messages yet|Start a conversation/).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Click Drafts link to navigate to page
-    await page.getByRole("link", { name: "Drafts", exact: true }).click()
+    await page.locator('a[href*="/drafts"]').click()
 
     // Verify we're on the drafts page
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
@@ -131,7 +146,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -141,7 +156,7 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByRole("link", { name: "Drafts", exact: true }).click()
+    await page.locator('a[href*="/drafts"]').click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Click on the draft item to navigate
@@ -151,8 +166,8 @@ test.describe("Drafts Page", () => {
     // Should be back in the channel (URL contains the channel stream ID)
     await expect(page).toHaveURL(new RegExp(`/s/stream_`), { timeout: 5000 })
 
-    // Channel name should be visible in sidebar (use exact to avoid matching draft item text)
-    await expect(page.getByRole("link", { name: `#${channelName}`, exact: true })).toBeVisible()
+    // Channel heading should be visible (verifies we're in the right channel)
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible()
   })
 
   test("should delete draft with confirmation when clicking delete button", async ({ page }) => {
@@ -162,7 +177,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -172,7 +187,7 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByRole("link", { name: "Drafts", exact: true }).click()
+    await page.locator('a[href*="/drafts"]').click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover over draft item to reveal delete button
@@ -206,7 +221,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -216,7 +231,7 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Navigate to drafts page
-    await page.getByRole("link", { name: "Drafts", exact: true }).click()
+    await page.locator('a[href*="/drafts"]').click()
     await expect(page).toHaveURL(/\/drafts$/, { timeout: 2000 })
 
     // Hover and click delete
@@ -238,7 +253,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Create draft
     const editor = page.locator("[contenteditable='true']")
@@ -246,9 +261,12 @@ test.describe("Drafts Page", () => {
     await page.keyboard.type(`QS test ${testId}`)
     await page.waitForTimeout(700)
 
-    // Navigate away
+    // Navigate away (switch to All view to access button)
+    await switchToAllView(page)
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Type a message|No messages yet|Start a conversation/).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Open quick switcher with Cmd+K
     await page.keyboard.press("Meta+k")
@@ -276,7 +294,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Focus editor and paste an image (no text)
     const editor = page.locator("[contenteditable='true']")
@@ -309,12 +327,15 @@ test.describe("Drafts Page", () => {
     // Wait for draft to be saved
     await page.waitForTimeout(700)
 
-    // Navigate away
+    // Navigate away (switch to All view to access button)
+    await switchToAllView(page)
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Type a message|No messages yet|Start a conversation/).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Drafts link should not be greyed (attachment-only draft counts)
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
@@ -334,7 +355,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Type draft content
     const editor = page.locator("[contenteditable='true']")
@@ -344,7 +365,7 @@ test.describe("Drafts Page", () => {
     await page.waitForTimeout(700)
 
     // Verify draft was saved by checking Drafts link is highlighted
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
@@ -362,7 +383,9 @@ test.describe("Drafts Page", () => {
   test("should show scratchpad draft on page", async ({ page }) => {
     // Create a scratchpad
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()
-    await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Type a message|No messages yet|Start a conversation/).first()).toBeVisible({
+      timeout: 5000,
+    })
 
     // Type in the scratchpad
     const editor = page.locator("[contenteditable='true']")
@@ -377,10 +400,10 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 
@@ -399,7 +422,7 @@ test.describe("Drafts Page", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a message to reply to
     const editor = page.locator("[contenteditable='true']")
@@ -411,7 +434,9 @@ test.describe("Drafts Page", () => {
     await expect(page.getByText(`Parent message ${testId}`)).toBeVisible({ timeout: 5000 })
 
     // Click "Reply in thread" link to start a thread draft (appears on hover)
+    // Scope to main content area to avoid matching sidebar preview
     const messageContainer = page
+      .getByRole("main")
       .locator(".group")
       .filter({ hasText: `Parent message ${testId}` })
       .first()
@@ -432,16 +457,17 @@ test.describe("Drafts Page", () => {
     await page.keyboard.type(threadDraftContent)
     await page.waitForTimeout(700)
 
-    // Navigate away by creating another channel
+    // Navigate away by creating another channel (switch to All view to access button)
+    await switchToAllView(page)
     const otherChannelName = `other-channel-${testId}`
     page.once("dialog", async (dialog) => {
       await dialog.accept(otherChannelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${otherChannelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${otherChannelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Drafts link should not be greyed (has thread draft)
-    const draftsLink = page.getByRole("link", { name: "Drafts", exact: true })
+    const draftsLink = page.locator('a[href*="/drafts"]')
     await expect(draftsLink).toBeVisible({ timeout: 2000 })
     await expect(draftsLink).not.toHaveClass(/text-muted-foreground/)
 

@@ -6,6 +6,40 @@ interface StreamInfo {
   type: string
   displayName: string | null
   slug?: string | null
+  rootStreamId?: string | null
+}
+
+interface StreamForLookup {
+  id: string
+  type: string
+  displayName: string | null
+  slug?: string | null
+}
+
+/**
+ * Get a descriptive display name for a thread based on its root stream.
+ * Format: "Thread in #channel", "Thread in [Scratchpad name]", "Thread with [User(s)]"
+ */
+export function getThreadDisplayName(thread: { rootStreamId: string | null }, allStreams: StreamForLookup[]): string {
+  if (!thread.rootStreamId) {
+    return "Thread"
+  }
+
+  const rootStream = allStreams.find((s) => s.id === thread.rootStreamId)
+  if (!rootStream) {
+    return "Thread"
+  }
+
+  switch (rootStream.type) {
+    case "channel":
+      return `Thread in #${rootStream.slug || rootStream.displayName || "channel"}`
+    case "scratchpad":
+      return `Thread in ${rootStream.displayName || "Scratchpad"}`
+    case "dm":
+      return `Thread with ${rootStream.displayName || "DM"}`
+    default:
+      return "Thread"
+  }
 }
 
 /**

@@ -34,7 +34,7 @@ test.describe("Rich Text Editing", () => {
     }
 
     // Wait for sidebar to be visible
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
 
     // Create a scratchpad for testing
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()

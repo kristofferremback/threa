@@ -67,7 +67,7 @@ export function useUnreadCounts(workspaceId: string) {
   /**
    * Increment unread count for a stream.
    *
-   * Note: This is wired up to real-time socket events via the `unread:increment`
+   * Note: This is wired up to real-time socket events via the `stream:activity`
    * event in use-socket-events.ts. The backend broadcasts this workspace-scoped
    * event when messages are created, and the frontend filters by stream membership
    * and excludes the current user's own messages.

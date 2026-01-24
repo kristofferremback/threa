@@ -37,7 +37,7 @@ test.describe("Thread Replies", () => {
     await createButton.click()
 
     // Wait for sidebar to be visible (workspace loaded)
-    await expect(page.getByRole("heading", { name: "Channels", level: 3 })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
   })
 
   test("should send a reply in a thread", async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message in the channel
     const editor = page.locator("[contenteditable='true']")
@@ -60,7 +60,8 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
 
     // Hover over the message to reveal "Reply in thread" link
-    const messageContainer = page.locator(".group").filter({ hasText: parentMessage }).first()
+    // Scope to main content area to avoid matching sidebar preview
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
 
     // Click "Reply in thread" to open thread panel
@@ -97,7 +98,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -109,7 +110,7 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
 
     // Open thread panel
-    const messageContainer = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -133,7 +134,7 @@ test.describe("Thread Replies", () => {
     await page.waitForTimeout(1000)
 
     // Verify thread indicator shows "1 reply" on the parent message
-    const parentInStream = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await expect(parentInStream.getByText(/1 reply/i)).toBeVisible({ timeout: 3000 })
   })
 
@@ -144,7 +145,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -156,7 +157,7 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
 
     // Open thread
-    const messageContainer = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     const replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -204,7 +205,7 @@ test.describe("Thread Replies", () => {
     await page.waitForTimeout(1000)
 
     // Verify thread indicator shows "3 replies"
-    const parentInStream = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await expect(parentInStream.getByText(/3 replies/i)).toBeVisible({ timeout: 3000 })
   })
 
@@ -215,7 +216,7 @@ test.describe("Thread Replies", () => {
       await dialog.accept(channelName)
     })
     await page.getByRole("button", { name: "+ New Channel" }).click()
-    await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("heading", { name: `#${channelName}`, level: 1 })).toBeVisible({ timeout: 5000 })
 
     // Send a parent message
     const editor = page.locator("[contenteditable='true']")
@@ -227,7 +228,7 @@ test.describe("Thread Replies", () => {
     await expect(page.getByText(parentMessage)).toBeVisible({ timeout: 5000 })
 
     // Open thread and send first reply
-    const messageContainer = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     await messageContainer.hover()
     let replyLink = messageContainer.getByRole("link", { name: "Reply in thread" })
     await expect(replyLink).toBeVisible({ timeout: 2000 })
@@ -250,7 +251,7 @@ test.describe("Thread Replies", () => {
     await page.waitForTimeout(500)
 
     // Reopen the thread by clicking the reply count indicator
-    const parentInStream = page.locator(".group").filter({ hasText: parentMessage }).first()
+    const parentInStream = page.getByRole("main").locator(".group").filter({ hasText: parentMessage }).first()
     const threadIndicator = parentInStream.getByText(/1 reply/i)
     await expect(threadIndicator).toBeVisible({ timeout: 3000 })
     await threadIndicator.click()

@@ -30,8 +30,8 @@ test.describe("Emoji Shortcuts", () => {
       await page.getByRole("button", { name: "Create Workspace" }).click()
     }
 
-    // Wait for sidebar
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    // Wait for sidebar (empty state shows buttons, populated state shows headings)
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
 
     // Create a scratchpad to get an editor
     await page.getByRole("button", { name: "+ New Scratchpad" }).click()

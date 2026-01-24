@@ -94,11 +94,34 @@ export function isSameDay(a: Date, b: Date): boolean {
   return dateFnsIsSameDay(a, b)
 }
 
+interface RelativeTimeOptions {
+  /** Use terse format (e.g., "2m ago") vs verbose (e.g., "yesterday 14:30") */
+  terse?: boolean
+}
+
 /**
- * Format a date relative to now (e.g., "yesterday 14:30", "Monday 09:00").
- * Uses user preferences for time format.
+ * Format a date relative to now.
+ *
+ * Verbose (default): "yesterday 14:30", "Monday 09:00" - includes time
+ * Terse: "2m ago", "1h ago", "yesterday" - compact, no time
  */
-export function formatRelativeTime(date: Date, now: Date = new Date(), prefs?: TimePrefs): string {
+export function formatRelativeTime(
+  date: Date,
+  now: Date = new Date(),
+  prefs?: TimePrefs,
+  options?: RelativeTimeOptions
+): string {
+  const terse = options?.terse ?? false
+
+  if (terse) {
+    return formatRelativeTimeTerse(date, now)
+  }
+
+  return formatRelativeTimeVerbose(date, now, prefs)
+}
+
+/** Verbose format: includes time (e.g., "yesterday 14:30", "Monday 09:00") */
+function formatRelativeTimeVerbose(date: Date, now: Date, prefs?: TimePrefs): string {
   const time = formatTime(date, prefs)
 
   // Same day: just show time
@@ -133,6 +156,54 @@ export function formatRelativeTime(date: Date, now: Date = new Date(), prefs?: T
     year: "numeric",
   })
   return `${fullDate} ${time}`
+}
+
+/** Terse format: compact, no time (e.g., "2m ago", "yesterday") */
+function formatRelativeTimeTerse(date: Date, now: Date): string {
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+
+  // Less than 1 minute ago
+  if (diffSec < 60) {
+    return "now"
+  }
+
+  // Less than 1 hour ago
+  if (diffMin < 60) {
+    return `${diffMin}m ago`
+  }
+
+  // Less than 24 hours ago
+  if (diffHour < 24) {
+    return `${diffHour}h ago`
+  }
+
+  // Calculate days difference relative to `now` parameter, not system time
+  const daysAgo = differenceInDays(startOfDay(now), startOfDay(date))
+
+  // Yesterday (exactly 1 day ago)
+  if (daysAgo === 1) {
+    return "yesterday"
+  }
+
+  // Within the last week: show day name only
+  if (daysAgo < 7 && daysAgo > 0) {
+    return date.toLocaleDateString(undefined, { weekday: "short" })
+  }
+
+  // Same year: show month and day abbreviated
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+  }
+
+  // Different year: show abbreviated date with year
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "2-digit",
+  })
 }
 
 /**

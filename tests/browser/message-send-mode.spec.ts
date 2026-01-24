@@ -63,7 +63,7 @@ test.describe("Message Send Mode", () => {
     }
 
     // Wait for sidebar to be visible
-    await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible()
+    await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible()
   })
 
   test.describe("default enter mode", () => {
@@ -442,7 +442,7 @@ test.describe("Message Send Mode", () => {
       await page.reload()
 
       // Wait for app to load
-      await expect(page.getByRole("heading", { name: "Scratchpads", level: 3 })).toBeVisible({ timeout: 10000 })
+      await expect(page.getByRole("button", { name: "+ New Scratchpad" })).toBeVisible({ timeout: 10000 })
 
       // Create another scratchpad
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
