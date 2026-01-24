@@ -6,7 +6,8 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { StreamType, InvocationTrigger } from "./config"
+import type { StreamType } from "@threa/types"
+import type { InvocationTrigger } from "./config"
 
 /**
  * Input for companion evaluation.

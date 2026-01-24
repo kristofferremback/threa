@@ -22,11 +22,7 @@ import {
   RESEARCHER_MAX_ITERATIONS,
   RESEARCHER_MAX_RESULTS_PER_SEARCH,
 } from "../../agents/researcher/config"
-
-// Companion config is in evals/suites - we need to define it here for production
-// This avoids a production → evals dependency
-const COMPANION_MODEL_ID = "openrouter:anthropic/claude-sonnet-4.5"
-const COMPANION_TEMPERATURE = 0.7
+import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../agents/companion/config"
 
 // Embedding model - no co-located config exists
 const EMBEDDING_MODEL_ID = "openrouter:openai/text-embedding-3-small"
