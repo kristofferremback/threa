@@ -14,8 +14,7 @@ import {
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import { cn } from "@/lib/utils"
 import { useStreamOrDraft, useStreamError } from "@/hooks"
-import { usePanel, useCoordinatedLoading } from "@/contexts"
-import { StreamLoadingIndicator } from "@/components/loading"
+import { usePanel } from "@/contexts"
 import { TimelineView } from "@/components/timeline"
 import { StreamPanel, ThreadHeader } from "@/components/thread"
 import { ConversationList } from "@/components/conversations"
@@ -42,13 +41,9 @@ export function StreamPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { stream, isDraft, error, rename, archive, unarchive } = useStreamOrDraft(workspaceId!, streamId!)
   const { isPanelOpen, closePanel } = usePanel()
-  const { getStreamState } = useCoordinatedLoading()
 
   // Unified error checking - checks both coordinated loading and direct query errors
   const streamError = useStreamError(streamId, error)
-
-  // Show loading indicator when stream is loading (getStreamState returns "idle" during initial load)
-  const showLoadingIndicator = streamId ? getStreamState(streamId) === "loading" : false
 
   const isConversationViewOpen = searchParams.get("convView") === "open"
 
@@ -120,8 +115,7 @@ export function StreamPage() {
 
   const mainStreamContent = (
     <div className="flex h-full flex-col">
-      <header className="relative flex h-11 items-center justify-between border-b px-4">
-        <StreamLoadingIndicator isLoading={showLoadingIndicator} />
+      <header className="flex h-11 items-center justify-between border-b px-4">
         <div className="flex items-center gap-2 flex-1">
           {isEditing ? (
             <Input
