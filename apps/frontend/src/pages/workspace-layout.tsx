@@ -62,11 +62,15 @@ export function WorkspaceLayout() {
   const streamMatch = useMatch("/w/:workspaceId/s/:streamId")
   const streamId = streamMatch?.params.streamId
 
-  // Collect all stream IDs: main stream + any open panels
+  // Only include the main stream ID for coordinated loading.
+  // Panel streams are excluded because they have their own loading state
+  // managed by useStreamBootstrap in StreamPanel. Including panel IDs here
+  // can cause interference during draft-to-thread transitions when
+  // useCoordinatedStreamQueries creates queries that compete with the
+  // optimistic cache updates from the panel.
   const streamIds = useMemo(() => {
-    const panelIds = searchParams.getAll("panel")
-    return [streamId, ...panelIds].filter((id): id is string => Boolean(id))
-  }, [streamId, searchParams])
+    return streamId ? [streamId] : []
+  }, [streamId])
 
   const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
 
