@@ -124,9 +124,10 @@ function categorizeStream(
   return "other"
 }
 
-/** Truncate content for preview display */
-function truncateContent(content: JSONContent, maxLength: number = 50): string {
-  const markdown = serializeToMarkdown(content)
+/** Truncate content for preview display. Accepts either JSONContent or plain markdown string. */
+function truncateContent(content: JSONContent | string, maxLength: number = 50): string {
+  // Handle plain markdown string (from socket events) vs JSONContent (from database)
+  const markdown = typeof content === "string" ? content : serializeToMarkdown(content)
   const stripped = markdown
     .replace(/[*_~`#]/g, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
@@ -584,7 +585,7 @@ function StreamItem({
               )}
             >
               <span className="truncate flex-1">
-                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
+                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
               </span>
               <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
             </div>
@@ -749,7 +750,7 @@ function ScratchpadItem({
               )}
             >
               <span className="truncate flex-1">
-                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content as JSONContent)}
+                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
               </span>
               <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
             </div>
