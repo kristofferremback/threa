@@ -26,7 +26,7 @@ import {
   streamKeys,
   useThreadAncestors,
 } from "@/hooks"
-import { usePanel, isDraftPanel, parseDraftPanel, useCoordinatedLoading } from "@/contexts"
+import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
 import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
@@ -52,13 +52,9 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const streamService = useStreamService()
   const messageService = useMessageService()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
-  const { getStreamState } = useCoordinatedLoading()
 
   // Get panel stream ID
   if (!panelId) return null
-
-  // Show loading indicator when stream is loading (getStreamState returns "idle" during initial load and for drafts)
-  const showLoadingIndicator = getStreamState(panelId) === "loading"
 
   // Check if a stream is the main view stream (to avoid duplicating it in panel)
   const isMainViewStream = (streamId: string) => {
@@ -70,11 +66,18 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const draftInfo = isDraft ? parseDraftPanel(panelId) : null
 
   // For real streams, fetch bootstrap
-  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, isDraft ? "" : panelId, {
+  const {
+    data: bootstrap,
+    error,
+    isLoading: isBootstrapLoading,
+  } = useStreamBootstrap(workspaceId, isDraft ? "" : panelId, {
     enabled: !isDraft,
   })
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
+
+  // Show loading indicator only for real streams (not drafts) and only when actively loading after initial data
+  const showLoadingIndicator = !isDraft && isBootstrapLoading && !bootstrap
 
   // For draft threads, fetch parent stream to get the parent message
   const { data: parentBootstrap } = useStreamBootstrap(workspaceId, draftInfo?.parentStreamId ?? "", {
