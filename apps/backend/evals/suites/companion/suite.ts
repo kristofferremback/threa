@@ -76,7 +76,13 @@ import { ulid } from "ulid"
 
 /**
  * Build system prompt for eval context.
- * Simplified version of the production buildSystemPrompt.
+ *
+ * NOTE: This is intentionally simplified compared to production (persona-agent.ts).
+ * Production uses persona.systemPrompt from the database plus complex context
+ * (temporal info, workspace knowledge, participant lists). Evals test behavioral
+ * patterns - response quality, tone, decision making - which don't require
+ * production complexity. The simplified prompt provides sufficient context for
+ * behavior testing while being deterministic (no DB dependency).
  */
 function buildEvalSystemPrompt(input: CompanionInput): string {
   let prompt = `You are Ariadne, a helpful AI assistant in a workspace collaboration tool.
