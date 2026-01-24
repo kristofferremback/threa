@@ -11,37 +11,49 @@
  */
 
 import { parseArgs } from "util"
-import { runSuites, type RunnerOptions } from "./framework/runner"
+import { runSuites, runFromConfigFile, type RunnerOptions } from "./framework/runner"
 import { memoClassifierSuite } from "./suites/memo-classifier/suite"
 import { memorizerSuite } from "./suites/memorizer/suite"
+import { companionSuite } from "./suites/companion/suite"
+import { isConfigFilePath } from "./framework/config-loader"
 
 // All available suites
-const allSuites = [memoClassifierSuite, memorizerSuite]
+const allSuites = [memoClassifierSuite, memorizerSuite, companionSuite]
 
 function printHelp(): void {
+  const suiteNames = allSuites.map((s) => s.name).join(", ")
+  const suiteList = allSuites
+    .map((s) => {
+      const name = s.name.padEnd(16)
+      const desc = s.description || "No description"
+      return `  ${name} - ${desc}`
+    })
+    .join("\n")
+
   console.log(`
 AI Evaluation Framework
 
 Usage: bun run evals/run.ts [options]
 
 Options:
-  -h, --help           Show this help message
-  -s, --suite <name>   Run specific suite (memo-classifier, memorizer)
-  -c, --case <id>      Run specific case(s), comma-separated
-  -m, --model <ids>    Override model(s), comma-separated for comparison
+  -h, --help            Show this help message
+  -s, --suite <name>    Run specific suite (${suiteNames})
+  -c, --case <id>       Run specific case(s), comma-separated
+  -m, --model <ids>     Override model(s), comma-separated for comparison
   -t, --temperature <n> Override temperature (0.0-1.0)
-  -p, --parallel <n>   Number of parallel workers (default: 1)
-  --no-langfuse        Disable Langfuse recording
-  -v, --verbose        Verbose output
+  -p, --parallel <n>    Number of parallel workers (default: 1)
+  --config <file>       Run from YAML config file (ignores -s, -m flags)
+  --no-langfuse         Disable Langfuse recording
+  -v, --verbose         Verbose output
 
 Examples:
   bun run evals/run.ts
     Run all suites with default configuration
 
-  bun run evals/run.ts -s memo-classifier
-    Run only the memo-classifier suite
+  bun run evals/run.ts -s ${allSuites[0]?.name || "suite-name"}
+    Run only the ${allSuites[0]?.name || "suite-name"} suite
 
-  bun run evals/run.ts -s memorizer -c date-norm-001,date-norm-002
+  bun run evals/run.ts -s ${allSuites[1]?.name || "suite-name"} -c case-001,case-002
     Run specific test cases
 
   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini
@@ -50,12 +62,29 @@ Examples:
   bun run evals/run.ts -m openrouter:openai/gpt-4.1-mini,openrouter:anthropic/claude-haiku-4.5 -p 2
     Compare models in parallel
 
+  bun run evals/run.ts --config companion-config.yaml
+    Run with detailed per-component configuration from YAML file
+
   bun run evals/run.ts --no-langfuse -v
     Run with verbose output, skip Langfuse recording
 
+Config File Format (YAML):
+  suites:
+  - name: companion
+    title: "Default configuration"
+    # No component overrides - uses production defaults
+
+  - name: companion
+    title: "Claude models everywhere"
+    components:
+      companion:
+        model: openrouter:anthropic/claude-sonnet-4.5
+        temperature: 0.7
+      researcher:
+        model: openrouter:anthropic/claude-haiku-4.5
+
 Available Suites:
-  memo-classifier  - Tests message classification (gem detection)
-  memorizer        - Tests memo extraction and date normalization
+${suiteList}
 `)
 }
 
@@ -69,6 +98,7 @@ async function main(): Promise<void> {
       model: { type: "string", short: "m" },
       temperature: { type: "string", short: "t" },
       parallel: { type: "string", short: "p" },
+      config: { type: "string" },
       "no-langfuse": { type: "boolean" },
       verbose: { type: "boolean", short: "v" },
     },
@@ -104,8 +134,14 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  // Validate suite name
-  if (options.suite && !allSuites.some((s) => s.name === options.suite)) {
+  // Validate config file path
+  if (values.config && !isConfigFilePath(values.config)) {
+    console.error("Error: Config file must have .yaml or .yml extension")
+    process.exit(1)
+  }
+
+  // Validate suite name (only when not using config file)
+  if (!values.config && options.suite && !allSuites.some((s) => s.name === options.suite)) {
     console.error(`Error: Unknown suite "${options.suite}"`)
     console.error(`Available suites: ${allSuites.map((s) => s.name).join(", ")}`)
     process.exit(1)
@@ -115,6 +151,32 @@ async function main(): Promise<void> {
   console.log("║              AI Evaluation Framework                      ║")
   console.log("╚══════════════════════════════════════════════════════════╝")
 
+  // Config file mode: run from YAML config
+  if (values.config) {
+    console.log(`\nRunning from config file: ${values.config}`)
+    if (options.noLangfuse) {
+      console.log("Langfuse recording disabled")
+    }
+
+    try {
+      const results = await runFromConfigFile(values.config, allSuites as any, {
+        noLangfuse: options.noLangfuse,
+        verbose: options.verbose,
+        parallel: options.parallel,
+      })
+
+      const hasFailures = results.some((r) =>
+        r.permutations.some((p) => p.cases.some((c) => c.error || c.evaluations.some((e) => !e.passed)))
+      )
+      process.exit(hasFailures ? 1 : 0)
+    } catch (error) {
+      console.error("\nEvaluation failed with error:")
+      console.error(error)
+      process.exit(1)
+    }
+  }
+
+  // Standard mode: run with CLI flags
   if (options.suite) {
     console.log(`\nRunning suite: ${options.suite}`)
   } else {

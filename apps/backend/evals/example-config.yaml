@@ -1,0 +1,44 @@
+# Example evaluation config file
+#
+# This file demonstrates how to run evaluations with per-component configuration.
+# Use with: bun run eval -- --config evals/example-config.yaml
+#
+# Supported components per suite:
+#   companion:
+#     - companion: Main agent model (used for agent and synthesize nodes)
+#     - researcher: Research model (not yet integrated in eval)
+#
+#   memo-classifier, memorizer:
+#     - No component overrides supported (single model)
+
+suites:
+  # Run companion suite with default configuration
+  - name: companion
+    title: Default configuration
+    # No components specified - uses production defaults
+
+  # Run companion suite with specific model
+  - name: companion
+    title: Claude Sonnet 4.5
+    components:
+      companion:
+        model: openrouter:anthropic/claude-sonnet-4.5
+        temperature: 0.7
+
+  # Run companion suite with different model
+  - name: companion
+    title: GPT-4.1-mini
+    components:
+      companion:
+        model: openrouter:openai/gpt-4.1-mini
+        temperature: 0.5
+
+  # Run specific cases only
+  - name: companion
+    title: Greeting tests with Claude Haiku
+    cases:
+      - scratchpad-companion-greeting-001
+      - dm-companion-greeting-001
+    components:
+      companion:
+        model: openrouter:anthropic/claude-haiku-4.5

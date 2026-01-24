@@ -18,15 +18,12 @@ import {
   type EnrichedMessageResult,
 } from "./context-formatter"
 import { logger } from "../../lib/logger"
-
-// Model for researcher decisions - use fast model for structured output
-const RESEARCHER_MODEL = "openrouter:openai/gpt-oss-120b"
-
-// Maximum iterations for additional queries
-const MAX_ITERATIONS = 5
-
-// Maximum number of memos/messages to retrieve per search
-const MAX_RESULTS_PER_SEARCH = 5
+import {
+  RESEARCHER_MODEL_ID,
+  RESEARCHER_MAX_ITERATIONS,
+  RESEARCHER_MAX_RESULTS_PER_SEARCH,
+  RESEARCHER_SYSTEM_PROMPT,
+} from "./config"
 
 /**
  * Source item for citation - extended to support workspace sources.
@@ -82,7 +79,7 @@ export interface ResearcherDeps {
  * Get a LangChain model configured for the researcher's lightweight decision calls.
  */
 function getResearcherModel(ai: AI): ChatOpenAI {
-  return ai.getLangChainModel(RESEARCHER_MODEL)
+  return ai.getLangChainModel(RESEARCHER_MODEL_ID)
 }
 
 // Schema for combined decision + queries (single LLM call)
@@ -117,27 +114,6 @@ const evaluationSchema = z.object({
 })
 
 type SearchQuery = NonNullable<z.infer<typeof decisionWithQueriesSchema>["queries"]>[number]
-
-const SYSTEM_PROMPT = `You analyze user messages to decide if workspace knowledge retrieval would help answer them.
-
-You work in steps:
-1. First, decide if search is needed at all
-2. If yes, generate search queries
-3. After seeing results, evaluate if they're sufficient or if more searches are needed
-
-Guidelines:
-- Start with memo search (summarized knowledge) when looking for decisions, context, or discussions
-- Use message search when you need specific quotes, recent activity, or exact terms
-- Use "semantic" search for concepts, topics, intent
-- Use "exact" search for error messages, IDs, specific phrases, quoted text
-- Generate 1-3 focused queries per step
-
-Skip search entirely when:
-- Simple greetings, thanks, or acknowledgments
-- Questions about external/current topics (web search is more appropriate)
-- The conversation history already contains the answer
-- User is sharing information, not asking a question
-- The question is about the current conversation itself`
 
 /**
  * Researcher that retrieves relevant workspace knowledge before the main agent responds.
@@ -300,7 +276,7 @@ export class Researcher {
 
     // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
     let iteration = 0
-    while (iteration < MAX_ITERATIONS) {
+    while (iteration < RESEARCHER_MAX_ITERATIONS) {
       // AI evaluation (no DB, 1-5 seconds)
       const evaluation = await this.evaluateResults(model, contextSummary, allMemos, allMessages, langchainConfig)
 
@@ -385,7 +361,7 @@ export class Researcher {
 
       const result = await structuredModel.invoke(
         [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
           {
             role: "user",
             content: `Analyze this message and decide if workspace search would help answer it.
@@ -429,7 +405,7 @@ If search is NOT needed, set needsSearch to false and queries to null.`,
 
       const result = await structuredModel.invoke(
         [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
           {
             role: "user",
             content: `Evaluate if these search results are sufficient to help answer the user's question.
@@ -536,7 +512,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
           workspaceId,
           embedding,
           streamIds: accessibleStreamIds,
-          limit: MAX_RESULTS_PER_SEARCH,
+          limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
         })
 
         return results.map((r) => ({
@@ -556,7 +532,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
         workspaceId,
         query: query.query,
         streamIds: accessibleStreamIds,
-        limit: MAX_RESULTS_PER_SEARCH,
+        limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
       })
 
       return results.map((r) => ({
@@ -607,7 +583,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             query: "",
             streamIds: accessibleStreamIds,
             filters,
-            limit: MAX_RESULTS_PER_SEARCH,
+            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
           })
         } else if (embedding.length === 0) {
           // No embedding - keyword-only search
@@ -615,7 +591,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             query: searchQuery,
             streamIds: accessibleStreamIds,
             filters,
-            limit: MAX_RESULTS_PER_SEARCH,
+            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
           })
         } else {
           // Hybrid search with RRF ranking
@@ -624,7 +600,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             embedding,
             streamIds: accessibleStreamIds,
             filters,
-            limit: MAX_RESULTS_PER_SEARCH,
+            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
           })
         }
 

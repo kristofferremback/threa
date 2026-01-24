@@ -7,6 +7,7 @@
 
 import type { Pool } from "pg"
 import type { AI } from "../../src/lib/ai/ai"
+import type { ComponentOverrides } from "./config-types"
 
 // -----------------------------------------------------------------------------
 // Usage Tracking
@@ -59,6 +60,8 @@ export interface EvalContext {
   permutation: EvalPermutation
   /** Usage accumulator for tracking AI costs - call recordUsage() after AI calls */
   usage: UsageAccumulator
+  /** Component-specific overrides from config file */
+  componentOverrides?: ComponentOverrides
 }
 
 // -----------------------------------------------------------------------------
@@ -76,6 +79,8 @@ export interface EvalPermutation {
   temperature?: number
   /** Key into suite's promptVariants registry */
   promptVariant?: string
+  /** Title for this run (from config file) */
+  runTitle?: string
 }
 
 // -----------------------------------------------------------------------------

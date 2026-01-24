@@ -27,6 +27,8 @@ import { recordEvalRun, createLangfuseClient } from "./langfuse"
 import { createAI, type AI, type GenerateObjectOptions, type GenerateTextOptions } from "../../src/lib/ai/ai"
 import type { UsageAccumulator } from "./types"
 import { createWorkspaceFixture, type WorkspaceFixture } from "../fixtures/workspace"
+import { loadConfigFile } from "./config-loader"
+import type { ComponentOverrides, EvalConfigFile, SuiteRunConfig } from "./config-types"
 
 /**
  * Console output colors for terminal.
@@ -196,6 +198,14 @@ async function runCase<TInput, TOutput, TExpected>(
 }
 
 /**
+ * Options for running a single permutation.
+ */
+interface PermutationRunOptions extends RunnerOptions {
+  /** Component-specific overrides from config file */
+  componentOverrides?: ComponentOverrides
+}
+
+/**
  * Run all cases for a single permutation.
  */
 async function runPermutation<TInput, TOutput, TExpected>(
@@ -204,7 +214,7 @@ async function runPermutation<TInput, TOutput, TExpected>(
   dbResult: EvalDatabaseResult,
   ai: AI,
   fixture: WorkspaceFixture,
-  options: RunnerOptions
+  options: PermutationRunOptions
 ): Promise<PermutationResult<TOutput, TExpected>> {
   const startTime = Date.now()
   const cases: CaseResult<TOutput, TExpected>[] = []
@@ -226,6 +236,7 @@ async function runPermutation<TInput, TOutput, TExpected>(
     userId: fixture.userId,
     permutation,
     usage: usageAccumulator,
+    componentOverrides: options.componentOverrides,
   }
 
   // Run suite setup if provided
@@ -301,7 +312,7 @@ async function runPermutationIsolated<TInput, TOutput, TExpected>(
   permutation: EvalPermutation,
   template: EvalTemplateResult,
   ai: AI,
-  options: RunnerOptions,
+  options: PermutationRunOptions,
   langfuseClient: Langfuse | null
 ): Promise<{ result: PermutationResult<TOutput, TExpected>; traceId?: string }> {
   // Clone database from template
@@ -312,7 +323,8 @@ async function runPermutationIsolated<TInput, TOutput, TExpected>(
     // Create fixture for this permutation
     const fixture = await createWorkspaceFixture(dbResult.pool)
 
-    console.log(`\n${colors.yellow}Permutation: ${permutation.model}${colors.reset}`)
+    const permLabel = permutation.runTitle || permutation.model
+    console.log(`\n${colors.yellow}Permutation: ${permLabel}${colors.reset}`)
 
     const result = await runPermutation(suite, permutation, dbResult, ai, fixture, options)
 
@@ -397,7 +409,12 @@ function printSummary<TOutput, TExpected>(result: SuiteResult<TOutput, TExpected
     const passedCases = cases.filter((c) => !c.error && c.evaluations.every((e) => e.passed))
     const failedCases = cases.filter((c) => c.error || c.evaluations.some((e) => !e.passed))
 
-    console.log(`\nPermutation: ${permutation.model}`)
+    if (permutation.runTitle) {
+      console.log(`\nRun: ${permutation.runTitle}`)
+      console.log(`  Model: ${permutation.model}`)
+    } else {
+      console.log(`\nPermutation: ${permutation.model}`)
+    }
     if (permutation.temperature !== undefined) {
       console.log(`  Temperature: ${permutation.temperature}`)
     }
@@ -547,7 +564,8 @@ export async function runSuite<TInput, TOutput, TExpected>(
 
     try {
       for (const permutation of permutations) {
-        console.log(`\n${colors.yellow}Permutation: ${permutation.model}${colors.reset}`)
+        const permLabel = permutation.runTitle || permutation.model
+        console.log(`\n${colors.yellow}Permutation: ${permLabel}${colors.reset}`)
 
         const permResult = await runPermutation(suite, permutation, dbResult, ai, fixture, options)
         permutationResults.push(permResult)
@@ -616,6 +634,136 @@ export async function runSuites(
   // Print overall summary
   console.log("\n" + "=".repeat(60))
   console.log(`${colors.cyan}Overall Summary${colors.reset}`)
+  console.log("=".repeat(60))
+
+  let totalPassed = 0
+  let totalFailed = 0
+
+  for (const result of results) {
+    for (const permResult of result.permutations) {
+      for (const caseResult of permResult.cases) {
+        if (!caseResult.error && caseResult.evaluations.every((e) => e.passed)) {
+          totalPassed++
+        } else {
+          totalFailed++
+        }
+      }
+    }
+  }
+
+  console.log(
+    `\n${colors.green}Total Passed: ${totalPassed}${colors.reset}  ${colors.red}Total Failed: ${totalFailed}${colors.reset}`
+  )
+
+  return results
+}
+
+/**
+ * Run evaluation suites from a config file.
+ *
+ * Config files allow detailed per-component overrides for complex suites
+ * like the companion agent.
+ */
+export async function runFromConfigFile(
+  configPath: string,
+  allSuites: EvalSuite<unknown, unknown, unknown>[],
+  baseOptions: Omit<RunnerOptions, "suite" | "model" | "cases"> = {}
+): Promise<SuiteResult<unknown, unknown>[]> {
+  console.log(`\n${colors.cyan}Loading config file: ${configPath}${colors.reset}`)
+
+  // Load and validate config
+  const config = loadConfigFile(configPath)
+  console.log(`${colors.dim}Found ${config.suites.length} suite run(s) in config${colors.reset}`)
+
+  // Create AI wrapper
+  const ai = createEvalAI()
+
+  // Create Langfuse client if enabled
+  const langfuseClient = baseOptions.noLangfuse ? null : createLangfuseClient()
+
+  const results: SuiteResult<unknown, unknown>[] = []
+
+  try {
+    for (const runConfig of config.suites) {
+      // Find the suite
+      const suite = allSuites.find((s) => s.name === runConfig.name)
+      if (!suite) {
+        console.log(`${colors.red}Unknown suite: ${runConfig.name}${colors.reset}`)
+        console.log(`Available suites: ${allSuites.map((s) => s.name).join(", ")}`)
+        continue
+      }
+
+      console.log(`\n${colors.cyan}Running suite: ${suite.name}${colors.reset}`)
+      console.log(`${colors.yellow}Run: ${runConfig.title}${colors.reset}`)
+      if (suite.description) {
+        console.log(`${colors.dim}${suite.description}${colors.reset}`)
+      }
+
+      // Create permutation from config
+      const basePermutation = suite.defaultPermutations[0] || { model: "openrouter:anthropic/claude-haiku-4.5" }
+
+      // Apply component overrides to determine the "main" model
+      // Use companion model if specified, otherwise the base permutation model
+      const mainModel = runConfig.components?.companion?.model ?? basePermutation.model
+      const mainTemperature = runConfig.components?.companion?.temperature ?? basePermutation.temperature
+
+      const permutation: EvalPermutation = {
+        model: mainModel,
+        temperature: mainTemperature,
+        runTitle: runConfig.title,
+      }
+
+      // Build options with component overrides
+      const runOptions: PermutationRunOptions = {
+        ...baseOptions,
+        cases: runConfig.cases,
+        componentOverrides: runConfig.components,
+      }
+
+      // Set up database and run
+      const dbResult = await setupEvalDatabase({ label: `${suite.name}-${runConfig.title.replace(/\s+/g, "-")}` })
+      const fixture = await createWorkspaceFixture(dbResult.pool)
+
+      try {
+        const permLabel = permutation.runTitle || permutation.model
+        console.log(`\n${colors.yellow}Permutation: ${permLabel}${colors.reset}`)
+
+        const permResult = await runPermutation(suite, permutation, dbResult, ai, fixture, runOptions)
+
+        // Record to Langfuse if enabled
+        let lastTraceId: string | undefined
+        if (langfuseClient) {
+          lastTraceId = await recordEvalRun({
+            client: langfuseClient,
+            suiteName: suite.name,
+            permutation,
+            cases: permResult.cases,
+            runEvaluations: permResult.runEvaluations,
+          })
+        }
+
+        const result: SuiteResult<unknown, unknown> = {
+          suiteName: `${suite.name}: ${runConfig.title}`,
+          permutations: [permResult],
+          langfuseTraceId: lastTraceId,
+        }
+
+        // Print summary
+        printSummary(result)
+        results.push(result)
+      } finally {
+        await dbResult.cleanup()
+      }
+    }
+  } finally {
+    if (langfuseClient) {
+      await langfuseClient.shutdownAsync()
+    }
+  }
+
+  // Print overall summary
+  console.log("\n" + "=".repeat(60))
+  console.log(`${colors.cyan}Overall Summary (Config File)${colors.reset}`)
   console.log("=".repeat(60))
 
   let totalPassed = 0

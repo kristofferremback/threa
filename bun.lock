@@ -57,6 +57,7 @@
         "squid": "^0.5",
         "ulid": "^2",
         "umzug": "^3",
+        "yaml": "^2.8.2",
         "zod": "^4.2.0",
       },
       "devDependencies": {
