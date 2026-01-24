@@ -6,7 +6,15 @@ import { useAuth } from "@/auth"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
-import type { Stream, User, WorkspaceMember, WorkspaceBootstrap, StreamMember, UserPreferences } from "@threa/types"
+import type {
+  Stream,
+  User,
+  WorkspaceMember,
+  WorkspaceBootstrap,
+  StreamMember,
+  UserPreferences,
+  LastMessagePreview,
+} from "@threa/types"
 
 interface StreamPayload {
   workspaceId: string
@@ -42,10 +50,11 @@ interface StreamsReadAllPayload {
   streamIds: string[]
 }
 
-interface UnreadIncrementPayload {
+interface StreamActivityPayload {
   workspaceId: string
   streamId: string
   authorId: string
+  lastMessagePreview: LastMessagePreview
 }
 
 interface StreamDisplayNameUpdatedPayload {
@@ -276,7 +285,7 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     // Handle unread increment (when a new message is created in any stream)
-    socket.on("unread:increment", (payload: UnreadIncrementPayload) => {
+    socket.on("stream:activity", (payload: StreamActivityPayload) => {
       // Only update if it's for this workspace
       if (payload.workspaceId !== workspaceId) return
 
@@ -295,10 +304,15 @@ export function useSocketEvents(workspaceId: string) {
 
         return {
           ...old,
+          // Update unread count
           unreadCounts: {
             ...old.unreadCounts,
             [payload.streamId]: (old.unreadCounts[payload.streamId] ?? 0) + 1,
           },
+          // Update stream's lastMessagePreview for sidebar display
+          streams: old.streams.map((stream) =>
+            stream.id === payload.streamId ? { ...stream, lastMessagePreview: payload.lastMessagePreview } : stream
+          ),
         }
       })
     })
@@ -362,7 +376,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("user:updated")
       socket.off("stream:read")
       socket.off("stream:read_all")
-      socket.off("unread:increment")
+      socket.off("stream:activity")
       socket.off("user_preferences:updated")
     }
   }, [socket, workspaceId, queryClient, user])

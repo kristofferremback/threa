@@ -5,7 +5,7 @@ import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
 import type { User } from "./user-repository"
 import type { ConversationWithStaleness } from "../lib/conversation-staleness"
-import type { Memo as WireMemo, UserPreferences } from "@threa/types"
+import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
 
 /**
  * Outbox event types and their payloads.
@@ -25,7 +25,7 @@ export type OutboxEventType =
   | "stream:display_name_updated"
   | "stream:read"
   | "stream:read_all"
-  | "unread:increment"
+  | "stream:activity"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -58,7 +58,7 @@ export type WorkspaceScopedEventType =
   | "stream:updated"
   | "stream:archived"
   | "stream:unarchived"
-  | "unread:increment"
+  | "stream:activity"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -153,9 +153,11 @@ export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
   user: User
 }
 
-export interface UnreadIncrementOutboxPayload extends WorkspaceScopedPayload {
+/** Workspace-scoped event for sidebar updates when new messages arrive */
+export interface StreamActivityOutboxPayload extends WorkspaceScopedPayload {
   streamId: string
   authorId: string
+  lastMessagePreview: LastMessagePreview
 }
 
 // Conversation event payloads
@@ -246,7 +248,7 @@ export interface OutboxEventPayloadMap {
   "stream:display_name_updated": StreamDisplayNameUpdatedPayload
   "stream:read": StreamReadOutboxPayload
   "stream:read_all": StreamsReadAllOutboxPayload
-  "unread:increment": UnreadIncrementOutboxPayload
+  "stream:activity": StreamActivityOutboxPayload
   "attachment:uploaded": AttachmentUploadedOutboxPayload
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload

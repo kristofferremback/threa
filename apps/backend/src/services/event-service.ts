@@ -199,11 +199,19 @@ export class EventService {
 
       // 8. Publish unread increment to workspace room for sidebar updates
       // This is workspace-scoped so all members receive it, then frontend filters
-      // by stream membership and excludes the author's own messages
-      await OutboxRepository.insert(client, "unread:increment", {
+      // by stream membership and excludes the author's own messages.
+      // Includes lastMessagePreview so sidebar can update preview + urgency without
+      // needing to be subscribed to the stream room.
+      await OutboxRepository.insert(client, "stream:activity", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
         authorId: params.authorId,
+        lastMessagePreview: {
+          authorId: params.authorId,
+          authorType: params.authorType,
+          content: params.contentMarkdown,
+          createdAt: event.createdAt.toISOString(),
+        },
       })
 
       // 9. If this is a thread, update parent message's reply count
