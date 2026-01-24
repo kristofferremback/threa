@@ -26,8 +26,9 @@ import {
   streamKeys,
   useThreadAncestors,
 } from "@/hooks"
-import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
+import { usePanel, isDraftPanel, parseDraftPanel, useCoordinatedLoading } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
+import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
@@ -51,9 +52,13 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const streamService = useStreamService()
   const messageService = useMessageService()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
+  const { isStreamLoading, hasCompletedInitialLoad } = useCoordinatedLoading()
 
   // Get panel stream ID
   if (!panelId) return null
+
+  // Show loading indicator only after initial load and for non-drafts
+  const showLoadingIndicator = hasCompletedInitialLoad && !isDraftPanel(panelId) && isStreamLoading(panelId)
 
   // Check if a stream is the main view stream (to avoid duplicating it in panel)
   const isMainViewStream = (streamId: string) => {
@@ -169,7 +174,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   return (
     <SidePanel>
-      <SidePanelHeader>
+      <SidePanelHeader className="relative">
+        <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {isDraft && parentBootstrap?.stream ? (
           // Draft thread header with breadcrumbs
           <div className="flex items-center gap-1 min-w-0 flex-1">

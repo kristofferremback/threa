@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { StreamContentSkeleton } from "@/components/loading"
@@ -13,8 +13,10 @@ interface StreamError {
 interface CoordinatedLoadingContextValue {
   isLoading: boolean
   showSkeleton: boolean
+  hasCompletedInitialLoad: boolean
   streamErrors: StreamError[]
   getStreamError: (streamId: string) => StreamError | undefined
+  isStreamLoading: (streamId: string) => boolean
 }
 
 const CoordinatedLoadingContext = createContext<CoordinatedLoadingContextValue | null>(null)
@@ -29,11 +31,35 @@ const SKELETON_DELAY_MS = 1000
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false)
+  const initialLoadCompleteRef = useRef(false)
 
   const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
 
   const isLoading = workspaceLoading || streamsLoading
+
+  // Track which individual streams are currently loading
+  const loadingStreamIds = useMemo(() => {
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_"))
+    const loading = new Set<string>()
+    results.forEach((result, index) => {
+      if (result.isLoading && !result.isError) {
+        loading.add(serverStreamIds[index])
+      }
+    })
+    return loading
+  }, [results, streamIds])
+
+  const isStreamLoading = useMemo(() => (streamId: string) => loadingStreamIds.has(streamId), [loadingStreamIds])
+
+  // Mark initial load as complete once loading finishes for the first time
+  useEffect(() => {
+    if (!isLoading && !initialLoadCompleteRef.current) {
+      initialLoadCompleteRef.current = true
+      setHasCompletedInitialLoad(true)
+    }
+  }, [isLoading])
 
   // Extract errors from stream query results
   const streamErrors = useMemo<StreamError[]>(() => {
@@ -72,10 +98,12 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     () => ({
       isLoading,
       showSkeleton: isLoading && showSkeleton,
+      hasCompletedInitialLoad,
       streamErrors,
       getStreamError,
+      isStreamLoading,
     }),
-    [isLoading, showSkeleton, streamErrors, getStreamError]
+    [isLoading, showSkeleton, hasCompletedInitialLoad, streamErrors, getStreamError, isStreamLoading]
   )
 
   return <CoordinatedLoadingContext.Provider value={value}>{children}</CoordinatedLoadingContext.Provider>
@@ -95,35 +123,37 @@ interface CoordinatedLoadingGateProps {
 
 /**
  * Gate component that shows nothing while loading (for up to 1s),
- * then renders children. Children use useCoordinatedLoading() to
- * determine if they should show skeleton or real content.
+ * but ONLY during initial load. After initial load completes,
+ * always renders children immediately.
  */
 export function CoordinatedLoadingGate({ children }: CoordinatedLoadingGateProps) {
-  const { isLoading, showSkeleton } = useCoordinatedLoading()
+  const { isLoading, showSkeleton, hasCompletedInitialLoad } = useCoordinatedLoading()
 
-  // First second of loading: show nothing
-  if (isLoading && !showSkeleton) {
+  // Only blank the UI during initial load's first second.
+  // After initial load completes, always render children immediately.
+  if (isLoading && !showSkeleton && !hasCompletedInitialLoad) {
     return null
   }
 
-  // After 1s (skeleton phase) or ready: render children
-  // Children check context to know if they should show skeleton
   return <>{children}</>
 }
 
 /**
  * Gate for the main content area (Outlet).
- * Shows stream content skeleton during coordinated loading.
- * When there are stream errors, render children so error pages can show.
+ * Shows stream content skeleton ONLY during initial coordinated loading.
+ * After initial load completes, renders children immediately and lets
+ * individual stream components handle their own loading states.
  */
 export function MainContentGate({ children }: CoordinatedLoadingGateProps) {
-  const { isLoading, streamErrors } = useCoordinatedLoading()
+  const { isLoading, hasCompletedInitialLoad, streamErrors } = useCoordinatedLoading()
 
   // If there are stream errors, render children so error pages can display
   // This prevents infinite loading when a stream returns 404/403
   const hasStreamErrors = streamErrors.length > 0
 
-  if (isLoading && !hasStreamErrors) {
+  // Only block rendering during initial load. After initial load completes,
+  // always render children - stream components will show their own loading states.
+  if (isLoading && !hasCompletedInitialLoad && !hasStreamErrors) {
     return <StreamContentSkeleton />
   }
 
