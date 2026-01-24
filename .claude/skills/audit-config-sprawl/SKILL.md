@@ -1,212 +1,182 @@
 ---
 name: audit-config-sprawl
-description: Find configuration sprawl - duplicated constants, types, model IDs, and magic strings that should be centralized
+description: Find configuration sprawl - duplicated constants, types, and values that should be centralized
 ---
 
 # Audit Configuration Sprawl
 
-Find and report configuration sprawl issues across the codebase. Configuration sprawl occurs when constants, types, model IDs, temperatures, or other configuration values are defined in multiple places instead of being imported from a single source of truth.
+Find and report configuration sprawl across the codebase. Configuration sprawl occurs when the same value, constant, type, or configuration is defined in multiple places instead of being imported from a single source of truth.
 
 ## Why This Matters
 
 Configuration sprawl leads to:
 
-- Values drifting apart when one copy is updated but others aren't
-- Confusion about which definition is canonical
-- Harder refactoring when config needs to change
-- Bugs from inconsistent values
+- **Drift**: Values get out of sync when one copy is updated but others aren't
+- **Confusion**: Unclear which definition is canonical
+- **Fragility**: Refactoring becomes error-prone
+- **Bugs**: Inconsistent values cause subtle failures
+
+## The Core Principle
+
+**Every piece of configuration should have exactly one canonical source.** Consumers import from that source. If you find the same thing defined twice, one of them shouldn't exist.
 
 ## Instructions
 
-Run parallel searches to find different types of sprawl. Use haiku models for efficiency since these are pattern-matching tasks.
+### Phase 1: Understand the Codebase Structure
 
-### 1. Find Duplicate Model IDs
+Before searching for sprawl, understand where configuration SHOULD live:
 
-Search for hardcoded AI model strings that should be in config files:
+1. **Check for a shared types package** (e.g., `packages/types`, `@company/types`)
+   - What constants and types are already centralized?
+   - What's the export structure?
 
-```
-Grep for patterns like:
-- "openrouter:anthropic/claude"
-- "openrouter:openai/gpt"
-- Model ID patterns in string literals
+2. **Check for config files** in feature directories
+   - Look for `config.ts` files
+   - What patterns exist for co-locating config with features?
 
-Check if each model ID:
-- Is defined in a config.ts file (good)
-- Is imported from that config file where used (good)
-- Is hardcoded in multiple places (sprawl!)
-```
+3. **Review CLAUDE.md or similar** for documented conventions
+   - Are there invariants about where config should live?
+   - What's the expected pattern for new configuration?
 
-### 2. Find Duplicate Domain Constants
+### Phase 2: Search for Sprawl Patterns
 
-Search for constants that should be imported from @threa/types:
+Look for these general categories. The specific items will vary by codebase.
 
-```
-Look for local definitions of:
-- STREAM_TYPES, StreamType
-- EVENT_TYPES, EventType
-- COMMAND_EVENT_TYPES
-- VISIBILITY_OPTIONS
-- COMPANION_MODES
-- Any other constants from @threa/types/constants.ts
+#### Pattern 1: Constants Defined Multiple Times
 
-These should ALWAYS be imported from @threa/types, never redeclared.
-```
-
-### 3. Find Duplicate Type Definitions
-
-Search for types defined in multiple files:
+Search for the same constant value appearing in multiple files:
 
 ```
-Look for:
-- "interface TypeName {" appearing in multiple files
-- "type TypeName =" appearing in multiple files
-- Types that exist in @threa/types but are redeclared locally
-
-Common culprits:
-- SourceItem, AttachmentSummary
-- StreamType, EventType
-- Any domain entity types
+- String literals that look like configuration
+- Numeric values that appear repeatedly (temperatures, timeouts, limits)
+- Arrays/enums that define valid values for something
 ```
 
-### 4. Find Hardcoded Temperatures
+**Red flag**: Same string/number appears in 3+ files, or a local `const SOMETHING =` when a shared package exports it.
 
-Search for numeric temperature values:
+#### Pattern 2: Types Declared Multiple Times
 
-```
-Look for:
-- temperature: 0.X (hardcoded in function calls)
-- Temperature constants defined in multiple files
-
-Should be:
-- Defined in component's config.ts
-- Imported where needed
-```
-
-### 5. Find Duplicate System Prompts
-
-Search for system prompt strings:
+Search for type definitions that appear in multiple places:
 
 ```
-Look for:
-- Long strings that look like prompts
-- "You are" patterns in code
-- Prompt templates defined in multiple files
-
-Should be:
-- Defined in component's config.ts
-- Shared via ConfigResolver
+- interface SomeName { ... } in multiple files
+- type SomeName = ... in multiple files
+- Types that exist in a shared package but are redeclared locally
 ```
 
-### 6. Find Magic Strings
+**Red flag**: `grep -r "interface TypeName"` returns multiple files.
 
-Search for string literals used as configuration:
+#### Pattern 3: Magic Strings Instead of Constants
 
-```
-Look for:
-- Status values: "on", "off", "pending", "active"
-- Type discriminators: "user", "persona", "web", "workspace"
-- Feature flags or mode strings
-
-Should be:
-- Defined as const arrays with derived types
-- Imported from constants file
-```
-
-### 7. Find Re-exports (Anti-pattern)
-
-Search for type re-exports that violate direct import principle:
+Search for string literals used as discriminators or configuration:
 
 ```
-Look for:
+- Status values: "active", "pending", "failed"
+- Type discriminators: "user", "admin", "system"
+- Mode flags: "on", "off", "auto"
+- Feature identifiers in conditionals
+```
+
+**Red flag**: Same string literal appears in multiple files without a shared constant.
+
+#### Pattern 4: Re-exports Creating Indirection
+
+Search for exports that just re-export from somewhere else:
+
+```
+- export { X } from "./other-file"
 - export type { X } from "./other-file"
-- export { X } from "./other-file" (re-exporting from local files)
-
-These create indirection. Consumers should import directly from source:
-- @threa/types for domain types
-- Component's config.ts for component-specific config
 ```
 
-## Report Format
+**Red flag**: Consumers import from A, which re-exports from B. Why not import from B directly?
+
+#### Pattern 5: Eval/Test Config Diverging from Production
+
+Search for configuration in test/eval directories that duplicates production config:
+
+```
+- Model IDs hardcoded in tests instead of imported from production config
+- Prompts/schemas copied into test fixtures
+- Constants redefined for "testing purposes"
+```
+
+**Red flag**: Test and production use different values for the same concept.
+
+### Phase 3: Verify Each Finding
+
+For each potential sprawl issue:
+
+1. **Confirm it's actually duplication** - sometimes similar-looking things serve different purposes
+2. **Identify the canonical source** - where SHOULD this be defined?
+3. **Check consumers** - how many places would need updating?
+4. **Assess severity** - can this cause bugs, or is it just messy?
+
+### Phase 4: Report Findings
 
 For each finding, report:
 
 ```
-SEVERITY: HIGH | MEDIUM | LOW
+## [SEVERITY] [Brief title]
 
-ISSUE: [Brief description]
+**Issue**: [What's duplicated and why it's a problem]
 
-FILES:
-- file1.ts:line (defines X)
-- file2.ts:line (redefines X)
+**Files**:
+- `path/to/file1.ts:line` - [what it defines]
+- `path/to/file2.ts:line` - [what it defines]
 
-FIX: [What should be done]
-- Define X in [canonical location]
-- Import from [canonical location] in all consumers
+**Canonical source**: [Where this should live]
+
+**Fix**:
+1. [Step to centralize]
+2. [Step to update consumers]
 ```
 
 ### Severity Guide
 
-- **HIGH**: Domain types or constants that exist in @threa/types but are redeclared
-- **HIGH**: Config values that could drift and cause bugs (model IDs, prompts)
-- **MEDIUM**: Magic strings that reduce type safety
-- **LOW**: Re-exports that add indirection but don't cause bugs
+- **HIGH**: Can cause bugs (values could drift, types could mismatch)
+- **MEDIUM**: Reduces maintainability (harder to refactor, unclear source of truth)
+- **LOW**: Code smell (indirection, unnecessary complexity)
 
-## Example Findings
+## Example Searches
 
-### HIGH: EventType Redeclared
+These are examples of grep/glob patterns to find sprawl. Adapt to your codebase:
 
-```
-ISSUE: EventType union type defined locally instead of imported from @threa/types
+```bash
+# Find potential constant duplication
+grep -r "const.*TYPES\s*=" --include="*.ts"
+grep -r "export const.*=.*\[" --include="*.ts"
 
-FILES:
-- stream-event-repository.ts:17 (defines EventType union)
-- @threa/types/constants.ts:44 (canonical definition)
+# Find potential type duplication
+grep -r "^export interface" --include="*.ts" | sort | uniq -d
+grep -r "^export type" --include="*.ts" | sort | uniq -d
 
-FIX:
-- Remove local EventType definition
-- Import from @threa/types: import { type EventType } from "@threa/types"
-```
+# Find magic strings (common patterns)
+grep -rE '"(active|pending|failed|enabled|disabled)"' --include="*.ts"
+grep -rE 'status\s*===?\s*"' --include="*.ts"
 
-### MEDIUM: Magic Strings for Source Type
+# Find re-exports
+grep -r "export.*from\s*['\"]\./" --include="*.ts"
 
-```
-ISSUE: Source type discriminator used as magic string
+# Find hardcoded model IDs (AI projects)
+grep -rE '"[a-z]+:[a-z]+/[a-z]' --include="*.ts"
 
-FILES:
-- companion-graph.ts:148 (type: "workspace")
-- researcher.ts:42 (type: "web")
-- send-message-tool.ts:15 (type?: "web" | "workspace")
-
-FIX:
-- Add SOURCE_TYPES to @threa/types/constants.ts
-- Import and use SourceType where needed
+# Find hardcoded numbers that look like config
+grep -rE "temperature:\s*0\.[0-9]" --include="*.ts"
 ```
 
-## After Running Audit
+## After the Audit
 
-1. **Prioritize fixes** by severity and blast radius
-2. **Group related fixes** into logical commits
-3. **Update @threa/types** first if adding new constants
+1. **Prioritize** by severity and number of consumers affected
+2. **Group** related fixes into logical commits
+3. **Update shared package first** if adding new constants
 4. **Update consumers** to import from canonical source
-5. **Remove duplicates** and re-exports
-6. **Run type checker** after each change
-7. **Run tests** to verify no regressions
-
-## Common Canonical Locations
-
-| Type of Config           | Canonical Location  |
-| ------------------------ | ------------------- |
-| Domain types/constants   | @threa/types        |
-| Component model IDs      | src/\*/config.ts    |
-| Component temperatures   | src/\*/config.ts    |
-| System prompts           | src/\*/config.ts    |
-| Feature-specific schemas | src/\*/config.ts    |
-| API contract types       | @threa/types/api.ts |
+5. **Delete duplicates** - don't leave them commented out
+6. **Verify** with type checker and tests after each change
 
 ## Tips
 
-1. Use the Explore agent with "very thorough" for comprehensive searches
-2. Run searches in parallel to minimize time
-3. Cross-reference with @threa/types/index.ts exports
-4. Check config.ts files for existing centralized definitions
-5. Consider INV-44 (AI Config Co-location) when adding new config
+- Use parallel searches to minimize audit time
+- Start with the shared types package to understand what's already centralized
+- Cross-reference findings with existing config files
+- Some apparent duplication is intentional (e.g., test-specific values) - verify before reporting
+- Focus on sprawl that can cause bugs, not just aesthetic issues
