@@ -61,6 +61,10 @@ export {
   SOURCE_TYPES,
   type SourceType,
   SourceTypes,
+  // Agent triggers
+  AGENT_TRIGGERS,
+  type AgentTrigger,
+  AgentTriggers,
 } from "./constants"
 
 // Domain entities (wire format)

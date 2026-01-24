@@ -7,8 +7,5 @@
 // Re-export production config for suite usage
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../../src/agents/companion/config"
 
-/**
- * Invocation triggers (eval-specific concept for test cases).
- */
-export const INVOCATION_TRIGGERS = ["companion", "mention"] as const
-export type InvocationTrigger = (typeof INVOCATION_TRIGGERS)[number]
+// Re-export agent triggers for eval cases (canonical definition in @threa/types)
+export { AGENT_TRIGGERS as INVOCATION_TRIGGERS, type AgentTrigger as InvocationTrigger } from "@threa/types"

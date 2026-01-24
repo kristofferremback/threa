@@ -4,6 +4,8 @@
  * These types are used by QueueManager (queue-manager.ts) and all job workers.
  */
 
+import { AgentTriggers } from "@threa/types"
+
 /**
  * Job object passed to handlers.
  */
@@ -34,7 +36,7 @@ export interface PersonaAgentJobData {
   messageId: string // Trigger message
   personaId: string
   triggeredBy: string
-  trigger?: "mention" // undefined = companion mode
+  trigger?: typeof AgentTriggers.MENTION // undefined = companion mode
 }
 
 export interface NamingJobData {

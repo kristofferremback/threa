@@ -159,3 +159,12 @@ export const SourceTypes = {
   WEB: "web",
   WORKSPACE: "workspace",
 } as const satisfies Record<string, SourceType>
+
+// Agent invocation triggers
+export const AGENT_TRIGGERS = ["mention", "companion"] as const
+export type AgentTrigger = (typeof AGENT_TRIGGERS)[number]
+
+export const AgentTriggers = {
+  MENTION: "mention",
+  COMPANION: "companion",
+} as const satisfies Record<string, AgentTrigger>

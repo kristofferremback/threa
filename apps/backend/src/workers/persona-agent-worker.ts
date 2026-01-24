@@ -1,6 +1,7 @@
 import type { Pool } from "pg"
 import type { PersonaAgentJobData, JobHandler } from "../lib/job-queue"
 import { JobQueues } from "../lib/job-queue"
+import { AgentTriggers } from "@threa/types"
 import type { QueueManager } from "../lib/queue-manager"
 import type { PersonaAgentInput, PersonaAgentResult } from "../agents/persona-agent"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
@@ -87,7 +88,7 @@ async function checkForUnseenMessages(params: {
   streamId: string
   personaId: string
   lastSeenSequence: bigint
-  trigger?: "mention"
+  trigger?: typeof AgentTriggers.MENTION
   previousJobId: string
 }): Promise<void> {
   const { pool, jobQueue, workspaceId, streamId, personaId, lastSeenSequence, trigger, previousJobId } = params
