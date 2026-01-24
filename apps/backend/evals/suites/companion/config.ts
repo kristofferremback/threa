@@ -23,9 +23,6 @@ export { RESEARCHER_MODEL_ID } from "../../../src/agents/researcher/config"
 // Default model for companion responses
 export const COMPANION_MODEL_ID = "openrouter:anthropic/claude-sonnet-4.5"
 
-// Lightweight model for evals (faster, cheaper for testing)
-export const COMPANION_EVAL_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
-
 // Temperature settings
 export const COMPANION_TEMPERATURES = {
   /** Temperature for main response generation */

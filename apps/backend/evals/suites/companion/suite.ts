@@ -56,7 +56,7 @@ import {
   responseDecisionAccuracyEvaluator,
   averageQualityEvaluator,
 } from "./evaluators"
-import { COMPANION_MODEL_ID, COMPANION_EVAL_MODEL_ID, COMPANION_TEMPERATURES } from "./config"
+import { COMPANION_MODEL_ID, COMPANION_TEMPERATURES } from "./config"
 import {
   createCompanionGraph,
   toLangChainMessages,
@@ -427,7 +427,7 @@ export const companionSuite: EvalSuite<CompanionInput, CompanionOutput, Companio
 
   defaultPermutations: [
     {
-      model: COMPANION_EVAL_MODEL_ID,
+      model: COMPANION_MODEL_ID,
       temperature: COMPANION_TEMPERATURES.response,
     },
   ],
