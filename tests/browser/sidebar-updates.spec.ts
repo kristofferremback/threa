@@ -6,6 +6,7 @@ import { test, expect } from "@playwright/test"
  * Tests that sidebar updates correctly when:
  * 1. New messages arrive (preview should update)
  * 2. Stream is renamed (name should update in sidebar)
+ * 3. Messages from other users appear when navigating to stream
  */
 
 test.describe("Sidebar Updates", () => {
@@ -109,8 +110,8 @@ test.describe("Sidebar Updates", () => {
       await page.locator("[contenteditable='true']").click()
       await page.keyboard.type(uniqueTopic)
       await page.getByRole("button", { name: "Send" }).click()
-      // Use first() since sidebar preview may also contain this text
-      await expect(page.getByText(uniqueTopic).first()).toBeVisible({ timeout: 5000 })
+      // Scope to main content area to avoid matching sidebar preview (which may be hidden)
+      await expect(page.getByRole("main").getByText(uniqueTopic)).toBeVisible({ timeout: 5000 })
 
       // Get current URL to identify the stream
       const url = page.url()
@@ -167,6 +168,58 @@ test.describe("Sidebar Updates", () => {
       // After reading, the channel should have no urgency indicator
       // (urgency is now purely based on unread count, not time-based)
       await expect(page.getByRole("link", { name: `#${channelName}` })).toBeVisible()
+    })
+  })
+
+  test.describe("Bug 4: Stream content should update when navigating back", () => {
+    test("AI companion messages should appear without refresh", async ({ page }) => {
+      // This test uses the AI companion (Ariadne) to send messages while user is away
+      // Increase timeout for AI response
+      test.setTimeout(60000)
+
+      await loginAsAlice(page)
+
+      // Create a scratchpad (companion mode is on by default for scratchpads)
+      await page.getByRole("button", { name: "+ New Scratchpad" }).click()
+      await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+
+      // Send a message that will trigger Ariadne's response
+      const userMessage = `Hello Ariadne, please respond briefly ${testId}`
+      await page.locator("[contenteditable='true']").click()
+      await page.keyboard.type(userMessage)
+      await page.getByRole("button", { name: "Send" }).click()
+      // Scope to main content area to avoid matching sidebar preview
+      await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 5000 })
+
+      // Navigate away IMMEDIATELY to Drafts page before Ariadne responds
+      // (We don't wait for Ariadne's response here)
+      await page.getByRole("link", { name: "Drafts" }).click()
+      await expect(page.getByRole("heading", { name: "Drafts", level: 1 })).toBeVisible({ timeout: 5000 })
+
+      // Wait for Ariadne to respond (the stream:activity event should fire)
+      // We check the sidebar preview for Ariadne's name
+      await expect(page.getByText(/Ariadne:/).first()).toBeVisible({ timeout: 45000 })
+
+      // Navigate back to the scratchpad by clicking the sidebar link
+      // Find the scratchpad that has Ariadne's preview and click the parent link
+      const scratchpadWithAriadne = page
+        .locator("a")
+        .filter({ hasText: /Ariadne:/ })
+        .first()
+      await scratchpadWithAriadne.click()
+
+      // CRITICAL: Ariadne's message should be visible WITHOUT a refresh
+      // This verifies the stream bootstrap cache was invalidated on stream:activity
+      // Look for any message from Ariadne in the main content area
+      await expect(
+        page
+          .getByRole("main")
+          .locator(".group")
+          .filter({ hasText: /Ariadne/ })
+          .first()
+      ).toBeVisible({
+        timeout: 5000,
+      })
     })
   })
 })
