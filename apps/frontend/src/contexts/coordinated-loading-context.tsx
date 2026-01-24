@@ -94,8 +94,9 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   }, [isLoading, isReady])
 
   // Build a map of stream states for O(1) lookup
+  // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
   const streamStateMap = useMemo(() => {
-    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_"))
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
     const map = new Map<string, { isLoading: boolean; error: Error | null }>()
 
     results.forEach((result, index) => {
@@ -112,8 +113,9 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   }, [results, streamIds])
 
   // Extract errors for getStreamError
+  // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
   const streamErrors = useMemo<StreamError[]>(() => {
-    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_"))
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
     return results
       .map((result, index) => {
         if (!result.error) return null
@@ -132,7 +134,8 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
         if (!isReady) return "idle"
 
         // Drafts are always idle (no server fetch)
-        if (streamId.startsWith("draft_")) return "idle"
+        // Check both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
+        if (streamId.startsWith("draft_") || streamId.startsWith("draft:")) return "idle"
 
         const state = streamStateMap.get(streamId)
         if (!state) return "idle"

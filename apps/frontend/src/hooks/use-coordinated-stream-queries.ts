@@ -5,7 +5,8 @@ import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 
 function isDraftId(id: string): boolean {
-  return id.startsWith("draft_")
+  // Draft scratchpads use "draft_xxx" format, draft thread panels use "draft:xxx:xxx" format
+  return id.startsWith("draft_") || id.startsWith("draft:")
 }
 
 // Create a stable query function factory

@@ -121,7 +121,7 @@ describe("useCoordinatedStreamQueries", () => {
     expect(mockBootstrap).not.toHaveBeenCalled()
   })
 
-  it("should return isLoading=false when all IDs are drafts", () => {
+  it("should return isLoading=false when all IDs are draft scratchpads", () => {
     const queryClient = createTestQueryClient()
 
     const { result } = renderHook(() => useCoordinatedStreamQueries("workspace_1", ["draft_1", "draft_2"]), {
@@ -130,5 +130,28 @@ describe("useCoordinatedStreamQueries", () => {
 
     expect(result.current.isLoading).toBe(false)
     expect(mockBootstrap).not.toHaveBeenCalled()
+  })
+
+  it("should filter out draft thread panel IDs (draft:parentStreamId:parentMessageId format)", async () => {
+    const queryClient = createTestQueryClient()
+    mockBootstrap.mockResolvedValue({
+      stream: { id: "stream_123" },
+      events: [],
+      membership: null,
+    })
+
+    const streamIds = ["stream_123", "draft:stream_456:msg_789", "stream_abc"]
+
+    renderHook(() => useCoordinatedStreamQueries("workspace_1", streamIds), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(mockBootstrap).toHaveBeenCalledTimes(2)
+    })
+
+    expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_123")
+    expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_abc")
+    expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft:stream_456:msg_789")
   })
 })
