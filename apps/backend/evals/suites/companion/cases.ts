@@ -6,8 +6,7 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { StreamType } from "@threa/types"
-import type { InvocationTrigger } from "./config"
+import type { StreamType, AgentTrigger } from "@threa/types"
 
 /**
  * Input for companion evaluation.
@@ -18,7 +17,7 @@ export interface CompanionInput {
   /** Stream type context */
   streamType: StreamType
   /** Invocation trigger */
-  trigger: InvocationTrigger
+  trigger: AgentTrigger
   /** Conversation history (if any) */
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
   /** Additional context about the stream */

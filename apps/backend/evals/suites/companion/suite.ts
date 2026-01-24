@@ -1,10 +1,8 @@
 /**
  * Companion Agent Evaluation Suite
  *
- * Tests the companion agent's response quality across different contexts:
- * - Stream types: scratchpad, channel, thread, dm
- * - Triggers: companion mode, @mention
- * - Message types: greetings, questions, tasks, information sharing
+ * Tests the companion agent's response quality across different contexts.
+ * Uses the PRODUCTION PersonaAgent.run() directly - no duplicated prompts or graphs.
  *
  * ## Usage
  *
@@ -15,10 +13,7 @@
  *   bun run eval -- -s companion -c scratchpad-companion-greeting-001
  *
  *   # Compare models
- *   bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-4.1-mini -p 2
- *
- *   # Skip Langfuse recording
- *   bun run eval -- -s companion --no-langfuse
+ *   bun run eval -- -s companion -m openrouter:anthropic/claude-haiku-4.5,openrouter:openai/gpt-4.1-mini
  *
  * ## Case ID Format
  *
@@ -27,20 +22,9 @@
  *   - scratchpad-companion-greeting-001
  *   - channel-mention-help-001
  *   - dm-companion-casual-001
- *
- * ## Key Evaluators
- *
- * - should-respond: Did the agent correctly decide to respond?
- * - content-contains: Does response include expected keywords?
- * - content-not-contains: Does response avoid unwanted phrases?
- * - brevity: Is response appropriately concise?
- * - asks-question: Does it ask clarifying questions when needed?
- * - web-search-usage: Did it use web search when expected?
- * - response-quality: LLM-as-judge overall quality
- * - tone: LLM-as-judge tone appropriateness
  */
 
-import type { EvalSuite, EvalContext, EvalCase } from "../../framework/types"
+import type { EvalSuite, EvalContext } from "../../framework/types"
 import { companionCases, type CompanionInput, type CompanionExpected } from "./cases"
 import type { CompanionOutput, CompanionMessage } from "./types"
 import {
@@ -56,202 +40,158 @@ import {
   responseDecisionAccuracyEvaluator,
   averageQualityEvaluator,
 } from "./evaluators"
-import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./config"
-import {
-  createCompanionGraph,
-  toLangChainMessages,
-  type CompanionGraphCallbacks,
-} from "../../../src/agents/companion-graph"
-import type { StructuredToolInterface } from "@langchain/core/tools"
-import { DynamicStructuredTool } from "@langchain/core/tools"
-import { z } from "zod"
-import { MemorySaver } from "@langchain/langgraph"
-import { Researcher, type ResearcherResult } from "../../../src/agents/researcher/researcher"
-import { RESEARCHER_MODEL_ID } from "../../../src/agents/researcher/config"
+import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../../src/agents/companion/config"
+import { PersonaAgent, type PersonaAgentInput, type PersonaAgentDeps } from "../../../src/agents/persona-agent"
+import { LangGraphResponseGenerator } from "../../../src/agents/companion-runner"
+import { Researcher } from "../../../src/agents/researcher/researcher"
+import { SearchService } from "../../../src/services/search-service"
+import { UserPreferencesService } from "../../../src/services/user-preferences-service"
 import { EmbeddingService } from "../../../src/services/embedding-service"
-import type { Message } from "../../../src/repositories/message-repository"
 import { StreamRepository } from "../../../src/repositories/stream-repository"
 import { StreamMemberRepository } from "../../../src/repositories/stream-member-repository"
+import { MessageRepository } from "../../../src/repositories/message-repository"
+import { PersonaRepository } from "../../../src/repositories/persona-repository"
+import { createPostgresCheckpointer } from "../../../src/lib/ai"
+import { MessageService } from "../../../src/services/message-service"
+import { StreamEventService } from "../../../src/services/stream-event-service"
+import { OutboxDispatcher } from "../../../src/lib/outbox-dispatcher"
+import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
+import { personaId as generatePersonaId, streamId as generateStreamId } from "../../../src/lib/id"
+
+/** The production Ariadne system persona ID */
+const ARIADNE_PERSONA_ID = "persona_system_ariadne"
 
 /**
- * Build system prompt for eval context.
- *
- * NOTE: This is intentionally simplified compared to production (persona-agent.ts).
- * Production uses persona.systemPrompt from the database plus complex context
- * (temporal info, workspace knowledge, participant lists). Evals test behavioral
- * patterns - response quality, tone, decision making - which don't require
- * production complexity. The simplified prompt provides sufficient context for
- * behavior testing while being deterministic (no DB dependency).
+ * Get model configuration from context.
+ * Uses permutation override if provided, otherwise production defaults.
  */
-function buildEvalSystemPrompt(input: CompanionInput): string {
-  let prompt = `You are Ariadne, a helpful AI assistant in a workspace collaboration tool.
-You help users with questions, provide information, and engage in thoughtful conversation.
-
-Be concise, helpful, and match the tone of the conversation.
-When you don't know something, say so honestly.
-Don't make up information you don't have.`
-
-  // Add stream context
-  switch (input.streamType) {
-    case "scratchpad":
-      prompt += `
-
-## Context
-You are in a personal scratchpad - a private space for notes and thinking.
-This is a solo context where you're helping one person.`
-      break
-
-    case "channel":
-      prompt += `
-
-## Context
-You are in a team channel${input.streamContext?.name ? ` called "${input.streamContext.name}"` : ""}.
-This is a collaborative space where team members discuss topics.
-${input.streamContext?.participants ? `Members: ${input.streamContext.participants.join(", ")}` : ""}`
-      break
-
-    case "thread":
-      prompt += `
-
-## Context
-You are in a thread - a focused discussion branching from a parent conversation.
-Stay on topic and build on the existing discussion.`
-      break
-
-    case "dm":
-      prompt += `
-
-## Context
-You are in a direct message conversation.
-This is a private, focused conversation.`
-      break
-  }
-
-  // Add invocation context for mentions
-  if (input.trigger === "mention" && input.userName) {
-    prompt += `
-
-## Invocation
-You were @mentioned by ${input.userName} who wants your assistance.`
-  }
-
-  // Add send_message tool instructions
-  prompt += `
-
-## Responding
-You have a \`send_message\` tool to send messages. Use it when you want to respond.
-- Call send_message to send a response
-- If you have nothing meaningful to add, don't call send_message
-- Be helpful and conversational`
-
-  return prompt
-}
-
-/**
- * Create a send_message tool that captures messages.
- */
-function createCaptureSendMessageTool(messages: CompanionMessage[]): StructuredToolInterface {
-  return new DynamicStructuredTool({
-    name: "send_message",
-    description: "Send a message to the conversation",
-    schema: z.object({
-      content: z.string().describe("The message content to send"),
-    }),
-    func: async ({ content }) => {
-      messages.push({ content })
-      return JSON.stringify({ status: "sent", messageId: `msg_${Date.now()}` })
-    },
-  })
-}
-
-/**
- * Create a checkpointer for the eval.
- * Uses MemorySaver for simplicity in evals (no persistence needed).
- */
-function createCheckpointer(): MemorySaver {
-  return new MemorySaver()
-}
-
-/**
- * Create a mock Message from eval input for the researcher.
- */
-function createMockMessage(
-  content: string,
-  streamId: string,
-  authorId: string,
-  authorType: "user" | "persona" = "user"
-): Message {
+function getModelConfig(ctx: EvalContext): { model: string; temperature: number } {
+  const override = ctx.componentOverrides?.["companion"]
   return {
-    id: `msg_${ulid()}`,
-    streamId,
-    sequence: BigInt(1),
-    authorId,
-    authorType,
-    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] },
-    contentMarkdown: content,
-    replyCount: 0,
-    reactions: {},
-    editedAt: null,
-    deletedAt: null,
-    createdAt: new Date(),
+    model: override?.model ?? ctx.permutation.model,
+    temperature: override?.temperature ?? ctx.permutation.temperature ?? COMPANION_TEMPERATURE,
   }
 }
 
 /**
- * Convert conversation history to Message array for the researcher.
+ * Set up test data for a companion eval case.
+ * Creates persona, stream, and trigger message in the database.
  */
-function historyToMessages(
-  history: Array<{ role: "user" | "assistant"; content: string }> | undefined,
-  streamId: string,
-  userId: string,
+async function setupTestData(
+  input: CompanionInput,
+  ctx: EvalContext
+): Promise<{
   personaId: string
-): Message[] {
-  if (!history) return []
+  streamId: string
+  messageId: string
+}> {
+  const pool = ctx.pool
+  const modelConfig = getModelConfig(ctx)
 
-  return history.map((msg, index) => ({
-    id: `msg_${ulid()}_${index}`,
-    streamId,
-    sequence: BigInt(index + 1),
-    authorId: msg.role === "user" ? userId : personaId,
-    authorType: msg.role === "user" ? ("user" as const) : ("persona" as const),
-    contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: msg.content }] }] },
-    contentMarkdown: msg.content,
-    replyCount: 0,
-    reactions: {},
-    editedAt: null,
-    deletedAt: null,
-    createdAt: new Date(Date.now() - (history.length - index) * 60000), // Stagger timestamps
-  }))
-}
+  // Read the production Ariadne persona to get its system prompt
+  // This ensures evals use the EXACT production prompt (INV-44)
+  const productionPersona = await PersonaRepository.findById(pool, ARIADNE_PERSONA_ID)
+  if (!productionPersona) {
+    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} not found - ensure migrations have run`)
+  }
+  if (!productionPersona.systemPrompt) {
+    throw new Error(`Production persona ${ARIADNE_PERSONA_ID} has no system prompt`)
+  }
 
-/**
- * Get model configuration from context, respecting component overrides.
- */
-function getModelConfig(
-  ctx: EvalContext,
-  component: "companion" | "researcher"
-): { model: string; temperature?: number } {
-  const override = ctx.componentOverrides?.[component]
-  const baseModel = ctx.permutation.model
-  const baseTemp = ctx.permutation.temperature
+  // Create a test persona with production's system prompt but eval's model
+  const testPersonaId = generatePersonaId()
+  await pool.query(
+    `
+    INSERT INTO personas (id, workspace_id, slug, name, description, avatar_emoji, system_prompt, model, enabled_tools, managed_by, status)
+    VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, 'system', 'active')
+    ON CONFLICT (slug, workspace_id) WHERE workspace_id IS NULL DO UPDATE SET
+      model = EXCLUDED.model,
+      system_prompt = EXCLUDED.system_prompt
+  `,
+    [
+      testPersonaId,
+      `eval-ariadne-${ulid().toLowerCase().slice(0, 8)}`,
+      "Ariadne (Eval)",
+      productionPersona.description,
+      productionPersona.avatarEmoji,
+      productionPersona.systemPrompt,
+      modelConfig.model,
+      productionPersona.enabledTools ?? ["send_message"],
+    ]
+  )
+
+  // Map stream type from eval input to database type
+  const dbStreamType =
+    input.streamType === "scratchpad"
+      ? StreamTypes.SCRATCHPAD
+      : input.streamType === "channel"
+        ? StreamTypes.CHANNEL
+        : input.streamType === "thread"
+          ? StreamTypes.THREAD
+          : input.streamType === "dm"
+            ? StreamTypes.DM
+            : StreamTypes.SCRATCHPAD
+
+  // Create the stream
+  const testStreamId = generateStreamId()
+  await StreamRepository.insert(pool, {
+    id: testStreamId,
+    workspaceId: ctx.workspaceId,
+    type: dbStreamType,
+    displayName: input.streamContext?.name ?? `Eval ${input.streamType}`,
+    slug: input.streamType === "channel" ? `eval-${ulid().toLowerCase().slice(0, 8)}` : null,
+    description: input.streamContext?.description ?? null,
+    visibility: "private",
+    companionMode: input.trigger === "companion" ? "on" : "off",
+    companionPersonaId: input.trigger === "companion" ? testPersonaId : null,
+    createdBy: ctx.userId,
+  })
+
+  // Add user as stream member
+  await StreamMemberRepository.insert(pool, testStreamId, ctx.userId)
+
+  // Create conversation history if provided
+  if (input.conversationHistory && input.conversationHistory.length > 0) {
+    const eventService = new StreamEventService(pool)
+    const messageService = new MessageService(pool, eventService, new OutboxDispatcher(pool, new Map()))
+
+    for (const msg of input.conversationHistory) {
+      const authorId = msg.role === "user" ? ctx.userId : testPersonaId
+      const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
+      await messageService.create({
+        workspaceId: ctx.workspaceId,
+        streamId: testStreamId,
+        authorId,
+        authorType,
+        contentMarkdown: msg.content,
+      })
+    }
+  }
+
+  // Create the trigger message
+  const eventService = new StreamEventService(pool)
+  const messageService = new MessageService(pool, eventService, new OutboxDispatcher(pool, new Map()))
+  const triggerMessage = await messageService.create({
+    workspaceId: ctx.workspaceId,
+    streamId: testStreamId,
+    authorId: ctx.userId,
+    authorType: AuthorTypes.USER,
+    contentMarkdown: input.message,
+  })
 
   return {
-    model: override?.model ?? baseModel,
-    temperature: override?.temperature ?? baseTemp,
+    personaId: testPersonaId,
+    streamId: testStreamId,
+    messageId: triggerMessage.id,
   }
 }
 
 /**
- * Task function that runs the companion graph and captures output.
+ * Task function that runs the companion agent using production code paths.
  *
- * Integrates the full companion system including:
- * - Companion agent (main model)
- * - Researcher (workspace knowledge retrieval)
- *
- * Component overrides supported:
- * - companion: Main agent model
- * - researcher: Researcher model (for deciding when/how to search)
+ * Uses PersonaAgent.run() directly - the same code path as production.
+ * No duplicated prompts, no manual graph creation.
  */
 async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promise<CompanionOutput> {
   // Skip empty messages
@@ -263,139 +203,106 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     }
   }
 
-  const capturedMessages: CompanionMessage[] = []
-  const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = []
+  try {
+    // Set up test data in the database
+    const { personaId, streamId, messageId } = await setupTestData(input, ctx)
 
-  // Create tools
-  const sendMessageTool = createCaptureSendMessageTool(capturedMessages)
-  const tools: StructuredToolInterface[] = [sendMessageTool]
+    // Create dependencies for PersonaAgent
+    const checkpointer = await createPostgresCheckpointer(ctx.pool)
+    const embeddingService = new EmbeddingService({ ai: ctx.ai })
+    const userPreferencesService = new UserPreferencesService(ctx.pool)
+    const researcher = new Researcher({
+      pool: ctx.pool,
+      ai: ctx.ai,
+      configResolver: ctx.configResolver,
+      embeddingService,
+    })
+    const searchService = new SearchService({
+      pool: ctx.pool,
+      embeddingService,
+    })
 
-  // Get model configuration with component overrides
-  const companionConfig = getModelConfig(ctx, "companion")
-  const researcherConfig = getModelConfig(ctx, "researcher")
+    const responseGenerator = new LangGraphResponseGenerator({
+      ai: ctx.ai,
+      checkpointer,
+      // No tavilyApiKey - web search disabled for evals
+      costRecorder: undefined,
+    })
 
-  // Get LangChain model from AI wrapper
-  const model = ctx.ai.getLangChainModel(companionConfig.model)
+    // Create message and thread callbacks
+    const eventService = new StreamEventService(ctx.pool)
+    const outboxDispatcher = new OutboxDispatcher(ctx.pool, new Map())
+    const messageService = new MessageService(ctx.pool, eventService, outboxDispatcher)
 
-  // Create the companion graph
-  const graph = createCompanionGraph(model, tools)
+    const createMessage: PersonaAgentDeps["createMessage"] = async (params) => {
+      const message = await messageService.create({
+        workspaceId: params.workspaceId,
+        streamId: params.streamId,
+        authorId: params.authorId,
+        authorType: params.authorType,
+        contentMarkdown: params.content,
+        sources: params.sources,
+      })
+      return { id: message.id }
+    }
 
-  // Create checkpointer (use simple memory store for evals)
-  const checkpointer = createCheckpointer()
+    const createThread: PersonaAgentDeps["createThread"] = async (params) => {
+      // For evals, we don't actually need threads - return a mock
+      const threadId = generateStreamId()
+      await StreamRepository.insert(ctx.pool, {
+        id: threadId,
+        workspaceId: params.workspaceId,
+        type: StreamTypes.THREAD,
+        displayName: null,
+        slug: null,
+        description: null,
+        visibility: "private",
+        companionMode: "off",
+        companionPersonaId: null,
+        createdBy: params.createdBy,
+        parentStreamId: params.parentStreamId,
+        parentMessageId: params.parentMessageId,
+      })
+      return { id: threadId }
+    }
 
-  // Compile the graph
-  const compiledGraph = graph.compile({ checkpointer })
+    // Create PersonaAgent with real dependencies
+    const personaAgent = new PersonaAgent({
+      pool: ctx.pool,
+      responseGenerator,
+      userPreferencesService,
+      researcher,
+      searchService,
+      createMessage,
+      createThread,
+    })
 
-  // Build messages array
-  const conversationHistory = input.conversationHistory || []
-  const allMessages = [...conversationHistory, { role: "user" as const, content: input.message }]
-  const langchainMessages = toLangChainMessages(allMessages)
-
-  // Build system prompt
-  const systemPrompt = buildEvalSystemPrompt(input)
-
-  // Generate IDs for the eval run
-  const streamId = `stream_${ulid()}`
-  const sessionId = `session_eval_${Date.now()}`
-  const personaId = "persona_eval_ariadne"
-  const threadId = `eval_${ctx.workspaceId}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-
-  // Create the stream in the database so the researcher can find it
-  // Map stream type from eval input to actual stream type
-  const dbStreamType = input.streamType === "scratchpad" ? "scratchpad" : input.streamType
-  await StreamRepository.insert(ctx.pool, {
-    id: streamId,
-    workspaceId: ctx.workspaceId,
-    type: dbStreamType,
-    displayName: input.streamContext?.name ?? `Eval ${input.streamType}`,
-    slug: input.streamType === "channel" ? `eval-${ulid().toLowerCase().slice(0, 8)}` : null,
-    description: input.streamContext?.description ?? null,
-    visibility: "private",
-    companionMode: input.trigger === "companion" ? "on" : "off",
-    companionPersonaId: input.trigger === "companion" ? personaId : null,
-    createdBy: ctx.userId,
-  })
-
-  // Add user as stream member so they can access it
-  await StreamMemberRepository.insert(ctx.pool, streamId, ctx.userId)
-
-  // Create embedding service for researcher
-  const embeddingService = new EmbeddingService({ ai: ctx.ai })
-
-  // Create researcher with pool from eval context
-  const researcher = new Researcher({
-    pool: ctx.pool,
-    ai: ctx.ai,
-    configResolver: ctx.configResolver,
-    embeddingService,
-  })
-
-  // Create mock messages for researcher
-  const triggerMessage = createMockMessage(input.message, streamId, ctx.userId)
-  const historyMessages = historyToMessages(conversationHistory, streamId, ctx.userId, personaId)
-
-  // Create runResearcher callback
-  const runResearcher = async (
-    langchainConfig: import("@langchain/core/runnables").RunnableConfig
-  ): Promise<ResearcherResult> => {
-    return researcher.research({
+    // Build PersonaAgentInput
+    const agentInput: PersonaAgentInput = {
       workspaceId: ctx.workspaceId,
       streamId,
-      triggerMessage,
-      conversationHistory: historyMessages,
-      invokingUserId: ctx.userId,
-      langchainConfig,
-    })
-  }
+      messageId,
+      personaId,
+      serverId: `eval-server-${ulid()}`,
+      trigger: input.trigger === "mention" ? AgentTriggers.MENTION : undefined,
+    }
 
-  // Create graph callbacks with researcher
-  const graphCallbacks: CompanionGraphCallbacks = {
-    checkNewMessages: async () => [],
-    updateLastSeenSequence: async () => {},
-    sendMessageWithSources: async ({ content, sources }) => {
-      capturedMessages.push({ content, sources })
-      return { messageId: `msg_${Date.now()}`, content }
-    },
-    runResearcher,
-  }
+    // Run the agent!
+    const result = await personaAgent.run(agentInput)
 
-  try {
-    // Invoke the graph
-    const result = await compiledGraph.invoke(
-      {
-        messages: langchainMessages,
-        systemPrompt,
-        streamId,
-        sessionId,
-        personaId,
-        lastProcessedSequence: BigInt(0),
-        finalResponse: null,
-        iteration: 0,
-        messagesSent: 0,
-        hasNewMessages: false,
-        sources: [],
-        retrievedContext: null,
-      },
-      {
-        runName: "companion-eval",
-        configurable: {
-          thread_id: threadId,
-          callbacks: graphCallbacks,
-        },
-      }
-    )
+    // Read back messages sent by the agent
+    const allMessages = await MessageRepository.list(ctx.pool, streamId, { limit: 100 })
+    const agentMessages = allMessages.filter((m) => m.authorId === personaId)
 
-    // Record usage
-    ctx.usage.recordUsage({
-      promptTokens: 0, // Would need to track from model callbacks
-      completionTokens: 0,
-    })
+    const messages: CompanionMessage[] = agentMessages.map((m) => ({
+      content: m.contentMarkdown,
+      // Sources are stored in contentJson but we just need content for evals
+    }))
 
     return {
       input,
-      messages: capturedMessages,
-      responded: capturedMessages.length > 0,
-      toolCalls,
+      messages,
+      responded: messages.length > 0,
     }
   } catch (error) {
     return {

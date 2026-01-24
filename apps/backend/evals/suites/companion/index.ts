@@ -8,7 +8,6 @@
  */
 
 export { companionSuite, default } from "./suite"
-export * from "./config"
 export * from "./types"
 export * from "./cases"
 export * from "./evaluators"

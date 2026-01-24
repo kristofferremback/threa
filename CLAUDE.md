@@ -281,6 +281,17 @@ The fix: Create a config object or lookup table at the top. Each variant's compl
 
 **INV-44: AI Config Co-location** - Each AI component (classifier, memorizer, naming, etc.) must have a `config.ts` file co-located with its implementation. Config exports: model ID constant, system prompts, schemas, temperature settings. Production code and evals import from the same config file - no hardcoded duplicates. This ensures evals test the actual production configuration. Example: `lib/memo/config.ts` exports `MEMO_MODEL_ID`, `MEMO_TEMPERATURES`, prompts, schemas; both `classifier.ts` and `evals/suites/memo-classifier/suite.ts` import from it.
 
+**INV-45: Evals Call Production Entry Points** - Eval suites must call the same entry points production uses. Never recreate graphs, prompts, or business logic in eval code. If production calls `PersonaAgent.run()`, evals call `PersonaAgent.run()`. If you need to vary config (model, temperature), inject it at the appropriate layer - don't build a parallel implementation.
+
+Signs of violation:
+
+- Eval has its own `buildSystemPrompt()` or similar function
+- Eval calls `createGraph()` directly instead of the service/agent that wraps it
+- Eval duplicates schemas, prompts, or constants instead of reading from production sources
+- Eval creates "simplified" versions of production classes
+
+The fix: Find the production entry point. Wire up the dependencies it needs. Call it. If that's hard, the production code may need refactoring to be more testable - fix that, don't work around it in the eval.
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
@@ -500,3 +511,11 @@ Helper extracting part of workflow but leaving caller managing rest adds indirec
 ### Config sprawl is a recurring agent failure mode
 
 Coding agents tend to scatter variant logic throughout files instead of colocating config. Results: 200+ line files where variant behavior is impossible to review, modify safely, or even understand. The fix is always the same: create a config object at the top where each variant's complete behavior is visible in one block. Shared code receives config, doesn't compute it. When reviewing agent output, check: "Can I see all behavior for one variant on one screen?" If not, request consolidation before merge.
+
+### Evals that recreate production logic are worse than no evals
+
+An eval that builds its own prompt and graph is testing a parallel implementation, not production. When production changes, the eval keeps passing because it's testing itself. This gives false confidence while the real code diverges.
+
+The companion eval had `buildEvalSystemPrompt()` that duplicated the persona's system prompt logic. It called `createCompanionGraph()` directly instead of `PersonaAgent.run()`. Both are violations - the eval should set up test data, call the production entry point, and verify the output.
+
+If wiring up production dependencies for an eval is painful, that's a signal the production code needs better dependency injection, not that the eval should take shortcuts.
