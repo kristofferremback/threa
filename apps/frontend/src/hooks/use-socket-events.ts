@@ -120,14 +120,14 @@ export function useSocketEvents(workspaceId: string) {
         return { ...old, stream: payload.stream }
       })
 
-      // Update workspace bootstrap cache (sidebar)
+      // Update workspace bootstrap cache (sidebar) - merge to preserve lastMessagePreview
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
         const bootstrap = old as { streams?: Stream[] }
         if (!bootstrap.streams) return old
         return {
           ...bootstrap,
-          streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? payload.stream : s)),
+          streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
         }
       })
 
@@ -173,10 +173,10 @@ export function useSocketEvents(workspaceId: string) {
         if (!bootstrap.streams) return old
         // Only add if not already present
         if (bootstrap.streams.some((s) => s.id === payload.stream.id)) {
-          // Update existing entry
+          // Update existing entry - merge to preserve lastMessagePreview
           return {
             ...bootstrap,
-            streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? payload.stream : s)),
+            streams: bootstrap.streams.map((s) => (s.id === payload.stream.id ? { ...s, ...payload.stream } : s)),
           }
         }
         return {

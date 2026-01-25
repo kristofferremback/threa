@@ -191,7 +191,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
         if (!wsBootstrap.streams) return old
         return {
           ...wsBootstrap,
-          streams: wsBootstrap.streams.map((s) => (s.id === streamId ? updatedStream : s)),
+          streams: wsBootstrap.streams.map((s) => (s.id === streamId ? { ...s, ...updatedStream } : s)),
         }
       })
     },
