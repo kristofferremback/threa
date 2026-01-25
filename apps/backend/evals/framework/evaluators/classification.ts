@@ -4,7 +4,7 @@
  * Verifies that specific fields in structured output match expected values.
  */
 
-import type { Evaluator, EvalContext, EvaluatorResult } from "../types"
+import type { Evaluator, EvaluatorResult } from "../types"
 
 /**
  * Options for field matching.
@@ -36,7 +36,7 @@ export interface FieldMatchOptions<TOutput, TExpected, K extends keyof TOutput &
 export function fieldMatchEvaluator<TOutput, TExpected, K extends keyof TOutput & keyof TExpected>(
   options: FieldMatchOptions<TOutput, TExpected, K>
 ): Evaluator<TOutput, TExpected> {
-  const { field, name = `field(${String(field)})`, compare = (a, b) => a === b } = options
+  const { field, name = `field(${String(field)})`, compare = (a, b) => (a as unknown) === (b as unknown) } = options
 
   return {
     name,

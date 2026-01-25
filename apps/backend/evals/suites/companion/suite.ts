@@ -52,9 +52,8 @@ import { StreamMemberRepository } from "../../../src/repositories/stream-member-
 import { MessageRepository } from "../../../src/repositories/message-repository"
 import { PersonaRepository } from "../../../src/repositories/persona-repository"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
-import { MessageService } from "../../../src/services/message-service"
-import { StreamEventService } from "../../../src/services/stream-event-service"
-import { OutboxDispatcher } from "../../../src/lib/outbox-dispatcher"
+import { EventService } from "../../../src/services/event-service"
+import { markdownToJson } from "../../../src/lib/content-parser"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
 import { personaId as generatePersonaId, streamId as generateStreamId } from "../../../src/lib/id"
@@ -140,43 +139,43 @@ async function setupTestData(
     workspaceId: ctx.workspaceId,
     type: dbStreamType,
     displayName: input.streamContext?.name ?? `Eval ${input.streamType}`,
-    slug: input.streamType === "channel" ? `eval-${ulid().toLowerCase().slice(0, 8)}` : null,
-    description: input.streamContext?.description ?? null,
+    slug: input.streamType === "channel" ? `eval-${ulid().toLowerCase().slice(0, 8)}` : undefined,
+    description: input.streamContext?.description,
     visibility: "private",
     companionMode: input.trigger === "companion" ? "on" : "off",
-    companionPersonaId: input.trigger === "companion" ? testPersonaId : null,
+    companionPersonaId: input.trigger === "companion" ? testPersonaId : undefined,
     createdBy: ctx.userId,
   })
 
   // Add user as stream member
   await StreamMemberRepository.insert(pool, testStreamId, ctx.userId)
 
+  // Create event service for message creation
+  const eventService = new EventService(pool)
+
   // Create conversation history if provided
   if (input.conversationHistory && input.conversationHistory.length > 0) {
-    const eventService = new StreamEventService(pool)
-    const messageService = new MessageService(pool, eventService, new OutboxDispatcher(pool, new Map()))
-
     for (const msg of input.conversationHistory) {
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
       const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
-      await messageService.create({
+      await eventService.createMessage({
         workspaceId: ctx.workspaceId,
         streamId: testStreamId,
         authorId,
         authorType,
+        contentJson: markdownToJson(msg.content),
         contentMarkdown: msg.content,
       })
     }
   }
 
   // Create the trigger message
-  const eventService = new StreamEventService(pool)
-  const messageService = new MessageService(pool, eventService, new OutboxDispatcher(pool, new Map()))
-  const triggerMessage = await messageService.create({
+  const triggerMessage = await eventService.createMessage({
     workspaceId: ctx.workspaceId,
     streamId: testStreamId,
     authorId: ctx.userId,
     authorType: AuthorTypes.USER,
+    contentJson: markdownToJson(input.message),
     contentMarkdown: input.message,
   })
 
@@ -229,17 +228,16 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       costRecorder: undefined,
     })
 
-    // Create message and thread callbacks
-    const eventService = new StreamEventService(ctx.pool)
-    const outboxDispatcher = new OutboxDispatcher(ctx.pool, new Map())
-    const messageService = new MessageService(ctx.pool, eventService, outboxDispatcher)
+    // Create message and thread callbacks using EventService
+    const evalEventService = new EventService(ctx.pool)
 
     const createMessage: PersonaAgentDeps["createMessage"] = async (params) => {
-      const message = await messageService.create({
+      const message = await evalEventService.createMessage({
         workspaceId: params.workspaceId,
         streamId: params.streamId,
         authorId: params.authorId,
         authorType: params.authorType,
+        contentJson: markdownToJson(params.content),
         contentMarkdown: params.content,
         sources: params.sources,
       })
@@ -253,12 +251,8 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
         id: threadId,
         workspaceId: params.workspaceId,
         type: StreamTypes.THREAD,
-        displayName: null,
-        slug: null,
-        description: null,
         visibility: "private",
         companionMode: "off",
-        companionPersonaId: null,
         createdBy: params.createdBy,
         parentStreamId: params.parentStreamId,
         parentMessageId: params.parentMessageId,
@@ -288,7 +282,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     }
 
     // Run the agent!
-    const result = await personaAgent.run(agentInput)
+    await personaAgent.run(agentInput)
 
     // Read back messages sent by the agent
     const allMessages = await MessageRepository.list(ctx.pool, streamId, { limit: 100 })
