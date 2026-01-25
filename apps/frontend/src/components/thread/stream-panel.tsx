@@ -28,6 +28,7 @@ import {
 } from "@/hooks"
 import { usePanel, isDraftPanel, parseDraftPanel } from "@/contexts"
 import { useStreamService, useMessageService } from "@/contexts"
+import { StreamLoadingIndicator } from "@/components/loading"
 import { StreamContent } from "@/components/timeline"
 import { StreamErrorBoundary } from "@/components/stream-error-boundary"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
@@ -65,11 +66,18 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const draftInfo = isDraft ? parseDraftPanel(panelId) : null
 
   // For real streams, fetch bootstrap
-  const { data: bootstrap, error } = useStreamBootstrap(workspaceId, isDraft ? "" : panelId, {
+  const {
+    data: bootstrap,
+    error,
+    isLoading: isBootstrapLoading,
+  } = useStreamBootstrap(workspaceId, isDraft ? "" : panelId, {
     enabled: !isDraft,
   })
   const stream = bootstrap?.stream
   const isThread = stream?.type === StreamTypes.THREAD
+
+  // Show loading indicator only for real streams (not drafts) and only when actively loading after initial data
+  const showLoadingIndicator = !isDraft && isBootstrapLoading && !bootstrap
 
   // For draft threads, fetch parent stream to get the parent message
   const { data: parentBootstrap } = useStreamBootstrap(workspaceId, draftInfo?.parentStreamId ?? "", {
@@ -169,7 +177,8 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
 
   return (
     <SidePanel>
-      <SidePanelHeader>
+      <SidePanelHeader className="relative">
+        <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {isDraft && parentBootstrap?.stream ? (
           // Draft thread header with breadcrumbs
           <div className="flex items-center gap-1 min-w-0 flex-1">

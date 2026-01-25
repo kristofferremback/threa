@@ -1,8 +1,22 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
+
+/**
+ * Global coordinated loading phase - only applies during initial app load.
+ * - "loading": First ~1s of initial load, UI shows blank
+ * - "skeleton": After ~1s, UI shows skeleton placeholders
+ * - "ready": Initial load complete, never returns to loading/skeleton
+ */
+export type CoordinatedPhase = "loading" | "skeleton" | "ready"
+
+/**
+ * Per-stream loading state - only reports loading AFTER initial load completes.
+ * During initial load, all streams report "idle" (the global phase handles that).
+ */
+export type StreamState = "idle" | "loading" | "error"
 
 interface StreamError {
   streamId: string
@@ -11,9 +25,16 @@ interface StreamError {
 }
 
 interface CoordinatedLoadingContextValue {
-  isLoading: boolean
-  showSkeleton: boolean
-  streamErrors: StreamError[]
+  /** Global coordinated loading phase */
+  phase: CoordinatedPhase
+
+  /** True if any stream has an error (used by MainContentGate to show error pages) */
+  hasErrors: boolean
+
+  /** Get state for a specific stream. Returns "idle" during initial load. */
+  getStreamState: (streamId: string) => StreamState
+
+  /** Get error details for a stream in error state */
   getStreamError: (streamId: string) => StreamError | undefined
 }
 
@@ -29,33 +50,37 @@ const SKELETON_DELAY_MS = 1000
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [isReady, setIsReady] = useState(false)
+  const initialLoadCompleteRef = useRef(false)
 
   const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
 
   const isLoading = workspaceLoading || streamsLoading
 
-  // Extract errors from stream query results
-  const streamErrors = useMemo<StreamError[]>(() => {
-    // Filter out draft IDs from streamIds to match the results array
-    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_"))
-    return results
-      .map((result, index) => {
-        if (!result.error) return null
-        const streamId = serverStreamIds[index]
-        const status = ApiError.isApiError(result.error) ? result.error.status : 500
-        return { streamId, status, error: result.error }
-      })
-      .filter((e): e is StreamError => e !== null)
-  }, [results, streamIds])
+  // Compute phase from state
+  const phase = useMemo<CoordinatedPhase>(() => {
+    if (isReady) return "ready"
+    if (showSkeleton) return "skeleton"
+    return "loading"
+  }, [isReady, showSkeleton])
 
-  const getStreamError = useMemo(
-    () => (streamId: string) => streamErrors.find((e) => e.streamId === streamId),
-    [streamErrors]
-  )
-
-  // Show skeleton after delay if still loading
+  // Mark initial load as complete once loading finishes for the first time
   useEffect(() => {
+    if (!isLoading && !initialLoadCompleteRef.current) {
+      initialLoadCompleteRef.current = true
+      setIsReady(true)
+    }
+  }, [isLoading])
+
+  // Show skeleton after delay if still loading during initial load
+  useEffect(() => {
+    // Once ready, never show skeleton again
+    if (isReady) {
+      setShowSkeleton(false)
+      return
+    }
+
     if (!isLoading) {
       setShowSkeleton(false)
       return
@@ -66,16 +91,71 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
     }, SKELETON_DELAY_MS)
 
     return () => clearTimeout(timer)
-  }, [isLoading])
+  }, [isLoading, isReady])
+
+  // Build a map of stream states for O(1) lookup
+  // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
+  const streamStateMap = useMemo(() => {
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
+    const map = new Map<string, { isLoading: boolean; error: Error | null }>()
+
+    results.forEach((result, index) => {
+      const streamId = serverStreamIds[index]
+      if (streamId) {
+        map.set(streamId, {
+          isLoading: result.isLoading && !result.isError,
+          error: result.error ?? null,
+        })
+      }
+    })
+
+    return map
+  }, [results, streamIds])
+
+  // Extract errors for getStreamError
+  // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
+  const streamErrors = useMemo<StreamError[]>(() => {
+    const serverStreamIds = streamIds.filter((id) => !id.startsWith("draft_") && !id.startsWith("draft:"))
+    return results
+      .map((result, index) => {
+        if (!result.error) return null
+        const streamId = serverStreamIds[index]
+        const status = ApiError.isApiError(result.error) ? result.error.status : 500
+        return { streamId, status, error: result.error }
+      })
+      .filter((e): e is StreamError => e !== null)
+  }, [results, streamIds])
+
+  const getStreamState = useMemo(
+    () =>
+      (streamId: string): StreamState => {
+        // During initial load, all streams report "idle" - the global phase controls skeleton display.
+        // This is intentional: individual stream loading indicators only appear AFTER initial load.
+        if (!isReady) return "idle"
+
+        // Drafts are always idle (no server fetch)
+        // Check both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
+        if (streamId.startsWith("draft_") || streamId.startsWith("draft:")) return "idle"
+
+        const state = streamStateMap.get(streamId)
+        if (!state) return "idle"
+        if (state.error) return "error"
+        if (state.isLoading) return "loading"
+        return "idle"
+      },
+    [isReady, streamStateMap]
+  )
+
+  const getStreamError = useMemo(
+    () => (streamId: string) => streamErrors.find((e) => e.streamId === streamId),
+    [streamErrors]
+  )
+
+  const hasErrors = streamErrors.length > 0
 
   const value = useMemo<CoordinatedLoadingContextValue>(
-    () => ({
-      isLoading,
-      showSkeleton: isLoading && showSkeleton,
-      streamErrors,
-      getStreamError,
-    }),
-    [isLoading, showSkeleton, streamErrors, getStreamError]
+    () => ({ phase, hasErrors, getStreamState, getStreamError }),
+    [phase, hasErrors, getStreamState, getStreamError]
   )
 
   return <CoordinatedLoadingContext.Provider value={value}>{children}</CoordinatedLoadingContext.Provider>
@@ -94,36 +174,30 @@ interface CoordinatedLoadingGateProps {
 }
 
 /**
- * Gate component that shows nothing while loading (for up to 1s),
- * then renders children. Children use useCoordinatedLoading() to
- * determine if they should show skeleton or real content.
+ * Gate component that shows nothing during the "loading" phase (first ~1s),
+ * then renders children. Only applies during initial load.
  */
 export function CoordinatedLoadingGate({ children }: CoordinatedLoadingGateProps) {
-  const { isLoading, showSkeleton } = useCoordinatedLoading()
+  const { phase } = useCoordinatedLoading()
 
-  // First second of loading: show nothing
-  if (isLoading && !showSkeleton) {
+  if (phase === "loading") {
     return null
   }
 
-  // After 1s (skeleton phase) or ready: render children
-  // Children check context to know if they should show skeleton
   return <>{children}</>
 }
 
 /**
  * Gate for the main content area (Outlet).
- * Shows stream content skeleton during coordinated loading.
- * When there are stream errors, render children so error pages can show.
+ * Shows skeleton during initial load, then renders children.
+ * Individual stream components handle their own loading states after that.
  */
 export function MainContentGate({ children }: CoordinatedLoadingGateProps) {
-  const { isLoading, streamErrors } = useCoordinatedLoading()
+  const { phase, hasErrors } = useCoordinatedLoading()
 
-  // If there are stream errors, render children so error pages can display
-  // This prevents infinite loading when a stream returns 404/403
-  const hasStreamErrors = streamErrors.length > 0
-
-  if (isLoading && !hasStreamErrors) {
+  // During initial load, show skeleton
+  // Exception: if there are errors, render children so error pages can display
+  if (phase !== "ready" && !hasErrors) {
     return <StreamContentSkeleton />
   }
 

@@ -23,5 +23,7 @@ export {
   CoordinatedLoadingGate,
   MainContentGate,
   useCoordinatedLoading,
+  type CoordinatedPhase,
+  type StreamState,
 } from "./coordinated-loading-context"
 export { SidebarProvider, useSidebar, type ViewMode, type UrgencyBlock } from "./sidebar-context"

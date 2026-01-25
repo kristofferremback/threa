@@ -917,7 +917,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ workspaceId }: SidebarProps) {
-  const { isLoading: coordinatedLoading } = useCoordinatedLoading()
+  const { phase } = useCoordinatedLoading()
   const {
     viewMode,
     setViewMode,
@@ -1055,8 +1055,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return () => observer.disconnect()
   }, [setSidebarHeight, setScrollContainerOffset])
 
-  // During coordinated loading, show skeleton
-  if (coordinatedLoading) {
+  // During initial coordinated loading, show skeleton
+  if (phase !== "ready") {
     return (
       <SidebarShell
         header={<HeaderSkeleton />}
