@@ -1,6 +1,6 @@
 # Threa Design System
 
-A comprehensive reference for Threa's visual design language. Use this document when implementing UI components and patterns.
+A comprehensive reference for Threa's visual design language. Use this document when implementing UI components and patterns. Last reviewed: January 2026.
 
 **Design Philosophy:** Bold, modern, "AI-native" aesthetic for professionals at tech companies. The golden thread motif (inspired by Ariadne) provides warmth and distinction without being flashy.
 
