@@ -18,17 +18,18 @@ To do this, follow these steps precisely:
    d. Agent #4: Read previous pull requests that touched these files, and check for any comments on those pull requests that may also apply to the current pull request.
    e. Agent #5: Read code comments in the modified files, and make sure the changes in the pull request comply with any guidance in the comments.
    f. Agent #6 (Abstraction Design): **Evaluate the quality of any new or modified APIs, contexts, hooks, or interfaces. Look specifically for:**
-      - **Leaky abstractions**: Does the API expose implementation details (multiple correlated booleans, internal state) instead of semantic intent? Example: exposing `isLoading`, `showSkeleton`, `hasCompletedInitialLoad` separately forces consumers to combine them; a `phase: "loading" | "skeleton" | "ready"` would be better.
-      - **Consumer burden**: Do consumers have to understand internal state to use the API correctly? Look for complex boolean combinations like `if (isX && !isY && hasZ)` in consuming code.
-      - **State machine leakage**: If the code has lifecycle states (loading → ready, draft → published), does the API expose the states as a discriminated union/enum, or as primitive booleans that must be combined?
+      - **Leaky abstractions**: Does the API expose implementation details (multiple correlated booleans, internal state) instead of semantic intent? When you see multiple booleans that consumers must combine, ask: "Do these represent states in a hidden state machine?" If yes, the abstraction should expose the state directly.
+      - **Consumer burden**: Do consumers have to understand internal state to use the API correctly? Look for complex boolean combinations like `if (isX && !isY && hasZ)` in consuming code - this pattern suggests the abstraction is forcing consumers to re-derive information it should provide directly.
+      - **State machine leakage**: If the code has lifecycle states (loading → ready, draft → published, open → closing → closed), does the API expose the states as a discriminated union/enum, or as primitive booleans that must be combined? Multiple correlated booleans are a code smell.
       - **Next developer test**: Would someone new to the codebase understand how to use this API correctly? If they'd likely get it wrong, the abstraction is leaky.
 
       **How to evaluate**: Read the API being introduced (context value, hook return, class interface). Then read ALL consumers in the PR, paying close attention to HOW they use the API values. Look for:
-      - Complex boolean expressions combining multiple context values (e.g., `isX && !isY && hasZ`)
-      - Comments explaining how to correctly use the API ("only check X after Y is true")
-      - Similar logic repeated across multiple consumers (a sign the abstraction should encapsulate it)
+      - Complex boolean expressions combining multiple API values with `&&`, `||`, `!`
+      - Comments explaining how to correctly combine values ("only check X after Y is true")
+      - Similar logic repeated across multiple consumers (the abstraction should encapsulate it)
+      - Consumers asking questions like "what state are we in?" by combining primitives
 
-      If consumers are doing complex logic to derive what should be simple answers ("is this ready?", "what phase are we in?"), that's a leaky abstraction. The abstraction should answer the question directly. Suggest concrete improvements like "use `phase: 'loading' | 'ready'` instead of `isLoading` + `hasCompleted`".
+      If consumers are doing complex logic to derive what should be simple answers, that's a leaky abstraction. The fix is usually to expose the semantic answer directly (a discriminated union, an enum, a computed property) rather than the raw ingredients.
 5. For each issue found in #4, launch a parallel Haiku agent that takes the PR, issue description, and list of CLAUDE.md files (from step 2), and returns a score to indicate the agent's level of confidence for whether the issue is real or false positive. To do that, the agent should score each issue on a scale from 0-100, indicating its level of confidence. For issues that were flagged due to CLAUDE.md instructions, the agent should double check that the CLAUDE.md actually calls out that issue specifically. The scale is (give this rubric to the agent verbatim):
    a. 0: Not confident at all. This is a false positive that doesn't stand up to light scrutiny, or is a pre-existing issue.
    b. 25: Somewhat confident. This might be a real issue, but may also be a false positive. The agent wasn't able to verify that it's a real issue. If the issue is stylistic, it is one that was not explicitly called out in the relevant CLAUDE.md.
@@ -49,7 +50,7 @@ Examples of false positives, for steps 4 and 5:
 - Pedantic nitpicks that a senior engineer wouldn't call out
 - **CRITICAL: Test failures, type errors, build errors, or any issues that would be caught by CI. CI is the gold standard - if tests pass in CI, they pass. Do NOT report issues like "tests are missing parameter X" or "this will fail typecheck" - assume CI catches these. Your job is to find issues CI cannot catch.**
 - Issues that a linter, typechecker, or compiler would catch (eg. missing or incorrect imports, type errors, broken tests, formatting issues, pedantic style issues like newlines). No need to run these build steps yourself -- it is safe to assume that they will be run separately as part of CI.
-- General code quality issues (eg. lack of test coverage, general security issues, poor documentation), unless explicitly required in CLAUDE.md. **Exception: Leaky abstractions are NOT general quality issues - they are specific design problems that cause bugs. An API that exposes `isLoading && !showSkeleton && hasCompleted` instead of `phase === "ready"` will be misused.**
+- General code quality issues (eg. lack of test coverage, general security issues, poor documentation), unless explicitly required in CLAUDE.md. **Exception: Leaky abstractions are NOT general quality issues - they are specific design problems that cause bugs. When consumers must combine multiple booleans to answer simple questions ("are we ready?", "what state are we in?"), every new consumer will likely get it wrong.**
 - Issues that are called out in CLAUDE.md, but explicitly silenced in the code (eg. due to a lint ignore comment)
 - Changes in functionality that are likely intentional or are directly related to the broader change
 - Real issues, but on lines that the user did not modify in their pull request
