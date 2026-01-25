@@ -3,6 +3,8 @@ import { Outlet, useParams, useNavigate, useSearchParams, useMatch } from "react
 import { AppShell } from "@/components/layout/app-shell"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Toaster } from "@/components/ui/sonner"
+import { MentionableMarkdownWrapper } from "@/components/ui/markdown-content"
+import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import {
   PanelProvider,
   QuickSwitcherProvider,
@@ -14,7 +16,7 @@ import {
   MainContentGate,
   SidebarProvider,
 } from "@/contexts"
-import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts } from "@/hooks"
+import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts, useMentionables } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { ApiError } from "@/api/client"
@@ -69,6 +71,7 @@ export function WorkspaceLayout() {
   }, [streamId, searchParams])
 
   const { error: workspaceError } = useWorkspaceBootstrap(workspaceId ?? "")
+  const { mentionables } = useMentionables()
 
   useEffect(() => {
     if (
@@ -97,37 +100,41 @@ export function WorkspaceLayout() {
 
   return (
     <CoordinatedLoadingProvider workspaceId={workspaceId} streamIds={streamIds}>
-      <PreferencesProvider workspaceId={workspaceId}>
-        <SettingsProvider>
-          <WorkspaceKeyboardHandler
-            switcherOpen={switcherOpen}
-            onOpenSwitcher={openSwitcher}
-            onCloseSwitcher={closeSwitcher}
-          >
-            <QuickSwitcherProvider openSwitcher={openSwitcher}>
-              <PanelProvider>
-                <SidebarProvider>
-                  <CoordinatedLoadingGate>
-                    <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                      <MainContentGate>
-                        <Outlet />
-                      </MainContentGate>
-                    </AppShell>
-                  </CoordinatedLoadingGate>
-                </SidebarProvider>
-                <QuickSwitcher
-                  workspaceId={workspaceId}
-                  open={switcherOpen}
-                  onOpenChange={setSwitcherOpen}
-                  initialMode={switcherMode}
-                />
-                <SettingsDialog />
-                <Toaster />
-              </PanelProvider>
-            </QuickSwitcherProvider>
-          </WorkspaceKeyboardHandler>
-        </SettingsProvider>
-      </PreferencesProvider>
+      <MentionableMarkdownWrapper mentionables={mentionables}>
+        <WorkspaceEmojiProvider workspaceId={workspaceId}>
+          <PreferencesProvider workspaceId={workspaceId}>
+            <SettingsProvider>
+              <WorkspaceKeyboardHandler
+                switcherOpen={switcherOpen}
+                onOpenSwitcher={openSwitcher}
+                onCloseSwitcher={closeSwitcher}
+              >
+                <QuickSwitcherProvider openSwitcher={openSwitcher}>
+                  <PanelProvider>
+                    <SidebarProvider>
+                      <CoordinatedLoadingGate>
+                        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                          <MainContentGate>
+                            <Outlet />
+                          </MainContentGate>
+                        </AppShell>
+                      </CoordinatedLoadingGate>
+                    </SidebarProvider>
+                    <QuickSwitcher
+                      workspaceId={workspaceId}
+                      open={switcherOpen}
+                      onOpenChange={setSwitcherOpen}
+                      initialMode={switcherMode}
+                    />
+                    <SettingsDialog />
+                    <Toaster />
+                  </PanelProvider>
+                </QuickSwitcherProvider>
+              </WorkspaceKeyboardHandler>
+            </SettingsProvider>
+          </PreferencesProvider>
+        </WorkspaceEmojiProvider>
+      </MentionableMarkdownWrapper>
     </CoordinatedLoadingProvider>
   )
 }

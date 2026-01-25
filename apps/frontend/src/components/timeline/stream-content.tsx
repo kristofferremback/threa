@@ -8,13 +8,10 @@ import {
   useStreamBootstrap,
   useAutoMarkAsRead,
   useUnreadDivider,
-  useMentionables,
 } from "@/hooks"
 import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
-import { MentionableMarkdownWrapper } from "@/components/ui/markdown-content"
-import { WorkspaceEmojiProvider } from "@/components/workspace-emoji"
 import { StreamTypes, type Stream } from "@threa/types"
 import { EventList } from "./event-list"
 import { MessageInput } from "./message-input"
@@ -41,7 +38,6 @@ export function StreamContent({
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
-  const { mentionables } = useMentionables()
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -126,62 +122,54 @@ export function StreamContent({
   }
 
   return (
-    <MentionableMarkdownWrapper mentionables={mentionables}>
-      <WorkspaceEmojiProvider workspaceId={workspaceId}>
-        <div className="flex h-full flex-col">
-          <div
-            ref={scrollContainerRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden mb-4"
-            onScroll={handleScroll}
-          >
-            {/* Show parent message for threads */}
-            {isThread && parentMessage && parentStreamId && (
-              <ThreadParentMessage
-                event={parentMessage}
-                workspaceId={workspaceId}
-                streamId={parentStreamId}
-                replyCount={events.length}
-              />
-            )}
-            {!isDraft && isFetchingOlder && (
-              <div className="flex justify-center py-2">
-                <p className="text-sm text-muted-foreground">Loading older messages...</p>
-              </div>
-            )}
-            {isDraft ? (
-              <Empty className="h-full border-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <MessageSquare />
-                  </EmptyMedia>
-                  <EmptyTitle>Start a conversation</EmptyTitle>
-                  <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <EventList
-                events={events}
-                isLoading={isLoading}
-                workspaceId={workspaceId}
-                streamId={streamId}
-                highlightMessageId={highlightMessageId}
-                firstUnreadEventId={dividerEventId}
-                isDividerFading={isDividerFading}
-              />
-            )}
+    <div className="flex h-full flex-col">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden mb-4" onScroll={handleScroll}>
+        {/* Show parent message for threads */}
+        {isThread && parentMessage && parentStreamId && (
+          <ThreadParentMessage
+            event={parentMessage}
+            workspaceId={workspaceId}
+            streamId={parentStreamId}
+            replyCount={events.length}
+          />
+        )}
+        {!isDraft && isFetchingOlder && (
+          <div className="flex justify-center py-2">
+            <p className="text-sm text-muted-foreground">Loading older messages...</p>
           </div>
-          <MessageInput
+        )}
+        {isDraft ? (
+          <Empty className="h-full border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquare />
+              </EmptyMedia>
+              <EmptyTitle>Start a conversation</EmptyTitle>
+              <EmptyDescription>Type a message below to begin this scratchpad.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <EventList
+            events={events}
+            isLoading={isLoading}
             workspaceId={workspaceId}
             streamId={streamId}
-            streamName={stream?.displayName ?? undefined}
-            disabled={isArchived}
-            disabledReason={
-              isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
-            }
-            autoFocus={autoFocus}
+            highlightMessageId={highlightMessageId}
+            firstUnreadEventId={dividerEventId}
+            isDividerFading={isDividerFading}
           />
-        </div>
-      </WorkspaceEmojiProvider>
-    </MentionableMarkdownWrapper>
+        )}
+      </div>
+      <MessageInput
+        workspaceId={workspaceId}
+        streamId={streamId}
+        streamName={stream?.displayName ?? undefined}
+        disabled={isArchived}
+        disabledReason={
+          isArchived ? "This thread has been sealed in the labyrinth. It can be read but not extended." : undefined
+        }
+        autoFocus={autoFocus}
+      />
+    </div>
   )
 }
