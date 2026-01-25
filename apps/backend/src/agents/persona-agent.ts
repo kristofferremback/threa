@@ -1,6 +1,14 @@
 import type { Pool } from "pg"
 import { withClient, type Querier } from "../db"
-import { AgentToolNames, AuthorTypes, StreamTypes, type AuthorType, type UserPreferences } from "@threa/types"
+import {
+  AgentToolNames,
+  AgentTriggers,
+  AuthorTypes,
+  StreamTypes,
+  type AuthorType,
+  type UserPreferences,
+  type SourceItem,
+} from "@threa/types"
 import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
@@ -14,7 +22,6 @@ import {
   isToolEnabled,
   type SendMessageInputWithSources,
   type SendMessageResult,
-  type SourceItem,
   type SearchToolsCallbacks,
   type MessageSearchResult,
   type StreamSearchResult,
@@ -203,7 +210,7 @@ export interface PersonaAgentInput {
   messageId: string // Trigger message
   personaId: string // Which persona to invoke
   serverId: string
-  trigger?: "mention" // undefined = companion mode
+  trigger?: typeof AgentTriggers.MENTION // undefined = companion mode
 }
 
 /**
@@ -304,7 +311,7 @@ export class PersonaAgent {
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
-        if (trigger === "mention" && triggerMessage?.authorType === "user") {
+        if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === "user") {
           const mentioner = await UserRepository.findById(db, triggerMessage.authorId)
           mentionerName = mentioner?.name ?? undefined
         }
@@ -345,7 +352,7 @@ export class PersonaAgent {
         const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
           // For channel mentions: create thread on first message
           // Note: createThread is idempotent (uses ON CONFLICT DO NOTHING), so retries are safe
-          if (trigger === "mention" && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
+          if (trigger === AgentTriggers.MENTION && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
             const thread = await createThread({
               workspaceId,
               parentStreamId: streamId,
@@ -575,7 +582,7 @@ export class PersonaAgent {
 function buildSystemPrompt(
   persona: Persona,
   context: StreamContext,
-  trigger?: "mention",
+  trigger?: typeof AgentTriggers.MENTION,
   mentionerName?: string,
   retrievedContext?: string | null
 ): string {
@@ -586,7 +593,7 @@ function buildSystemPrompt(
   let prompt = persona.systemPrompt
 
   // Add mention invocation context if applicable
-  if (trigger === "mention") {
+  if (trigger === AgentTriggers.MENTION) {
     const mentionerDesc = mentionerName ? `**${mentionerName}**` : "a user"
     prompt += `
 

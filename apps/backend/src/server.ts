@@ -64,6 +64,7 @@ import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
+import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
 import { QueueManager } from "./lib/queue-manager"
 import { ScheduleManager } from "./lib/schedule-manager"
 import { CleanupWorker } from "./lib/cleanup-worker"
@@ -162,10 +163,11 @@ export async function startServer(): Promise<ServerInstance> {
     openrouter: { apiKey: config.ai.openRouterApiKey },
     costRecorder: costService,
   })
+  const configResolver = createStaticConfigResolver()
   const messageFormatter = new MessageFormatter()
   const streamNamingService = config.useStubAI
     ? new StubStreamNamingService()
-    : new StreamNamingService(pool, ai, config.ai.namingModel, messageFormatter)
+    : new StreamNamingService(pool, ai, configResolver, messageFormatter)
   const conversationService = new ConversationService(pool)
   const userPreferencesService = new UserPreferencesService(pool)
 
@@ -301,7 +303,7 @@ export async function startServer(): Promise<ServerInstance> {
       })
 
   // Create researcher for workspace knowledge retrieval
-  const researcher = new Researcher({ pool, ai, embeddingService })
+  const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
 
   const personaAgent = new PersonaAgent({
     pool,
@@ -324,7 +326,7 @@ export async function startServer(): Promise<ServerInstance> {
   // Boundary extraction
   const boundaryExtractor = config.useStubBoundaryExtraction
     ? new StubBoundaryExtractor()
-    : new LLMBoundaryExtractor(ai, config.ai.extractionModel)
+    : new LLMBoundaryExtractor(ai, configResolver)
   const boundaryExtractionService = new BoundaryExtractionService(pool, boundaryExtractor)
   const boundaryExtractionWorker = createBoundaryExtractionWorker({ service: boundaryExtractionService })
   jobQueue.registerHandler(JobQueues.BOUNDARY_EXTRACT, boundaryExtractionWorker)
@@ -334,8 +336,8 @@ export async function startServer(): Promise<ServerInstance> {
     ? new StubMemoService()
     : new MemoService({
         pool,
-        classifier: new MemoClassifier(ai, config.ai.memoModel, messageFormatter),
-        memorizer: new Memorizer(ai, config.ai.memoModel, messageFormatter),
+        classifier: new MemoClassifier(ai, configResolver, messageFormatter),
+        memorizer: new Memorizer(ai, configResolver, messageFormatter),
         embeddingService,
         messageFormatter,
       })

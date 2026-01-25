@@ -10,7 +10,8 @@
     "test:unit": "bun test src/",
     "test:integration": "bun test tests/integration/",
     "test:e2e": "bun test --preload ./tests/setup.ts tests/e2e/",
-    "test:watch": "bun test --watch src/"
+    "test:watch": "bun test --watch src/",
+    "eval": "bun run evals/run.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.956.0",
@@ -37,6 +38,7 @@
     "cors": "^2",
     "express": "^5",
     "ipaddr.js": "^2.3.0",
+    "langfuse": "^3.38.6",
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
     "node-html-markdown": "^2.0.0",
@@ -50,6 +52,7 @@
     "squid": "^0.5",
     "ulid": "^2",
     "umzug": "^3",
+    "yaml": "^2.8.2",
     "zod": "^4.2.0"
   },
   "devDependencies": {

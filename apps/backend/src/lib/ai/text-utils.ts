@@ -83,9 +83,93 @@ function addDefaults(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * Extract the first valid JSON object from text that may have garbage prefixes.
+ *
+ * Some models output garbage before JSON like:
+ * - "that.{...}"
+ * - "{{...}}"  (double braces)
+ * - "reason.{...}"
+ * - '": true}.{...}' (fragments from previous output)
+ */
+function extractJsonObject(text: string): string {
+  // Find the first '{' that might start valid JSON
+  const firstBrace = text.indexOf("{")
+  if (firstBrace === -1) return text
+
+  // Try parsing from each '{' until we find valid JSON
+  let pos = firstBrace
+  while (pos < text.length) {
+    const candidate = text.slice(pos)
+
+    // Skip if we hit a double brace - try the inner one
+    if (candidate.startsWith("{{") || candidate.startsWith("{ {")) {
+      pos = text.indexOf("{", pos + 1)
+      if (pos === -1) break
+      continue
+    }
+
+    // Try to find matching closing brace by counting
+    let depth = 0
+    let inString = false
+    let escape = false
+    let end = -1
+
+    for (let i = 0; i < candidate.length; i++) {
+      const char = candidate[i]
+
+      if (escape) {
+        escape = false
+        continue
+      }
+
+      if (char === "\\") {
+        escape = true
+        continue
+      }
+
+      if (char === '"') {
+        inString = !inString
+        continue
+      }
+
+      if (inString) continue
+
+      if (char === "{") depth++
+      if (char === "}") {
+        depth--
+        if (depth === 0) {
+          end = i + 1
+          break
+        }
+      }
+    }
+
+    if (end > 0) {
+      const extracted = candidate.slice(0, end)
+      try {
+        JSON.parse(extracted)
+        return extracted
+      } catch {
+        // Not valid JSON, try next brace
+      }
+    }
+
+    // Find next '{' to try
+    const nextBrace = text.indexOf("{", pos + 1)
+    if (nextBrace === -1) break
+    pos = nextBrace
+  }
+
+  // Couldn't extract valid JSON, return original
+  return text
+}
+
+/**
  * Strip markdown code fences and normalize JSON field names.
  *
  * Handles common LLM output issues:
+ * - Garbage prefixes before JSON (e.g., "that.{...}")
+ * - Double braces (e.g., "{{...}}")
  * - Markdown code fences (```json ... ```)
  * - snake_case field names instead of camelCase
  * - Semantic field name variations (e.g., "classification" → "isKnowledgeWorthy")
@@ -105,6 +189,9 @@ export async function stripMarkdownFences({ text }: { text: string }): Promise<s
     .replace(/^\s*```(?:json)?\s*\n?/i, "")
     .replace(/\n?```\s*$/i, "")
     .trim()
+
+  // Extract JSON object from garbage prefixes
+  cleaned = extractJsonObject(cleaned)
 
   // Try to parse and normalize field names
   try {

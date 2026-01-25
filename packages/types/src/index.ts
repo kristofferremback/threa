@@ -57,6 +57,14 @@ export {
   AGENT_TOOL_NAMES,
   type AgentToolName,
   AgentToolNames,
+  // Source types
+  SOURCE_TYPES,
+  type SourceType,
+  SourceTypes,
+  // Agent triggers
+  AGENT_TRIGGERS,
+  type AgentTrigger,
+  AgentTriggers,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -73,6 +81,7 @@ export type {
   Persona,
   Attachment,
   AttachmentSummary,
+  SourceItem,
   Conversation,
   ConversationWithStaleness,
   Memo,

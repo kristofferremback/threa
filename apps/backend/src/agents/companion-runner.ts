@@ -13,10 +13,9 @@ import {
   type SendMessageInput,
   type SendMessageInputWithSources,
   type SendMessageResult,
-  type SourceItem,
   type SearchToolsCallbacks,
 } from "./tools"
-import { AgentToolNames } from "@threa/types"
+import { AgentToolNames, type SourceItem } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
 import { getCostTrackingCallbacks } from "../lib/ai/ai"
 import { getDebugCallbacks } from "../lib/ai/debug-callback"

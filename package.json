@@ -18,6 +18,7 @@
     "monitoring:stop": "docker compose -f docker-compose.monitoring.yml stop",
     "monitoring:logs": "docker compose -f docker-compose.monitoring.yml logs -f",
     "setup:worktree": "bun scripts/setup-worktree.ts",
+    "eval": "bun run --cwd apps/backend eval --",
     "test": "bun run --cwd apps/backend test",
     "test:unit": "bun run --cwd apps/backend test:unit",
     "test:e2e": "bun run --cwd apps/backend test:e2e",

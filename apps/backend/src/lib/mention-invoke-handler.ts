@@ -2,7 +2,7 @@ import type { Pool } from "pg"
 import { OutboxRepository } from "../repositories"
 import { PersonaRepository } from "../repositories/persona-repository"
 import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
-import { AuthorTypes } from "@threa/types"
+import { AgentTriggers, AuthorTypes } from "@threa/types"
 import { extractMentionSlugs } from "./mention-extractor"
 import { logger } from "./logger"
 import { JobQueues } from "./job-queue"
@@ -160,7 +160,7 @@ export class MentionInvokeHandler implements OutboxHandler {
               messageId: messageEvent.payload.messageId,
               personaId: persona.id,
               triggeredBy,
-              trigger: "mention",
+              trigger: AgentTriggers.MENTION,
             })
           }
 

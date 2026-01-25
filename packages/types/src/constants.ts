@@ -150,3 +150,21 @@ export const AgentToolNames = {
   SEARCH_USERS: "search_users",
   GET_STREAM_MESSAGES: "get_stream_messages",
 } as const satisfies Record<string, AgentToolName>
+
+// Source types for message citations
+export const SOURCE_TYPES = ["web", "workspace"] as const
+export type SourceType = (typeof SOURCE_TYPES)[number]
+
+export const SourceTypes = {
+  WEB: "web",
+  WORKSPACE: "workspace",
+} as const satisfies Record<string, SourceType>
+
+// Agent invocation triggers
+export const AGENT_TRIGGERS = ["mention", "companion"] as const
+export type AgentTrigger = (typeof AGENT_TRIGGERS)[number]
+
+export const AgentTriggers = {
+  MENTION: "mention",
+  COMPANION: "companion",
+} as const satisfies Record<string, AgentTrigger>

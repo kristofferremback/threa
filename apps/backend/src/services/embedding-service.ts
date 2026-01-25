@@ -1,6 +1,5 @@
 import type { AI, CostContext } from "../lib/ai/ai"
-
-const DEFAULT_MODEL = "openrouter:openai/text-embedding-3-small"
+import { EMBEDDING_MODEL_ID } from "./embedding/config"
 
 export interface EmbeddingServiceConfig {
   ai: AI
@@ -31,7 +30,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
 
   constructor(config: EmbeddingServiceConfig) {
     this.ai = config.ai
-    this.modelId = config.model ?? DEFAULT_MODEL
+    this.modelId = config.model ?? EMBEDDING_MODEL_ID
   }
 
   /**

@@ -14,7 +14,7 @@ export { StreamPersonaParticipantRepository } from "./stream-persona-participant
 export type { StreamPersonaParticipant } from "./stream-persona-participant-repository"
 
 export { StreamEventRepository } from "./stream-event-repository"
-export type { StreamEvent, EventType, InsertEventParams } from "./stream-event-repository"
+export type { StreamEvent, InsertEventParams } from "./stream-event-repository"
 
 export { MessageRepository } from "./message-repository"
 export type { Message, InsertMessageParams } from "./message-repository"
