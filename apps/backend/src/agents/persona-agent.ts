@@ -167,15 +167,17 @@ export async function withSession(
   // The work callback can use pool directly for short-lived queries
   // Periodic heartbeat keeps the session alive during long AI calls,
   // preventing the orphan cleanup (60s threshold) from killing active sessions.
-  const heartbeatInterval = setInterval(async () => {
-    try {
-      await AgentSessionRepository.updateHeartbeat(pool, session.id)
-    } catch (err) {
-      logger.warn({ err, sessionId: session.id }, "Heartbeat update failed")
-    }
-  }, 15_000)
+  let heartbeatInterval: ReturnType<typeof setInterval> | undefined
 
   try {
+    heartbeatInterval = setInterval(async () => {
+      try {
+        await AgentSessionRepository.updateHeartbeat(pool, session.id)
+      } catch (err) {
+        logger.warn({ err, sessionId: session.id }, "Heartbeat update failed")
+      }
+    }, 15_000)
+
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
     // Phase 3: Complete session + emit completed event atomically
@@ -261,7 +263,7 @@ export async function withSession(
 
     return { status: "failed" as const, sessionId: session.id }
   } finally {
-    clearInterval(heartbeatInterval)
+    if (heartbeatInterval) clearInterval(heartbeatInterval)
   }
 }
 

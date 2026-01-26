@@ -68,7 +68,7 @@ export class SessionTrace {
     const now = new Date()
 
     // Persist step row (started, not yet completed)
-    const step = await AgentSessionRepository.insertStep(this.deps.pool, {
+    await AgentSessionRepository.insertStep(this.deps.pool, {
       id,
       sessionId: this.params.sessionId,
       stepNumber: this.stepNumber,
@@ -84,12 +84,12 @@ export class SessionTrace {
     this.deps.io.to(this.sessionRoom).emit("agent_session:step:started", {
       sessionId: this.params.sessionId,
       step: {
-        id: step.id,
-        sessionId: step.sessionId,
-        stepNumber: step.stepNumber,
-        stepType: step.stepType,
-        content: step.content,
-        startedAt: step.startedAt.toISOString(),
+        id,
+        sessionId: this.params.sessionId,
+        stepNumber: this.stepNumber,
+        stepType: params.stepType,
+        content: params.content,
+        startedAt: now.toISOString(),
       },
     })
 
