@@ -516,7 +516,7 @@ function StreamItem({
     if (stream.type === StreamTypes.CHANNEL) {
       return {
         icon: <Hash className="h-3.5 w-3.5" />,
-        className: "bg-[hsl(200_60%_50%)]/10 text-[hsl(200_60%_50%)]",
+        className: "bg-muted text-[hsl(200_60%_50%)]",
       }
     }
     if (stream.type === StreamTypes.SCRATCHPAD) {
@@ -539,7 +539,6 @@ function StreamItem({
   }
 
   const avatar = getAvatar()
-  // Use getThreadDisplayName for threads, otherwise use slug or displayName
   const name =
     stream.type === StreamTypes.THREAD
       ? getThreadDisplayName(stream, allStreams)
@@ -547,10 +546,14 @@ function StreamItem({
         ? `#${stream.slug}`
         : stream.displayName || "Untitled"
 
-  // For threads with their own displayName, show root context as subtle indicator
-  // (Skip if thread doesn't have displayName - context is already in the fallback name)
-  const threadRootContext =
-    stream.type === StreamTypes.THREAD && stream.displayName ? getThreadRootContext(stream, allStreams) : null
+  const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
+
+  // Root stream type for avatar badge on threads
+  const threadRootType = (() => {
+    if (stream.type !== StreamTypes.THREAD || !stream.rootStreamId) return null
+    const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
+    return rootStream?.type ?? null
+  })()
 
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
@@ -589,17 +592,37 @@ function StreamItem({
       {/* Main content wrapper */}
       <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
         {/* Avatar */}
-        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", avatar.className)}>
-          {avatar.icon}
-        </div>
+        {threadRootType ? (
+          <div className="w-8 h-8 rounded-lg flex-shrink-0 relative bg-muted flex items-center justify-center">
+            <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
+            <div
+              className={cn(
+                "absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-background border border-border flex items-center justify-center",
+                threadRootType === "channel" && "text-[hsl(200_60%_50%)]",
+                threadRootType === "scratchpad" && "text-primary",
+                threadRootType === "dm" && "text-muted-foreground"
+              )}
+            >
+              {threadRootType === "channel" && <Hash className="h-2 w-2" />}
+              {threadRootType === "scratchpad" && <FileEdit className="h-2 w-2" />}
+              {threadRootType === "dm" && <User className="h-2 w-2" />}
+            </div>
+          </div>
+        ) : (
+          <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", avatar.className)}>
+            {avatar.icon}
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
           <div className="flex items-center gap-2 pr-8">
-            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>{name}</span>
-            {threadRootContext && (
-              <span className="flex-shrink-0 text-[10px] text-muted-foreground/70">{threadRootContext}</span>
-            )}
+            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+              {name}
+              {threadRootContext && (
+                <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
+              )}
+            </span>
             <UnreadBadge count={unreadCount} />
           </div>
           {preview && preview.content && (

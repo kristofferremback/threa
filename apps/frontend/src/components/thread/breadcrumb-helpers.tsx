@@ -18,38 +18,15 @@ interface StreamForLookup {
 }
 
 /**
- * Get a descriptive display name for a thread.
+ * Get a display name for a thread.
  * If the thread has its own displayName (AI-generated), use that.
- * Otherwise, derive from root stream: "Thread in #channel", "Thread in [Scratchpad name]", "Thread with [User(s)]"
+ * Otherwise, returns "Thread". Root context is shown separately via getThreadRootContext().
  */
 export function getThreadDisplayName(
   thread: { displayName?: string | null; rootStreamId: string | null },
-  allStreams: StreamForLookup[]
+  _allStreams: StreamForLookup[]
 ): string {
-  // Use thread's own displayName if available (AI-generated names)
-  if (thread.displayName) {
-    return thread.displayName
-  }
-
-  if (!thread.rootStreamId) {
-    return "Thread"
-  }
-
-  const rootStream = allStreams.find((s) => s.id === thread.rootStreamId)
-  if (!rootStream) {
-    return "Thread"
-  }
-
-  switch (rootStream.type) {
-    case "channel":
-      return `Thread in #${rootStream.slug || rootStream.displayName || "channel"}`
-    case "scratchpad":
-      return `Thread in ${rootStream.displayName || "Scratchpad"}`
-    case "dm":
-      return `Thread with ${rootStream.displayName || "DM"}`
-    default:
-      return "Thread"
-  }
+  return thread.displayName || "Thread"
 }
 
 /**

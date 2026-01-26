@@ -28,8 +28,7 @@ export function ThreadsPage() {
       const preview = thread.lastMessagePreview
       const previewText = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
 
-      // For threads with their own displayName, show root context in description
-      const rootContext = thread.displayName ? getThreadRootContext(thread, bootstrap.streams) : null
+      const rootContext = getThreadRootContext(thread, bootstrap.streams)
       const description = rootContext ? `in ${rootContext} · ${previewText}` : previewText
 
       return {
