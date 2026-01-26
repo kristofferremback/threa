@@ -76,9 +76,14 @@ export function ResponsiveBreadcrumbs({
 
   const { ancestorMaxWidth, currentMaxWidth } = useMemo(() => {
     const separatorWidth = 24
+    const ellipsisWidth = 32
     const visibleAncestorCount = Math.min(ancestors.length, maxVisibleAncestors)
-    const totalSeparators = visibleAncestorCount * separatorWidth
-    const available = Math.max(0, containerWidth - totalSeparators)
+    const hasEllipsis = ancestors.length > maxVisibleAncestors && ancestors.length > 0
+
+    // Each visible ancestor has a separator; the ellipsis has its own separator too
+    const separatorCount = visibleAncestorCount + (hasEllipsis ? 1 : 0)
+    const fixedOverhead = separatorCount * separatorWidth + (hasEllipsis ? ellipsisWidth : 0)
+    const available = Math.max(0, containerWidth - fixedOverhead)
 
     if (visibleAncestorCount === 0) {
       return { ancestorMaxWidth: 0, currentMaxWidth: Math.min(available, 300) }
@@ -123,9 +128,9 @@ export function ResponsiveBreadcrumbs({
     }
 
     const first = ancestors[0]
-    const tailCount = Math.max(1, maxVisibleAncestors - 1)
-    const hidden = ancestors.slice(1, ancestors.length - tailCount)
-    const tail = ancestors.slice(ancestors.length - tailCount)
+    const tailCount = Math.max(0, maxVisibleAncestors - 1)
+    const hidden = ancestors.slice(1, tailCount > 0 ? ancestors.length - tailCount : undefined)
+    const tail = tailCount > 0 ? ancestors.slice(ancestors.length - tailCount) : []
 
     return (
       <>
