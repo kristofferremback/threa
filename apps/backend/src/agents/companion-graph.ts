@@ -4,10 +4,20 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { AgentToolNames, type SourceItem } from "@threa/types"
+import { AgentToolNames, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
 import { logger } from "../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
 import type { ResearcherResult } from "./researcher"
+
+/**
+ * Parameters for recording a step in the agent trace.
+ */
+export interface RecordStepParams {
+  stepType: AgentStepType
+  content?: string
+  sources?: TraceSource[]
+  messageId?: string
+}
 
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
@@ -29,6 +39,8 @@ export interface CompanionGraphCallbacks {
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
   /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
   runResearcher?: (config: RunnableConfig) => Promise<ResearcherResult>
+  /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
+  recordStep?: (params: RecordStepParams) => Promise<void>
 }
 
 /**
@@ -144,6 +156,20 @@ function createResearchNode() {
         "Research node completed"
       )
 
+      // Record the workspace search step
+      if (callbacks.recordStep && result.sources.length > 0) {
+        await callbacks.recordStep({
+          stepType: "workspace_search",
+          content: `Found ${result.memos.length} memos and ${result.messages.length} related messages`,
+          sources: result.sources.map((s) => ({
+            title: s.title,
+            url: s.url,
+            type: s.type,
+            snippet: s.snippet,
+          })),
+        })
+      }
+
       // If researcher found sources, add them to the initial sources
       const newSources: SourceItem[] = result.sources.map((s) => ({
         title: s.title,
@@ -169,13 +195,22 @@ function createResearchNode() {
 function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
   const modelWithTools = tools.length > 0 ? model.bindTools(tools) : model
 
-  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+
     // Check iteration limit
     if (state.iteration >= MAX_ITERATIONS) {
       return {
         finalResponse: null,
         iteration: state.iteration, // Keep current value
       }
+    }
+
+    // Record thinking step before LLM invocation
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "thinking",
+      })
     }
 
     // Build system prompt with retrieved context if available
@@ -306,6 +341,15 @@ function createFinalizeOrReconsiderNode() {
           { messageId: result.messageId, contentLength: pending.content.length },
           "Pending message committed"
         )
+
+        // Record the message sent step
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "message_sent",
+            content: pending.content,
+            messageId: result.messageId,
+          })
+        }
       }
 
       return {
@@ -399,6 +443,21 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         // Extract sources from web_search results
         const sources = extractSourcesFromWebSearch(resultStr)
         collectedSources = [...collectedSources, ...sources]
+
+        // Record the web search step
+        const callbacks = getCallbacks(_config)
+        if (callbacks.recordStep) {
+          const query = (toolCall.args as { query?: string }).query
+          await callbacks.recordStep({
+            stepType: "web_search",
+            content: query,
+            sources: sources.map((s) => ({
+              title: s.title,
+              url: s.url,
+              type: "web" as const,
+            })),
+          })
+        }
 
         toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: resultStr }))
       } catch (error) {
@@ -661,6 +720,15 @@ function createEnsureResponseNode() {
       content: state.finalResponse,
       sources: state.sources.length > 0 ? state.sources : undefined,
     })
+
+    // Record the message sent step
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "message_sent",
+        content: state.finalResponse,
+        messageId: result.messageId,
+      })
+    }
 
     logger.info({ messageId: result.messageId, sourceCount: state.sources.length }, "ensure_response sent message")
 

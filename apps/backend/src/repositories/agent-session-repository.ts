@@ -1,25 +1,13 @@
+import type { AgentSessionStatus, AgentStepType, TraceSource } from "@threa/types"
+import { AgentSessionStatuses, AgentStepTypes } from "@threa/types"
 import type { Querier } from "../db"
 import { sql } from "../db"
 
-// Session status values
-export const SessionStatuses = {
-  PENDING: "pending",
-  RUNNING: "running",
-  COMPLETED: "completed",
-  FAILED: "failed",
-} as const
-
-export type SessionStatus = (typeof SessionStatuses)[keyof typeof SessionStatuses]
-
-// Step type values
-export const StepTypes = {
-  THINKING: "thinking",
-  TOOL_CALL: "tool_call",
-  TOOL_RESULT: "tool_result",
-  RESPONSE: "response",
-} as const
-
-export type StepType = (typeof StepTypes)[keyof typeof StepTypes]
+// Re-export for backwards compatibility
+export const SessionStatuses = AgentSessionStatuses
+export type SessionStatus = AgentSessionStatus
+export const StepTypes = AgentStepTypes
+export type StepType = AgentStepType
 
 // Internal row types (snake_case)
 interface SessionRow {
@@ -29,6 +17,7 @@ interface SessionRow {
   trigger_message_id: string
   status: string
   current_step: number
+  current_step_type: string | null
   server_id: string | null
   heartbeat_at: Date | null
   response_message_id: string | null
@@ -45,6 +34,7 @@ interface StepRow {
   step_number: number
   step_type: string
   content: unknown
+  sources: TraceSource[] | null
   tokens_used: number | null
   started_at: Date
   completed_at: Date | null
@@ -58,6 +48,7 @@ export interface AgentSession {
   triggerMessageId: string
   status: SessionStatus
   currentStep: number
+  currentStepType: StepType | null
   serverId: string | null
   heartbeatAt: Date | null
   responseMessageId: string | null
@@ -74,6 +65,7 @@ export interface AgentSessionStep {
   stepNumber: number
   stepType: StepType
   content: unknown
+  sources: TraceSource[] | null
   tokensUsed: number | null
   startedAt: Date
   completedAt: Date | null
@@ -95,7 +87,9 @@ export interface InsertStepParams {
   stepNumber: number
   stepType: StepType
   content?: unknown
+  sources?: TraceSource[]
   tokensUsed?: number
+  startedAt: Date
 }
 
 // Mappers
@@ -107,6 +101,7 @@ function mapRowToSession(row: SessionRow): AgentSession {
     triggerMessageId: row.trigger_message_id,
     status: row.status as SessionStatus,
     currentStep: row.current_step,
+    currentStepType: row.current_step_type as StepType | null,
     serverId: row.server_id,
     heartbeatAt: row.heartbeat_at,
     responseMessageId: row.response_message_id,
@@ -125,6 +120,7 @@ function mapRowToStep(row: StepRow): AgentSessionStep {
     stepNumber: row.step_number,
     stepType: row.step_type as StepType,
     content: row.content,
+    sources: row.sources,
     tokensUsed: row.tokens_used,
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -133,14 +129,14 @@ function mapRowToStep(row: StepRow): AgentSessionStep {
 
 const SESSION_SELECT_FIELDS = `
   id, stream_id, persona_id, trigger_message_id,
-  status, current_step, server_id, heartbeat_at,
+  status, current_step, current_step_type, server_id, heartbeat_at,
   response_message_id, error, last_seen_sequence,
   sent_message_ids, created_at, completed_at
 `
 
 const STEP_SELECT_FIELDS = `
   id, session_id, step_number, step_type,
-  content, tokens_used, started_at, completed_at
+  content, sources, tokens_used, started_at, completed_at
 `
 
 export const AgentSessionRepository = {
@@ -277,6 +273,20 @@ export const AgentSessionRepository = {
   },
 
   /**
+   * Update the current step type for a session.
+   * Used for cross-stream activity display ("Ariadne is thinking...").
+   */
+  async updateCurrentStepType(db: Querier, id: string, stepType: StepType | null): Promise<void> {
+    await db.query(
+      sql`
+        UPDATE agent_sessions
+        SET current_step_type = ${stepType}, heartbeat_at = NOW()
+        WHERE id = ${id}
+      `
+    )
+  },
+
+  /**
    * Find sessions that are running but have stale heartbeats.
    * These are candidates for recovery/retry.
    */
@@ -367,6 +377,7 @@ export const AgentSessionRepository = {
           last_seen_sequence = ${params.lastSeenSequence.toString()},
           response_message_id = ${params.responseMessageId ?? null},
           sent_message_ids = ${params.sentMessageIds ?? null},
+          current_step_type = NULL,
           completed_at = NOW()
         WHERE id = ${id}
         RETURNING ${sql.raw(SESSION_SELECT_FIELDS)}
@@ -381,14 +392,16 @@ export const AgentSessionRepository = {
     const result = await db.query<StepRow>(
       sql`
         INSERT INTO agent_session_steps (
-          id, session_id, step_number, step_type, content, tokens_used
+          id, session_id, step_number, step_type, content, sources, tokens_used, started_at
         ) VALUES (
           ${params.id},
           ${params.sessionId},
           ${params.stepNumber},
           ${params.stepType},
           ${params.content ? JSON.stringify(params.content) : null},
-          ${params.tokensUsed ?? null}
+          ${params.sources ? JSON.stringify(params.sources) : null},
+          ${params.tokensUsed ?? null},
+          ${params.startedAt}
         )
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `

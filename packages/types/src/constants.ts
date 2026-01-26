@@ -168,3 +168,44 @@ export const AgentTriggers = {
   MENTION: "mention",
   COMPANION: "companion",
 } as const satisfies Record<string, AgentTrigger>
+
+// Agent session event types (stream events for session lifecycle)
+export const AGENT_SESSION_EVENT_TYPES = [
+  "agent_session:started",
+  "agent_session:completed",
+  "agent_session:failed",
+] as const
+export type AgentSessionEventType = (typeof AGENT_SESSION_EVENT_TYPES)[number]
+
+// Agent step types (semantic - frontend maps to display labels)
+export const AGENT_STEP_TYPES = [
+  "thinking",
+  "web_search",
+  "visit_page",
+  "workspace_search",
+  "message_sent",
+  "tool_call",
+  "tool_error",
+] as const
+export type AgentStepType = (typeof AGENT_STEP_TYPES)[number]
+
+export const AgentStepTypes = {
+  THINKING: "thinking",
+  WEB_SEARCH: "web_search",
+  VISIT_PAGE: "visit_page",
+  WORKSPACE_SEARCH: "workspace_search",
+  MESSAGE_SENT: "message_sent",
+  TOOL_CALL: "tool_call",
+  TOOL_ERROR: "tool_error",
+} as const satisfies Record<string, AgentStepType>
+
+// Agent session statuses
+export const AGENT_SESSION_STATUSES = ["pending", "running", "completed", "failed"] as const
+export type AgentSessionStatus = (typeof AGENT_SESSION_STATUSES)[number]
+
+export const AgentSessionStatuses = {
+  PENDING: "pending",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const satisfies Record<string, AgentSessionStatus>

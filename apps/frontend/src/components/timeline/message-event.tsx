@@ -1,12 +1,12 @@
 import { type ReactNode, useRef, useEffect } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Link } from "react-router-dom"
-import { MessageSquareReply } from "lucide-react"
+import { MessageSquareReply, Sparkles } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { usePendingMessages, usePanel, createDraftPanelId } from "@/contexts"
+import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
 import { useActors } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
@@ -19,6 +19,7 @@ interface MessagePayload {
   attachments?: AttachmentSummary[]
   replyCount?: number
   threadId?: string
+  sessionId?: string
 }
 
 interface MessageEventProps {
@@ -117,6 +118,7 @@ function SentMessageEvent({
   isHighlighted,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
+  const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -169,18 +171,27 @@ function SentMessageEvent({
       actorInitials={actorInitials}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
-        // Only show the icon button when thread exists (to open it)
-        // For messages without threads, we show "Reply in thread" text in footer on hover
-        !hideActions &&
-        !isParentOfCurrentThread &&
-        threadId && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-            <Link
-              to={getPanelUrl(threadId)}
-              className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
-            >
-              <MessageSquareReply className="h-4 w-4" />
-            </Link>
+        !hideActions && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto flex items-center gap-1">
+            {/* Trace link for AI messages with sessionId */}
+            {event.actorType === "persona" && payload.sessionId && (
+              <Link
+                to={getTraceUrl(payload.sessionId, payload.messageId)}
+                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                title="View agent trace"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Link>
+            )}
+            {/* Reply in thread button (only when thread exists) */}
+            {!isParentOfCurrentThread && threadId && (
+              <Link
+                to={getPanelUrl(threadId)}
+                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
+              >
+                <MessageSquareReply className="h-4 w-4" />
+              </Link>
+            )}
           </div>
         )
       }

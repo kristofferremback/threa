@@ -1,6 +1,11 @@
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
 import type { StructuredToolInterface } from "@langchain/core/tools"
-import { createCompanionGraph, toLangChainMessages, type CompanionGraphCallbacks } from "./companion-graph"
+import {
+  createCompanionGraph,
+  toLangChainMessages,
+  type CompanionGraphCallbacks,
+  type RecordStepParams,
+} from "./companion-graph"
 import {
   createSendMessageTool,
   createWebSearchTool,
@@ -21,6 +26,9 @@ import { getCostTrackingCallbacks } from "../lib/ai/ai"
 import { getDebugCallbacks } from "../lib/ai/debug-callback"
 import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
+
+// Re-export for consumers
+export type { RecordStepParams }
 
 const MAX_MESSAGES = 5
 
@@ -88,6 +96,8 @@ export interface ResponseGeneratorCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Optional workspace search callbacks (required if search tools are enabled) */
   search?: SearchToolsCallbacks
+  /** Optional callback to record steps in the agent trace */
+  recordStep?: (params: RecordStepParams) => Promise<void>
 }
 
 /**
@@ -209,6 +219,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
         return result
       },
       runResearcher,
+      recordStep: callbacks.recordStep,
     }
 
     // Parse model for metadata

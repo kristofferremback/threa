@@ -219,6 +219,7 @@ export async function startServer(): Promise<ServerInstance> {
     authorType: "user" | "persona"
     content: string
     sources?: { title: string; url: string }[]
+    sessionId?: string
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -230,6 +231,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentJson,
       contentMarkdown,
       sources: params.sources,
+      sessionId: params.sessionId,
     })
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)

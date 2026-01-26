@@ -65,6 +65,17 @@ export {
   AGENT_TRIGGERS,
   type AgentTrigger,
   AgentTriggers,
+  // Agent session events
+  AGENT_SESSION_EVENT_TYPES,
+  type AgentSessionEventType,
+  // Agent step types
+  AGENT_STEP_TYPES,
+  type AgentStepType,
+  AgentStepTypes,
+  // Agent session statuses
+  AGENT_SESSION_STATUSES,
+  type AgentSessionStatus,
+  AgentSessionStatuses,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -231,3 +242,17 @@ export {
   // API types
   type UpdateUserPreferencesInput,
 } from "./preferences"
+
+// Agent trace types
+export {
+  TRACE_SOURCE_TYPES,
+  type TraceSourceType,
+  type TraceSource,
+  type AgentSessionStep,
+  type AgentSession,
+  type AgentSessionWithSteps,
+  type AgentActivityUpdate,
+  type AgentSessionStartedPayload,
+  type AgentSessionCompletedPayload,
+  type AgentSessionFailedPayload,
+} from "./agent-trace"

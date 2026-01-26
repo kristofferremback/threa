@@ -17,7 +17,8 @@ import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
-import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
+import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
+import { stepId } from "../lib/id"
 import {
   isToolEnabled,
   type SendMessageInputWithSources,
@@ -192,6 +193,7 @@ export interface PersonaAgentDeps {
     authorType: AuthorType
     content: string
     sources?: SourceItem[]
+    sessionId?: string
   }) => Promise<{ id: string }>
   createThread: (params: {
     workspaceId: string
@@ -371,6 +373,7 @@ export class PersonaAgent {
             authorType: AuthorTypes.PERSONA,
             content: msgInput.content,
             sources: msgInput.sources,
+            sessionId: session.id,
           })
           return { messageId: message.id, content: msgInput.content }
         }
@@ -488,6 +491,9 @@ export class PersonaAgent {
           }
         }
 
+        // Track step numbers for the session
+        let stepNumber = 0
+
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
@@ -510,6 +516,21 @@ export class PersonaAgent {
           },
 
           search: searchCallbacks,
+
+          recordStep: async (params: RecordStepParams) => {
+            stepNumber++
+            await AgentSessionRepository.insertStep(db, {
+              id: stepId(),
+              sessionId: session.id,
+              stepNumber,
+              stepType: params.stepType,
+              content: params.content,
+              sources: params.sources,
+              startedAt: new Date(),
+            })
+            // Also update the current step type on the session for real-time display
+            await AgentSessionRepository.updateCurrentStepType(db, session.id, params.stepType)
+          },
         }
 
         // Format messages with timestamps if temporal context is available

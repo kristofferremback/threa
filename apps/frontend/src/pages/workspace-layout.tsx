@@ -15,10 +15,13 @@ import {
   CoordinatedLoadingGate,
   MainContentGate,
   SidebarProvider,
+  TraceProvider,
+  useTrace,
 } from "@/contexts"
 import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts, useMentionables } from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
+import { TraceDialog } from "@/components/trace"
 import { ApiError } from "@/api/client"
 
 interface WorkspaceKeyboardHandlerProps {
@@ -51,6 +54,16 @@ function WorkspaceKeyboardHandler({
   })
 
   return <>{children}</>
+}
+
+function TraceDialogContainer() {
+  const { isOpen } = useTrace()
+
+  if (!isOpen) {
+    return null
+  }
+
+  return <TraceDialog />
 }
 
 export function WorkspaceLayout() {
@@ -111,23 +124,26 @@ export function WorkspaceLayout() {
               >
                 <QuickSwitcherProvider openSwitcher={openSwitcher}>
                   <PanelProvider>
-                    <SidebarProvider>
-                      <CoordinatedLoadingGate>
-                        <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
-                          <MainContentGate>
-                            <Outlet />
-                          </MainContentGate>
-                        </AppShell>
-                      </CoordinatedLoadingGate>
-                    </SidebarProvider>
-                    <QuickSwitcher
-                      workspaceId={workspaceId}
-                      open={switcherOpen}
-                      onOpenChange={setSwitcherOpen}
-                      initialMode={switcherMode}
-                    />
-                    <SettingsDialog />
-                    <Toaster />
+                    <TraceProvider>
+                      <SidebarProvider>
+                        <CoordinatedLoadingGate>
+                          <AppShell sidebar={<Sidebar workspaceId={workspaceId} />}>
+                            <MainContentGate>
+                              <Outlet />
+                            </MainContentGate>
+                          </AppShell>
+                        </CoordinatedLoadingGate>
+                      </SidebarProvider>
+                      <QuickSwitcher
+                        workspaceId={workspaceId}
+                        open={switcherOpen}
+                        onOpenChange={setSwitcherOpen}
+                        initialMode={switcherMode}
+                      />
+                      <SettingsDialog />
+                      <TraceDialogContainer />
+                      <Toaster />
+                    </TraceProvider>
                   </PanelProvider>
                 </QuickSwitcherProvider>
               </WorkspaceKeyboardHandler>

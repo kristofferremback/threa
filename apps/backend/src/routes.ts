@@ -15,6 +15,7 @@ import { createUserPreferencesHandlers } from "./handlers/user-preferences-handl
 import { createAIUsageHandlers } from "./handlers/ai-usage-handlers"
 import { createDebugHandlers } from "./handlers/debug-handlers"
 import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
+import { createAgentSessionHandlers } from "./handlers/agent-session-handlers"
 import { errorHandler } from "./lib/error-handler"
 import type { AuthService } from "./services/auth-service"
 import { StubAuthService } from "./services/auth-service.stub"
@@ -87,6 +88,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const preferences = createUserPreferencesHandlers({ userPreferencesService })
   const aiUsage = createAIUsageHandlers({ pool })
   const debug = createDebugHandlers({ pool, poolMonitor })
+  const agentSession = createAgentSessionHandlers({ pool })
 
   // Health check endpoint - no auth required
   app.get("/health", debug.health)
@@ -174,6 +176,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
   app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
+
+  // Agent Sessions (trace viewing)
+  app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
 
   // Prometheus metrics endpoint (unauthenticated for scraping)
   app.get("/metrics", debug.metrics)
