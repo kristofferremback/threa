@@ -135,6 +135,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
   app.post("/api/workspaces/:workspaceId/streams/read-all", ...authed, workspace.markAllAsRead)
   app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
+  app.patch("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.update)
   app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
   app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
   app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
