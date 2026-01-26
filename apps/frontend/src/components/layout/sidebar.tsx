@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
-import { getThreadDisplayName } from "@/components/thread/breadcrumb-helpers"
+import { getThreadDisplayName, getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import {
   useWorkspaceBootstrap,
   useCreateStream,
@@ -62,6 +62,12 @@ const URGENCY_COLORS = {
   quiet: "transparent", // Hidden when no activity
   ai: "hsl(45 100% 50%)", // Bright gold/amber
 } as const
+
+const BADGE_CONFIG: Record<string, { icon: typeof Hash; color: string }> = {
+  channel: { icon: Hash, color: "text-[hsl(200_60%_50%)]" },
+  scratchpad: { icon: FileEdit, color: "text-primary" },
+  dm: { icon: User, color: "text-muted-foreground" },
+}
 
 /** Smart view section configuration - single source of truth for section behavior */
 const SMART_SECTIONS = {
@@ -190,6 +196,97 @@ function useUrgencyTracking(
 
     return () => setUrgencyBlock(streamId, null)
   }, [streamId, urgency, scrollContainerRef, sidebarHeight, scrollContainerOffset, setUrgencyBlock, itemRef])
+}
+
+// ============================================================================
+// Stream Item Sub-Components
+// ============================================================================
+
+function UrgencyStrip({ urgency }: { urgency: UrgencyLevel }) {
+  return (
+    <div
+      className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
+      style={{ backgroundColor: URGENCY_COLORS[urgency] }}
+    />
+  )
+}
+
+interface StreamItemAvatarProps {
+  icon: ReactNode
+  className: string
+  badge?: { icon: typeof Hash; color: string } | null
+}
+
+function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarProps) {
+  return (
+    <div
+      className={cn(
+        "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 relative",
+        badge ? "bg-muted" : className
+      )}
+    >
+      {badge ? <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" /> : icon}
+      {badge && (
+        <div
+          className={cn(
+            "absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-background border border-border flex items-center justify-center",
+            badge.color
+          )}
+        >
+          <badge.icon className="h-2 w-2" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface StreamItemPreviewProps {
+  preview: StreamWithPreview["lastMessagePreview"]
+  getActorName: (actorId: string | null, actorType: "user" | "persona" | null) => string
+  compact: boolean
+  showPreviewOnHover: boolean
+}
+
+function StreamItemPreview({ preview, getActorName, compact, showPreviewOnHover }: StreamItemPreviewProps) {
+  if (!preview?.content) return null
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 text-xs text-muted-foreground",
+        compact && !showPreviewOnHover && "hidden",
+        compact && showPreviewOnHover && "hidden group-hover:flex"
+      )}
+    >
+      <span className="truncate flex-1">
+        {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
+      </span>
+      <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
+    </div>
+  )
+}
+
+function StreamItemContextMenu({ children }: { children: ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 // ============================================================================
@@ -516,7 +613,7 @@ function StreamItem({
     if (stream.type === StreamTypes.CHANNEL) {
       return {
         icon: <Hash className="h-3.5 w-3.5" />,
-        className: "bg-[hsl(200_60%_50%)]/10 text-[hsl(200_60%_50%)]",
+        className: "bg-muted text-[hsl(200_60%_50%)]",
       }
     }
     if (stream.type === StreamTypes.SCRATCHPAD) {
@@ -539,13 +636,22 @@ function StreamItem({
   }
 
   const avatar = getAvatar()
-  // Use getThreadDisplayName for threads, otherwise use slug or displayName
   const name =
     stream.type === StreamTypes.THREAD
-      ? getThreadDisplayName(stream, allStreams)
+      ? getThreadDisplayName(stream)
       : stream.slug
         ? `#${stream.slug}`
         : stream.displayName || "Untitled"
+
+  const threadRootContext = stream.type === StreamTypes.THREAD ? getThreadRootContext(stream, allStreams) : null
+
+  const threadBadge = (() => {
+    if (stream.type !== StreamTypes.THREAD || !stream.rootStreamId) return null
+    const rootStream = allStreams.find((s) => s.id === stream.rootStreamId)
+    if (!rootStream?.type) return null
+    const config = BADGE_CONFIG[rootStream.type]
+    return config ?? null
+  })()
 
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
@@ -573,66 +679,36 @@ function StreamItem({
         hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10"
       )}
     >
-      {/* Inline urgency strip - left edge indicator */}
-      {showUrgencyStrip && (
-        <div
-          className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
-          style={{ backgroundColor: URGENCY_COLORS[stream.urgency] }}
-        />
-      )}
+      {showUrgencyStrip && <UrgencyStrip urgency={stream.urgency} />}
 
-      {/* Main content wrapper */}
       <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-        {/* Avatar */}
-        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", avatar.className)}>
-          {avatar.icon}
-        </div>
+        <StreamItemAvatar icon={avatar.icon} className={avatar.className} badge={threadBadge} />
 
-        {/* Content */}
         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
           <div className="flex items-center gap-2 pr-8">
-            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>{name}</span>
+            <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
+              {name}
+              {threadRootContext && (
+                <span className="font-normal text-muted-foreground/60 text-xs"> · {threadRootContext}</span>
+              )}
+            </span>
             <UnreadBadge count={unreadCount} />
           </div>
-          {preview && preview.content && (
-            <div
-              className={cn(
-                "flex items-center gap-1.5 text-xs text-muted-foreground",
-                compact && !showPreviewOnHover && "hidden",
-                compact && showPreviewOnHover && "hidden group-hover:flex"
-              )}
-            >
-              <span className="truncate flex-1">
-                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
-              </span>
-              <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
-            </div>
-          )}
+          <StreamItemPreview
+            preview={preview}
+            getActorName={getActorName}
+            compact={compact}
+            showPreviewOnHover={showPreviewOnHover}
+          />
         </div>
       </div>
 
-      {/* Context menu - top-right positioned */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem disabled className="text-muted-foreground">
-            <Pencil className="mr-2 h-4 w-4" />
-            Settings (coming soon)
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <StreamItemContextMenu>
+        <DropdownMenuItem disabled className="text-muted-foreground">
+          <Pencil className="mr-2 h-4 w-4" />
+          Settings (coming soon)
+        </DropdownMenuItem>
+      </StreamItemContextMenu>
     </Link>
   )
 }
@@ -735,22 +811,11 @@ function ScratchpadItem({
         hasUnread && !isActive && "bg-primary/5 hover:bg-primary/10"
       )}
     >
-      {/* Inline urgency strip - left edge indicator */}
-      {showUrgencyStrip && (
-        <div
-          className="w-1 flex-shrink-0 rounded-l-lg transition-colors duration-300"
-          style={{ backgroundColor: URGENCY_COLORS[streamWithPreview.urgency] }}
-        />
-      )}
+      {showUrgencyStrip && <UrgencyStrip urgency={streamWithPreview.urgency} />}
 
-      {/* Main content wrapper */}
       <div className="flex items-center gap-2.5 flex-1 min-w-0 px-2 py-2">
-        {/* Avatar */}
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary">
-          <FileEdit className="h-3.5 w-3.5" />
-        </div>
+        <StreamItemAvatar icon={<FileEdit className="h-3.5 w-3.5" />} className="bg-primary/10 text-primary" />
 
-        {/* Content */}
         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
           <div className="flex items-center gap-2 pr-8">
             <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>
@@ -759,63 +824,39 @@ function ScratchpadItem({
             </span>
             <UnreadBadge count={unreadCount} />
           </div>
-          {preview && preview.content && (
-            <div
-              className={cn(
-                "flex items-center gap-1.5 text-xs text-muted-foreground",
-                compact && !showPreviewOnHover && "hidden",
-                compact && showPreviewOnHover && "hidden group-hover:flex"
-              )}
-            >
-              <span className="truncate flex-1">
-                {getActorName(preview.authorId, preview.authorType)}: {truncateContent(preview.content)}
-              </span>
-              <RelativeTime date={preview.createdAt} className="flex-shrink-0" />
-            </div>
-          )}
+          <StreamItemPreview
+            preview={preview}
+            getActorName={getActorName}
+            compact={compact}
+            showPreviewOnHover={showPreviewOnHover}
+          />
         </div>
       </div>
 
-      {/* Context menu - top-right positioned */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-1 top-1 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              handleStartRename()
-            }}
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              handleArchive()
-            }}
-            className="text-destructive"
-          >
-            <Archive className="mr-2 h-4 w-4" />
-            {isDraft ? "Delete" : "Archive"}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <StreamItemContextMenu>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            handleStartRename()
+          }}
+        >
+          <Pencil className="mr-2 h-4 w-4" />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            handleArchive()
+          }}
+          className="text-destructive"
+        >
+          <Archive className="mr-2 h-4 w-4" />
+          {isDraft ? "Delete" : "Archive"}
+        </DropdownMenuItem>
+      </StreamItemContextMenu>
     </Link>
   )
 }

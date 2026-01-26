@@ -1,59 +1,63 @@
-import { useStreamBootstrap } from "./use-streams"
+import { useMemo } from "react"
+import { useWorkspaceBootstrap } from "./use-workspaces"
 
 interface ThreadAncestor {
   id: string
   displayName: string | null
   slug: string | null
   type: string
+  parentStreamId: string | null
 }
 
 /**
- * Fetches ancestor streams from current thread to root
- * Returns array from root to current (excluding current)
+ * Builds the full ancestor chain from current thread to root.
+ * Uses cached workspace streams to walk parentStreamId chain.
+ * Returns array ordered from root to immediate parent (excluding current).
  */
 export function useThreadAncestors(
   workspaceId: string,
   currentStreamId: string,
   parentStreamId: string | null,
-  rootStreamId: string | null
+  _rootStreamId: string | null
 ): {
   ancestors: ThreadAncestor[]
   isLoading: boolean
 } {
-  // Fetch root stream
-  const { data: rootBootstrap, isLoading: rootLoading } = useStreamBootstrap(workspaceId, rootStreamId ?? "", {
-    enabled: !!rootStreamId && rootStreamId !== currentStreamId,
-  })
+  const { data: bootstrap, isLoading } = useWorkspaceBootstrap(workspaceId)
 
-  // Fetch parent stream (if different from root)
-  const { data: parentBootstrap, isLoading: parentLoading } = useStreamBootstrap(workspaceId, parentStreamId ?? "", {
-    enabled: !!parentStreamId && parentStreamId !== rootStreamId && parentStreamId !== currentStreamId,
-  })
+  const ancestors = useMemo(() => {
+    if (!bootstrap?.streams || !parentStreamId) {
+      return []
+    }
 
-  const isLoading = rootLoading || parentLoading
+    // Build a lookup map for O(1) access
+    const streamMap = new Map(bootstrap.streams.map((s) => [s.id, s]))
 
-  // Build ancestor array (from root to current parent)
-  const ancestors: ThreadAncestor[] = []
+    // Walk up the parent chain starting from parentStreamId
+    const chain: ThreadAncestor[] = []
+    const visited = new Set<string>()
+    let currentId: string | null = parentStreamId
 
-  // Add root stream first
-  if (rootBootstrap?.stream) {
-    ancestors.push({
-      id: rootBootstrap.stream.id,
-      displayName: rootBootstrap.stream.displayName,
-      slug: rootBootstrap.stream.slug,
-      type: rootBootstrap.stream.type,
-    })
-  }
+    while (currentId && currentId !== currentStreamId) {
+      if (visited.has(currentId)) break
+      visited.add(currentId)
 
-  // Add parent stream if different from root
-  if (parentBootstrap?.stream && parentStreamId !== rootStreamId) {
-    ancestors.push({
-      id: parentBootstrap.stream.id,
-      displayName: parentBootstrap.stream.displayName,
-      slug: parentBootstrap.stream.slug,
-      type: parentBootstrap.stream.type,
-    })
-  }
+      const stream = streamMap.get(currentId)
+      if (!stream) break
+
+      chain.unshift({
+        id: stream.id,
+        displayName: stream.displayName,
+        slug: stream.slug,
+        type: stream.type,
+        parentStreamId: stream.parentStreamId,
+      })
+
+      currentId = stream.parentStreamId
+    }
+
+    return chain
+  }, [bootstrap?.streams, parentStreamId, currentStreamId])
 
   return { ancestors, isLoading }
 }

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ItemList, type QuickSwitcherItem } from "@/components/quick-switcher"
 import { useWorkspaceBootstrap } from "@/hooks"
 import { StreamTypes } from "@threa/types"
-import { getThreadDisplayName } from "@/components/thread/breadcrumb-helpers"
+import { getThreadDisplayName, getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 
 export function ThreadsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -24,9 +24,12 @@ export function ThreadsPage() {
     if (!bootstrap?.streams) return []
 
     return threads.map((thread) => {
-      const displayName = getThreadDisplayName(thread, bootstrap.streams)
+      const displayName = getThreadDisplayName(thread)
       const preview = thread.lastMessagePreview
-      const description = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
+      const previewText = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
+
+      const rootContext = getThreadRootContext(thread, bootstrap.streams)
+      const description = rootContext ? `in ${rootContext} · ${previewText}` : previewText
 
       return {
         id: thread.id,

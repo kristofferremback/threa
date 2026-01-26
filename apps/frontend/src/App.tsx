@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth"
 import { QueryClientProvider, ServicesProvider, SocketProvider, PendingMessagesProvider } from "./contexts"
 import { usePendingMessageRetry } from "./hooks"
 import { router } from "./routes"
+import { TooltipProvider } from "./components/ui/tooltip"
 
 function PendingMessageRetryHandler() {
   usePendingMessageRetry()
@@ -16,8 +17,10 @@ export function App() {
         <ServicesProvider>
           <SocketProvider>
             <PendingMessagesProvider>
-              <PendingMessageRetryHandler />
-              <RouterProvider router={router} />
+              <TooltipProvider delayDuration={300}>
+                <PendingMessageRetryHandler />
+                <RouterProvider router={router} />
+              </TooltipProvider>
             </PendingMessagesProvider>
           </SocketProvider>
         </ServicesProvider>

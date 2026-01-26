@@ -63,8 +63,16 @@ describe("Stream Naming", () => {
       expect(needsAutoNaming(stream)).toBe(true)
     })
 
-    test("returns false for thread (excluded from auto-naming, see THR-63)", () => {
+    test("returns true for thread without displayName", () => {
       const stream = createMockStream({ type: "thread", displayName: null })
+      expect(needsAutoNaming(stream)).toBe(true)
+    })
+
+    test("returns false for thread with displayName", () => {
+      const stream = createMockStream({
+        type: "thread",
+        displayName: "Discussion Thread",
+      })
       expect(needsAutoNaming(stream)).toBe(false)
     })
 

@@ -1,4 +1,4 @@
-import { useSearchParams, Link, useParams } from "react-router-dom"
+import { useSearchParams, useParams } from "react-router-dom"
 import { useMemo, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
@@ -10,14 +10,6 @@ import {
   SidePanelContent,
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
 import {
   useStreamBootstrap,
   useDraftComposer,
@@ -35,7 +27,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
-import { AncestorBreadcrumbItem, getStreamBreadcrumbName } from "./breadcrumb-helpers"
+import { ResponsiveBreadcrumbs } from "./responsive-breadcrumbs"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import { serializeToMarkdown } from "@threa/prosemirror"
 
@@ -56,7 +48,6 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   // Get panel stream ID
   if (!panelId) return null
 
-  // Check if a stream is the main view stream (to avoid duplicating it in panel)
   const isMainViewStream = (streamId: string) => {
     return mainViewStreamId === streamId
   }
@@ -108,7 +99,6 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     workspaceId,
     draftKey,
     scopeId: draftInfo?.parentMessageId ?? "",
-    initialContent: "",
   })
 
   // Handle draft thread submission
@@ -161,8 +151,6 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
       )
 
       // Invalidate parent stream's bootstrap to refetch with updated reply counts
-      // This ensures that when navigating back via breadcrumbs, the parent shows
-      // the correct reply count for messages that now have nested threads
       queryClient.invalidateQueries({
         queryKey: streamKeys.bootstrap(workspaceId, draftInfo.parentStreamId),
       })
@@ -175,55 +163,41 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     }
   }, [draftInfo, composer, streamService, workspaceId, messageService, queryClient, openPanel])
 
+  // Build the full ancestor chain for draft breadcrumbs: hook ancestors + parent stream
+  const fullChain = useMemo(() => {
+    if (!draftInfo || !parentBootstrap?.stream) return []
+
+    const parentItem = {
+      id: draftInfo.parentStreamId,
+      displayName: parentBootstrap.stream.displayName,
+      slug: parentBootstrap.stream.slug,
+      type: parentBootstrap.stream.type,
+      parentStreamId: parentBootstrap.stream.parentStreamId,
+    }
+
+    return [...ancestors, parentItem]
+  }, [ancestors, parentBootstrap?.stream, draftInfo])
+
   return (
     <SidePanel>
       <SidePanelHeader className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {isDraft && parentBootstrap?.stream ? (
-          // Draft thread header with breadcrumbs
-          <div className="flex items-center gap-1 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+          // Draft thread header with responsive breadcrumbs
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Breadcrumb className="min-w-0">
-              <BreadcrumbList className="flex-nowrap">
-                {/* Ancestor breadcrumb items */}
-                {ancestors.map((ancestor) => (
-                  <AncestorBreadcrumbItem
-                    key={ancestor.id}
-                    stream={ancestor}
-                    isMainViewStream={isMainViewStream(ancestor.id)}
-                    onClosePanel={closePanel}
-                    getNavigationUrl={getPanelUrl}
-                  />
-                ))}
-                {/* Parent stream */}
-                <BreadcrumbItem className="max-w-[120px]">
-                  <BreadcrumbLink asChild>
-                    {isMainViewStream(draftInfo!.parentStreamId) ? (
-                      <button
-                        onClick={closePanel}
-                        className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
-                      >
-                        {getStreamBreadcrumbName(parentBootstrap.stream)}
-                      </button>
-                    ) : (
-                      <Link to={getPanelUrl(draftInfo!.parentStreamId)} className="truncate block">
-                        {getStreamBreadcrumbName(parentBootstrap.stream)}
-                      </Link>
-                    )}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                {/* Current draft */}
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="truncate">New thread</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
+            <ResponsiveBreadcrumbs
+              ancestors={fullChain}
+              currentLabel="New thread"
+              isMainViewStream={isMainViewStream}
+              onClosePanel={closePanel}
+              getNavigationUrl={getPanelUrl}
+            />
           </div>
         ) : isThread && stream ? (
-          <ThreadHeader workspaceId={workspaceId} stream={stream} onBack={onClose} inPanel />
+          <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
         ) : (
           <SidePanelTitle>{stream?.displayName || "Stream"}</SidePanelTitle>
         )}

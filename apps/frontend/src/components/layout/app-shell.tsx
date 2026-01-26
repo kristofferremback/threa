@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
 import { useSidebar, useQuickSwitcher } from "@/contexts"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl on Windows/Linux) */
@@ -17,50 +17,48 @@ function Topbar({ isPinned, onToggleSidebar }: TopbarProps) {
   const { openSwitcher } = useQuickSwitcher()
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="flex h-11 items-center border-b bg-background/80 backdrop-blur-sm">
-        {/* Left section - sidebar toggle */}
-        <div className="flex w-[100px] items-center px-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={onToggleSidebar}
-                aria-label={isPinned ? "Collapse sidebar" : "Pin sidebar"}
-              >
-                {isPinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{isPinned ? "Collapse sidebar" : "Pin sidebar"}</TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* Center section - placeholder for label tabs (future) */}
-        <div className="flex flex-1 items-center justify-center">
-          {/* Label tabs will go here when groups are implemented */}
-        </div>
-
-        {/* Right section - quick actions */}
-        <div className="flex w-[100px] items-center justify-end px-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1 px-2 text-xs text-muted-foreground"
-                onClick={() => openSwitcher("stream")}
-              >
-                <Command className="h-3 w-3" />
-                <span>K</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Quick switcher ({MOD_KEY}K)</TooltipContent>
-          </Tooltip>
-        </div>
+    <div className="flex h-11 items-center border-b bg-background/80 backdrop-blur-sm">
+      {/* Left section - sidebar toggle */}
+      <div className="flex w-[100px] items-center px-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onToggleSidebar}
+              aria-label={isPinned ? "Collapse sidebar" : "Pin sidebar"}
+            >
+              {isPinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{isPinned ? "Collapse sidebar" : "Pin sidebar"}</TooltipContent>
+        </Tooltip>
       </div>
-    </TooltipProvider>
+
+      {/* Center section - placeholder for label tabs (future) */}
+      <div className="flex flex-1 items-center justify-center">
+        {/* Label tabs will go here when groups are implemented */}
+      </div>
+
+      {/* Right section - quick actions */}
+      <div className="flex w-[100px] items-center justify-end px-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs text-muted-foreground"
+              onClick={() => openSwitcher("stream")}
+            >
+              <Command className="h-3 w-3" />
+              <span>K</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Quick switcher ({MOD_KEY}K)</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
   )
 }
 
