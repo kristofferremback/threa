@@ -1,0 +1,187 @@
+import { useRef, useState, useEffect, useMemo } from "react"
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { AncestorBreadcrumbItem } from "./breadcrumb-helpers"
+import { BreadcrumbEllipsisDropdown } from "./breadcrumb-ellipsis-dropdown"
+
+interface StreamInfo {
+  id: string
+  type: string
+  displayName: string | null
+  slug?: string | null
+  parentStreamId?: string | null
+}
+
+const BREAKPOINTS = {
+  /** Below: only current item */
+  MINIMAL: 200,
+  /** Below: root > current */
+  COMPACT: 300,
+  /** Below: root + 1 ancestor > current */
+  MEDIUM: 450,
+  /** Above: show all or root + 2 ancestors > current */
+  FULL: 600,
+}
+
+interface ResponsiveBreadcrumbsProps {
+  ancestors: StreamInfo[]
+  currentLabel: string
+  isMainViewStream: (streamId: string) => boolean
+  onClosePanel: () => void
+  getNavigationUrl: (streamId: string) => string
+  /** Show loading placeholder instead of ancestors */
+  isLoading?: boolean
+}
+
+export function ResponsiveBreadcrumbs({
+  ancestors,
+  currentLabel,
+  isMainViewStream,
+  onClosePanel,
+  getNavigationUrl,
+  isLoading = false,
+}: ResponsiveBreadcrumbsProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(BREAKPOINTS.FULL)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+
+    observer.observe(container)
+    setContainerWidth(container.offsetWidth)
+
+    return () => observer.disconnect()
+  }, [])
+
+  const maxVisibleAncestors = useMemo(() => {
+    if (containerWidth < BREAKPOINTS.MINIMAL) return 0
+    if (containerWidth < BREAKPOINTS.COMPACT) return 1
+    if (containerWidth < BREAKPOINTS.MEDIUM) return 2
+    if (containerWidth < BREAKPOINTS.FULL) return 3
+    return Infinity
+  }, [containerWidth])
+
+  const { ancestorMaxWidth, currentMaxWidth } = useMemo(() => {
+    const separatorWidth = 24
+    const visibleAncestorCount = Math.min(ancestors.length, maxVisibleAncestors)
+    const totalSeparators = visibleAncestorCount * separatorWidth
+    const available = Math.max(0, containerWidth - totalSeparators)
+
+    if (visibleAncestorCount === 0) {
+      return { ancestorMaxWidth: 0, currentMaxWidth: Math.min(available, 300) }
+    }
+
+    const currentShare = Math.min(200, Math.max(80, Math.floor(available * 0.5)))
+    const ancestorBudget = available - currentShare
+    const perAncestor = Math.max(40, Math.floor(ancestorBudget / visibleAncestorCount))
+
+    return {
+      ancestorMaxWidth: Math.min(perAncestor, 150),
+      currentMaxWidth: currentShare,
+    }
+  }, [containerWidth, ancestors.length, maxVisibleAncestors])
+
+  const renderAncestors = () => {
+    if (ancestors.length === 0) return null
+
+    // Smallest breakpoint: collapse all ancestors into ellipsis dropdown
+    if (maxVisibleAncestors === 0) {
+      return (
+        <BreadcrumbEllipsisDropdown
+          items={ancestors}
+          getNavigationUrl={getNavigationUrl}
+          isMainViewStream={isMainViewStream}
+          onClosePanel={onClosePanel}
+        />
+      )
+    }
+
+    if (ancestors.length <= maxVisibleAncestors) {
+      return ancestors.map((ancestor) => (
+        <AncestorBreadcrumbItem
+          key={ancestor.id}
+          stream={ancestor}
+          isMainViewStream={isMainViewStream(ancestor.id)}
+          onClosePanel={onClosePanel}
+          getNavigationUrl={getNavigationUrl}
+          maxWidth={ancestorMaxWidth}
+        />
+      ))
+    }
+
+    const first = ancestors[0]
+    const tailCount = Math.max(1, maxVisibleAncestors - 1)
+    const hidden = ancestors.slice(1, ancestors.length - tailCount)
+    const tail = ancestors.slice(ancestors.length - tailCount)
+
+    return (
+      <>
+        <AncestorBreadcrumbItem
+          stream={first}
+          isMainViewStream={isMainViewStream(first.id)}
+          onClosePanel={onClosePanel}
+          getNavigationUrl={getNavigationUrl}
+          maxWidth={ancestorMaxWidth}
+        />
+        {hidden.length > 0 && (
+          <BreadcrumbEllipsisDropdown
+            items={hidden}
+            getNavigationUrl={getNavigationUrl}
+            isMainViewStream={isMainViewStream}
+            onClosePanel={onClosePanel}
+          />
+        )}
+        {tail.map((ancestor) => (
+          <AncestorBreadcrumbItem
+            key={ancestor.id}
+            stream={ancestor}
+            isMainViewStream={isMainViewStream(ancestor.id)}
+            onClosePanel={onClosePanel}
+            getNavigationUrl={getNavigationUrl}
+            maxWidth={ancestorMaxWidth}
+          />
+        ))}
+      </>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="min-w-0 flex-1 overflow-hidden">
+      <Breadcrumb>
+        <BreadcrumbList className="flex-nowrap">
+          {isLoading ? (
+            <>
+              <BreadcrumbItem>
+                <span className="text-muted-foreground text-sm">Loading...</span>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+            </>
+          ) : (
+            renderAncestors()
+          )}
+          <BreadcrumbItem style={{ maxWidth: currentMaxWidth }}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <BreadcrumbPage className="truncate">{currentLabel}</BreadcrumbPage>
+              </TooltipTrigger>
+              <TooltipContent>{currentLabel}</TooltipContent>
+            </Tooltip>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+    </div>
+  )
+}
