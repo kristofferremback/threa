@@ -35,9 +35,13 @@ export function useThreadAncestors(
 
     // Walk up the parent chain starting from parentStreamId
     const chain: ThreadAncestor[] = []
+    const visited = new Set<string>()
     let currentId: string | null = parentStreamId
 
     while (currentId && currentId !== currentStreamId) {
+      if (visited.has(currentId)) break
+      visited.add(currentId)
+
       const stream = streamMap.get(currentId)
       if (!stream) break
 
@@ -49,7 +53,6 @@ export function useThreadAncestors(
         parentStreamId: stream.parentStreamId,
       })
 
-      // Move up to parent
       currentId = stream.parentStreamId
     }
 

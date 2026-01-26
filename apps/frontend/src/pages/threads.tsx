@@ -24,7 +24,7 @@ export function ThreadsPage() {
     if (!bootstrap?.streams) return []
 
     return threads.map((thread) => {
-      const displayName = getThreadDisplayName(thread, bootstrap.streams)
+      const displayName = getThreadDisplayName(thread)
       const preview = thread.lastMessagePreview
       const previewText = preview ? `${preview.authorId}: ${preview.content ? "..." : "No messages"}` : "No messages"
 

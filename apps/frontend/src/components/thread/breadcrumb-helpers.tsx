@@ -22,10 +22,7 @@ interface StreamForLookup {
  * If the thread has its own displayName (AI-generated), use that.
  * Otherwise, returns "Thread". Root context is shown separately via getThreadRootContext().
  */
-export function getThreadDisplayName(
-  thread: { displayName?: string | null; rootStreamId: string | null },
-  _allStreams: StreamForLookup[]
-): string {
+export function getThreadDisplayName(thread: { displayName?: string | null; rootStreamId: string | null }): string {
   return thread.displayName || "Thread"
 }
 
@@ -105,6 +102,7 @@ export function AncestorBreadcrumbItem({
               <BreadcrumbLink asChild>
                 <button
                   onClick={onClosePanel}
+                  aria-label={`Return to ${displayName}`}
                   className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
                 >
                   {displayName}

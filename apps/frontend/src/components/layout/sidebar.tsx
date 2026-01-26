@@ -638,7 +638,7 @@ function StreamItem({
   const avatar = getAvatar()
   const name =
     stream.type === StreamTypes.THREAD
-      ? getThreadDisplayName(stream, allStreams)
+      ? getThreadDisplayName(stream)
       : stream.slug
         ? `#${stream.slug}`
         : stream.displayName || "Untitled"

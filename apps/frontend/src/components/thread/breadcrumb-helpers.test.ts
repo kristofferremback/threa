@@ -3,17 +3,17 @@ import { getThreadDisplayName, getThreadRootContext, getStreamBreadcrumbName } f
 
 describe("getThreadDisplayName", () => {
   test("returns displayName when set", () => {
-    expect(getThreadDisplayName({ displayName: "Fixing the auth bug", rootStreamId: "stream_123" }, [])).toBe(
+    expect(getThreadDisplayName({ displayName: "Fixing the auth bug", rootStreamId: "stream_123" })).toBe(
       "Fixing the auth bug"
     )
   })
 
   test("returns 'Thread' when displayName is null", () => {
-    expect(getThreadDisplayName({ displayName: null, rootStreamId: "stream_123" }, [])).toBe("Thread")
+    expect(getThreadDisplayName({ displayName: null, rootStreamId: "stream_123" })).toBe("Thread")
   })
 
   test("returns 'Thread' when displayName is undefined", () => {
-    expect(getThreadDisplayName({ rootStreamId: "stream_123" }, [])).toBe("Thread")
+    expect(getThreadDisplayName({ rootStreamId: "stream_123" })).toBe("Thread")
   })
 })
 
