@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react"
 import { Link, useParams } from "react-router-dom"
-import { ChevronLeft } from "lucide-react"
+import { ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Breadcrumb,
@@ -25,8 +25,6 @@ interface ThreadHeaderStream {
 interface ThreadHeaderProps {
   workspaceId: string
   stream: ThreadHeaderStream
-  /** Custom back action. If not provided, navigates to parent stream. */
-  onBack?: () => void
   /** Whether this header is in a panel (true) or main view (false). Affects navigation behavior. */
   inPanel?: boolean
 }
@@ -43,7 +41,7 @@ const BREAKPOINTS = {
   FULL: 600,
 }
 
-export function ThreadHeader({ workspaceId, stream, onBack, inPanel = false }: ThreadHeaderProps) {
+export function ThreadHeader({ workspaceId, stream, inPanel = false }: ThreadHeaderProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(BREAKPOINTS.FULL)
 
@@ -78,7 +76,7 @@ export function ThreadHeader({ workspaceId, stream, onBack, inPanel = false }: T
     return []
   }, [hookAncestors, stream.rootStreamId, bootstrap?.streams])
 
-  const { getPanelUrl, closePanel } = usePanel()
+  const { openPanel, getPanelUrl, closePanel } = usePanel()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
 
   // Measure container width for responsive breadcrumbs
@@ -108,22 +106,52 @@ export function ThreadHeader({ workspaceId, stream, onBack, inPanel = false }: T
     return inPanel && mainViewStreamId === streamId
   }
 
-  const backButton = onBack ? (
-    <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onBack}>
-      <ChevronLeft className="h-4 w-4" />
-    </Button>
-  ) : stream.parentStreamId ? (
-    isMainViewStream(stream.parentStreamId) ? (
-      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={closePanel}>
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-    ) : (
-      <Link to={getNavigationUrl(stream.parentStreamId)}>
-        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-      </Link>
-    )
+  // Determine parent stream type for tooltip
+  const parentType = ancestors.length > 0 ? ancestors[ancestors.length - 1].type : null
+  const upTooltip = (() => {
+    switch (parentType) {
+      case "channel":
+        return "Show channel"
+      case "scratchpad":
+        return "Show scratchpad"
+      case "dm":
+        return "Show DM"
+      case "thread":
+        return "Show parent thread"
+      default:
+        return "Show parent"
+    }
+  })()
+
+  const handleGoUp = () => {
+    if (!stream.parentStreamId) return
+    if (inPanel) {
+      // If parent is already the main view, just close the panel
+      if (isMainViewStream(stream.parentStreamId)) {
+        closePanel()
+      } else {
+        openPanel(stream.parentStreamId)
+      }
+    }
+  }
+
+  const upButton = stream.parentStreamId ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {inPanel ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleGoUp}>
+            <ChevronUp className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Link to={getNavigationUrl(stream.parentStreamId)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+          </Link>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{upTooltip}</TooltipContent>
+    </Tooltip>
   ) : null
 
   // Progressive reduction: how many ancestors can we show?
@@ -226,7 +254,7 @@ export function ThreadHeader({ workspaceId, stream, onBack, inPanel = false }: T
       ref={containerRef}
       className={`flex items-center gap-1 min-w-0 flex-1 overflow-hidden ${inPanel ? "pr-2" : ""}`}
     >
-      {backButton}
+      {upButton}
       <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
         <BreadcrumbList className="flex-nowrap">
           {showLoadingPlaceholder ? (

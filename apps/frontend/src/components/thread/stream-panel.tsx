@@ -325,7 +325,7 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
             </Breadcrumb>
           </div>
         ) : isThread && stream ? (
-          <ThreadHeader workspaceId={workspaceId} stream={stream} onBack={onClose} inPanel />
+          <ThreadHeader workspaceId={workspaceId} stream={stream} inPanel />
         ) : (
           <SidePanelTitle>{stream?.displayName || "Stream"}</SidePanelTitle>
         )}
