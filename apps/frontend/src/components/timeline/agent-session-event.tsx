@@ -183,7 +183,7 @@ export function AgentSessionEvent({ events }: AgentSessionEventProps) {
           <div className="font-medium" style={config.titleColor ? { color: config.titleColor } : undefined}>
             {config.title}
           </div>
-          {config.subtitle && <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle}</div>}
+          <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
         </div>
         <div className="text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           Show trace and sources →
