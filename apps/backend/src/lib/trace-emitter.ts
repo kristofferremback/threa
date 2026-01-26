@@ -19,7 +19,15 @@ interface TraceEmitterDeps {
 export class TraceEmitter {
   constructor(private readonly deps: TraceEmitterDeps) {}
 
-  forSession(params: { sessionId: string; workspaceId: string; streamId: string }): SessionTrace {
+  forSession(params: {
+    sessionId: string
+    workspaceId: string
+    streamId: string
+    triggerMessageId: string
+    personaName: string
+    /** For channel mentions: the channel stream ID for inline indicator progress events */
+    channelStreamId?: string
+  }): SessionTrace {
     return new SessionTrace(this.deps, params)
   }
 }
@@ -32,6 +40,7 @@ export class SessionTrace {
   private stepNumber = 0
   private readonly sessionRoom: string
   private readonly streamRoom: string
+  private readonly channelRoom: string | null
 
   constructor(
     private readonly deps: TraceEmitterDeps,
@@ -39,10 +48,14 @@ export class SessionTrace {
       sessionId: string
       workspaceId: string
       streamId: string
+      triggerMessageId: string
+      personaName: string
+      channelStreamId?: string
     }
   ) {
     this.sessionRoom = `ws:${params.workspaceId}:agent_session:${params.sessionId}`
     this.streamRoom = `ws:${params.workspaceId}:stream:${params.streamId}`
+    this.channelRoom = params.channelStreamId ? `ws:${params.workspaceId}:stream:${params.channelStreamId}` : null
   }
 
   /**
@@ -80,14 +93,22 @@ export class SessionTrace {
       },
     })
 
-    // Emit to stream room (lightweight, for timeline card)
-    this.deps.io.to(this.streamRoom).emit("agent_session:progress", {
+    // Emit to stream room (lightweight, for timeline card + trigger message indicator)
+    // When channelRoom is set, also emit to the channel for the inline indicator
+    const progressPayload = {
       workspaceId: this.params.workspaceId,
       streamId: this.params.streamId,
       sessionId: this.params.sessionId,
+      triggerMessageId: this.params.triggerMessageId,
+      personaName: this.params.personaName,
       stepCount: this.stepNumber,
       currentStepType: params.stepType,
-    })
+    }
+    let target = this.deps.io.to(this.streamRoom)
+    if (this.channelRoom) {
+      target = target.to(this.channelRoom)
+    }
+    target.emit("agent_session:progress", progressPayload)
 
     return new ActiveStep(this.deps, {
       stepId: id,
@@ -107,6 +128,25 @@ export class SessionTrace {
   notifyFailed(): void {
     this.deps.io.to(this.sessionRoom).emit("agent_session:failed", {
       sessionId: this.params.sessionId,
+    })
+  }
+
+  /** Notify channel room that agent activity started. For immediate inline indicator. */
+  notifyActivityStarted(): void {
+    if (!this.channelRoom) return
+    this.deps.io.to(this.channelRoom).emit("agent_session:activity_started", {
+      sessionId: this.params.sessionId,
+      triggerMessageId: this.params.triggerMessageId,
+      personaName: this.params.personaName,
+    })
+  }
+
+  /** Notify channel room that agent activity ended. For inline indicator cleanup. */
+  notifyActivityEnded(): void {
+    if (!this.channelRoom) return
+    this.deps.io.to(this.channelRoom).emit("agent_session:activity_ended", {
+      sessionId: this.params.sessionId,
+      triggerMessageId: this.params.triggerMessageId,
     })
   }
 }

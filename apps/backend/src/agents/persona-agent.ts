@@ -380,19 +380,47 @@ export class PersonaAgent {
     // Create trace emitter for session-room notifications
     const { traceEmitter } = this.deps
 
+    // For channel mentions: create thread eagerly so session lifecycle events
+    // go to the thread (where the session card will be visible)
+    const isChannelMention = trigger === AgentTriggers.MENTION && stream.type === StreamTypes.CHANNEL
+    let sessionStreamId = streamId
+    let channelStreamId: string | undefined
+    if (isChannelMention) {
+      const thread = await createThread({
+        workspaceId,
+        parentStreamId: streamId,
+        parentMessageId: messageId,
+        createdBy: persona.id,
+      })
+      sessionStreamId = thread.id
+      channelStreamId = streamId
+      logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention (eager)")
+    }
+
     // Step 2: Run with session lifecycle management
     const result = await withSession(
       {
         pool,
         triggerMessageId: messageId,
-        streamId,
+        streamId: sessionStreamId,
         personaId: persona.id,
         personaName: persona.name,
         workspaceId,
         serverId,
-        initialSequence,
+        initialSequence: isChannelMention ? BigInt(0) : initialSequence,
       },
       async (session, db) => {
+        // Create trace handle early so we can notify channel immediately
+        const trace = this.deps.traceEmitter.forSession({
+          sessionId: session.id,
+          workspaceId,
+          streamId: sessionStreamId,
+          triggerMessageId: messageId,
+          personaName: persona.name,
+          channelStreamId,
+        })
+        trace.notifyActivityStarted()
+
         // Fetch trigger message to get the invoking user
         // Note: db is Pool here - repos accept Querier which Pool satisfies
         const triggerMessage = await MessageRepository.findById(db, messageId)
@@ -442,26 +470,11 @@ export class PersonaAgent {
             })
         }
 
-        // Track target stream for responses - may change if we create a thread
-        let targetStreamId = streamId
-        let threadCreated = false
+        // For channel mentions the thread was already created eagerly before withSession.
+        // Messages always go to sessionStreamId (thread for channels, original stream otherwise).
+        const targetStreamId = sessionStreamId
 
-        // Helper to send a message, creating a thread for channel mentions on first send
         const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
-          // For channel mentions: create thread on first message
-          // Note: createThread is idempotent (uses ON CONFLICT DO NOTHING), so retries are safe
-          if (trigger === AgentTriggers.MENTION && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
-            const thread = await createThread({
-              workspaceId,
-              parentStreamId: streamId,
-              parentMessageId: messageId,
-              createdBy: persona.id,
-            })
-            targetStreamId = thread.id
-            threadCreated = true
-            logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
-          }
-
           const message = await createMessage({
             workspaceId,
             streamId: targetStreamId,
@@ -587,13 +600,6 @@ export class PersonaAgent {
           }
         }
 
-        // Create trace handle for this session
-        const trace = this.deps.traceEmitter.forSession({
-          sessionId: session.id,
-          workspaceId,
-          streamId,
-        })
-
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
@@ -662,13 +668,22 @@ export class PersonaAgent {
     )
 
     // Notify session room about terminal status (for trace dialog real-time updates)
+    // Also notify channel room about activity ending (for inline indicator cleanup)
     if (result.status === "completed" || result.status === "failed") {
-      const trace = traceEmitter.forSession({ sessionId: result.sessionId, workspaceId, streamId })
+      const trace = traceEmitter.forSession({
+        sessionId: result.sessionId,
+        workspaceId,
+        streamId: sessionStreamId,
+        triggerMessageId: messageId,
+        personaName: persona.name,
+        channelStreamId,
+      })
       if (result.status === "completed") {
         trace.notifyCompleted()
       } else {
         trace.notifyFailed()
       }
+      trace.notifyActivityEnded()
     }
 
     switch (result.status) {

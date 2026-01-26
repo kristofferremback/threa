@@ -8,7 +8,9 @@ import {
   useStreamBootstrap,
   useAutoMarkAsRead,
   useUnreadDivider,
+  useAgentActivity,
 } from "@/hooks"
+import { useSocket } from "@/contexts"
 import { useUser } from "@/auth"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { ErrorView } from "@/components/error-view"
@@ -38,6 +40,7 @@ export function StreamContent({
 }: StreamContentProps) {
   const [, setSearchParams] = useSearchParams()
   const user = useUser()
+  const socket = useSocket()
 
   // Clear highlight param after delay (works for both main view and panels)
   useEffect(() => {
@@ -89,6 +92,11 @@ export function StreamContent({
     streamId,
     { enabled: !isDraft }
   )
+
+  // In channels, agent responses go to threads — show inline activity on trigger messages
+  // and hide session cards (they belong in the thread). Other stream types show session cards directly.
+  const isChannel = stream?.type === StreamTypes.CHANNEL
+  const agentActivity = useAgentActivity(events, isChannel ? socket : null)
 
   const { scrollContainerRef, handleScroll } = useScrollBehavior({
     isLoading,
@@ -157,6 +165,8 @@ export function StreamContent({
             highlightMessageId={highlightMessageId}
             firstUnreadEventId={dividerEventId}
             isDividerFading={isDividerFading}
+            agentActivity={isChannel ? agentActivity : undefined}
+            hideSessionCards={isChannel}
           />
         )}
       </div>

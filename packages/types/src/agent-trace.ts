@@ -70,6 +70,8 @@ export interface AgentSessionProgressPayload {
   workspaceId: string
   streamId: string
   sessionId: string
+  triggerMessageId: string
+  personaName: string
   stepCount: number
   currentStepType: AgentStepType
 }
@@ -118,4 +120,17 @@ export interface StepCompletedPayload {
 
 export interface SessionTerminalPayload {
   sessionId: string
+}
+
+// Emitted to channel room when agent session starts (for immediate inline indicator)
+export interface AgentActivityStartedPayload {
+  sessionId: string
+  triggerMessageId: string
+  personaName: string
+}
+
+// Emitted to channel room when agent session ends (for inline indicator cleanup)
+export interface AgentActivityEndedPayload {
+  sessionId: string
+  triggerMessageId: string
 }

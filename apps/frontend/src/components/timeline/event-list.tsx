@@ -8,6 +8,7 @@ import {
   type CommandCompletedPayload,
   type CommandFailedPayload,
 } from "@threa/types"
+import type { MessageAgentActivity } from "@/hooks"
 import { EventItem } from "./event-item"
 import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
@@ -22,6 +23,9 @@ interface EventListProps {
   highlightMessageId?: string | null
   firstUnreadEventId?: string
   isDividerFading?: boolean
+  agentActivity?: Map<string, MessageAgentActivity>
+  /** Hide session group cards (used in channels where responses go to threads) */
+  hideSessionCards?: boolean
 }
 
 function isCommandEvent(event: StreamEvent): boolean {
@@ -109,6 +113,8 @@ export function EventList({
   highlightMessageId,
   firstUnreadEventId,
   isDividerFading,
+  agentActivity,
+  hideSessionCards,
 }: EventListProps) {
   const user = useUser()
 
@@ -159,13 +165,16 @@ export function EventList({
             {item.type === "command_group" ? (
               <CommandEvent events={item.events} />
             ) : item.type === "session_group" ? (
-              <AgentSessionEvent events={item.events} />
+              hideSessionCards ? null : (
+                <AgentSessionEvent events={item.events} />
+              )
             ) : (
               <EventItem
                 event={item.event}
                 workspaceId={workspaceId}
                 streamId={streamId}
                 highlightMessageId={highlightMessageId}
+                agentActivity={agentActivity}
               />
             )}
           </div>

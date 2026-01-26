@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
-import { useActors } from "@/hooks"
+import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
 import { ThreadIndicator } from "./thread-indicator"
@@ -30,6 +30,8 @@ interface MessageEventProps {
   hideActions?: boolean
   /** Whether to highlight this message (scroll into view and flash) */
   isHighlighted?: boolean
+  /** Active agent session triggered by this message */
+  activity?: MessageAgentActivity
 }
 
 interface MessageLayoutProps {
@@ -105,6 +107,7 @@ interface MessageEventInnerProps {
   actorInitials: string
   hideActions?: boolean
   isHighlighted?: boolean
+  activity?: MessageAgentActivity
 }
 
 function SentMessageEvent({
@@ -116,6 +119,7 @@ function SentMessageEvent({
   actorInitials,
   hideActions,
   isHighlighted,
+  activity,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
   const { getTraceUrl } = useTrace()
@@ -137,29 +141,47 @@ function SentMessageEvent({
   const draftPanelId = createDraftPanelId(streamId, payload.messageId)
   const draftPanelUrl = getPanelUrl(draftPanelId)
 
+  // Activity label for inline display in the footer
+  const activityLabel = activity
+    ? `${activity.personaName} is ${getStepLabel(activity.currentStepType).toLowerCase()}`
+    : null
+
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
   // Shows on hover when no thread exists yet, or always when thread exists
+  // When agent activity is present, the activity text is always visible on the same line
   const threadFooter = !hideActions ? (
-    threadId ? (
-      replyCount > 0 ? (
-        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} className="mt-1" />
+    <div className="mt-1 flex items-center gap-1.5 text-xs">
+      {threadId ? (
+        replyCount > 0 ? (
+          <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} />
+        ) : (
+          <Link to={getPanelUrl(threadId)} className="text-muted-foreground hover:text-foreground hover:underline">
+            Reply in thread
+          </Link>
+        )
       ) : (
         <Link
-          to={getPanelUrl(threadId)}
-          className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+          to={draftPanelUrl}
+          className={cn(
+            "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
+            !activityLabel && "opacity-0 group-hover:opacity-100"
+          )}
         >
           Reply in thread
         </Link>
-      )
-    ) : (
-      // Show "Reply in thread" on hover when no thread exists - opens draft panel
-      <Link
-        to={draftPanelUrl}
-        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        Reply in thread
-      </Link>
-    )
+      )}
+      {activityLabel && (
+        <>
+          <span className="text-muted-foreground/40">·</span>
+          <Link
+            to={getTraceUrl(activity!.sessionId)}
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
+            {activityLabel}
+          </Link>
+        </>
+      )}
+    </div>
   ) : null
 
   return (
@@ -239,7 +261,14 @@ function FailedMessageEvent({ event, payload, workspaceId, actorName, actorIniti
   )
 }
 
-export function MessageEvent({ event, workspaceId, streamId, hideActions, isHighlighted }: MessageEventProps) {
+export function MessageEvent({
+  event,
+  workspaceId,
+  streamId,
+  hideActions,
+  isHighlighted,
+  activity,
+}: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
   const { getActorName, getActorInitials } = useActors(workspaceId)
@@ -282,6 +311,7 @@ export function MessageEvent({ event, workspaceId, streamId, hideActions, isHigh
           actorInitials={actorInitials}
           hideActions={hideActions}
           isHighlighted={isHighlighted}
+          activity={activity}
         />
       )
   }

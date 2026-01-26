@@ -260,4 +260,6 @@ export {
   type StepProgressPayload,
   type StepCompletedPayload,
   type SessionTerminalPayload,
+  type AgentActivityStartedPayload,
+  type AgentActivityEndedPayload,
 } from "./agent-trace"
