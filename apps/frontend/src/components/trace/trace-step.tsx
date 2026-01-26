@@ -1,7 +1,9 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import type { AgentSessionStep, AgentStepType } from "@threa/types"
+import type { AgentSessionStep, AgentStepType, TraceSource } from "@threa/types"
 import { cn } from "@/lib/utils"
+import { MarkdownContent } from "@/components/ui/markdown-content"
+import { RelativeTime } from "@/components/relative-time"
 import {
   ChevronRight,
   Lightbulb,
@@ -117,13 +119,23 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
           <Icon className="w-3.5 h-3.5" />
           {config.label}
         </div>
-        {duration && <span className="text-[11px] text-muted-foreground ml-auto">{duration}</span>}
+        <div className="flex items-center gap-2 ml-auto text-[11px] text-muted-foreground">
+          <RelativeTime date={step.startedAt} className="text-[11px] text-muted-foreground" />
+          {duration && (
+            <>
+              <span>•</span>
+              <span>{duration}</span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Content */}
       {hasContent && (
         <div className="text-sm leading-relaxed">
-          {step.stepType === "web_search" ? (
+          {step.stepType === "thinking" ? (
+            <MarkdownContent content={step.content!} className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+          ) : step.stepType === "web_search" ? (
             <span>
               <strong>Query:</strong> "{step.content}"
             </span>
@@ -177,33 +189,52 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
               }}
             >
               {step.sources!.map((source, i) => (
-                <div
-                  key={i}
-                  className={cn("px-2.5 py-1.5 mx-[-1px]", i !== step.sources!.length - 1 && "border-b border-border")}
-                >
-                  <div className="font-semibold mb-1 text-xs">
-                    {source.url ? (
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        {source.title}
-                      </a>
-                    ) : (
-                      source.title
-                    )}
-                  </div>
-                  {source.domain && <div className="text-[11px] text-muted-foreground mb-1">{source.domain}</div>}
-                  {source.snippet && (
-                    <div className="text-muted-foreground text-[11px] leading-snug line-clamp-2">{source.snippet}</div>
-                  )}
-                </div>
+                <SourceItem key={i} source={source} workspaceId={workspaceId} isLast={i === step.sources!.length - 1} />
               ))}
             </div>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+function SourceItem({ source, workspaceId, isLast }: { source: TraceSource; workspaceId: string; isLast: boolean }) {
+  // Build internal link for workspace sources
+  const internalLink =
+    source.type === "workspace_message" && source.streamId && source.messageId
+      ? `/w/${workspaceId}/s/${source.streamId}?highlight=${source.messageId}`
+      : source.type === "workspace_memo" && source.streamId
+        ? `/w/${workspaceId}/s/${source.streamId}`
+        : null
+
+  return (
+    <div className={cn("px-2.5 py-1.5 mx-[-1px]", !isLast && "border-b border-border")}>
+      <div className="font-semibold mb-1 text-xs">
+        {internalLink ? (
+          <Link to={internalLink} className="text-primary hover:underline">
+            {source.title}
+          </Link>
+        ) : source.url ? (
+          <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+            {source.title}
+          </a>
+        ) : (
+          source.title
+        )}
+      </div>
+      {source.domain && <div className="text-[11px] text-muted-foreground mb-1">{source.domain}</div>}
+      {source.authorName && source.type === "workspace_message" && (
+        <div className="text-[11px] text-muted-foreground mb-1">
+          by {source.authorName}
+          {source.streamName && ` in ${source.streamName}`}
+        </div>
+      )}
+      {source.streamName && source.type === "workspace_memo" && (
+        <div className="text-[11px] text-muted-foreground mb-1">from {source.streamName}</div>
+      )}
+      {source.snippet && (
+        <div className="text-muted-foreground text-[11px] leading-snug line-clamp-2">{source.snippet}</div>
       )}
     </div>
   )

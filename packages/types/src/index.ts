@@ -255,4 +255,9 @@ export {
   type AgentSessionStartedPayload,
   type AgentSessionCompletedPayload,
   type AgentSessionFailedPayload,
+  type AgentSessionProgressPayload,
+  type StepStartedPayload,
+  type StepProgressPayload,
+  type StepCompletedPayload,
+  type SessionTerminalPayload,
 } from "./agent-trace"

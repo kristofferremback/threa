@@ -62,6 +62,12 @@ interface CommandFailedPayload {
   event: StreamEvent
 }
 
+interface AgentSessionEventPayload {
+  workspaceId: string
+  streamId: string
+  event: StreamEvent
+}
+
 interface StreamBootstrap {
   events: StreamEvent[]
   latestSequence: string
@@ -331,6 +337,24 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       await db.events.put({ ...payload.event, _cachedAt: Date.now() })
     }
 
+    // Handle agent session events (stream-scoped, visible to all members)
+    const handleAgentSessionEvent = async (payload: AgentSessionEventPayload) => {
+      if (payload.streamId !== streamId) return
+
+      queryClient.setQueryData(streamKeys.bootstrap(workspaceId, streamId), (old: unknown) => {
+        if (!old || typeof old !== "object") return old
+        const bootstrap = old as StreamBootstrap
+        if (bootstrap.events.some((e) => e.id === payload.event.id)) return old
+        return {
+          ...bootstrap,
+          events: [...bootstrap.events, payload.event],
+          latestSequence: payload.event.sequence,
+        }
+      })
+
+      await db.events.put({ ...payload.event, _cachedAt: Date.now() })
+    }
+
     socket.on("message:created", handleMessageCreated)
     socket.on("message:edited", handleMessageEdited)
     socket.on("message:deleted", handleMessageDeleted)
@@ -341,6 +365,9 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("command:dispatched", handleCommandDispatched)
     socket.on("command:completed", handleCommandCompleted)
     socket.on("command:failed", handleCommandFailed)
+    socket.on("agent_session:started", handleAgentSessionEvent)
+    socket.on("agent_session:completed", handleAgentSessionEvent)
+    socket.on("agent_session:failed", handleAgentSessionEvent)
 
     return () => {
       socket.emit("leave", room)
@@ -354,6 +381,9 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("command:dispatched", handleCommandDispatched)
       socket.off("command:completed", handleCommandCompleted)
       socket.off("command:failed", handleCommandFailed)
+      socket.off("agent_session:started", handleAgentSessionEvent)
+      socket.off("agent_session:completed", handleAgentSessionEvent)
+      socket.off("agent_session:failed", handleAgentSessionEvent)
     }
   }, [socket, workspaceId, streamId, shouldSubscribe, queryClient])
 }

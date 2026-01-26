@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { withClient, type Querier } from "../db"
+import { withClient, withTransaction, type Querier } from "../db"
 import {
   AgentToolNames,
   AgentTriggers,
@@ -15,10 +15,12 @@ import { MessageRepository, type Message } from "../repositories/message-reposit
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
+import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
-import { stepId } from "../lib/id"
+import { eventId } from "../lib/id"
+import type { TraceEmitter } from "../lib/trace-emitter"
 import {
   isToolEnabled,
   type SendMessageInputWithSources,
@@ -66,6 +68,8 @@ export async function withSession(
     triggerMessageId: string
     streamId: string
     personaId: string
+    personaName: string
+    workspaceId: string
     serverId: string
     initialSequence: bigint
   },
@@ -74,11 +78,12 @@ export async function withSession(
     pool: Pool
   ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
 ): Promise<WithSessionResult> {
-  const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
+  const { pool, triggerMessageId, streamId, personaId, personaName, workspaceId, serverId, initialSequence } = params
 
-  // Phase 1: Session setup (short-lived connection)
-  // Uses atomic insert with ON CONFLICT to prevent race conditions
-  const setupResult = await withClient(pool, async (db) => {
+  // Phase 1: Session setup (short-lived transaction)
+  // Uses atomic insert with ON CONFLICT to prevent race conditions.
+  // Transaction ensures session creation + stream event + outbox event commit together.
+  const setupResult = await withTransaction(pool, async (db) => {
     // Check if we already have a session for this trigger message
     const existingSession = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
 
@@ -127,6 +132,27 @@ export async function withSession(
       }
     }
 
+    // Emit agent_session:started stream event + outbox event
+    const streamEvent = await StreamEventRepository.insert(db, {
+      id: eventId(),
+      streamId,
+      eventType: "agent_session:started",
+      payload: {
+        sessionId: session.id,
+        personaId,
+        personaName,
+        triggerMessageId,
+        startedAt: session.createdAt.toISOString(),
+      },
+      actorId: personaId,
+      actorType: "persona",
+    })
+    await OutboxRepository.insert(db, "agent_session:started", {
+      workspaceId,
+      streamId,
+      event: streamEvent,
+    })
+
     return { status: "ready" as const, session }
   })
 
@@ -139,15 +165,52 @@ export async function withSession(
 
   // Phase 2: Run work WITHOUT holding connection
   // The work callback can use pool directly for short-lived queries
+  // Periodic heartbeat keeps the session alive during long AI calls,
+  // preventing the orphan cleanup (60s threshold) from killing active sessions.
+  const heartbeatInterval = setInterval(async () => {
+    try {
+      await AgentSessionRepository.updateHeartbeat(pool, session.id)
+    } catch (err) {
+      logger.warn({ err, sessionId: session.id }, "Heartbeat update failed")
+    }
+  }, 15_000)
+
   try {
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
-    // Phase 3: Complete session atomically (single query updates both sequence and status)
+    // Phase 3: Complete session + emit completed event atomically
     try {
-      await AgentSessionRepository.completeSession(pool, session.id, {
-        lastSeenSequence,
-        responseMessageId: sentMessageIds[0] ?? null,
-        sentMessageIds,
+      await withTransaction(pool, async (db) => {
+        const completed = await AgentSessionRepository.completeSession(db, session.id, {
+          lastSeenSequence,
+          responseMessageId: sentMessageIds[0] ?? null,
+          sentMessageIds,
+        })
+
+        // Count actual steps from DB (current_step on session is not reliably incremented)
+        const steps = await AgentSessionRepository.findStepsBySession(db, session.id)
+        const completedAt = completed?.completedAt ?? new Date()
+        const duration = completedAt.getTime() - session.createdAt.getTime()
+
+        const streamEvent = await StreamEventRepository.insert(db, {
+          id: eventId(),
+          streamId,
+          eventType: "agent_session:completed",
+          payload: {
+            sessionId: session.id,
+            stepCount: steps.length,
+            messageCount: sentMessageIds.length,
+            duration,
+            completedAt: completedAt.toISOString(),
+          },
+          actorId: personaId,
+          actorType: "persona",
+        })
+        await OutboxRepository.insert(db, "agent_session:completed", {
+          workspaceId,
+          streamId,
+          event: streamEvent,
+        })
       })
     } catch (err) {
       logger.error({ err, sessionId: session.id }, "Failed to complete session, orphan cleanup will recover")
@@ -166,12 +229,39 @@ export async function withSession(
   } catch (err) {
     logger.error({ err, sessionId: session.id }, "Session failed")
 
-    // Phase 3 (error): Mark session as failed (short-lived connection)
-    await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.FAILED, {
-      error: String(err),
+    // Phase 3 (error): Mark session as failed + emit failed event atomically
+    await withTransaction(pool, async (db) => {
+      const failed = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.FAILED, {
+        error: String(err),
+      })
+      if (failed) {
+        const steps = await AgentSessionRepository.findStepsBySession(db, session.id)
+
+        const streamEvent = await StreamEventRepository.insert(db, {
+          id: eventId(),
+          streamId,
+          eventType: "agent_session:failed",
+          payload: {
+            sessionId: session.id,
+            stepCount: steps.length,
+            error: String(err),
+            traceId: session.id,
+            failedAt: new Date().toISOString(),
+          },
+          actorId: personaId,
+          actorType: "persona",
+        })
+        await OutboxRepository.insert(db, "agent_session:failed", {
+          workspaceId,
+          streamId,
+          event: streamEvent,
+        })
+      }
     }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
 
     return { status: "failed" as const, sessionId: session.id }
+  } finally {
+    clearInterval(heartbeatInterval)
   }
 }
 
@@ -180,6 +270,7 @@ export async function withSession(
  */
 export interface PersonaAgentDeps {
   pool: Pool
+  traceEmitter: TraceEmitter
   responseGenerator: ResponseGenerator
   userPreferencesService: UserPreferencesService
   /** Researcher for workspace knowledge retrieval */
@@ -286,6 +377,9 @@ export class PersonaAgent {
 
     const { persona, stream, initialSequence } = precheck
 
+    // Create trace emitter for session-room notifications
+    const { traceEmitter } = this.deps
+
     // Step 2: Run with session lifecycle management
     const result = await withSession(
       {
@@ -293,6 +387,8 @@ export class PersonaAgent {
         triggerMessageId: messageId,
         streamId,
         personaId: persona.id,
+        personaName: persona.name,
+        workspaceId,
         serverId,
         initialSequence,
       },
@@ -491,8 +587,12 @@ export class PersonaAgent {
           }
         }
 
-        // Track step numbers for the session
-        let stepNumber = 0
+        // Create trace handle for this session
+        const trace = this.deps.traceEmitter.forSession({
+          sessionId: session.id,
+          workspaceId,
+          streamId,
+        })
 
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
@@ -518,18 +618,15 @@ export class PersonaAgent {
           search: searchCallbacks,
 
           recordStep: async (params: RecordStepParams) => {
-            stepNumber++
-            await AgentSessionRepository.insertStep(db, {
-              id: stepId(),
-              sessionId: session.id,
-              stepNumber,
+            const step = await trace.startStep({
               stepType: params.stepType,
               content: params.content,
-              sources: params.sources,
-              startedAt: new Date(),
             })
-            // Also update the current step type on the session for real-time display
-            await AgentSessionRepository.updateCurrentStepType(db, session.id, params.stepType)
+            await step.complete({
+              content: params.content,
+              sources: params.sources,
+              messageId: params.messageId,
+            })
           },
         }
 
@@ -563,6 +660,16 @@ export class PersonaAgent {
         }
       }
     )
+
+    // Notify session room about terminal status (for trace dialog real-time updates)
+    if (result.status === "completed" || result.status === "failed") {
+      const trace = traceEmitter.forSession({ sessionId: result.sessionId, workspaceId, streamId })
+      if (result.status === "completed") {
+        trace.notifyCompleted()
+      } else {
+        trace.notifyFailed()
+      }
+    }
 
     switch (result.status) {
       case "skipped":

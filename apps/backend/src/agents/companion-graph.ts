@@ -17,6 +17,8 @@ export interface RecordStepParams {
   content?: string
   sources?: TraceSource[]
   messageId?: string
+  /** Duration of the step in milliseconds (used to compute completedAt) */
+  durationMs?: number
 }
 
 const MAX_ITERATIONS = 20
@@ -144,7 +146,9 @@ function createResearchNode() {
     logger.info("Research node starting")
 
     try {
+      const startTime = Date.now()
       const result = await callbacks.runResearcher(config)
+      const durationMs = Date.now() - startTime
 
       logger.debug(
         {
@@ -156,17 +160,32 @@ function createResearchNode() {
         "Research node completed"
       )
 
-      // Record the workspace search step
-      if (callbacks.recordStep && result.sources.length > 0) {
+      // Record the workspace search step with enriched source metadata
+      if (callbacks.recordStep && (result.memos.length > 0 || result.messages.length > 0)) {
+        const traceSources: TraceSource[] = [
+          ...result.memos.map((m) => ({
+            type: "workspace_memo" as const,
+            title: m.memo.title,
+            snippet: m.memo.abstract.slice(0, 200),
+            streamId: m.sourceStream?.id,
+            streamName: m.sourceStream?.name ?? undefined,
+          })),
+          ...result.messages.map((m) => ({
+            type: "workspace_message" as const,
+            title: `${m.authorName} in ${m.streamName}`,
+            snippet: m.content.slice(0, 200),
+            streamId: m.streamId,
+            messageId: m.id,
+            authorName: m.authorName,
+            timestamp: m.createdAt.toISOString(),
+          })),
+        ]
+
         await callbacks.recordStep({
           stepType: "workspace_search",
           content: `Found ${result.memos.length} memos and ${result.messages.length} related messages`,
-          sources: result.sources.map((s) => ({
-            title: s.title,
-            url: s.url,
-            type: s.type,
-            snippet: s.snippet,
-          })),
+          durationMs,
+          sources: traceSources,
         })
       }
 
@@ -206,20 +225,15 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       }
     }
 
-    // Record thinking step before LLM invocation
-    if (callbacks.recordStep) {
-      await callbacks.recordStep({
-        stepType: "thinking",
-      })
-    }
-
     // Build system prompt with retrieved context if available
     const fullSystemPrompt = state.retrievedContext
       ? `${state.systemPrompt}\n\n${state.retrievedContext}`
       : state.systemPrompt
 
     const systemMessage = new SystemMessage(fullSystemPrompt)
+    const startTime = Date.now()
     const response = await modelWithTools.invoke([systemMessage, ...state.messages])
+    const durationMs = Date.now() - startTime
 
     // Extract text content
     let responseText: string
@@ -243,6 +257,24 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       },
       "Agent node response"
     )
+
+    // Record thinking step after LLM call with actual content
+    if (callbacks.recordStep) {
+      let thinkingContent: string | undefined
+      if (responseText.trim()) {
+        thinkingContent = responseText
+      } else if (response.tool_calls?.length) {
+        // LLM produced no text, only tool calls — summarize the plan
+        const toolNames = response.tool_calls.map((tc) => tc.name).join(", ")
+        thinkingContent = `Planning to use: ${toolNames}`
+      }
+
+      await callbacks.recordStep({
+        stepType: "thinking",
+        content: thinkingContent,
+        durationMs,
+      })
+    }
 
     return {
       messages: [response],
@@ -342,12 +374,18 @@ function createFinalizeOrReconsiderNode() {
           "Pending message committed"
         )
 
-        // Record the message sent step
+        // Record the message sent step with sources
         if (callbacks.recordStep) {
           await callbacks.recordStep({
             stepType: "message_sent",
             content: pending.content,
             messageId: result.messageId,
+            sources: pending.sources?.map((s) => ({
+              type: (s.type ?? "web") as TraceSource["type"],
+              title: s.title,
+              url: s.url,
+              snippet: s.snippet,
+            })),
           })
         }
       }
@@ -385,6 +423,62 @@ function createFinalizeOrReconsiderNode() {
       pendingMessages: [], // Clear pending - agent will re-stage if it wants to send
       hasNewMessages: true,
     }
+  }
+}
+
+/**
+ * Map tool names to semantic step types for the trace.
+ */
+function getToolStepType(toolName: string): AgentStepType {
+  switch (toolName) {
+    case "read_url":
+      return "visit_page"
+    case "search_messages":
+    case "search_streams":
+    case "search_users":
+    case "get_stream_messages":
+      return "workspace_search"
+    default:
+      return "tool_call"
+  }
+}
+
+/**
+ * Format tool execution into content and optional sources for the trace.
+ * Uses both input args and tool result to build rich trace data.
+ */
+function formatToolStep(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultStr: string
+): { content: string; sources?: TraceSource[] } {
+  switch (toolName) {
+    case "read_url": {
+      const url = String(args.url ?? "")
+      // Parse result to extract page title
+      try {
+        const parsed = JSON.parse(resultStr)
+        if (parsed.title && parsed.title !== "Untitled") {
+          return {
+            content: parsed.title,
+            sources: [{ type: "web", title: parsed.title, url, domain: new URL(url).hostname }],
+          }
+        }
+      } catch {
+        // Result wasn't valid JSON or didn't have title
+      }
+      return { content: url }
+    }
+    case "search_messages":
+      return { content: `Searching messages: "${args.query ?? ""}"${args.stream ? ` in ${args.stream}` : ""}` }
+    case "search_streams":
+      return { content: `Searching streams: "${args.query ?? ""}"` }
+    case "search_users":
+      return { content: `Searching users: "${args.query ?? ""}"` }
+    case "get_stream_messages":
+      return { content: `Reading messages from ${args.stream ?? "unknown stream"}` }
+    default:
+      return { content: `${toolName}(${JSON.stringify(args)})` }
   }
 }
 
@@ -433,11 +527,15 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
     const pendingMessages: PendingMessage[] = []
 
+    const callbacks = getCallbacks(_config)
+
     // Execute web_search calls first and collect sources
     for (const toolCall of webSearchCalls) {
       const tool = toolMap.get(toolCall.name)!
+      const startTime = Date.now()
       try {
         const result = await tool.invoke(toolCall.args)
+        const durationMs = Date.now() - startTime
         const resultStr = typeof result === "string" ? result : JSON.stringify(result)
 
         // Extract sources from web_search results
@@ -445,12 +543,12 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         collectedSources = [...collectedSources, ...sources]
 
         // Record the web search step
-        const callbacks = getCallbacks(_config)
         if (callbacks.recordStep) {
           const query = (toolCall.args as { query?: string }).query
           await callbacks.recordStep({
             stepType: "web_search",
             content: query,
+            durationMs,
             sources: sources.map((s) => ({
               title: s.title,
               url: s.url,
@@ -461,16 +559,30 @@ function createToolsNode(tools: StructuredToolInterface[]) {
 
         toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: resultStr }))
       } catch (error) {
+        const durationMs = Date.now() - startTime
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `web_search failed: ${String(error)}`,
+            durationMs,
+          })
+        }
         toolMessages.push(
           new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
         )
       }
     }
 
-    // Execute other tools (read_url, etc.)
+    // Execute other tools (read_url, search_messages, etc.)
     for (const toolCall of otherCalls) {
       const tool = toolMap.get(toolCall.name)
       if (!tool) {
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `Unknown tool: ${toolCall.name}`,
+          })
+        }
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
@@ -479,15 +591,34 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         )
         continue
       }
+      const startTime = Date.now()
       try {
         const result = await tool.invoke(toolCall.args)
+        const durationMs = Date.now() - startTime
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+
+        // Record step with appropriate type based on tool name
+        if (callbacks.recordStep) {
+          const stepType = getToolStepType(toolCall.name)
+          const { content, sources } = formatToolStep(toolCall.name, toolCall.args, resultStr)
+          await callbacks.recordStep({ stepType, content, sources, durationMs })
+        }
+
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
-            content: typeof result === "string" ? result : JSON.stringify(result),
+            content: resultStr,
           })
         )
       } catch (error) {
+        const durationMs = Date.now() - startTime
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `${toolCall.name} failed: ${String(error)}`,
+            durationMs,
+          })
+        }
         toolMessages.push(
           new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
         )
@@ -721,12 +852,21 @@ function createEnsureResponseNode() {
       sources: state.sources.length > 0 ? state.sources : undefined,
     })
 
-    // Record the message sent step
+    // Record the message sent step with sources
     if (callbacks.recordStep) {
       await callbacks.recordStep({
         stepType: "message_sent",
         content: state.finalResponse,
         messageId: result.messageId,
+        sources:
+          state.sources.length > 0
+            ? state.sources.map((s) => ({
+                type: (s.type ?? "web") as TraceSource["type"],
+                title: s.title,
+                url: s.url,
+                snippet: s.snippet,
+              }))
+            : undefined,
       })
     }
 

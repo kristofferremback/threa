@@ -5,6 +5,8 @@ import type { UserService } from "./services/user-service"
 import type { StreamService } from "./services/stream-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
+import { AgentSessionRepository } from "./repositories/agent-session-repository"
+import { StreamMemberRepository } from "./repositories/stream-member-repository"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/metrics"
 
@@ -22,6 +24,7 @@ function normalizeRoomPattern(room: string): string {
     .replace(/^ws:[\w]+/, "ws:{workspaceId}")
     .replace(/stream:[\w]+/, "stream:{streamId}")
     .replace(/thread:[\w]+/, "thread:{threadId}")
+    .replace(/agent_session:[\w]+/, "agent_session:{sessionId}")
 }
 
 /**
@@ -41,6 +44,7 @@ interface SocketMetricsState {
 }
 
 interface Dependencies {
+  pool: import("pg").Pool
   authService: AuthService
   userService: UserService
   streamService: StreamService
@@ -49,7 +53,7 @@ interface Dependencies {
 }
 
 export function registerSocketHandlers(io: Server, deps: Dependencies) {
-  const { authService, userService, streamService, workspaceService, userSocketRegistry } = deps
+  const { pool, authService, userService, streamService, workspaceService, userSocketRegistry } = deps
 
   // ===========================================================================
   // Authentication middleware
@@ -140,6 +144,30 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
         logger.debug({ userId, room }, "Joined stream room")
+        return
+      }
+
+      // Agent session room: ws:${workspaceId}:agent_session:${sessionId}
+      const sessionMatch = room.match(/^ws:([^:]+):agent_session:(.+)$/)
+      if (sessionMatch) {
+        const [, wsId, agentSessionId] = sessionMatch
+        // Verify user has access to the session's stream
+        const session = await AgentSessionRepository.findById(pool, agentSessionId)
+        if (!session) {
+          socket.emit("error", { message: "Session not found" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          return
+        }
+        const isMember = await StreamMemberRepository.isMember(pool, session.streamId, userId)
+        if (!isMember) {
+          socket.emit("error", { message: "Not authorized to join this session" })
+          wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          return
+        }
+        socket.join(room)
+        wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
+        metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
+        logger.debug({ userId, room }, "Joined agent session room")
         return
       }
 

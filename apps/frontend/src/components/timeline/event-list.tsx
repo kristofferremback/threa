@@ -1,12 +1,15 @@
 import {
   COMMAND_EVENT_TYPES,
+  AGENT_SESSION_EVENT_TYPES,
   type CommandEventType,
+  type AgentSessionEventType,
   type StreamEvent,
   type CommandDispatchedPayload,
   type CommandCompletedPayload,
   type CommandFailedPayload,
 } from "@threa/types"
 import { EventItem } from "./event-item"
+import { AgentSessionEvent } from "./agent-session-event"
 import { CommandEvent } from "./command-event"
 import { UnreadDivider } from "./unread-divider"
 import { useUser } from "@/auth"
@@ -31,34 +34,53 @@ function getCommandId(event: StreamEvent): string | null {
   return payload.commandId
 }
 
-/** Represents either a regular event or a group of command events */
+function isAgentSessionEvent(event: StreamEvent): boolean {
+  return AGENT_SESSION_EVENT_TYPES.includes(event.eventType as AgentSessionEventType)
+}
+
+function getSessionId(event: StreamEvent): string | null {
+  if (!isAgentSessionEvent(event)) return null
+  return (event.payload as { sessionId?: string })?.sessionId ?? null
+}
+
+/** Represents either a regular event, a group of command events, or a group of agent session events */
 type TimelineItem =
   | { type: "event"; event: StreamEvent }
   | { type: "command_group"; commandId: string; events: StreamEvent[] }
+  | { type: "session_group"; sessionId: string; events: StreamEvent[] }
 
 /**
- * Groups command events by commandId while preserving order.
- * Command groups appear at the position of their first (dispatched) event.
+ * Groups command events by commandId and agent session events by sessionId
+ * while preserving order. Groups appear at the position of their first event.
  */
 function groupTimelineItems(events: StreamEvent[], currentUserId: string | undefined): TimelineItem[] {
   const result: TimelineItem[] = []
   const commandGroups = new Map<string, StreamEvent[]>()
-  const commandPositions = new Map<string, number>() // commandId → position in result
+  const commandPositions = new Map<string, number>()
+  const sessionGroups = new Map<string, StreamEvent[]>()
+  const sessionPositions = new Map<string, number>()
 
   for (const event of events) {
     const commandId = getCommandId(event)
+    const agentSessionId = getSessionId(event)
 
     if (commandId) {
       // Skip command events that aren't from the current user
       if (event.actorId !== currentUserId) continue
 
       if (!commandGroups.has(commandId)) {
-        // First event for this command - record position
         commandGroups.set(commandId, [])
         commandPositions.set(commandId, result.length)
         result.push({ type: "command_group", commandId, events: [] })
       }
       commandGroups.get(commandId)!.push(event)
+    } else if (agentSessionId) {
+      if (!sessionGroups.has(agentSessionId)) {
+        sessionGroups.set(agentSessionId, [])
+        sessionPositions.set(agentSessionId, result.length)
+        result.push({ type: "session_group", sessionId: agentSessionId, events: [] })
+      }
+      sessionGroups.get(agentSessionId)!.push(event)
     } else {
       result.push({ type: "event", event })
     }
@@ -68,6 +90,12 @@ function groupTimelineItems(events: StreamEvent[], currentUserId: string | undef
   for (const [commandId, events] of commandGroups) {
     const position = commandPositions.get(commandId)!
     result[position] = { type: "command_group", commandId, events }
+  }
+
+  // Fill in session groups with their events
+  for (const [sessionId, events] of sessionGroups) {
+    const position = sessionPositions.get(sessionId)!
+    result[position] = { type: "session_group", sessionId, events }
   }
 
   return result
@@ -108,7 +136,7 @@ export function EventList({
   // Helper to check if an item is the first unread event
   const isFirstUnread = (item: TimelineItem): boolean => {
     if (!firstUnreadEventId) return false
-    if (item.type === "command_group") {
+    if (item.type === "command_group" || item.type === "session_group") {
       return item.events[0]?.id === firstUnreadEventId
     }
     return item.event.id === firstUnreadEventId
@@ -118,13 +146,20 @@ export function EventList({
     <div className="flex flex-col p-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
         const showUnreadDivider = isFirstUnread(item)
-        const eventId = item.type === "command_group" ? item.commandId : item.event.id
+        const eventId =
+          item.type === "command_group"
+            ? item.commandId
+            : item.type === "session_group"
+              ? item.sessionId
+              : item.event.id
 
         return (
           <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
             {showUnreadDivider && <UnreadDivider isFading={isDividerFading} />}
             {item.type === "command_group" ? (
               <CommandEvent events={item.events} />
+            ) : item.type === "session_group" ? (
+              <AgentSessionEvent events={item.events} />
             ) : (
               <EventItem
                 event={item.event}

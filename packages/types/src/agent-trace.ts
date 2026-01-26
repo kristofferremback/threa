@@ -65,6 +65,15 @@ export interface AgentActivityUpdate {
   stepType: AgentStepType | null
 }
 
+// Real-time progress payload (emitted per step to stream room, not persisted)
+export interface AgentSessionProgressPayload {
+  workspaceId: string
+  streamId: string
+  sessionId: string
+  stepCount: number
+  currentStepType: AgentStepType
+}
+
 // Stream event payloads for agent session lifecycle
 export interface AgentSessionStartedPayload {
   sessionId: string
@@ -88,4 +97,25 @@ export interface AgentSessionFailedPayload {
   error: string
   traceId: string
   failedAt: string
+}
+
+// Session-room socket event payloads (for trace dialog real-time updates)
+export interface StepStartedPayload {
+  sessionId: string
+  step: AgentSessionStep
+}
+
+export interface StepProgressPayload {
+  sessionId: string
+  stepId: string
+  content?: string
+}
+
+export interface StepCompletedPayload {
+  sessionId: string
+  step: AgentSessionStep
+}
+
+export interface SessionTerminalPayload {
+  sessionId: string
 }

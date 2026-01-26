@@ -67,6 +67,12 @@ export function EventItem({ event, workspaceId, streamId, hideActions, highlight
       // Command events are grouped and rendered in EventList, not here
       return null
 
+    case "agent_session:started":
+    case "agent_session:completed":
+    case "agent_session:failed":
+      // Agent session events are grouped and rendered in EventList, not here
+      return null
+
     default:
       // Unknown event type - render as system event
       return (

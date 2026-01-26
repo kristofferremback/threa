@@ -35,6 +35,7 @@ interface StepRow {
   step_type: string
   content: unknown
   sources: TraceSource[] | null
+  message_id: string | null
   tokens_used: number | null
   started_at: Date
   completed_at: Date | null
@@ -66,6 +67,7 @@ export interface AgentSessionStep {
   stepType: StepType
   content: unknown
   sources: TraceSource[] | null
+  messageId: string | null
   tokensUsed: number | null
   startedAt: Date
   completedAt: Date | null
@@ -88,8 +90,10 @@ export interface InsertStepParams {
   stepType: StepType
   content?: unknown
   sources?: TraceSource[]
+  messageId?: string
   tokensUsed?: number
   startedAt: Date
+  completedAt?: Date
 }
 
 // Mappers
@@ -121,6 +125,7 @@ function mapRowToStep(row: StepRow): AgentSessionStep {
     stepType: row.step_type as StepType,
     content: row.content,
     sources: row.sources,
+    messageId: row.message_id,
     tokensUsed: row.tokens_used,
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -136,7 +141,7 @@ const SESSION_SELECT_FIELDS = `
 
 const STEP_SELECT_FIELDS = `
   id, session_id, step_number, step_type,
-  content, sources, tokens_used, started_at, completed_at
+  content, sources, message_id, tokens_used, started_at, completed_at
 `
 
 export const AgentSessionRepository = {
@@ -392,7 +397,8 @@ export const AgentSessionRepository = {
     const result = await db.query<StepRow>(
       sql`
         INSERT INTO agent_session_steps (
-          id, session_id, step_number, step_type, content, sources, tokens_used, started_at
+          id, session_id, step_number, step_type, content, sources,
+          message_id, tokens_used, started_at, completed_at
         ) VALUES (
           ${params.id},
           ${params.sessionId},
@@ -400,8 +406,10 @@ export const AgentSessionRepository = {
           ${params.stepType},
           ${params.content ? JSON.stringify(params.content) : null},
           ${params.sources ? JSON.stringify(params.sources) : null},
+          ${params.messageId ?? null},
           ${params.tokensUsed ?? null},
-          ${params.startedAt}
+          ${params.startedAt},
+          ${params.completedAt ?? null}
         )
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `
@@ -416,6 +424,31 @@ export const AgentSessionRepository = {
         SET
           completed_at = NOW(),
           tokens_used = COALESCE(${tokensUsed ?? null}, tokens_used)
+        WHERE id = ${stepId}
+        RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
+      `
+    )
+    return result.rows[0] ? mapRowToStep(result.rows[0]) : null
+  },
+
+  async updateStep(
+    db: Querier,
+    stepId: string,
+    params: {
+      content?: unknown
+      sources?: TraceSource[]
+      messageId?: string
+      completedAt?: Date
+    }
+  ): Promise<AgentSessionStep | null> {
+    const result = await db.query<StepRow>(
+      sql`
+        UPDATE agent_session_steps
+        SET
+          content = COALESCE(${params.content != null ? JSON.stringify(params.content) : null}, content),
+          sources = COALESCE(${params.sources ? JSON.stringify(params.sources) : null}, sources),
+          message_id = COALESCE(${params.messageId ?? null}, message_id),
+          completed_at = COALESCE(${params.completedAt ?? null}, completed_at)
         WHERE id = ${stepId}
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `

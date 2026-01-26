@@ -54,6 +54,7 @@ import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
 import { PersonaAgent } from "./agents/persona-agent"
+import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -289,7 +290,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { authService, userService, streamService, workspaceService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, userService, streamService, workspaceService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -307,8 +308,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Create researcher for workspace knowledge retrieval
   const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
 
+  const traceEmitter = new TraceEmitter({ io, pool })
   const personaAgent = new PersonaAgent({
     pool,
+    traceEmitter,
     responseGenerator,
     userPreferencesService,
     researcher,
