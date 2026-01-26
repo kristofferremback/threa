@@ -1,5 +1,5 @@
-import { useSearchParams, Link, useParams } from "react-router-dom"
-import { useMemo, useCallback } from "react"
+import { useSearchParams, useParams } from "react-router-dom"
+import { useMemo, useCallback, useRef, useState, useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
 import {
@@ -10,14 +10,7 @@ import {
   SidePanelContent,
 } from "@/components/ui/side-panel"
 import { Button } from "@/components/ui/button"
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbPage } from "@/components/ui/breadcrumb"
 import {
   useStreamBootstrap,
   useDraftComposer,
@@ -35,9 +28,22 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { MessageComposer } from "@/components/composer"
 import { ThreadParentMessage } from "./thread-parent-message"
 import { ThreadHeader } from "./thread-header"
-import { AncestorBreadcrumbItem, getStreamBreadcrumbName } from "./breadcrumb-helpers"
+import { AncestorBreadcrumbItem } from "./breadcrumb-helpers"
+import { BreadcrumbEllipsisDropdown } from "./breadcrumb-ellipsis-dropdown"
 import { StreamTypes, type JSONContent } from "@threa/types"
 import { serializeToMarkdown } from "@threa/prosemirror"
+
+/** Breakpoints for progressive breadcrumb reduction */
+const BREAKPOINTS = {
+  /** Below: only current item */
+  MINIMAL: 200,
+  /** Below: root > current */
+  COMPACT: 300,
+  /** Below: root + 1 ancestor > current */
+  MEDIUM: 450,
+  /** Above: show all or root + 2 ancestors > current */
+  FULL: 600,
+}
 
 interface StreamPanelProps {
   workspaceId: string
@@ -52,6 +58,26 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
   const streamService = useStreamService()
   const messageService = useMessageService()
   const { streamId: mainViewStreamId } = useParams<{ streamId: string }>()
+
+  // Measure container for responsive breadcrumbs
+  const headerRef = useRef<HTMLElement>(null)
+  const [containerWidth, setContainerWidth] = useState(BREAKPOINTS.FULL)
+
+  useEffect(() => {
+    const container = headerRef.current
+    if (!container) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+
+    observer.observe(container)
+    setContainerWidth(container.offsetWidth)
+
+    return () => observer.disconnect()
+  }, [])
 
   // Get panel stream ID
   if (!panelId) return null
@@ -108,7 +134,6 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     workspaceId,
     draftKey,
     scopeId: draftInfo?.parentMessageId ?? "",
-    initialContent: "",
   })
 
   // Handle draft thread submission
@@ -175,48 +200,125 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
     }
   }, [draftInfo, composer, streamService, workspaceId, messageService, queryClient, openPanel])
 
+  // Progressive reduction: how many ancestors (including parent) can we show?
+  const maxVisibleAncestors = useMemo(() => {
+    if (containerWidth < BREAKPOINTS.MINIMAL) return 0
+    if (containerWidth < BREAKPOINTS.COMPACT) return 1
+    if (containerWidth < BREAKPOINTS.MEDIUM) return 2
+    if (containerWidth < BREAKPOINTS.FULL) return 3
+    return Infinity
+  }, [containerWidth])
+
+  // Width budget: "New thread" gets priority, ancestors share the rest
+  const { ancestorMaxWidth, currentMaxWidth } = useMemo(() => {
+    // Fixed overhead: back button + close button + flex gaps
+    const fixedOverhead = 32 + 32 + 16
+    // Each visible ancestor has a separator (">" + spacing) after it
+    const separatorWidth = 24
+
+    const totalAncestorCount = ancestors.length + (parentBootstrap?.stream ? 1 : 0)
+    const visibleAncestorCount = Math.min(totalAncestorCount, maxVisibleAncestors)
+
+    const totalSeparators = visibleAncestorCount * separatorWidth
+    const available = Math.max(0, containerWidth - fixedOverhead - totalSeparators)
+
+    if (visibleAncestorCount === 0) {
+      return { ancestorMaxWidth: 0, currentMaxWidth: Math.min(available, 300) }
+    }
+
+    // Current item gets ~50% of remaining space (min 80px, max 200px)
+    const currentShare = Math.min(200, Math.max(80, Math.floor(available * 0.5)))
+    const ancestorBudget = available - currentShare
+    const perAncestor = Math.max(40, Math.floor(ancestorBudget / visibleAncestorCount))
+
+    return {
+      ancestorMaxWidth: Math.min(perAncestor, 150),
+      currentMaxWidth: currentShare,
+    }
+  }, [containerWidth, ancestors.length, maxVisibleAncestors, parentBootstrap?.stream])
+
+  // Render draft breadcrumbs with progressive ellipsis
+  // Chain: ancestors (from hook) + parent stream → then "New thread" is rendered separately
+  const renderDraftBreadcrumbs = () => {
+    if (!parentBootstrap?.stream || maxVisibleAncestors === 0) return null
+
+    const parentItem = {
+      id: draftInfo!.parentStreamId,
+      displayName: parentBootstrap.stream.displayName,
+      slug: parentBootstrap.stream.slug,
+      type: parentBootstrap.stream.type,
+      parentStreamId: parentBootstrap.stream.parentStreamId,
+    }
+
+    // Build the full ancestor chain: hook ancestors + parent stream
+    const fullChain = [...ancestors, parentItem]
+
+    // All fit — show them all
+    if (fullChain.length <= maxVisibleAncestors) {
+      return fullChain.map((item) => (
+        <AncestorBreadcrumbItem
+          key={item.id}
+          stream={item}
+          isMainViewStream={isMainViewStream(item.id)}
+          onClosePanel={closePanel}
+          getNavigationUrl={getPanelUrl}
+          maxWidth={ancestorMaxWidth}
+        />
+      ))
+    }
+
+    // Too many: show first + ellipsis + last N
+    const first = fullChain[0]
+    const tailCount = Math.max(1, maxVisibleAncestors - 1)
+    const hidden = fullChain.slice(1, fullChain.length - tailCount)
+    const tail = fullChain.slice(fullChain.length - tailCount)
+
+    return (
+      <>
+        <AncestorBreadcrumbItem
+          stream={first}
+          isMainViewStream={isMainViewStream(first.id)}
+          onClosePanel={closePanel}
+          getNavigationUrl={getPanelUrl}
+          maxWidth={ancestorMaxWidth}
+        />
+        {hidden.length > 0 && (
+          <BreadcrumbEllipsisDropdown
+            items={hidden}
+            getNavigationUrl={getPanelUrl}
+            isMainViewStream={isMainViewStream}
+            onClosePanel={closePanel}
+          />
+        )}
+        {tail.map((item) => (
+          <AncestorBreadcrumbItem
+            key={item.id}
+            stream={item}
+            isMainViewStream={isMainViewStream(item.id)}
+            onClosePanel={closePanel}
+            getNavigationUrl={getPanelUrl}
+            maxWidth={ancestorMaxWidth}
+          />
+        ))}
+      </>
+    )
+  }
+
   return (
     <SidePanel>
-      <SidePanelHeader className="relative">
+      <SidePanelHeader ref={headerRef} className="relative">
         <StreamLoadingIndicator isLoading={showLoadingIndicator} />
         {isDraft && parentBootstrap?.stream ? (
-          // Draft thread header with breadcrumbs
-          <div className="flex items-center gap-1 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+          // Draft thread header with responsive breadcrumbs
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden pr-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onClose}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Breadcrumb className="min-w-0">
+            <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
               <BreadcrumbList className="flex-nowrap">
-                {/* Ancestor breadcrumb items */}
-                {ancestors.map((ancestor) => (
-                  <AncestorBreadcrumbItem
-                    key={ancestor.id}
-                    stream={ancestor}
-                    isMainViewStream={isMainViewStream(ancestor.id)}
-                    onClosePanel={closePanel}
-                    getNavigationUrl={getPanelUrl}
-                  />
-                ))}
-                {/* Parent stream */}
-                <BreadcrumbItem className="max-w-[120px]">
-                  <BreadcrumbLink asChild>
-                    {isMainViewStream(draftInfo!.parentStreamId) ? (
-                      <button
-                        onClick={closePanel}
-                        className="truncate block text-left hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
-                      >
-                        {getStreamBreadcrumbName(parentBootstrap.stream)}
-                      </button>
-                    ) : (
-                      <Link to={getPanelUrl(draftInfo!.parentStreamId)} className="truncate block">
-                        {getStreamBreadcrumbName(parentBootstrap.stream)}
-                      </Link>
-                    )}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                {/* Current draft */}
-                <BreadcrumbItem>
+                {renderDraftBreadcrumbs()}
+                {/* Current draft — gets priority width */}
+                <BreadcrumbItem style={{ maxWidth: currentMaxWidth }}>
                   <BreadcrumbPage className="truncate">New thread</BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>

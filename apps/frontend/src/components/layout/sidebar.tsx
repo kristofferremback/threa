@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { JSONContent } from "@threa/types"
-import { getThreadDisplayName } from "@/components/thread/breadcrumb-helpers"
+import { getThreadDisplayName, getThreadRootContext } from "@/components/thread/breadcrumb-helpers"
 import {
   useWorkspaceBootstrap,
   useCreateStream,
@@ -547,6 +547,11 @@ function StreamItem({
         ? `#${stream.slug}`
         : stream.displayName || "Untitled"
 
+  // For threads with their own displayName, show root context as subtle indicator
+  // (Skip if thread doesn't have displayName - context is already in the fallback name)
+  const threadRootContext =
+    stream.type === StreamTypes.THREAD && stream.displayName ? getThreadRootContext(stream, allStreams) : null
+
   // For scratchpads, support renaming
   if (stream.type === StreamTypes.SCRATCHPAD) {
     return (
@@ -592,6 +597,9 @@ function StreamItem({
         <div className="flex flex-col flex-1 min-w-0 gap-0.5">
           <div className="flex items-center gap-2 pr-8">
             <span className={cn("truncate text-sm", hasUnread ? "font-semibold" : "font-medium")}>{name}</span>
+            {threadRootContext && (
+              <span className="flex-shrink-0 text-[10px] text-muted-foreground/70">{threadRootContext}</span>
+            )}
             <UnreadBadge count={unreadCount} />
           </div>
           {preview && preview.content && (
