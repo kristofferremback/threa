@@ -456,13 +456,14 @@ export const AgentSessionRepository = {
     return result.rows[0] ? mapRowToStep(result.rows[0]) : null
   },
 
-  async findStepsBySession(db: Querier, sessionId: string): Promise<AgentSessionStep[]> {
+  async findStepsBySession(db: Querier, sessionId: string, limit: number = 500): Promise<AgentSessionStep[]> {
     const result = await db.query<StepRow>(
       sql`
         SELECT ${sql.raw(STEP_SELECT_FIELDS)}
         FROM agent_session_steps
         WHERE session_id = ${sessionId}
         ORDER BY step_number ASC
+        LIMIT ${limit}
       `
     )
     return result.rows.map(mapRowToStep)

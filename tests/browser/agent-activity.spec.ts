@@ -12,6 +12,10 @@ import { test, expect } from "@playwright/test"
  * but the full session lifecycle (create → complete) still fires.
  */
 
+// Stub companion is fast but session lifecycle (create → complete) involves
+// multiple async hops (outbox → broadcast → UI). 15s accommodates CI slowness.
+const AGENT_COMPLETION_TIMEOUT = 15_000
+
 test.describe("Agent Activity", () => {
   const testId = Date.now().toString(36)
   const testEmail = `agent-activity-${testId}@example.com`
@@ -56,7 +60,7 @@ test.describe("Agent Activity", () => {
     const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: messageText }).first()
 
     // Wait for reply indicator — means the agent completed and sent a message to the thread
-    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: 15000 })
+    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
 
     // Let events settle (bootstrap fetch may race with the last outbox events)
     await page.waitForTimeout(1000)
@@ -95,7 +99,7 @@ test.describe("Agent Activity", () => {
 
     // Wait for agent to complete
     const triggerMessage = page.getByRole("main").locator(".group").filter({ hasText: "do your thing" }).first()
-    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: 15000 })
+    await expect(triggerMessage.getByText(/\d+ repl/i)).toBeVisible({ timeout: AGENT_COMPLETION_TIMEOUT })
 
     // Session card should NOT be visible in the channel view
     await expect(page.getByText("Session complete")).not.toBeVisible({ timeout: 2000 })

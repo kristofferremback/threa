@@ -48,7 +48,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
   const handleStepStarted = useCallback(
     (payload: StepStartedPayload) => {
-      if (payload.sessionId !== sessionId) return
+      if (payload?.sessionId !== sessionId || !payload.step?.id) return
       setRealtimeSteps((prev) => {
         const next = new Map(prev)
         next.set(payload.step.id, payload.step)
@@ -60,7 +60,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
   const handleStepProgress = useCallback(
     (payload: StepProgressPayload) => {
-      if (payload.sessionId !== sessionId) return
+      if (payload?.sessionId !== sessionId || !payload.stepId) return
       if (payload.content != null) {
         setStreamingContent((prev) => ({ ...prev, [payload.stepId]: payload.content! }))
       }
@@ -70,7 +70,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
   const handleStepCompleted = useCallback(
     (payload: StepCompletedPayload) => {
-      if (payload.sessionId !== sessionId) return
+      if (payload?.sessionId !== sessionId || !payload.step?.id) return
       setRealtimeSteps((prev) => {
         const next = new Map(prev)
         next.set(payload.step.id, payload.step)
@@ -87,7 +87,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
   const handleCompleted = useCallback(
     (payload: SessionTerminalPayload) => {
-      if (payload.sessionId !== sessionId) return
+      if (payload?.sessionId !== sessionId) return
       setTerminalStatus("completed")
     },
     [sessionId]
@@ -95,7 +95,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
   const handleFailed = useCallback(
     (payload: SessionTerminalPayload) => {
-      if (payload.sessionId !== sessionId) return
+      if (payload?.sessionId !== sessionId) return
       setTerminalStatus("failed")
     },
     [sessionId]
