@@ -10,6 +10,7 @@ import type {
 } from "@threa/types"
 import { useTrace } from "@/contexts"
 import { useSocket } from "@/contexts"
+import { RelativeTime } from "@/components/relative-time"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
@@ -25,6 +26,7 @@ interface StatusConfig {
   bgColor: string
   hoverBgColor: string
   titleColor?: string
+  timestamp: string | null
 }
 
 function deriveStatus(events: StreamEvent[]): {
@@ -88,6 +90,7 @@ function buildStatusConfig(
         borderColor: "hsl(var(--border))",
         bgColor: "hsl(var(--muted) / 0.5)",
         hoverBgColor: "hsl(var(--muted) / 0.7)",
+        timestamp: completedPayload?.completedAt ?? startedPayload?.startedAt ?? null,
       }
     }
     case "failed": {
@@ -108,6 +111,7 @@ function buildStatusConfig(
         bgColor: "hsl(0 84% 60% / 0.05)",
         hoverBgColor: "hsl(0 84% 60% / 0.08)",
         titleColor: "hsl(0 84% 60%)",
+        timestamp: failedPayload?.failedAt ?? startedPayload?.startedAt ?? null,
       }
     }
     case "running": {
@@ -127,6 +131,7 @@ function buildStatusConfig(
         borderColor: "hsl(var(--border))",
         bgColor: "hsl(var(--muted) / 0.5)",
         hoverBgColor: "hsl(var(--muted) / 0.7)",
+        timestamp: startedPayload?.startedAt ?? null,
       }
     }
   }
@@ -185,8 +190,11 @@ export function AgentSessionEvent({ events }: AgentSessionEventProps) {
           </div>
           <div className="text-[11px] text-muted-foreground mt-0.5">{config.subtitle || "\u00a0"}</div>
         </div>
-        <div className="text-[11px] text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          Show trace and sources →
+        <div className="shrink-0 text-[11px]">
+          {config.timestamp && (
+            <RelativeTime date={config.timestamp} className="text-muted-foreground group-hover:hidden" />
+          )}
+          <span className="text-primary hidden group-hover:inline">Show trace and sources →</span>
         </div>
       </Link>
     </div>
