@@ -50,7 +50,7 @@ test.describe("Thread Breadcrumbs", () => {
     const channelMessage = `BC nav test ${testId}`
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
 
     // Create a first-level thread
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
@@ -109,7 +109,7 @@ test.describe("Thread Breadcrumbs", () => {
     await page.waitForTimeout(500)
 
     // Should be back viewing the channel with the original message visible
-    await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByRole("main").getByText(channelMessage).first()).toBeVisible({ timeout: 3000 })
   })
 
   test("should show thread with root context suffix in sidebar", async ({ page }) => {
@@ -127,7 +127,7 @@ test.describe("Thread Breadcrumbs", () => {
     const channelMessage = `Sidebar context ${testId}`
     await page.keyboard.type(channelMessage)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(channelMessage)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole("main").getByText(channelMessage)).toBeVisible({ timeout: 5000 })
 
     // Create a thread
     const messageContainer = page.getByRole("main").locator(".group").filter({ hasText: channelMessage }).first()
@@ -147,7 +147,7 @@ test.describe("Thread Breadcrumbs", () => {
 
     // Reload to ensure workspace bootstrap reflects the new thread in sidebar
     await page.reload()
-    await expect(page.getByRole("button", { name: "+ New Channel" })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole("navigation", { name: "Sidebar navigation" })).toBeVisible({ timeout: 10000 })
 
     // The sidebar should show the thread with a root context suffix " · #channel-name"
     // This unique format (dot separator + channel slug) only appears on thread entries
