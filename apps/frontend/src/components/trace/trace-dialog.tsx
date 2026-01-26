@@ -5,7 +5,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { useTrace } from "@/contexts"
 import { useAgentTrace } from "@/hooks/use-agent-trace"
 import { TraceStepList } from "./trace-step-list"
-import { Settings, X } from "lucide-react"
+import { X } from "lucide-react"
 import type { AgentSessionStatus } from "@threa/types"
 
 const STATUS_TEXT: Record<AgentSessionStatus, string> = {
@@ -52,18 +52,10 @@ export function TraceDialog() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              title="Trace preferences"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-            <DialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-              <X className="w-5 h-5" />
-              <span className="sr-only">Close</span>
-            </DialogClose>
-          </div>
+          <DialogClose className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
         </div>
 
         {/* Steps */}
@@ -102,7 +94,8 @@ export function TraceDialog() {
 }
 
 function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
+  if (!Number.isFinite(ms) || ms <= 0) return "0ms"
+  if (ms < 1000) return `${Math.round(ms)}ms`
   const seconds = ms / 1000
   if (seconds < 60) return `${seconds.toFixed(1)}s`
   const minutes = Math.floor(seconds / 60)

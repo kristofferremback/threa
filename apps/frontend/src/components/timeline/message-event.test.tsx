@@ -22,6 +22,9 @@ vi.mock("@/contexts", () => ({
     getPanelUrl: (streamId: string) => `/panel/${streamId}`,
     openThreadDraft: vi.fn(),
   }),
+  useTrace: () => ({
+    getTraceUrl: (sessionId: string) => `/trace/${sessionId}`,
+  }),
   createDraftPanelId: (parentStreamId: string, parentMessageId: string) => `draft:${parentStreamId}:${parentMessageId}`,
 }))
 

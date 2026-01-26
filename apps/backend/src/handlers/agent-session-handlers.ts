@@ -25,36 +25,27 @@ export function createAgentSessionHandlers({ pool }: Dependencies) {
       const { sessionId } = req.params
 
       const result = await withClient(pool, async (db) => {
-        // Find the session
         const session = await AgentSessionRepository.findById(db, sessionId)
         if (!session) {
           return { error: "Session not found", status: 404 }
         }
 
-        // Get the stream to check access and workspace
-        const stream = await StreamRepository.findById(db, session.streamId)
+        const [stream, membership, persona, steps] = await Promise.all([
+          StreamRepository.findById(db, session.streamId),
+          StreamMemberRepository.findByStreamAndUser(db, session.streamId, userId),
+          PersonaRepository.findById(db, session.personaId),
+          AgentSessionRepository.findStepsBySession(db, sessionId),
+        ])
+
         if (!stream || stream.workspaceId !== workspaceId) {
           return { error: "Session not found", status: 404 }
         }
-
-        // Check if user has access to the stream
-        const membership = await StreamMemberRepository.findByStreamAndUser(db, session.streamId, userId)
         if (!membership) {
           return { error: "Not authorized to view this session", status: 403 }
         }
-
-        // Get the persona
-        const persona = await PersonaRepository.findById(db, session.personaId)
         if (!persona) {
           return { error: "Persona not found", status: 404 }
         }
-
-        // Get all steps for the session
-        const steps = await AgentSessionRepository.findStepsBySession(db, sessionId)
-
-        // Calculate duration if session is completed
-        const duration =
-          session.completedAt && session.createdAt ? session.completedAt.getTime() - session.createdAt.getTime() : null
 
         const response: AgentSessionWithSteps = {
           session: {
