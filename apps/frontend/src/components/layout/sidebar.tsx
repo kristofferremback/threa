@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import {
   MoreHorizontal,
@@ -12,6 +12,7 @@ import {
   User,
   MessageSquareText,
   Plus,
+  ChevronRight,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -76,7 +77,6 @@ const SMART_SECTIONS = {
     icon: "⚡",
     compact: false, // Shows full preview always
     showPreviewOnHover: false,
-    collapsible: false,
     showCollapsedHint: false,
   },
   recent: {
@@ -84,7 +84,6 @@ const SMART_SECTIONS = {
     icon: "🕐",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: false,
     showCollapsedHint: false,
   },
   pinned: {
@@ -92,7 +91,6 @@ const SMART_SECTIONS = {
     icon: "📌",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: false,
     showCollapsedHint: false,
   },
   other: {
@@ -100,7 +98,6 @@ const SMART_SECTIONS = {
     icon: "📂",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: true,
     showCollapsedHint: true,
   },
 } as const
@@ -361,7 +358,9 @@ interface SectionHeaderProps {
   icon?: string
   /** Total unread count for the section (sum of all item unreads) */
   unreadCount?: number
-  isCollapsible?: boolean
+  /** Whether the section is currently collapsed */
+  isCollapsed?: boolean
+  /** Toggle callback - if provided, section becomes collapsible */
   onToggle?: () => void
   /** Add button callback - shows plus icon on hover */
   onAdd?: () => void
@@ -370,12 +369,24 @@ interface SectionHeaderProps {
 }
 
 /** Section header with consistent styling across all views */
-function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+function SectionHeader({ label, icon, unreadCount, isCollapsed, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+  const isCollapsible = !!onToggle
+
   const headingContent = (
-    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
-      {icon && `${icon} `}
-      {label}
-    </h3>
+    <div className="flex items-center gap-1.5">
+      {isCollapsible && (
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+            !isCollapsed && "rotate-90"
+          )}
+        />
+      )}
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
+        {icon && `${icon} `}
+        {label}
+      </h3>
+    </div>
   )
 
   const rightContent = (
@@ -398,7 +409,7 @@ function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAd
     </div>
   )
 
-  if (isCollapsible && onToggle) {
+  if (isCollapsible) {
     return (
       <div
         role="button"
@@ -481,7 +492,7 @@ function StreamSection({
         label={label}
         icon={icon}
         unreadCount={totalUnreadCount}
-        isCollapsible={!!onToggle}
+        isCollapsed={isCollapsed}
         onToggle={onToggle}
         onAdd={onAdd}
         addTooltip={addTooltip}
@@ -549,8 +560,8 @@ function SmartSection({
 }: SmartSectionProps) {
   const config = SMART_SECTIONS[section]
 
-  // Hide empty sections (except collapsible ones like "other" which show a hint)
-  if (items.length === 0 && !config.collapsible) return null
+  // Hide empty sections
+  if (items.length === 0) return null
 
   return (
     <StreamSection
@@ -562,7 +573,7 @@ function SmartSection({
       activeStreamId={activeStreamId}
       getUnreadCount={getUnreadCount}
       isCollapsed={isCollapsed}
-      onToggle={config.collapsible ? onToggle : undefined}
+      onToggle={onToggle}
       showCollapsedHint={config.showCollapsedHint}
       compact={config.compact}
       showPreviewOnHover={config.showPreviewOnHover}
@@ -1063,7 +1074,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     return { scratchpads, channels, dms }
   }, [processedStreams])
 
-  const isOtherCollapsed = collapsedSections.includes("other")
+  const isSectionCollapsed = useCallback((section: string) => collapsedSections.includes(section), [collapsedSections])
 
   // Track sidebar and scroll container dimensions for position calculations
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -1184,7 +1195,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         </div>
       }
       streamList={
-        <ScrollArea className="flex-1 [&>div>div]:!block [&>div>div]:!w-full">
+        <ScrollArea className="h-full [&>div>div]:!block [&>div>div]:!w-full">
           <div ref={scrollContainerRef} className="p-2">
             {isLoading ? (
               <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
@@ -1211,6 +1222,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("important")}
+                  onToggle={() => toggleSectionCollapsed("important")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1220,6 +1233,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("recent")}
+                  onToggle={() => toggleSectionCollapsed("recent")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1229,6 +1244,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("pinned")}
+                  onToggle={() => toggleSectionCollapsed("pinned")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1238,7 +1255,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
-                  isCollapsed={isOtherCollapsed}
+                  isCollapsed={isSectionCollapsed("other")}
                   onToggle={() => toggleSectionCollapsed("other")}
                   scrollContainerRef={scrollContainerRef}
                 />
@@ -1253,6 +1270,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("scratchpads")}
+                  onToggle={() => toggleSectionCollapsed("scratchpads")}
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateScratchpad}
                   addTooltip="+ New Scratchpad"
@@ -1267,6 +1286,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("channels")}
+                  onToggle={() => toggleSectionCollapsed("channels")}
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateChannel}
                   addTooltip="+ New Channel"
