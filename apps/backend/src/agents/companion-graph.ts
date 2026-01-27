@@ -301,6 +301,7 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
 /**
  * Create the check_new_messages node.
  * Checks for new messages and injects them if found.
+ * Records a context_received step when new messages are discovered.
  */
 function createCheckNewMessagesNode() {
   return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
@@ -318,6 +319,23 @@ function createCheckNewMessagesNode() {
       state.lastProcessedSequence
     )
     await callbacks.updateLastSeenSequence(state.sessionId, maxSequence)
+
+    // Record the new messages being added to context
+    // This helps users see what additional messages the agent considered
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "context_received",
+        content: JSON.stringify({
+          messages: newMessages.map((m) => ({
+            messageId: m.messageId,
+            authorName: m.authorName,
+            authorType: m.authorType,
+            createdAt: m.createdAt,
+            content: m.content.slice(0, 300), // Preview
+          })),
+        }),
+      })
+    }
 
     // Convert to HumanMessages and inject
     const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
