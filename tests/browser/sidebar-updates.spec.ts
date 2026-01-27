@@ -197,8 +197,9 @@ test.describe("Sidebar Updates", () => {
       await expect(page.getByRole("heading", { name: "Drafts", level: 1 })).toBeVisible({ timeout: 5000 })
 
       // Wait for Ariadne to respond (the stream:activity event should fire)
-      // We check the sidebar preview for Ariadne's name
-      await expect(page.getByText(/Ariadne:/).first()).toBeVisible({ timeout: 45000 })
+      // Preview text is in the DOM but hidden until hover (compact sidebar mode),
+      // so we check attachment rather than visibility
+      await expect(page.getByText(/Ariadne:/).first()).toBeAttached({ timeout: 45000 })
 
       // Navigate back to the scratchpad by clicking the sidebar link
       // Find the scratchpad that has Ariadne's preview and click the parent link
