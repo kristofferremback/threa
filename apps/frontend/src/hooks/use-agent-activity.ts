@@ -16,6 +16,8 @@ export interface MessageAgentActivity {
   personaName: string
   currentStepType: AgentStepType | null
   stepCount: number
+  /** Thread stream ID for channel mentions - allows linking directly to thread */
+  threadStreamId?: string
 }
 
 const STEP_LABELS: Record<AgentStepType, string> = {
@@ -38,6 +40,7 @@ interface ProgressEntry {
   personaName: string
   currentStepType: AgentStepType | null
   stepCount: number
+  threadStreamId?: string
 }
 
 /**
@@ -117,6 +120,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         personaName: payload.personaName,
         currentStepType: null,
         stepCount: 0,
+        threadStreamId: payload.threadStreamId,
       })
       return next
     })
@@ -131,6 +135,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         personaName: payload.personaName,
         currentStepType: payload.currentStepType,
         stepCount: payload.stepCount,
+        threadStreamId: payload.threadStreamId,
       })
       return next
     })
@@ -172,6 +177,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         personaName: progress?.personaName ?? session.personaName,
         currentStepType: progress?.currentStepType ?? null,
         stepCount: progress?.stepCount ?? 0,
+        threadStreamId: progress?.threadStreamId,
       })
     }
 
@@ -183,6 +189,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         personaName: progress.personaName,
         currentStepType: progress.currentStepType,
         stepCount: progress.stepCount,
+        threadStreamId: progress.threadStreamId,
       })
     }
 

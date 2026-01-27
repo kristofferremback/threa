@@ -74,6 +74,8 @@ export interface AgentSessionProgressPayload {
   personaName: string
   stepCount: number
   currentStepType: AgentStepType
+  /** Thread stream ID for channel mentions - allows frontend to link directly to thread */
+  threadStreamId?: string
 }
 
 // Stream event payloads for agent session lifecycle
@@ -127,6 +129,8 @@ export interface AgentActivityStartedPayload {
   sessionId: string
   triggerMessageId: string
   personaName: string
+  /** Thread stream ID - allows frontend to link directly to thread before stream:created arrives */
+  threadStreamId: string
 }
 
 // Emitted to channel room when agent session ends (for inline indicator cleanup)

@@ -95,6 +95,7 @@ export class SessionTrace {
 
     // Emit to stream room (lightweight, for timeline card + trigger message indicator)
     // When channelRoom is set, also emit to the channel for the inline indicator
+    // Include threadStreamId so frontend can link directly to thread before stream:created arrives
     const progressPayload = {
       workspaceId: this.params.workspaceId,
       streamId: this.params.streamId,
@@ -103,6 +104,7 @@ export class SessionTrace {
       personaName: this.params.personaName,
       stepCount: this.stepNumber,
       currentStepType: params.stepType,
+      threadStreamId: this.params.channelStreamId ? this.params.streamId : undefined,
     }
     let target = this.deps.io.to(this.streamRoom)
     if (this.channelRoom) {
@@ -134,10 +136,13 @@ export class SessionTrace {
   /** Notify channel room that agent activity started. For immediate inline indicator. */
   notifyActivityStarted(): void {
     if (!this.channelRoom) return
+    // Include threadStreamId (which is this.params.streamId) so frontend can link
+    // directly to the thread before the slower stream:created event arrives
     this.deps.io.to(this.channelRoom).emit("agent_session:activity_started", {
       sessionId: this.params.sessionId,
       triggerMessageId: this.params.triggerMessageId,
       personaName: this.params.personaName,
+      threadStreamId: this.params.streamId,
     })
   }
 

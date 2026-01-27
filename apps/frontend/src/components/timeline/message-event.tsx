@@ -149,13 +149,19 @@ function SentMessageEvent({
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
   // Shows on hover when no thread exists yet, or always when thread exists
   // When agent activity is present, the activity text is always visible on the same line
+  // When activity.threadStreamId is present, use it for the thread link (allows immediate
+  // navigation to the real thread before the slower stream:created event updates threadId)
+  const effectiveThreadId = threadId ?? activity?.threadStreamId
   const threadFooter = !hideActions ? (
     <div className="mt-1 flex items-center gap-1.5 text-xs">
-      {threadId ? (
+      {effectiveThreadId ? (
         replyCount > 0 ? (
-          <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} />
+          <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
         ) : (
-          <Link to={getPanelUrl(threadId)} className="text-muted-foreground hover:text-foreground hover:underline">
+          <Link
+            to={getPanelUrl(effectiveThreadId)}
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
             Reply in thread
           </Link>
         )
@@ -205,10 +211,10 @@ function SentMessageEvent({
                 <Sparkles className="h-4 w-4" />
               </Link>
             )}
-            {/* Reply in thread button (only when thread exists) */}
-            {!isParentOfCurrentThread && threadId && (
+            {/* Reply in thread button (only when thread exists or agent activity has threadStreamId) */}
+            {!isParentOfCurrentThread && effectiveThreadId && (
               <Link
-                to={getPanelUrl(threadId)}
+                to={getPanelUrl(effectiveThreadId)}
                 className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
               >
                 <MessageSquareReply className="h-4 w-4" />
