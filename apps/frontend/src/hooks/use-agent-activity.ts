@@ -15,6 +15,7 @@ export interface MessageAgentActivity {
   sessionId: string
   personaName: string
   currentStepType: AgentStepType | null
+  stepCount: number
 }
 
 const STEP_LABELS: Record<AgentStepType, string> = {
@@ -36,6 +37,7 @@ interface ProgressEntry {
   triggerMessageId: string
   personaName: string
   currentStepType: AgentStepType | null
+  stepCount: number
 }
 
 /**
@@ -114,6 +116,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         triggerMessageId: payload.triggerMessageId,
         personaName: payload.personaName,
         currentStepType: null,
+        stepCount: 0,
       })
       return next
     })
@@ -127,6 +130,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         triggerMessageId: payload.triggerMessageId,
         personaName: payload.personaName,
         currentStepType: payload.currentStepType,
+        stepCount: payload.stepCount,
       })
       return next
     })
@@ -167,6 +171,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         sessionId,
         personaName: progress?.personaName ?? session.personaName,
         currentStepType: progress?.currentStepType ?? null,
+        stepCount: progress?.stepCount ?? 0,
       })
     }
 
@@ -177,6 +182,7 @@ export function useAgentActivity(events: StreamEvent[], socket: Socket | null): 
         sessionId,
         personaName: progress.personaName,
         currentStepType: progress.currentStepType,
+        stepCount: progress.stepCount,
       })
     }
 

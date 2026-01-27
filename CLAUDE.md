@@ -300,6 +300,25 @@ Examples of correct patterns:
 - `LLMBoundaryExtractor.extract()` not manual graph invocation
 - `PersonaAgent.run()` not `createCompanionGraph()` directly
 
+**INV-46: No Hardcoded Display Text in Backend** - Backend NEVER returns hardcoded user-facing text (English sentences, formatted descriptions). Return structured data; the frontend formats for display. This enables i18n and keeps rendering decisions in the UI layer. Example: a trace step for workspace search stores `{ memoCount: 3, messageCount: 2 }` not `"Found 3 memos and 2 related messages"`. LLM output is fine — it's generated, not hardcoded.
+
+**INV-47: No Nested Ternaries** - Never nest ternary expressions. Multi-level ternaries are hard to parse and debug. Use `switch` statements, early returns, or config lookups instead. One level of ternary is fine (`a ? b : c`); two or more levels is not (`a ? b : c ? d : e`).
+
+```typescript
+// Bad
+const status = failed ? "failed" : completed ? "completed" : "running"
+
+// Good
+switch (true) {
+  case !!failed:
+    return "failed"
+  case !!completed:
+    return "completed"
+  default:
+    return "running"
+}
+```
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
@@ -482,27 +501,6 @@ Adding `workspaceId` to paths touched routes, handlers, services, outbox events,
 ### Prefer iteration over recursion for middleware chains
 
 Recursive implementations work but iteration is harder to get wrong, has no stack depth concerns, easier to debug. Middleware pattern is inherently iterative.
-
-### Avoid nested ternaries
-
-Multi-level ternaries are clever but hard to debug. First thing when troubleshooting is flattening them. Use switch statements - roughly as terse but explain each case explicitly:
-
-```typescript
-// Bad - requires mental stack to parse
-const x = a ? b : c ? d : e ? f : g
-
-// Good - each case is explicit
-switch (true) {
-  case a:
-    return b
-  case c:
-    return d
-  case e:
-    return f
-  default:
-    return g
-}
-```
 
 ### Be consistent in initialization patterns
 

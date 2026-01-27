@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Check, X, Loader2 } from "lucide-react"
 import type {
@@ -6,14 +5,15 @@ import type {
   AgentSessionStartedPayload,
   AgentSessionCompletedPayload,
   AgentSessionFailedPayload,
-  AgentSessionProgressPayload,
 } from "@threa/types"
 import { useTrace } from "@/contexts"
-import { useSocket } from "@/contexts"
 import { RelativeTime } from "@/components/relative-time"
+import { formatDuration } from "@/lib/dates"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
+  /** Live progress from parent (via useAgentActivity hook) */
+  liveStepCount?: number
 }
 
 type SessionStatus = "running" | "completed" | "failed"
@@ -58,7 +58,15 @@ function deriveStatus(events: StreamEvent[]): {
     }
   }
 
-  const status: SessionStatus = failedPayload ? "failed" : completedPayload ? "completed" : "running"
+  let status: SessionStatus
+  if (failedPayload) {
+    status = "failed"
+  } else if (completedPayload) {
+    status = "completed"
+  } else {
+    status = "running"
+  }
+
   return { status, sessionId, startedPayload, completedPayload, failedPayload }
 }
 
@@ -67,7 +75,7 @@ function buildStatusConfig(
   startedPayload: AgentSessionStartedPayload | null,
   completedPayload: AgentSessionCompletedPayload | null,
   failedPayload: AgentSessionFailedPayload | null,
-  liveProgress: { stepCount: number } | null
+  liveStepCount: number | undefined
 ): StatusConfig {
   switch (status) {
     case "completed": {
@@ -117,8 +125,8 @@ function buildStatusConfig(
     case "running": {
       const personaName = startedPayload?.personaName ?? "Agent"
       const parts: string[] = []
-      if (liveProgress) {
-        parts.push(`${liveProgress.stepCount} ${liveProgress.stepCount === 1 ? "step" : "steps"}`)
+      if (liveStepCount !== undefined) {
+        parts.push(`${liveStepCount} ${liveStepCount === 1 ? "step" : "steps"}`)
       }
       return {
         title: `${personaName} is working...`,
@@ -137,29 +145,11 @@ function buildStatusConfig(
   }
 }
 
-export function AgentSessionEvent({ events }: AgentSessionEventProps) {
+export function AgentSessionEvent({ events, liveStepCount }: AgentSessionEventProps) {
   const { getTraceUrl } = useTrace()
-  const socket = useSocket()
   const { status, sessionId, startedPayload, completedPayload, failedPayload } = deriveStatus(events)
 
-  // Live progress from socket (step count updates per step)
-  const [progress, setProgress] = useState<{ stepCount: number } | null>(null)
-
-  useEffect(() => {
-    if (!socket || status !== "running") return
-
-    const handler = (payload: AgentSessionProgressPayload) => {
-      if (payload.sessionId !== sessionId) return
-      setProgress({ stepCount: payload.stepCount })
-    }
-
-    socket.on("agent_session:progress", handler)
-    return () => {
-      socket.off("agent_session:progress", handler)
-    }
-  }, [socket, sessionId, status])
-
-  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, progress)
+  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, liveStepCount)
 
   if (!sessionId) return null
 
@@ -199,13 +189,4 @@ export function AgentSessionEvent({ events }: AgentSessionEventProps) {
       </Link>
     </div>
   )
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = Math.floor(seconds % 60)
-  return `${minutes}m ${remainingSeconds}s`
 }

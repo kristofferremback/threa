@@ -183,7 +183,7 @@ function createResearchNode() {
 
         await callbacks.recordStep({
           stepType: "workspace_search",
-          content: `Found ${result.memos.length} memos and ${result.messages.length} related messages`,
+          content: JSON.stringify({ memoCount: result.memos.length, messageCount: result.messages.length }),
           durationMs,
           sources: traceSources,
         })
@@ -264,9 +264,8 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       if (responseText.trim()) {
         thinkingContent = responseText
       } else if (response.tool_calls?.length) {
-        // LLM produced no text, only tool calls — summarize the plan
-        const toolNames = response.tool_calls.map((tc) => tc.name).join(", ")
-        thinkingContent = `Planning to use: ${toolNames}`
+        const toolNames = response.tool_calls.map((tc) => tc.name)
+        thinkingContent = JSON.stringify({ toolPlan: toolNames })
       }
 
       await callbacks.recordStep({
@@ -444,8 +443,8 @@ function getToolStepType(toolName: string): AgentStepType {
 }
 
 /**
- * Format tool execution into content and optional sources for the trace.
- * Uses both input args and tool result to build rich trace data.
+ * Format tool execution into structured content and optional sources for the trace.
+ * Returns structured JSON (INV-46) — the frontend handles display formatting.
  */
 function formatToolStep(
   toolName: string,
@@ -455,30 +454,29 @@ function formatToolStep(
   switch (toolName) {
     case "read_url": {
       const url = String(args.url ?? "")
-      // Parse result to extract page title
       try {
         const parsed = JSON.parse(resultStr)
         if (parsed.title && parsed.title !== "Untitled") {
           return {
-            content: parsed.title,
+            content: JSON.stringify({ url, title: parsed.title }),
             sources: [{ type: "web", title: parsed.title, url, domain: new URL(url).hostname }],
           }
         }
       } catch {
         // Result wasn't valid JSON or didn't have title
       }
-      return { content: url }
+      return { content: JSON.stringify({ url }) }
     }
     case "search_messages":
-      return { content: `Searching messages: "${args.query ?? ""}"${args.stream ? ` in ${args.stream}` : ""}` }
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "", stream: args.stream ?? null }) }
     case "search_streams":
-      return { content: `Searching streams: "${args.query ?? ""}"` }
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
     case "search_users":
-      return { content: `Searching users: "${args.query ?? ""}"` }
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
     case "get_stream_messages":
-      return { content: `Reading messages from ${args.stream ?? "unknown stream"}` }
+      return { content: JSON.stringify({ tool: toolName, stream: args.stream ?? null }) }
     default:
-      return { content: `${toolName}(${JSON.stringify(args)})` }
+      return { content: JSON.stringify({ tool: toolName, args }) }
   }
 }
 

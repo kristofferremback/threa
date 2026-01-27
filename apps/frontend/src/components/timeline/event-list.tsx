@@ -148,16 +148,29 @@ export function EventList({
     return item.event.id === firstUnreadEventId
   }
 
+  // Build sessionId → stepCount lookup from agentActivity (keyed by triggerMessageId)
+  const sessionStepCounts = new Map<string, number>()
+  if (agentActivity) {
+    for (const activity of agentActivity.values()) {
+      sessionStepCounts.set(activity.sessionId, activity.stepCount)
+    }
+  }
+
   return (
     <div className="flex flex-col p-6 mx-auto max-w-[800px] w-full min-w-0">
       {timelineItems.map((item) => {
         const showUnreadDivider = isFirstUnread(item)
-        const eventId =
-          item.type === "command_group"
-            ? item.commandId
-            : item.type === "session_group"
-              ? item.sessionId
-              : item.event.id
+        let eventId: string
+        switch (item.type) {
+          case "command_group":
+            eventId = item.commandId
+            break
+          case "session_group":
+            eventId = item.sessionId
+            break
+          default:
+            eventId = item.event.id
+        }
 
         return (
           <div key={eventId} className={showUnreadDivider ? "relative" : undefined}>
@@ -166,7 +179,7 @@ export function EventList({
               <CommandEvent events={item.events} />
             ) : item.type === "session_group" ? (
               hideSessionCards ? null : (
-                <AgentSessionEvent events={item.events} />
+                <AgentSessionEvent events={item.events} liveStepCount={sessionStepCounts.get(item.sessionId)} />
               )
             ) : (
               <EventItem
