@@ -21,6 +21,7 @@ export interface MessageAgentActivity {
 }
 
 const STEP_LABELS: Record<AgentStepType, string> = {
+  context_received: "Reading messages...",
   thinking: "Thinking...",
   reconsidering: "Reconsidering...",
   web_search: "Searching the web...",

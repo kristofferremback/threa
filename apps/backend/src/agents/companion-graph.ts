@@ -25,16 +25,26 @@ const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
 
 /**
+ * A new message that arrived during agent processing.
+ * Includes rich metadata for trace display.
+ */
+export interface NewMessageInfo {
+  sequence: bigint
+  messageId: string
+  content: string
+  authorId: string
+  authorName: string
+  authorType: "user" | "persona"
+  createdAt: string
+}
+
+/**
  * Callbacks that must be provided when invoking the graph.
  * Passed via configurable in the RunnableConfig.
  */
 export interface CompanionGraphCallbacks {
   /** Check for new messages since lastProcessedSequence */
-  checkNewMessages: (
-    streamId: string,
-    sinceSequence: bigint,
-    excludeAuthorId: string
-  ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
+  checkNewMessages: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
   /** Update the last seen sequence on the session */
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
@@ -411,14 +421,20 @@ function createFinalizeOrReconsiderNode() {
       "New messages arrived while responses pending - agent will reconsider"
     )
 
-    // Record the reconsideration step - this is valuable trace info
+    // Record the reconsideration step with rich message context
+    // This helps users see exactly what new context caused the agent to reconsider
     if (callbacks.recordStep) {
       await callbacks.recordStep({
         stepType: "reconsidering",
         content: JSON.stringify({
           draftResponse: pendingContents,
-          newMessageCount: newMessages.length,
-          newMessages: newMessages.map((m) => m.content.slice(0, 200)),
+          newMessages: newMessages.map((m) => ({
+            messageId: m.messageId,
+            authorName: m.authorName,
+            authorType: m.authorType,
+            createdAt: m.createdAt,
+            content: m.content.slice(0, 300), // Preview
+          })),
         }),
       })
     }

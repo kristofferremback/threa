@@ -182,6 +182,7 @@ export type AgentSessionEventType = (typeof AGENT_SESSION_EVENT_TYPES)[number]
 
 // Agent step types (semantic - frontend maps to display labels)
 export const AGENT_STEP_TYPES = [
+  "context_received",
   "thinking",
   "reconsidering",
   "web_search",
@@ -194,6 +195,7 @@ export const AGENT_STEP_TYPES = [
 export type AgentStepType = (typeof AGENT_STEP_TYPES)[number]
 
 export const AgentStepTypes = {
+  CONTEXT_RECEIVED: "context_received",
   THINKING: "thinking",
   RECONSIDERING: "reconsidering",
   WEB_SEARCH: "web_search",

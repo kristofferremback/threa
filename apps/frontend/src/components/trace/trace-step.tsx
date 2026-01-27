@@ -7,6 +7,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
 import {
   ChevronRight,
+  Inbox,
   Lightbulb,
   RotateCcw,
   Search,
@@ -27,6 +28,7 @@ interface StepConfig {
 }
 
 const STEP_CONFIGS: Record<AgentStepType, StepConfig> = {
+  context_received: { label: "Context", icon: Inbox, hue: 220, saturation: 70, lightness: 55 },
   thinking: { label: "Thinking", icon: Lightbulb, hue: 45, saturation: 93, lightness: 47 },
   reconsidering: { label: "Reconsidering", icon: RotateCcw, hue: 280, saturation: 70, lightness: 55 },
   web_search: { label: "Web Search", icon: Search, hue: 200, saturation: 70, lightness: 50 },
@@ -128,6 +130,16 @@ function StepContent({
   return <div className="text-sm leading-relaxed">{renderStepContent(stepType, content, structured, messageLink)}</div>
 }
 
+/** Message info as stored in context_received and reconsidering steps */
+interface MessageInfo {
+  messageId: string
+  authorName: string
+  authorType: "user" | "persona"
+  createdAt: string
+  content: string
+  isTrigger?: boolean
+}
+
 function renderStepContent(
   stepType: AgentStepType,
   content: string,
@@ -135,6 +147,39 @@ function renderStepContent(
   messageLink: string | null
 ): React.ReactNode {
   switch (stepType) {
+    case "context_received": {
+      if (structured && "messages" in structured) {
+        const messages = structured.messages as MessageInfo[]
+        const triggerMessage = messages.find((m) => m.isTrigger)
+        const contextMessages = messages.filter((m) => !m.isTrigger)
+
+        return (
+          <div className="space-y-3">
+            {/* Trigger message - highlighted */}
+            {triggerMessage && (
+              <div>
+                <div className="text-muted-foreground text-[11px] mb-1.5 font-medium">Triggered by:</div>
+                <MessagePreview message={triggerMessage} highlight />
+              </div>
+            )}
+
+            {/* Context messages */}
+            {contextMessages.length > 0 && (
+              <div>
+                <div className="text-muted-foreground text-[11px] mb-1.5">Recent context:</div>
+                <div className="space-y-1.5">
+                  {contextMessages.map((msg) => (
+                    <MessagePreview key={msg.messageId} message={msg} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      }
+      return <span className="text-muted-foreground">Processing messages...</span>
+    }
+
     case "thinking": {
       if (structured && "toolPlan" in structured) {
         const tools = structured.toolPlan as string[]
@@ -146,28 +191,30 @@ function renderStepContent(
     case "reconsidering": {
       if (structured && "draftResponse" in structured) {
         const draft = structured.draftResponse as string
-        const newMessageCount = (structured.newMessageCount as number) ?? 0
-        const newMessages = (structured.newMessages as string[]) ?? []
+        const newMessages = (structured.newMessages as MessageInfo[]) ?? []
         return (
-          <div className="space-y-2">
-            <div className="text-muted-foreground">
-              New context arrived ({newMessageCount} {newMessageCount === 1 ? "message" : "messages"}) — reconsidering
-              response
-            </div>
-            <div className="rounded bg-muted/50 px-3 py-2 text-xs">
-              <div className="text-muted-foreground text-[11px] mb-1">Draft response:</div>
-              <div className="italic">"{draft.length > 150 ? draft.slice(0, 150) + "..." : draft}"</div>
-            </div>
+          <div className="space-y-3">
+            {/* New messages that arrived */}
             {newMessages.length > 0 && (
-              <div className="rounded bg-primary/5 px-3 py-2 text-xs">
-                <div className="text-muted-foreground text-[11px] mb-1">New context:</div>
-                {newMessages.map((msg, i) => (
-                  <div key={i} className="text-muted-foreground">
-                    • {msg.length > 100 ? msg.slice(0, 100) + "..." : msg}
-                  </div>
-                ))}
+              <div>
+                <div className="text-muted-foreground text-[11px] mb-1.5 font-medium">
+                  New {newMessages.length === 1 ? "message" : "messages"} arrived:
+                </div>
+                <div className="space-y-1.5">
+                  {newMessages.map((msg) => (
+                    <MessagePreview key={msg.messageId} message={msg} highlight />
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Draft response that's being reconsidered */}
+            <div>
+              <div className="text-muted-foreground text-[11px] mb-1.5">Draft being reconsidered:</div>
+              <div className="rounded bg-muted/50 px-3 py-2 text-xs italic">
+                "{draft.length > 200 ? draft.slice(0, 200) + "..." : draft}"
+              </div>
+            </div>
           </div>
         )
       }
@@ -350,4 +397,24 @@ function SourceTitle({ source, internalLink }: { source: TraceSource; internalLi
     )
   }
   return <>{source.title}</>
+}
+
+/** Preview of a message in context_received or reconsidering steps */
+function MessagePreview({ message, highlight }: { message: MessageInfo; highlight?: boolean }) {
+  const isPersona = message.authorType === "persona"
+  const preview = message.content.length > 150 ? message.content.slice(0, 150) + "..." : message.content
+
+  return (
+    <div
+      className={cn("rounded px-3 py-2 text-xs", highlight ? "bg-primary/10 border border-primary/20" : "bg-muted/50")}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className={cn("font-medium", isPersona && "text-primary")}>{message.authorName}</span>
+        <span className="text-muted-foreground text-[10px]">
+          <RelativeTime date={message.createdAt} className="text-[10px] text-muted-foreground" />
+        </span>
+      </div>
+      <div className="text-foreground/90 leading-relaxed">{preview}</div>
+    </div>
+  )
 }

@@ -437,6 +437,52 @@ export class PersonaAgent {
         // Build stream context with temporal information
         const context = await buildStreamContext(db, stream, { preferences })
 
+        // Build a map of participant IDs to names for message attribution
+        const participantNames = new Map<string, string>()
+        if (context.participants) {
+          for (const p of context.participants) {
+            participantNames.set(p.id, p.name)
+          }
+        }
+
+        // Also look up persona names for any persona messages in history
+        const personaAuthorIds = [
+          ...new Set(context.conversationHistory.filter((m) => m.authorType === "persona").map((m) => m.authorId)),
+        ]
+        if (personaAuthorIds.length > 0) {
+          const personas = await PersonaRepository.findByIds(db, personaAuthorIds)
+          for (const p of personas) {
+            participantNames.set(p.id, p.name)
+          }
+        }
+
+        // Record the initial context - messages being processed at session start
+        // This helps users understand WHY this session was triggered and WHAT the agent saw
+        if (context.conversationHistory.length > 0) {
+          // Find messages we're actually processing (recent ones, focused on trigger)
+          // Include the trigger message and any recent context (last few messages)
+          const triggerIdx = context.conversationHistory.findIndex((m) => m.id === messageId)
+          const contextMessages =
+            triggerIdx >= 0
+              ? context.conversationHistory.slice(Math.max(0, triggerIdx - 4)) // 4 messages before + trigger
+              : context.conversationHistory.slice(-5) // Fallback: last 5
+
+          const step = await trace.startStep({
+            stepType: "context_received",
+            content: JSON.stringify({
+              messages: contextMessages.map((m) => ({
+                messageId: m.id,
+                authorName: participantNames.get(m.authorId) ?? "Unknown",
+                authorType: m.authorType,
+                createdAt: m.createdAt.toISOString(),
+                content: m.contentMarkdown.slice(0, 300), // Preview
+                isTrigger: m.id === messageId,
+              })),
+            }),
+          })
+          await step.complete({})
+        }
+
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
         if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === "user") {
@@ -612,10 +658,28 @@ export class PersonaAgent {
             const messages = await MessageRepository.listSince(db, checkStreamId, sinceSequence, {
               excludeAuthorId,
             })
+
+            // Look up author names for rich trace display
+            const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+            const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+
+            const [users, personas] = await Promise.all([
+              userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+              personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+            ])
+
+            const authorNames = new Map<string, string>()
+            for (const u of users) authorNames.set(u.id, u.name)
+            for (const p of personas) authorNames.set(p.id, p.name)
+
             return messages.map((m) => ({
               sequence: m.sequence,
+              messageId: m.id,
               content: m.contentMarkdown,
               authorId: m.authorId,
+              authorName: authorNames.get(m.authorId) ?? "Unknown",
+              authorType: m.authorType,
+              createdAt: m.createdAt.toISOString(),
             }))
           },
 

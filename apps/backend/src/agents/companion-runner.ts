@@ -5,6 +5,7 @@ import {
   toLangChainMessages,
   type CompanionGraphCallbacks,
   type RecordStepParams,
+  type NewMessageInfo,
 } from "./companion-graph"
 import {
   createSendMessageTool,
@@ -28,7 +29,7 @@ import { logger } from "../lib/logger"
 import { getLangfuseCallbacks } from "../lib/langfuse"
 
 // Re-export for consumers
-export type { RecordStepParams }
+export type { RecordStepParams, NewMessageInfo }
 
 const MAX_MESSAGES = 5
 
@@ -86,12 +87,8 @@ export interface ResponseGeneratorCallbacks {
   sendMessage: (input: SendMessageInput) => Promise<SendMessageResult>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
-  /** Check for new messages since a sequence */
-  checkNewMessages: (
-    streamId: string,
-    sinceSequence: bigint,
-    excludeAuthorId: string
-  ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
+  /** Check for new messages since a sequence (returns rich info for trace display) */
+  checkNewMessages: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
   /** Update the last seen sequence on the session */
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Optional workspace search callbacks (required if search tools are enabled) */
