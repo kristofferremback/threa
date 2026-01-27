@@ -189,9 +189,9 @@ export async function startServer(): Promise<ServerInstance> {
     //
     // Max concurrent handlers: 3 × 3 = 9 handlers
     // Peak connections: ~9-10 (safe for 30 connection pool)
-    pollIntervalMs: 500,
+    pollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS) || 500,
     refillDebounceMs: 100,
-    maxActiveTokens: 3,
+    maxActiveTokens: Number(process.env.QUEUE_MAX_ACTIVE_TOKENS) || 3,
     processingConcurrency: 3,
   })
 
@@ -371,7 +371,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Schedule memo batch check cron job (every 30 seconds)
   // workspaceId in payload: "system" for system-wide batch check
   // workspaceId in schedule: null for global (not workspace-specific) schedule
-  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" }, null)
+  // Skip when AI is stubbed - stub memo services don't need batch processing
+  if (!config.useStubAI) {
+    await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" }, null)
+  }
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })

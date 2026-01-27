@@ -156,7 +156,7 @@ export interface DatabasePools {
  */
 export function createDatabasePools(connectionString: string): DatabasePools {
   // Main pool for transactional work
-  const main = createDatabasePool(connectionString, { max: 30 })
+  const main = createDatabasePool(connectionString, { max: Number(process.env.DATABASE_POOL_MAX) || 30 })
 
   // Listen pool for long-held NOTIFY/LISTEN connections
   // Size: 9 listeners + headroom for reconnection overlap
