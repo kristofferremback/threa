@@ -58,11 +58,12 @@ function deriveStatus(events: StreamEvent[]): {
     }
   }
 
+  // Completed takes precedence over failed (intermediate failures can be recovered)
   let status: SessionStatus
-  if (failedPayload) {
-    status = "failed"
-  } else if (completedPayload) {
+  if (completedPayload) {
     status = "completed"
+  } else if (failedPayload) {
+    status = "failed"
   } else {
     status = "running"
   }
