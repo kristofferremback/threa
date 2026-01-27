@@ -212,7 +212,10 @@ function renderStepContent(
             <div>
               <div className="text-muted-foreground text-[11px] mb-1.5">Draft being reconsidered:</div>
               <div className="rounded bg-muted/50 px-3 py-2 text-xs italic">
-                "{draft.length > 200 ? draft.slice(0, 200) + "..." : draft}"
+                <MarkdownContent
+                  content={draft.length > 200 ? draft.slice(0, 200) + "..." : draft}
+                  className="text-xs"
+                />
               </div>
             </div>
           </div>
@@ -252,11 +255,14 @@ function renderStepContent(
       return <span>{content}</span>
     }
 
-    case "message_sent":
+    case "message_sent": {
+      const messagePreview = content.length > 100 ? content.slice(0, 100) + "..." : content
       return (
         <div className="group">
           <span className="text-muted-foreground">Sent message: </span>
-          <span>"{content.length > 100 ? content.slice(0, 100) + "..." : content}"</span>
+          <span className="inline">
+            "<MarkdownContent content={messagePreview} className="inline text-sm" />"
+          </span>
           {messageLink && (
             <Link
               to={messageLink}
@@ -268,6 +274,7 @@ function renderStepContent(
           )}
         </div>
       )
+    }
 
     case "tool_call": {
       if (structured && "tool" in structured) {
@@ -402,6 +409,7 @@ function SourceTitle({ source, internalLink }: { source: TraceSource; internalLi
 /** Preview of a message in context_received or reconsidering steps */
 function MessagePreview({ message, highlight }: { message: MessageInfo; highlight?: boolean }) {
   const isPersona = message.authorType === "persona"
+  // Truncate long content but preserve markdown structure
   const preview = message.content.length > 150 ? message.content.slice(0, 150) + "..." : message.content
 
   return (
@@ -414,7 +422,7 @@ function MessagePreview({ message, highlight }: { message: MessageInfo; highligh
           <RelativeTime date={message.createdAt} className="text-[10px] text-muted-foreground" />
         </span>
       </div>
-      <div className="text-foreground/90 leading-relaxed">{preview}</div>
+      <MarkdownContent content={preview} className="text-xs leading-relaxed text-foreground/90" />
     </div>
   )
 }
