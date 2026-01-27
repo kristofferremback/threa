@@ -8,6 +8,7 @@ import { formatDuration } from "@/lib/dates"
 import {
   ChevronRight,
   Lightbulb,
+  RotateCcw,
   Search,
   FileText,
   Building2,
@@ -27,6 +28,7 @@ interface StepConfig {
 
 const STEP_CONFIGS: Record<AgentStepType, StepConfig> = {
   thinking: { label: "Thinking", icon: Lightbulb, hue: 45, saturation: 93, lightness: 47 },
+  reconsidering: { label: "Reconsidering", icon: RotateCcw, hue: 280, saturation: 70, lightness: 55 },
   web_search: { label: "Web Search", icon: Search, hue: 200, saturation: 70, lightness: 50 },
   visit_page: { label: "Reading Page", icon: FileText, hue: 200, saturation: 70, lightness: 50 },
   workspace_search: { label: "Workspace Search", icon: Building2, hue: 270, saturation: 60, lightness: 50 },
@@ -139,6 +141,37 @@ function renderStepContent(
         return <span className="text-muted-foreground">Planning to use: {tools.join(", ")}</span>
       }
       return <MarkdownContent content={content} className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+    }
+
+    case "reconsidering": {
+      if (structured && "draftResponse" in structured) {
+        const draft = structured.draftResponse as string
+        const newMessageCount = (structured.newMessageCount as number) ?? 0
+        const newMessages = (structured.newMessages as string[]) ?? []
+        return (
+          <div className="space-y-2">
+            <div className="text-muted-foreground">
+              New context arrived ({newMessageCount} {newMessageCount === 1 ? "message" : "messages"}) — reconsidering
+              response
+            </div>
+            <div className="rounded bg-muted/50 px-3 py-2 text-xs">
+              <div className="text-muted-foreground text-[11px] mb-1">Draft response:</div>
+              <div className="italic">"{draft.length > 150 ? draft.slice(0, 150) + "..." : draft}"</div>
+            </div>
+            {newMessages.length > 0 && (
+              <div className="rounded bg-primary/5 px-3 py-2 text-xs">
+                <div className="text-muted-foreground text-[11px] mb-1">New context:</div>
+                {newMessages.map((msg, i) => (
+                  <div key={i} className="text-muted-foreground">
+                    • {msg.length > 100 ? msg.slice(0, 100) + "..." : msg}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      }
+      return <span className="text-muted-foreground">Reconsidering response due to new context</span>
     }
 
     case "web_search":

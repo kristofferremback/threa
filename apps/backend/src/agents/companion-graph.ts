@@ -259,6 +259,7 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
     )
 
     // Record thinking step after LLM call with actual content
+    // Skip recording if there's nothing to show (empty response, no tool calls)
     if (callbacks.recordStep) {
       let thinkingContent: string | undefined
       if (responseText.trim()) {
@@ -268,11 +269,14 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
         thinkingContent = JSON.stringify({ toolPlan: toolNames })
       }
 
-      await callbacks.recordStep({
-        stepType: "thinking",
-        content: thinkingContent,
-        durationMs,
-      })
+      // Only record thinking steps that have content - empty iterations are noise
+      if (thinkingContent) {
+        await callbacks.recordStep({
+          stepType: "thinking",
+          content: thinkingContent,
+          durationMs,
+        })
+      }
     }
 
     return {
@@ -406,6 +410,18 @@ function createFinalizeOrReconsiderNode() {
       },
       "New messages arrived while responses pending - agent will reconsider"
     )
+
+    // Record the reconsideration step - this is valuable trace info
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "reconsidering",
+        content: JSON.stringify({
+          draftResponse: pendingContents,
+          newMessageCount: newMessages.length,
+          newMessages: newMessages.map((m) => m.content.slice(0, 200)),
+        }),
+      })
+    }
 
     // Build reconsideration context
     const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
