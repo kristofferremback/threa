@@ -34,7 +34,8 @@ export const MEMO_TEMPERATURES = {
 /**
  * Schema for message classification output.
  * OpenAI's strict mode requires ALL properties in `required`,
- * so we use `.nullable()` instead of `.optional()`.
+ * so we use `.nullable()` instead of `.optional()` for fields the model must emit.
+ * reasoning uses `.nullish()` because some models omit it when isGem is false.
  */
 export const messageClassificationSchema = z.object({
   isGem: z.boolean().describe("Whether this message is a standalone gem worth memorizing"),
@@ -43,7 +44,7 @@ export const messageClassificationSchema = z.object({
     .nullable()
     .describe(`Type of knowledge if isGem is true: ${KNOWLEDGE_TYPES.map((t) => `"${t}"`).join(" | ")}`),
   confidence: z.number().min(0).max(1).nullable().describe("Confidence in this classification (0.0 to 1.0)"),
-  reasoning: z.string().nullable().describe("Brief explanation of the classification decision"),
+  reasoning: z.string().nullish().describe("Brief explanation of the classification decision"),
 })
 
 export type MessageClassificationOutput = z.infer<typeof messageClassificationSchema>

@@ -61,6 +61,11 @@ function addDefaults(obj: Record<string, unknown>): Record<string, unknown> {
     }
   }
 
+  // Message classification often omits reasoning when isGem is false; default to null
+  if ("isGem" in obj && !("reasoning" in obj)) {
+    obj.reasoning = null
+  }
+
   // Default confidence if missing
   if (!("confidence" in obj)) {
     obj.confidence = 0.5
