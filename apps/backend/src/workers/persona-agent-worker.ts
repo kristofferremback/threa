@@ -59,9 +59,9 @@ export function createPersonaAgentWorker(deps: PersonaAgentWorkerDeps): JobHandl
     // Check for unseen messages that arrived while the session was running.
     // The companion listener skips dispatching jobs for messages when a session
     // is already active (RUNNING/PENDING), so we need to catch up here.
-    // This also applies to mentions — if someone answers while the agent is
-    // thinking, the agent should reconsider rather than repeat what was said.
-    if (result.status === "completed" && result.lastSeenSequence !== undefined) {
+    // Skip for mentions — they work in threads with a different sequence space
+    // than the channel, and new mentions get their own jobs via mention-invoke.
+    if (result.status === "completed" && result.lastSeenSequence !== undefined && trigger !== AgentTriggers.MENTION) {
       await checkForUnseenMessages({
         pool,
         jobQueue,
