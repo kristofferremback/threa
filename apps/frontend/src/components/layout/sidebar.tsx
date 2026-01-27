@@ -52,6 +52,9 @@ import { ThemeDropdown } from "@/components/theme-dropdown"
 
 type UrgencyLevel = "mentions" | "activity" | "quiet" | "ai"
 
+/** Sorting strategies for sidebar sections */
+type SortType = "activity" | "importance" | "alphabetic_active_first"
+
 interface StreamItemData extends StreamWithPreview {
   urgency: UrgencyLevel
   section: SectionKey
@@ -78,6 +81,7 @@ const SMART_SECTIONS = {
     compact: false, // Shows full preview always
     showPreviewOnHover: false,
     showCollapsedHint: false,
+    sortType: "importance" as SortType,
   },
   recent: {
     label: "Recent",
@@ -85,6 +89,7 @@ const SMART_SECTIONS = {
     compact: true,
     showPreviewOnHover: true,
     showCollapsedHint: false,
+    sortType: "activity" as SortType,
   },
   pinned: {
     label: "Pinned",
@@ -92,6 +97,7 @@ const SMART_SECTIONS = {
     compact: true,
     showPreviewOnHover: true,
     showCollapsedHint: false,
+    sortType: "activity" as SortType,
   },
   other: {
     label: "Everything Else",
@@ -99,10 +105,18 @@ const SMART_SECTIONS = {
     compact: true,
     showPreviewOnHover: true,
     showCollapsedHint: true,
+    sortType: "activity" as SortType,
   },
 } as const
 
 type SectionKey = keyof typeof SMART_SECTIONS
+
+/** All view section configuration */
+const ALL_SECTIONS = {
+  scratchpads: { sortType: "activity" as SortType },
+  channels: { sortType: "alphabetic_active_first" as SortType },
+  dms: { sortType: "alphabetic_active_first" as SortType },
+} as const
 
 // ============================================================================
 // Helper Functions
@@ -157,6 +171,58 @@ function truncateContent(content: JSONContent | string, maxLength: number = 50):
     .replace(/\n+/g, " ")
     .trim()
   return stripped.length > maxLength ? stripped.slice(0, maxLength) + "..." : stripped
+}
+
+/** Get display name for sorting (handles channels, scratchpads, DMs) */
+function getStreamSortName(stream: StreamWithPreview): string {
+  return (stream.slug ?? stream.displayName ?? "").toLowerCase()
+}
+
+/** Get activity timestamp for sorting (most recent message or creation) */
+function getActivityTime(stream: StreamWithPreview): number {
+  const timestamp = stream.lastMessagePreview?.createdAt ?? stream.createdAt
+  return new Date(timestamp).getTime()
+}
+
+/**
+ * Sort streams by the specified sort type.
+ * @param streams - Array of streams to sort (mutates in place for efficiency)
+ * @param sortType - Sorting strategy to use
+ * @param getUnreadCount - Function to get unread count for a stream
+ */
+function sortStreams(
+  streams: StreamItemData[],
+  sortType: SortType,
+  getUnreadCount: (streamId: string) => number
+): StreamItemData[] {
+  switch (sortType) {
+    case "activity":
+      // Most recent activity first
+      return streams.sort((a, b) => getActivityTime(b) - getActivityTime(a))
+
+    case "importance":
+      // Mentions first, then AI activity, then by unread count
+      return streams.sort((a, b) => {
+        if (a.urgency === "mentions" && b.urgency !== "mentions") return -1
+        if (a.urgency !== "mentions" && b.urgency === "mentions") return 1
+        if (a.urgency === "ai" && b.urgency !== "ai") return -1
+        if (a.urgency !== "ai" && b.urgency === "ai") return 1
+        return getUnreadCount(b.id) - getUnreadCount(a.id)
+      })
+
+    case "alphabetic_active_first":
+      // Unreads first (sorted alphabetically), then reads (sorted alphabetically)
+      return streams.sort((a, b) => {
+        const aUnread = getUnreadCount(a.id) > 0
+        const bUnread = getUnreadCount(b.id) > 0
+        if (aUnread && !bUnread) return -1
+        if (!aUnread && bUnread) return 1
+        return getStreamSortName(a).localeCompare(getStreamSortName(b))
+      })
+
+    default:
+      return streams
+  }
 }
 
 // ============================================================================
@@ -1010,7 +1076,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   // Organize streams by section
   const streamsBySection = useMemo(() => {
     const important: StreamItemData[] = []
-    const recent: StreamItemData[] = []
+    const recentCandidates: StreamItemData[] = [] // All streams that could go in Recent
     const pinned: StreamItemData[] = []
     const other: StreamItemData[] = []
 
@@ -1020,7 +1086,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           important.push(stream)
           break
         case "recent":
-          recent.push(stream)
+          recentCandidates.push(stream)
           break
         case "pinned":
           pinned.push(stream)
@@ -1031,25 +1097,35 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       }
     }
 
-    // Sort each section
-    important.sort((a, b) => {
-      // Mentions first, then AI, then by unread count
-      if (a.urgency === "mentions" && b.urgency !== "mentions") return -1
-      if (a.urgency !== "mentions" && b.urgency === "mentions") return 1
-      return getUnreadCount(b.id) - getUnreadCount(a.id)
-    })
+    // Sort each section using configured sort types
+    sortStreams(important, SMART_SECTIONS.important.sortType, getUnreadCount)
+    sortStreams(pinned, SMART_SECTIONS.pinned.sortType, getUnreadCount)
+    sortStreams(other, SMART_SECTIONS.other.sortType, getUnreadCount)
 
-    recent.sort((a, b) => {
-      // Most recent first
-      const aTime = a.lastMessagePreview?.createdAt || a.createdAt
-      const bTime = b.lastMessagePreview?.createdAt || b.createdAt
-      return new Date(bTime).getTime() - new Date(aTime).getTime()
-    })
+    // Recent section: special filtering logic
+    // Show unreads OR up to 5 most recent (excluding items already in Important)
+    // - If no unreads: show at most 5 recent streams
+    // - If <5 unreads: show unreads + remaining reads up to 5 total
+    // - If ≥5 unreads: show all unreads
+    sortStreams(recentCandidates, SMART_SECTIONS.recent.sortType, getUnreadCount)
 
-    // Limit Important to 10, Recent to 15
+    const recentUnreads = recentCandidates.filter((s) => getUnreadCount(s.id) > 0)
+    const recentReads = recentCandidates.filter((s) => getUnreadCount(s.id) === 0)
+
+    let recent: StreamItemData[]
+    if (recentUnreads.length >= 5) {
+      // Show all unreads when there are 5 or more
+      recent = recentUnreads
+    } else {
+      // Show unreads + fill remaining slots with reads (up to 5 total)
+      const remainingSlots = 5 - recentUnreads.length
+      recent = [...recentUnreads, ...recentReads.slice(0, remainingSlots)]
+    }
+
+    // Limit Important to 10
     return {
       important: important.slice(0, 10),
-      recent: recent.slice(0, 15),
+      recent,
       pinned,
       other,
     }
@@ -1066,13 +1142,19 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         scratchpads.push(stream)
       } else if (stream.type === StreamTypes.CHANNEL) {
         channels.push(stream)
-      } else {
+      } else if (stream.type === StreamTypes.DM) {
         dms.push(stream)
       }
+      // Note: threads are not shown in All view
     }
 
+    // Sort each section using configured sort types
+    sortStreams(scratchpads, ALL_SECTIONS.scratchpads.sortType, getUnreadCount)
+    sortStreams(channels, ALL_SECTIONS.channels.sortType, getUnreadCount)
+    sortStreams(dms, ALL_SECTIONS.dms.sortType, getUnreadCount)
+
     return { scratchpads, channels, dms }
-  }, [processedStreams])
+  }, [processedStreams, getUnreadCount])
 
   const isSectionCollapsed = useCallback((section: string) => collapsedSections.includes(section), [collapsedSections])
 
@@ -1294,6 +1376,22 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   compact
                   showPreviewOnHover
                 />
+
+                {streamsByType.dms.length > 0 && (
+                  <StreamSection
+                    label="Direct Messages"
+                    items={streamsByType.dms}
+                    allStreams={processedStreams}
+                    workspaceId={workspaceId}
+                    activeStreamId={activeStreamId}
+                    getUnreadCount={getUnreadCount}
+                    isCollapsed={isSectionCollapsed("dms")}
+                    onToggle={() => toggleSectionCollapsed("dms")}
+                    scrollContainerRef={scrollContainerRef}
+                    compact
+                    showPreviewOnHover
+                  />
+                )}
               </>
             )}
           </div>
