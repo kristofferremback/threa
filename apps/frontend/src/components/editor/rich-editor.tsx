@@ -192,7 +192,7 @@ export function RichEditor({
       attributes: {
         class: cn(
           "min-h-[40px] max-h-[200px] overflow-y-auto w-full py-2 outline-none",
-          "prose prose-sm dark:prose-invert max-w-none",
+          "prose prose-sm dark:prose-invert max-w-none text-sm",
           // Paragraph styling - minimal spacing for chat-like feel
           "[&_p]:my-0 [&_p]:min-h-[1.5em]",
           // List styling

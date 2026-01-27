@@ -22,7 +22,7 @@ export const CommandExtension = createTriggerExtension<CommandItem, CommandNodeA
   attributes: {
     name: { dataAttr: "data-name" },
   },
-  getClassName: () => "font-mono font-bold bg-muted text-primary",
+  getClassName: () => "font-mono font-bold bg-muted text-primary text-sm",
   getText: (attrs) => `/${attrs.name}`,
   mapPropsToAttrs: (c) => ({
     name: c.name,
