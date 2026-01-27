@@ -70,7 +70,7 @@ describe("stripMarkdownFences", () => {
   test("converts snake_case to camelCase", async () => {
     const input = '{"is_gem": false, "knowledge_type": null}'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"isGem":false,"knowledgeType":null,"confidence":0.5}')
+    expect(result).toBe('{"isGem":false,"knowledgeType":null,"reasoning":null,"confidence":0.5}')
   })
 
   test("maps classification field to isKnowledgeWorthy", async () => {
