@@ -437,22 +437,40 @@ export class PersonaAgent {
         // Build stream context with temporal information
         const context = await buildStreamContext(db, stream, { preferences })
 
-        // Build a map of participant IDs to names for message attribution
-        const participantNames = new Map<string, string>()
+        // Build a map of author IDs to names for message attribution
+        // We need to look up both users and personas from the conversation history
+        const authorNames = new Map<string, string>()
+
+        // Start with participants (if available - channels/DMs have these)
         if (context.participants) {
           for (const p of context.participants) {
-            participantNames.set(p.id, p.name)
+            authorNames.set(p.id, p.name)
           }
         }
 
-        // Also look up persona names for any persona messages in history
+        // Look up any user authors not already in participants (e.g., scratchpad owner)
+        const userAuthorIds = [
+          ...new Set(
+            context.conversationHistory
+              .filter((m) => m.authorType === "user" && !authorNames.has(m.authorId))
+              .map((m) => m.authorId)
+          ),
+        ]
+        if (userAuthorIds.length > 0) {
+          const users = await UserRepository.findByIds(db, userAuthorIds)
+          for (const u of users) {
+            authorNames.set(u.id, u.name)
+          }
+        }
+
+        // Look up persona names for any persona messages in history
         const personaAuthorIds = [
           ...new Set(context.conversationHistory.filter((m) => m.authorType === "persona").map((m) => m.authorId)),
         ]
         if (personaAuthorIds.length > 0) {
           const personas = await PersonaRepository.findByIds(db, personaAuthorIds)
           for (const p of personas) {
-            participantNames.set(p.id, p.name)
+            authorNames.set(p.id, p.name)
           }
         }
 
@@ -472,7 +490,7 @@ export class PersonaAgent {
             content: JSON.stringify({
               messages: contextMessages.map((m) => ({
                 messageId: m.id,
-                authorName: participantNames.get(m.authorId) ?? "Unknown",
+                authorName: authorNames.get(m.authorId) ?? "Unknown",
                 authorType: m.authorType,
                 createdAt: m.createdAt.toISOString(),
                 content: m.contentMarkdown.slice(0, 300), // Preview
