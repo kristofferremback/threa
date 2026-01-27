@@ -26,10 +26,14 @@ interface UseAgentTraceResult {
 /**
  * Subscribe-then-bootstrap hook for agent trace steps.
  *
- * 1. Join session room
+ * CRITICAL: We must subscribe BEFORE fetching to avoid missing events.
+ * The pattern is:
+ * 1. Join session room (socket subscription)
  * 2. Listen for real-time step events
- * 3. After subscription, fetch API for historical data
+ * 3. After subscription confirmed, fetch API for historical data
  * 4. Merge: real-time steps win on ID collision
+ *
+ * This prevents the race where we fetch data, miss an event, then subscribe.
  */
 export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentTraceResult {
   const socket = useSocket()
@@ -38,12 +42,17 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   const [realtimeSteps, setRealtimeSteps] = useState<Map<string, AgentSessionStep>>(new Map())
   const [streamingContent, setStreamingContent] = useState<Record<string, string>>({})
   const [terminalStatus, setTerminalStatus] = useState<"completed" | "failed" | null>(null)
+  // Track if socket is subscribed (enables query after subscription)
+  const [isSubscribed, setIsSubscribed] = useState(false)
 
   // Bootstrap: single fetch for historical data. Real-time updates come via socket.
+  // IMPORTANT: Only fetch AFTER socket subscription is confirmed to avoid race conditions
   const { data, isLoading, error } = useQuery({
     queryKey: ["agent-session", workspaceId, sessionId],
     queryFn: () => agentSessionsApi.getSession(workspaceId, sessionId),
-    enabled: !!workspaceId && !!sessionId,
+    enabled: !!workspaceId && !!sessionId && isSubscribed,
+    // Always refetch when modal opens - don't serve stale data from a previous view
+    staleTime: 0,
   })
 
   const handleStepStarted = useCallback(
@@ -102,6 +111,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   )
 
   // Subscribe to session room and listen for events
+  // CRITICAL: Subscription must complete BEFORE query is enabled to avoid race conditions
   useEffect(() => {
     if (!socket || !workspaceId || !sessionId) return
 
@@ -111,17 +121,26 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     setRealtimeSteps(new Map())
     setStreamingContent({})
     setTerminalStatus(null)
+    setIsSubscribed(false)
 
-    // Subscribe to session room (before any fetch returns, ensuring no missed events)
+    // Subscribe to session room FIRST
     socket.emit("join", room)
 
+    // Set up event listeners
     socket.on("agent_session:step:started", handleStepStarted)
     socket.on("agent_session:step:progress", handleStepProgress)
     socket.on("agent_session:step:completed", handleStepCompleted)
     socket.on("agent_session:completed", handleCompleted)
     socket.on("agent_session:failed", handleFailed)
 
+    // Mark as subscribed after a microtask to ensure join is queued
+    // This enables the query to fetch AFTER subscription is established
+    queueMicrotask(() => {
+      setIsSubscribed(true)
+    })
+
     return () => {
+      setIsSubscribed(false)
       socket.emit("leave", room)
       socket.off("agent_session:step:started", handleStepStarted)
       socket.off("agent_session:step:progress", handleStepProgress)
