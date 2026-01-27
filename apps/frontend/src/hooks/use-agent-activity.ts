@@ -10,6 +10,7 @@ import type {
   AgentActivityStartedPayload,
   AgentActivityEndedPayload,
 } from "@threa/types"
+import { getStepInlineLabel } from "@/lib/step-config"
 
 export interface MessageAgentActivity {
   sessionId: string
@@ -20,22 +21,8 @@ export interface MessageAgentActivity {
   threadStreamId?: string
 }
 
-const STEP_LABELS: Record<AgentStepType, string> = {
-  context_received: "Reading messages...",
-  thinking: "Thinking...",
-  reconsidering: "Reconsidering...",
-  web_search: "Searching the web...",
-  visit_page: "Reading page...",
-  workspace_search: "Searching workspace...",
-  message_sent: "Sending response...",
-  tool_call: "Using tools...",
-  tool_error: "Encountered an error...",
-}
-
-export function getStepLabel(stepType: AgentStepType | null): string {
-  if (!stepType) return "Working..."
-  return STEP_LABELS[stepType] ?? "Working..."
-}
+// Re-export from consolidated config for backward compatibility
+export { getStepInlineLabel as getStepLabel }
 
 interface ProgressEntry {
   triggerMessageId: string

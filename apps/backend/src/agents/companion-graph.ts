@@ -480,12 +480,12 @@ function createFinalizeOrReconsiderNode() {
  */
 function getToolStepType(toolName: string): AgentStepType {
   switch (toolName) {
-    case "read_url":
+    case AgentToolNames.READ_URL:
       return "visit_page"
-    case "search_messages":
-    case "search_streams":
-    case "search_users":
-    case "get_stream_messages":
+    case AgentToolNames.SEARCH_MESSAGES:
+    case AgentToolNames.SEARCH_STREAMS:
+    case AgentToolNames.SEARCH_USERS:
+    case AgentToolNames.GET_STREAM_MESSAGES:
       return "workspace_search"
     default:
       return "tool_call"
@@ -502,7 +502,7 @@ function formatToolStep(
   resultStr: string
 ): { content: string; sources?: TraceSource[] } {
   switch (toolName) {
-    case "read_url": {
+    case AgentToolNames.READ_URL: {
       const url = String(args.url ?? "")
       try {
         const parsed = JSON.parse(resultStr)
@@ -517,13 +517,13 @@ function formatToolStep(
       }
       return { content: JSON.stringify({ url }) }
     }
-    case "search_messages":
+    case AgentToolNames.SEARCH_MESSAGES:
       return { content: JSON.stringify({ tool: toolName, query: args.query ?? "", stream: args.stream ?? null }) }
-    case "search_streams":
+    case AgentToolNames.SEARCH_STREAMS:
       return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
-    case "search_users":
+    case AgentToolNames.SEARCH_USERS:
       return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
-    case "get_stream_messages":
+    case AgentToolNames.GET_STREAM_MESSAGES:
       return { content: JSON.stringify({ tool: toolName, stream: args.stream ?? null }) }
     default:
       return { content: JSON.stringify({ tool: toolName, args }) }
@@ -567,9 +567,11 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     }
 
     // Separate tool calls: execute web_search first to collect sources, then send_message
-    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === "web_search")
-    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === "send_message")
-    const otherCalls = lastMessage.tool_calls.filter((tc) => tc.name !== "web_search" && tc.name !== "send_message")
+    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.WEB_SEARCH)
+    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.SEND_MESSAGE)
+    const otherCalls = lastMessage.tool_calls.filter(
+      (tc) => tc.name !== AgentToolNames.WEB_SEARCH && tc.name !== AgentToolNames.SEND_MESSAGE
+    )
 
     const toolMessages: ToolMessage[] = []
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources

@@ -1,43 +1,13 @@
-import { useState } from "react"
 import { Link } from "react-router-dom"
 import type { AgentSessionStep, AgentStepType, TraceSource } from "@threa/types"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
 import { formatDuration } from "@/lib/dates"
-import {
-  ChevronRight,
-  Inbox,
-  Lightbulb,
-  RotateCcw,
-  Search,
-  FileText,
-  Building2,
-  MessageSquare,
-  Wrench,
-  AlertTriangle,
-  ExternalLink,
-} from "lucide-react"
-
-interface StepConfig {
-  label: string
-  icon: typeof Lightbulb
-  hue: number
-  saturation: number
-  lightness: number
-}
-
-const STEP_CONFIGS: Record<AgentStepType, StepConfig> = {
-  context_received: { label: "Context", icon: Inbox, hue: 220, saturation: 70, lightness: 55 },
-  thinking: { label: "Thinking", icon: Lightbulb, hue: 45, saturation: 93, lightness: 47 },
-  reconsidering: { label: "Reconsidering", icon: RotateCcw, hue: 280, saturation: 70, lightness: 55 },
-  web_search: { label: "Web Search", icon: Search, hue: 200, saturation: 70, lightness: 50 },
-  visit_page: { label: "Reading Page", icon: FileText, hue: 200, saturation: 70, lightness: 50 },
-  workspace_search: { label: "Workspace Search", icon: Building2, hue: 270, saturation: 60, lightness: 50 },
-  message_sent: { label: "Response", icon: MessageSquare, hue: 142, saturation: 76, lightness: 36 },
-  tool_call: { label: "Tool Call", icon: Wrench, hue: 200, saturation: 70, lightness: 50 },
-  tool_error: { label: "Error", icon: AlertTriangle, hue: 0, saturation: 72, lightness: 51 },
-}
+import { STEP_DISPLAY_CONFIG } from "@/lib/step-config"
+import { ChevronRight, ExternalLink, type LucideIcon } from "lucide-react"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { FileText } from "lucide-react"
 
 interface TraceStepProps {
   step: AgentSessionStep
@@ -46,7 +16,7 @@ interface TraceStepProps {
 }
 
 export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
-  const config = STEP_CONFIGS[step.stepType]
+  const config = STEP_DISPLAY_CONFIG[step.stepType]
   const Icon = config.icon
 
   const duration = step.duration ? formatDuration(step.duration) : null
@@ -69,17 +39,14 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
   )
 }
 
-function StepHeader({
-  config,
-  Icon,
-  startedAt,
-  duration,
-}: {
-  config: StepConfig
-  Icon: typeof Lightbulb
+interface StepHeaderProps {
+  config: { label: string; hue: number; saturation: number; lightness: number }
+  Icon: LucideIcon
   startedAt: string
   duration: string | null
-}) {
+}
+
+function StepHeader({ config, Icon, startedAt, duration }: StepHeaderProps) {
   return (
     <div className="flex items-center gap-2.5 mb-3">
       <div
@@ -312,20 +279,16 @@ function renderStepContent(
   }
 }
 
-function SourceList({
-  sources,
-  config,
-  workspaceId,
-}: {
+interface SourceListProps {
   sources: TraceSource[]
-  config: StepConfig
+  config: { hue: number; saturation: number; lightness: number }
   workspaceId: string
-}) {
-  const [isOpen, setIsOpen] = useState(false)
+}
 
+function SourceList({ sources, config, workspaceId }: SourceListProps) {
   return (
-    <div className="mt-4">
-      <button onClick={() => setIsOpen(!isOpen)} className="flex items-center justify-between w-full py-2 text-left">
+    <Collapsible className="mt-4">
+      <CollapsibleTrigger className="flex items-center justify-between w-full py-2 text-left group">
         <div className="flex items-center gap-2 text-[13px] font-semibold">
           <FileText className="w-4 h-4" />
           Sources
@@ -333,10 +296,10 @@ function SourceList({
             {sources.length}
           </span>
         </div>
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
-      </button>
+        <ChevronRight className="w-4 h-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+      </CollapsibleTrigger>
 
-      {isOpen && (
+      <CollapsibleContent>
         <div
           className="mt-2 rounded-md text-xs"
           style={{
@@ -348,8 +311,8 @@ function SourceList({
             <SourceItem key={i} source={source} workspaceId={workspaceId} isLast={i === sources.length - 1} />
           ))}
         </div>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
