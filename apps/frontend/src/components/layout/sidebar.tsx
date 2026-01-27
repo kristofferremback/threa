@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import {
   MoreHorizontal,
@@ -12,6 +12,7 @@ import {
   User,
   MessageSquareText,
   Plus,
+  ChevronRight,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -51,6 +52,9 @@ import { ThemeDropdown } from "@/components/theme-dropdown"
 
 type UrgencyLevel = "mentions" | "activity" | "quiet" | "ai"
 
+/** Sorting strategies for sidebar sections */
+type SortType = "activity" | "importance" | "alphabetic_active_first"
+
 interface StreamItemData extends StreamWithPreview {
   urgency: UrgencyLevel
   section: SectionKey
@@ -76,36 +80,43 @@ const SMART_SECTIONS = {
     icon: "⚡",
     compact: false, // Shows full preview always
     showPreviewOnHover: false,
-    collapsible: false,
     showCollapsedHint: false,
+    sortType: "importance" as SortType,
   },
   recent: {
     label: "Recent",
     icon: "🕐",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: false,
     showCollapsedHint: false,
+    sortType: "activity" as SortType,
   },
   pinned: {
     label: "Pinned",
     icon: "📌",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: false,
     showCollapsedHint: false,
+    sortType: "activity" as SortType,
   },
   other: {
     label: "Everything Else",
     icon: "📂",
     compact: true,
     showPreviewOnHover: true,
-    collapsible: true,
     showCollapsedHint: true,
+    sortType: "activity" as SortType,
   },
 } as const
 
 type SectionKey = keyof typeof SMART_SECTIONS
+
+/** All view section configuration */
+const ALL_SECTIONS = {
+  scratchpads: { sortType: "activity" as SortType },
+  channels: { sortType: "alphabetic_active_first" as SortType },
+  dms: { sortType: "alphabetic_active_first" as SortType },
+} as const
 
 // ============================================================================
 // Helper Functions
@@ -160,6 +171,58 @@ function truncateContent(content: JSONContent | string, maxLength: number = 50):
     .replace(/\n+/g, " ")
     .trim()
   return stripped.length > maxLength ? stripped.slice(0, maxLength) + "..." : stripped
+}
+
+/** Get display name for sorting (handles channels, scratchpads, DMs) */
+function getStreamSortName(stream: StreamWithPreview): string {
+  return (stream.slug ?? stream.displayName ?? "").toLowerCase()
+}
+
+/** Get activity timestamp for sorting (most recent message or creation) */
+function getActivityTime(stream: StreamWithPreview): number {
+  const timestamp = stream.lastMessagePreview?.createdAt ?? stream.createdAt
+  return new Date(timestamp).getTime()
+}
+
+/**
+ * Sort streams by the specified sort type.
+ * @param streams - Array of streams to sort (mutates in place for efficiency)
+ * @param sortType - Sorting strategy to use
+ * @param getUnreadCount - Function to get unread count for a stream
+ */
+function sortStreams(
+  streams: StreamItemData[],
+  sortType: SortType,
+  getUnreadCount: (streamId: string) => number
+): StreamItemData[] {
+  switch (sortType) {
+    case "activity":
+      // Most recent activity first
+      return streams.sort((a, b) => getActivityTime(b) - getActivityTime(a))
+
+    case "importance":
+      // Mentions first, then AI activity, then by unread count
+      return streams.sort((a, b) => {
+        if (a.urgency === "mentions" && b.urgency !== "mentions") return -1
+        if (a.urgency !== "mentions" && b.urgency === "mentions") return 1
+        if (a.urgency === "ai" && b.urgency !== "ai") return -1
+        if (a.urgency !== "ai" && b.urgency === "ai") return 1
+        return getUnreadCount(b.id) - getUnreadCount(a.id)
+      })
+
+    case "alphabetic_active_first":
+      // Unreads first (sorted alphabetically), then reads (sorted alphabetically)
+      return streams.sort((a, b) => {
+        const aUnread = getUnreadCount(a.id) > 0
+        const bUnread = getUnreadCount(b.id) > 0
+        if (aUnread && !bUnread) return -1
+        if (!aUnread && bUnread) return 1
+        return getStreamSortName(a).localeCompare(getStreamSortName(b))
+      })
+
+    default:
+      return streams
+  }
 }
 
 // ============================================================================
@@ -361,7 +424,9 @@ interface SectionHeaderProps {
   icon?: string
   /** Total unread count for the section (sum of all item unreads) */
   unreadCount?: number
-  isCollapsible?: boolean
+  /** Whether the section is currently collapsed */
+  isCollapsed?: boolean
+  /** Toggle callback - if provided, section becomes collapsible */
   onToggle?: () => void
   /** Add button callback - shows plus icon on hover */
   onAdd?: () => void
@@ -370,12 +435,24 @@ interface SectionHeaderProps {
 }
 
 /** Section header with consistent styling across all views */
-function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+function SectionHeader({ label, icon, unreadCount, isCollapsed, onToggle, onAdd, addTooltip }: SectionHeaderProps) {
+  const isCollapsible = !!onToggle
+
   const headingContent = (
-    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
-      {icon && `${icon} `}
-      {label}
-    </h3>
+    <div className="flex items-center gap-1.5">
+      {isCollapsible && (
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+            !isCollapsed && "rotate-90"
+          )}
+        />
+      )}
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground m-0">
+        {icon && `${icon} `}
+        {label}
+      </h3>
+    </div>
   )
 
   const rightContent = (
@@ -398,7 +475,7 @@ function SectionHeader({ label, icon, unreadCount, isCollapsible, onToggle, onAd
     </div>
   )
 
-  if (isCollapsible && onToggle) {
+  if (isCollapsible) {
     return (
       <div
         role="button"
@@ -481,7 +558,7 @@ function StreamSection({
         label={label}
         icon={icon}
         unreadCount={totalUnreadCount}
-        isCollapsible={!!onToggle}
+        isCollapsed={isCollapsed}
         onToggle={onToggle}
         onAdd={onAdd}
         addTooltip={addTooltip}
@@ -549,8 +626,8 @@ function SmartSection({
 }: SmartSectionProps) {
   const config = SMART_SECTIONS[section]
 
-  // Hide empty sections (except collapsible ones like "other" which show a hint)
-  if (items.length === 0 && !config.collapsible) return null
+  // Hide empty sections
+  if (items.length === 0) return null
 
   return (
     <StreamSection
@@ -562,7 +639,7 @@ function SmartSection({
       activeStreamId={activeStreamId}
       getUnreadCount={getUnreadCount}
       isCollapsed={isCollapsed}
-      onToggle={config.collapsible ? onToggle : undefined}
+      onToggle={onToggle}
       showCollapsedHint={config.showCollapsedHint}
       compact={config.compact}
       showPreviewOnHover={config.showPreviewOnHover}
@@ -999,7 +1076,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
   // Organize streams by section
   const streamsBySection = useMemo(() => {
     const important: StreamItemData[] = []
-    const recent: StreamItemData[] = []
+    const recentCandidates: StreamItemData[] = [] // All streams that could go in Recent
     const pinned: StreamItemData[] = []
     const other: StreamItemData[] = []
 
@@ -1009,7 +1086,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           important.push(stream)
           break
         case "recent":
-          recent.push(stream)
+          recentCandidates.push(stream)
           break
         case "pinned":
           pinned.push(stream)
@@ -1020,25 +1097,35 @@ export function Sidebar({ workspaceId }: SidebarProps) {
       }
     }
 
-    // Sort each section
-    important.sort((a, b) => {
-      // Mentions first, then AI, then by unread count
-      if (a.urgency === "mentions" && b.urgency !== "mentions") return -1
-      if (a.urgency !== "mentions" && b.urgency === "mentions") return 1
-      return getUnreadCount(b.id) - getUnreadCount(a.id)
-    })
+    // Sort each section using configured sort types
+    sortStreams(important, SMART_SECTIONS.important.sortType, getUnreadCount)
+    sortStreams(pinned, SMART_SECTIONS.pinned.sortType, getUnreadCount)
+    sortStreams(other, SMART_SECTIONS.other.sortType, getUnreadCount)
 
-    recent.sort((a, b) => {
-      // Most recent first
-      const aTime = a.lastMessagePreview?.createdAt || a.createdAt
-      const bTime = b.lastMessagePreview?.createdAt || b.createdAt
-      return new Date(bTime).getTime() - new Date(aTime).getTime()
-    })
+    // Recent section: special filtering logic
+    // Show unreads OR up to 5 most recent (excluding items already in Important)
+    // - If no unreads: show at most 5 recent streams
+    // - If <5 unreads: show unreads + remaining reads up to 5 total
+    // - If ≥5 unreads: show all unreads
+    sortStreams(recentCandidates, SMART_SECTIONS.recent.sortType, getUnreadCount)
 
-    // Limit Important to 10, Recent to 15
+    const recentUnreads = recentCandidates.filter((s) => getUnreadCount(s.id) > 0)
+    const recentReads = recentCandidates.filter((s) => getUnreadCount(s.id) === 0)
+
+    let recent: StreamItemData[]
+    if (recentUnreads.length >= 5) {
+      // Show all unreads when there are 5 or more
+      recent = recentUnreads
+    } else {
+      // Show unreads + fill remaining slots with reads (up to 5 total)
+      const remainingSlots = 5 - recentUnreads.length
+      recent = [...recentUnreads, ...recentReads.slice(0, remainingSlots)]
+    }
+
+    // Limit Important to 10
     return {
       important: important.slice(0, 10),
-      recent: recent.slice(0, 15),
+      recent,
       pinned,
       other,
     }
@@ -1055,15 +1142,21 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         scratchpads.push(stream)
       } else if (stream.type === StreamTypes.CHANNEL) {
         channels.push(stream)
-      } else {
+      } else if (stream.type === StreamTypes.DM) {
         dms.push(stream)
       }
+      // Note: threads are not shown in All view
     }
 
-    return { scratchpads, channels, dms }
-  }, [processedStreams])
+    // Sort each section using configured sort types
+    sortStreams(scratchpads, ALL_SECTIONS.scratchpads.sortType, getUnreadCount)
+    sortStreams(channels, ALL_SECTIONS.channels.sortType, getUnreadCount)
+    sortStreams(dms, ALL_SECTIONS.dms.sortType, getUnreadCount)
 
-  const isOtherCollapsed = collapsedSections.includes("other")
+    return { scratchpads, channels, dms }
+  }, [processedStreams, getUnreadCount])
+
+  const isSectionCollapsed = useCallback((section: string) => collapsedSections.includes(section), [collapsedSections])
 
   // Track sidebar and scroll container dimensions for position calculations
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -1184,7 +1277,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
         </div>
       }
       streamList={
-        <ScrollArea className="flex-1 [&>div>div]:!block [&>div>div]:!w-full">
+        <ScrollArea className="h-full [&>div>div]:!block [&>div>div]:!w-full">
           <div ref={scrollContainerRef} className="p-2">
             {isLoading ? (
               <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
@@ -1211,6 +1304,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("important")}
+                  onToggle={() => toggleSectionCollapsed("important")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1220,6 +1315,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("recent")}
+                  onToggle={() => toggleSectionCollapsed("recent")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1229,6 +1326,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("pinned")}
+                  onToggle={() => toggleSectionCollapsed("pinned")}
                   scrollContainerRef={scrollContainerRef}
                 />
                 <SmartSection
@@ -1238,7 +1337,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
-                  isCollapsed={isOtherCollapsed}
+                  isCollapsed={isSectionCollapsed("other")}
                   onToggle={() => toggleSectionCollapsed("other")}
                   scrollContainerRef={scrollContainerRef}
                 />
@@ -1253,6 +1352,8 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("scratchpads")}
+                  onToggle={() => toggleSectionCollapsed("scratchpads")}
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateScratchpad}
                   addTooltip="+ New Scratchpad"
@@ -1267,12 +1368,30 @@ export function Sidebar({ workspaceId }: SidebarProps) {
                   workspaceId={workspaceId}
                   activeStreamId={activeStreamId}
                   getUnreadCount={getUnreadCount}
+                  isCollapsed={isSectionCollapsed("channels")}
+                  onToggle={() => toggleSectionCollapsed("channels")}
                   scrollContainerRef={scrollContainerRef}
                   onAdd={handleCreateChannel}
                   addTooltip="+ New Channel"
                   compact
                   showPreviewOnHover
                 />
+
+                {streamsByType.dms.length > 0 && (
+                  <StreamSection
+                    label="Direct Messages"
+                    items={streamsByType.dms}
+                    allStreams={processedStreams}
+                    workspaceId={workspaceId}
+                    activeStreamId={activeStreamId}
+                    getUnreadCount={getUnreadCount}
+                    isCollapsed={isSectionCollapsed("dms")}
+                    onToggle={() => toggleSectionCollapsed("dms")}
+                    scrollContainerRef={scrollContainerRef}
+                    compact
+                    showPreviewOnHover
+                  />
+                )}
               </>
             )}
           </div>
