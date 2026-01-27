@@ -634,6 +634,7 @@ export class PersonaAgent {
               content: params.content,
               sources: params.sources,
               messageId: params.messageId,
+              durationMs: params.durationMs,
             })
           },
         }

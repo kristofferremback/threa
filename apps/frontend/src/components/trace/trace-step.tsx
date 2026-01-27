@@ -47,7 +47,7 @@ export function TraceStep({ step, workspaceId, streamId }: TraceStepProps) {
 
   const duration = step.duration ? formatDuration(step.duration) : null
   const hasSources = step.sources && step.sources.length > 0
-  const messageLink = step.messageId ? `/w/${workspaceId}/s/${streamId}?highlight=${step.messageId}` : null
+  const messageLink = step.messageId ? `/w/${workspaceId}/s/${streamId}?m=${step.messageId}` : null
 
   return (
     <div
@@ -293,7 +293,7 @@ function SourceItem({ source, workspaceId, isLast }: { source: TraceSource; work
 
 function buildSourceLink(source: TraceSource, workspaceId: string): string | null {
   if (source.type === "workspace_message" && source.streamId && source.messageId) {
-    return `/w/${workspaceId}/s/${source.streamId}?highlight=${source.messageId}`
+    return `/w/${workspaceId}/s/${source.streamId}?m=${source.messageId}`
   }
   if (source.type === "workspace_memo" && source.streamId) {
     return `/w/${workspaceId}/s/${source.streamId}`

@@ -116,6 +116,7 @@ export class SessionTrace {
       stepId: id,
       sessionId: this.params.sessionId,
       sessionRoom: this.sessionRoom,
+      startedAt: now,
     })
   }
 
@@ -167,6 +168,7 @@ export class ActiveStep {
       stepId: string
       sessionId: string
       sessionRoom: string
+      startedAt: Date
     }
   ) {}
 
@@ -180,14 +182,23 @@ export class ActiveStep {
   }
 
   /** Complete the step. Persists to DB + emits to socket. */
-  async complete(params?: { content?: string; sources?: TraceSource[]; messageId?: string }): Promise<void> {
-    const now = new Date()
+  async complete(params?: {
+    content?: string
+    sources?: TraceSource[]
+    messageId?: string
+    /** If provided, completedAt is computed as startedAt + durationMs */
+    durationMs?: number
+  }): Promise<void> {
+    // If durationMs is provided, compute completedAt relative to startedAt
+    // This allows recording accurate durations when step is recorded after operation completes
+    const completedAt =
+      params?.durationMs !== undefined ? new Date(this.params.startedAt.getTime() + params.durationMs) : new Date()
 
     const updated = await AgentSessionRepository.updateStep(this.deps.pool, this.params.stepId, {
       content: params?.content,
       sources: params?.sources,
       messageId: params?.messageId,
-      completedAt: now,
+      completedAt,
     })
 
     this.deps.io.to(this.params.sessionRoom).emit("agent_session:step:completed", {
@@ -204,7 +215,7 @@ export class ActiveStep {
             startedAt: updated.startedAt.toISOString(),
             completedAt: updated.completedAt?.toISOString(),
           }
-        : { id: this.params.stepId, completedAt: now.toISOString() },
+        : { id: this.params.stepId, completedAt: completedAt.toISOString() },
     })
   }
 }
