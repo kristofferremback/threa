@@ -80,6 +80,9 @@ async function cleanupStaleJobs(): Promise<void> {
   })
 
   try {
+    // Clean new queue system — stale messages from previous runs starve fresh jobs
+    await testPool.query("DELETE FROM queue_messages")
+    await testPool.query("DELETE FROM queue_tokens")
     // Delete old pg-boss jobs to prevent queue pollution
     await testPool.query("DELETE FROM pgboss.job WHERE state IN ('created', 'retry', 'active')")
     // Also clean up archived jobs to prevent bloat
@@ -126,6 +129,12 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.USE_STUB_AUTH = "true"
   process.env.USE_STUB_COMPANION = "true"
   process.env.USE_STUB_BOUNDARY_EXTRACTION = "true"
+  process.env.USE_STUB_AI = "true"
+
+  // Higher throughput for parallel test files
+  process.env.QUEUE_MAX_ACTIVE_TOKENS = "15"
+  process.env.QUEUE_POLL_INTERVAL_MS = "100"
+  process.env.DATABASE_POOL_MAX = "50"
 
   // S3/MinIO configuration for file upload tests
   // Use a test-specific bucket name to avoid conflicts with local development

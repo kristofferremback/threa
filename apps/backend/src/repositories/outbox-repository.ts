@@ -37,6 +37,9 @@ export type OutboxEventType =
   | "command:dispatched"
   | "command:completed"
   | "command:failed"
+  | "agent_session:started"
+  | "agent_session:completed"
+  | "agent_session:failed"
   | "user_preferences:updated"
   | "budget:alert"
 
@@ -51,6 +54,9 @@ export type StreamScopedEventType =
   | "stream:display_name_updated"
   | "conversation:created"
   | "conversation:updated"
+  | "agent_session:started"
+  | "agent_session:completed"
+  | "agent_session:failed"
 
 /** Events that are scoped to a workspace (no streamId) */
 export type WorkspaceScopedEventType =
@@ -204,6 +210,19 @@ export interface CommandFailedOutboxPayload extends StreamScopedPayload {
   event: StreamEvent
 }
 
+// Agent session event payloads (stream-scoped - visible to all stream members)
+export interface AgentSessionStartedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface AgentSessionCompletedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface AgentSessionFailedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
 // Read state event payloads (author-scoped - only visible to the user marking as read)
 export interface StreamReadOutboxPayload extends WorkspaceScopedPayload {
   authorId: string
@@ -260,6 +279,9 @@ export interface OutboxEventPayloadMap {
   "command:dispatched": CommandDispatchedOutboxPayload
   "command:completed": CommandCompletedOutboxPayload
   "command:failed": CommandFailedOutboxPayload
+  "agent_session:started": AgentSessionStartedOutboxPayload
+  "agent_session:completed": AgentSessionCompletedOutboxPayload
+  "agent_session:failed": AgentSessionFailedOutboxPayload
   "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
   "budget:alert": BudgetAlertOutboxPayload
 }
@@ -303,6 +325,9 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "stream:display_name_updated",
   "conversation:created",
   "conversation:updated",
+  "agent_session:started",
+  "agent_session:completed",
+  "agent_session:failed",
 ]
 
 /**

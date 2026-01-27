@@ -266,6 +266,24 @@ export function getFutureDatePresets(now: Date = new Date()): DatePreset[] {
 }
 
 // ============================================================================
+// Duration Formatting
+// ============================================================================
+
+/**
+ * Format a duration in milliseconds to a human-readable string.
+ * Examples: "150ms", "2.3s", "1m 30s"
+ */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0ms"
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return `${minutes}m ${remainingSeconds}s`
+}
+
+// ============================================================================
 // Re-exports from date-fns for convenience
 // ============================================================================
 

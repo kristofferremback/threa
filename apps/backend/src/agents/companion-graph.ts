@@ -4,13 +4,39 @@ import type { ChatOpenAI } from "@langchain/openai"
 import type { BaseMessage } from "@langchain/core/messages"
 import type { StructuredToolInterface } from "@langchain/core/tools"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import { AgentToolNames, type SourceItem } from "@threa/types"
+import { AgentToolNames, type SourceItem, type AgentStepType, type TraceSource } from "@threa/types"
 import { logger } from "../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
 import type { ResearcherResult } from "./researcher"
 
+/**
+ * Parameters for recording a step in the agent trace.
+ */
+export interface RecordStepParams {
+  stepType: AgentStepType
+  content?: string
+  sources?: TraceSource[]
+  messageId?: string
+  /** Duration of the step in milliseconds (used to compute completedAt) */
+  durationMs?: number
+}
+
 const MAX_ITERATIONS = 20
 const MAX_MESSAGES = 5
+
+/**
+ * A new message that arrived during agent processing.
+ * Includes rich metadata for trace display.
+ */
+export interface NewMessageInfo {
+  sequence: bigint
+  messageId: string
+  content: string
+  authorId: string
+  authorName: string
+  authorType: "user" | "persona"
+  createdAt: string
+}
 
 /**
  * Callbacks that must be provided when invoking the graph.
@@ -18,17 +44,15 @@ const MAX_MESSAGES = 5
  */
 export interface CompanionGraphCallbacks {
   /** Check for new messages since lastProcessedSequence */
-  checkNewMessages: (
-    streamId: string,
-    sinceSequence: bigint,
-    excludeAuthorId: string
-  ) => Promise<Array<{ sequence: bigint; content: string; authorId: string }>>
+  checkNewMessages: (streamId: string, sinceSequence: bigint, excludeAuthorId: string) => Promise<NewMessageInfo[]>
   /** Update the last seen sequence on the session */
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
   /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
   runResearcher?: (config: RunnableConfig) => Promise<ResearcherResult>
+  /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
+  recordStep?: (params: RecordStepParams) => Promise<void>
 }
 
 /**
@@ -132,7 +156,9 @@ function createResearchNode() {
     logger.info("Research node starting")
 
     try {
+      const startTime = Date.now()
       const result = await callbacks.runResearcher(config)
+      const durationMs = Date.now() - startTime
 
       logger.debug(
         {
@@ -143,6 +169,35 @@ function createResearchNode() {
         },
         "Research node completed"
       )
+
+      // Record the workspace search step with enriched source metadata
+      if (callbacks.recordStep && (result.memos.length > 0 || result.messages.length > 0)) {
+        const traceSources: TraceSource[] = [
+          ...result.memos.map((m) => ({
+            type: "workspace_memo" as const,
+            title: m.memo.title,
+            snippet: m.memo.abstract.slice(0, 200),
+            streamId: m.sourceStream?.id,
+            streamName: m.sourceStream?.name ?? undefined,
+          })),
+          ...result.messages.map((m) => ({
+            type: "workspace_message" as const,
+            title: `${m.authorName} in ${m.streamName}`,
+            snippet: m.content.slice(0, 200),
+            streamId: m.streamId,
+            messageId: m.id,
+            authorName: m.authorName,
+            timestamp: m.createdAt.toISOString(),
+          })),
+        ]
+
+        await callbacks.recordStep({
+          stepType: "workspace_search",
+          content: JSON.stringify({ memoCount: result.memos.length, messageCount: result.messages.length }),
+          durationMs,
+          sources: traceSources,
+        })
+      }
 
       // If researcher found sources, add them to the initial sources
       const newSources: SourceItem[] = result.sources.map((s) => ({
@@ -169,7 +224,9 @@ function createResearchNode() {
 function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
   const modelWithTools = tools.length > 0 ? model.bindTools(tools) : model
 
-  return async (state: CompanionStateType): Promise<Partial<CompanionStateType>> => {
+  return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
+    const callbacks = getCallbacks(config)
+
     // Check iteration limit
     if (state.iteration >= MAX_ITERATIONS) {
       return {
@@ -184,7 +241,9 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       : state.systemPrompt
 
     const systemMessage = new SystemMessage(fullSystemPrompt)
+    const startTime = Date.now()
     const response = await modelWithTools.invoke([systemMessage, ...state.messages])
+    const durationMs = Date.now() - startTime
 
     // Extract text content
     let responseText: string
@@ -209,6 +268,27 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
       "Agent node response"
     )
 
+    // Record thinking step after LLM call with actual content
+    // Skip recording if there's nothing to show (empty response, no tool calls)
+    if (callbacks.recordStep) {
+      let thinkingContent: string | undefined
+      if (responseText.trim()) {
+        thinkingContent = responseText
+      } else if (response.tool_calls?.length) {
+        const toolNames = response.tool_calls.map((tc) => tc.name)
+        thinkingContent = JSON.stringify({ toolPlan: toolNames })
+      }
+
+      // Only record thinking steps that have content - empty iterations are noise
+      if (thinkingContent) {
+        await callbacks.recordStep({
+          stepType: "thinking",
+          content: thinkingContent,
+          durationMs,
+        })
+      }
+    }
+
     return {
       messages: [response],
       finalResponse: responseText,
@@ -221,6 +301,7 @@ function createAgentNode(model: ChatOpenAI, tools: StructuredToolInterface[]) {
 /**
  * Create the check_new_messages node.
  * Checks for new messages and injects them if found.
+ * Records a context_received step when new messages are discovered.
  */
 function createCheckNewMessagesNode() {
   return async (state: CompanionStateType, config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
@@ -238,6 +319,23 @@ function createCheckNewMessagesNode() {
       state.lastProcessedSequence
     )
     await callbacks.updateLastSeenSequence(state.sessionId, maxSequence)
+
+    // Record the new messages being added to context
+    // This helps users see what additional messages the agent considered
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "context_received",
+        content: JSON.stringify({
+          messages: newMessages.map((m) => ({
+            messageId: m.messageId,
+            authorName: m.authorName,
+            authorType: m.authorType,
+            createdAt: m.createdAt,
+            content: m.content.slice(0, 300), // Preview
+          })),
+        }),
+      })
+    }
 
     // Convert to HumanMessages and inject
     const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
@@ -306,6 +404,21 @@ function createFinalizeOrReconsiderNode() {
           { messageId: result.messageId, contentLength: pending.content.length },
           "Pending message committed"
         )
+
+        // Record the message sent step with sources
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "message_sent",
+            content: pending.content,
+            messageId: result.messageId,
+            sources: pending.sources?.map((s) => ({
+              type: (s.type ?? "web") as TraceSource["type"],
+              title: s.title,
+              url: s.url,
+              snippet: s.snippet,
+            })),
+          })
+        }
       }
 
       return {
@@ -326,6 +439,24 @@ function createFinalizeOrReconsiderNode() {
       "New messages arrived while responses pending - agent will reconsider"
     )
 
+    // Record the reconsideration step with rich message context
+    // This helps users see exactly what new context caused the agent to reconsider
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "reconsidering",
+        content: JSON.stringify({
+          draftResponse: pendingContents,
+          newMessages: newMessages.map((m) => ({
+            messageId: m.messageId,
+            authorName: m.authorName,
+            authorType: m.authorType,
+            createdAt: m.createdAt,
+            content: m.content.slice(0, 300), // Preview
+          })),
+        }),
+      })
+    }
+
     // Build reconsideration context
     const humanMessages = newMessages.map((m) => new HumanMessage(m.content))
     const reconsiderPrompt = new SystemMessage(
@@ -341,6 +472,61 @@ function createFinalizeOrReconsiderNode() {
       pendingMessages: [], // Clear pending - agent will re-stage if it wants to send
       hasNewMessages: true,
     }
+  }
+}
+
+/**
+ * Map tool names to semantic step types for the trace.
+ */
+function getToolStepType(toolName: string): AgentStepType {
+  switch (toolName) {
+    case AgentToolNames.READ_URL:
+      return "visit_page"
+    case AgentToolNames.SEARCH_MESSAGES:
+    case AgentToolNames.SEARCH_STREAMS:
+    case AgentToolNames.SEARCH_USERS:
+    case AgentToolNames.GET_STREAM_MESSAGES:
+      return "workspace_search"
+    default:
+      return "tool_call"
+  }
+}
+
+/**
+ * Format tool execution into structured content and optional sources for the trace.
+ * Returns structured JSON (INV-46) — the frontend handles display formatting.
+ */
+function formatToolStep(
+  toolName: string,
+  args: Record<string, unknown>,
+  resultStr: string
+): { content: string; sources?: TraceSource[] } {
+  switch (toolName) {
+    case AgentToolNames.READ_URL: {
+      const url = String(args.url ?? "")
+      try {
+        const parsed = JSON.parse(resultStr)
+        if (parsed.title && parsed.title !== "Untitled") {
+          return {
+            content: JSON.stringify({ url, title: parsed.title }),
+            sources: [{ type: "web", title: parsed.title, url, domain: new URL(url).hostname }],
+          }
+        }
+      } catch {
+        // Result wasn't valid JSON or didn't have title
+      }
+      return { content: JSON.stringify({ url }) }
+    }
+    case AgentToolNames.SEARCH_MESSAGES:
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "", stream: args.stream ?? null }) }
+    case AgentToolNames.SEARCH_STREAMS:
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
+    case AgentToolNames.SEARCH_USERS:
+      return { content: JSON.stringify({ tool: toolName, query: args.query ?? "" }) }
+    case AgentToolNames.GET_STREAM_MESSAGES:
+      return { content: JSON.stringify({ tool: toolName, stream: args.stream ?? null }) }
+    default:
+      return { content: JSON.stringify({ tool: toolName, args }) }
   }
 }
 
@@ -381,37 +567,72 @@ function createToolsNode(tools: StructuredToolInterface[]) {
     }
 
     // Separate tool calls: execute web_search first to collect sources, then send_message
-    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === "web_search")
-    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === "send_message")
-    const otherCalls = lastMessage.tool_calls.filter((tc) => tc.name !== "web_search" && tc.name !== "send_message")
+    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.WEB_SEARCH)
+    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.SEND_MESSAGE)
+    const otherCalls = lastMessage.tool_calls.filter(
+      (tc) => tc.name !== AgentToolNames.WEB_SEARCH && tc.name !== AgentToolNames.SEND_MESSAGE
+    )
 
     const toolMessages: ToolMessage[] = []
     let collectedSources: SourceItem[] = [...state.sources] // Start with any existing sources
     const pendingMessages: PendingMessage[] = []
 
+    const callbacks = getCallbacks(_config)
+
     // Execute web_search calls first and collect sources
     for (const toolCall of webSearchCalls) {
       const tool = toolMap.get(toolCall.name)!
+      const startTime = Date.now()
       try {
         const result = await tool.invoke(toolCall.args)
+        const durationMs = Date.now() - startTime
         const resultStr = typeof result === "string" ? result : JSON.stringify(result)
 
         // Extract sources from web_search results
         const sources = extractSourcesFromWebSearch(resultStr)
         collectedSources = [...collectedSources, ...sources]
 
+        // Record the web search step
+        if (callbacks.recordStep) {
+          const query = (toolCall.args as { query?: string }).query
+          await callbacks.recordStep({
+            stepType: "web_search",
+            content: query,
+            durationMs,
+            sources: sources.map((s) => ({
+              title: s.title,
+              url: s.url,
+              type: "web" as const,
+            })),
+          })
+        }
+
         toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: resultStr }))
       } catch (error) {
+        const durationMs = Date.now() - startTime
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `web_search failed: ${String(error)}`,
+            durationMs,
+          })
+        }
         toolMessages.push(
           new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
         )
       }
     }
 
-    // Execute other tools (read_url, etc.)
+    // Execute other tools (read_url, search_messages, etc.)
     for (const toolCall of otherCalls) {
       const tool = toolMap.get(toolCall.name)
       if (!tool) {
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `Unknown tool: ${toolCall.name}`,
+          })
+        }
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
@@ -420,15 +641,34 @@ function createToolsNode(tools: StructuredToolInterface[]) {
         )
         continue
       }
+      const startTime = Date.now()
       try {
         const result = await tool.invoke(toolCall.args)
+        const durationMs = Date.now() - startTime
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+
+        // Record step with appropriate type based on tool name
+        if (callbacks.recordStep) {
+          const stepType = getToolStepType(toolCall.name)
+          const { content, sources } = formatToolStep(toolCall.name, toolCall.args, resultStr)
+          await callbacks.recordStep({ stepType, content, sources, durationMs })
+        }
+
         toolMessages.push(
           new ToolMessage({
             tool_call_id: toolCall.id!,
-            content: typeof result === "string" ? result : JSON.stringify(result),
+            content: resultStr,
           })
         )
       } catch (error) {
+        const durationMs = Date.now() - startTime
+        if (callbacks.recordStep) {
+          await callbacks.recordStep({
+            stepType: "tool_error",
+            content: `${toolCall.name} failed: ${String(error)}`,
+            durationMs,
+          })
+        }
         toolMessages.push(
           new ToolMessage({ tool_call_id: toolCall.id!, content: JSON.stringify({ error: String(error) }) })
         )
@@ -661,6 +901,24 @@ function createEnsureResponseNode() {
       content: state.finalResponse,
       sources: state.sources.length > 0 ? state.sources : undefined,
     })
+
+    // Record the message sent step with sources
+    if (callbacks.recordStep) {
+      await callbacks.recordStep({
+        stepType: "message_sent",
+        content: state.finalResponse,
+        messageId: result.messageId,
+        sources:
+          state.sources.length > 0
+            ? state.sources.map((s) => ({
+                type: (s.type ?? "web") as TraceSource["type"],
+                title: s.title,
+                url: s.url,
+                snippet: s.snippet,
+              }))
+            : undefined,
+      })
+    }
 
     logger.info({ messageId: result.messageId, sourceCount: state.sources.length }, "ensure_response sent message")
 

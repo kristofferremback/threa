@@ -27,6 +27,7 @@ export interface MessageCreatedPayload {
   contentMarkdown: string
   attachments?: AttachmentSummary[]
   sources?: SourceItem[]
+  sessionId?: string
 }
 
 export interface MessageEditedPayload {
@@ -60,6 +61,7 @@ export interface CreateMessageParams {
   contentMarkdown: string
   attachmentIds?: string[]
   sources?: SourceItem[]
+  sessionId?: string
 }
 
 export interface EditMessageParams {
@@ -144,6 +146,7 @@ export class EventService {
           contentMarkdown: params.contentMarkdown,
           ...(attachmentSummaries && { attachments: attachmentSummaries }),
           ...(params.sources && params.sources.length > 0 && { sources: params.sources }),
+          ...(params.sessionId && { sessionId: params.sessionId }),
         } satisfies MessageCreatedPayload,
         actorId: params.authorId,
         actorType: params.authorType,

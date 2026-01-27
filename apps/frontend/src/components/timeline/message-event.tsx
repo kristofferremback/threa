@@ -1,13 +1,13 @@
 import { type ReactNode, useRef, useEffect } from "react"
 import type { StreamEvent, AttachmentSummary } from "@threa/types"
 import { Link } from "react-router-dom"
-import { MessageSquareReply } from "lucide-react"
+import { MessageSquareReply, Sparkles } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { usePendingMessages, usePanel, createDraftPanelId } from "@/contexts"
-import { useActors } from "@/hooks"
+import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
+import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
 import { AttachmentList } from "./attachment-list"
 import { ThreadIndicator } from "./thread-indicator"
@@ -19,6 +19,7 @@ interface MessagePayload {
   attachments?: AttachmentSummary[]
   replyCount?: number
   threadId?: string
+  sessionId?: string
 }
 
 interface MessageEventProps {
@@ -29,6 +30,8 @@ interface MessageEventProps {
   hideActions?: boolean
   /** Whether to highlight this message (scroll into view and flash) */
   isHighlighted?: boolean
+  /** Active agent session triggered by this message */
+  activity?: MessageAgentActivity
 }
 
 interface MessageLayoutProps {
@@ -104,6 +107,7 @@ interface MessageEventInnerProps {
   actorInitials: string
   hideActions?: boolean
   isHighlighted?: boolean
+  activity?: MessageAgentActivity
 }
 
 function SentMessageEvent({
@@ -115,8 +119,10 @@ function SentMessageEvent({
   actorInitials,
   hideActions,
   isHighlighted,
+  activity,
 }: MessageEventInnerProps) {
   const { panelId, getPanelUrl } = usePanel()
+  const { getTraceUrl } = useTrace()
   const replyCount = payload.replyCount ?? 0
   const threadId = payload.threadId
   const containerRef = useRef<HTMLDivElement>(null)
@@ -135,29 +141,53 @@ function SentMessageEvent({
   const draftPanelId = createDraftPanelId(streamId, payload.messageId)
   const draftPanelUrl = getPanelUrl(draftPanelId)
 
+  // Activity label for inline display in the footer
+  const activityLabel = activity
+    ? `${activity.personaName} is ${getStepLabel(activity.currentStepType).toLowerCase()}`
+    : null
+
   // Thread link or "Reply in thread" text (hidden when hideActions is true)
   // Shows on hover when no thread exists yet, or always when thread exists
+  // When agent activity is present, the activity text is always visible on the same line
+  // When activity.threadStreamId is present, use it for the thread link (allows immediate
+  // navigation to the real thread before the slower stream:created event updates threadId)
+  const effectiveThreadId = threadId ?? activity?.threadStreamId
   const threadFooter = !hideActions ? (
-    threadId ? (
-      replyCount > 0 ? (
-        <ThreadIndicator replyCount={replyCount} href={getPanelUrl(threadId)} className="mt-1" />
+    <div className="mt-1 flex items-center gap-1.5 text-xs">
+      {effectiveThreadId ? (
+        replyCount > 0 ? (
+          <ThreadIndicator replyCount={replyCount} href={getPanelUrl(effectiveThreadId)} />
+        ) : (
+          <Link
+            to={getPanelUrl(effectiveThreadId)}
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Reply in thread
+          </Link>
+        )
       ) : (
         <Link
-          to={getPanelUrl(threadId)}
-          className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+          to={draftPanelUrl}
+          className={cn(
+            "text-muted-foreground hover:text-foreground hover:underline transition-opacity",
+            !activityLabel && "opacity-0 group-hover:opacity-100"
+          )}
         >
           Reply in thread
         </Link>
-      )
-    ) : (
-      // Show "Reply in thread" on hover when no thread exists - opens draft panel
-      <Link
-        to={draftPanelUrl}
-        className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        Reply in thread
-      </Link>
-    )
+      )}
+      {activityLabel && (
+        <>
+          <span className="text-muted-foreground/40">·</span>
+          <Link
+            to={getTraceUrl(activity!.sessionId)}
+            className="text-muted-foreground hover:text-foreground hover:underline"
+          >
+            {activityLabel}
+          </Link>
+        </>
+      )}
+    </div>
   ) : null
 
   return (
@@ -169,18 +199,27 @@ function SentMessageEvent({
       actorInitials={actorInitials}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
-        // Only show the icon button when thread exists (to open it)
-        // For messages without threads, we show "Reply in thread" text in footer on hover
-        !hideActions &&
-        !isParentOfCurrentThread &&
-        threadId && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-            <Link
-              to={getPanelUrl(threadId)}
-              className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
-            >
-              <MessageSquareReply className="h-4 w-4" />
-            </Link>
+        !hideActions && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-auto flex items-center gap-1">
+            {/* Trace link for AI messages with sessionId */}
+            {event.actorType === "persona" && payload.sessionId && (
+              <Link
+                to={getTraceUrl(payload.sessionId, payload.messageId)}
+                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                title="View agent trace"
+              >
+                <Sparkles className="h-4 w-4" />
+              </Link>
+            )}
+            {/* Reply in thread button (only when thread exists or agent activity has threadStreamId) */}
+            {!isParentOfCurrentThread && effectiveThreadId && (
+              <Link
+                to={getPanelUrl(effectiveThreadId)}
+                className="inline-flex items-center justify-center h-6 px-2 rounded-md hover:bg-accent"
+              >
+                <MessageSquareReply className="h-4 w-4" />
+              </Link>
+            )}
           </div>
         )
       }
@@ -228,7 +267,14 @@ function FailedMessageEvent({ event, payload, workspaceId, actorName, actorIniti
   )
 }
 
-export function MessageEvent({ event, workspaceId, streamId, hideActions, isHighlighted }: MessageEventProps) {
+export function MessageEvent({
+  event,
+  workspaceId,
+  streamId,
+  hideActions,
+  isHighlighted,
+  activity,
+}: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
   const { getActorName, getActorInitials } = useActors(workspaceId)
@@ -271,6 +317,7 @@ export function MessageEvent({ event, workspaceId, streamId, hideActions, isHigh
           actorInitials={actorInitials}
           hideActions={hideActions}
           isHighlighted={isHighlighted}
+          activity={activity}
         />
       )
   }

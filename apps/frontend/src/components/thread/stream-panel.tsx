@@ -1,5 +1,5 @@
 import { useSearchParams, useParams } from "react-router-dom"
-import { useMemo, useCallback } from "react"
+import { useMemo, useCallback, useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { MessageSquare, ChevronLeft } from "lucide-react"
 import {
@@ -92,6 +92,17 @@ export function StreamPanel({ workspaceId, onClose }: StreamPanelProps) {
         (e.payload as { messageId?: string })?.messageId === draftInfo.parentMessageId
     )
   }, [parentBootstrap, draftInfo])
+
+  // Auto-convert draft to real thread when created externally (e.g., agent eager thread creation)
+  const externalThreadId = useMemo(() => {
+    if (!parentMessage) return null
+    return (parentMessage.payload as { threadId?: string }).threadId ?? null
+  }, [parentMessage])
+
+  useEffect(() => {
+    if (!isDraft || !externalThreadId) return
+    openPanel(externalThreadId)
+  }, [isDraft, externalThreadId, openPanel])
 
   // Draft composer
   const draftKey = draftInfo ? getDraftMessageKey({ type: "thread", parentMessageId: draftInfo.parentMessageId }) : ""

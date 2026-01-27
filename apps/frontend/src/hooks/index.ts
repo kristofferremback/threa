@@ -68,3 +68,5 @@ export { useStreamError, type StreamErrorType, type StreamError } from "./use-st
 export { useAIUsage, useAIRecentUsage, useAIBudget, useUpdateAIBudget, aiUsageKeys } from "./use-ai-usage"
 
 export { useThreadAncestors } from "./use-thread-ancestors"
+
+export { useAgentActivity, getStepLabel, type MessageAgentActivity } from "./use-agent-activity"

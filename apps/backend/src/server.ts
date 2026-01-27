@@ -54,6 +54,7 @@ import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
 import { PersonaAgent } from "./agents/persona-agent"
+import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
@@ -188,9 +189,9 @@ export async function startServer(): Promise<ServerInstance> {
     //
     // Max concurrent handlers: 3 × 3 = 9 handlers
     // Peak connections: ~9-10 (safe for 30 connection pool)
-    pollIntervalMs: 500,
+    pollIntervalMs: Number(process.env.QUEUE_POLL_INTERVAL_MS) || 500,
     refillDebounceMs: 100,
-    maxActiveTokens: 3,
+    maxActiveTokens: Number(process.env.QUEUE_MAX_ACTIVE_TOKENS) || 3,
     processingConcurrency: 3,
   })
 
@@ -219,6 +220,7 @@ export async function startServer(): Promise<ServerInstance> {
     authorType: "user" | "persona"
     content: string
     sources?: { title: string; url: string }[]
+    sessionId?: string
   }) => {
     const contentMarkdown = normalizeMessage(params.content)
     const contentJson = parseMarkdown(contentMarkdown, undefined, toEmoji)
@@ -230,6 +232,7 @@ export async function startServer(): Promise<ServerInstance> {
       contentJson,
       contentMarkdown,
       sources: params.sources,
+      sessionId: params.sessionId,
     })
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
@@ -287,7 +290,7 @@ export async function startServer(): Promise<ServerInstance> {
   io.adapter(createAdapter(pool))
 
   const userSocketRegistry = new UserSocketRegistry()
-  registerSocketHandlers(io, { authService, userService, streamService, workspaceService, userSocketRegistry })
+  registerSocketHandlers(io, { pool, authService, userService, streamService, workspaceService, userSocketRegistry })
 
   const serverId = `server_${ulid()}`
 
@@ -305,8 +308,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Create researcher for workspace knowledge retrieval
   const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
 
+  const traceEmitter = new TraceEmitter({ io, pool })
   const personaAgent = new PersonaAgent({
     pool,
+    traceEmitter,
     responseGenerator,
     userPreferencesService,
     researcher,
@@ -366,7 +371,10 @@ export async function startServer(): Promise<ServerInstance> {
   // Schedule memo batch check cron job (every 30 seconds)
   // workspaceId in payload: "system" for system-wide batch check
   // workspaceId in schedule: null for global (not workspace-specific) schedule
-  await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" }, null)
+  // Skip when AI is stubbed - stub memo services don't need batch processing
+  if (!config.useStubAI) {
+    await jobQueue.schedule(JobQueues.MEMO_BATCH_CHECK, 30, { workspaceId: "system" }, null)
+  }
 
   // Outbox dispatcher - single LISTEN connection fans out to all handlers
   const outboxDispatcher = new OutboxDispatcher({ listenPool: pools.listen })

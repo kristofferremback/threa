@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { withClient, type Querier } from "../db"
+import { withClient, withTransaction, type Querier } from "../db"
 import {
   AgentToolNames,
   AgentTriggers,
@@ -15,9 +15,12 @@ import { MessageRepository, type Message } from "../repositories/message-reposit
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
 import { UserRepository } from "../repositories/user-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
+import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
-import type { ResponseGenerator, ResponseGeneratorCallbacks } from "./companion-runner"
+import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
+import { eventId } from "../lib/id"
+import type { TraceEmitter } from "../lib/trace-emitter"
 import {
   isToolEnabled,
   type SendMessageInputWithSources,
@@ -65,6 +68,8 @@ export async function withSession(
     triggerMessageId: string
     streamId: string
     personaId: string
+    personaName: string
+    workspaceId: string
     serverId: string
     initialSequence: bigint
   },
@@ -73,11 +78,12 @@ export async function withSession(
     pool: Pool
   ) => Promise<{ messagesSent: number; sentMessageIds: string[]; lastSeenSequence: bigint }>
 ): Promise<WithSessionResult> {
-  const { pool, triggerMessageId, streamId, personaId, serverId, initialSequence } = params
+  const { pool, triggerMessageId, streamId, personaId, personaName, workspaceId, serverId, initialSequence } = params
 
-  // Phase 1: Session setup (short-lived connection)
-  // Uses atomic insert with ON CONFLICT to prevent race conditions
-  const setupResult = await withClient(pool, async (db) => {
+  // Phase 1: Session setup (short-lived transaction)
+  // Uses atomic insert with ON CONFLICT to prevent race conditions.
+  // Transaction ensures session creation + stream event + outbox event commit together.
+  const setupResult = await withTransaction(pool, async (db) => {
     // Check if we already have a session for this trigger message
     const existingSession = await AgentSessionRepository.findByTriggerMessage(db, triggerMessageId)
 
@@ -126,6 +132,27 @@ export async function withSession(
       }
     }
 
+    // Emit agent_session:started stream event + outbox event
+    const streamEvent = await StreamEventRepository.insert(db, {
+      id: eventId(),
+      streamId,
+      eventType: "agent_session:started",
+      payload: {
+        sessionId: session.id,
+        personaId,
+        personaName,
+        triggerMessageId,
+        startedAt: session.createdAt.toISOString(),
+      },
+      actorId: personaId,
+      actorType: "persona",
+    })
+    await OutboxRepository.insert(db, "agent_session:started", {
+      workspaceId,
+      streamId,
+      event: streamEvent,
+    })
+
     return { status: "ready" as const, session }
   })
 
@@ -138,15 +165,54 @@ export async function withSession(
 
   // Phase 2: Run work WITHOUT holding connection
   // The work callback can use pool directly for short-lived queries
+  // Periodic heartbeat keeps the session alive during long AI calls,
+  // preventing the orphan cleanup (60s threshold) from killing active sessions.
+  let heartbeatInterval: ReturnType<typeof setInterval> | undefined
+
   try {
+    heartbeatInterval = setInterval(async () => {
+      try {
+        await AgentSessionRepository.updateHeartbeat(pool, session.id)
+      } catch (err) {
+        logger.warn({ err, sessionId: session.id }, "Heartbeat update failed")
+      }
+    }, 15_000)
+
     const { messagesSent, sentMessageIds, lastSeenSequence } = await work(session, pool)
 
-    // Phase 3: Complete session atomically (single query updates both sequence and status)
+    // Phase 3: Complete session + emit completed event atomically
     try {
-      await AgentSessionRepository.completeSession(pool, session.id, {
-        lastSeenSequence,
-        responseMessageId: sentMessageIds[0] ?? null,
-        sentMessageIds,
+      await withTransaction(pool, async (db) => {
+        const completed = await AgentSessionRepository.completeSession(db, session.id, {
+          lastSeenSequence,
+          responseMessageId: sentMessageIds[0] ?? null,
+          sentMessageIds,
+        })
+
+        // Count actual steps from DB (current_step on session is not reliably incremented)
+        const steps = await AgentSessionRepository.findStepsBySession(db, session.id)
+        const completedAt = completed?.completedAt ?? new Date()
+        const duration = completedAt.getTime() - session.createdAt.getTime()
+
+        const streamEvent = await StreamEventRepository.insert(db, {
+          id: eventId(),
+          streamId,
+          eventType: "agent_session:completed",
+          payload: {
+            sessionId: session.id,
+            stepCount: steps.length,
+            messageCount: sentMessageIds.length,
+            duration,
+            completedAt: completedAt.toISOString(),
+          },
+          actorId: personaId,
+          actorType: "persona",
+        })
+        await OutboxRepository.insert(db, "agent_session:completed", {
+          workspaceId,
+          streamId,
+          event: streamEvent,
+        })
       })
     } catch (err) {
       logger.error({ err, sessionId: session.id }, "Failed to complete session, orphan cleanup will recover")
@@ -165,12 +231,39 @@ export async function withSession(
   } catch (err) {
     logger.error({ err, sessionId: session.id }, "Session failed")
 
-    // Phase 3 (error): Mark session as failed (short-lived connection)
-    await AgentSessionRepository.updateStatus(pool, session.id, SessionStatuses.FAILED, {
-      error: String(err),
+    // Phase 3 (error): Mark session as failed + emit failed event atomically
+    await withTransaction(pool, async (db) => {
+      const failed = await AgentSessionRepository.updateStatus(db, session.id, SessionStatuses.FAILED, {
+        error: String(err),
+      })
+      if (failed) {
+        const steps = await AgentSessionRepository.findStepsBySession(db, session.id)
+
+        const streamEvent = await StreamEventRepository.insert(db, {
+          id: eventId(),
+          streamId,
+          eventType: "agent_session:failed",
+          payload: {
+            sessionId: session.id,
+            stepCount: steps.length,
+            error: String(err),
+            traceId: session.id,
+            failedAt: new Date().toISOString(),
+          },
+          actorId: personaId,
+          actorType: "persona",
+        })
+        await OutboxRepository.insert(db, "agent_session:failed", {
+          workspaceId,
+          streamId,
+          event: streamEvent,
+        })
+      }
     }).catch((e) => logger.error({ err: e }, "Failed to mark session as failed"))
 
     return { status: "failed" as const, sessionId: session.id }
+  } finally {
+    if (heartbeatInterval) clearInterval(heartbeatInterval)
   }
 }
 
@@ -179,6 +272,7 @@ export async function withSession(
  */
 export interface PersonaAgentDeps {
   pool: Pool
+  traceEmitter: TraceEmitter
   responseGenerator: ResponseGenerator
   userPreferencesService: UserPreferencesService
   /** Researcher for workspace knowledge retrieval */
@@ -192,6 +286,7 @@ export interface PersonaAgentDeps {
     authorType: AuthorType
     content: string
     sources?: SourceItem[]
+    sessionId?: string
   }) => Promise<{ id: string }>
   createThread: (params: {
     workspaceId: string
@@ -284,17 +379,50 @@ export class PersonaAgent {
 
     const { persona, stream, initialSequence } = precheck
 
+    // Create trace emitter for session-room notifications
+    const { traceEmitter } = this.deps
+
+    // For channel mentions: create thread eagerly so session lifecycle events
+    // go to the thread (where the session card will be visible)
+    const isChannelMention = trigger === AgentTriggers.MENTION && stream.type === StreamTypes.CHANNEL
+    let sessionStreamId = streamId
+    let channelStreamId: string | undefined
+    if (isChannelMention) {
+      const thread = await createThread({
+        workspaceId,
+        parentStreamId: streamId,
+        parentMessageId: messageId,
+        createdBy: persona.id,
+      })
+      sessionStreamId = thread.id
+      channelStreamId = streamId
+      logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention (eager)")
+    }
+
     // Step 2: Run with session lifecycle management
     const result = await withSession(
       {
         pool,
         triggerMessageId: messageId,
-        streamId,
+        streamId: sessionStreamId,
         personaId: persona.id,
+        personaName: persona.name,
+        workspaceId,
         serverId,
-        initialSequence,
+        initialSequence: isChannelMention ? BigInt(0) : initialSequence,
       },
       async (session, db) => {
+        // Create trace handle early so we can notify channel immediately
+        const trace = this.deps.traceEmitter.forSession({
+          sessionId: session.id,
+          workspaceId,
+          streamId: sessionStreamId,
+          triggerMessageId: messageId,
+          personaName: persona.name,
+          channelStreamId,
+        })
+        trace.notifyActivityStarted()
+
         // Fetch trigger message to get the invoking user
         // Note: db is Pool here - repos accept Querier which Pool satisfies
         const triggerMessage = await MessageRepository.findById(db, messageId)
@@ -308,6 +436,70 @@ export class PersonaAgent {
 
         // Build stream context with temporal information
         const context = await buildStreamContext(db, stream, { preferences })
+
+        // Build a map of author IDs to names for message attribution
+        // We need to look up both users and personas from the conversation history
+        const authorNames = new Map<string, string>()
+
+        // Start with participants (if available - channels/DMs have these)
+        if (context.participants) {
+          for (const p of context.participants) {
+            authorNames.set(p.id, p.name)
+          }
+        }
+
+        // Look up any user authors not already in participants (e.g., scratchpad owner)
+        const userAuthorIds = [
+          ...new Set(
+            context.conversationHistory
+              .filter((m) => m.authorType === "user" && !authorNames.has(m.authorId))
+              .map((m) => m.authorId)
+          ),
+        ]
+        if (userAuthorIds.length > 0) {
+          const users = await UserRepository.findByIds(db, userAuthorIds)
+          for (const u of users) {
+            authorNames.set(u.id, u.name)
+          }
+        }
+
+        // Look up persona names for any persona messages in history
+        const personaAuthorIds = [
+          ...new Set(context.conversationHistory.filter((m) => m.authorType === "persona").map((m) => m.authorId)),
+        ]
+        if (personaAuthorIds.length > 0) {
+          const personas = await PersonaRepository.findByIds(db, personaAuthorIds)
+          for (const p of personas) {
+            authorNames.set(p.id, p.name)
+          }
+        }
+
+        // Record the initial context - messages being processed at session start
+        // This helps users understand WHY this session was triggered and WHAT the agent saw
+        if (context.conversationHistory.length > 0) {
+          // Find messages we're actually processing (recent ones, focused on trigger)
+          // Include the trigger message and any recent context (last few messages)
+          const triggerIdx = context.conversationHistory.findIndex((m) => m.id === messageId)
+          const contextMessages =
+            triggerIdx >= 0
+              ? context.conversationHistory.slice(Math.max(0, triggerIdx - 4)) // 4 messages before + trigger
+              : context.conversationHistory.slice(-5) // Fallback: last 5
+
+          const step = await trace.startStep({
+            stepType: "context_received",
+            content: JSON.stringify({
+              messages: contextMessages.map((m) => ({
+                messageId: m.id,
+                authorName: authorNames.get(m.authorId) ?? "Unknown",
+                authorType: m.authorType,
+                createdAt: m.createdAt.toISOString(),
+                content: m.contentMarkdown.slice(0, 300), // Preview
+                isTrigger: m.id === messageId,
+              })),
+            }),
+          })
+          await step.complete({})
+        }
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
@@ -344,26 +536,11 @@ export class PersonaAgent {
             })
         }
 
-        // Track target stream for responses - may change if we create a thread
-        let targetStreamId = streamId
-        let threadCreated = false
+        // For channel mentions the thread was already created eagerly before withSession.
+        // Messages always go to sessionStreamId (thread for channels, original stream otherwise).
+        const targetStreamId = sessionStreamId
 
-        // Helper to send a message, creating a thread for channel mentions on first send
         const doSendMessage = async (msgInput: SendMessageInputWithSources): Promise<SendMessageResult> => {
-          // For channel mentions: create thread on first message
-          // Note: createThread is idempotent (uses ON CONFLICT DO NOTHING), so retries are safe
-          if (trigger === AgentTriggers.MENTION && context.streamType === StreamTypes.CHANNEL && !threadCreated) {
-            const thread = await createThread({
-              workspaceId,
-              parentStreamId: streamId,
-              parentMessageId: messageId,
-              createdBy: persona.id,
-            })
-            targetStreamId = thread.id
-            threadCreated = true
-            logger.info({ threadId: thread.id, streamId, messageId }, "Created thread for channel mention response")
-          }
-
           const message = await createMessage({
             workspaceId,
             streamId: targetStreamId,
@@ -371,6 +548,7 @@ export class PersonaAgent {
             authorType: AuthorTypes.PERSONA,
             content: msgInput.content,
             sources: msgInput.sources,
+            sessionId: session.id,
           })
           return { messageId: message.id, content: msgInput.content }
         }
@@ -498,10 +676,28 @@ export class PersonaAgent {
             const messages = await MessageRepository.listSince(db, checkStreamId, sinceSequence, {
               excludeAuthorId,
             })
+
+            // Look up author names for rich trace display
+            const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+            const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
+
+            const [users, personas] = await Promise.all([
+              userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+              personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
+            ])
+
+            const authorNames = new Map<string, string>()
+            for (const u of users) authorNames.set(u.id, u.name)
+            for (const p of personas) authorNames.set(p.id, p.name)
+
             return messages.map((m) => ({
               sequence: m.sequence,
+              messageId: m.id,
               content: m.contentMarkdown,
               authorId: m.authorId,
+              authorName: authorNames.get(m.authorId) ?? "Unknown",
+              authorType: m.authorType,
+              createdAt: m.createdAt.toISOString(),
             }))
           },
 
@@ -510,6 +706,19 @@ export class PersonaAgent {
           },
 
           search: searchCallbacks,
+
+          recordStep: async (params: RecordStepParams) => {
+            const step = await trace.startStep({
+              stepType: params.stepType,
+              content: params.content,
+            })
+            await step.complete({
+              content: params.content,
+              sources: params.sources,
+              messageId: params.messageId,
+              durationMs: params.durationMs,
+            })
+          },
         }
 
         // Format messages with timestamps if temporal context is available
@@ -542,6 +751,25 @@ export class PersonaAgent {
         }
       }
     )
+
+    // Notify session room about terminal status (for trace dialog real-time updates)
+    // Also notify channel room about activity ending (for inline indicator cleanup)
+    if (result.status === "completed" || result.status === "failed") {
+      const trace = traceEmitter.forSession({
+        sessionId: result.sessionId,
+        workspaceId,
+        streamId: sessionStreamId,
+        triggerMessageId: messageId,
+        personaName: persona.name,
+        channelStreamId,
+      })
+      if (result.status === "completed") {
+        trace.notifyCompleted()
+      } else {
+        trace.notifyFailed()
+      }
+      trace.notifyActivityEnded()
+    }
 
     switch (result.status) {
       case "skipped":
