@@ -1,6 +1,5 @@
 import type { Pool } from "pg"
 import { z } from "zod"
-import type { RunnableConfig } from "@langchain/core/runnables"
 import { withClient } from "../../db"
 import type { AI } from "../../lib/ai/ai"
 import type { ConfigResolver, ResearcherConfig } from "../../lib/ai/config-resolver"
@@ -59,8 +58,6 @@ export interface ResearcherInput {
   invokingUserId: string
   /** For DMs: all participant user IDs */
   dmParticipantIds?: string[]
-  /** LangChain config for trace context propagation */
-  langchainConfig?: RunnableConfig
 }
 
 /**

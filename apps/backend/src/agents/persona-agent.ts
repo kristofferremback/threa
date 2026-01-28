@@ -513,9 +513,7 @@ export class PersonaAgent {
         const systemPrompt = buildSystemPrompt(persona, context, trigger, mentionerName, null)
 
         // Create researcher callback for the graph's research node
-        let runResearcher:
-          | ((config: import("@langchain/core/runnables").RunnableConfig) => Promise<ResearcherResult>)
-          | undefined
+        let runResearcher: (() => Promise<ResearcherResult>) | undefined
         if (triggerMessage && invokingUserId) {
           // Capture DM participant IDs if needed
           let dmParticipantIds: string[] | undefined
@@ -524,7 +522,7 @@ export class PersonaAgent {
             dmParticipantIds = members.map((m) => m.userId)
           }
 
-          runResearcher = (langchainConfig) =>
+          runResearcher = () =>
             researcher.research({
               workspaceId,
               streamId,
@@ -532,7 +530,6 @@ export class PersonaAgent {
               conversationHistory: context.conversationHistory,
               invokingUserId,
               dmParticipantIds,
-              langchainConfig,
             })
         }
 

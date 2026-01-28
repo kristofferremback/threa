@@ -83,7 +83,8 @@ export interface InsertSessionParams {
   serverId?: string
 }
 
-export interface InsertStepParams {
+// Upsert params
+export interface UpsertStepParams {
   id: string
   sessionId: string
   stepNumber: number
@@ -393,7 +394,7 @@ export const AgentSessionRepository = {
 
   // ----- Steps -----
 
-  async insertStep(db: Querier, params: InsertStepParams): Promise<AgentSessionStep> {
+  async upsertStep(db: Querier, params: UpsertStepParams): Promise<AgentSessionStep> {
     const result = await db.query<StepRow>(
       sql`
         INSERT INTO agent_session_steps (

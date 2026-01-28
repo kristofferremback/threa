@@ -64,18 +64,21 @@ export class SessionTrace {
    */
   async startStep(params: { stepType: AgentStepType; content?: string }): Promise<ActiveStep> {
     this.stepNumber++
-    const id = generateStepId()
     const now = new Date()
 
     // Persist step row (started, not yet completed)
-    await AgentSessionRepository.insertStep(this.deps.pool, {
-      id,
+    const step = await AgentSessionRepository.upsertStep(this.deps.pool, {
+      id: generateStepId(),
       sessionId: this.params.sessionId,
       stepNumber: this.stepNumber,
       stepType: params.stepType,
       content: params.content,
       startedAt: now,
     })
+    const stepId = step.id
+    const startedAt = step.startedAt ?? now
+    const stepNumber = step.stepNumber
+    const stepContent = step.content ?? params.content
 
     // Update session's current step type for cross-stream display
     await AgentSessionRepository.updateCurrentStepType(this.deps.pool, this.params.sessionId, params.stepType)
@@ -84,12 +87,12 @@ export class SessionTrace {
     this.deps.io.to(this.sessionRoom).emit("agent_session:step:started", {
       sessionId: this.params.sessionId,
       step: {
-        id,
+        id: stepId,
         sessionId: this.params.sessionId,
-        stepNumber: this.stepNumber,
+        stepNumber,
         stepType: params.stepType,
-        content: params.content,
-        startedAt: now.toISOString(),
+        content: stepContent,
+        startedAt: startedAt.toISOString(),
       },
     })
 
@@ -102,7 +105,7 @@ export class SessionTrace {
       sessionId: this.params.sessionId,
       triggerMessageId: this.params.triggerMessageId,
       personaName: this.params.personaName,
-      stepCount: this.stepNumber,
+      stepCount: stepNumber,
       currentStepType: params.stepType,
       threadStreamId: this.params.channelStreamId ? this.params.streamId : undefined,
     }
@@ -113,10 +116,10 @@ export class SessionTrace {
     target.emit("agent_session:progress", progressPayload)
 
     return new ActiveStep(this.deps, {
-      stepId: id,
+      stepId,
       sessionId: this.params.sessionId,
       sessionRoom: this.sessionRoom,
-      startedAt: now,
+      startedAt,
     })
   }
 

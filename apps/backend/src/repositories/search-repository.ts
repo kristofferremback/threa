@@ -72,7 +72,7 @@ export interface HybridSearchParams {
   semanticWeight?: number
   k?: number
   /** Max L2 distance for semantic results; only messages with distance < this are included. */
-  semanticDistanceThreshold?: number
+  semanticDistanceThreshold: number
 }
 
 export const SearchRepository = {
@@ -240,7 +240,7 @@ export const SearchRepository = {
       keywordWeight = 0.6,
       semanticWeight = 0.4,
       k = 60,
-      semanticDistanceThreshold = 0.8,
+      semanticDistanceThreshold,
     } = params
 
     if (streamIds.length === 0) {
