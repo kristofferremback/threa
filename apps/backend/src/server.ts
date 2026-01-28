@@ -56,6 +56,7 @@ import { createCommandWorker } from "./workers/command-worker"
 import { PersonaAgent } from "./agents/persona-agent"
 import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
+import { StubSimulationAgent } from "./agents/simulation-agent.stub"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
 import { JobQueues } from "./lib/job-queue"
 import { ulid } from "ulid"
@@ -238,14 +239,16 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   // Simulation agent - needed for SimulateCommand
-  const simulationAgent = new SimulationAgent({
-    pool,
-    ai,
-    streamService,
-    checkpointer,
-    createMessage,
-    orchestratorModel: config.ai.namingModel,
-  })
+  const simulationAgent = config.useStubAI
+    ? new StubSimulationAgent()
+    : new SimulationAgent({
+        pool,
+        ai,
+        streamService,
+        checkpointer,
+        createMessage,
+        orchestratorModel: config.ai.namingModel,
+      })
 
   // Command infrastructure - created early for route registration
   const commandRegistry = new CommandRegistry()

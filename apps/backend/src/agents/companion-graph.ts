@@ -50,7 +50,7 @@ export interface CompanionGraphCallbacks {
   /** Send a message with optional sources (used by ensure_response node) */
   sendMessageWithSources: (input: SendMessageInputWithSources) => Promise<SendMessageResult>
   /** Run the researcher to retrieve workspace knowledge (optional - if not provided, research is skipped) */
-  runResearcher?: (config: RunnableConfig) => Promise<ResearcherResult>
+  runResearcher?: () => Promise<ResearcherResult>
   /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
   recordStep?: (params: RecordStepParams) => Promise<void>
 }
@@ -157,7 +157,7 @@ function createResearchNode() {
 
     try {
       const startTime = Date.now()
-      const result = await callbacks.runResearcher(config)
+      const result = await callbacks.runResearcher()
       const durationMs = Date.now() - startTime
 
       logger.debug(

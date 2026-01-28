@@ -71,6 +71,17 @@ export interface HybridSearchParams {
   keywordWeight?: number
   semanticWeight?: number
   k?: number
+  /** Max L2 distance for semantic results; only messages with distance < this are included. */
+  semanticDistanceThreshold: number
+}
+
+export interface SearchWithEmbeddingParams {
+  query: string
+  embedding: number[]
+  streamIds: string[]
+  filters: ResolvedFilters
+  limit: number
+  semanticDistanceThreshold: number
 }
 
 export const SearchRepository = {
@@ -222,6 +233,34 @@ export const SearchRepository = {
   },
 
   /**
+   * Search messages using full-text or hybrid search based on embedding availability.
+   * Falls back to full-text search when no semantic embedding is available.
+   */
+  async searchWithEmbedding(db: Querier, params: SearchWithEmbeddingParams): Promise<SearchResult[]> {
+    const { query, embedding, streamIds, filters, limit, semanticDistanceThreshold } = params
+    const hasQuery = query.trim().length > 0
+    const normalizedQuery = hasQuery ? query : ""
+
+    if (!hasQuery || embedding.length === 0) {
+      return SearchRepository.fullTextSearch(db, {
+        query: normalizedQuery,
+        streamIds,
+        filters,
+        limit,
+      })
+    }
+
+    return SearchRepository.hybridSearch(db, {
+      query: normalizedQuery,
+      embedding,
+      streamIds,
+      filters,
+      limit,
+      semanticDistanceThreshold,
+    })
+  },
+
+  /**
    * Hybrid search combining full-text and semantic search with RRF ranking.
    * Supports quoted phrases for exact matching: "chicken wingz"
    * All done in a single query using CTEs.
@@ -229,7 +268,17 @@ export const SearchRepository = {
    * RRF formula: score(d) = Σ(weight / (k + rank(d)))
    */
   async hybridSearch(db: Querier, params: HybridSearchParams): Promise<SearchResult[]> {
-    const { query, embedding, streamIds, filters, limit, keywordWeight = 0.6, semanticWeight = 0.4, k = 60 } = params
+    const {
+      query,
+      embedding,
+      streamIds,
+      filters,
+      limit,
+      keywordWeight = 0.6,
+      semanticWeight = 0.4,
+      k = 60,
+      semanticDistanceThreshold,
+    } = params
 
     if (streamIds.length === 0) {
       return []
@@ -276,6 +325,7 @@ export const SearchRepository = {
         WHERE m.stream_id = ANY(${streamIds})
           AND m.deleted_at IS NULL
           AND m.embedding IS NOT NULL
+          AND m.embedding <=> ${embeddingLiteral}::vector < ${semanticDistanceThreshold}
           AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
           AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
           AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})

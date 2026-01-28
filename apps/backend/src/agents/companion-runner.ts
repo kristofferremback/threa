@@ -60,9 +60,7 @@ export interface GenerateResponseParams {
   /** User ID who invoked this response - for cost attribution to the human user */
   invokingUserId?: string
   /** Callback to run the researcher for workspace knowledge retrieval */
-  runResearcher?: (
-    config: import("@langchain/core/runnables").RunnableConfig
-  ) => Promise<import("./researcher").ResearcherResult>
+  runResearcher?: () => Promise<import("./researcher").ResearcherResult>
 }
 
 /**

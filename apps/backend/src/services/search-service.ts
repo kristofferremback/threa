@@ -4,6 +4,7 @@ import { SearchRepository, type SearchResult, type ResolvedFilters } from "../re
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
+import { SEMANTIC_DISTANCE_THRESHOLD } from "./search/config"
 
 export type ArchiveStatus = "active" | "archived"
 
@@ -114,33 +115,13 @@ export class SearchService {
         after: filters.after,
       }
 
-      // 3. If no search terms, return recent messages
-      if (!query.trim()) {
-        return SearchRepository.fullTextSearch(client, {
-          query: "",
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      // 4. If no embedding (generation failed), fall back to keyword-only
-      if (embedding.length === 0) {
-        return SearchRepository.fullTextSearch(client, {
-          query,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      // 5. Full hybrid search with RRF ranking in a single query
-      return SearchRepository.hybridSearch(client, {
+      return SearchRepository.searchWithEmbedding(client, {
         query,
         embedding,
         streamIds,
         filters: repoFilters,
         limit,
+        semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
       })
     })
   }
