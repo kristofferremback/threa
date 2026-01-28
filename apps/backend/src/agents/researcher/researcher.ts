@@ -584,35 +584,14 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       // DB search (fast, ~10-50ms)
       return await withClient(pool, async (client) => {
         const filters = {}
-        let results
-
-        if (!searchQuery.trim()) {
-          // No search terms - return recent messages
-          results = await SearchRepository.fullTextSearch(client, {
-            query: "",
-            streamIds: accessibleStreamIds,
-            filters,
-            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
-          })
-        } else if (embedding.length === 0) {
-          // No embedding - keyword-only search
-          results = await SearchRepository.fullTextSearch(client, {
-            query: searchQuery,
-            streamIds: accessibleStreamIds,
-            filters,
-            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
-          })
-        } else {
-          // Hybrid search with RRF ranking (only semantically relevant results)
-          results = await SearchRepository.hybridSearch(client, {
-            query: searchQuery,
-            embedding,
-            streamIds: accessibleStreamIds,
-            filters,
-            limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
-            semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
-          })
-        }
+        const results = await SearchRepository.searchWithEmbedding(client, {
+          query: searchQuery,
+          embedding,
+          streamIds: accessibleStreamIds,
+          filters,
+          limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+          semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
+        })
 
         // Enrich results with author names and stream names
         return enrichMessageSearchResults(client, results)

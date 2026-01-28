@@ -115,28 +115,7 @@ export class SearchService {
         after: filters.after,
       }
 
-      // 3. If no search terms, return recent messages
-      if (!query.trim()) {
-        return SearchRepository.fullTextSearch(client, {
-          query: "",
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      // 4. If no embedding (generation failed), fall back to keyword-only
-      if (embedding.length === 0) {
-        return SearchRepository.fullTextSearch(client, {
-          query,
-          streamIds,
-          filters: repoFilters,
-          limit,
-        })
-      }
-
-      // 5. Full hybrid search with RRF ranking in a single query (only semantically relevant results)
-      return SearchRepository.hybridSearch(client, {
+      return SearchRepository.searchWithEmbedding(client, {
         query,
         embedding,
         streamIds,

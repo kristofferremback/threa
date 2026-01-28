@@ -4,55 +4,55 @@
 
 import { describe, test, expect } from "bun:test"
 import { stripMarkdownFences } from "./text-utils"
+import { memoRepair } from "../memo/repair"
 
 describe("stripMarkdownFences", () => {
   test("removes ```json fence and normalizes JSON", async () => {
     const input = '```json\n{"key": "value"}\n```'
     const result = await stripMarkdownFences({ text: input })
-    // Now parses and re-serializes, adding defaults
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("removes plain ``` fence", async () => {
     const input = '```\n{"key": "value"}\n```'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("handles leading whitespace before fence", async () => {
     const input = '  \n```json\n{"key": "value"}\n```'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("handles missing closing fence", async () => {
     const input = '```json\n{"key": "value"}'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("handles trailing whitespace after closing fence", async () => {
     const input = '```json\n{"key": "value"}\n```  \n'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("preserves content without fences", async () => {
     const input = '{"key": "value"}'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("handles case-insensitive JSON marker", async () => {
     const input = '```JSON\n{"key": "value"}\n```'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","confidence":0.5}')
+    expect(result).toBe('{"key":"value"}')
   })
 
   test("preserves nested structure", async () => {
     const input = '```json\n{"key": "value", "nested": {"a": 1}}\n```'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"key":"value","nested":{"a":1},"confidence":0.5}')
+    expect(result).toBe('{"key":"value","nested":{"a":1}}')
   })
 
   test("handles empty content", async () => {
@@ -70,12 +70,20 @@ describe("stripMarkdownFences", () => {
   test("converts snake_case to camelCase", async () => {
     const input = '{"is_gem": false, "knowledge_type": null}'
     const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe('{"isGem":false,"knowledgeType":null,"reasoning":null,"confidence":0.5}')
+    expect(result).toBe('{"isGem":false,"knowledgeType":null}')
   })
 
+  test("returns cleaned text if JSON parse fails", async () => {
+    const input = "```json\nnot valid json\n```"
+    const result = await stripMarkdownFences({ text: input })
+    expect(result).toBe("not valid json")
+  })
+})
+
+describe("memoRepair", () => {
   test("maps classification field to isKnowledgeWorthy", async () => {
     const input = '{"classification": "not_knowledge_worthy", "reasoning": "test"}'
-    const result = await stripMarkdownFences({ text: input })
+    const result = await memoRepair({ text: input })
     const parsed = JSON.parse(result)
     expect(parsed.isKnowledgeWorthy).toBe(false)
     expect(parsed.reasoning).toBe("test")
@@ -83,7 +91,7 @@ describe("stripMarkdownFences", () => {
 
   test("adds defaults for isGem=false", async () => {
     const input = '{"isGem": false, "reasoning": "social chatter"}'
-    const result = await stripMarkdownFences({ text: input })
+    const result = await memoRepair({ text: input })
     const parsed = JSON.parse(result)
     expect(parsed.isGem).toBe(false)
     expect(parsed.knowledgeType).toBe(null)
@@ -92,7 +100,7 @@ describe("stripMarkdownFences", () => {
 
   test("adds defaults for isKnowledgeWorthy=false", async () => {
     const input = '{"isKnowledgeWorthy": false, "reasoning": "banter"}'
-    const result = await stripMarkdownFences({ text: input })
+    const result = await memoRepair({ text: input })
     const parsed = JSON.parse(result)
     expect(parsed.isKnowledgeWorthy).toBe(false)
     expect(parsed.shouldReviseExisting).toBe(false)
@@ -102,14 +110,8 @@ describe("stripMarkdownFences", () => {
 
   test("preserves existing confidence value", async () => {
     const input = '{"isGem": true, "confidence": 0.95}'
-    const result = await stripMarkdownFences({ text: input })
+    const result = await memoRepair({ text: input })
     const parsed = JSON.parse(result)
     expect(parsed.confidence).toBe(0.95)
-  })
-
-  test("returns cleaned text if JSON parse fails", async () => {
-    const input = "```json\nnot valid json\n```"
-    const result = await stripMarkdownFences({ text: input })
-    expect(result).toBe("not valid json")
   })
 })

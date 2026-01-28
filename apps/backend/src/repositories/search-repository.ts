@@ -75,6 +75,15 @@ export interface HybridSearchParams {
   semanticDistanceThreshold: number
 }
 
+export interface SearchWithEmbeddingParams {
+  query: string
+  embedding: number[]
+  streamIds: string[]
+  filters: ResolvedFilters
+  limit: number
+  semanticDistanceThreshold: number
+}
+
 export const SearchRepository = {
   /**
    * Get stream IDs that a user can access, optionally filtered by required members.
@@ -221,6 +230,34 @@ export const SearchRepository = {
     `)
 
     return result.rows.map(mapRowToSearchResult)
+  },
+
+  /**
+   * Search messages using full-text or hybrid search based on embedding availability.
+   * Falls back to full-text search when no semantic embedding is available.
+   */
+  async searchWithEmbedding(db: Querier, params: SearchWithEmbeddingParams): Promise<SearchResult[]> {
+    const { query, embedding, streamIds, filters, limit, semanticDistanceThreshold } = params
+    const hasQuery = query.trim().length > 0
+    const normalizedQuery = hasQuery ? query : ""
+
+    if (!hasQuery || embedding.length === 0) {
+      return SearchRepository.fullTextSearch(db, {
+        query: normalizedQuery,
+        streamIds,
+        filters,
+        limit,
+      })
+    }
+
+    return SearchRepository.hybridSearch(db, {
+      query: normalizedQuery,
+      embedding,
+      streamIds,
+      filters,
+      limit,
+      semanticDistanceThreshold,
+    })
   },
 
   /**
