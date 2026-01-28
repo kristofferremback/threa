@@ -1,4 +1,5 @@
 import type { AI } from "../ai/ai"
+import { stripMarkdownFences } from "../ai/text-utils"
 import type { ConfigResolver } from "../ai/config-resolver"
 import { COMPONENT_PATHS } from "../ai/config-resolver"
 import { MessageFormatter } from "../ai/message-formatter"
@@ -6,6 +7,7 @@ import type { Message } from "../../repositories/message-repository"
 import type { Conversation } from "../../repositories/conversation-repository"
 import type { Memo } from "../../repositories/memo-repository"
 import type { KnowledgeType } from "@threa/types"
+import { z } from "zod"
 import {
   messageClassificationSchema,
   conversationClassificationSchema,
@@ -15,6 +17,7 @@ import {
   CLASSIFIER_CONVERSATION_PROMPT,
   CLASSIFIER_EXISTING_MEMO_TEMPLATE,
 } from "./config"
+import { logger } from "../logger"
 
 /** Optional context for cost tracking */
 export interface ClassifierContext {
@@ -58,9 +61,8 @@ export class MemoClassifier {
       .replace("{{AUTHOR_ID}}", message.authorId.slice(-8))
       .replace("{{CONTENT}}", message.contentMarkdown)
 
-    const { value } = await this.ai.generateObject({
+    const value = await this.generateWithRepair(messageClassificationSchema, {
       model: config.modelId,
-      schema: messageClassificationSchema,
       messages: [
         { role: "system", content: CLASSIFIER_MESSAGE_SYSTEM_PROMPT },
         { role: "user", content: prompt },
@@ -104,9 +106,8 @@ export class MemoClassifier {
       .replace("{{MESSAGES}}", formattedMessages)
       .replace("{{EXISTING_MEMO_SECTION}}", existingMemoSection)
 
-    const { value } = await this.ai.generateObject({
+    const value = await this.generateWithRepair(conversationClassificationSchema, {
       model: config.modelId,
-      schema: conversationClassificationSchema,
       messages: [
         { role: "system", content: CLASSIFIER_CONVERSATION_SYSTEM_PROMPT },
         { role: "user", content: prompt },
@@ -129,6 +130,50 @@ export class MemoClassifier {
       shouldReviseExisting: existingMemo ? (value.shouldReviseExisting ?? false) : false,
       revisionReason: value.revisionReason ?? null,
       confidence: value.confidence ?? 0.5,
+    }
+  }
+
+  private async generateWithRepair<T extends z.ZodType>(
+    schema: T,
+    options: {
+      model: string
+      messages: { role: "system" | "user" | "assistant"; content: string }[]
+      temperature?: number
+      telemetry: { functionId: string; metadata?: Record<string, unknown> }
+      context: { workspaceId: string; origin: "system" }
+    }
+  ): Promise<z.infer<T>> {
+    try {
+      const { value } = await this.ai.generateObject({
+        model: options.model,
+        schema,
+        messages: options.messages,
+        temperature: options.temperature,
+        telemetry: options.telemetry,
+        context: options.context,
+      })
+      return value
+    } catch (error) {
+      const repaired = await this.tryRepair(schema, error)
+      if (repaired) {
+        logger.warn({ error, functionId: options.telemetry.functionId }, "Memo classifier output repaired")
+        return repaired
+      }
+      throw error
+    }
+  }
+
+  private async tryRepair<T extends z.ZodType>(schema: T, error: unknown): Promise<z.infer<T> | null> {
+    const text = typeof (error as { text?: unknown })?.text === "string" ? (error as { text: string }).text : null
+    if (!text) return null
+
+    const repaired = await stripMarkdownFences({ text })
+    try {
+      const parsed = JSON.parse(repaired)
+      const result = schema.safeParse(parsed)
+      return result.success ? result.data : null
+    } catch {
+      return null
     }
   }
 }

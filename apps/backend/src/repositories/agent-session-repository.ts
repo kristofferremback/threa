@@ -411,6 +411,13 @@ export const AgentSessionRepository = {
           ${params.startedAt},
           ${params.completedAt ?? null}
         )
+        ON CONFLICT (session_id, step_number) DO UPDATE
+        SET
+          content = COALESCE(agent_session_steps.content, EXCLUDED.content),
+          sources = COALESCE(agent_session_steps.sources, EXCLUDED.sources),
+          message_id = COALESCE(agent_session_steps.message_id, EXCLUDED.message_id),
+          tokens_used = COALESCE(agent_session_steps.tokens_used, EXCLUDED.tokens_used),
+          completed_at = COALESCE(agent_session_steps.completed_at, EXCLUDED.completed_at)
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `
     )

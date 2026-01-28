@@ -1,7 +1,6 @@
 import type { Pool } from "pg"
 import { z } from "zod"
 import type { RunnableConfig } from "@langchain/core/runnables"
-import type { ChatOpenAI } from "@langchain/openai"
 import { withClient } from "../../db"
 import type { AI } from "../../lib/ai/ai"
 import type { ConfigResolver, ResearcherConfig } from "../../lib/ai/config-resolver"
@@ -20,6 +19,7 @@ import {
   type EnrichedMessageResult,
 } from "./context-formatter"
 import { logger } from "../../lib/logger"
+import { SEMANTIC_DISTANCE_THRESHOLD } from "../../services/search/config"
 import { RESEARCHER_MAX_ITERATIONS, RESEARCHER_MAX_RESULTS_PER_SEARCH, RESEARCHER_SYSTEM_PROMPT } from "./config"
 
 /**
@@ -228,17 +228,19 @@ export class Researcher {
     accessibleStreamIds: string[]
   ): Promise<ResearcherResult> {
     const { ai, configResolver, embeddingService } = this.deps
-    const { workspaceId, triggerMessage, conversationHistory, langchainConfig, invokingUserId } = input
+    const { workspaceId, triggerMessage, conversationHistory, invokingUserId } = input
 
     // Resolve config for researcher
     const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
 
-    // Get LangChain model for structured output calls
-    const model = ai.getLangChainModel(config.modelId)
-
     // Step 1: Decide if search is needed AND generate queries in one call (AI, no DB)
     const contextSummary = this.buildContextSummary(triggerMessage, conversationHistory)
-    const decision = await this.decideAndGenerateQueries(model, contextSummary, langchainConfig)
+    const decision = await this.decideAndGenerateQueries({
+      contextSummary,
+      config,
+      workspaceId,
+      messageId: triggerMessage.id,
+    })
 
     if (!decision.needsSearch || !decision.queries?.length) {
       logger.debug(
@@ -273,7 +275,14 @@ export class Researcher {
     let iteration = 0
     while (iteration < maxIterations) {
       // AI evaluation (no DB, 1-5 seconds)
-      const evaluation = await this.evaluateResults(model, contextSummary, allMemos, allMessages, langchainConfig)
+      const evaluation = await this.evaluateResults(
+        contextSummary,
+        allMemos,
+        allMessages,
+        config,
+        workspaceId,
+        triggerMessage.id
+      )
 
       if (evaluation.sufficient || !evaluation.additionalQueries?.length) {
         logger.debug(
@@ -344,18 +353,19 @@ export class Researcher {
    * Combined decision + query generation in a single LLM call.
    * Saves one round-trip compared to separate decide + generateQueries calls.
    */
-  private async decideAndGenerateQueries(
-    model: ChatOpenAI,
-    contextSummary: string,
-    langchainConfig?: RunnableConfig
-  ): Promise<z.infer<typeof decisionWithQueriesSchema>> {
+  private async decideAndGenerateQueries(params: {
+    contextSummary: string
+    config: ResearcherConfig
+    workspaceId: string
+    messageId: string
+  }): Promise<z.infer<typeof decisionWithQueriesSchema>> {
+    const { ai } = this.deps
+    const { contextSummary, config, workspaceId, messageId } = params
     try {
-      const structuredModel = model.withStructuredOutput(decisionWithQueriesSchema, {
-        name: "researcher-decide-and-query",
-      })
-
-      const result = await structuredModel.invoke(
-        [
+      const { value } = await ai.generateObject({
+        model: config.modelId,
+        schema: decisionWithQueriesSchema,
+        messages: [
           { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
           {
             role: "user",
@@ -372,10 +382,12 @@ If search IS needed:
 If search is NOT needed, set needsSearch to false and queries to null.`,
           },
         ],
-        langchainConfig
-      )
+        temperature: config.temperature,
+        telemetry: { functionId: "researcher-decide-and-query", metadata: { messageId } },
+        context: { workspaceId, origin: "system" },
+      })
 
-      return result
+      return value
     } catch (error) {
       logger.warn({ error }, "Researcher decision failed, defaulting to no search")
       return { needsSearch: false, reasoning: "Decision failed", queries: null }
@@ -387,19 +399,21 @@ If search is NOT needed, set needsSearch to false and queries to null.`,
    * Uses LangChain's structured output for proper trace integration.
    */
   private async evaluateResults(
-    model: ChatOpenAI,
     contextSummary: string,
     memos: EnrichedMemoResult[],
     messages: EnrichedMessageResult[],
-    langchainConfig?: RunnableConfig
+    config: ResearcherConfig,
+    workspaceId: string,
+    messageId: string
   ): Promise<z.infer<typeof evaluationSchema>> {
+    const { ai } = this.deps
     const resultsText = this.formatResultsForEvaluation(memos, messages)
 
     try {
-      const structuredModel = model.withStructuredOutput(evaluationSchema, { name: "researcher-evaluate" })
-
-      const result = await structuredModel.invoke(
-        [
+      const { value } = await ai.generateObject({
+        model: config.modelId,
+        schema: evaluationSchema,
+        messages: [
           { role: "system", content: RESEARCHER_SYSTEM_PROMPT },
           {
             role: "user",
@@ -414,10 +428,12 @@ ${resultsText || "No results found yet."}
 If results are insufficient, suggest additional queries. Otherwise, mark as sufficient.`,
           },
         ],
-        langchainConfig
-      )
+        temperature: config.temperature,
+        telemetry: { functionId: "researcher-evaluate", metadata: { messageId } },
+        context: { workspaceId, origin: "system" },
+      })
 
-      return result
+      return value
     } catch (error) {
       logger.warn({ error }, "Researcher evaluation failed, treating as sufficient")
       return { sufficient: true, additionalQueries: null, reasoning: "Evaluation failed" }
@@ -508,6 +524,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
           embedding,
           streamIds: accessibleStreamIds,
           limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+          threshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
 
         return results.map((r) => ({
@@ -589,13 +606,14 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
           })
         } else {
-          // Hybrid search with RRF ranking
+          // Hybrid search with RRF ranking (only semantically relevant results)
           results = await SearchRepository.hybridSearch(client, {
             query: searchQuery,
             embedding,
             streamIds: accessibleStreamIds,
             filters,
             limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+            semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
           })
         }
 

@@ -4,6 +4,7 @@ import { SearchRepository, type SearchResult, type ResolvedFilters } from "../re
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { logger } from "../lib/logger"
 import type { StreamType } from "@threa/types"
+import { SEMANTIC_DISTANCE_THRESHOLD } from "./search/config"
 
 export type ArchiveStatus = "active" | "archived"
 
@@ -134,13 +135,14 @@ export class SearchService {
         })
       }
 
-      // 5. Full hybrid search with RRF ranking in a single query
+      // 5. Full hybrid search with RRF ranking in a single query (only semantically relevant results)
       return SearchRepository.hybridSearch(client, {
         query,
         embedding,
         streamIds,
         filters: repoFilters,
         limit,
+        semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
       })
     })
   }

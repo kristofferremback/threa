@@ -19,6 +19,10 @@ const SEMANTIC_FIELD_MAPPINGS: Record<string, { field: string; transform?: (v: u
     field: "isKnowledgeWorthy",
     transform: (v) => typeof v === "string" && !v.toLowerCase().includes("not"),
   },
+  // "preserve: false" → "isKnowledgeWorthy: false"
+  preserve: { field: "isKnowledgeWorthy" },
+  // "reason: ..." → "reasoning: ..."
+  reason: { field: "reasoning" },
   // "recommendation: do_not_preserve" → we don't need this field, but don't want it to fail
   recommendation: { field: "_recommendation" },
 }
