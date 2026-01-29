@@ -78,10 +78,12 @@ export class SessionTrace {
     const stepId = step.id
     const startedAt = step.startedAt ?? now
     const stepNumber = step.stepNumber
+    const stepType = step.stepType
     const stepContent = step.content ?? params.content
 
     // Update session's current step type for cross-stream display
-    await AgentSessionRepository.updateCurrentStepType(this.deps.pool, this.params.sessionId, params.stepType)
+    // Use DB-returned stepType for consistency with persisted value
+    await AgentSessionRepository.updateCurrentStepType(this.deps.pool, this.params.sessionId, stepType)
 
     // Emit to session room (detailed, for trace dialog)
     this.deps.io.to(this.sessionRoom).emit("agent_session:step:started", {
@@ -90,7 +92,7 @@ export class SessionTrace {
         id: stepId,
         sessionId: this.params.sessionId,
         stepNumber,
-        stepType: params.stepType,
+        stepType,
         content: stepContent,
         startedAt: startedAt.toISOString(),
       },
@@ -106,7 +108,7 @@ export class SessionTrace {
       triggerMessageId: this.params.triggerMessageId,
       personaName: this.params.personaName,
       stepCount: stepNumber,
-      currentStepType: params.stepType,
+      currentStepType: stepType,
       threadStreamId: this.params.channelStreamId ? this.params.streamId : undefined,
     }
     let target = this.deps.io.to(this.streamRoom)
