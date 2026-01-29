@@ -52,7 +52,9 @@ import { StreamMemberRepository } from "../../../src/repositories/stream-member-
 import { MessageRepository } from "../../../src/repositories/message-repository"
 import { PersonaRepository } from "../../../src/repositories/persona-repository"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
+import { TraceEmitter } from "../../../src/lib/trace-emitter"
 import { EventService } from "../../../src/services/event-service"
+import type { Server } from "socket.io"
 import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
@@ -228,6 +230,10 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       costRecorder: undefined,
     })
 
+    // Stub Socket.io server for tracing - evals don't need real-time updates
+    const stubIo = { to: () => ({ to: () => ({ emit: () => {} }), emit: () => {} }) } as unknown as Server
+    const traceEmitter = new TraceEmitter({ io: stubIo, pool: ctx.pool })
+
     // Create message and thread callbacks using EventService
     const evalEventService = new EventService(ctx.pool)
 
@@ -263,6 +269,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     // Create PersonaAgent with real dependencies
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
+      traceEmitter,
       responseGenerator,
       userPreferencesService,
       researcher,
