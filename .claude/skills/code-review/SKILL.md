@@ -98,37 +98,26 @@ CLAUDE.md files to check: \<CLAUDE_MD_FILES\>
 
 **Gather Context** - Run these commands:
 
-- `gh pr diff <NUMBER>` - Get the diff (WARNING: shows ALL changes, some may be outdated if fixed in later commits)
+- `gh pr diff <NUMBER>` - Get the cumulative diff (PR HEAD vs base branch)
 - `gh pr view <NUMBER> --json headRefOid -q '.headRefOid'` - Get HEAD SHA for linking
-- `gh pr view <NUMBER> --json commits -q '.commits | length'` - Check number of commits (if >1, issues may have been fixed)
 - `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
 - `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
 - Read each CLAUDE.md file listed above
 
-**WARNING**: If the PR has multiple commits, the diff aggregates ALL changes. Code that appears problematic in the diff may have already been fixed in a subsequent commit. ALWAYS read the actual current file before reporting.
+**About the diff:** `gh pr diff` shows the cumulative diff between the PR HEAD and the base branch (main). This IS the current state of the PR - not commit-by-commit changes.
 
-**CRITICAL - Verify Before Reporting:**
+**CRITICAL - Read Files for Context:**
 
-The diff shows ALL changes across ALL commits. Issues you see in the diff may have been fixed in later commits within the same PR. You MUST verify each issue still exists before reporting.
+The diff shows WHAT changed but not always WHY. For every potential issue:
 
-For EVERY potential issue:
-
-1. **Use the Read tool** to read the CURRENT file (not the diff) at the specific line numbers
-2. **Confirm the exact problematic code is still present** in the current state
-3. If the code has been changed/fixed since the diff you're looking at, DO NOT REPORT IT
-
-Example workflow:
-
-- You see `started_at = EXCLUDED.started_at` in the diff and think it should use COALESCE
-- Before reporting: `Read` the actual file to check current state
-- If file now shows `started_at = COALESCE(...)`, the issue was already fixed - skip it
-- Only report if the problematic code is STILL THERE in the current file
+1. **Use the Read tool** to read the file at the specific line numbers to understand full context
+2. **Trace the data flow** - understand how values are used before and after the change
+3. **Check related code** - changes often require corresponding updates elsewhere
 
 **False Positives to Avoid:**
 
 - Pre-existing issues (not introduced by this PR)
 - Issues on lines the PR did not modify (EXCEPTION: missing corresponding changes - see below)
-- **Issues fixed in subsequent commits within the same PR** - This is the #1 source of false positives. The diff shows cumulative changes. If you see something wrong and later commits fixed it, DO NOT REPORT. Always Read the current file first.
 - Test failures, type errors, build errors - CI catches these. Your job is to find issues CI cannot catch.
 - Issues a linter/typechecker/compiler would catch (imports, types, formatting)
 - General quality issues (test coverage, documentation) unless CLAUDE.md requires them
