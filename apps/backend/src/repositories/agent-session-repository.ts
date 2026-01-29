@@ -419,8 +419,9 @@ export const AgentSessionRepository = {
           sources = COALESCE(EXCLUDED.sources, agent_session_steps.sources),
           message_id = COALESCE(EXCLUDED.message_id, agent_session_steps.message_id),
           tokens_used = COALESCE(EXCLUDED.tokens_used, agent_session_steps.tokens_used),
+          -- On retry, reset both timestamps: new attempt = new start, clear old completion
           started_at = EXCLUDED.started_at,
-          completed_at = COALESCE(EXCLUDED.completed_at, agent_session_steps.completed_at)
+          completed_at = EXCLUDED.completed_at
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `
     )
