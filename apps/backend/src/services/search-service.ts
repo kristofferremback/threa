@@ -115,8 +115,21 @@ export class SearchService {
         after: filters.after,
       }
 
-      return SearchRepository.searchWithEmbedding(client, {
-        query,
+      const normalizedQuery = query.trim()
+      const hasQuery = normalizedQuery.length > 0
+      const hasEmbedding = embedding.length > 0
+
+      if (!hasQuery || !hasEmbedding) {
+        return SearchRepository.fullTextSearch(client, {
+          query: normalizedQuery,
+          streamIds,
+          filters: repoFilters,
+          limit,
+        })
+      }
+
+      return SearchRepository.hybridSearch(client, {
+        query: normalizedQuery,
         embedding,
         streamIds,
         filters: repoFilters,

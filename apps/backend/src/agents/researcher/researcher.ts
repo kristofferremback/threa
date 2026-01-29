@@ -584,14 +584,25 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
       // DB search (fast, ~10-50ms)
       return await withClient(pool, async (client) => {
         const filters = {}
-        const results = await SearchRepository.searchWithEmbedding(client, {
-          query: searchQuery,
-          embedding,
-          streamIds: accessibleStreamIds,
-          filters,
-          limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
-          semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
-        })
+        const normalizedQuery = searchQuery.trim()
+        const hasQuery = normalizedQuery.length > 0
+        const hasEmbedding = embedding.length > 0
+        const results =
+          !hasQuery || !hasEmbedding
+            ? await SearchRepository.fullTextSearch(client, {
+                query: normalizedQuery,
+                streamIds: accessibleStreamIds,
+                filters,
+                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+              })
+            : await SearchRepository.hybridSearch(client, {
+                query: normalizedQuery,
+                embedding,
+                streamIds: accessibleStreamIds,
+                filters,
+                limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+                semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
+              })
 
         // Enrich results with author names and stream names
         return enrichMessageSearchResults(client, results)
