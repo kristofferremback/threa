@@ -249,8 +249,6 @@ https://github.com/<OWNER>/<REPO>/blob/<SHA>/CLAUDE.md#L100-L105
 [links]
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
-
-<sub>- If this code review was useful, please react with 👍. Otherwise, react with 👎.</sub>
 ---
 ```
 
