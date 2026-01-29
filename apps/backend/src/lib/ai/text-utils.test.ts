@@ -114,4 +114,15 @@ describe("memoRepair", () => {
     const parsed = JSON.parse(result)
     expect(parsed.confidence).toBe(0.95)
   })
+
+  test("maps isKnowledgeWorthPreserving to isKnowledgeWorthy", async () => {
+    const input = '{"isKnowledgeWorthPreserving": false, "reasoning": "informal chat", "confidence": 0.5}'
+    const result = await memoRepair({ text: input })
+    const parsed = JSON.parse(result)
+    expect(parsed.isKnowledgeWorthy).toBe(false)
+    expect(parsed.isKnowledgeWorthPreserving).toBeUndefined()
+    expect(parsed.shouldReviseExisting).toBe(false)
+    expect(parsed.revisionReason).toBe(null)
+    expect(parsed.knowledgeType).toBe(null)
+  })
 })

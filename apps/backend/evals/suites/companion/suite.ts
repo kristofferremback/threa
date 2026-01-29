@@ -53,7 +53,7 @@ import { MessageRepository } from "../../../src/repositories/message-repository"
 import { PersonaRepository } from "../../../src/repositories/persona-repository"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
 import { EventService } from "../../../src/services/event-service"
-import { markdownToJson } from "../../../src/lib/content-parser"
+import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
 import { ulid } from "ulid"
 import { personaId as generatePersonaId, streamId as generateStreamId } from "../../../src/lib/id"
@@ -163,7 +163,7 @@ async function setupTestData(
         streamId: testStreamId,
         authorId,
         authorType,
-        contentJson: markdownToJson(msg.content),
+        contentJson: parseMarkdown(msg.content),
         contentMarkdown: msg.content,
       })
     }
@@ -175,7 +175,7 @@ async function setupTestData(
     streamId: testStreamId,
     authorId: ctx.userId,
     authorType: AuthorTypes.USER,
-    contentJson: markdownToJson(input.message),
+    contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })
 
@@ -237,7 +237,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
         streamId: params.streamId,
         authorId: params.authorId,
         authorType: params.authorType,
-        contentJson: markdownToJson(params.content),
+        contentJson: parseMarkdown(params.content),
         contentMarkdown: params.content,
         sources: params.sources,
       })

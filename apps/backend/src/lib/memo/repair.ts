@@ -8,6 +8,8 @@ const MEMO_SEMANTIC_FIELD_MAPPINGS: Record<string, SemanticFieldMapping> = {
   },
   // "preserve: false" → "isKnowledgeWorthy: false"
   preserve: { field: "isKnowledgeWorthy" },
+  // "isKnowledgeWorthPreserving: false" → "isKnowledgeWorthy: false"
+  isKnowledgeWorthPreserving: { field: "isKnowledgeWorthy" },
   // "reason: ..." → "reasoning: ..."
   reason: { field: "reasoning" },
   // "recommendation: do_not_preserve" → we don't need this field, but don't want it to fail
