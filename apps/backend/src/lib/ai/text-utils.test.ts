@@ -125,4 +125,11 @@ describe("memoRepair", () => {
     expect(parsed.revisionReason).toBe(null)
     expect(parsed.knowledgeType).toBe(null)
   })
+
+  test("normalizes knowledgeType to lowercase", async () => {
+    const input = '{"isGem": true, "knowledgeType": "Decision", "confidence": 0.5}'
+    const result = await memoRepair({ text: input })
+    const parsed = JSON.parse(result)
+    expect(parsed.knowledgeType).toBe("decision")
+  })
 })

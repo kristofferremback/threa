@@ -17,6 +17,11 @@ const MEMO_SEMANTIC_FIELD_MAPPINGS: Record<string, SemanticFieldMapping> = {
 }
 
 function addMemoDefaults(obj: Record<string, unknown>): Record<string, unknown> {
+  // Normalize knowledgeType to lowercase (models sometimes return "Decision" instead of "decision")
+  if ("knowledgeType" in obj && typeof obj.knowledgeType === "string") {
+    obj.knowledgeType = obj.knowledgeType.toLowerCase()
+  }
+
   // For message classification: if isGem is false, knowledgeType should be null
   if ("isGem" in obj && obj.isGem === false) {
     if (!("knowledgeType" in obj)) {
