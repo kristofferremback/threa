@@ -95,7 +95,7 @@ export interface SemanticSearchParams {
   embedding: number[]
   streamIds?: string[]
   limit?: number
-  threshold?: number
+  semanticDistanceThreshold?: number
 }
 
 export interface FullTextSearchParams {
@@ -403,7 +403,7 @@ export const MemoRepository = {
    * Returns memos with their source stream info for navigation.
    */
   async semanticSearch(db: Querier, params: SemanticSearchParams): Promise<MemoSearchResult[]> {
-    const { workspaceId, embedding, streamIds, limit = 10, threshold = 0.8 } = params
+    const { workspaceId, embedding, streamIds, limit = 10, semanticDistanceThreshold = 0.8 } = params
     const hasStreamFilter = streamIds && streamIds.length > 0
 
     const embeddingLiteral = `[${embedding.join(",")}]`
@@ -432,7 +432,7 @@ export const MemoRepository = {
         WHERE m.workspace_id = ${workspaceId}
           AND m.status = 'active'
           AND m.embedding IS NOT NULL
-          AND m.embedding <=> ${embeddingLiteral}::vector < ${threshold}
+          AND m.embedding <=> ${embeddingLiteral}::vector < ${semanticDistanceThreshold}
       )
       SELECT * FROM memo_with_stream
       WHERE (${!hasStreamFilter} OR stream_id = ANY(${streamIds ?? []}))

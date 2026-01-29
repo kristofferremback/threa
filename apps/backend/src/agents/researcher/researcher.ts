@@ -521,7 +521,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
           embedding,
           streamIds: accessibleStreamIds,
           limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
-          threshold: SEMANTIC_DISTANCE_THRESHOLD,
+          semanticDistanceThreshold: SEMANTIC_DISTANCE_THRESHOLD,
         })
 
         return results.map((r) => ({
