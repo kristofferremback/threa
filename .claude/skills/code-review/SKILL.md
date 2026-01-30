@@ -220,39 +220,74 @@ Use `gh pr comment <NUMBER> --body "..."` with this EXACT structure:
 
 ```
 <!-- unified-review -->
+
+## Code Review Summary
+
+**Confidence Score: X/7** - [Excellent/Very Good/Good/Acceptable/Needs Work/Significant Concerns/Major Problems]
+
+[1-2 sentence overall assessment of the PR quality and what it does well or poorly.]
+
+**Suggested improvements:**
+- `file.ts:10-20` - Brief description of issue and fix
+- `other-file.ts:50` - Another issue
+
+(Or if no issues: "None - the code is clean.")
+
 ---
-### Code review
 
-Found N issues:
+<details><summary>🔍 Code Quality [CLEAN | N suggestions]</summary>
 
-1. Brief description of the issue (CLAUDE.md says "exact quote" OR bug due to specific reason)
+[Detailed findings with context, code snippets, and explanations.]
 
-https://github.com/<OWNER>/<REPO>/blob/<SHA>/path/to/file.ts#L10-L20
+</details>
 
-https://github.com/<OWNER>/<REPO>/blob/<SHA>/path/to/related-file.ts#L50-L60
+<details><summary>📋 CLAUDE.md Compliance [CLEAN | N violations]</summary>
 
-https://github.com/<OWNER>/<REPO>/blob/<SHA>/CLAUDE.md#L100-L105
+[Violations with CLAUDE.md citations and quotes.]
 
-2. Next issue description...
+</details>
 
-[links]
+<details><summary>🏗️ Abstraction Design [CLEAN | N concerns]</summary>
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
----
+[Design concerns with explanations.]
+
+</details>
+
+<details><summary>🔒 Security [CLEAN | N issues]</summary>
+
+[Security issues by severity, or "✅ No security concerns identified."]
+
+</details>
+
+<details><summary>⚡ Performance [CLEAN | N concerns]</summary>
+
+[Performance issues, or "✅ No performance concerns."]
+
+</details>
+
+<details><summary>🔄 Reactivity [CLEAN | N issues]</summary>
+
+[Reactivity issues, or "✅ No reactivity issues identified."]
+
+</details>
 ```
 
-Or if no issues:
+**Section Status Format:**
 
-```
-<!-- unified-review -->
----
-### Code review
+- `[CLEAN]` - No issues found in this area
+- `[N suggestions]` / `[N violations]` / `[N concerns]` / `[N issues]` - Count of findings
 
-No issues found. Checked for bugs, CLAUDE.md compliance, and missing corresponding changes.
+**Suggested Improvements Format (in summary):**
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
----
-```
+- Use `file.ts:line` or `file.ts:start-end` format
+- One line per issue, brief description
+- Most important issues first
+
+**Detailed Findings Format (in collapsed sections):**
+
+- Use headers for distinct issues (e.g., `### Minor: ResizeObserver cleanup`)
+- Include code snippets showing current code and suggested fix
+- Explain WHY it's an issue, not just WHAT
 
 **Link Format Requirements:**
 
@@ -265,35 +300,62 @@ No issues found. Checked for bugs, CLAUDE.md compliance, and missing correspondi
 
 **Supersede Old Comment** (if previous unified-review exists):
 
-First, fetch the old comment body:
+**CRITICAL**: The old review content MUST be collapsed. Follow these steps exactly:
+
+1. Fetch the old comment body and store it:
 
 ```bash
-gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body'
+OLD_BODY=$(gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body')
 ```
 
-Then update it to preserve the old review in a collapsible block:
+2. Remove the `<!-- unified-review -->` marker from the old body (so it won't be detected as active)
+
+3. Update the old comment with the FULL old content inside the collapsed block:
 
 ```bash
-gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body="$(cat <<'EOF'
-<!-- unified-review:superseded -->
+gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body="<!-- unified-review:superseded -->
 **[New review available here](NEW_COMMENT_URL)**
 
 <details>
-<summary>Previous review</summary>
+<summary>Previous review (superseded)</summary>
 
-[OLD_COMMENT_BODY with <!-- unified-review --> marker removed]
+$OLD_BODY_WITH_MARKER_REMOVED
+
+</details>"
+```
+
+**Example of correct superseded comment:**
+
+```
+<!-- unified-review:superseded -->
+**[New review available here](https://github.com/.../issuecomment-123)**
+
+<details>
+<summary>Previous review (superseded)</summary>
+
+## Code Review Summary
+
+**Confidence Score: 6/7** - Very Good
+
+[... entire old review content here, collapsed ...]
 
 </details>
-EOF
-)"
 ```
+
+The old review MUST be fully preserved inside `<details>` - never truncate or summarize it.
 
 **Final Output** - Return ONLY this structured summary:
 
 ```
 REVIEW_POSTED: <comment_url>
 CONFIDENCE: <1-7>
-ISSUES_FOUND: <number>
+SUMMARY:
+  Code Quality: <CLEAN | N issues>
+  CLAUDE.md: <CLEAN | N violations>
+  Abstraction: <CLEAN | N concerns>
+  Security: <CLEAN | N issues>
+  Performance: <CLEAN | N issues>
+  Reactivity: <CLEAN | N issues>
 KEY_ISSUES: <brief comma-separated list, or "None">
 ```
 
@@ -313,7 +375,15 @@ Parse the structured summary from the agent's output.
 Code review posted to PR #<NUMBER>: <COMMENT_URL>
 
 Confidence: <SCORE>/7
-Issues found: <N>
+
+Summary:
+- 🔍 Code Quality: <status>
+- 📋 CLAUDE.md: <status>
+- 🏗️ Abstraction: <status>
+- 🔒 Security: <status>
+- ⚡ Performance: <status>
+- 🔄 Reactivity: <status>
+
 Key issues: [list if any]
 ```
 
