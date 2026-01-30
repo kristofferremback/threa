@@ -64,32 +64,37 @@ export class SessionTrace {
    */
   async startStep(params: { stepType: AgentStepType; content?: string }): Promise<ActiveStep> {
     this.stepNumber++
-    const id = generateStepId()
     const now = new Date()
 
     // Persist step row (started, not yet completed)
-    await AgentSessionRepository.insertStep(this.deps.pool, {
-      id,
+    const step = await AgentSessionRepository.upsertStep(this.deps.pool, {
+      id: generateStepId(),
       sessionId: this.params.sessionId,
       stepNumber: this.stepNumber,
       stepType: params.stepType,
       content: params.content,
       startedAt: now,
     })
+    const stepId = step.id
+    const startedAt = step.startedAt ?? now
+    const stepNumber = step.stepNumber
+    const stepType = step.stepType
+    const stepContent = step.content ?? params.content
 
     // Update session's current step type for cross-stream display
-    await AgentSessionRepository.updateCurrentStepType(this.deps.pool, this.params.sessionId, params.stepType)
+    // Use DB-returned stepType for consistency with persisted value
+    await AgentSessionRepository.updateCurrentStepType(this.deps.pool, this.params.sessionId, stepType)
 
     // Emit to session room (detailed, for trace dialog)
     this.deps.io.to(this.sessionRoom).emit("agent_session:step:started", {
       sessionId: this.params.sessionId,
       step: {
-        id,
+        id: stepId,
         sessionId: this.params.sessionId,
-        stepNumber: this.stepNumber,
-        stepType: params.stepType,
-        content: params.content,
-        startedAt: now.toISOString(),
+        stepNumber,
+        stepType,
+        content: stepContent,
+        startedAt: startedAt.toISOString(),
       },
     })
 
@@ -102,8 +107,8 @@ export class SessionTrace {
       sessionId: this.params.sessionId,
       triggerMessageId: this.params.triggerMessageId,
       personaName: this.params.personaName,
-      stepCount: this.stepNumber,
-      currentStepType: params.stepType,
+      stepCount: stepNumber,
+      currentStepType: stepType,
       threadStreamId: this.params.channelStreamId ? this.params.streamId : undefined,
     }
     let target = this.deps.io.to(this.streamRoom)
@@ -113,10 +118,10 @@ export class SessionTrace {
     target.emit("agent_session:progress", progressPayload)
 
     return new ActiveStep(this.deps, {
-      stepId: id,
+      stepId,
       sessionId: this.params.sessionId,
       sessionRoom: this.sessionRoom,
-      startedAt: now,
+      startedAt,
     })
   }
 

@@ -4,7 +4,8 @@ import { withClient } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { AgentSessionRepository, SessionStatuses } from "../../src/repositories/agent-session-repository"
-import { streamId, userId, workspaceId, sessionId, personaId, messageId } from "../../src/lib/id"
+import { streamId, userId, workspaceId, sessionId, personaId, messageId, stepId } from "../../src/lib/id"
+import { AgentStepTypes } from "@threa/types"
 import { setupTestDatabase, testMessageContent } from "./setup"
 
 describe("Agent Session Repository", () => {
@@ -694,6 +695,69 @@ describe("Agent Session - Concurrency", () => {
 
     expect(results[1]).not.toBeNull()
     expect(results[1]!.id).toBe(session2Id)
+  })
+
+  describe("upsertStep", () => {
+    test("should reset timestamps on retry to prevent started > completed", async () => {
+      const testStreamId = streamId()
+      const testPersonaId = personaId()
+      const testSessionId = sessionId()
+      const testStepId = stepId()
+
+      await withClient(pool, async (client) => {
+        // Create session first
+        await AgentSessionRepository.insert(client, {
+          id: testSessionId,
+          streamId: testStreamId,
+          personaId: testPersonaId,
+          triggerMessageId: messageId(),
+          status: SessionStatuses.RUNNING,
+          serverId: "test-server",
+        })
+
+        // Insert initial step
+        const originalStart = new Date("2026-01-01T10:00:00Z")
+        const step1 = await AgentSessionRepository.upsertStep(client, {
+          id: testStepId,
+          sessionId: testSessionId,
+          stepNumber: 1,
+          stepType: AgentStepTypes.THINKING,
+          startedAt: originalStart,
+        })
+
+        expect(step1.startedAt).toEqual(originalStart)
+        expect(step1.completedAt).toBeNull()
+
+        // Complete the step
+        const completionTime = new Date("2026-01-01T10:00:05Z")
+        await AgentSessionRepository.updateStep(client, testStepId, {
+          completedAt: completionTime,
+        })
+
+        // Verify completion
+        const completedStep = await AgentSessionRepository.findLatestStep(client, testSessionId)
+        expect(completedStep!.completedAt).toEqual(completionTime)
+
+        // Retry the step (simulates crash recovery) - this would happen if agent restarts
+        const retryStart = new Date("2026-01-01T10:01:00Z")
+        const retriedStep = await AgentSessionRepository.upsertStep(client, {
+          id: stepId(), // New ID but same step_number triggers conflict
+          sessionId: testSessionId,
+          stepNumber: 1,
+          stepType: AgentStepTypes.THINKING,
+          startedAt: retryStart,
+          // completedAt not provided = NULL
+        })
+
+        // Key assertion: started_at should be the retry time, completed_at should be cleared
+        // This prevents the invalid state where started_at > completed_at
+        expect(retriedStep.startedAt).toEqual(retryStart)
+        expect(retriedStep.completedAt).toBeNull()
+
+        // Verify started_at is NOT greater than completed_at (since completed_at is null, this is satisfied)
+        // The old bug would have: started_at=10:01:00, completed_at=10:00:05 (invalid!)
+      })
+    })
   })
 
   describe("insertRunningOrSkip", () => {

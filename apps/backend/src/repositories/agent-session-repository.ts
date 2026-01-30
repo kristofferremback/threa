@@ -83,7 +83,8 @@ export interface InsertSessionParams {
   serverId?: string
 }
 
-export interface InsertStepParams {
+// Upsert params
+export interface UpsertStepParams {
   id: string
   sessionId: string
   stepNumber: number
@@ -393,7 +394,7 @@ export const AgentSessionRepository = {
 
   // ----- Steps -----
 
-  async insertStep(db: Querier, params: InsertStepParams): Promise<AgentSessionStep> {
+  async upsertStep(db: Querier, params: UpsertStepParams): Promise<AgentSessionStep> {
     const result = await db.query<StepRow>(
       sql`
         INSERT INTO agent_session_steps (
@@ -411,6 +412,16 @@ export const AgentSessionRepository = {
           ${params.startedAt},
           ${params.completedAt ?? null}
         )
+        ON CONFLICT (session_id, step_number) DO UPDATE
+        SET
+          step_type = EXCLUDED.step_type,
+          content = COALESCE(EXCLUDED.content, agent_session_steps.content),
+          sources = COALESCE(EXCLUDED.sources, agent_session_steps.sources),
+          message_id = COALESCE(EXCLUDED.message_id, agent_session_steps.message_id),
+          tokens_used = COALESCE(EXCLUDED.tokens_used, agent_session_steps.tokens_used),
+          -- On retry, reset both timestamps: new attempt = new start, clear old completion
+          started_at = EXCLUDED.started_at,
+          completed_at = EXCLUDED.completed_at
         RETURNING ${sql.raw(STEP_SELECT_FIELDS)}
       `
     )

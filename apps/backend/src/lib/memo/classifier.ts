@@ -15,6 +15,7 @@ import {
   CLASSIFIER_CONVERSATION_PROMPT,
   CLASSIFIER_EXISTING_MEMO_TEMPLATE,
 } from "./config"
+import { memoRepair } from "./repair"
 
 /** Optional context for cost tracking */
 export interface ClassifierContext {
@@ -66,6 +67,7 @@ export class MemoClassifier {
         { role: "user", content: prompt },
       ],
       temperature: config.temperature,
+      repair: memoRepair,
       telemetry: {
         functionId: "memo-classify-message",
         metadata: { messageId: message.id },
@@ -112,6 +114,7 @@ export class MemoClassifier {
         { role: "user", content: prompt },
       ],
       temperature: config.temperature,
+      repair: memoRepair,
       telemetry: {
         functionId: "memo-classify-conversation",
         metadata: {

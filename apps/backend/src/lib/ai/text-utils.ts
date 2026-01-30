@@ -9,81 +9,39 @@ function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
 }
 
-/**
- * Semantic field mappings for when LLMs use different but equivalent field names.
- * Maps from model's field name to expected schema field name and optional value transform.
- */
-const SEMANTIC_FIELD_MAPPINGS: Record<string, { field: string; transform?: (v: unknown) => unknown }> = {
-  // "classification: not_knowledge_worthy" → "isKnowledgeWorthy: false"
-  classification: {
-    field: "isKnowledgeWorthy",
-    transform: (v) => typeof v === "string" && !v.toLowerCase().includes("not"),
-  },
-  // "recommendation: do_not_preserve" → we don't need this field, but don't want it to fail
-  recommendation: { field: "_recommendation" },
+export interface SemanticFieldMapping {
+  field: string
+  transform?: (v: unknown) => unknown
+}
+
+export interface JsonRepairOptions {
+  fieldMappings?: Record<string, SemanticFieldMapping>
+  addDefaults?: (obj: Record<string, unknown>) => Record<string, unknown>
 }
 
 /**
  * Recursively convert all snake_case keys in an object to camelCase,
  * and apply semantic field mappings.
  */
-function normalizeObject(obj: unknown): unknown {
+function normalizeObject(obj: unknown, fieldMappings?: Record<string, SemanticFieldMapping>): unknown {
   if (Array.isArray(obj)) {
-    return obj.map(normalizeObject)
+    return obj.map((item) => normalizeObject(item, fieldMappings))
   }
   if (obj !== null && typeof obj === "object") {
     const result: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(obj)) {
       // Check for semantic mapping first
-      const mapping = SEMANTIC_FIELD_MAPPINGS[key]
+      const mapping = fieldMappings?.[key]
       if (mapping) {
         const transformedValue = mapping.transform ? mapping.transform(value) : value
-        result[mapping.field] = normalizeObject(transformedValue)
+        result[mapping.field] = normalizeObject(transformedValue, fieldMappings)
       } else {
         // Convert snake_case to camelCase
-        result[snakeToCamel(key)] = normalizeObject(value)
+        result[snakeToCamel(key)] = normalizeObject(value, fieldMappings)
       }
     }
     return result
   }
-  return obj
-}
-
-/**
- * Add default values for common missing fields.
- * The AI SDK validates before applying Zod defaults, so we must add them here.
- */
-function addDefaults(obj: Record<string, unknown>): Record<string, unknown> {
-  // For message classification: if isGem is false, knowledgeType should be null
-  if ("isGem" in obj && obj.isGem === false) {
-    if (!("knowledgeType" in obj)) {
-      obj.knowledgeType = null
-    }
-  }
-
-  // Message classification often omits reasoning when isGem is false; default to null
-  if ("isGem" in obj && !("reasoning" in obj)) {
-    obj.reasoning = null
-  }
-
-  // Default confidence if missing
-  if (!("confidence" in obj)) {
-    obj.confidence = 0.5
-  }
-
-  // For conversation classification: add defaults for boolean fields
-  if ("isKnowledgeWorthy" in obj) {
-    if (!("shouldReviseExisting" in obj)) {
-      obj.shouldReviseExisting = false
-    }
-    if (!("revisionReason" in obj)) {
-      obj.revisionReason = null
-    }
-    if (obj.isKnowledgeWorthy === false && !("knowledgeType" in obj)) {
-      obj.knowledgeType = null
-    }
-  }
-
   return obj
 }
 
@@ -170,6 +128,35 @@ function extractJsonObject(text: string): string {
 }
 
 /**
+ * Create a JSON repair function with optional semantic field mappings and defaults.
+ */
+export function createJsonRepair(options: JsonRepairOptions = {}) {
+  const { fieldMappings, addDefaults } = options
+
+  return async ({ text }: { text: string }): Promise<string> => {
+    // Strip markdown fences
+    let cleaned = text
+      .replace(/^\s*```(?:json)?\s*\n?/i, "")
+      .replace(/\n?```\s*$/i, "")
+      .trim()
+
+    // Extract JSON object from garbage prefixes
+    cleaned = extractJsonObject(cleaned)
+
+    // Try to parse and normalize field names
+    try {
+      const parsed = JSON.parse(cleaned)
+      const normalized = normalizeObject(parsed, fieldMappings) as Record<string, unknown>
+      const withDefaults = addDefaults ? addDefaults(normalized) : normalized
+      return JSON.stringify(withDefaults)
+    } catch {
+      // If parsing fails, return the cleaned text as-is
+      return cleaned
+    }
+  }
+}
+
+/**
  * Strip markdown code fences and normalize JSON field names.
  *
  * Handles common LLM output issues:
@@ -177,35 +164,7 @@ function extractJsonObject(text: string): string {
  * - Double braces (e.g., "{{...}}")
  * - Markdown code fences (```json ... ```)
  * - snake_case field names instead of camelCase
- * - Semantic field name variations (e.g., "classification" → "isKnowledgeWorthy")
- *
- * Used with AI SDK's experimental_repairText option:
- * @example
- * generateObject({
- *   model,
- *   schema,
- *   prompt,
- *   experimental_repairText: stripMarkdownFences,
- * })
  */
 export async function stripMarkdownFences({ text }: { text: string }): Promise<string> {
-  // Strip markdown fences
-  let cleaned = text
-    .replace(/^\s*```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim()
-
-  // Extract JSON object from garbage prefixes
-  cleaned = extractJsonObject(cleaned)
-
-  // Try to parse and normalize field names
-  try {
-    const parsed = JSON.parse(cleaned)
-    const normalized = normalizeObject(parsed) as Record<string, unknown>
-    const withDefaults = addDefaults(normalized)
-    return JSON.stringify(withDefaults)
-  } catch {
-    // If parsing fails, return the cleaned text as-is
-    return cleaned
-  }
+  return createJsonRepair()({ text })
 }

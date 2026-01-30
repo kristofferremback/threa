@@ -71,6 +71,8 @@ export interface HybridSearchParams {
   keywordWeight?: number
   semanticWeight?: number
   k?: number
+  /** Max L2 distance for semantic results; only messages with distance < this are included. */
+  semanticDistanceThreshold: number
 }
 
 export const SearchRepository = {
@@ -229,7 +231,17 @@ export const SearchRepository = {
    * RRF formula: score(d) = Σ(weight / (k + rank(d)))
    */
   async hybridSearch(db: Querier, params: HybridSearchParams): Promise<SearchResult[]> {
-    const { query, embedding, streamIds, filters, limit, keywordWeight = 0.6, semanticWeight = 0.4, k = 60 } = params
+    const {
+      query,
+      embedding,
+      streamIds,
+      filters,
+      limit,
+      keywordWeight = 0.6,
+      semanticWeight = 0.4,
+      k = 60,
+      semanticDistanceThreshold,
+    } = params
 
     if (streamIds.length === 0) {
       return []
@@ -276,6 +288,7 @@ export const SearchRepository = {
         WHERE m.stream_id = ANY(${streamIds})
           AND m.deleted_at IS NULL
           AND m.embedding IS NOT NULL
+          AND m.embedding <=> ${embeddingLiteral}::vector < ${semanticDistanceThreshold}
           AND (${filters.authorId === undefined} OR m.author_id = ${filters.authorId ?? ""})
           AND (${filters.streamTypes === undefined || filters.streamTypes.length === 0} OR s.type = ANY(${filters.streamTypes ?? []}))
           AND (${filters.before === undefined} OR m.created_at < ${filters.before ?? new Date()})
