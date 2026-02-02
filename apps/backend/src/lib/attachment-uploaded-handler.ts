@@ -6,7 +6,6 @@ import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
-import { withClient } from "../db"
 import { isImageAttachment } from "../services/image-caption"
 import { ProcessingStatuses } from "@threa/types"
 
@@ -78,9 +77,7 @@ export class AttachmentUploadedHandler implements OutboxHandler {
 
   private async processEvents(): Promise<void> {
     await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await withClient(this.db, (client) =>
-        OutboxRepository.fetchAfterId(client, cursor, this.batchSize)
-      )
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
 
       if (events.length === 0) {
         return { status: "no_events" }
@@ -110,10 +107,7 @@ export class AttachmentUploadedHandler implements OutboxHandler {
             logger.info({ attachmentId, filename, mimeType }, "Image caption job dispatched")
           } else {
             // Non-image: mark as skipped
-            await withClient(this.db, (client) =>
-              AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.SKIPPED)
-            )
-
+            await AttachmentRepository.updateProcessingStatus(this.db, attachmentId, ProcessingStatuses.SKIPPED)
             logger.debug({ attachmentId, filename, mimeType }, "Non-image attachment marked as skipped")
           }
 

@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
 import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
@@ -383,7 +382,7 @@ export const OUTBOX_CHANNEL = "outbox_events"
 
 export const OutboxRepository = {
   async insert<T extends OutboxEventType>(
-    client: PoolClient,
+    client: Querier,
     eventType: T,
     payload: OutboxEventPayloadMap[T]
   ): Promise<OutboxEvent<T>> {
@@ -403,7 +402,7 @@ export const OutboxRepository = {
    * Fetches events after a cursor ID for cursor-based processing.
    * No locking - the caller should hold a lock on their listener's cursor row.
    */
-  async fetchAfterId(client: PoolClient, afterId: bigint, limit: number = 100): Promise<OutboxEvent[]> {
+  async fetchAfterId(client: Querier, afterId: bigint, limit: number = 100): Promise<OutboxEvent[]> {
     const result = await client.query<OutboxRow>(sql`
       SELECT id, event_type, payload, created_at
       FROM outbox
