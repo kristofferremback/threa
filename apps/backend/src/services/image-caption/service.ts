@@ -64,16 +64,16 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
         return null
       }
 
-      // Atomic transition: only process if still pending
+      // Atomic transition: process if pending or processing (allows retries)
       const claimed = await AttachmentRepository.updateProcessingStatus(
         client,
         attachmentId,
         ProcessingStatuses.PROCESSING,
-        { onlyIfStatus: ProcessingStatuses.PENDING }
+        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING] }
       )
 
       if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment not in pending state, skipping")
+        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/failed/skipped, skipping")
         return null
       }
 
@@ -141,52 +141,43 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
         "Image analysis completed"
       )
     } catch (error) {
-      // Mark as failed and re-throw
+      // Log and re-throw - let job queue handle retries, DLQ hook will mark as failed
       log.error({ error }, "Image analysis failed")
-
-      await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.FAILED)
-
       throw error
     }
 
     // =========================================================================
     // Phase 3: Save extraction and mark as completed
     // =========================================================================
-    try {
-      await withTransaction(this.pool, async (client) => {
-        // Build full_text from extracted text components
-        const textParts: string[] = []
-        if (analysis.extractedText?.headings?.length) {
-          textParts.push(...analysis.extractedText.headings)
-        }
-        if (analysis.extractedText?.labels?.length) {
-          textParts.push(...analysis.extractedText.labels)
-        }
-        if (analysis.extractedText?.body) {
-          textParts.push(analysis.extractedText.body)
-        }
-        const fullText = textParts.length > 0 ? textParts.join("\n") : null
+    await withTransaction(this.pool, async (client) => {
+      // Build full_text from extracted text components
+      const textParts: string[] = []
+      if (analysis.extractedText?.headings?.length) {
+        textParts.push(...analysis.extractedText.headings)
+      }
+      if (analysis.extractedText?.labels?.length) {
+        textParts.push(...analysis.extractedText.labels)
+      }
+      if (analysis.extractedText?.body) {
+        textParts.push(analysis.extractedText.body)
+      }
+      const fullText = textParts.length > 0 ? textParts.join("\n") : null
 
-        // Insert extraction record
-        await AttachmentExtractionRepository.insert(client, {
-          id: extractionId(),
-          attachmentId,
-          workspaceId: attachment.workspaceId,
-          contentType: analysis.contentType,
-          summary: analysis.summary,
-          fullText,
-          structuredData: analysis.structuredData,
-        })
-
-        // Mark attachment as completed
-        await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+      // Insert extraction record
+      await AttachmentExtractionRepository.insert(client, {
+        id: extractionId(),
+        attachmentId,
+        workspaceId: attachment.workspaceId,
+        contentType: analysis.contentType,
+        summary: analysis.summary,
+        fullText,
+        structuredData: analysis.structuredData,
       })
 
-      log.info("Image extraction saved successfully")
-    } catch (error) {
-      log.error({ error }, "Failed to save extraction")
-      await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.FAILED)
-      throw error
-    }
+      // Mark attachment as completed
+      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+    })
+
+    log.info("Image extraction saved successfully")
   }
 }

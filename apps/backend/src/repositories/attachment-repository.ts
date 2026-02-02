@@ -158,13 +158,23 @@ export const AttachmentRepository = {
    * Returns true if the update was applied, false otherwise.
    *
    * @param onlyIfStatus - If provided, only update if current status matches this value (atomic transition)
+   * @param onlyIfStatusIn - If provided, only update if current status is in this array (for retries)
    */
   async updateProcessingStatus(
     client: Querier,
     id: string,
     status: ProcessingStatus,
-    options?: { onlyIfStatus?: ProcessingStatus }
+    options?: { onlyIfStatus?: ProcessingStatus; onlyIfStatusIn?: ProcessingStatus[] }
   ): Promise<boolean> {
+    if (options?.onlyIfStatusIn) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET processing_status = ${status}
+        WHERE id = ${id} AND processing_status = ANY(${options.onlyIfStatusIn})
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
     if (options?.onlyIfStatus) {
       const result = await client.query(sql`
         UPDATE attachments
