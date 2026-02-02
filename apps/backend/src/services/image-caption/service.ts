@@ -9,8 +9,8 @@
  */
 
 import type { Pool } from "pg"
-import { ulid } from "ulid"
 import { withClient, withTransaction } from "../../db"
+import { extractionId } from "../../lib/id"
 import { AttachmentRepository, AttachmentExtractionRepository } from "../../repositories"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { AI } from "../../lib/ai/ai"
@@ -169,7 +169,7 @@ export class ImageCaptionService {
 
       // Insert extraction record
       await AttachmentExtractionRepository.insert(client, {
-        id: `extract_${ulid()}`,
+        id: extractionId(),
         attachmentId,
         workspaceId: attachment.workspaceId,
         contentType: analysis.contentType,
