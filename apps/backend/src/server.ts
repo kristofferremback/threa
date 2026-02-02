@@ -55,7 +55,7 @@ import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
 import { createImageCaptionWorker } from "./workers/image-caption-worker"
-import { ImageCaptionService } from "./services/image-caption"
+import { ImageCaptionService, StubImageCaptionService } from "./services/image-caption"
 import { PersonaAgent } from "./agents/persona-agent"
 import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
@@ -366,12 +366,12 @@ export async function startServer(): Promise<ServerInstance> {
   const commandWorker = createCommandWorker({ pool, commandRegistry })
   jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
 
-  // Image captioning worker (skip in stub AI mode)
-  if (!config.useStubAI) {
-    const imageCaptionService = new ImageCaptionService({ pool, ai, storage })
-    const imageCaptionWorker = createImageCaptionWorker({ imageCaptionService })
-    jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker)
-  }
+  // Image captioning worker
+  const imageCaptionService = config.useStubAI
+    ? new StubImageCaptionService()
+    : new ImageCaptionService({ pool, ai, storage })
+  const imageCaptionWorker = createImageCaptionWorker({ imageCaptionService })
+  jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker)
 
   // Register handlers before starting
   await jobQueue.start()

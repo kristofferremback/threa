@@ -24,6 +24,7 @@ import {
   imageAnalysisSchema,
   type ImageAnalysisOutput,
 } from "./config"
+import type { ImageCaptionServiceLike } from "./types"
 
 export interface ImageCaptionServiceDeps {
   pool: Pool
@@ -31,7 +32,7 @@ export interface ImageCaptionServiceDeps {
   storage: StorageProvider
 }
 
-export class ImageCaptionService {
+export class ImageCaptionService implements ImageCaptionServiceLike {
   private readonly pool: Pool
   private readonly ai: AI
   private readonly storage: StorageProvider

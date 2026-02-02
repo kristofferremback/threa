@@ -1,10 +1,6 @@
 import type { ImageCaptionJobData, JobHandler } from "../lib/job-queue"
+import type { ImageCaptionServiceLike } from "../services/image-caption"
 import { logger } from "../lib/logger"
-
-/** Interface for any service that can process images */
-export interface ImageCaptionServiceLike {
-  processImage(attachmentId: string): Promise<void>
-}
 
 export interface ImageCaptionWorkerDeps {
   imageCaptionService: ImageCaptionServiceLike
