@@ -100,3 +100,25 @@ export interface JobDataMap {
  * Handler for a single job. Returns void on success, throws on error.
  */
 export type JobHandler<T> = (job: Job<T>) => Promise<void>
+
+/**
+ * Hook called when a message is moved to DLQ.
+ * Runs inside the same transaction as the DLQ move for atomicity.
+ * If the hook throws, the transaction rolls back and the message stays in retry queue.
+ */
+export type OnDLQHook<T> = (querier: import("../db").Querier, job: Job<T>, error: Error) => Promise<void>
+
+/**
+ * Lifecycle hooks for job handlers.
+ */
+export interface HandlerHooks<T> {
+  /** Called when message is moved to DLQ after exhausting retries */
+  onDLQ?: OnDLQHook<T>
+}
+
+/**
+ * Options for registering a job handler.
+ */
+export interface HandlerOptions<T> {
+  hooks?: HandlerHooks<T>
+}
