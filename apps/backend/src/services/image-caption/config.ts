@@ -29,18 +29,6 @@ export const IMAGE_CAPTION_TEMPERATURE = 0.1
 // ============================================================================
 
 /**
- * MIME types that indicate an image file.
- */
-export const SUPPORTED_IMAGE_MIME_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-] as const
-
-/**
  * File extensions that indicate an image file.
  * Used when mime_type is application/octet-stream.
  */

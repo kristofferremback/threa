@@ -1,5 +1,4 @@
-import type { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 import type { ExtractionContentType, ChartData, TableData, DiagramData } from "@threa/types"
 
 // Internal row type (snake_case)
@@ -59,7 +58,7 @@ const SELECT_FIELDS = `
 `
 
 export const AttachmentExtractionRepository = {
-  async insert(client: PoolClient, params: InsertAttachmentExtractionParams): Promise<AttachmentExtraction> {
+  async insert(client: Querier, params: InsertAttachmentExtractionParams): Promise<AttachmentExtraction> {
     const result = await client.query<AttachmentExtractionRow>(sql`
       INSERT INTO attachment_extractions (
         id, attachment_id, workspace_id,
@@ -79,14 +78,14 @@ export const AttachmentExtractionRepository = {
     return mapRowToExtraction(result.rows[0])
   },
 
-  async findByAttachmentId(client: PoolClient, attachmentId: string): Promise<AttachmentExtraction | null> {
+  async findByAttachmentId(client: Querier, attachmentId: string): Promise<AttachmentExtraction | null> {
     const result = await client.query<AttachmentExtractionRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachment_extractions WHERE attachment_id = ${attachmentId}`
     )
     return result.rows[0] ? mapRowToExtraction(result.rows[0]) : null
   },
 
-  async findByAttachmentIds(client: PoolClient, attachmentIds: string[]): Promise<Map<string, AttachmentExtraction>> {
+  async findByAttachmentIds(client: Querier, attachmentIds: string[]): Promise<Map<string, AttachmentExtraction>> {
     if (attachmentIds.length === 0) return new Map()
 
     const result = await client.query<AttachmentExtractionRow>(
@@ -101,7 +100,7 @@ export const AttachmentExtractionRepository = {
   },
 
   async findByWorkspace(
-    client: PoolClient,
+    client: Querier,
     workspaceId: string,
     options?: {
       contentType?: ExtractionContentType
@@ -129,5 +128,12 @@ export const AttachmentExtractionRepository = {
       LIMIT ${limit} OFFSET ${offset}
     `)
     return result.rows.map(mapRowToExtraction)
+  },
+
+  async deleteByAttachmentId(client: Querier, attachmentId: string): Promise<boolean> {
+    const result = await client.query(sql`
+      DELETE FROM attachment_extractions WHERE attachment_id = ${attachmentId}
+    `)
+    return (result.rowCount ?? 0) > 0
   },
 }

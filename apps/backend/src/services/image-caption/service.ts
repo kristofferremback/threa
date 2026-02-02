@@ -64,16 +64,16 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
         return null
       }
 
-      // Atomic transition: process if pending or processing (allows retries)
+      // Atomic transition: process if pending, processing, or failed (allows retries and un-DLQ)
       const claimed = await AttachmentRepository.updateProcessingStatus(
         client,
         attachmentId,
         ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING] }
+        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING, ProcessingStatuses.FAILED] }
       )
 
       if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/failed/skipped, skipping")
+        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/skipped, skipping")
         return null
       }
 

@@ -368,7 +368,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Image captioning worker
   const imageCaptionService = config.useStubAI
-    ? new StubImageCaptionService()
+    ? new StubImageCaptionService(pool)
     : new ImageCaptionService({ pool, ai, storage })
   const imageCaptionWorker = createImageCaptionWorker({ imageCaptionService })
   jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker)
