@@ -152,35 +152,41 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
     // =========================================================================
     // Phase 3: Save extraction and mark as completed
     // =========================================================================
-    await withTransaction(this.pool, async (client) => {
-      // Build full_text from extracted text components
-      const textParts: string[] = []
-      if (analysis.extractedText?.headings?.length) {
-        textParts.push(...analysis.extractedText.headings)
-      }
-      if (analysis.extractedText?.labels?.length) {
-        textParts.push(...analysis.extractedText.labels)
-      }
-      if (analysis.extractedText?.body) {
-        textParts.push(analysis.extractedText.body)
-      }
-      const fullText = textParts.length > 0 ? textParts.join("\n") : null
+    try {
+      await withTransaction(this.pool, async (client) => {
+        // Build full_text from extracted text components
+        const textParts: string[] = []
+        if (analysis.extractedText?.headings?.length) {
+          textParts.push(...analysis.extractedText.headings)
+        }
+        if (analysis.extractedText?.labels?.length) {
+          textParts.push(...analysis.extractedText.labels)
+        }
+        if (analysis.extractedText?.body) {
+          textParts.push(analysis.extractedText.body)
+        }
+        const fullText = textParts.length > 0 ? textParts.join("\n") : null
 
-      // Insert extraction record
-      await AttachmentExtractionRepository.insert(client, {
-        id: extractionId(),
-        attachmentId,
-        workspaceId: attachment.workspaceId,
-        contentType: analysis.contentType,
-        summary: analysis.summary,
-        fullText,
-        structuredData: analysis.structuredData,
+        // Insert extraction record
+        await AttachmentExtractionRepository.insert(client, {
+          id: extractionId(),
+          attachmentId,
+          workspaceId: attachment.workspaceId,
+          contentType: analysis.contentType,
+          summary: analysis.summary,
+          fullText,
+          structuredData: analysis.structuredData,
+        })
+
+        // Mark attachment as completed
+        await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
       })
 
-      // Mark attachment as completed
-      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
-    })
-
-    log.info("Image extraction saved successfully")
+      log.info("Image extraction saved successfully")
+    } catch (error) {
+      log.error({ error }, "Failed to save extraction")
+      await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.FAILED)
+      throw error
+    }
   }
 }
