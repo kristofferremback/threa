@@ -546,7 +546,7 @@ export class QueueManager {
         messages.map((message) =>
           limit(async () => {
             try {
-              await this.processMessage(message, workerIdValue, completedMessageIds, token.workspaceId)
+              await this.processMessage(message, workerIdValue, completedMessageIds)
             } catch (err) {
               // Error already logged and handled in processMessage
               // Continue processing other messages
@@ -593,11 +593,18 @@ export class QueueManager {
    * not per-message, to reduce database queries.
    */
   private async processMessage(
-    message: { id: string; queueName: string; payload: unknown; failedCount: number },
+    message: {
+      id: string
+      queueName: string
+      workspaceId: string
+      payload: unknown
+      failedCount: number
+      insertedAt: Date
+    },
     workerId: string,
-    completedMessageIds: Set<string>,
-    workspaceId: string
+    completedMessageIds: Set<string>
   ): Promise<void> {
+    const workspaceId = message.workspaceId
     // Handler must exist - we only lease tokens for queues with registered handlers
     const handler = this.handlers.get(message.queueName)!
 
@@ -696,10 +703,20 @@ export class QueueManager {
 
   /**
    * Move message to DLQ.
-   * If an onDLQ hook is registered, runs both in the same transaction for atomicity.
+   *
+   * If an onDLQ hook is registered, it runs in a savepoint:
+   * - Hook writes only persist if the DLQ move commits
+   * - Hook failure is logged but doesn't prevent the DLQ move
    */
   private async moveMessageToDlq(
-    message: { id: string; queueName: string; payload: unknown },
+    message: {
+      id: string
+      queueName: string
+      workspaceId: string
+      payload: unknown
+      failedCount: number
+      insertedAt: Date
+    },
     workerId: string,
     error: Error
   ): Promise<void> {
@@ -716,15 +733,21 @@ export class QueueManager {
           dlqAt: now,
         })
 
-        await onDLQHook(
-          client,
-          {
-            id: message.id,
-            name: message.queueName,
-            data: message.payload,
-          },
-          error
-        )
+        // Run hook in savepoint - failure doesn't prevent DLQ move
+        try {
+          await withTransaction(client, async (hookClient) => {
+            await onDLQHook(hookClient, { id: message.id, name: message.queueName, data: message.payload }, error, {
+              failedCount: message.failedCount,
+              insertedAt: message.insertedAt,
+              workspaceId: message.workspaceId,
+            })
+          })
+        } catch (hookError) {
+          logger.error(
+            { messageId: message.id, queueName: message.queueName, err: hookError },
+            "onDLQ hook failed - DLQ move will still commit"
+          )
+        }
       })
     } else {
       await this.queueRepo.failDlq(this.pool, {
