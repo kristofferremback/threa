@@ -156,7 +156,7 @@ interface ImageLightboxProps {
 function ImageLightbox({ isOpen, onClose, imageUrl, filename }: ImageLightboxProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden bg-black/95 border-none">
+      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden bg-black/95 border-none" hideCloseButton>
         <DialogTitle className="sr-only">{filename}</DialogTitle>
         <DialogDescription className="sr-only">Full-size image preview</DialogDescription>
         <div className="relative flex items-center justify-center min-h-[50vh]">
