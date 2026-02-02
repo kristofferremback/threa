@@ -143,9 +143,7 @@ export class ImageCaptionService {
       // Mark as failed and re-throw
       log.error({ error }, "Image analysis failed")
 
-      await withClient(this.pool, (client) =>
-        AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.FAILED)
-      )
+      await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.FAILED)
 
       throw error
     }
