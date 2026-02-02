@@ -153,4 +153,33 @@ export const AttachmentRepository = {
     `)
     return (result.rowCount ?? 0) > 0
   },
+
+  /**
+   * Update the processing status of an attachment.
+   * Returns true if the update was applied, false otherwise.
+   *
+   * @param onlyIfStatus - If provided, only update if current status matches this value (atomic transition)
+   */
+  async updateProcessingStatus(
+    client: PoolClient,
+    id: string,
+    status: ProcessingStatus,
+    options?: { onlyIfStatus?: ProcessingStatus }
+  ): Promise<boolean> {
+    if (options?.onlyIfStatus) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET processing_status = ${status}
+        WHERE id = ${id} AND processing_status = ${options.onlyIfStatus}
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    const result = await client.query(sql`
+      UPDATE attachments
+      SET processing_status = ${status}
+      WHERE id = ${id}
+    `)
+    return (result.rowCount ?? 0) > 0
+  },
 }

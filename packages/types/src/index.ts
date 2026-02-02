@@ -37,6 +37,10 @@ export {
   type StorageProvider,
   PROCESSING_STATUSES,
   type ProcessingStatus,
+  ProcessingStatuses,
+  EXTRACTION_CONTENT_TYPES,
+  type ExtractionContentType,
+  ExtractionContentTypes,
   // Conversations
   CONVERSATION_STATUSES,
   type ConversationStatus,
@@ -98,6 +102,10 @@ export type {
   Memo,
   PendingMemoItem,
   MemoStreamState,
+  ChartData,
+  TableData,
+  DiagramData,
+  AttachmentExtraction,
 } from "./domain"
 
 // Slug validation

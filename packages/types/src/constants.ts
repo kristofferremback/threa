@@ -83,8 +83,38 @@ export const STORAGE_PROVIDERS = ["s3"] as const
 export type StorageProvider = (typeof STORAGE_PROVIDERS)[number]
 
 // Attachment processing status
-export const PROCESSING_STATUSES = ["pending", "processing", "completed", "failed"] as const
+export const PROCESSING_STATUSES = ["pending", "processing", "completed", "failed", "skipped"] as const
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number]
+
+export const ProcessingStatuses = {
+  PENDING: "pending",
+  PROCESSING: "processing",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  SKIPPED: "skipped",
+} as const satisfies Record<string, ProcessingStatus>
+
+// Extraction content types (for image/document analysis)
+export const EXTRACTION_CONTENT_TYPES = [
+  "chart",
+  "table",
+  "diagram",
+  "screenshot",
+  "photo",
+  "document",
+  "other",
+] as const
+export type ExtractionContentType = (typeof EXTRACTION_CONTENT_TYPES)[number]
+
+export const ExtractionContentTypes = {
+  CHART: "chart",
+  TABLE: "table",
+  DIAGRAM: "diagram",
+  SCREENSHOT: "screenshot",
+  PHOTO: "photo",
+  DOCUMENT: "document",
+  OTHER: "other",
+} as const satisfies Record<string, ExtractionContentType>
 
 // Conversation status
 export const CONVERSATION_STATUSES = ["active", "stalled", "resolved"] as const
