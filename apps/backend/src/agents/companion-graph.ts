@@ -72,32 +72,39 @@ function truncateSingleMessage(message: BaseMessage, maxChars: number): BaseMess
   const length = getMessageLength(message)
   if (length <= maxChars) return message
 
-  logger.warn({ messageLength: length, maxChars, messageType: message._getType() }, "Truncating oversized message")
+  // Type guards work on deserialized messages and provide proper TypeScript narrowing
+  const messageType = HumanMessage.isInstance(message)
+    ? "human"
+    : AIMessage.isInstance(message)
+      ? "ai"
+      : SystemMessage.isInstance(message)
+        ? "system"
+        : ToolMessage.isInstance(message)
+          ? "tool"
+          : "unknown"
+  logger.warn({ messageLength: length, maxChars, messageType }, "Truncating oversized message")
 
   // Truncate the content
-  // Use _getType() instead of instanceof - instanceof checks fail after checkpoint deserialization
-  // because the deserialized objects aren't true class instances
   if (typeof message.content === "string") {
     const truncated = message.content.slice(0, maxChars) + "\n\n[... content truncated due to length ...]"
-    const type = message._getType()
-    if (type === "human") {
+    if (HumanMessage.isInstance(message)) {
       return new HumanMessage({ content: truncated, id: message.id })
-    } else if (type === "ai") {
+    } else if (AIMessage.isInstance(message)) {
       return new AIMessage({
         content: truncated,
         id: message.id,
-        tool_calls: (message as AIMessage).tool_calls,
+        tool_calls: message.tool_calls,
       })
-    } else if (type === "system") {
+    } else if (SystemMessage.isInstance(message)) {
       return new SystemMessage({ content: truncated, id: message.id })
-    } else if (type === "tool") {
+    } else if (ToolMessage.isInstance(message)) {
       return new ToolMessage({
         content: truncated,
-        tool_call_id: (message as ToolMessage).tool_call_id,
+        tool_call_id: message.tool_call_id,
       })
     }
     // Fallback for unknown message types - still truncate
-    logger.warn({ messageType: type }, "Unknown message type in truncation, creating generic message")
+    logger.warn({ messageType }, "Unknown message type in truncation, creating generic message")
     return new HumanMessage({ content: truncated, id: message.id })
   }
 
@@ -141,31 +148,27 @@ function truncateSingleMessage(message: BaseMessage, maxChars: number): BaseMess
       }
     }
 
-    const type = message._getType()
-    if (type === "human") {
+    if (HumanMessage.isInstance(message)) {
       return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
-    } else if (type === "ai") {
+    } else if (AIMessage.isInstance(message)) {
       return new AIMessage({
         content: truncatedContent as AIMessage["content"],
         id: message.id,
-        tool_calls: (message as AIMessage).tool_calls,
+        tool_calls: message.tool_calls,
       })
-    } else if (type === "tool") {
+    } else if (ToolMessage.isInstance(message)) {
       return new ToolMessage({
         content: truncatedContent as ToolMessage["content"],
-        tool_call_id: (message as ToolMessage).tool_call_id,
+        tool_call_id: message.tool_call_id,
       })
     }
     // Fallback for array content on unknown types
-    logger.warn({ messageType: type }, "Unknown message type with array content in truncation")
+    logger.warn({ messageType }, "Unknown message type with array content in truncation")
     return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
   }
 
   // Fallback: if we get here, log and return truncated as HumanMessage
-  logger.warn(
-    { messageType: message._getType(), contentType: typeof message.content },
-    "Unhandled content type in truncation"
-  )
+  logger.warn({ messageType, contentType: typeof message.content }, "Unhandled content type in truncation")
   return message
 }
 
@@ -804,17 +807,15 @@ function createToolsNode(tools: StructuredToolInterface[]) {
   return async (state: CompanionStateType, _config: RunnableConfig): Promise<Partial<CompanionStateType>> => {
     const lastMessage = state.messages[state.messages.length - 1]
 
-    // Use _getType() instead of instanceof - instanceof checks fail after checkpoint deserialization
-    const isAIMessage = lastMessage._getType() === "ai"
-    const aiMessage = lastMessage as AIMessage
-    if (!isAIMessage || !aiMessage.tool_calls?.length) {
+    // Type guards work on deserialized messages and provide proper TypeScript narrowing
+    if (!AIMessage.isInstance(lastMessage) || !lastMessage.tool_calls?.length) {
       return {}
     }
 
     // Separate tool calls: execute web_search first to collect sources, then send_message
-    const webSearchCalls = aiMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.WEB_SEARCH)
-    const sendMessageCalls = aiMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.SEND_MESSAGE)
-    const otherCalls = aiMessage.tool_calls.filter(
+    const webSearchCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.WEB_SEARCH)
+    const sendMessageCalls = lastMessage.tool_calls.filter((tc) => tc.name === AgentToolNames.SEND_MESSAGE)
+    const otherCalls = lastMessage.tool_calls.filter(
       (tc) => tc.name !== AgentToolNames.WEB_SEARCH && tc.name !== AgentToolNames.SEND_MESSAGE
     )
 
@@ -1011,8 +1012,8 @@ function routeAfterAgent(state: CompanionStateType): "tools" | "check_final_mess
 
   const lastMessage = state.messages[state.messages.length - 1]
 
-  // Use _getType() instead of instanceof - instanceof checks fail after checkpoint deserialization
-  if (lastMessage._getType() === "ai" && (lastMessage as AIMessage).tool_calls?.length) {
+  // Type guards work on deserialized messages and provide proper TypeScript narrowing
+  if (AIMessage.isInstance(lastMessage) && lastMessage.tool_calls?.length) {
     // Always execute tools first - never skip them
     return "tools"
   }
@@ -1046,9 +1047,9 @@ function routeAfterFinalCheck(state: CompanionStateType): "agent" | "synthesize"
   if (state.hasNewMessages) return "agent"
 
   // Check if web_search was used - if so, route through synthesis for citations
-  // Use _getType() instead of instanceof - instanceof checks fail after checkpoint deserialization
+  // Type guards work on deserialized messages and provide proper TypeScript narrowing
   const usedWebSearch = state.messages.some(
-    (m) => m._getType() === "ai" && (m as AIMessage).tool_calls?.some((tc) => tc.name === AgentToolNames.WEB_SEARCH)
+    (m) => AIMessage.isInstance(m) && m.tool_calls?.some((tc) => tc.name === AgentToolNames.WEB_SEARCH)
   )
 
   logger.debug({ usedWebSearch, messageCount: state.messages.length }, "routeAfterFinalCheck decision")
@@ -1064,8 +1065,8 @@ function extractSearchSources(messages: BaseMessage[]): Array<{ title: string; u
   const seenUrls = new Set<string>()
 
   for (const msg of messages) {
-    // Use _getType() instead of instanceof - instanceof checks fail after checkpoint deserialization
-    if (msg._getType() !== "tool") continue
+    // Type guards work on deserialized messages and provide proper TypeScript narrowing
+    if (!ToolMessage.isInstance(msg)) continue
 
     try {
       const content = JSON.parse(msg.content as string)
