@@ -71,6 +71,7 @@ import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
+import { createModelRegistry } from "./lib/ai/model-registry"
 import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
 import { QueueManager } from "./lib/queue-manager"
 import { ScheduleManager } from "./lib/schedule-manager"
@@ -170,6 +171,7 @@ export async function startServer(): Promise<ServerInstance> {
     openrouter: { apiKey: config.ai.openRouterApiKey },
     costRecorder: costService,
   })
+  const modelRegistry = createModelRegistry()
   const configResolver = createStaticConfigResolver()
   const messageFormatter = new MessageFormatter()
   const streamNamingService = config.useStubAI
@@ -324,6 +326,8 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     researcher,
     searchService,
+    storage,
+    modelRegistry,
     createMessage,
     createThread,
   })

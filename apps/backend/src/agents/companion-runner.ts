@@ -15,11 +15,17 @@ import {
   createSearchStreamsTool,
   createSearchUsersTool,
   createGetStreamMessagesTool,
+  createSearchAttachmentsTool,
+  createGetAttachmentTool,
+  createLoadAttachmentTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
   type SendMessageResult,
   type SearchToolsCallbacks,
+  type SearchAttachmentsCallbacks,
+  type GetAttachmentCallbacks,
+  type LoadAttachmentCallbacks,
 } from "./tools"
 import { AgentToolNames, type SourceItem } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
@@ -34,6 +40,14 @@ export type { RecordStepParams, NewMessageInfo }
 const MAX_MESSAGES = 5
 
 /**
+ * Content block types for multimodal messages.
+ */
+type TextContentBlock = { type: "text"; text: string }
+type ImageContentBlock = { type: "image_url"; image_url: { url: string } }
+type ContentBlock = TextContentBlock | ImageContentBlock
+type MessageContent = string | ContentBlock[]
+
+/**
  * Parameters for generating a response.
  */
 export interface GenerateResponseParams {
@@ -43,8 +57,8 @@ export interface GenerateResponseParams {
   modelId: string
   /** System prompt for the assistant */
   systemPrompt: string
-  /** Conversation history */
-  messages: Array<{ role: "user" | "assistant"; content: string }>
+  /** Conversation history - supports multimodal content for vision models */
+  messages: Array<{ role: "user" | "assistant"; content: MessageContent }>
   /** Stream ID for context */
   streamId: string
   /** Session ID for tracking */
@@ -91,6 +105,14 @@ export interface ResponseGeneratorCallbacks {
   updateLastSeenSequence: (sessionId: string, sequence: bigint) => Promise<void>
   /** Optional workspace search callbacks (required if search tools are enabled) */
   search?: SearchToolsCallbacks
+  /** Optional attachment callbacks (required if attachment tools are enabled) */
+  attachments?: {
+    search: SearchAttachmentsCallbacks
+    get: GetAttachmentCallbacks
+    load: LoadAttachmentCallbacks | undefined
+  }
+  /** Optional callback to await image processing for messages (for multi-modal support) */
+  awaitImageProcessing?: (messageIds: string[]) => Promise<void>
   /** Optional callback to record steps in the agent trace */
   recordStep?: (params: RecordStepParams) => Promise<void>
 }
@@ -191,6 +213,20 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       }
     }
 
+    // Add attachment tools if callbacks are provided
+    if (callbacks.attachments) {
+      if (isToolEnabled(enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)) {
+        tools.push(createSearchAttachmentsTool(callbacks.attachments.search))
+      }
+      if (isToolEnabled(enabledTools, AgentToolNames.GET_ATTACHMENT)) {
+        tools.push(createGetAttachmentTool(callbacks.attachments.get))
+      }
+      // Only add load_attachment if the callback is available (vision models only)
+      if (callbacks.attachments.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {
+        tools.push(createLoadAttachmentTool(callbacks.attachments.load))
+      }
+    }
+
     logger.debug(
       { enabledToolCount: tools.length, toolNames: tools.map((t) => t.name) },
       "Tools configured for session"
@@ -215,6 +251,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
       runResearcher,
       recordStep: callbacks.recordStep,
+      awaitImageProcessing: callbacks.awaitImageProcessing,
     }
 
     // Parse model for metadata

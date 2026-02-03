@@ -18,6 +18,8 @@ import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../r
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
+import { AttachmentRepository } from "../repositories/attachment-repository"
+import { AttachmentExtractionRepository } from "../repositories/attachment-extraction-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
 import { eventId } from "../lib/id"
 import type { TraceEmitter } from "../lib/trace-emitter"
@@ -26,15 +28,21 @@ import {
   type SendMessageInputWithSources,
   type SendMessageResult,
   type SearchToolsCallbacks,
-  type MessageSearchResult,
-  type StreamSearchResult,
-  type UserSearchResult,
+  type SearchAttachmentsCallbacks,
+  type GetAttachmentCallbacks,
+  type LoadAttachmentCallbacks,
+  type AttachmentSearchResult,
+  type AttachmentDetails,
+  type LoadAttachmentResult,
 } from "./tools"
-import { buildStreamContext, type StreamContext } from "./context-builder"
+import { buildStreamContext, type StreamContext, type MessageWithAttachments } from "./context-builder"
 import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
 import { SearchRepository } from "../repositories/search-repository"
 import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import type { SearchService } from "../services/search-service"
+import type { StorageProvider } from "../lib/storage/s3-client"
+import type { ModelRegistry } from "../lib/ai/model-registry"
+import { awaitImageProcessing, hasPendingImageProcessing } from "../lib/await-image-processing"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
@@ -279,6 +287,10 @@ export interface PersonaAgentDeps {
   researcher: Researcher
   /** Search service for workspace search tools */
   searchService: SearchService
+  /** Storage provider for loading attachments */
+  storage: StorageProvider
+  /** Model registry for checking vision capabilities */
+  modelRegistry: ModelRegistry
   createMessage: (params: {
     workspaceId: string
     streamId: string
@@ -340,8 +352,17 @@ export class PersonaAgent {
    * Run the persona agent for a given message.
    */
   async run(input: PersonaAgentInput): Promise<PersonaAgentResult> {
-    const { pool, responseGenerator, userPreferencesService, researcher, searchService, createMessage, createThread } =
-      this.deps
+    const {
+      pool,
+      responseGenerator,
+      userPreferencesService,
+      researcher,
+      searchService,
+      storage,
+      modelRegistry,
+      createMessage,
+      createThread,
+    } = this.deps
     const { workspaceId, streamId, messageId, personaId, serverId, trigger } = input
 
     // Step 1: Load and validate persona and stream
@@ -434,8 +455,38 @@ export class PersonaAgent {
           preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
         }
 
-        // Build stream context with temporal information
-        const context = await buildStreamContext(db, stream, { preferences })
+        // Await image processing for trigger message attachments before proceeding
+        // This ensures vision models can analyze images in the triggering message
+        if (triggerMessage) {
+          const triggerAttachments = await AttachmentRepository.findByMessageId(db, messageId)
+          const imageAttachmentIds = triggerAttachments.filter((a) => a.mimeType.startsWith("image/")).map((a) => a.id)
+
+          if (imageAttachmentIds.length > 0) {
+            logger.info(
+              { messageId, imageCount: imageAttachmentIds.length },
+              "Awaiting image processing for trigger message"
+            )
+            const awaitResult = await awaitImageProcessing(pool, imageAttachmentIds)
+            logger.info(
+              {
+                messageId,
+                completedCount: awaitResult.completedIds.length,
+                failedCount: awaitResult.failedOrTimedOutIds.length,
+              },
+              "Image processing await completed"
+            )
+          }
+        }
+
+        // Build stream context with temporal information and attachment context
+        // Images are NOT loaded inline - agent sees captions from extractions
+        // and can use load_attachment tool when it needs to see actual image content
+        const context = await buildStreamContext(db, stream, {
+          preferences,
+          triggerMessageId: messageId,
+          includeAttachments: true,
+          // Don't pass storage/loadImages - agent uses load_attachment tool for images
+        })
 
         // Build a map of author IDs to names for message attribution
         // We need to look up both users and personas from the conversation history
@@ -663,6 +714,113 @@ export class PersonaAgent {
           }
         }
 
+        // Build attachment callbacks for attachment tools
+        let attachmentCallbacks:
+          | {
+              search: SearchAttachmentsCallbacks
+              get: GetAttachmentCallbacks
+              load: LoadAttachmentCallbacks | undefined
+            }
+          | undefined
+        if (invokingUserId) {
+          // Get accessible stream IDs (reuse from search if available)
+          const accessSpec = await computeAgentAccessSpec(db, { stream, invokingUserId })
+          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+
+          const searchAttachments: SearchAttachmentsCallbacks = {
+            searchAttachments: async (input): Promise<AttachmentSearchResult[]> => {
+              const results = await AttachmentRepository.searchWithExtractions(db, {
+                workspaceId,
+                streamIds: accessibleStreamIds,
+                query: input.query,
+                contentTypes: input.contentTypes as import("@threa/types").ExtractionContentType[] | undefined,
+                limit: input.limit,
+              })
+
+              return results.map((r) => ({
+                id: r.id,
+                filename: r.filename,
+                mimeType: r.mimeType,
+                contentType: r.extraction?.contentType ?? null,
+                summary: r.extraction?.summary ?? null,
+                streamId: r.streamId,
+                messageId: r.messageId,
+                createdAt: r.createdAt.toISOString(),
+              }))
+            },
+          }
+
+          const getAttachment: GetAttachmentCallbacks = {
+            getAttachment: async (input): Promise<AttachmentDetails | null> => {
+              const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+              if (!attachment) return null
+
+              // Check access: attachment must be in an accessible stream
+              if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+                return null
+              }
+
+              const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+
+              return {
+                id: attachment.id,
+                filename: attachment.filename,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                processingStatus: attachment.processingStatus,
+                createdAt: attachment.createdAt.toISOString(),
+                extraction: extraction
+                  ? {
+                      contentType: extraction.contentType,
+                      summary: extraction.summary,
+                      fullText: extraction.fullText,
+                      structuredData: extraction.structuredData,
+                    }
+                  : null,
+              }
+            },
+          }
+
+          // load_attachment is only available for vision-capable models
+          let loadAttachment: LoadAttachmentCallbacks | undefined
+          if (modelRegistry.supportsVision(persona.model)) {
+            loadAttachment = {
+              loadAttachment: async (input): Promise<LoadAttachmentResult | null> => {
+                const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+                if (!attachment) return null
+
+                // Check access
+                if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+                  return null
+                }
+
+                // Only allow loading images
+                if (!attachment.mimeType.startsWith("image/")) {
+                  return null
+                }
+
+                // Load the image data from storage
+                const buffer = await storage.getObject(attachment.storagePath)
+                const base64 = buffer.toString("base64")
+                const dataUrl = `data:${attachment.mimeType};base64,${base64}`
+
+                return {
+                  id: attachment.id,
+                  filename: attachment.filename,
+                  mimeType: attachment.mimeType,
+                  dataUrl,
+                }
+              },
+            }
+          }
+
+          attachmentCallbacks = {
+            search: searchAttachments,
+            get: getAttachment,
+            load: loadAttachment,
+          }
+        }
+
         // Create callbacks for the response generator
         // Note: These use db (Pool) directly - each call auto-acquires/releases connection
         const callbacks: ResponseGeneratorCallbacks = {
@@ -703,6 +861,22 @@ export class PersonaAgent {
           },
 
           search: searchCallbacks,
+
+          attachments: attachmentCallbacks,
+
+          awaitImageProcessing: async (messageIds: string[]) => {
+            // Get attachments for these messages and await their processing
+            const attachmentsByMessage = await AttachmentRepository.findByMessageIds(db, messageIds)
+            const allAttachmentIds: string[] = []
+            for (const attachments of attachmentsByMessage.values()) {
+              for (const a of attachments) {
+                allAttachmentIds.push(a.id)
+              }
+            }
+            if (allAttachmentIds.length > 0) {
+              await awaitImageProcessing(db, allAttachmentIds)
+            }
+          },
 
           recordStep: async (params: RecordStepParams) => {
             const step = await trace.startStep({
@@ -900,6 +1074,48 @@ When to use read_url:
 - To verify information or get complete context from a source`
   }
 
+  // Add attachment tool instructions if enabled
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.SEARCH_ATTACHMENTS)) {
+    prompt += `
+
+## Searching Attachments
+
+You have a \`search_attachments\` tool to search for files shared in the workspace.
+
+When to use search_attachments:
+- When the user asks about previously shared files or documents
+- To find relevant attachments by name or content
+- To discover what files exist in a conversation or workspace`
+  }
+
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.GET_ATTACHMENT)) {
+    prompt += `
+
+## Getting Attachment Details
+
+You have a \`get_attachment\` tool to retrieve full details about a specific attachment.
+
+When to use get_attachment:
+- After search_attachments to get the complete content of a file
+- When you need the full text or structured data from an attachment
+- To examine an attachment referenced by ID`
+  }
+
+  if (isToolEnabled(persona.enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {
+    prompt += `
+
+## Loading Attachments for Analysis
+
+You have a \`load_attachment\` tool to load an image for direct visual analysis.
+
+When to use load_attachment:
+- When the user asks you to look at or analyze an image
+- When you need to understand visual content in detail
+- When the caption/description from get_attachment isn't sufficient
+
+Note: This tool returns the actual image data so you can see and describe what's in the image.`
+  }
+
   // Add temporal context at the end (for prompt cache efficiency)
   if (context.temporal) {
     prompt += buildTemporalPromptSection(context.temporal, context.participantTimezones)
@@ -1035,6 +1251,28 @@ function buildDmPrompt(context: StreamContext): string {
 }
 
 /**
+ * Content block types for multimodal messages.
+ * Compatible with OpenAI/Claude/LangChain message format.
+ */
+type TextContentBlock = { type: "text"; text: string }
+type ImageContentBlock = { type: "image_url"; image_url: { url: string } }
+type ContentBlock = TextContentBlock | ImageContentBlock
+
+/**
+ * Message content - either a plain string or multimodal content blocks.
+ * When images with dataUrl are present, we return content blocks.
+ */
+export type MessageContent = string | ContentBlock[]
+
+/**
+ * Formatted message for LLM consumption.
+ */
+export interface FormattedMessage {
+  role: "user" | "assistant"
+  content: MessageContent
+}
+
+/**
  * Format messages for the LLM with timestamps and author names.
  * Includes date boundaries when messages cross dates.
  *
@@ -1042,18 +1280,18 @@ function buildDmPrompt(context: StreamContext): string {
  * - User messages: `(14:30) [@name] content`
  * - Assistant messages: `(14:30) content`
  *
+ * When a message has image attachments with dataUrl, returns multimodal content
+ * with image_url blocks so vision models can see the images directly.
+ *
  * When temporal context is unavailable, returns messages with original content.
  */
-function formatMessagesWithTemporal(
-  messages: Message[],
-  context: StreamContext
-): Array<{ role: "user" | "assistant"; content: string }> {
+function formatMessagesWithTemporal(messages: MessageWithAttachments[], context: StreamContext): FormattedMessage[] {
   const temporal = context.temporal
   if (!temporal) {
-    // No temporal context - return messages with original content
+    // No temporal context - return messages with original content + attachment context
     return messages.map((m) => ({
       role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
-      content: m.contentMarkdown,
+      content: formatMessageContent(m),
     }))
   }
 
@@ -1065,7 +1303,7 @@ function formatMessagesWithTemporal(
     }
   }
 
-  const result: Array<{ role: "user" | "assistant"; content: string }> = []
+  const result: FormattedMessage[] = []
   let currentDateKey: string | null = null
 
   for (const msg of messages) {
@@ -1086,18 +1324,109 @@ function formatMessagesWithTemporal(
       const authorName = authorNames.get(msg.authorId) ?? "Unknown"
       const hasMultipleUsers = context.streamType === StreamTypes.CHANNEL || context.streamType === StreamTypes.DM
       const namePrefix = hasMultipleUsers ? `[@${authorName}] ` : ""
+      const textPrefix = `${dateBoundaryPrefix}(${time}) ${namePrefix}`
+
       result.push({
         role,
-        content: `${dateBoundaryPrefix}(${time}) ${namePrefix}${msg.contentMarkdown}`,
+        content: formatMessageContent(msg, textPrefix),
       })
     } else {
       // Assistant/persona messages - no timestamp or date markers to avoid model mimicking
       result.push({
         role,
-        content: msg.contentMarkdown,
+        content: formatMessageContent(msg),
       })
     }
   }
 
   return result
+}
+
+/**
+ * Format message content including attachment context.
+ *
+ * For messages WITH image attachments that have dataUrl:
+ * Returns multimodal content blocks with the actual images, so vision models
+ * can see the images directly in the conversation.
+ *
+ * For messages WITHOUT image data:
+ * Returns a plain string with attachment descriptions (captions/summaries).
+ */
+function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = ""): MessageContent {
+  const baseContent = msg.contentMarkdown
+
+  // Check if we have any images with actual data URLs
+  const imageAttachments = msg.attachments?.filter((att) => att.dataUrl && att.mimeType.startsWith("image/")) ?? []
+  const nonImageAttachments = msg.attachments?.filter((att) => !att.dataUrl || !att.mimeType.startsWith("image/")) ?? []
+
+  // If we have images with data URLs, return multimodal content
+  if (imageAttachments.length > 0) {
+    const contentBlocks: ContentBlock[] = []
+
+    // Build text content with non-image attachment descriptions
+    let textContent = textPrefix + baseContent
+
+    if (nonImageAttachments.length > 0) {
+      const attachmentDescriptions = nonImageAttachments.map((att) => {
+        let desc = `[Attachment: ${att.filename} (${att.mimeType})]`
+        if (att.extraction) {
+          desc += `\n  Content type: ${att.extraction.contentType}`
+          desc += `\n  Summary: ${att.extraction.summary}`
+          if (att.extraction.fullText) {
+            desc += `\n  Full content: ${att.extraction.fullText}`
+          }
+        }
+        return desc
+      })
+      textContent += "\n\n" + attachmentDescriptions.join("\n\n")
+    }
+
+    // Add image caption context before the images
+    const imageDescriptions = imageAttachments.map((att) => {
+      let desc = `[Image: ${att.filename}]`
+      if (att.extraction?.summary) {
+        desc += ` - ${att.extraction.summary}`
+      }
+      return desc
+    })
+    if (imageDescriptions.length > 0) {
+      textContent += "\n\n" + imageDescriptions.join("\n")
+    }
+
+    // Add text block
+    contentBlocks.push({ type: "text", text: textContent })
+
+    // Add image blocks
+    for (const att of imageAttachments) {
+      if (att.dataUrl) {
+        contentBlocks.push({
+          type: "image_url",
+          image_url: { url: att.dataUrl },
+        })
+      }
+    }
+
+    return contentBlocks
+  }
+
+  // No images with data - return plain string
+  let content = textPrefix + baseContent
+
+  if (msg.attachments && msg.attachments.length > 0) {
+    const attachmentDescriptions = msg.attachments.map((att) => {
+      let desc = `[Attachment: ${att.filename} (${att.mimeType})]`
+      if (att.extraction) {
+        desc += `\n  Content type: ${att.extraction.contentType}`
+        desc += `\n  Summary: ${att.extraction.summary}`
+        if (att.extraction.fullText) {
+          desc += `\n  Full content: ${att.extraction.fullText}`
+        }
+      }
+      return desc
+    })
+
+    content += "\n\n" + attachmentDescriptions.join("\n\n")
+  }
+
+  return content
 }

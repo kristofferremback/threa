@@ -171,6 +171,9 @@ export const AGENT_TOOL_NAMES = [
   "search_streams",
   "search_users",
   "get_stream_messages",
+  "search_attachments",
+  "get_attachment",
+  "load_attachment",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -182,6 +185,9 @@ export const AgentToolNames = {
   SEARCH_STREAMS: "search_streams",
   SEARCH_USERS: "search_users",
   GET_STREAM_MESSAGES: "get_stream_messages",
+  SEARCH_ATTACHMENTS: "search_attachments",
+  GET_ATTACHMENT: "get_attachment",
+  LOAD_ATTACHMENT: "load_attachment",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations

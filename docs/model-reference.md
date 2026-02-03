@@ -1,8 +1,25 @@
 # AI Model Reference
 
-**Last updated:** 2026-01-22
+**Last updated:** 2026-02-03
 
 This document provides a comprehensive reference for AI models including capabilities, pricing, and usage guidelines. Always verify against this file when working with AI integration.
+
+## Model Capabilities Registry
+
+The source of truth for model input/output modalities is `apps/backend/src/lib/ai/models.yaml`. This file defines which models support vision, text, and other modalities. The `ModelRegistry` class loads this at startup and provides capability checks:
+
+```typescript
+import { createModelRegistry } from "./lib/ai/model-registry"
+
+const modelRegistry = createModelRegistry()
+
+// Check if a model supports vision (image input)
+if (modelRegistry.supportsVision("openrouter:anthropic/claude-sonnet-4.5")) {
+  // Model can process images
+}
+```
+
+When adding new models, update `models.yaml` with their capabilities.
 
 ## Model Format
 

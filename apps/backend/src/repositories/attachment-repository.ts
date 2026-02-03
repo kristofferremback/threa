@@ -1,5 +1,5 @@
 import { sql, type Querier } from "../db"
-import type { StorageProvider, ProcessingStatus } from "@threa/types"
+import type { StorageProvider, ProcessingStatus, ExtractionContentType } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface AttachmentRow {
@@ -45,6 +45,22 @@ export interface InsertAttachmentParams {
   storageProvider?: StorageProvider
 }
 
+// Row type for attachments with extraction joined
+interface AttachmentWithExtractionRow extends AttachmentRow {
+  extraction_content_type: string | null
+  extraction_summary: string | null
+  extraction_full_text: string | null
+}
+
+// Domain type for attachment with extraction
+export interface AttachmentWithExtraction extends Attachment {
+  extraction: {
+    contentType: ExtractionContentType
+    summary: string
+    fullText: string | null
+  } | null
+}
+
 function mapRowToAttachment(row: AttachmentRow): Attachment {
   return {
     id: row.id,
@@ -59,6 +75,19 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     storagePath: row.storage_path,
     processingStatus: row.processing_status as ProcessingStatus,
     createdAt: row.created_at,
+  }
+}
+
+function mapRowToAttachmentWithExtraction(row: AttachmentWithExtractionRow): AttachmentWithExtraction {
+  return {
+    ...mapRowToAttachment(row),
+    extraction: row.extraction_content_type
+      ? {
+          contentType: row.extraction_content_type as ExtractionContentType,
+          summary: row.extraction_summary ?? "",
+          fullText: row.extraction_full_text,
+        }
+      : null,
   }
 }
 
@@ -190,5 +219,77 @@ export const AttachmentRepository = {
       WHERE id = ${id}
     `)
     return (result.rowCount ?? 0) > 0
+  },
+
+  /**
+   * Search attachments with their extractions joined.
+   * Searches by filename and extraction content (summary, full_text).
+   */
+  async searchWithExtractions(
+    client: Querier,
+    opts: {
+      workspaceId: string
+      streamIds: string[]
+      query: string
+      contentTypes?: ExtractionContentType[]
+      limit?: number
+    }
+  ): Promise<AttachmentWithExtraction[]> {
+    const { workspaceId, streamIds, query, contentTypes, limit = 20 } = opts
+
+    if (streamIds.length === 0) return []
+
+    const searchPattern = `%${query}%`
+
+    // Use separate queries to avoid nested sql template issues
+    if (contentTypes?.length) {
+      const result = await client.query<AttachmentWithExtractionRow>(sql`
+        SELECT
+          a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
+          a.filename, a.mime_type, a.size_bytes,
+          a.storage_provider, a.storage_path, a.processing_status,
+          a.created_at,
+          e.content_type AS extraction_content_type,
+          e.summary AS extraction_summary,
+          e.full_text AS extraction_full_text
+        FROM attachments a
+        LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
+        WHERE a.workspace_id = ${workspaceId}
+          AND a.stream_id = ANY(${streamIds})
+          AND (
+            a.filename ILIKE ${searchPattern}
+            OR e.summary ILIKE ${searchPattern}
+            OR e.full_text ILIKE ${searchPattern}
+          )
+          AND e.content_type = ANY(${contentTypes})
+        ORDER BY a.created_at DESC
+        LIMIT ${limit}
+      `)
+      return result.rows.map(mapRowToAttachmentWithExtraction)
+    }
+
+    const result = await client.query<AttachmentWithExtractionRow>(sql`
+      SELECT
+        a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
+        a.filename, a.mime_type, a.size_bytes,
+        a.storage_provider, a.storage_path, a.processing_status,
+        a.created_at,
+        e.content_type AS extraction_content_type,
+        e.summary AS extraction_summary,
+        e.full_text AS extraction_full_text
+      FROM attachments a
+      LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
+      WHERE a.workspace_id = ${workspaceId}
+        AND a.stream_id = ANY(${streamIds})
+        AND (
+          a.filename ILIKE ${searchPattern}
+          OR e.summary ILIKE ${searchPattern}
+          OR e.full_text ILIKE ${searchPattern}
+        )
+      ORDER BY a.created_at DESC
+      LIMIT ${limit}
+    `)
+
+    return result.rows.map(mapRowToAttachmentWithExtraction)
   },
 }

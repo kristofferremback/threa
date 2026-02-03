@@ -1,11 +1,13 @@
 import type { Querier } from "../db"
-import type { StreamType, UserPreferences } from "@threa/types"
-import { StreamTypes } from "@threa/types"
+import type { StreamType, UserPreferences, ExtractionContentType } from "@threa/types"
+import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { UserRepository } from "../repositories/user-repository"
+import { AttachmentRepository } from "../repositories/attachment-repository"
+import { AttachmentExtractionRepository } from "../repositories/attachment-extraction-repository"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../lib/temporal"
 
 /**
@@ -36,6 +38,35 @@ export interface ThreadPathEntry {
 }
 
 /**
+ * Attachment context for a message.
+ * Detail level varies based on message recency.
+ */
+export interface AttachmentContext {
+  id: string
+  filename: string
+  mimeType: string
+  extraction: {
+    contentType: ExtractionContentType
+    summary: string
+    /** Full text is included for recent messages (invoking + last 3 user messages) */
+    fullText: string | null
+  } | null
+  /**
+   * Base64 data URL for image attachments.
+   * Only populated for recent messages when the model supports vision.
+   * Format: "data:image/png;base64,..."
+   */
+  dataUrl?: string
+}
+
+/**
+ * Message with attachment context.
+ */
+export interface MessageWithAttachments extends Message {
+  attachments?: AttachmentContext[]
+}
+
+/**
  * Context about the stream for the companion agent.
  * Different stream types populate different fields.
  */
@@ -48,8 +79,8 @@ export interface StreamContext {
   }
   /** Participants in the stream (for channels, DMs). Scratchpads don't need this. */
   participants?: Participant[]
-  /** Conversation history - messages in chronological order */
-  conversationHistory: Message[]
+  /** Conversation history - messages in chronological order, may include attachment context */
+  conversationHistory: MessageWithAttachments[]
   /** For threads: path from current thread up to root channel */
   threadContext?: {
     depth: number
@@ -71,6 +102,23 @@ export interface BuildStreamContextOptions {
   preferences?: UserPreferences
   /** Current time at invocation (for deterministic testing) */
   currentTime?: Date
+  /** Trigger message ID (for determining attachment detail levels) */
+  triggerMessageId?: string
+  /** Whether to include attachment context */
+  includeAttachments?: boolean
+  /**
+   * Storage provider for loading image data.
+   * Required when loadImages is true.
+   */
+  storage?: {
+    getObject(key: string): Promise<Buffer>
+  }
+  /**
+   * Whether to load actual image data for vision models.
+   * When true, images in recent messages will be loaded from storage
+   * and included as base64 data URLs so the model can see them.
+   */
+  loadImages?: boolean
 }
 
 /**
@@ -79,6 +127,9 @@ export interface BuildStreamContextOptions {
  *
  * When preferences are provided, includes temporal context
  * with the invoking user's timezone and time preferences.
+ *
+ * When includeAttachments is true, messages are enriched with attachment context.
+ * Detail level varies based on message recency relative to triggerMessageId.
  */
 export async function buildStreamContext(
   db: Querier,
@@ -91,22 +142,38 @@ export async function buildStreamContext(
     temporal = buildTemporalContext(options.preferences, options.currentTime)
   }
 
+  let context: StreamContext
   switch (stream.type) {
     case StreamTypes.SCRATCHPAD:
-      return buildScratchpadContext(db, stream, temporal)
+      context = await buildScratchpadContext(db, stream, temporal)
+      break
 
     case StreamTypes.CHANNEL:
-      return buildChannelContext(db, stream, temporal)
+      context = await buildChannelContext(db, stream, temporal)
+      break
 
     case StreamTypes.THREAD:
-      return buildThreadContext(db, stream, temporal)
+      context = await buildThreadContext(db, stream, temporal)
+      break
 
     case StreamTypes.DM:
-      return buildDmContext(db, stream, temporal)
+      context = await buildDmContext(db, stream, temporal)
+      break
 
     default:
-      return buildScratchpadContext(db, stream, temporal)
+      context = await buildScratchpadContext(db, stream, temporal)
   }
+
+  // Enrich with attachment context if requested
+  if (options?.includeAttachments) {
+    context.conversationHistory = await enrichMessagesWithAttachments(db, context.conversationHistory, {
+      triggerMessageId: options.triggerMessageId,
+      storage: options.storage,
+      loadImages: options.loadImages,
+    })
+  }
+
+  return context
 }
 
 /**
@@ -319,4 +386,172 @@ async function resolveAuthorName(db: Querier, authorId: string, authorType: "use
   // For personas, we'd need to look up the persona
   // For now, return a placeholder
   return "Assistant"
+}
+
+/**
+ * Number of recent user messages to include full extraction details for.
+ */
+const FULL_EXTRACTION_USER_MESSAGES = 3
+
+/**
+ * Options for enriching messages with attachment context.
+ */
+export interface EnrichAttachmentsOptions {
+  /** The trigger message ID (for determining detail levels) */
+  triggerMessageId?: string
+  /**
+   * Storage provider for loading image data.
+   * If provided along with loadImages=true, actual image data will be loaded
+   * for recent messages so vision models can see the images.
+   */
+  storage?: {
+    getObject(key: string): Promise<Buffer>
+  }
+  /**
+   * Whether to load actual image data for vision models.
+   * Requires storage to be provided.
+   */
+  loadImages?: boolean
+}
+
+/**
+ * Enrich messages with attachment context.
+ *
+ * Detail levels based on message position:
+ * - Trigger message + messages after it: Full extraction (summary + fullText) + image data
+ * - Last N user messages before trigger: Full extraction + image data
+ * - Older messages: Summary only (no image data)
+ *
+ * When loadImages is true and storage is provided, actual image data (as base64 data URLs)
+ * will be included for recent messages with image attachments. This allows vision models
+ * to see the images directly in the conversation.
+ */
+export async function enrichMessagesWithAttachments(
+  db: Querier,
+  messages: Message[],
+  options?: EnrichAttachmentsOptions
+): Promise<MessageWithAttachments[]> {
+  const { triggerMessageId, storage, loadImages } = options ?? {}
+  if (messages.length === 0) return []
+
+  // Get all message IDs
+  const messageIds = messages.map((m) => m.id)
+
+  // Batch fetch attachments for all messages
+  const attachmentsByMessage = await AttachmentRepository.findByMessageIds(db, messageIds)
+
+  // If no attachments, return messages as-is
+  if (attachmentsByMessage.size === 0) {
+    return messages
+  }
+
+  // Collect all attachment IDs for extraction lookup
+  const allAttachmentIds: string[] = []
+  for (const attachments of attachmentsByMessage.values()) {
+    for (const a of attachments) {
+      allAttachmentIds.push(a.id)
+    }
+  }
+
+  // Batch fetch extractions
+  const extractionsByAttachment = await AttachmentExtractionRepository.findByAttachmentIds(db, allAttachmentIds)
+
+  // Determine which messages get full extraction details
+  const triggerIdx = triggerMessageId ? messages.findIndex((m) => m.id === triggerMessageId) : -1
+
+  // Find indices of last N user messages before trigger
+  const userMessageIndicesBeforeTrigger: number[] = []
+  for (let i = triggerIdx - 1; i >= 0 && userMessageIndicesBeforeTrigger.length < FULL_EXTRACTION_USER_MESSAGES; i--) {
+    if (messages[i].authorType === AuthorTypes.USER) {
+      userMessageIndicesBeforeTrigger.push(i)
+    }
+  }
+
+  // Build set of message indices that get full extraction
+  const fullExtractionIndices = new Set<number>()
+  if (triggerIdx >= 0) {
+    // Trigger message and all messages after it
+    for (let i = triggerIdx; i < messages.length; i++) {
+      fullExtractionIndices.add(i)
+    }
+  }
+  // Last N user messages before trigger
+  for (const idx of userMessageIndicesBeforeTrigger) {
+    fullExtractionIndices.add(idx)
+  }
+
+  // Determine if we should load images
+  const shouldLoadImages = loadImages && storage
+
+  // Collect image attachments that need loading (for recent messages only)
+  const imageAttachmentsToLoad: Array<{ attachmentId: string; storagePath: string; mimeType: string }> = []
+  if (shouldLoadImages) {
+    for (let idx = 0; idx < messages.length; idx++) {
+      if (!fullExtractionIndices.has(idx)) continue
+      const attachments = attachmentsByMessage.get(messages[idx].id)
+      if (!attachments) continue
+      for (const att of attachments) {
+        if (att.mimeType.startsWith("image/")) {
+          imageAttachmentsToLoad.push({
+            attachmentId: att.id,
+            storagePath: att.storagePath,
+            mimeType: att.mimeType,
+          })
+        }
+      }
+    }
+  }
+
+  // Load image data in parallel
+  const imageDataByAttachment = new Map<string, string>()
+  if (imageAttachmentsToLoad.length > 0 && storage) {
+    const results = await Promise.allSettled(
+      imageAttachmentsToLoad.map(async ({ attachmentId, storagePath, mimeType }) => {
+        const buffer = await storage.getObject(storagePath)
+        const base64 = buffer.toString("base64")
+        return { attachmentId, dataUrl: `data:${mimeType};base64,${base64}` }
+      })
+    )
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        imageDataByAttachment.set(result.value.attachmentId, result.value.dataUrl)
+      }
+      // Silently skip failed image loads - the caption will still be available
+    }
+  }
+
+  // Enrich each message with attachment context
+  return messages.map((message, idx): MessageWithAttachments => {
+    const attachments = attachmentsByMessage.get(message.id)
+    if (!attachments || attachments.length === 0) {
+      return message
+    }
+
+    const includeFullText = fullExtractionIndices.has(idx)
+    const includeImageData = shouldLoadImages && fullExtractionIndices.has(idx)
+
+    const attachmentContexts: AttachmentContext[] = attachments.map((attachment) => {
+      const extraction = extractionsByAttachment.get(attachment.id)
+      const dataUrl = includeImageData ? imageDataByAttachment.get(attachment.id) : undefined
+
+      return {
+        id: attachment.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        extraction: extraction
+          ? {
+              contentType: extraction.contentType,
+              summary: extraction.summary,
+              fullText: includeFullText ? extraction.fullText : null,
+            }
+          : null,
+        dataUrl,
+      }
+    })
+
+    return {
+      ...message,
+      attachments: attachmentContexts,
+    }
+  })
 }

@@ -25,6 +25,7 @@ You work in steps:
 Guidelines:
 - Start with memo search (summarized knowledge) when looking for decisions, context, or discussions
 - Use message search when you need specific quotes, recent activity, or exact terms
+- Use attachment search when looking for files, images, or documents shared in the workspace
 - Use "semantic" search for concepts, topics, intent
 - Use "exact" search for error messages, IDs, specific phrases, quoted text
 - Generate 1-3 focused queries per step
