@@ -38,7 +38,12 @@ import {
   type AttachmentDetails,
   type LoadAttachmentResult,
 } from "./tools"
-import { buildStreamContext, type StreamContext, type MessageWithAttachments } from "./context-builder"
+import {
+  buildStreamContext,
+  type AttachmentContext,
+  type MessageWithAttachments,
+  type StreamContext,
+} from "./context-builder"
 import { Researcher, type ResearcherResult, computeAgentAccessSpec, enrichMessageSearchResults } from "./researcher"
 import { SearchRepository } from "../repositories/search-repository"
 import { resolveStreamIdentifier } from "./tools/identifier-resolver"
@@ -1255,25 +1260,11 @@ function buildDmPrompt(context: StreamContext): string {
 }
 
 /**
- * Content block types for multimodal messages.
- * Compatible with OpenAI/Claude/LangChain message format.
- */
-type TextContentBlock = { type: "text"; text: string }
-type ImageContentBlock = { type: "image_url"; image_url: { url: string } }
-type ContentBlock = TextContentBlock | ImageContentBlock
-
-/**
- * Message content - either a plain string or multimodal content blocks.
- * When images with dataUrl are present, we return content blocks.
- */
-export type MessageContent = string | ContentBlock[]
-
-/**
  * Formatted message for LLM consumption.
  */
 export interface FormattedMessage {
   role: "user" | "assistant"
-  content: MessageContent
+  content: string
 }
 
 /**
@@ -1282,12 +1273,10 @@ export interface FormattedMessage {
  *
  * Returns messages in standard { role, content } format with enriched content:
  * - User messages: `(14:30) [@name] content`
- * - Assistant messages: `(14:30) content`
+ * - Assistant messages: content only (no timestamp to avoid model mimicking)
  *
- * When a message has image attachments with dataUrl, returns multimodal content
- * with image_url blocks so vision models can see the images directly.
- *
- * When temporal context is unavailable, returns messages with original content.
+ * Attachments are included as text descriptions (captions/summaries).
+ * Actual images are loaded on-demand via the load_attachment tool.
  */
 function formatMessagesWithTemporal(messages: MessageWithAttachments[], context: StreamContext): FormattedMessage[] {
   const temporal = context.temporal
@@ -1367,101 +1356,43 @@ function formatStructuredData(data: ChartData | TableData | DiagramData | null):
 }
 
 /**
- * Format message content including attachment context.
- *
- * For messages WITH image attachments that have dataUrl:
- * Returns multimodal content blocks with the actual images, so vision models
- * can see the images directly in the conversation.
- *
- * For messages WITHOUT image data:
- * Returns a plain string with attachment descriptions (captions/summaries).
+ * Format a single attachment as a text description.
  */
-function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = ""): MessageContent {
-  const baseContent = msg.contentMarkdown
+function formatAttachmentDescription(att: AttachmentContext): string {
+  const isImage = att.mimeType.startsWith("image/")
+  let desc = isImage ? `[Image: ${att.filename}]` : `[Attachment: ${att.filename} (${att.mimeType})]`
 
-  // Check if we have any images with actual data URLs
-  const imageAttachments = msg.attachments?.filter((att) => att.dataUrl && att.mimeType.startsWith("image/")) ?? []
-  const nonImageAttachments = msg.attachments?.filter((att) => !att.dataUrl || !att.mimeType.startsWith("image/")) ?? []
-
-  // If we have images with data URLs, return multimodal content
-  if (imageAttachments.length > 0) {
-    const contentBlocks: ContentBlock[] = []
-
-    // Build text content with non-image attachment descriptions
-    let textContent = textPrefix + baseContent
-
-    if (nonImageAttachments.length > 0) {
-      const attachmentDescriptions = nonImageAttachments.map((att) => {
-        let desc = `[Attachment: ${att.filename} (${att.mimeType})]`
-        if (att.extraction) {
-          desc += `\n  Content type: ${att.extraction.contentType}`
-          desc += `\n  Summary: ${att.extraction.summary}`
-          if (att.extraction.fullText) {
-            desc += `\n  Full content: ${att.extraction.fullText}`
-          }
-          const structuredStr = formatStructuredData(att.extraction.structuredData)
-          if (structuredStr) {
-            desc += `\n${structuredStr}`
-          }
-        }
-        return desc
-      })
-      textContent += "\n\n" + attachmentDescriptions.join("\n\n")
-    }
-
-    // Add image caption context before the images (with structured data for charts/tables)
-    const imageDescriptions = imageAttachments.map((att) => {
-      let desc = `[Image: ${att.filename}]`
-      if (att.extraction?.summary) {
+  if (att.extraction) {
+    if (isImage) {
+      if (att.extraction.summary) {
         desc += ` - ${att.extraction.summary}`
       }
-      const structuredStr = formatStructuredData(att.extraction?.structuredData ?? null)
-      if (structuredStr) {
-        desc += `\n${structuredStr}`
-      }
-      return desc
-    })
-    if (imageDescriptions.length > 0) {
-      textContent += "\n\n" + imageDescriptions.join("\n")
-    }
-
-    // Add text block
-    contentBlocks.push({ type: "text", text: textContent })
-
-    // Add image blocks
-    for (const att of imageAttachments) {
-      if (att.dataUrl) {
-        contentBlocks.push({
-          type: "image_url",
-          image_url: { url: att.dataUrl },
-        })
+    } else {
+      desc += `\n  Content type: ${att.extraction.contentType}`
+      desc += `\n  Summary: ${att.extraction.summary}`
+      if (att.extraction.fullText) {
+        desc += `\n  Full content: ${att.extraction.fullText}`
       }
     }
-
-    return contentBlocks
+    const structuredStr = formatStructuredData(att.extraction.structuredData)
+    if (structuredStr) {
+      desc += `\n${structuredStr}`
+    }
   }
 
-  // No images with data - return plain string
-  let content = textPrefix + baseContent
+  return desc
+}
+
+/**
+ * Format message content including attachment context as text descriptions.
+ * Actual images are loaded on-demand via the load_attachment tool.
+ */
+function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = ""): string {
+  let content = textPrefix + msg.contentMarkdown
 
   if (msg.attachments && msg.attachments.length > 0) {
-    const attachmentDescriptions = msg.attachments.map((att) => {
-      let desc = `[Attachment: ${att.filename} (${att.mimeType})]`
-      if (att.extraction) {
-        desc += `\n  Content type: ${att.extraction.contentType}`
-        desc += `\n  Summary: ${att.extraction.summary}`
-        if (att.extraction.fullText) {
-          desc += `\n  Full content: ${att.extraction.fullText}`
-        }
-        const structuredStr = formatStructuredData(att.extraction.structuredData)
-        if (structuredStr) {
-          desc += `\n${structuredStr}`
-        }
-      }
-      return desc
-    })
-
-    content += "\n\n" + attachmentDescriptions.join("\n\n")
+    const descriptions = msg.attachments.map(formatAttachmentDescription)
+    content += "\n\n" + descriptions.join("\n\n")
   }
 
   return content
