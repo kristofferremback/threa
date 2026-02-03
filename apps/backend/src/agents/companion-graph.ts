@@ -89,25 +89,26 @@ function truncateSingleMessage(message: BaseMessage, maxChars: number): BaseMess
   // Truncate the content
   if (typeof message.content === "string") {
     const truncated = message.content.slice(0, maxChars) + "\n\n[... content truncated due to length ...]"
-    if (HumanMessage.isInstance(message)) {
-      return new HumanMessage({ content: truncated, id: message.id })
-    } else if (AIMessage.isInstance(message)) {
-      return new AIMessage({
-        content: truncated,
-        id: message.id,
-        tool_calls: message.tool_calls,
-      })
-    } else if (SystemMessage.isInstance(message)) {
-      return new SystemMessage({ content: truncated, id: message.id })
-    } else if (ToolMessage.isInstance(message)) {
-      return new ToolMessage({
-        content: truncated,
-        tool_call_id: message.tool_call_id,
-      })
+    switch (true) {
+      case HumanMessage.isInstance(message):
+        return new HumanMessage({ content: truncated, id: message.id })
+      case AIMessage.isInstance(message):
+        return new AIMessage({
+          content: truncated,
+          id: message.id,
+          tool_calls: message.tool_calls,
+        })
+      case SystemMessage.isInstance(message):
+        return new SystemMessage({ content: truncated, id: message.id })
+      case ToolMessage.isInstance(message):
+        return new ToolMessage({
+          content: truncated,
+          tool_call_id: message.tool_call_id,
+        })
+      default:
+        logger.warn({ messageType }, "Unknown message type in truncation, creating generic message")
+        return new HumanMessage({ content: truncated, id: message.id })
     }
-    // Fallback for unknown message types - still truncate
-    logger.warn({ messageType }, "Unknown message type in truncation, creating generic message")
-    return new HumanMessage({ content: truncated, id: message.id })
   }
 
   // For array content (multimodal), truncate text parts
@@ -116,57 +117,62 @@ function truncateSingleMessage(message: BaseMessage, maxChars: number): BaseMess
     const truncatedContent: unknown[] = []
 
     for (const part of message.content as unknown[]) {
-      if (typeof part === "string") {
-        if (part.length <= remainingChars) {
-          truncatedContent.push(part)
-          remainingChars -= part.length
-        } else {
-          truncatedContent.push(part.slice(0, remainingChars) + "\n\n[... content truncated ...]")
-          remainingChars = 0
-          break
-        }
-      } else if (
+      const isTextBlock =
         typeof part === "object" &&
         part !== null &&
         "type" in part &&
         (part as { type: string }).type === "text" &&
         "text" in part
-      ) {
-        const textPart = part as { type: string; text: string }
-        if (textPart.text.length <= remainingChars) {
-          truncatedContent.push(part)
-          remainingChars -= textPart.text.length
-        } else {
-          truncatedContent.push({
-            type: "text",
-            text: textPart.text.slice(0, remainingChars) + "\n\n[... content truncated ...]",
-          })
-          remainingChars = 0
+
+      switch (true) {
+        case typeof part === "string":
+          if (part.length <= remainingChars) {
+            truncatedContent.push(part)
+            remainingChars -= part.length
+          } else {
+            truncatedContent.push(part.slice(0, remainingChars) + "\n\n[... content truncated ...]")
+            remainingChars = 0
+          }
+          break
+        case isTextBlock: {
+          const textPart = part as { type: string; text: string }
+          if (textPart.text.length <= remainingChars) {
+            truncatedContent.push(part)
+            remainingChars -= textPart.text.length
+          } else {
+            truncatedContent.push({
+              type: "text",
+              text: textPart.text.slice(0, remainingChars) + "\n\n[... content truncated ...]",
+            })
+            remainingChars = 0
+          }
           break
         }
-      } else {
-        // Keep non-text parts (images, etc.)
-        truncatedContent.push(part)
+        default:
+          // Keep non-text parts (images, etc.)
+          truncatedContent.push(part)
       }
+      if (remainingChars === 0) break
     }
 
-    if (HumanMessage.isInstance(message)) {
-      return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
-    } else if (AIMessage.isInstance(message)) {
-      return new AIMessage({
-        content: truncatedContent as AIMessage["content"],
-        id: message.id,
-        tool_calls: message.tool_calls,
-      })
-    } else if (ToolMessage.isInstance(message)) {
-      return new ToolMessage({
-        content: truncatedContent as ToolMessage["content"],
-        tool_call_id: message.tool_call_id,
-      })
+    switch (true) {
+      case HumanMessage.isInstance(message):
+        return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
+      case AIMessage.isInstance(message):
+        return new AIMessage({
+          content: truncatedContent as AIMessage["content"],
+          id: message.id,
+          tool_calls: message.tool_calls,
+        })
+      case ToolMessage.isInstance(message):
+        return new ToolMessage({
+          content: truncatedContent as ToolMessage["content"],
+          tool_call_id: message.tool_call_id,
+        })
+      default:
+        logger.warn({ messageType }, "Unknown message type with array content in truncation")
+        return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
     }
-    // Fallback for array content on unknown types
-    logger.warn({ messageType }, "Unknown message type with array content in truncation")
-    return new HumanMessage({ content: truncatedContent as HumanMessage["content"], id: message.id })
   }
 
   // Fallback: if we get here, log and return truncated as HumanMessage
