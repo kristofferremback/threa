@@ -1,5 +1,12 @@
 import type { Querier } from "../db"
-import type { StreamType, UserPreferences, ExtractionContentType } from "@threa/types"
+import type {
+  StreamType,
+  UserPreferences,
+  ExtractionContentType,
+  ChartData,
+  TableData,
+  DiagramData,
+} from "@threa/types"
 import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -50,6 +57,8 @@ export interface AttachmentContext {
     summary: string
     /** Full text is included for recent messages (invoking + last 3 user messages) */
     fullText: string | null
+    /** Structured data for charts, tables, diagrams (included for recent messages) */
+    structuredData: ChartData | TableData | DiagramData | null
   } | null
   /**
    * Base64 data URL for image attachments.
@@ -543,6 +552,7 @@ export async function enrichMessagesWithAttachments(
               contentType: extraction.contentType,
               summary: extraction.summary,
               fullText: includeFullText ? extraction.fullText : null,
+              structuredData: includeFullText ? extraction.structuredData : null,
             }
           : null,
         dataUrl,

@@ -8,6 +8,9 @@ import {
   type AuthorType,
   type UserPreferences,
   type SourceItem,
+  type ChartData,
+  type TableData,
+  type DiagramData,
 } from "@threa/types"
 import type { UserPreferencesService } from "../services/user-preferences-service"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -614,13 +617,15 @@ export class PersonaAgent {
 
           // Get accessible stream IDs for the agent's context
           accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+          // Capture in const for TypeScript narrowing inside callbacks
+          const streamIdsForCallbacks = accessibleStreamIds
 
           searchCallbacks = {
             searchMessages: async (input) => {
               // Resolve optional stream filter
-              let filterStreamIds = accessibleStreamIds
+              let filterStreamIds = streamIdsForCallbacks
               if (input.stream) {
-                const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+                const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, streamIdsForCallbacks)
                 if (!resolved.resolved) {
                   // Stream not found or not accessible - return empty results
                   return []
@@ -651,7 +656,7 @@ export class PersonaAgent {
             searchStreams: async (input) => {
               // Use trigram search for fuzzy matching on stream names
               const streams = await StreamRepository.searchByName(db, {
-                streamIds: accessibleStreamIds,
+                streamIds: streamIdsForCallbacks,
                 query: input.query,
                 types: input.types,
                 limit: 10,
@@ -676,7 +681,7 @@ export class PersonaAgent {
 
             getStreamMessages: async (input) => {
               // Resolve the stream identifier (ID, slug, or #slug)
-              const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, accessibleStreamIds)
+              const resolved = await resolveStreamIdentifier(db, workspaceId, input.stream, streamIdsForCallbacks)
               if (!resolved.resolved) {
                 // Stream not found or not accessible
                 return []
@@ -1342,6 +1347,26 @@ function formatMessagesWithTemporal(messages: MessageWithAttachments[], context:
 }
 
 /**
+ * Format structured data as compact JSON for inclusion in attachment descriptions.
+ * Note: Label avoids "data:" pattern which Langfuse SDK incorrectly parses as data URI.
+ */
+function formatStructuredData(data: ChartData | TableData | DiagramData | null): string | null {
+  if (!data) return null
+
+  // For tables with many rows, truncate to avoid context bloat
+  if ("rows" in data && Array.isArray(data.rows) && data.rows.length > 10) {
+    const truncated = {
+      ...data,
+      rows: data.rows.slice(0, 10),
+      _truncated: `${data.rows.length - 10} more rows`,
+    }
+    return `  Parsed: ${JSON.stringify(truncated)}`
+  }
+
+  return `  Parsed: ${JSON.stringify(data)}`
+}
+
+/**
  * Format message content including attachment context.
  *
  * For messages WITH image attachments that have dataUrl:
@@ -1374,17 +1399,25 @@ function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = 
           if (att.extraction.fullText) {
             desc += `\n  Full content: ${att.extraction.fullText}`
           }
+          const structuredStr = formatStructuredData(att.extraction.structuredData)
+          if (structuredStr) {
+            desc += `\n${structuredStr}`
+          }
         }
         return desc
       })
       textContent += "\n\n" + attachmentDescriptions.join("\n\n")
     }
 
-    // Add image caption context before the images
+    // Add image caption context before the images (with structured data for charts/tables)
     const imageDescriptions = imageAttachments.map((att) => {
       let desc = `[Image: ${att.filename}]`
       if (att.extraction?.summary) {
         desc += ` - ${att.extraction.summary}`
+      }
+      const structuredStr = formatStructuredData(att.extraction?.structuredData ?? null)
+      if (structuredStr) {
+        desc += `\n${structuredStr}`
       }
       return desc
     })
@@ -1419,6 +1452,10 @@ function formatMessageContent(msg: MessageWithAttachments, textPrefix: string = 
         desc += `\n  Summary: ${att.extraction.summary}`
         if (att.extraction.fullText) {
           desc += `\n  Full content: ${att.extraction.fullText}`
+        }
+        const structuredStr = formatStructuredData(att.extraction.structuredData)
+        if (structuredStr) {
+          desc += `\n${structuredStr}`
         }
       }
       return desc
