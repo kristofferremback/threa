@@ -61,7 +61,9 @@ import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { StubSimulationAgent } from "./agents/simulation-agent.stub"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
-import { JobQueues } from "./lib/job-queue"
+import { JobQueues, type OnDLQHook, type ImageCaptionJobData } from "./lib/job-queue"
+import { ProcessingStatuses } from "@threa/types"
+import { AttachmentRepository } from "./repositories"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { parseMarkdown } from "@threa/prosemirror"
@@ -371,7 +373,12 @@ export async function startServer(): Promise<ServerInstance> {
     ? new StubImageCaptionService(pool)
     : new ImageCaptionService({ pool, ai, storage })
   const imageCaptionWorker = createImageCaptionWorker({ imageCaptionService })
-  jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker)
+  const imageCaptionOnDLQ: OnDLQHook<ImageCaptionJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+  }
+  jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker, {
+    hooks: { onDLQ: imageCaptionOnDLQ },
+  })
 
   // Register handlers before starting
   await jobQueue.start()
