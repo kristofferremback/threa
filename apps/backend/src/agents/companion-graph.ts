@@ -65,6 +65,17 @@ function getMessageLength(message: BaseMessage): number {
 }
 
 /**
+ * Get the type string for a message using static isInstance checks.
+ */
+function getMessageType(message: BaseMessage): string {
+  if (HumanMessage.isInstance(message)) return "human"
+  if (AIMessage.isInstance(message)) return "ai"
+  if (SystemMessage.isInstance(message)) return "system"
+  if (ToolMessage.isInstance(message)) return "tool"
+  return "unknown"
+}
+
+/**
  * Truncate a single message's content if it exceeds the limit.
  * Returns a new message with truncated content, or the original if no truncation needed.
  */
@@ -72,16 +83,7 @@ function truncateSingleMessage(message: BaseMessage, maxChars: number): BaseMess
   const length = getMessageLength(message)
   if (length <= maxChars) return message
 
-  // Type guards work on deserialized messages and provide proper TypeScript narrowing
-  const messageType = HumanMessage.isInstance(message)
-    ? "human"
-    : AIMessage.isInstance(message)
-      ? "ai"
-      : SystemMessage.isInstance(message)
-        ? "system"
-        : ToolMessage.isInstance(message)
-          ? "tool"
-          : "unknown"
+  const messageType = getMessageType(message)
   logger.warn({ messageLength: length, maxChars, messageType }, "Truncating oversized message")
 
   // Truncate the content
