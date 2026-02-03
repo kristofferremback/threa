@@ -52,8 +52,10 @@ export async function awaitImageProcessing(
 
   logger.debug({ attachmentIds, timeoutMs }, "Starting to await image processing")
 
+  // Each iteration auto-acquires and releases a connection via pool (not withClient).
+  // This is intentional per INV-41: we release between polling intervals to avoid
+  // holding connections during sleep. Do NOT wrap in withClient.
   while (pendingIds.size > 0 && Date.now() - startTime < timeoutMs) {
-    // Fetch current status of all pending attachments
     const attachments = await AttachmentRepository.findByIds(pool, Array.from(pendingIds))
 
     for (const attachment of attachments) {

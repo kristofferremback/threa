@@ -602,7 +602,9 @@ export class PersonaAgent {
         }
 
         // Build search callbacks for workspace search tools
+        // Compute accessible stream IDs once for both search and attachment tools
         let searchCallbacks: SearchToolsCallbacks | undefined
+        let accessibleStreamIds: string[] | undefined
         if (invokingUserId) {
           // Compute access spec for search context
           const accessSpec = await computeAgentAccessSpec(db, {
@@ -611,7 +613,7 @@ export class PersonaAgent {
           })
 
           // Get accessible stream IDs for the agent's context
-          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
+          accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
 
           searchCallbacks = {
             searchMessages: async (input) => {
@@ -715,6 +717,7 @@ export class PersonaAgent {
         }
 
         // Build attachment callbacks for attachment tools
+        // Reuses accessibleStreamIds computed above for search callbacks
         let attachmentCallbacks:
           | {
               search: SearchAttachmentsCallbacks
@@ -722,11 +725,7 @@ export class PersonaAgent {
               load: LoadAttachmentCallbacks | undefined
             }
           | undefined
-        if (invokingUserId) {
-          // Get accessible stream IDs (reuse from search if available)
-          const accessSpec = await computeAgentAccessSpec(db, { stream, invokingUserId })
-          const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(db, accessSpec, workspaceId)
-
+        if (invokingUserId && accessibleStreamIds) {
           const searchAttachments: SearchAttachmentsCallbacks = {
             searchAttachments: async (input): Promise<AttachmentSearchResult[]> => {
               const results = await AttachmentRepository.searchWithExtractions(db, {

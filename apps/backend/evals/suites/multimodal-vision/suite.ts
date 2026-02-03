@@ -129,7 +129,10 @@ async function setupTestData(
     throw new Error(`Production persona ${ARIADNE_PERSONA_ID} has no system prompt`)
   }
 
-  // Create a test persona with production's system prompt but eval's model
+  // Create a test persona that uses production Ariadne's config (system prompt, tools, etc.)
+  // but with the eval's model. This is intentional: vision evals need vision-capable models,
+  // which may differ from production. We copy production config to ensure the eval tests
+  // realistic behavior, while model variation lets us test across different vision models.
   const testPersonaId = generatePersonaId()
   await pool.query(
     `
