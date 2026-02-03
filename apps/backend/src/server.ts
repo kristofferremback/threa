@@ -35,6 +35,7 @@ import { BoundaryExtractionHandler } from "./lib/boundary-extraction-handler"
 import { MemoAccumulatorHandler } from "./lib/memo-accumulator-handler"
 import { CommandHandler } from "./lib/command-handler"
 import { MentionInvokeHandler } from "./lib/mention-invoke-handler"
+import { AttachmentUploadedHandler } from "./lib/attachment-uploaded-handler"
 import { MemoClassifier } from "./lib/memo/classifier"
 import { Memorizer } from "./lib/memo/memorizer"
 import { MemoService } from "./services/memo-service"
@@ -53,12 +54,16 @@ import { createSimulationWorker } from "./workers/simulation-worker"
 import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
+import { createImageCaptionWorker } from "./workers/image-caption-worker"
+import { ImageCaptionService, StubImageCaptionService } from "./services/image-caption"
 import { PersonaAgent } from "./agents/persona-agent"
 import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { StubSimulationAgent } from "./agents/simulation-agent.stub"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
-import { JobQueues } from "./lib/job-queue"
+import { JobQueues, type OnDLQHook, type ImageCaptionJobData } from "./lib/job-queue"
+import { ProcessingStatuses } from "@threa/types"
+import { AttachmentRepository } from "./repositories"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { parseMarkdown } from "@threa/prosemirror"
@@ -363,6 +368,18 @@ export async function startServer(): Promise<ServerInstance> {
   const commandWorker = createCommandWorker({ pool, commandRegistry })
   jobQueue.registerHandler(JobQueues.COMMAND_EXECUTE, commandWorker)
 
+  // Image captioning worker
+  const imageCaptionService = config.useStubAI
+    ? new StubImageCaptionService(pool)
+    : new ImageCaptionService({ pool, ai, storage })
+  const imageCaptionWorker = createImageCaptionWorker({ imageCaptionService })
+  const imageCaptionOnDLQ: OnDLQHook<ImageCaptionJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+  }
+  jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker, {
+    hooks: { onDLQ: imageCaptionOnDLQ },
+  })
+
   // Register handlers before starting
   await jobQueue.start()
 
@@ -392,6 +409,7 @@ export async function startServer(): Promise<ServerInstance> {
   const memoAccumulatorHandler = new MemoAccumulatorHandler(pool)
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
+  const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
 
   // Ensure listeners exist in database
   await broadcastHandler.ensureListener()
@@ -403,6 +421,7 @@ export async function startServer(): Promise<ServerInstance> {
   await memoAccumulatorHandler.ensureListener()
   await commandHandler.ensureListener()
   await mentionInvokeHandler.ensureListener()
+  await attachmentUploadedHandler.ensureListener()
 
   // Register all handlers with dispatcher
   outboxDispatcher.register(broadcastHandler)
@@ -414,6 +433,7 @@ export async function startServer(): Promise<ServerInstance> {
   outboxDispatcher.register(memoAccumulatorHandler)
   outboxDispatcher.register(commandHandler)
   outboxDispatcher.register(mentionInvokeHandler)
+  outboxDispatcher.register(attachmentUploadedHandler)
 
   // Start single LISTEN connection that notifies all handlers
   await outboxDispatcher.start()

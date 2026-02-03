@@ -1,6 +1,6 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../db"
-import { AttachmentRepository, Attachment, OutboxRepository } from "../repositories"
+import { AttachmentRepository, AttachmentExtractionRepository, Attachment, OutboxRepository } from "../repositories"
 import type { StorageProvider } from "../lib/storage/s3-client"
 
 export interface CreateAttachmentParams {
@@ -77,7 +77,10 @@ export class AttachmentService {
     // Delete from S3
     await this.storage.delete(attachment.storagePath)
 
-    // Delete from database
-    return withTransaction(this.pool, (client) => AttachmentRepository.delete(client, id))
+    // Delete from database (attachment + extraction)
+    return withTransaction(this.pool, async (client) => {
+      await AttachmentExtractionRepository.deleteByAttachmentId(client, id)
+      return AttachmentRepository.delete(client, id)
+    })
   }
 }

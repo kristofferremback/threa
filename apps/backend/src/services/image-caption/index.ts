@@ -1,0 +1,5 @@
+export { ImageCaptionService } from "./service"
+export { StubImageCaptionService } from "./service.stub"
+export type { ImageCaptionServiceDeps } from "./service"
+export type { ImageCaptionServiceLike } from "./types"
+export { IMAGE_CAPTION_MODEL_ID, IMAGE_CAPTION_TEMPERATURE, isImageAttachment, IMAGE_EXTENSIONS } from "./config"

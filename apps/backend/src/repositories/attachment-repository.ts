@@ -1,5 +1,4 @@
-import { PoolClient } from "pg"
-import { sql } from "../db"
+import { sql, type Querier } from "../db"
 import type { StorageProvider, ProcessingStatus } from "@threa/types"
 
 // Internal row type (snake_case, not exported)
@@ -71,14 +70,14 @@ const SELECT_FIELDS = `
 `
 
 export const AttachmentRepository = {
-  async findById(client: PoolClient, id: string): Promise<Attachment | null> {
+  async findById(client: Querier, id: string): Promise<Attachment | null> {
     const result = await client.query<AttachmentRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE id = ${id}`
     )
     return result.rows[0] ? mapRowToAttachment(result.rows[0]) : null
   },
 
-  async findByIds(client: PoolClient, ids: string[]): Promise<Attachment[]> {
+  async findByIds(client: Querier, ids: string[]): Promise<Attachment[]> {
     if (ids.length === 0) return []
     const result = await client.query<AttachmentRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE id = ANY(${ids})`
@@ -86,14 +85,14 @@ export const AttachmentRepository = {
     return result.rows.map(mapRowToAttachment)
   },
 
-  async findByMessageId(client: PoolClient, messageId: string): Promise<Attachment[]> {
+  async findByMessageId(client: Querier, messageId: string): Promise<Attachment[]> {
     const result = await client.query<AttachmentRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE message_id = ${messageId}`
     )
     return result.rows.map(mapRowToAttachment)
   },
 
-  async findByMessageIds(client: PoolClient, messageIds: string[]): Promise<Map<string, Attachment[]>> {
+  async findByMessageIds(client: Querier, messageIds: string[]): Promise<Map<string, Attachment[]>> {
     if (messageIds.length === 0) return new Map()
     const result = await client.query<AttachmentRow>(
       sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE message_id = ANY(${messageIds})`
@@ -109,7 +108,7 @@ export const AttachmentRepository = {
     return byMessage
   },
 
-  async insert(client: PoolClient, params: InsertAttachmentParams): Promise<Attachment> {
+  async insert(client: Querier, params: InsertAttachmentParams): Promise<Attachment> {
     const result = await client.query<AttachmentRow>(sql`
       INSERT INTO attachments (
         id, workspace_id, stream_id, uploaded_by,
@@ -133,7 +132,7 @@ export const AttachmentRepository = {
   },
 
   async attachToMessage(
-    client: PoolClient,
+    client: Querier,
     attachmentIds: string[],
     messageId: string,
     streamId: string
@@ -147,9 +146,48 @@ export const AttachmentRepository = {
     return result.rowCount ?? 0
   },
 
-  async delete(client: PoolClient, id: string): Promise<boolean> {
+  async delete(client: Querier, id: string): Promise<boolean> {
     const result = await client.query(sql`
       DELETE FROM attachments WHERE id = ${id}
+    `)
+    return (result.rowCount ?? 0) > 0
+  },
+
+  /**
+   * Update the processing status of an attachment.
+   * Returns true if the update was applied, false otherwise.
+   *
+   * @param onlyIfStatus - If provided, only update if current status matches this value (atomic transition)
+   * @param onlyIfStatusIn - If provided, only update if current status is in this array (for retries)
+   */
+  async updateProcessingStatus(
+    client: Querier,
+    id: string,
+    status: ProcessingStatus,
+    options?: { onlyIfStatus?: ProcessingStatus; onlyIfStatusIn?: ProcessingStatus[] }
+  ): Promise<boolean> {
+    if (options?.onlyIfStatusIn) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET processing_status = ${status}
+        WHERE id = ${id} AND processing_status = ANY(${options.onlyIfStatusIn})
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    if (options?.onlyIfStatus) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET processing_status = ${status}
+        WHERE id = ${id} AND processing_status = ${options.onlyIfStatus}
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    const result = await client.query(sql`
+      UPDATE attachments
+      SET processing_status = ${status}
+      WHERE id = ${id}
     `)
     return (result.rowCount ?? 0) > 0
   },

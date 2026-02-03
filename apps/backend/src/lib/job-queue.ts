@@ -25,6 +25,7 @@ export const JobQueues = {
   MEMO_BATCH_PROCESS: "memo.batch-process",
   SIMULATE_RUN: "simulate.run",
   COMMAND_EXECUTE: "command.execute",
+  IMAGE_CAPTION: "image.caption",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -84,6 +85,14 @@ export interface CommandExecuteJobData {
   userId: string
 }
 
+export interface ImageCaptionJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  mimeType: string
+  storagePath: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -94,6 +103,7 @@ export interface JobDataMap {
   [JobQueues.MEMO_BATCH_PROCESS]: MemoBatchProcessJobData
   [JobQueues.SIMULATE_RUN]: SimulationJobData
   [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
+  [JobQueues.IMAGE_CAPTION]: ImageCaptionJobData
 }
 
 /**

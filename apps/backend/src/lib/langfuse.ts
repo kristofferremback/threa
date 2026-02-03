@@ -2,6 +2,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node"
 import { LangfuseSpanProcessor } from "@langfuse/otel"
 import { CallbackHandler } from "@langfuse/langchain"
 import { logger } from "./logger"
+import { overrideFetchForLangfuseMinio } from "./hacks"
 
 let otelSdk: NodeSDK | null = null
 
@@ -24,6 +25,8 @@ export function isLangfuseEnabled(): boolean {
  * Fails gracefully - if initialization fails, continues without tracing.
  */
 export function initLangfuse(): void {
+  overrideFetchForLangfuseMinio()
+
   if (!isLangfuseEnabled()) {
     logger.info("Langfuse not configured, skipping initialization")
     return

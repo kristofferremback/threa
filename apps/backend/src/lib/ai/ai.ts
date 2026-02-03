@@ -15,7 +15,7 @@ import {
   embed as aiEmbed,
   embedMany as aiEmbedMany,
 } from "ai"
-import type { Embedding, LanguageModel, EmbeddingModel } from "ai"
+import type { Embedding, LanguageModel, EmbeddingModel, ModelMessage } from "ai"
 import type { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { ChatOpenAI } from "@langchain/openai"
@@ -88,9 +88,39 @@ export interface CostContext {
 /** Message types matching Vercel AI SDK */
 export type MessageRole = "system" | "user" | "assistant"
 
+/**
+ * Text content part for multi-modal messages.
+ * Matches AI SDK's TextPart type.
+ */
+export interface TextContentPart {
+  type: "text"
+  text: string
+}
+
+/**
+ * Image content part for multi-modal messages.
+ * Matches AI SDK's ImagePart type.
+ *
+ * The image field accepts:
+ * - Base64-encoded string
+ * - Base64 data URL (e.g., "data:image/png;base64,...")
+ * - HTTP(S) URL
+ * - Uint8Array, Buffer, or ArrayBuffer
+ */
+export interface ImageContentPart {
+  type: "image"
+  /** Image data: base64 string, data URL, http(s) URL, or binary data */
+  image: string | Uint8Array | Buffer | ArrayBuffer | URL
+  /** Optional IANA media type (e.g., "image/png", "image/jpeg") */
+  mimeType?: string
+}
+
+/** Content that can be either a simple string or an array of content parts */
+export type MessageContent = string | (TextContentPart | ImageContentPart)[]
+
 export interface Message {
   role: MessageRole
-  content: string
+  content: MessageContent
 }
 
 export interface GenerateTextOptions {
@@ -451,7 +481,9 @@ export function createAI(config: AIConfig): AI {
       const model = getLanguageModel(options.model)
       const response = await aiGenerateText({
         model,
-        messages: options.messages,
+        // Our Message type is compatible with AI SDK's ModelMessage at runtime
+        // The cast is needed because our role type is a union while SDK uses discriminated types
+        messages: options.messages as ModelMessage[],
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
@@ -484,7 +516,8 @@ export function createAI(config: AIConfig): AI {
       const response = await aiGenerateObject({
         model,
         schema: options.schema,
-        messages: options.messages,
+        // Our Message type is compatible with AI SDK's ModelMessage at runtime
+        messages: options.messages as ModelMessage[],
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         experimental_repairText: repair,

@@ -4,6 +4,7 @@ import type { S3Config } from "../env"
 
 export interface StorageProvider {
   getSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
+  getObject(key: string): Promise<Buffer>
   delete(key: string): Promise<void>
 }
 
@@ -31,6 +32,25 @@ export function createS3Storage(config: S3Config): StorageProvider {
         Key: key,
       })
       return getSignedUrl(client, command, { expiresIn })
+    },
+
+    async getObject(key: string): Promise<Buffer> {
+      const command = new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+      })
+      const response = await client.send(command)
+
+      if (!response.Body) {
+        throw new Error(`No body in S3 response for key: ${key}`)
+      }
+
+      // Convert readable stream to Buffer
+      const chunks: Uint8Array[] = []
+      for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+        chunks.push(chunk)
+      }
+      return Buffer.concat(chunks)
     },
 
     async delete(key: string): Promise<void> {

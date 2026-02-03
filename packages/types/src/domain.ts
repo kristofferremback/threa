@@ -26,6 +26,7 @@ import type {
   MemoStatus,
   PendingItemType,
   SourceType,
+  ExtractionContentType,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -258,4 +259,53 @@ export interface MemoStreamState {
   streamId: string
   lastProcessedAt: string | null
   lastActivityAt: string
+}
+
+/**
+ * Structured data extracted from charts.
+ * Fields use `| null` to match Zod schema output.
+ */
+export interface ChartData {
+  chartType: string
+  title: string | null
+  axes: { x: string | null; y: string | null } | null
+  dataPoints: Array<{ label: string; value: string | number }> | null
+  trends: string[] | null
+}
+
+/**
+ * Structured data extracted from tables.
+ * Fields use `| null` to match Zod schema output.
+ */
+export interface TableData {
+  headers: string[]
+  rows: string[][]
+  summary: string | null
+}
+
+/**
+ * Structured data extracted from diagrams.
+ * Fields use `| null` to match Zod schema output.
+ */
+export interface DiagramData {
+  diagramType: string
+  nodes: Array<{ id: string; label: string }> | null
+  connections: Array<{ from: string; to: string; label: string | null }> | null
+  description: string | null
+}
+
+/**
+ * Extracted content from an attachment (images, documents, etc.).
+ * Created by image captioning pipeline for AI agent context.
+ */
+export interface AttachmentExtraction {
+  id: string
+  attachmentId: string
+  workspaceId: string
+  contentType: ExtractionContentType
+  summary: string
+  fullText: string | null
+  structuredData: ChartData | TableData | DiagramData | null
+  createdAt: string
+  updatedAt: string
 }

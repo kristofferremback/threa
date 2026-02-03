@@ -22,6 +22,9 @@ export type { Message, InsertMessageParams } from "./message-repository"
 export { AttachmentRepository } from "./attachment-repository"
 export type { Attachment, InsertAttachmentParams } from "./attachment-repository"
 
+export { AttachmentExtractionRepository } from "./attachment-extraction-repository"
+export type { AttachmentExtraction, InsertAttachmentExtractionParams } from "./attachment-extraction-repository"
+
 export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "./outbox-repository"
 export type {
   OutboxEvent,
