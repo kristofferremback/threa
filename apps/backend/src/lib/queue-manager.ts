@@ -1,11 +1,12 @@
 import type { Pool } from "pg"
+import { withTransaction } from "../db"
 import pLimit from "p-limit"
 import type { QueueRepository } from "../repositories/queue-repository"
 import type { TokenPoolRepository } from "../repositories/token-pool-repository"
 import { CronRepository, type CronTick } from "../repositories/cron-repository"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
-import type { JobDataMap, JobQueueName, JobHandler } from "./job-queue"
+import type { JobDataMap, JobQueueName, JobHandler, HandlerOptions, HandlerHooks } from "./job-queue"
 import { queueId, workerId, tickerId, cronId } from "./id"
 import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "./metrics"
 
@@ -69,6 +70,7 @@ export class QueueManager {
   private readonly refillDebounceMs: number
   private readonly maxActiveTokens: number
   private readonly handlers = new Map<string, JobHandler<unknown>>()
+  private readonly handlerHooks = new Map<string, HandlerHooks<unknown>>()
   private readonly managerId: string
   private isStarted = false
   private isStopping = false
@@ -121,11 +123,18 @@ export class QueueManager {
    * Register handler for a queue.
    * Must be called before start().
    */
-  registerHandler<T extends JobQueueName>(queueName: T, handler: JobHandler<JobDataMap[T]>): void {
+  registerHandler<T extends JobQueueName>(
+    queueName: T,
+    handler: JobHandler<JobDataMap[T]>,
+    options?: HandlerOptions<JobDataMap[T]>
+  ): void {
     if (this.isStarted) {
       throw new Error(`Cannot register handler for ${queueName}: queue already started`)
     }
     this.handlers.set(queueName, handler as JobHandler<unknown>)
+    if (options?.hooks) {
+      this.handlerHooks.set(queueName, options.hooks as HandlerHooks<unknown>)
+    }
   }
 
   /**
@@ -537,7 +546,7 @@ export class QueueManager {
         messages.map((message) =>
           limit(async () => {
             try {
-              await this.processMessage(message, workerIdValue, completedMessageIds, token.workspaceId)
+              await this.processMessage(message, workerIdValue, completedMessageIds)
             } catch (err) {
               // Error already logged and handled in processMessage
               // Continue processing other messages
@@ -584,11 +593,18 @@ export class QueueManager {
    * not per-message, to reduce database queries.
    */
   private async processMessage(
-    message: { id: string; queueName: string; payload: unknown; failedCount: number },
+    message: {
+      id: string
+      queueName: string
+      workspaceId: string
+      payload: unknown
+      failedCount: number
+      insertedAt: Date
+    },
     workerId: string,
-    completedMessageIds: Set<string>,
-    workspaceId: string
+    completedMessageIds: Set<string>
   ): Promise<void> {
+    const workspaceId = message.workspaceId
     // Handler must exist - we only lease tokens for queues with registered handlers
     const handler = this.handlers.get(message.queueName)!
 
@@ -627,7 +643,7 @@ export class QueueManager {
 
       if (newFailedCount >= this.maxRetries) {
         // Move to DLQ
-        await this.moveMessageToDlq(message.id, workerId, error.message)
+        await this.moveMessageToDlq(message, workerId, error)
         completedMessageIds.add(message.id)
 
         queueMessagesProcessed.inc({ queue: message.queueName, status: "dlq", workspace_id: workspaceId })
@@ -687,16 +703,60 @@ export class QueueManager {
 
   /**
    * Move message to DLQ.
+   *
+   * If an onDLQ hook is registered, it runs in a savepoint:
+   * - Hook writes only persist if the DLQ move commits
+   * - Hook failure is logged but doesn't prevent the DLQ move
    */
-  private async moveMessageToDlq(messageId: string, workerId: string, error: string): Promise<void> {
+  private async moveMessageToDlq(
+    message: {
+      id: string
+      queueName: string
+      workspaceId: string
+      payload: unknown
+      failedCount: number
+      insertedAt: Date
+    },
+    workerId: string,
+    error: Error
+  ): Promise<void> {
     const now = new Date()
+    const hooks = this.handlerHooks.get(message.queueName)
+    const onDLQHook = hooks?.onDLQ
 
-    await this.queueRepo.failDlq(this.pool, {
-      messageId,
-      claimedBy: workerId,
-      error,
-      dlqAt: now,
-    })
+    if (onDLQHook) {
+      await withTransaction(this.pool, async (client) => {
+        await this.queueRepo.failDlq(client, {
+          messageId: message.id,
+          claimedBy: workerId,
+          error: error.message,
+          dlqAt: now,
+        })
+
+        // Run hook in savepoint - failure doesn't prevent DLQ move
+        try {
+          await withTransaction(client, async (hookClient) => {
+            await onDLQHook(hookClient, { id: message.id, name: message.queueName, data: message.payload }, error, {
+              failedCount: message.failedCount,
+              insertedAt: message.insertedAt,
+              workspaceId: message.workspaceId,
+            })
+          })
+        } catch (hookError) {
+          logger.error(
+            { messageId: message.id, queueName: message.queueName, err: hookError },
+            "onDLQ hook failed - DLQ move will still commit"
+          )
+        }
+      })
+    } else {
+      await this.queueRepo.failDlq(this.pool, {
+        messageId: message.id,
+        claimedBy: workerId,
+        error: error.message,
+        dlqAt: now,
+      })
+    }
   }
 
   /**

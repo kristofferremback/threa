@@ -1,5 +1,6 @@
 import { Pool, PoolClient, PoolConfig, QueryConfig, QueryResult, QueryResultRow } from "pg"
 import { sql } from "squid/pg"
+import { ulid } from "ulid"
 import { logger } from "../lib/logger"
 
 export { sql }
@@ -179,12 +180,50 @@ function isRecoverableConnectionError(err: unknown): boolean {
   return error.code === "57P05" || error.code === "ECONNRESET"
 }
 
-export async function withTransaction<T>(pool: Pool, callback: (client: PoolClient) => Promise<T>): Promise<T> {
+/**
+ * Check if a querier is a PoolClient (already has connection, possibly in transaction).
+ * PoolClient has a `release` method that Pool doesn't have.
+ */
+function isPoolClient(db: Pool | PoolClient): db is PoolClient {
+  return "release" in db && typeof db.release === "function"
+}
+
+/**
+ * Execute callback in a transaction.
+ *
+ * Supports nested transactions via savepoints:
+ * - Pass Pool: starts a new transaction (BEGIN/COMMIT)
+ * - Pass PoolClient: uses a savepoint (nested transaction)
+ *
+ * This allows callers to use withTransaction without knowing if they're
+ * already inside a transaction - the right thing happens automatically.
+ */
+export async function withTransaction<T>(
+  db: Pool | PoolClient,
+  callback: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  if (isPoolClient(db)) {
+    // Already have a client - use savepoint for nested transaction
+    const savepointName = `sp_${ulid()}`
+    await db.query(`SAVEPOINT ${savepointName}`)
+    try {
+      const result = await callback(db)
+      await db.query(`RELEASE SAVEPOINT ${savepointName}`)
+      return result
+    } catch (error) {
+      await db.query(`ROLLBACK TO SAVEPOINT ${savepointName}`).catch(() => {
+        // Ignore rollback errors
+      })
+      throw error
+    }
+  }
+
+  // Top-level transaction from pool
   let lastError: unknown
 
   // Retry once on recoverable connection errors
   for (let attempt = 0; attempt < 2; attempt++) {
-    const client = await pool.connect()
+    const client = await db.connect()
     try {
       await client.query("BEGIN")
       const result = await callback(client)
