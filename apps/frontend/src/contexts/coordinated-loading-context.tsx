@@ -60,6 +60,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const [isReady, setIsReady] = useState(false)
   const initialLoadCompleteRef = useRef(false)
   const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
@@ -105,6 +106,11 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   // This shows for both initial loads AND reconnect loads
   useEffect(() => {
     if (isLoading) {
+      // Clear any pending hide timeout
+      if (hideIndicatorTimerRef.current) {
+        clearTimeout(hideIndicatorTimerRef.current)
+        hideIndicatorTimerRef.current = null
+      }
       // Start timer to show loading indicator after delay
       loadingIndicatorTimerRef.current = setTimeout(() => {
         setShowLoadingIndicator(true)
@@ -116,12 +122,15 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
         loadingIndicatorTimerRef.current = null
       }
       // Small delay before hiding for smooth transition
-      setTimeout(() => setShowLoadingIndicator(false), 100)
+      hideIndicatorTimerRef.current = setTimeout(() => setShowLoadingIndicator(false), 100)
     }
 
     return () => {
       if (loadingIndicatorTimerRef.current) {
         clearTimeout(loadingIndicatorTimerRef.current)
+      }
+      if (hideIndicatorTimerRef.current) {
+        clearTimeout(hideIndicatorTimerRef.current)
       }
     }
   }, [isLoading])

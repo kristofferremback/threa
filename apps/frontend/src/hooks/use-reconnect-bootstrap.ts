@@ -11,9 +11,9 @@ import { streamKeys } from "./use-streams"
  * 1. Invalidates workspace bootstrap query to refetch fresh data
  * 2. Invalidates all stream bootstrap queries to refetch fresh data
  *
- * The actual room re-joining is handled automatically by useSocketEvents and
- * useStreamSocket - when their useEffect runs again due to the socket
- * reconnecting, they will emit "join" for their rooms.
+ * Room re-joining is handled by useSocketEvents and useStreamSocket which
+ * include reconnectCount in their dependency arrays, causing them to re-run
+ * and emit "join" for their rooms when reconnectCount changes.
  *
  * React Query's invalidation will trigger refetches, which combined with
  * the re-joining of rooms follows the subscribe-then-bootstrap pattern.
