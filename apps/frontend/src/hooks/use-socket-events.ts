@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
-import { useSocket } from "@/contexts"
+import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
@@ -77,6 +77,7 @@ interface UserPreferencesUpdatedPayload {
 export function useSocketEvents(workspaceId: string) {
   const queryClient = useQueryClient()
   const socket = useSocket()
+  const reconnectCount = useSocketReconnectCount()
   const { user } = useAuth()
   const { streamId: currentStreamId } = useParams<{ streamId: string }>()
 
@@ -392,5 +393,5 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:activity")
       socket.off("user_preferences:updated")
     }
-  }, [socket, workspaceId, queryClient, user])
+  }, [socket, workspaceId, queryClient, user, reconnectCount])
 }

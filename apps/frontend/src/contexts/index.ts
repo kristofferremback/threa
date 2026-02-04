@@ -12,7 +12,15 @@ export {
   type MessageService,
   type ConversationService,
 } from "./services-context"
-export { SocketProvider, useSocket, useSocketConnected } from "./socket-context"
+export {
+  SocketProvider,
+  useSocket,
+  useSocketStatus,
+  useSocketConnected,
+  useSocketReconnectCount,
+  useSocketIsReconnecting,
+  type SocketStatus,
+} from "./socket-context"
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
 export { PanelProvider, usePanel, isDraftPanel, parseDraftPanel, createDraftPanelId } from "./panel-context"
 export { QuickSwitcherProvider, useQuickSwitcher } from "./quick-switcher-context"

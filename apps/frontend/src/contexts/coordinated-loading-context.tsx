@@ -36,6 +36,12 @@ interface CoordinatedLoadingContextValue {
 
   /** Get error details for a stream in error state */
   getStreamError: (streamId: string) => StreamError | undefined
+
+  /** True when any loading is happening (for topbar loading indicator) */
+  isLoading: boolean
+
+  /** True when loading indicator should be visible (after delay, same as skeleton) */
+  showLoadingIndicator: boolean
 }
 
 const CoordinatedLoadingContext = createContext<CoordinatedLoadingContextValue | null>(null)
@@ -46,12 +52,15 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const SKELETON_DELAY_MS = 1000
+const LOADING_DELAY_MS = 1000
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [showLoadingIndicator, setShowLoadingIndicator] = useState(false)
   const [isReady, setIsReady] = useState(false)
   const initialLoadCompleteRef = useRef(false)
+  const loadingIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hideIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { isLoading: workspaceLoading } = useWorkspaceBootstrap(workspaceId)
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
@@ -88,10 +97,43 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
 
     const timer = setTimeout(() => {
       setShowSkeleton(true)
-    }, SKELETON_DELAY_MS)
+    }, LOADING_DELAY_MS)
 
     return () => clearTimeout(timer)
   }, [isLoading, isReady])
+
+  // Show loading indicator after delay (for slow loads)
+  // This shows for both initial loads AND reconnect loads
+  useEffect(() => {
+    if (isLoading) {
+      // Clear any pending hide timeout
+      if (hideIndicatorTimerRef.current) {
+        clearTimeout(hideIndicatorTimerRef.current)
+        hideIndicatorTimerRef.current = null
+      }
+      // Start timer to show loading indicator after delay
+      loadingIndicatorTimerRef.current = setTimeout(() => {
+        setShowLoadingIndicator(true)
+      }, LOADING_DELAY_MS)
+    } else {
+      // Clear timer and hide indicator when loading completes
+      if (loadingIndicatorTimerRef.current) {
+        clearTimeout(loadingIndicatorTimerRef.current)
+        loadingIndicatorTimerRef.current = null
+      }
+      // Small delay before hiding for smooth transition
+      hideIndicatorTimerRef.current = setTimeout(() => setShowLoadingIndicator(false), 100)
+    }
+
+    return () => {
+      if (loadingIndicatorTimerRef.current) {
+        clearTimeout(loadingIndicatorTimerRef.current)
+      }
+      if (hideIndicatorTimerRef.current) {
+        clearTimeout(hideIndicatorTimerRef.current)
+      }
+    }
+  }, [isLoading])
 
   // Build a map of stream states for O(1) lookup
   // Filter out both draft scratchpads (draft_xxx) and draft thread panels (draft:xxx:xxx)
@@ -154,8 +196,8 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const hasErrors = streamErrors.length > 0
 
   const value = useMemo<CoordinatedLoadingContextValue>(
-    () => ({ phase, hasErrors, getStreamState, getStreamError }),
-    [phase, hasErrors, getStreamState, getStreamError]
+    () => ({ phase, hasErrors, getStreamState, getStreamError, isLoading, showLoadingIndicator }),
+    [phase, hasErrors, getStreamState, getStreamError, isLoading, showLoadingIndicator]
   )
 
   return <CoordinatedLoadingContext.Provider value={value}>{children}</CoordinatedLoadingContext.Provider>

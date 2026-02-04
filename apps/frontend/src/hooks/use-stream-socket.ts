@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useSocket } from "@/contexts"
+import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { db } from "@/db"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
@@ -86,6 +86,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
   const shouldSubscribe = options?.enabled ?? true
   const queryClient = useQueryClient()
   const socket = useSocket()
+  const reconnectCount = useSocketReconnectCount()
 
   useEffect(() => {
     if (!socket || !workspaceId || !streamId || !shouldSubscribe) return
@@ -385,5 +386,5 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
       socket.off("agent_session:completed", handleAgentSessionEvent)
       socket.off("agent_session:failed", handleAgentSessionEvent)
     }
-  }, [socket, workspaceId, streamId, shouldSubscribe, queryClient])
+  }, [socket, workspaceId, streamId, shouldSubscribe, queryClient, reconnectCount])
 }
