@@ -333,6 +333,8 @@ spyOn(SomeRepository, "someMethod").mockResolvedValue(mockData)
 
 If you MUST use `mock.module()`, only do so for modules that are exclusively used by the code under test and not imported by any other test file.
 
+**INV-49: No Deprecated Aliases** - Never create `@deprecated` export aliases for renamed functions, constants, or types. Deprecated aliases add cognitive load, clutter exports, and suggest the codebase isn't maintained. When renaming, update all call sites in the same commit. Git has history if someone needs to find the old name. This is a corollary of INV-38 (Delete Dead Code Immediately).
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
