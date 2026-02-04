@@ -769,7 +769,7 @@ export class PersonaAgent {
               if (!attachment) return null
 
               // Check access: attachment must be in an accessible stream
-              if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
                 return null
               }
 
@@ -803,7 +803,7 @@ export class PersonaAgent {
                 if (!attachment) return null
 
                 // Check access
-                if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+                if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
                   return null
                 }
 
@@ -834,7 +834,7 @@ export class PersonaAgent {
               if (!attachment) return null
 
               // Check access
-              if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
                 return null
               }
 
