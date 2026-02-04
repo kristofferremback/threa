@@ -173,9 +173,11 @@ export class StreamNamingService {
     }
 
     // Format messages with attachment extractions (quick read for author names)
-    const conversationText = await withClient(this.pool, async (client) => {
-      return this.messageFormatter.formatMessagesWithAttachments(client, messages, attachmentsByMessageId)
-    })
+    const conversationText = await this.messageFormatter.formatMessagesWithAttachments(
+      this.pool,
+      messages,
+      attachmentsByMessageId
+    )
 
     // Phase 2: AI processing (no connection held, 1-5+ seconds!)
     const existingNames = otherStreams
