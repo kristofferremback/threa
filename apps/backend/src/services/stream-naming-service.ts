@@ -10,7 +10,7 @@ import { COMPONENT_PATHS } from "../lib/ai/config-resolver"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
-import { awaitAttachmentProcessing } from "../lib/await-image-processing"
+import { awaitAttachmentProcessing } from "../lib/await-attachment-processing"
 import { MAX_MESSAGES_FOR_NAMING, MAX_EXISTING_NAMES, buildNamingSystemPrompt } from "./stream-naming/config"
 
 export interface GenerateNameResult {

@@ -63,7 +63,7 @@ mock.module("../repositories/message-repository", () => ({
 
 // AttachmentRepository will be mocked via spyOn in beforeEach
 // Note: We do NOT mock awaitAttachmentProcessing via mock.module because that
-// pollutes the module cache and breaks await-image-processing.test.ts.
+// pollutes the module cache and breaks await-attachment-processing.test.ts.
 // Instead, awaitAttachmentProcessing will use the spyOn'd AttachmentRepository.
 
 mock.module("../repositories/outbox-repository", () => ({

@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test"
-import { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-image-processing"
+import { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-attachment-processing"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import type { Attachment } from "../repositories/attachment-repository"
 
