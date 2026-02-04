@@ -1,6 +1,7 @@
 import { forwardRef } from "react"
 import type { Placement } from "@floating-ui/react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { PersonaAvatar } from "@/components/persona-avatar"
 import { cn } from "@/lib/utils"
 import { SuggestionList, type SuggestionListRef } from "./suggestion-list"
 import type { Mentionable } from "./types"
@@ -35,13 +36,17 @@ const typeLabels: Record<Mentionable["type"], string> = {
 }
 
 function MentionItem({ item }: { item: Mentionable }) {
+  const fallback = item.avatarEmoji ?? item.name.slice(0, 2).toUpperCase()
+
   return (
     <>
-      <Avatar className="h-7 w-7 shrink-0">
-        <AvatarFallback className={cn("text-xs font-semibold", avatarStyles[item.type])}>
-          {item.avatarEmoji ?? item.name.slice(0, 2).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
+      {item.type === "persona" ? (
+        <PersonaAvatar slug={item.slug} fallback={fallback} size="sm" />
+      ) : (
+        <Avatar className="h-7 w-7 shrink-0">
+          <AvatarFallback className={cn("text-xs font-semibold", avatarStyles[item.type])}>{fallback}</AvatarFallback>
+        </Avatar>
+      )}
       <div className="flex flex-1 flex-col items-start min-w-0">
         <div className="flex items-center gap-1.5 w-full">
           <span className="text-[13px] font-medium truncate">
