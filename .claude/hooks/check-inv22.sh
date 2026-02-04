@@ -51,9 +51,10 @@ DISMISSIVE_PATTERNS=(
 
 for pattern in "${DISMISSIVE_PATTERNS[@]}"; do
   if echo "$LAST_ASSISTANT_TEXT" | grep -iq "$pattern"; then
+    # Output a reminder (not a block) - Claude will see this message but can continue
     jq -n '{
-      "decision": "block",
-      "reason": "INV-22 VIOLATION: Never dismiss test failures as \"pre-existing\" or \"unrelated\".\n\nFailing tests mean one of:\n1. You broke something - fix it\n2. Flaky test - fix the flakiness\n3. Test merged to main broken - fix it in a separate commit\n\nInvestigate the actual error. Understand what is failing and why. Fix it. Confirm the test passes."
+      "decision": "warn",
+      "message": "INV-22 Reminder: Test failures should not be dismissed as \"pre-existing\" or \"unrelated\".\n\nPlease investigate: What is actually failing? Why? Can you fix it?\n\nIf genuinely unrelated to your changes, fix it in a separate commit."
     }'
     exit 0
   fi

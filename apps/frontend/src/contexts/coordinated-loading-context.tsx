@@ -40,7 +40,7 @@ interface CoordinatedLoadingContextValue {
   /** True when any loading is happening (for topbar loading indicator) */
   isLoading: boolean
 
-  /** True when loading indicator should be visible (after 200ms delay) */
+  /** True when loading indicator should be visible (after delay, same as skeleton) */
   showLoadingIndicator: boolean
 }
 
@@ -52,8 +52,7 @@ interface CoordinatedLoadingProviderProps {
   children: ReactNode
 }
 
-const SKELETON_DELAY_MS = 1000
-const LOADING_INDICATOR_DELAY_MS = 200
+const LOADING_DELAY_MS = 1000
 
 export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }: CoordinatedLoadingProviderProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
@@ -97,7 +96,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
 
     const timer = setTimeout(() => {
       setShowSkeleton(true)
-    }, SKELETON_DELAY_MS)
+    }, LOADING_DELAY_MS)
 
     return () => clearTimeout(timer)
   }, [isLoading, isReady])
@@ -109,7 +108,7 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
       // Start timer to show loading indicator after delay
       loadingIndicatorTimerRef.current = setTimeout(() => {
         setShowLoadingIndicator(true)
-      }, LOADING_INDICATOR_DELAY_MS)
+      }, LOADING_DELAY_MS)
     } else {
       // Clear timer and hide indicator when loading completes
       if (loadingIndicatorTimerRef.current) {

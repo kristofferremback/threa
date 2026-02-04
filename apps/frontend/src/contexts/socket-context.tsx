@@ -1,20 +1,27 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
 import { io, Socket } from "socket.io-client"
 
+/**
+ * Socket connection status.
+ * - "disconnected": No connection (initial state or after reconnect failure)
+ * - "connecting": Attempting initial connection
+ * - "connected": Successfully connected
+ * - "reconnecting": Was connected, now attempting to reconnect
+ */
+export type SocketStatus = "disconnected" | "connecting" | "connected" | "reconnecting"
+
 interface SocketContextValue {
   socket: Socket | null
-  isConnected: boolean
+  /** Current connection status */
+  status: SocketStatus
   /** Counter that increments on each reconnection (use in useEffect deps to trigger re-bootstrap) */
   reconnectCount: number
-  /** True when we've had a connection before and are now reconnecting */
-  isReconnecting: boolean
 }
 
 const SocketContext = createContext<SocketContextValue>({
   socket: null,
-  isConnected: false,
+  status: "disconnected",
   reconnectCount: 0,
-  isReconnecting: false,
 })
 
 interface SocketProviderProps {
@@ -23,9 +30,8 @@ interface SocketProviderProps {
 
 export function SocketProvider({ children }: SocketProviderProps) {
   const [socket, setSocket] = useState<Socket | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
+  const [status, setStatus] = useState<SocketStatus>("connecting")
   const [reconnectCount, setReconnectCount] = useState(0)
-  const [isReconnecting, setIsReconnecting] = useState(false)
 
   // Track if we've ever been connected (to distinguish initial connect from reconnect)
   const hasEverConnectedRef = useRef(false)
@@ -38,13 +44,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
     })
 
     newSocket.on("connect", () => {
-      const wasReconnecting = hasEverConnectedRef.current && !isConnected
+      const wasReconnecting = hasEverConnectedRef.current
       hasEverConnectedRef.current = true
-      setIsConnected(true)
-      setIsReconnecting(false)
+      setStatus("connected")
 
       if (wasReconnecting) {
-        // This is a reconnect, not initial connect
         setReconnectCount((c) => c + 1)
         console.log("[Socket] Reconnected successfully")
       } else {
@@ -53,10 +57,11 @@ export function SocketProvider({ children }: SocketProviderProps) {
     })
 
     newSocket.on("disconnect", (reason) => {
-      setIsConnected(false)
       if (hasEverConnectedRef.current) {
-        setIsReconnecting(true)
+        setStatus("reconnecting")
         console.log("[Socket] Disconnected:", reason)
+      } else {
+        setStatus("disconnected")
       }
     })
 
@@ -66,7 +71,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Socket.io manager events for reconnection tracking
     newSocket.io.on("reconnect_attempt", (attempt) => {
-      setIsReconnecting(true)
+      setStatus("reconnecting")
       console.log(`[Socket] Reconnect attempt ${attempt}`)
     })
 
@@ -76,7 +81,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     newSocket.io.on("reconnect_failed", () => {
       console.error("[Socket] Reconnect failed - giving up")
-      setIsReconnecting(false)
+      setStatus("disconnected")
     })
 
     setSocket(newSocket)
@@ -86,19 +91,19 @@ export function SocketProvider({ children }: SocketProviderProps) {
     }
   }, [])
 
-  return (
-    <SocketContext.Provider value={{ socket, isConnected, reconnectCount, isReconnecting }}>
-      {children}
-    </SocketContext.Provider>
-  )
+  return <SocketContext.Provider value={{ socket, status, reconnectCount }}>{children}</SocketContext.Provider>
 }
 
 export function useSocket(): Socket | null {
   return useContext(SocketContext).socket
 }
 
+export function useSocketStatus(): SocketStatus {
+  return useContext(SocketContext).status
+}
+
 export function useSocketConnected(): boolean {
-  return useContext(SocketContext).isConnected
+  return useContext(SocketContext).status === "connected"
 }
 
 export function useSocketReconnectCount(): number {
@@ -106,5 +111,5 @@ export function useSocketReconnectCount(): number {
 }
 
 export function useSocketIsReconnecting(): boolean {
-  return useContext(SocketContext).isReconnecting
+  return useContext(SocketContext).status === "reconnecting"
 }

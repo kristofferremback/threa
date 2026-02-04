@@ -15,9 +15,11 @@ export {
 export {
   SocketProvider,
   useSocket,
+  useSocketStatus,
   useSocketConnected,
   useSocketReconnectCount,
   useSocketIsReconnecting,
+  type SocketStatus,
 } from "./socket-context"
 export { PendingMessagesProvider, usePendingMessages } from "./pending-messages-context"
 export { PanelProvider, usePanel, isDraftPanel, parseDraftPanel, createDraftPanelId } from "./panel-context"
