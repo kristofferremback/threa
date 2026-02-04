@@ -237,7 +237,11 @@ describe("Context Builder", () => {
         expect(context).toMatchObject({
           streamType: StreamTypes.THREAD,
           streamInfo: { name: "Thread Discussion" },
-          conversationHistory: [{ contentMarkdown: "Reply in thread" }],
+          // Parent message is prepended to conversation history for full context
+          conversationHistory: [
+            { contentMarkdown: "This is the parent message that spawned the thread" },
+            { contentMarkdown: "Reply in thread" },
+          ],
           threadContext: {
             depth: 2,
             path: [
@@ -344,6 +348,12 @@ describe("Context Builder", () => {
           depth: 3,
           path: [{ displayName: "Root Channel" }, { displayName: "Thread Level 1" }, { displayName: "Thread Level 2" }],
         })
+
+        // Parent message from thread1 should be prepended to conversation history
+        expect(context.conversationHistory).toMatchObject([
+          { contentMarkdown: "Second level message" },
+          { contentMarkdown: "Third level message" },
+        ])
       })
     })
   })

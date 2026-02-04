@@ -280,12 +280,28 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
 
 /**
  * Thread context: nested discussions. Traverses hierarchy to root.
+ *
+ * Includes the parent message that spawned the thread as the first message
+ * in conversation history. This ensures the agent sees the full context
+ * (including attachments like images) that led to the thread being created.
  */
 async function buildThreadContext(db: Querier, stream: Stream, temporal?: TemporalContext): Promise<StreamContext> {
   const messages = await MessageRepository.list(db, stream.id, { limit: MAX_CONTEXT_MESSAGES })
 
   // Build thread path from current thread up to root
   const threadPath = await buildThreadPath(db, stream)
+
+  // Include the parent message that spawned this thread as context.
+  // This is critical because the parent message may contain attachments (images, files)
+  // and context that the thread discussion is about.
+  let conversationHistory = messages
+  if (stream.parentMessageId) {
+    const parentMessage = await MessageRepository.findById(db, stream.parentMessageId)
+    if (parentMessage) {
+      // Prepend parent message to conversation history
+      conversationHistory = [parentMessage, ...messages]
+    }
+  }
 
   return {
     streamType: stream.type,
@@ -294,7 +310,7 @@ async function buildThreadContext(db: Querier, stream: Stream, temporal?: Tempor
       description: stream.description,
       slug: stream.slug,
     },
-    conversationHistory: messages,
+    conversationHistory,
     threadContext: {
       depth: threadPath.length,
       path: threadPath,
