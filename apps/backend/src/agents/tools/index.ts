@@ -21,6 +21,26 @@ export {
   type UserSearchResult,
   type StreamMessagesResult,
 } from "./search-workspace-tool"
+export {
+  createSearchAttachmentsTool,
+  type SearchAttachmentsInput,
+  type SearchAttachmentsCallbacks,
+  type AttachmentSearchResult,
+} from "./search-attachments-tool"
+export {
+  createGetAttachmentTool,
+  type GetAttachmentInput,
+  type GetAttachmentCallbacks,
+  type AttachmentDetails,
+} from "./get-attachment-tool"
+export {
+  createLoadAttachmentTool,
+  isMultimodalToolResult,
+  type LoadAttachmentInput,
+  type LoadAttachmentCallbacks,
+  type LoadAttachmentResult,
+  type MultimodalToolResult,
+} from "./load-attachment-tool"
 
 /**
  * Check if a tool is enabled for a persona.

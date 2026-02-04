@@ -9,6 +9,7 @@ import type { Message } from "../../repositories/message-repository"
 import { MemoRepository, type MemoSearchResult } from "../../repositories/memo-repository"
 import { SearchRepository } from "../../repositories/search-repository"
 import { StreamRepository } from "../../repositories/stream-repository"
+import { AttachmentRepository, type AttachmentWithExtraction } from "../../repositories/attachment-repository"
 import { ResearcherCache, type ResearcherCachedResult } from "./cache"
 import { computeAgentAccessSpec, type AgentAccessSpec } from "./access-spec"
 import {
@@ -16,6 +17,7 @@ import {
   enrichMessageSearchResults,
   type EnrichedMemoResult,
   type EnrichedMessageResult,
+  type EnrichedAttachmentResult,
 } from "./context-formatter"
 import { logger } from "../../lib/logger"
 import { SEMANTIC_DISTANCE_THRESHOLD } from "../../services/search/config"
@@ -45,6 +47,8 @@ export interface ResearcherResult {
   memos: EnrichedMemoResult[]
   /** Messages found (for debugging/logging) */
   messages: EnrichedMessageResult[]
+  /** Attachments found (for debugging/logging) */
+  attachments?: EnrichedAttachmentResult[]
 }
 
 /**
@@ -77,7 +81,7 @@ const decisionWithQueriesSchema = z.object({
   queries: z
     .array(
       z.object({
-        target: z.enum(["memos", "messages"]),
+        target: z.enum(["memos", "messages", "attachments"]),
         type: z.enum(["semantic", "exact"]),
         query: z.string(),
       })
@@ -92,7 +96,7 @@ const evaluationSchema = z.object({
   additionalQueries: z
     .array(
       z.object({
-        target: z.enum(["memos", "messages"]),
+        target: z.enum(["memos", "messages", "attachments"]),
         type: z.enum(["semantic", "exact"]),
         query: z.string(),
       })
@@ -252,6 +256,7 @@ export class Researcher {
     // Execute searches and collect results
     let allMemos: EnrichedMemoResult[] = []
     let allMessages: EnrichedMessageResult[] = []
+    let allAttachments: EnrichedAttachmentResult[] = []
     const searchesPerformed: ResearcherCachedResult["searchesPerformed"] = []
 
     // Execute initial queries (uses pool.query for DB operations, fast ~50-100ms)
@@ -265,6 +270,7 @@ export class Researcher {
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
+    allAttachments = [...allAttachments, ...initialResults.attachments]
     searchesPerformed.push(...initialResults.searches)
 
     // Step 3: Iterative evaluation - let the researcher decide if more searches are needed
@@ -276,6 +282,7 @@ export class Researcher {
         contextSummary,
         allMemos,
         allMessages,
+        allAttachments,
         config,
         workspaceId,
         triggerMessage.id
@@ -302,6 +309,7 @@ export class Researcher {
       // Deduplicate results
       const existingMemoIds = new Set(allMemos.map((m) => m.memo.id))
       const existingMessageIds = new Set(allMessages.map((m) => m.id))
+      const existingAttachmentIds = new Set(allAttachments.map((a) => a.id))
 
       for (const memo of additionalResults.memos) {
         if (!existingMemoIds.has(memo.memo.id)) {
@@ -317,21 +325,29 @@ export class Researcher {
         }
       }
 
+      for (const att of additionalResults.attachments) {
+        if (!existingAttachmentIds.has(att.id)) {
+          allAttachments.push(att)
+          existingAttachmentIds.add(att.id)
+        }
+      }
+
       searchesPerformed.push(...additionalResults.searches)
       iteration++
     }
 
     // Build sources for citation
-    const sources = this.buildSources(allMemos, allMessages, workspaceId)
+    const sources = this.buildSources(allMemos, allMessages, allAttachments, workspaceId)
 
     // Format retrieved context for system prompt
-    const retrievedContext = formatRetrievedContext(allMemos, allMessages)
+    const retrievedContext = formatRetrievedContext(allMemos, allMessages, allAttachments)
 
     logger.info(
       {
         messageId: triggerMessage.id,
         memoCount: allMemos.length,
         messageCount: allMessages.length,
+        attachmentCount: allAttachments.length,
         searchCount: searchesPerformed.length,
       },
       "Researcher completed"
@@ -343,6 +359,7 @@ export class Researcher {
       shouldSearch: true,
       memos: allMemos,
       messages: allMessages,
+      attachments: allAttachments,
     }
   }
 
@@ -399,12 +416,13 @@ If search is NOT needed, set needsSearch to false and queries to null.`,
     contextSummary: string,
     memos: EnrichedMemoResult[],
     messages: EnrichedMessageResult[],
+    attachments: EnrichedAttachmentResult[],
     config: ResearcherConfig,
     workspaceId: string,
     messageId: string
   ): Promise<z.infer<typeof evaluationSchema>> {
     const { ai } = this.deps
-    const resultsText = this.formatResultsForEvaluation(memos, messages)
+    const resultsText = this.formatResultsForEvaluation(memos, messages, attachments)
 
     try {
       const { value } = await ai.generateObject({
@@ -451,6 +469,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
   ): Promise<{
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]
+    attachments: EnrichedAttachmentResult[]
     searches: ResearcherCachedResult["searchesPerformed"]
   }> {
     // Execute all queries in parallel
@@ -462,6 +481,7 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
             type: "memos" as const,
             memos: memoResults,
             messages: [] as EnrichedMessageResult[],
+            attachments: [] as EnrichedAttachmentResult[],
             search: {
               target: "memos" as const,
               type: query.type,
@@ -469,17 +489,32 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
               resultCount: memoResults.length,
             },
           }
-        } else {
+        } else if (query.target === "messages") {
           const messageResults = await this.searchMessages(pool, query, workspaceId, accessibleStreamIds)
           return {
             type: "messages" as const,
             memos: [] as EnrichedMemoResult[],
             messages: messageResults,
+            attachments: [] as EnrichedAttachmentResult[],
             search: {
               target: "messages" as const,
               type: query.type,
               query: query.query,
               resultCount: messageResults.length,
+            },
+          }
+        } else {
+          const attachmentResults = await this.searchAttachments(pool, query, workspaceId, accessibleStreamIds)
+          return {
+            type: "attachments" as const,
+            memos: [] as EnrichedMemoResult[],
+            messages: [] as EnrichedMessageResult[],
+            attachments: attachmentResults,
+            search: {
+              target: "attachments" as const,
+              type: query.type,
+              query: query.query,
+              resultCount: attachmentResults.length,
             },
           }
         }
@@ -489,15 +524,17 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
     // Aggregate results
     const memos: EnrichedMemoResult[] = []
     const messages: EnrichedMessageResult[] = []
+    const attachments: EnrichedAttachmentResult[] = []
     const searches: ResearcherCachedResult["searchesPerformed"] = []
 
     for (const result of results) {
       memos.push(...result.memos)
       messages.push(...result.messages)
+      attachments.push(...result.attachments)
       searches.push(result.search)
     }
 
-    return { memos, messages, searches }
+    return { memos, messages, attachments, searches }
   }
 
   /**
@@ -614,11 +651,45 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
   }
 
   /**
+   * Search attachments with a query.
+   * Uses keyword search on filename and extraction content.
+   */
+  private async searchAttachments(
+    pool: Pool,
+    query: SearchQuery,
+    workspaceId: string,
+    accessibleStreamIds: string[]
+  ): Promise<EnrichedAttachmentResult[]> {
+    try {
+      const results = await AttachmentRepository.searchWithExtractions(pool, {
+        workspaceId,
+        streamIds: accessibleStreamIds,
+        query: query.query,
+        limit: RESEARCHER_MAX_RESULTS_PER_SEARCH,
+      })
+
+      return results.map((r) => ({
+        id: r.id,
+        filename: r.filename,
+        mimeType: r.mimeType,
+        streamId: r.streamId,
+        contentType: r.extraction?.contentType ?? null,
+        summary: r.extraction?.summary ?? null,
+        createdAt: r.createdAt,
+      }))
+    } catch (error) {
+      logger.warn({ error, query: query.query }, "Attachment search failed")
+      return []
+    }
+  }
+
+  /**
    * Build sources for citation.
    */
   private buildSources(
     memos: EnrichedMemoResult[],
     messages: EnrichedMessageResult[],
+    attachments: EnrichedAttachmentResult[],
     workspaceId: string
   ): WorkspaceSourceItem[] {
     const sources: WorkspaceSourceItem[] = []
@@ -638,6 +709,17 @@ If results are insufficient, suggest additional queries. Otherwise, mark as suff
         title: `${msg.authorName} in ${msg.streamName}`,
         url: `/w/${workspaceId}/streams/${msg.streamId}?message=${msg.id}`,
         snippet: msg.content.slice(0, 200),
+      })
+    }
+
+    for (const att of attachments) {
+      sources.push({
+        type: "workspace",
+        title: att.filename,
+        url: att.streamId
+          ? `/w/${workspaceId}/streams/${att.streamId}?attachment=${att.id}`
+          : `/w/${workspaceId}/attachments/${att.id}`,
+        snippet: att.summary?.slice(0, 200),
       })
     }
 
@@ -661,7 +743,11 @@ ${historyText || "No recent messages."}`
   /**
    * Format results for evaluation prompt.
    */
-  private formatResultsForEvaluation(memos: EnrichedMemoResult[], messages: EnrichedMessageResult[]): string {
+  private formatResultsForEvaluation(
+    memos: EnrichedMemoResult[],
+    messages: EnrichedMessageResult[],
+    attachments: EnrichedAttachmentResult[]
+  ): string {
     const parts: string[] = []
 
     if (memos.length > 0) {
@@ -678,6 +764,14 @@ ${historyText || "No recent messages."}`
       }
     }
 
+    if (attachments.length > 0) {
+      parts.push("### Attachments Found")
+      for (const att of attachments) {
+        const summary = att.summary ? `: ${att.summary}` : ""
+        parts.push(`- **${att.filename}** (${att.contentType ?? att.mimeType})${summary}`)
+      }
+    }
+
     return parts.join("\n\n")
   }
 
@@ -691,6 +785,7 @@ ${historyText || "No recent messages."}`
       shouldSearch: cached.shouldSearch,
       memos: [], // We don't cache the full enriched results
       messages: [],
+      attachments: [],
     }
   }
 
@@ -716,6 +811,7 @@ ${historyText || "No recent messages."}`
       shouldSearch: false,
       memos: [],
       messages: [],
+      attachments: [],
     }
   }
 }

@@ -6,15 +6,16 @@ allowed-tools: Bash(gh api:*), Bash(gh issue view:*), Bash(gh issue list:*), Bas
 
 # Multi-Perspective Code Review
 
-Spawns a single Sonnet agent that analyzes a PR from multiple perspectives and posts a unified comment.
+Spawns a single Opus agent that analyzes a PR from multiple perspectives and posts a unified comment.
 
 ## What It Does
 
 1. Checks PR eligibility (not draft, not closed, not already reviewed)
 2. Gathers CLAUDE.md context for compliance checking
-3. Spawns ONE background agent (Sonnet) that reviews from all perspectives
-4. Agent posts the unified comment directly to GitHub
-5. Agent reports back a summary with confidence score
+3. Spawns a Haiku subagent to find the implementation plan (from session history and plan files)
+4. Spawns ONE background agent (Opus) that reviews from all perspectives
+5. Agent posts the unified comment directly to GitHub
+6. Agent reports back a summary with confidence score
 
 ## Instructions
 
@@ -69,21 +70,63 @@ done
 [ -f "CLAUDE.md" ] && echo "CLAUDE.md"
 ```
 
-### Step 3: Spawn Review Agent
+### Step 3: Find Plan via Subagent
 
-Use the Task tool to spawn ONE agent with Sonnet.
+Spawn a Haiku subagent to find the implementation plan. This keeps the reviewer's context clean.
+
+```
+Use the Task tool with these parameters:
+  subagent_type: "general-purpose"
+  model: "haiku"
+  description: "Find implementation plan"
+  prompt: |
+    Find the implementation plan for branch: <BRANCH_NAME>
+
+    Follow the /find-plan skill instructions:
+    1. Check ~/.claude/projects/ for session history (path format: absolute path with /. replaced by -)
+    2. Find plan files in ~/.claude/plans/ or written during sessions
+    3. Classify sessions as MAIN/SUBSTEP/SIDE_QUEST/INVESTIGATION
+    4. Read the main plan file if it exists
+
+    Return a structured summary:
+
+    PLAN_FOUND: [yes/no]
+    PLAN_FILE: [path if exists]
+    MAIN_REQUIREMENTS:
+    - [bullet points of what was requested]
+
+    KEY_DESIGN_DECISIONS:
+    - [bullet points of approach chosen]
+
+    SIDE_QUESTS (exclude from plan adherence):
+    - [any sessions that are tooling/process work, not feature work]
+
+    Keep it concise - this will be passed to a code reviewer.
+```
+
+Also get the PR description (often contains requirements):
+
+```bash
+gh pr view <NUMBER> --json body -q '.body'
+```
+
+Pass the subagent's output as `<PLAN_SUMMARY>` and PR description as `<PR_DESCRIPTION>` to the review agent.
+
+### Step 4: Spawn Review Agent
+
+Use the Task tool to spawn ONE agent with Opus.
 
 **CRITICAL**:
 
-- Set `model: "sonnet"` to use Sonnet
+- Set `model: "opus"` to use Opus
 - Set `run_in_background: true`
 
-Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>`, `<CLAUDE_MD_FILES>` with actual values.
+Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>`, `<CLAUDE_MD_FILES>`, `<PLAN_SUMMARY>`, `<PR_DESCRIPTION>` with actual values.
 
 **Task parameters:**
 
 - subagent_type: "general-purpose"
-- model: "sonnet"
+- model: "opus"
 - description: "Multi-perspective PR review"
 - run_in_background: true
 - prompt: (see below)
@@ -95,6 +138,8 @@ You are a comprehensive code review agent. Review PR #\<NUMBER\> from multiple p
 PR: #\<NUMBER\> - \<TITLE\>
 Repo: \<OWNER\>/\<REPO\>
 CLAUDE.md files to check: \<CLAUDE_MD_FILES\>
+Plan summary: \<PLAN_SUMMARY\>
+PR Description: \<PR_DESCRIPTION\>
 
 **Gather Context** - Run these commands:
 
@@ -103,6 +148,7 @@ CLAUDE.md files to check: \<CLAUDE_MD_FILES\>
 - `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
 - `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
 - Read each CLAUDE.md file listed above
+- Review the plan summary provided above (already extracted by subagent)
 
 **About the diff:** `gh pr diff` shows the cumulative diff between the PR HEAD and the base branch (main). This IS the current state of the PR - not commit-by-commit changes.
 
@@ -126,7 +172,34 @@ The diff shows WHAT changed but not always WHY. For every potential issue:
 - Theoretical risks without concrete impact
 - Issues where you haven't traced the full data flow
 
-**Two-Phase Code Quality Review:**
+**Phase 0 - Plan Adherence (FIRST):**
+
+Before reviewing code quality, check if the implementation matches the original plan/requirements:
+
+1. Review the plan summary provided above (requirements, design decisions, side quests to exclude)
+2. Read the PR description for stated goals
+3. Compare the actual implementation against:
+   - **Stated requirements**: Does the code do what was asked?
+   - **Planned approach**: If a plan exists, does the implementation follow it?
+   - **Scope creep**: Are there changes beyond what was planned/requested?
+   - **Missing pieces**: Are there planned features that weren't implemented?
+   - **Deviations**: If the implementation differs from the plan, is there a good reason?
+
+**What to flag:**
+
+- Implementation that doesn't match stated requirements
+- Missing features that were explicitly planned
+- Fundamental approach differs from plan without explanation in PR description
+
+**What NOT to flag:**
+
+- **User-requested additions**: If the PR description mentions additional requirements, those are authorized scope
+- **Supporting infrastructure**: Migrations, types, tests, refactors that enable the main feature are expected
+- **Implementation details**: The plan says "add caching" - using Redis vs in-memory is an implementation choice, not a deviation
+- Reasonable decisions within the spirit of the plan
+- Cases where no plan exists (just note "No plan found")
+
+**Key principle**: The question is "does this serve the stated goal?" not "was every line in the original plan?" Features often need supporting changes. A migration to add a column, a new type definition, a refactored helper - these aren't scope creep, they're implementation.
 
 **Phase 1 - Low-Level (Diff-Focused):**
 Shallow scan of the diff itself for obvious issues:
@@ -234,6 +307,16 @@ Use `gh pr comment <NUMBER> --body "..."` with this EXACT structure:
 (Or if no issues: "None - the code is clean.")
 
 ---
+
+<details><summary>📐 Plan Adherence [CLEAN | N issues]</summary>
+
+[Assessment of whether implementation matches the plan/requirements. Include:
+- What was planned/requested
+- What was implemented
+- Any gaps or deviations
+Or "✅ Implementation matches the stated requirements." if clean.]
+
+</details>
 
 <details><summary>🔍 Code Quality [CLEAN | N suggestions]</summary>
 
@@ -350,6 +433,7 @@ The old review MUST be fully preserved inside `<details>` - never truncate or su
 REVIEW_POSTED: <comment_url>
 CONFIDENCE: <1-7>
 SUMMARY:
+  Plan Adherence: <CLEAN | N issues>
   Code Quality: <CLEAN | N issues>
   CLAUDE.md: <CLEAN | N violations>
   Abstraction: <CLEAN | N concerns>
@@ -359,7 +443,7 @@ SUMMARY:
 KEY_ISSUES: <brief comma-separated list, or "None">
 ```
 
-### Step 4: Collect Report
+### Step 5: Collect Report
 
 Use TaskOutput to wait for the agent:
 
@@ -369,7 +453,7 @@ TaskOutput(task_id: "<task_id>", block: true, timeout: 300000)
 
 Parse the structured summary from the agent's output.
 
-### Step 5: Report Results to User
+### Step 6: Report Results to User
 
 ```
 Code review posted to PR #<NUMBER>: <COMMENT_URL>
@@ -377,6 +461,7 @@ Code review posted to PR #<NUMBER>: <COMMENT_URL>
 Confidence: <SCORE>/7
 
 Summary:
+- 📐 Plan Adherence: <status>
 - 🔍 Code Quality: <status>
 - 📋 CLAUDE.md: <status>
 - 🏗️ Abstraction: <status>
@@ -396,9 +481,9 @@ Key issues: [list if any]
 
 ## Token Efficiency
 
-This skill uses a single Sonnet agent instead of multiple parallel agents:
+This skill uses a single Opus agent instead of multiple parallel agents:
 
-- One code exploration pass (not six)
+- One code exploration pass (not seven)
 - Shared context across all review perspectives
 - Agent posts comment directly (no large content passed back)
 - Only structured summary returned to orchestrator

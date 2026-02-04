@@ -29,7 +29,7 @@ export interface ResearcherCachedResult {
     snippet?: string
   }>
   searchesPerformed: Array<{
-    target: "memos" | "messages"
+    target: "memos" | "messages" | "attachments"
     type: "semantic" | "exact"
     query: string
     resultCount: number

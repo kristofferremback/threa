@@ -34,24 +34,42 @@ export interface EnrichedMessageResult {
 }
 
 /**
- * Format retrieved memos and messages into a context section for the system prompt.
+ * Enriched attachment result with extraction info.
+ */
+export interface EnrichedAttachmentResult {
+  id: string
+  filename: string
+  mimeType: string
+  streamId: string | null
+  contentType: string | null
+  summary: string | null
+  createdAt: Date
+}
+
+/**
+ * Format retrieved memos, messages, and attachments into a context section for the system prompt.
  *
  * Returns null if no results were found.
  * Otherwise returns a formatted markdown section to inject into the prompt.
  */
-export function formatRetrievedContext(memos: EnrichedMemoResult[], messages: EnrichedMessageResult[]): string | null {
-  if (memos.length === 0 && messages.length === 0) {
+export function formatRetrievedContext(
+  memos: EnrichedMemoResult[],
+  messages: EnrichedMessageResult[],
+  attachments: EnrichedAttachmentResult[] = []
+): string | null {
+  if (memos.length === 0 && messages.length === 0 && attachments.length === 0) {
     return null
   }
 
   const memosSection = memos.length > 0 ? formatMemosSection(memos) : ""
   const messagesSection = messages.length > 0 ? formatMessagesSection(messages) : ""
+  const attachmentsSection = attachments.length > 0 ? formatAttachmentsSection(attachments) : ""
 
   return `## Retrieved Knowledge
 
 The following relevant information was found in the workspace:
 
-${memosSection}${messagesSection}Use this knowledge to inform your response. Cite sources when relevant.`
+${memosSection}${messagesSection}${attachmentsSection}Use this knowledge to inform your response. Cite sources when relevant.`
 }
 
 function formatMemosSection(memos: EnrichedMemoResult[]): string {
@@ -89,6 +107,24 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
   return `### Related Messages
 
 ${messageEntries}
+
+`
+}
+
+function formatAttachmentsSection(attachments: EnrichedAttachmentResult[]): string {
+  const attachmentEntries = attachments
+    .map((att) => {
+      const relativeDate = formatRelativeDate(att.createdAt)
+      const contentInfo = att.contentType ? ` (${att.contentType})` : ""
+      const summary = att.summary ? `\n${att.summary}` : ""
+
+      return `**${att.filename}**${contentInfo} _(${relativeDate})_${summary}`
+    })
+    .join("\n\n")
+
+  return `### Related Attachments
+
+${attachmentEntries}
 
 `
 }
