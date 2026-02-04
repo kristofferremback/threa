@@ -3,18 +3,24 @@ import type {
   StreamType,
   UserPreferences,
   ExtractionContentType,
+  ExtractionSourceType,
+  PdfSizeTier,
   ChartData,
   TableData,
   DiagramData,
 } from "@threa/types"
-import { StreamTypes, AuthorTypes } from "@threa/types"
+import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { UserRepository } from "../repositories/user-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
-import { AttachmentExtractionRepository } from "../repositories/attachment-extraction-repository"
+import {
+  AttachmentExtractionRepository,
+  type PdfMetadata,
+  type PdfSection,
+} from "../repositories/attachment-extraction-repository"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../lib/temporal"
 
 /**
@@ -59,6 +65,14 @@ export interface AttachmentContext {
     fullText: string | null
     /** Structured data for charts, tables, diagrams (included for recent messages) */
     structuredData: ChartData | TableData | DiagramData | null
+    /** Source type: 'image' or 'pdf' */
+    sourceType: ExtractionSourceType
+    /** PDF-specific metadata (only for PDFs) */
+    pdfMetadata?: {
+      totalPages: number
+      sizeTier: PdfSizeTier
+      sections?: PdfSection[]
+    }
   } | null
   /**
    * Base64 data URL for image attachments.
@@ -559,6 +573,10 @@ export async function enrichMessagesWithAttachments(
       const extraction = extractionsByAttachment.get(attachment.id)
       const dataUrl = includeImageData ? imageDataByAttachment.get(attachment.id) : undefined
 
+      // For large PDFs, don't include full text (use load_pdf_section tool instead)
+      const isLargePdf =
+        extraction?.sourceType === ExtractionSourceTypes.PDF && extraction?.pdfMetadata?.sizeTier === PdfSizeTiers.LARGE
+
       return {
         id: attachment.id,
         filename: attachment.filename,
@@ -567,8 +585,16 @@ export async function enrichMessagesWithAttachments(
           ? {
               contentType: extraction.contentType,
               summary: extraction.summary,
-              fullText: includeFullText ? extraction.fullText : null,
+              fullText: includeFullText && !isLargePdf ? extraction.fullText : null,
               structuredData: includeFullText ? extraction.structuredData : null,
+              sourceType: extraction.sourceType,
+              pdfMetadata: extraction.pdfMetadata
+                ? {
+                    totalPages: extraction.pdfMetadata.totalPages,
+                    sizeTier: extraction.pdfMetadata.sizeTier,
+                    sections: extraction.pdfMetadata.sections,
+                  }
+                : undefined,
             }
           : null,
         dataUrl,

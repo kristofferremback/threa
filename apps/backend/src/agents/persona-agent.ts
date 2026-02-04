@@ -23,6 +23,7 @@ import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import { AttachmentExtractionRepository } from "../repositories/attachment-extraction-repository"
+import { PdfPageExtractionRepository } from "../repositories/pdf-page-extraction-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
 import { eventId } from "../lib/id"
 import type { TraceEmitter } from "../lib/trace-emitter"
@@ -34,9 +35,11 @@ import {
   type SearchAttachmentsCallbacks,
   type GetAttachmentCallbacks,
   type LoadAttachmentCallbacks,
+  type LoadPdfSectionCallbacks,
   type AttachmentSearchResult,
   type AttachmentDetails,
   type LoadAttachmentResult,
+  type LoadPdfSectionResult,
 } from "./tools"
 import {
   buildStreamContext,
@@ -733,6 +736,7 @@ export class PersonaAgent {
               search: SearchAttachmentsCallbacks
               get: GetAttachmentCallbacks
               load: LoadAttachmentCallbacks | undefined
+              loadPdfSection: LoadPdfSectionCallbacks | undefined
             }
           | undefined
         if (invokingUserId && accessibleStreamIds) {
@@ -823,10 +827,62 @@ export class PersonaAgent {
             }
           }
 
+          // load_pdf_section for loading page ranges from large PDFs
+          const loadPdfSection: LoadPdfSectionCallbacks = {
+            loadPdfSection: async (input): Promise<LoadPdfSectionResult | null> => {
+              const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+              if (!attachment) return null
+
+              // Check access
+              if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+                return null
+              }
+
+              // Get extraction to check metadata
+              const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+              if (!extraction || extraction.sourceType !== "pdf" || !extraction.pdfMetadata) {
+                return null
+              }
+
+              const totalPages = extraction.pdfMetadata.totalPages
+
+              // Validate page range
+              if (input.startPage > totalPages || input.endPage > totalPages) {
+                return null
+              }
+
+              // Get page extractions for the range
+              const pages = await PdfPageExtractionRepository.findByAttachmentAndPageRange(
+                db,
+                input.attachmentId,
+                input.startPage,
+                input.endPage
+              )
+
+              const pageContents = pages.map((p) => ({
+                pageNumber: p.pageNumber,
+                content: p.markdownContent ?? p.ocrText ?? p.rawText ?? "",
+              }))
+
+              const combinedContent = pageContents.map((p) => p.content).join("\n\n---\n\n")
+
+              return {
+                attachmentId: input.attachmentId,
+                filename: attachment.filename,
+                startPage: input.startPage,
+                endPage: input.endPage,
+                totalPages,
+                content: combinedContent,
+                pages: pageContents,
+              }
+            },
+          }
+
           attachmentCallbacks = {
             search: searchAttachments,
             get: getAttachment,
             load: loadAttachment,
+            loadPdfSection,
           }
         }
 

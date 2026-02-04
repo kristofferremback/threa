@@ -26,6 +26,9 @@ export const JobQueues = {
   SIMULATE_RUN: "simulate.run",
   COMMAND_EXECUTE: "command.execute",
   IMAGE_CAPTION: "image.caption",
+  PDF_PREPARE: "pdf.prepare",
+  PDF_PROCESS_PAGE: "pdf.process_page",
+  PDF_ASSEMBLE: "pdf.assemble",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -93,6 +96,29 @@ export interface ImageCaptionJobData {
   storagePath: string
 }
 
+/** PDF prepare job - extracts text/images, classifies pages, fans out page jobs */
+export interface PdfPrepareJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  storagePath: string
+}
+
+/** PDF page processing job - processes single page based on classification */
+export interface PdfProcessPageJobData {
+  attachmentId: string
+  workspaceId: string
+  pageNumber: number
+  pdfJobId: string
+}
+
+/** PDF assemble job - combines page results into document extraction */
+export interface PdfAssembleJobData {
+  attachmentId: string
+  workspaceId: string
+  pdfJobId: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -104,6 +130,9 @@ export interface JobDataMap {
   [JobQueues.SIMULATE_RUN]: SimulationJobData
   [JobQueues.COMMAND_EXECUTE]: CommandExecuteJobData
   [JobQueues.IMAGE_CAPTION]: ImageCaptionJobData
+  [JobQueues.PDF_PREPARE]: PdfPrepareJobData
+  [JobQueues.PDF_PROCESS_PAGE]: PdfProcessPageJobData
+  [JobQueues.PDF_ASSEMBLE]: PdfAssembleJobData
 }
 
 /**

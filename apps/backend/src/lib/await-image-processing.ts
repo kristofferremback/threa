@@ -4,9 +4,13 @@ import { AttachmentRepository } from "../repositories/attachment-repository"
 import { logger } from "./logger"
 
 /**
- * Default timeout for awaiting image processing (60 seconds).
+ * Default timeout for awaiting attachment processing (60 seconds).
+ * Works for both images and PDFs.
  */
-export const DEFAULT_IMAGE_PROCESSING_TIMEOUT_MS = 60_000
+export const DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS = 60_000
+
+/** @deprecated Use DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS */
+export const DEFAULT_IMAGE_PROCESSING_TIMEOUT_MS = DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS
 
 /**
  * Polling interval for checking processing status (1 second).
@@ -29,14 +33,14 @@ export interface AwaitImageProcessingResult {
  * Await processing completion for a list of attachment IDs.
  *
  * Polls the database until all attachments reach a terminal state (completed, failed, skipped)
- * or the timeout is reached.
+ * or the timeout is reached. Works for all attachment types (images, PDFs, etc.).
  *
  * @param pool - Database pool
  * @param attachmentIds - IDs of attachments to wait for
  * @param timeoutMs - Maximum time to wait (default: 60s)
  * @returns Result indicating which attachments completed
  */
-export async function awaitImageProcessing(
+export async function awaitAttachmentProcessing(
   pool: Pool,
   attachmentIds: string[],
   timeoutMs: number = DEFAULT_IMAGE_PROCESSING_TIMEOUT_MS
@@ -129,3 +133,6 @@ export async function hasPendingImageProcessing(pool: Pool, attachmentIds: strin
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+/** @deprecated Use awaitAttachmentProcessing */
+export const awaitImageProcessing = awaitAttachmentProcessing

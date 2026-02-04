@@ -23,7 +23,23 @@ export { AttachmentRepository } from "./attachment-repository"
 export type { Attachment, InsertAttachmentParams } from "./attachment-repository"
 
 export { AttachmentExtractionRepository } from "./attachment-extraction-repository"
-export type { AttachmentExtraction, InsertAttachmentExtractionParams } from "./attachment-extraction-repository"
+export type {
+  AttachmentExtraction,
+  InsertAttachmentExtractionParams,
+  PdfMetadata,
+  PdfSection,
+} from "./attachment-extraction-repository"
+
+export { PdfPageExtractionRepository } from "./pdf-page-extraction-repository"
+export type {
+  PdfPageExtraction,
+  EmbeddedImage,
+  InsertPdfPageExtractionParams,
+  UpdatePdfPageExtractionParams,
+} from "./pdf-page-extraction-repository"
+
+export { PdfProcessingJobRepository } from "./pdf-processing-job-repository"
+export type { PdfProcessingJob, InsertPdfProcessingJobParams } from "./pdf-processing-job-repository"
 
 export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "./outbox-repository"
 export type {

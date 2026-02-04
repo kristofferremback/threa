@@ -55,13 +55,24 @@ import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
 import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
 import { createCommandWorker } from "./workers/command-worker"
 import { createImageCaptionWorker } from "./workers/image-caption-worker"
+import { createPdfPrepareWorker } from "./workers/pdf-prepare-worker"
+import { createPdfPageWorker } from "./workers/pdf-page-worker"
+import { createPdfAssembleWorker } from "./workers/pdf-assemble-worker"
 import { ImageCaptionService, StubImageCaptionService } from "./services/image-caption"
+import { PdfProcessingService, StubPdfProcessingService } from "./services/pdf-processing"
 import { PersonaAgent } from "./agents/persona-agent"
 import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
 import { StubSimulationAgent } from "./agents/simulation-agent.stub"
 import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
-import { JobQueues, type OnDLQHook, type ImageCaptionJobData } from "./lib/job-queue"
+import {
+  JobQueues,
+  type OnDLQHook,
+  type ImageCaptionJobData,
+  type PdfPrepareJobData,
+  type PdfProcessPageJobData,
+  type PdfAssembleJobData,
+} from "./lib/job-queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./repositories"
 import { ulid } from "ulid"
@@ -382,6 +393,26 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.IMAGE_CAPTION, imageCaptionWorker, {
     hooks: { onDLQ: imageCaptionOnDLQ },
+  })
+
+  // PDF processing workers
+  const pdfProcessingService = config.useStubAI
+    ? new StubPdfProcessingService({ pool })
+    : new PdfProcessingService({ pool, ai, storage, jobQueue })
+  const pdfPrepareWorker = createPdfPrepareWorker({ pdfProcessingService })
+  const pdfPageWorker = createPdfPageWorker({ pdfProcessingService })
+  const pdfAssembleWorker = createPdfAssembleWorker({ pdfProcessingService })
+  const pdfOnDLQ: OnDLQHook<PdfPrepareJobData | PdfProcessPageJobData | PdfAssembleJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+  }
+  jobQueue.registerHandler(JobQueues.PDF_PREPARE, pdfPrepareWorker, {
+    hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfPrepareJobData> },
+  })
+  jobQueue.registerHandler(JobQueues.PDF_PROCESS_PAGE, pdfPageWorker, {
+    hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfProcessPageJobData> },
+  })
+  jobQueue.registerHandler(JobQueues.PDF_ASSEMBLE, pdfAssembleWorker, {
+    hooks: { onDLQ: pdfOnDLQ as OnDLQHook<PdfAssembleJobData> },
   })
 
   // Register handlers before starting

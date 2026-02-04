@@ -7,6 +7,7 @@ import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./curs
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
 import { isImageAttachment } from "../services/image-caption"
+import { isPdfAttachment } from "../services/pdf-processing"
 import { ProcessingStatuses } from "@threa/types"
 
 export interface AttachmentUploadedHandlerConfig {
@@ -33,7 +34,8 @@ const DEFAULT_CONFIG = {
  * Handler that processes attachment:uploaded events.
  *
  * For images: enqueues IMAGE_CAPTION job for AI processing
- * For non-images: sets status='skipped' (no processing needed)
+ * For PDFs: enqueues PDF_PREPARE job for document extraction
+ * For others: sets status='skipped' (no processing needed)
  */
 export class AttachmentUploadedHandler implements OutboxHandler {
   readonly listenerId = "attachment-uploaded"
@@ -105,10 +107,20 @@ export class AttachmentUploadedHandler implements OutboxHandler {
             })
 
             logger.info({ attachmentId, filename, mimeType }, "Image caption job dispatched")
+          } else if (isPdfAttachment(mimeType, filename)) {
+            // Enqueue PDF processing job
+            await this.jobQueue.send(JobQueues.PDF_PREPARE, {
+              attachmentId,
+              workspaceId,
+              filename,
+              storagePath,
+            })
+
+            logger.info({ attachmentId, filename, mimeType }, "PDF prepare job dispatched")
           } else {
-            // Non-image: mark as skipped
+            // Non-image/non-PDF: mark as skipped
             await AttachmentRepository.updateProcessingStatus(this.db, attachmentId, ProcessingStatuses.SKIPPED)
-            logger.debug({ attachmentId, filename, mimeType }, "Non-image attachment marked as skipped")
+            logger.debug({ attachmentId, filename, mimeType }, "Attachment marked as skipped")
           }
 
           lastProcessedId = event.id
