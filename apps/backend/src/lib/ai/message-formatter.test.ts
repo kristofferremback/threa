@@ -1,6 +1,7 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
 import type { Message } from "../../repositories/message-repository"
+import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
 import type { PoolClient } from "pg"
 
 const mockFindUsersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
@@ -303,6 +304,194 @@ describe("MessageFormatter", () => {
       expect(result).toBe(
         "[2024-01-01T10:00:00.000Z] [user] Alice: First\n\n[2024-01-01T10:00:01.000Z] [user] Alice: Second"
       )
+    })
+  })
+
+  describe("formatMessagesWithAttachments", () => {
+    function createAttachment(overrides: Partial<AttachmentWithExtraction> = {}): AttachmentWithExtraction {
+      return {
+        id: "attach_123",
+        workspaceId: "ws_123",
+        streamId: "stream_123",
+        messageId: "msg_123",
+        uploadedBy: "user_123",
+        filename: "image.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 1024,
+        storageProvider: "s3" as const,
+        storagePath: "/path/to/image.jpg",
+        processingStatus: "completed" as const,
+        createdAt: new Date("2024-01-01T10:00:00Z"),
+        extraction: null,
+        ...overrides,
+      }
+    }
+
+    test("should return empty wrapper for empty message list", async () => {
+      const result = await formatter.formatMessagesWithAttachments(mockClient, [], new Map())
+
+      expect(result).toBe("<messages></messages>")
+    })
+
+    test("should format messages without attachments", async () => {
+      const messages = [
+        createMessage({
+          id: "msg_1",
+          authorId: "user_123",
+          authorType: "user",
+          contentMarkdown: "Hello!",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
+        }),
+      ]
+
+      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, new Map())
+
+      expect(result).toContain('authorName="Alice"')
+      expect(result).toContain("Hello!")
+      expect(result).not.toContain("<attachment")
+    })
+
+    test("should include attachment extraction summary in message", async () => {
+      const messages = [
+        createMessage({
+          id: "msg_1",
+          authorId: "user_123",
+          authorType: "user",
+          contentMarkdown: "What's in this image?",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
+        }),
+      ]
+
+      const attachmentsMap = new Map<string, AttachmentWithExtraction[]>()
+      attachmentsMap.set("msg_1", [
+        createAttachment({
+          id: "attach_1",
+          messageId: "msg_1",
+          filename: "fish.jpg",
+          extraction: {
+            contentType: "photo" as const,
+            summary: "A colorful tropical fish swimming in a coral reef",
+            fullText: null,
+          },
+        }),
+      ])
+
+      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+
+      expect(result).toContain("What's in this image?")
+      expect(result).toContain('<attachment filename="fish.jpg" contentType="photo">')
+      expect(result).toContain("A colorful tropical fish swimming in a coral reef</attachment>")
+    })
+
+    test("should handle multiple attachments on same message", async () => {
+      const messages = [
+        createMessage({
+          id: "msg_1",
+          authorId: "user_123",
+          authorType: "user",
+          contentMarkdown: "Compare these images",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
+        }),
+      ]
+
+      const attachmentsMap = new Map<string, AttachmentWithExtraction[]>()
+      attachmentsMap.set("msg_1", [
+        createAttachment({
+          id: "attach_1",
+          messageId: "msg_1",
+          filename: "cat.jpg",
+          extraction: {
+            contentType: "photo" as const,
+            summary: "An orange tabby cat sleeping on a couch",
+            fullText: null,
+          },
+        }),
+        createAttachment({
+          id: "attach_2",
+          messageId: "msg_1",
+          filename: "dog.jpg",
+          extraction: {
+            contentType: "photo" as const,
+            summary: "A golden retriever playing in a park",
+            fullText: null,
+          },
+        }),
+      ])
+
+      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+
+      expect(result).toContain('<attachment filename="cat.jpg" contentType="photo">')
+      expect(result).toContain("An orange tabby cat sleeping on a couch</attachment>")
+      expect(result).toContain('<attachment filename="dog.jpg" contentType="photo">')
+      expect(result).toContain("A golden retriever playing in a park</attachment>")
+    })
+
+    test("should skip attachments without extractions", async () => {
+      const messages = [
+        createMessage({
+          id: "msg_1",
+          authorId: "user_123",
+          authorType: "user",
+          contentMarkdown: "Check this file",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
+        }),
+      ]
+
+      const attachmentsMap = new Map<string, AttachmentWithExtraction[]>()
+      attachmentsMap.set("msg_1", [
+        createAttachment({
+          id: "attach_1",
+          messageId: "msg_1",
+          filename: "document.pdf",
+          extraction: null, // No extraction
+        }),
+      ])
+
+      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+
+      expect(result).toContain("Check this file")
+      expect(result).not.toContain("<attachment")
+    })
+
+    test("should escape XML special characters in filenames and summaries", async () => {
+      const messages = [
+        createMessage({
+          id: "msg_1",
+          authorId: "user_123",
+          authorType: "user",
+          contentMarkdown: "Look at this",
+          createdAt: new Date("2024-01-01T10:00:00Z"),
+        }),
+      ]
+
+      const attachmentsMap = new Map<string, AttachmentWithExtraction[]>()
+      attachmentsMap.set("msg_1", [
+        createAttachment({
+          id: "attach_1",
+          messageId: "msg_1",
+          filename: 'file"with"quotes.jpg',
+          extraction: {
+            contentType: "photo" as const,
+            summary: "Image with <brackets> & ampersand",
+            fullText: null,
+          },
+        }),
+      ])
+
+      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+
+      const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
+
+      expect(result).toContain('filename="file&quot;with&quot;quotes.jpg"')
+      expect(result).toContain("Image with &lt;brackets&gt; &amp; ampersand</attachment>")
     })
   })
 })
