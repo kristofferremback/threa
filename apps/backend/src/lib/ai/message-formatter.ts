@@ -1,5 +1,6 @@
 import type { Querier } from "../../db"
 import type { Message } from "../../repositories/message-repository"
+import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
 import { UserRepository } from "../../repositories/user-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
 
@@ -107,5 +108,58 @@ export class MessageFormatter {
     })
 
     return formatted.join("\n\n")
+  }
+
+  /**
+   * Format messages with attachment extraction summaries included.
+   * Batch-fetches all unique author IDs to minimize queries.
+   *
+   * Attachments are pre-fetched and passed in (already awaited for processing).
+   * This allows the caller to await image processing before formatting.
+   *
+   * @param client Database client (for author name resolution)
+   * @param messages Messages to format
+   * @param attachmentsByMessageId Map of message ID to attachments with their extractions
+   *
+   * @example
+   * const formatted = await messageFormatter.formatMessagesWithAttachments(client, messages, attachmentsMap)
+   * // <messages>
+   * // <message authorType="user" authorId="user_123" authorName="Alice" createdAt="...">
+   * // What's in this image?
+   * // <attachment filename="photo.jpg" contentType="photo">A colorful tropical fish swimming in a coral reef</attachment>
+   * // </message>
+   * // </messages>
+   */
+  async formatMessagesWithAttachments(
+    client: Querier,
+    messages: Message[],
+    attachmentsByMessageId: Map<string, AttachmentWithExtraction[]>
+  ): Promise<string> {
+    if (messages.length === 0) return "<messages></messages>"
+
+    const nameById = await this.resolveAuthorNames(client, messages)
+
+    const formatted = messages.map((m) => {
+      const authorName = nameById.get(m.authorId) ?? "Unknown"
+      const attachments = attachmentsByMessageId.get(m.id) ?? []
+
+      // Build attachment tags for extractions
+      const attachmentTags = attachments
+        .filter((a) => a.extraction !== null)
+        .map((a) => {
+          const ext = a.extraction!
+          return `<attachment filename="${escapeXmlAttr(a.filename)}" contentType="${escapeXmlAttr(ext.contentType)}">${escapeXml(ext.summary)}</attachment>`
+        })
+        .join("\n")
+
+      // Build message content with attachments
+      const content = attachmentTags
+        ? `${escapeXml(m.contentMarkdown)}\n${attachmentTags}`
+        : escapeXml(m.contentMarkdown)
+
+      return `<message authorType="${m.authorType}" authorId="${m.authorId}" authorName="${escapeXmlAttr(authorName)}" createdAt="${m.createdAt.toISOString()}">\n${content}\n</message>`
+    })
+
+    return `<messages>\n${formatted.join("\n")}\n</messages>`
   }
 }

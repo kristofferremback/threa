@@ -3,12 +3,14 @@ import { withTransaction, withClient } from "../db"
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository } from "../repositories/message-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
+import { AttachmentRepository, type AttachmentWithExtraction } from "../repositories/attachment-repository"
 import type { AI } from "../lib/ai/ai"
 import type { ConfigResolver } from "../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../lib/ai/config-resolver"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
+import { awaitImageProcessing } from "../lib/await-image-processing"
 import { MAX_MESSAGES_FOR_NAMING, MAX_EXISTING_NAMES, buildNamingSystemPrompt } from "./stream-naming/config"
 
 export interface GenerateNameResult {
@@ -84,9 +86,11 @@ export class StreamNamingService {
    * Called after each message is created in scratchpads/threads.
    *
    * IMPORTANT: This method uses the three-phase pattern (INV-41) to avoid holding
-   * database connections during AI calls (which can take 1-5+ seconds):
+   * database connections during slow operations:
    *
-   * Phase 1: Fetch all data (stream, messages, names) with withClient (~100-200ms)
+   * Phase 1: Fetch all data (stream, messages, attachments, names) with withClient (~100-200ms)
+   * Await: Poll for image processing completion with no connection held (0-60s)
+   * Fetch extractions: Quick read of extraction data after processing completes (~50ms)
    * Phase 2: AI call with no database connection held (1-5+ seconds)
    * Phase 3: Save result with withTransaction, re-checking stream state (~100ms)
    *
@@ -103,11 +107,11 @@ export class StreamNamingService {
     const fetchedData = await withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
       if (!stream) {
-        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
+        return { stream: null, messages: [], otherStreams: [], attachmentIds: [] }
       }
 
       if (!needsAutoNaming(stream)) {
-        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
+        return { stream: null, messages: [], otherStreams: [], attachmentIds: [] }
       }
 
       // Fetch recent messages to build context
@@ -116,16 +120,25 @@ export class StreamNamingService {
       })
 
       if (messages.length === 0) {
-        return { stream: null, messages: [], otherStreams: [], conversationText: "" }
+        return { stream: null, messages: [], otherStreams: [], attachmentIds: [] }
       }
 
       // Fetch existing stream names to avoid duplicates
       const otherStreams = await StreamRepository.list(client, stream.workspaceId, { types: [stream.type] })
 
-      // Format messages (needs to resolve author names via DB)
-      const conversationText = await this.messageFormatter.formatMessages(client, messages)
+      // Fetch attachments for these messages (to get IDs for awaiting processing)
+      const messageIds = messages.map((m) => m.id)
+      const attachmentsByMessage = await AttachmentRepository.findByMessageIds(client, messageIds)
 
-      return { stream, messages, otherStreams, conversationText }
+      // Collect all attachment IDs
+      const attachmentIds: string[] = []
+      for (const attachments of attachmentsByMessage.values()) {
+        for (const a of attachments) {
+          attachmentIds.push(a.id)
+        }
+      }
+
+      return { stream, messages, otherStreams, attachmentIds }
     })
 
     // Early exit if nothing to do
@@ -133,7 +146,38 @@ export class StreamNamingService {
       return false
     }
 
-    const { stream, messages, otherStreams, conversationText } = fetchedData
+    const { stream, messages, otherStreams, attachmentIds } = fetchedData
+
+    // Await image processing (no connection held - polling releases between checks)
+    // This ensures attachment extractions are available before we format the conversation
+    if (attachmentIds.length > 0) {
+      logger.debug({ streamId, attachmentCount: attachmentIds.length }, "Awaiting image processing for stream naming")
+      const awaitResult = await awaitImageProcessing(this.pool, attachmentIds)
+      logger.debug(
+        {
+          streamId,
+          completedCount: awaitResult.completedIds.length,
+          failedCount: awaitResult.failedOrTimedOutIds.length,
+        },
+        "Image processing complete for stream naming"
+      )
+    }
+
+    // Fetch attachments with extractions (quick read, uses pool directly per INV-30)
+    const messageIds = messages.map((m) => m.id)
+    let attachmentsByMessageId: Map<string, AttachmentWithExtraction[]>
+    if (attachmentIds.length > 0) {
+      attachmentsByMessageId = await AttachmentRepository.findByMessageIdsWithExtractions(this.pool, messageIds)
+    } else {
+      attachmentsByMessageId = new Map()
+    }
+
+    // Format messages with attachment extractions (quick read for author names)
+    const conversationText = await this.messageFormatter.formatMessagesWithAttachments(
+      this.pool,
+      messages,
+      attachmentsByMessageId
+    )
 
     // Phase 2: AI processing (no connection held, 1-5+ seconds!)
     const existingNames = otherStreams

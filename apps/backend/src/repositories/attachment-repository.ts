@@ -137,6 +137,40 @@ export const AttachmentRepository = {
     return byMessage
   },
 
+  /**
+   * Find attachments with their extractions for a list of message IDs.
+   * Returns a map from message ID to attachments with extraction data.
+   */
+  async findByMessageIdsWithExtractions(
+    client: Querier,
+    messageIds: string[]
+  ): Promise<Map<string, AttachmentWithExtraction[]>> {
+    if (messageIds.length === 0) return new Map()
+
+    const result = await client.query<AttachmentWithExtractionRow>(sql`
+      SELECT
+        a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
+        a.filename, a.mime_type, a.size_bytes,
+        a.storage_provider, a.storage_path, a.processing_status,
+        a.created_at,
+        e.content_type AS extraction_content_type,
+        e.summary AS extraction_summary,
+        e.full_text AS extraction_full_text
+      FROM attachments a
+      LEFT JOIN attachment_extractions e ON e.attachment_id = a.id
+      WHERE a.message_id = ANY(${messageIds})
+    `)
+
+    const byMessage = new Map<string, AttachmentWithExtraction[]>()
+    for (const row of result.rows) {
+      if (!row.message_id) continue
+      const existing = byMessage.get(row.message_id) ?? []
+      existing.push(mapRowToAttachmentWithExtraction(row))
+      byMessage.set(row.message_id, existing)
+    }
+    return byMessage
+  },
+
   async insert(client: Querier, params: InsertAttachmentParams): Promise<Attachment> {
     const result = await client.query<AttachmentRow>(sql`
       INSERT INTO attachments (

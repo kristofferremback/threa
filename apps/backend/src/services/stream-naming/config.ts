@@ -23,13 +23,15 @@ export function buildNamingSystemPrompt(existingNames: string[], requireName: bo
 
   Follow these steps:
   1. Analyze the conversation and identify the main topic or purpose
-  2. Consider any other streams provided in the list of existing names, these should be avoided as much as possible as recent conversations with similar names confuse users
-  3. Generate a title that is descriptive and concise
-  4. Evaluate the title against the evaluation criteria
+  2. Pay attention to any attached files - if a user uploads an image or document and asks about it, the title should reflect what's in the attachment
+  3. Consider any other streams provided in the list of existing names, these should be avoided as much as possible as recent conversations with similar names confuse users
+  4. Generate a title that is descriptive and concise
+  5. Evaluate the title against the evaluation criteria
 
 Evaluation criteria:
 - Return ONLY the title, no quotes or explanation.
 - The title should be descriptive and concise, try avoiding generic names like "Quick Question" or "New Discussion"
+- If the conversation involves attached files (images, documents, etc.), incorporate what they contain into the title
 ${existingNames.length > 0 ? `- Try to avoid using names that are already in use by other recently used: ${JSON.stringify(existingNames)}` : ""}
 ${
   requireName

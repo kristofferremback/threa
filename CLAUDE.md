@@ -319,6 +319,20 @@ switch (true) {
 }
 ```
 
+**INV-48: No mock.module for Shared Modules** - Never use Bun's `mock.module()` for modules that other test files also import. `mock.module()` pollutes the global module cache and persists across test files, causing other tests to receive the mock instead of the real implementation. Use `spyOn()` on object methods instead - it's scoped to the current test and auto-restores.
+
+```typescript
+// Bad - pollutes module cache, breaks other test files
+mock.module("../lib/some-module", () => ({
+  someFunction: mock(() => "mocked"),
+}))
+
+// Good - scoped to current test, doesn't affect other files
+spyOn(SomeRepository, "someMethod").mockResolvedValue(mockData)
+```
+
+If you MUST use `mock.module()`, only do so for modules that are exclusively used by the code under test and not imported by any other test file.
+
 When introducing a new invariant:
 
 1. Document it here with next available ID
