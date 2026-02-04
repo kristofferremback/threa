@@ -10,7 +10,7 @@ import { COMPONENT_PATHS } from "../lib/ai/config-resolver"
 import { needsAutoNaming } from "../lib/display-name"
 import { logger } from "../lib/logger"
 import { MessageFormatter } from "../lib/ai/message-formatter"
-import { awaitImageProcessing } from "../lib/await-image-processing"
+import { awaitAttachmentProcessing } from "../lib/await-image-processing"
 import { MAX_MESSAGES_FOR_NAMING, MAX_EXISTING_NAMES, buildNamingSystemPrompt } from "./stream-naming/config"
 
 export interface GenerateNameResult {
@@ -148,18 +148,21 @@ export class StreamNamingService {
 
     const { stream, messages, otherStreams, attachmentIds } = fetchedData
 
-    // Await image processing (no connection held - polling releases between checks)
+    // Await attachment processing (no connection held - polling releases between checks)
     // This ensures attachment extractions are available before we format the conversation
     if (attachmentIds.length > 0) {
-      logger.debug({ streamId, attachmentCount: attachmentIds.length }, "Awaiting image processing for stream naming")
-      const awaitResult = await awaitImageProcessing(this.pool, attachmentIds)
+      logger.debug(
+        { streamId, attachmentCount: attachmentIds.length },
+        "Awaiting attachment processing for stream naming"
+      )
+      const awaitResult = await awaitAttachmentProcessing(this.pool, attachmentIds)
       logger.debug(
         {
           streamId,
           completedCount: awaitResult.completedIds.length,
           failedCount: awaitResult.failedOrTimedOutIds.length,
         },
-        "Image processing complete for stream naming"
+        "Attachment processing complete for stream naming"
       )
     }
 
