@@ -114,8 +114,8 @@ export interface ResponseGeneratorCallbacks {
     load: LoadAttachmentCallbacks | undefined
     loadPdfSection: LoadPdfSectionCallbacks | undefined
   }
-  /** Optional callback to await image processing for messages (for multi-modal support) */
-  awaitImageProcessing?: (messageIds: string[]) => Promise<void>
+  /** Optional callback to await attachment processing for messages (for multi-modal support) */
+  awaitAttachmentProcessing?: (messageIds: string[]) => Promise<void>
   /** Optional callback to record steps in the agent trace */
   recordStep?: (params: RecordStepParams) => Promise<void>
 }
@@ -258,7 +258,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
       runResearcher,
       recordStep: callbacks.recordStep,
-      awaitImageProcessing: callbacks.awaitImageProcessing,
+      awaitAttachmentProcessing: callbacks.awaitAttachmentProcessing,
     }
 
     // Parse model for metadata

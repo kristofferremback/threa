@@ -267,8 +267,8 @@ export interface CompanionGraphCallbacks {
   runResearcher?: () => Promise<ResearcherResult>
   /** Record a step in the agent trace (optional - if not provided, steps are not recorded) */
   recordStep?: (params: RecordStepParams) => Promise<void>
-  /** Await image processing for messages (optional - for multi-modal support) */
-  awaitImageProcessing?: (messageIds: string[]) => Promise<void>
+  /** Await attachment processing for messages (optional - for multi-modal support) */
+  awaitAttachmentProcessing?: (messageIds: string[]) => Promise<void>
 }
 
 /**
@@ -552,11 +552,11 @@ function createCheckNewMessagesNode() {
       return { hasNewMessages: false }
     }
 
-    // Await image processing for new messages if callback is provided
-    // This ensures we have captions before the agent processes the messages
-    if (callbacks.awaitImageProcessing) {
+    // Await attachment processing for new messages if callback is provided
+    // This ensures we have captions/extractions before the agent processes the messages
+    if (callbacks.awaitAttachmentProcessing) {
       const messageIds = newMessages.map((m) => m.messageId)
-      await callbacks.awaitImageProcessing(messageIds)
+      await callbacks.awaitAttachmentProcessing(messageIds)
     }
 
     // Update last seen sequence
@@ -613,11 +613,11 @@ function createFinalizeOrReconsiderNode() {
     const newMessages = await callbacks.checkNewMessages(state.streamId, state.lastProcessedSequence, state.personaId)
     const hasNewMessages = newMessages.length > 0
 
-    // Await image processing for new messages if callback is provided
-    // This ensures we have captions before the agent reconsiders
-    if (hasNewMessages && callbacks.awaitImageProcessing) {
+    // Await attachment processing for new messages if callback is provided
+    // This ensures we have captions/extractions before the agent reconsiders
+    if (hasNewMessages && callbacks.awaitAttachmentProcessing) {
       const messageIds = newMessages.map((m) => m.messageId)
-      await callbacks.awaitImageProcessing(messageIds)
+      await callbacks.awaitAttachmentProcessing(messageIds)
     }
 
     // Update last seen sequence if we found new messages

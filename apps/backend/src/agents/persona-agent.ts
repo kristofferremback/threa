@@ -53,7 +53,7 @@ import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import type { SearchService } from "../services/search-service"
 import type { StorageProvider } from "../lib/storage/s3-client"
 import type { ModelRegistry } from "../lib/ai/model-registry"
-import { awaitImageProcessing } from "../lib/await-image-processing"
+import { awaitAttachmentProcessing } from "../lib/await-image-processing"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
@@ -477,7 +477,7 @@ export class PersonaAgent {
               { messageId, imageCount: imageAttachmentIds.length },
               "Awaiting image processing for trigger message"
             )
-            const awaitResult = await awaitImageProcessing(pool, imageAttachmentIds)
+            const awaitResult = await awaitAttachmentProcessing(pool, imageAttachmentIds)
             logger.info(
               {
                 messageId,
@@ -929,7 +929,7 @@ export class PersonaAgent {
 
           attachments: attachmentCallbacks,
 
-          awaitImageProcessing: async (messageIds: string[]) => {
+          awaitAttachmentProcessing: async (messageIds: string[]) => {
             // Get attachments for these messages and await their processing
             const attachmentsByMessage = await AttachmentRepository.findByMessageIds(db, messageIds)
             const allAttachmentIds: string[] = []
@@ -939,7 +939,7 @@ export class PersonaAgent {
               }
             }
             if (allAttachmentIds.length > 0) {
-              await awaitImageProcessing(db, allAttachmentIds)
+              await awaitAttachmentProcessing(db, allAttachmentIds)
             }
           },
 
