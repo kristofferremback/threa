@@ -1,8 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useRef } from "react"
 import { PanelLeftClose, PanelLeft, Command } from "lucide-react"
-import { useSidebar, useQuickSwitcher } from "@/contexts"
+import { useSidebar, useQuickSwitcher, useCoordinatedLoading } from "@/contexts"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { TopbarLoadingIndicator } from "./topbar-loading-indicator"
 import { cn } from "@/lib/utils"
 
 /** Platform-appropriate modifier key symbol (⌘ on Mac, Ctrl on Windows/Linux) */
@@ -15,9 +16,12 @@ interface TopbarProps {
 
 function Topbar({ isPinned, onToggleSidebar }: TopbarProps) {
   const { openSwitcher } = useQuickSwitcher()
+  const { showLoadingIndicator } = useCoordinatedLoading()
 
   return (
-    <div className="flex h-11 items-center border-b bg-background/80 backdrop-blur-sm">
+    <div className="relative flex h-11 items-center border-b bg-background/80 backdrop-blur-sm">
+      {/* Loading indicator - subtle shimmer at bottom border */}
+      <TopbarLoadingIndicator visible={showLoadingIndicator} />
       {/* Left section - sidebar toggle */}
       <div className="flex w-[100px] items-center px-3">
         <Tooltip>

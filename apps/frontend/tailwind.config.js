@@ -123,6 +123,17 @@ export default {
             transform: "translateX(400%)",
           },
         },
+        "topbar-shimmer": {
+          "0%": {
+            transform: "translateX(-100%)",
+          },
+          "50%": {
+            transform: "translateX(300%)",
+          },
+          "100%": {
+            transform: "translateX(-100%)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -131,6 +142,7 @@ export default {
         "highlight-flash": "highlight-flash 2s ease-out forwards",
         "activity-pulse": "activity-pulse 2s ease-in-out infinite",
         "indeterminate-progress": "indeterminate-progress 1.5s ease-in-out infinite",
+        "topbar-shimmer": "topbar-shimmer 2s ease-in-out infinite",
       },
     },
   },

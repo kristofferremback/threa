@@ -18,7 +18,13 @@ import {
   TraceProvider,
   useTrace,
 } from "@/contexts"
-import { useSocketEvents, useWorkspaceBootstrap, useKeyboardShortcuts, useMentionables } from "@/hooks"
+import {
+  useSocketEvents,
+  useWorkspaceBootstrap,
+  useKeyboardShortcuts,
+  useMentionables,
+  useReconnectBootstrap,
+} from "@/hooks"
 import { QuickSwitcher, type QuickSwitcherMode } from "@/components/quick-switcher"
 import { SettingsDialog } from "@/components/settings"
 import { TraceDialog } from "@/components/trace"
@@ -97,6 +103,9 @@ export function WorkspaceLayout() {
   }, [workspaceError, navigate])
 
   useSocketEvents(workspaceId ?? "")
+
+  // Handle reconnection: re-bootstrap workspace and streams when socket reconnects
+  useReconnectBootstrap(workspaceId ?? "", streamIds)
 
   const openSwitcher = useCallback((mode: QuickSwitcherMode) => {
     setSwitcherMode(mode)
