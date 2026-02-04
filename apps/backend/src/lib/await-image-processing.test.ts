@@ -1,11 +1,21 @@
-import { describe, it, expect, spyOn, afterEach } from "bun:test"
-import { awaitImageProcessing, hasPendingImageProcessing } from "./await-image-processing"
-import { AttachmentRepository } from "../repositories/attachment-repository"
+import { describe, it, expect, mock, beforeEach } from "bun:test"
 import type { Attachment } from "../repositories/attachment-repository"
 
+// Mock the repository module BEFORE importing the code under test
+const mockFindByIds = mock(() => Promise.resolve([] as Attachment[]))
+
+mock.module("../repositories/attachment-repository", () => ({
+  AttachmentRepository: {
+    findByIds: mockFindByIds,
+  },
+}))
+
+// Import AFTER mocking
+const { awaitImageProcessing, hasPendingImageProcessing } = await import("./await-image-processing")
+
 describe("awaitImageProcessing", () => {
-  afterEach(() => {
-    // spyOn automatically restores after each test in Bun
+  beforeEach(() => {
+    mockFindByIds.mockClear()
   })
 
   it("returns immediately when no attachments provided", async () => {
@@ -37,7 +47,7 @@ describe("awaitImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     const result = await awaitImageProcessing(mockPool, ["attach_1"], 1000)
 
@@ -65,7 +75,7 @@ describe("awaitImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     const result = await awaitImageProcessing(mockPool, ["attach_1"], 1000)
 
@@ -109,7 +119,7 @@ describe("awaitImageProcessing", () => {
       },
     ]
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue(mockAttachments)
+    mockFindByIds.mockResolvedValue(mockAttachments)
 
     const result = await awaitImageProcessing(mockPool, ["attach_1", "attach_2"], 1000)
 
@@ -135,7 +145,7 @@ describe("awaitImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     // Use very short timeout to speed up test
     const result = await awaitImageProcessing(mockPool, ["attach_1"], 100)
@@ -147,6 +157,10 @@ describe("awaitImageProcessing", () => {
 })
 
 describe("hasPendingImageProcessing", () => {
+  beforeEach(() => {
+    mockFindByIds.mockClear()
+  })
+
   it("returns false for empty array", async () => {
     const mockPool = {} as any
 
@@ -172,7 +186,7 @@ describe("hasPendingImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
 
@@ -196,7 +210,7 @@ describe("hasPendingImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
 
@@ -220,7 +234,7 @@ describe("hasPendingImageProcessing", () => {
       createdAt: new Date(),
     }
 
-    spyOn(AttachmentRepository, "findByIds").mockResolvedValue([mockAttachment])
+    mockFindByIds.mockResolvedValue([mockAttachment])
 
     const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
 
