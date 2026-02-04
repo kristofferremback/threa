@@ -9,18 +9,15 @@ import { logger } from "./logger"
  */
 export const DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS = 60_000
 
-/** @deprecated Use DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS */
-export const DEFAULT_IMAGE_PROCESSING_TIMEOUT_MS = DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS
-
 /**
  * Polling interval for checking processing status (1 second).
  */
 const POLL_INTERVAL_MS = 1_000
 
 /**
- * Result of awaiting image processing.
+ * Result of awaiting attachment processing.
  */
-export interface AwaitImageProcessingResult {
+export interface AwaitAttachmentProcessingResult {
   /** Whether all attachments completed processing */
   allCompleted: boolean
   /** IDs of attachments that completed successfully */
@@ -43,8 +40,8 @@ export interface AwaitImageProcessingResult {
 export async function awaitAttachmentProcessing(
   pool: Pool,
   attachmentIds: string[],
-  timeoutMs: number = DEFAULT_IMAGE_PROCESSING_TIMEOUT_MS
-): Promise<AwaitImageProcessingResult> {
+  timeoutMs: number = DEFAULT_ATTACHMENT_PROCESSING_TIMEOUT_MS
+): Promise<AwaitAttachmentProcessingResult> {
   if (attachmentIds.length === 0) {
     return { allCompleted: true, completedIds: [], failedOrTimedOutIds: [] }
   }
@@ -54,7 +51,7 @@ export async function awaitAttachmentProcessing(
   const completedIds: string[] = []
   const failedIds: string[] = []
 
-  logger.debug({ attachmentIds, timeoutMs }, "Starting to await image processing")
+  logger.debug({ attachmentIds, timeoutMs }, "Starting to await attachment processing")
 
   // Each iteration auto-acquires and releases a connection via pool (not withClient).
   // This is intentional per INV-41: we release between polling intervals to avoid
@@ -89,7 +86,7 @@ export async function awaitAttachmentProcessing(
   const timedOutIds = Array.from(pendingIds)
   const failedOrTimedOutIds = [...failedIds, ...timedOutIds]
 
-  const result: AwaitImageProcessingResult = {
+  const result: AwaitAttachmentProcessingResult = {
     allCompleted: failedOrTimedOutIds.length === 0,
     completedIds,
     failedOrTimedOutIds,
@@ -110,7 +107,7 @@ export async function awaitAttachmentProcessing(
       timedOutCount: timedOutIds.length,
       elapsedMs: Date.now() - startTime,
     },
-    "Finished awaiting image processing"
+    "Finished awaiting attachment processing"
   )
 
   return result
@@ -120,7 +117,7 @@ export async function awaitAttachmentProcessing(
  * Check if any attachments in a list are still pending or processing.
  * Quick check without polling.
  */
-export async function hasPendingImageProcessing(pool: Pool, attachmentIds: string[]): Promise<boolean> {
+export async function hasPendingAttachmentProcessing(pool: Pool, attachmentIds: string[]): Promise<boolean> {
   if (attachmentIds.length === 0) return false
 
   const attachments = await AttachmentRepository.findByIds(pool, attachmentIds)
@@ -133,6 +130,3 @@ export async function hasPendingImageProcessing(pool: Pool, attachmentIds: strin
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
-
-/** @deprecated Use awaitAttachmentProcessing */
-export const awaitImageProcessing = awaitAttachmentProcessing

@@ -1,12 +1,12 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test"
-import { awaitImageProcessing, hasPendingImageProcessing } from "./await-image-processing"
+import { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-image-processing"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import type { Attachment } from "../repositories/attachment-repository"
 
 // Mock the repository
 const originalFindByIds = AttachmentRepository.findByIds
 
-describe("awaitImageProcessing", () => {
+describe("awaitAttachmentProcessing", () => {
   beforeEach(() => {
     // Reset mock after each test
     AttachmentRepository.findByIds = originalFindByIds
@@ -15,7 +15,7 @@ describe("awaitImageProcessing", () => {
   it("returns immediately when no attachments provided", async () => {
     const mockPool = {} as any
 
-    const result = await awaitImageProcessing(mockPool, [])
+    const result = await awaitAttachmentProcessing(mockPool, [])
 
     expect(result).toEqual({
       allCompleted: true,
@@ -43,7 +43,7 @@ describe("awaitImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
-    const result = await awaitImageProcessing(mockPool, ["attach_1"], 1000)
+    const result = await awaitAttachmentProcessing(mockPool, ["attach_1"], 1000)
 
     expect(result).toEqual({
       allCompleted: true,
@@ -71,7 +71,7 @@ describe("awaitImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
-    const result = await awaitImageProcessing(mockPool, ["attach_1"], 1000)
+    const result = await awaitAttachmentProcessing(mockPool, ["attach_1"], 1000)
 
     expect(result).toEqual({
       allCompleted: false,
@@ -115,7 +115,7 @@ describe("awaitImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve(mockAttachments))
 
-    const result = await awaitImageProcessing(mockPool, ["attach_1", "attach_2"], 1000)
+    const result = await awaitAttachmentProcessing(mockPool, ["attach_1", "attach_2"], 1000)
 
     expect(result.allCompleted).toBe(false)
     expect(result.completedIds).toContain("attach_1")
@@ -142,7 +142,7 @@ describe("awaitImageProcessing", () => {
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
     // Use very short timeout to speed up test
-    const result = await awaitImageProcessing(mockPool, ["attach_1"], 100)
+    const result = await awaitAttachmentProcessing(mockPool, ["attach_1"], 100)
 
     expect(result.allCompleted).toBe(false)
     expect(result.completedIds).toHaveLength(0)
@@ -150,7 +150,7 @@ describe("awaitImageProcessing", () => {
   })
 })
 
-describe("hasPendingImageProcessing", () => {
+describe("hasPendingAttachmentProcessing", () => {
   beforeEach(() => {
     AttachmentRepository.findByIds = originalFindByIds
   })
@@ -158,7 +158,7 @@ describe("hasPendingImageProcessing", () => {
   it("returns false for empty array", async () => {
     const mockPool = {} as any
 
-    const result = await hasPendingImageProcessing(mockPool, [])
+    const result = await hasPendingAttachmentProcessing(mockPool, [])
 
     expect(result).toBe(false)
   })
@@ -182,7 +182,7 @@ describe("hasPendingImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
-    const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
+    const result = await hasPendingAttachmentProcessing(mockPool, ["attach_1"])
 
     expect(result).toBe(false)
   })
@@ -206,7 +206,7 @@ describe("hasPendingImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
-    const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
+    const result = await hasPendingAttachmentProcessing(mockPool, ["attach_1"])
 
     expect(result).toBe(true)
   })
@@ -230,7 +230,7 @@ describe("hasPendingImageProcessing", () => {
 
     AttachmentRepository.findByIds = mock(() => Promise.resolve([mockAttachment]))
 
-    const result = await hasPendingImageProcessing(mockPool, ["attach_1"])
+    const result = await hasPendingAttachmentProcessing(mockPool, ["attach_1"])
 
     expect(result).toBe(true)
   })
