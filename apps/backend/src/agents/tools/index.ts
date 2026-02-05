@@ -41,6 +41,12 @@ export {
   type LoadAttachmentResult,
   type MultimodalToolResult,
 } from "./load-attachment-tool"
+export {
+  createLoadPdfSectionTool,
+  type LoadPdfSectionInput,
+  type LoadPdfSectionCallbacks,
+  type LoadPdfSectionResult,
+} from "./load-pdf-section-tool"
 
 /**
  * Check if a tool is enabled for a persona.

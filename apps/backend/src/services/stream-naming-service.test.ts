@@ -62,9 +62,9 @@ mock.module("../repositories/message-repository", () => ({
 }))
 
 // AttachmentRepository will be mocked via spyOn in beforeEach
-// Note: We do NOT mock awaitImageProcessing via mock.module because that
-// pollutes the module cache and breaks await-image-processing.test.ts.
-// Instead, awaitImageProcessing will use the spyOn'd AttachmentRepository.
+// Note: We do NOT mock awaitAttachmentProcessing via mock.module because that
+// pollutes the module cache and breaks await-attachment-processing.test.ts.
+// Instead, awaitAttachmentProcessing will use the spyOn'd AttachmentRepository.
 
 mock.module("../repositories/outbox-repository", () => ({
   OutboxRepository: {
@@ -121,7 +121,7 @@ describe("StreamNamingService", () => {
     // Don't set default for mockStreamList - each test that needs it will set it
 
     // Use spyOn for AttachmentRepository to avoid mock.module pollution
-    // findByIds is used by awaitImageProcessing - return empty to make it complete immediately
+    // findByIds is used by awaitAttachmentProcessing - return empty to make it complete immediately
     spyOn(AttachmentRepository, "findByIds").mockResolvedValue([])
     spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(new Map())
     spyOn(AttachmentRepository, "findByMessageIdsWithExtractions").mockResolvedValue(new Map())
@@ -302,7 +302,7 @@ describe("StreamNamingService", () => {
       attachmentsMap.set("msg_1", [{ id: "attach_1" }])
       spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(attachmentsMap)
 
-      // awaitImageProcessing will call findByIds - return completed status
+      // awaitAttachmentProcessing will call findByIds - return completed status
       spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
         { id: "attach_1", processingStatus: "completed" },
       ] as any)
@@ -333,7 +333,7 @@ describe("StreamNamingService", () => {
       attachmentsMap.set("msg_1", [{ id: "attach_1" }])
       spyOn(AttachmentRepository, "findByMessageIds").mockResolvedValue(attachmentsMap)
 
-      // awaitImageProcessing will call findByIds - return completed status
+      // awaitAttachmentProcessing will call findByIds - return completed status
       spyOn(AttachmentRepository, "findByIds").mockResolvedValue([
         { id: "attach_1", processingStatus: "completed" },
       ] as any)

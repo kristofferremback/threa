@@ -23,6 +23,7 @@ import { StreamEventRepository } from "../repositories/stream-event-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import { AttachmentExtractionRepository } from "../repositories/attachment-extraction-repository"
+import { PdfPageExtractionRepository } from "../repositories/pdf-page-extraction-repository"
 import type { ResponseGenerator, ResponseGeneratorCallbacks, RecordStepParams } from "./companion-runner"
 import { eventId } from "../lib/id"
 import type { TraceEmitter } from "../lib/trace-emitter"
@@ -34,9 +35,11 @@ import {
   type SearchAttachmentsCallbacks,
   type GetAttachmentCallbacks,
   type LoadAttachmentCallbacks,
+  type LoadPdfSectionCallbacks,
   type AttachmentSearchResult,
   type AttachmentDetails,
   type LoadAttachmentResult,
+  type LoadPdfSectionResult,
 } from "./tools"
 import {
   buildStreamContext,
@@ -50,7 +53,7 @@ import { resolveStreamIdentifier } from "./tools/identifier-resolver"
 import type { SearchService } from "../services/search-service"
 import type { StorageProvider } from "../lib/storage/s3-client"
 import type { ModelRegistry } from "../lib/ai/model-registry"
-import { awaitImageProcessing } from "../lib/await-image-processing"
+import { awaitAttachmentProcessing } from "../lib/await-attachment-processing"
 import { sessionId } from "../lib/id"
 import { logger } from "../lib/logger"
 import { formatTime, getDateKey, formatDate, buildTemporalPromptSection } from "../lib/temporal"
@@ -474,7 +477,7 @@ export class PersonaAgent {
               { messageId, imageCount: imageAttachmentIds.length },
               "Awaiting image processing for trigger message"
             )
-            const awaitResult = await awaitImageProcessing(pool, imageAttachmentIds)
+            const awaitResult = await awaitAttachmentProcessing(pool, imageAttachmentIds)
             logger.info(
               {
                 messageId,
@@ -733,6 +736,7 @@ export class PersonaAgent {
               search: SearchAttachmentsCallbacks
               get: GetAttachmentCallbacks
               load: LoadAttachmentCallbacks | undefined
+              loadPdfSection: LoadPdfSectionCallbacks | undefined
             }
           | undefined
         if (invokingUserId && accessibleStreamIds) {
@@ -765,7 +769,7 @@ export class PersonaAgent {
               if (!attachment) return null
 
               // Check access: attachment must be in an accessible stream
-              if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
                 return null
               }
 
@@ -799,7 +803,7 @@ export class PersonaAgent {
                 if (!attachment) return null
 
                 // Check access
-                if (attachment.streamId && !accessibleStreamIds.includes(attachment.streamId)) {
+                if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
                   return null
                 }
 
@@ -823,10 +827,62 @@ export class PersonaAgent {
             }
           }
 
+          // load_pdf_section for loading page ranges from large PDFs
+          const loadPdfSection: LoadPdfSectionCallbacks = {
+            loadPdfSection: async (input): Promise<LoadPdfSectionResult | null> => {
+              const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+              if (!attachment) return null
+
+              // Check access
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+                return null
+              }
+
+              // Get extraction to check metadata
+              const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+              if (!extraction || extraction.sourceType !== "pdf" || !extraction.pdfMetadata) {
+                return null
+              }
+
+              const totalPages = extraction.pdfMetadata.totalPages
+
+              // Validate page range
+              if (input.startPage > totalPages || input.endPage > totalPages) {
+                return null
+              }
+
+              // Get page extractions for the range
+              const pages = await PdfPageExtractionRepository.findByAttachmentAndPageRange(
+                db,
+                input.attachmentId,
+                input.startPage,
+                input.endPage
+              )
+
+              const pageContents = pages.map((p) => ({
+                pageNumber: p.pageNumber,
+                content: p.markdownContent ?? p.ocrText ?? p.rawText ?? "",
+              }))
+
+              const combinedContent = pageContents.map((p) => p.content).join("\n\n---\n\n")
+
+              return {
+                attachmentId: input.attachmentId,
+                filename: attachment.filename,
+                startPage: input.startPage,
+                endPage: input.endPage,
+                totalPages,
+                content: combinedContent,
+                pages: pageContents,
+              }
+            },
+          }
+
           attachmentCallbacks = {
             search: searchAttachments,
             get: getAttachment,
             load: loadAttachment,
+            loadPdfSection,
           }
         }
 
@@ -873,7 +929,7 @@ export class PersonaAgent {
 
           attachments: attachmentCallbacks,
 
-          awaitImageProcessing: async (messageIds: string[]) => {
+          awaitAttachmentProcessing: async (messageIds: string[]) => {
             // Get attachments for these messages and await their processing
             const attachmentsByMessage = await AttachmentRepository.findByMessageIds(db, messageIds)
             const allAttachmentIds: string[] = []
@@ -883,7 +939,7 @@ export class PersonaAgent {
               }
             }
             if (allAttachmentIds.length > 0) {
-              await awaitImageProcessing(db, allAttachmentIds)
+              await awaitAttachmentProcessing(db, allAttachmentIds)
             }
           },
 

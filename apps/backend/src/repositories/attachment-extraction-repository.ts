@@ -1,5 +1,12 @@
 import { sql, type Querier } from "../db"
-import type { ExtractionContentType, ChartData, TableData, DiagramData } from "@threa/types"
+import type {
+  ExtractionContentType,
+  ExtractionSourceType,
+  PdfSizeTier,
+  ChartData,
+  TableData,
+  DiagramData,
+} from "@threa/types"
 
 // Internal row type (snake_case)
 interface AttachmentExtractionRow {
@@ -10,8 +17,23 @@ interface AttachmentExtractionRow {
   summary: string
   full_text: string | null
   structured_data: unknown | null
+  source_type: string
+  pdf_metadata: unknown | null
   created_at: Date
   updated_at: Date
+}
+
+// PDF-specific metadata
+export interface PdfMetadata {
+  totalPages: number
+  sizeTier: PdfSizeTier
+  sections?: PdfSection[]
+}
+
+export interface PdfSection {
+  startPage: number
+  endPage: number
+  title: string
 }
 
 // Domain type (camelCase)
@@ -23,6 +45,8 @@ export interface AttachmentExtraction {
   summary: string
   fullText: string | null
   structuredData: ChartData | TableData | DiagramData | null
+  sourceType: ExtractionSourceType
+  pdfMetadata: PdfMetadata | null
   createdAt: Date
   updatedAt: Date
 }
@@ -35,6 +59,8 @@ export interface InsertAttachmentExtractionParams {
   summary: string
   fullText?: string | null
   structuredData?: ChartData | TableData | DiagramData | null
+  sourceType?: ExtractionSourceType
+  pdfMetadata?: PdfMetadata | null
 }
 
 function mapRowToExtraction(row: AttachmentExtractionRow): AttachmentExtraction {
@@ -46,6 +72,8 @@ function mapRowToExtraction(row: AttachmentExtractionRow): AttachmentExtraction 
     summary: row.summary,
     fullText: row.full_text,
     structuredData: row.structured_data as ChartData | TableData | DiagramData | null,
+    sourceType: row.source_type as ExtractionSourceType,
+    pdfMetadata: row.pdf_metadata as PdfMetadata | null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -54,6 +82,7 @@ function mapRowToExtraction(row: AttachmentExtractionRow): AttachmentExtraction 
 const SELECT_FIELDS = `
   id, attachment_id, workspace_id,
   content_type, summary, full_text, structured_data,
+  source_type, pdf_metadata,
   created_at, updated_at
 `
 
@@ -62,7 +91,8 @@ export const AttachmentExtractionRepository = {
     const result = await client.query<AttachmentExtractionRow>(sql`
       INSERT INTO attachment_extractions (
         id, attachment_id, workspace_id,
-        content_type, summary, full_text, structured_data
+        content_type, summary, full_text, structured_data,
+        source_type, pdf_metadata
       )
       VALUES (
         ${params.id},
@@ -71,7 +101,9 @@ export const AttachmentExtractionRepository = {
         ${params.contentType},
         ${params.summary},
         ${params.fullText ?? null},
-        ${params.structuredData ? JSON.stringify(params.structuredData) : null}
+        ${params.structuredData ? JSON.stringify(params.structuredData) : null},
+        ${params.sourceType ?? "image"},
+        ${params.pdfMetadata ? JSON.stringify(params.pdfMetadata) : null}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)

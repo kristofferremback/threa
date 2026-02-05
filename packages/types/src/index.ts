@@ -80,6 +80,19 @@ export {
   AGENT_SESSION_STATUSES,
   type AgentSessionStatus,
   AgentSessionStatuses,
+  // PDF processing
+  PDF_PAGE_CLASSIFICATIONS,
+  type PdfPageClassification,
+  PdfPageClassifications,
+  PDF_JOB_STATUSES,
+  type PdfJobStatus,
+  PdfJobStatuses,
+  PDF_SIZE_TIERS,
+  type PdfSizeTier,
+  PdfSizeTiers,
+  EXTRACTION_SOURCE_TYPES,
+  type ExtractionSourceType,
+  ExtractionSourceTypes,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -106,6 +119,8 @@ export type {
   TableData,
   DiagramData,
   AttachmentExtraction,
+  PdfSection,
+  PdfMetadata,
 } from "./domain"
 
 // Slug validation

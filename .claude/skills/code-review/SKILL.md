@@ -11,11 +11,12 @@ Spawns a single Opus agent that analyzes a PR from multiple perspectives and pos
 ## What It Does
 
 1. Checks PR eligibility (not draft, not closed, not already reviewed)
-2. Gathers CLAUDE.md context for compliance checking
-3. Spawns a Haiku subagent to find the implementation plan (from session history and plan files)
-4. Spawns ONE background agent (Opus) that reviews from all perspectives
-5. Agent posts the unified comment directly to GitHub
-6. Agent reports back a summary with confidence score
+2. Identifies PR number and repo info
+3. Spawns ONE background agent (Opus) that:
+   - Gathers its own context (plan, PR description, CLAUDE.md files)
+   - Reviews from all perspectives
+   - Posts the unified comment directly to GitHub
+4. Agent reports back a summary with confidence score
 
 ## Instructions
 
@@ -41,7 +42,7 @@ gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | 
 
 If a unified-review comment exists, the agent will supersede it (not skip).
 
-### Step 2: Identify PR and Gather Context
+### Step 2: Identify PR
 
 If a PR number was provided as an argument, use that. Otherwise, find the open PR for the current branch:
 
@@ -61,58 +62,7 @@ Get repo owner/name for API calls:
 gh repo view --json owner,name -q '"\(.owner.login)|\(.name)"'
 ```
 
-Find relevant CLAUDE.md files:
-
-```bash
-gh pr diff <NUMBER> --name-only | xargs -I{} dirname {} | sort -u | while read dir; do
-  [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
-done
-[ -f "CLAUDE.md" ] && echo "CLAUDE.md"
-```
-
-### Step 3: Find Plan via Subagent
-
-Spawn a Haiku subagent to find the implementation plan. This keeps the reviewer's context clean.
-
-```
-Use the Task tool with these parameters:
-  subagent_type: "general-purpose"
-  model: "haiku"
-  description: "Find implementation plan"
-  prompt: |
-    Find the implementation plan for branch: <BRANCH_NAME>
-
-    Follow the /find-plan skill instructions:
-    1. Check ~/.claude/projects/ for session history (path format: absolute path with /. replaced by -)
-    2. Find plan files in ~/.claude/plans/ or written during sessions
-    3. Classify sessions as MAIN/SUBSTEP/SIDE_QUEST/INVESTIGATION
-    4. Read the main plan file if it exists
-
-    Return a structured summary:
-
-    PLAN_FOUND: [yes/no]
-    PLAN_FILE: [path if exists]
-    MAIN_REQUIREMENTS:
-    - [bullet points of what was requested]
-
-    KEY_DESIGN_DECISIONS:
-    - [bullet points of approach chosen]
-
-    SIDE_QUESTS (exclude from plan adherence):
-    - [any sessions that are tooling/process work, not feature work]
-
-    Keep it concise - this will be passed to a code reviewer.
-```
-
-Also get the PR description (often contains requirements):
-
-```bash
-gh pr view <NUMBER> --json body -q '.body'
-```
-
-Pass the subagent's output as `<PLAN_SUMMARY>` and PR description as `<PR_DESCRIPTION>` to the review agent.
-
-### Step 4: Spawn Review Agent
+### Step 3: Spawn Review Agent
 
 Use the Task tool to spawn ONE agent with Opus.
 
@@ -121,7 +71,7 @@ Use the Task tool to spawn ONE agent with Opus.
 - Set `model: "opus"` to use Opus
 - Set `run_in_background: true`
 
-Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>`, `<CLAUDE_MD_FILES>`, `<PLAN_SUMMARY>`, `<PR_DESCRIPTION>` with actual values.
+Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>` with actual values.
 
 **Task parameters:**
 
@@ -137,20 +87,36 @@ You are a comprehensive code review agent. Review PR #\<NUMBER\> from multiple p
 
 PR: #\<NUMBER\> - \<TITLE\>
 Repo: \<OWNER\>/\<REPO\>
-CLAUDE.md files to check: \<CLAUDE_MD_FILES\>
-Plan summary: \<PLAN_SUMMARY\>
-PR Description: \<PR_DESCRIPTION\>
 
-**Gather Context** - Run these commands:
+**Phase 0: Gather Context**
 
-- `gh pr diff <NUMBER>` - Get the cumulative diff (PR HEAD vs base branch)
-- `gh pr view <NUMBER> --json headRefOid -q '.headRefOid'` - Get HEAD SHA for linking
-- `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
-- `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
-- Read each CLAUDE.md file listed above
-- Review the plan summary provided above (already extracted by subagent)
+Before reviewing, gather all necessary context yourself:
+
+1. **Get PR info:**
+   - `gh pr diff <NUMBER>` - Get the cumulative diff
+   - `gh pr view <NUMBER> --json headRefOid,body -q '{sha: .headRefOid, body: .body}'` - Get HEAD SHA and PR description
+   - `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
+   - `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
+
+2. **Find CLAUDE.md files in changed directories:**
+
+   ```bash
+   gh pr diff <NUMBER> --name-only | xargs -I{} dirname {} | sort -u | while read dir; do
+     [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
+   done
+   [ -f "CLAUDE.md" ] && echo "CLAUDE.md"
+   ```
+
+   Read each CLAUDE.md file found.
+
+3. **Find the implementation plan** using the /find-plan skill approach:
+   - Check `~/.claude/plans/` for plan files related to this branch
+   - Look for plan files in the repo (docs/, .claude/, etc.)
+   - If no plan exists, note "No plan found" and proceed with PR description as requirements
 
 **About the diff:** `gh pr diff` shows the cumulative diff between the PR HEAD and the base branch (main). This IS the current state of the PR - not commit-by-commit changes.
+
+**Phase 1: Review**
 
 **CRITICAL - Read Files for Context:**
 
@@ -172,12 +138,12 @@ The diff shows WHAT changed but not always WHY. For every potential issue:
 - Theoretical risks without concrete impact
 - Issues where you haven't traced the full data flow
 
-**Phase 0 - Plan Adherence (FIRST):**
+**Plan Adherence (check FIRST):**
 
 Before reviewing code quality, check if the implementation matches the original plan/requirements:
 
-1. Review the plan summary provided above (requirements, design decisions, side quests to exclude)
-2. Read the PR description for stated goals
+1. Review the plan you found in Phase 0 (requirements, design decisions)
+2. Review the PR description for stated goals
 3. Compare the actual implementation against:
    - **Stated requirements**: Does the code do what was asked?
    - **Planned approach**: If a plan exists, does the implementation follow it?
@@ -201,7 +167,7 @@ Before reviewing code quality, check if the implementation matches the original 
 
 **Key principle**: The question is "does this serve the stated goal?" not "was every line in the original plan?" Features often need supporting changes. A migration to add a column, a new type definition, a refactored helper - these aren't scope creep, they're implementation.
 
-**Phase 1 - Low-Level (Diff-Focused):**
+**Low-Level (Diff-Focused):**
 Shallow scan of the diff itself for obvious issues:
 
 - Logic errors and bugs in the changed code
@@ -210,7 +176,7 @@ Shallow scan of the diff itself for obvious issues:
 - Incorrect variable usage
 - Focus ONLY on the changes themselves, not surrounding context
 
-**Phase 2 - High-Level (Context-Focused):**
+**High-Level (Context-Focused):**
 Understand the bigger picture:
 
 - WHY does this code exist? What problem does it solve?
@@ -218,7 +184,7 @@ Understand the bigger picture:
 - Read git blame/history if needed to understand intent
 - Check if related code elsewhere needs corresponding changes
 
-**Phase 3 - Historical Context:**
+**Historical Context:**
 Check historical context that may inform the review:
 
 - `gh pr list --state merged --search "path:<file>" --limit 5` - Find previous PRs that touched these files
@@ -443,7 +409,7 @@ SUMMARY:
 KEY_ISSUES: <brief comma-separated list, or "None">
 ```
 
-### Step 5: Collect Report
+### Step 4: Collect Report
 
 Use TaskOutput to wait for the agent:
 
@@ -453,7 +419,7 @@ TaskOutput(task_id: "<task_id>", block: true, timeout: 300000)
 
 Parse the structured summary from the agent's output.
 
-### Step 6: Report Results to User
+### Step 5: Report Results to User
 
 ```
 Code review posted to PR #<NUMBER>: <COMMENT_URL>
@@ -481,8 +447,9 @@ Key issues: [list if any]
 
 ## Token Efficiency
 
-This skill uses a single Opus agent instead of multiple parallel agents:
+This skill uses a single Opus agent that gathers its own context:
 
+- Agent fetches plan, PR description, and CLAUDE.md files itself (not passed in prompt)
 - One code exploration pass (not seven)
 - Shared context across all review perspectives
 - Agent posts comment directly (no large content passed back)

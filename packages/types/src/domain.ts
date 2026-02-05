@@ -27,6 +27,8 @@ import type {
   PendingItemType,
   SourceType,
   ExtractionContentType,
+  ExtractionSourceType,
+  PdfSizeTier,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -295,6 +297,24 @@ export interface DiagramData {
 }
 
 /**
+ * Section within a PDF document for large PDF navigation.
+ */
+export interface PdfSection {
+  startPage: number
+  endPage: number
+  title: string
+}
+
+/**
+ * Metadata for PDF extractions.
+ */
+export interface PdfMetadata {
+  totalPages: number
+  sizeTier: PdfSizeTier
+  sections: PdfSection[]
+}
+
+/**
  * Extracted content from an attachment (images, documents, etc.).
  * Created by image captioning pipeline for AI agent context.
  */
@@ -306,6 +326,8 @@ export interface AttachmentExtraction {
   summary: string
   fullText: string | null
   structuredData: ChartData | TableData | DiagramData | null
+  sourceType: ExtractionSourceType
+  pdfMetadata: PdfMetadata | null
   createdAt: string
   updatedAt: string
 }

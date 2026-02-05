@@ -174,6 +174,7 @@ export const AGENT_TOOL_NAMES = [
   "search_attachments",
   "get_attachment",
   "load_attachment",
+  "load_pdf_section",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -188,6 +189,7 @@ export const AgentToolNames = {
   SEARCH_ATTACHMENTS: "search_attachments",
   GET_ATTACHMENT: "get_attachment",
   LOAD_ATTACHMENT: "load_attachment",
+  LOAD_PDF_SECTION: "load_pdf_section",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations
@@ -252,3 +254,46 @@ export const AgentSessionStatuses = {
   COMPLETED: "completed",
   FAILED: "failed",
 } as const satisfies Record<string, AgentSessionStatus>
+
+// PDF page classifications
+export const PDF_PAGE_CLASSIFICATIONS = ["text_rich", "scanned", "complex_layout", "mixed", "empty"] as const
+export type PdfPageClassification = (typeof PDF_PAGE_CLASSIFICATIONS)[number]
+
+export const PdfPageClassifications = {
+  TEXT_RICH: "text_rich",
+  SCANNED: "scanned",
+  COMPLEX_LAYOUT: "complex_layout",
+  MIXED: "mixed",
+  EMPTY: "empty",
+} as const satisfies Record<string, PdfPageClassification>
+
+// PDF processing job statuses (fan-out/fan-in coordination)
+export const PDF_JOB_STATUSES = ["preparing", "processing_pages", "assembling", "completed", "failed"] as const
+export type PdfJobStatus = (typeof PDF_JOB_STATUSES)[number]
+
+export const PdfJobStatuses = {
+  PREPARING: "preparing",
+  PROCESSING_PAGES: "processing_pages",
+  ASSEMBLING: "assembling",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const satisfies Record<string, PdfJobStatus>
+
+// PDF size tiers (determines injection strategy)
+export const PDF_SIZE_TIERS = ["small", "medium", "large"] as const
+export type PdfSizeTier = (typeof PDF_SIZE_TIERS)[number]
+
+export const PdfSizeTiers = {
+  SMALL: "small",
+  MEDIUM: "medium",
+  LARGE: "large",
+} as const satisfies Record<string, PdfSizeTier>
+
+// Extraction source types (image vs PDF)
+export const EXTRACTION_SOURCE_TYPES = ["image", "pdf"] as const
+export type ExtractionSourceType = (typeof EXTRACTION_SOURCE_TYPES)[number]
+
+export const ExtractionSourceTypes = {
+  IMAGE: "image",
+  PDF: "pdf",
+} as const satisfies Record<string, ExtractionSourceType>

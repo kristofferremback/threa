@@ -18,6 +18,7 @@ import {
   createSearchAttachmentsTool,
   createGetAttachmentTool,
   createLoadAttachmentTool,
+  createLoadPdfSectionTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
@@ -26,6 +27,7 @@ import {
   type SearchAttachmentsCallbacks,
   type GetAttachmentCallbacks,
   type LoadAttachmentCallbacks,
+  type LoadPdfSectionCallbacks,
 } from "./tools"
 import { AgentToolNames, type SourceItem } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
@@ -110,9 +112,10 @@ export interface ResponseGeneratorCallbacks {
     search: SearchAttachmentsCallbacks
     get: GetAttachmentCallbacks
     load: LoadAttachmentCallbacks | undefined
+    loadPdfSection: LoadPdfSectionCallbacks | undefined
   }
-  /** Optional callback to await image processing for messages (for multi-modal support) */
-  awaitImageProcessing?: (messageIds: string[]) => Promise<void>
+  /** Optional callback to await attachment processing for messages (for multi-modal support) */
+  awaitAttachmentProcessing?: (messageIds: string[]) => Promise<void>
   /** Optional callback to record steps in the agent trace */
   recordStep?: (params: RecordStepParams) => Promise<void>
 }
@@ -225,6 +228,10 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       if (callbacks.attachments.load && isToolEnabled(enabledTools, AgentToolNames.LOAD_ATTACHMENT)) {
         tools.push(createLoadAttachmentTool(callbacks.attachments.load))
       }
+      // Add load_pdf_section for loading page ranges from large PDFs
+      if (callbacks.attachments.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)) {
+        tools.push(createLoadPdfSectionTool(callbacks.attachments.loadPdfSection))
+      }
     }
 
     logger.debug(
@@ -251,7 +258,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       },
       runResearcher,
       recordStep: callbacks.recordStep,
-      awaitImageProcessing: callbacks.awaitImageProcessing,
+      awaitAttachmentProcessing: callbacks.awaitAttachmentProcessing,
     }
 
     // Parse model for metadata
