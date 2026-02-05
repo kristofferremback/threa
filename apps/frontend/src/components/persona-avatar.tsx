@@ -27,8 +27,8 @@ interface PersonaAvatarProps {
 /**
  * Avatar component for personas that handles special icons.
  *
- * - For Ariadne: renders the AriadneIcon SVG
- * - For other personas: renders emoji or initials in AvatarFallback
+ * - For Ariadne: renders the AriadneIcon SVG with gold border
+ * - For other personas: renders emoji or initials with solid gold background
  *
  * Centralizes the logic for persona avatar rendering so it's consistent
  * across message timeline, mention list, and other UI.

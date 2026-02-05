@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Ariadne Icon - Light Mode -->
+  <!-- Use on light backgrounds (#fff, #f5f5f5, etc.) -->
+  <path 
+    d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48" 
+    stroke="#9A7B3D" 
+    stroke-width="2.5" 
+    stroke-linecap="round" 
+    fill="none"
+  />
+</svg>

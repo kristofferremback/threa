@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { PersonaAvatar } from "@/components/persona-avatar"
+import { AriadneIcon } from "@/components/ariadne-icon"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
 import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
@@ -74,18 +74,22 @@ function MessageLayout({
         "message-item group flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
-          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary",
+          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
-      {isPersona ? (
-        <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
-      ) : (
-        <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-          <AvatarFallback className="bg-muted text-foreground">{actorInitials}</AvatarFallback>
-        </Avatar>
-      )}
+      <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+        <AvatarFallback
+          className={
+            isPersona
+              ? "bg-card text-primary shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]"
+              : "bg-muted text-foreground"
+          }
+        >
+          {personaSlug === "ariadne" ? <AriadneIcon size="sm" /> : actorInitials}
+        </AvatarFallback>
+      </Avatar>
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-1">
           <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>

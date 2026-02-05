@@ -134,6 +134,26 @@ export default {
             transform: "translateX(-100%)",
           },
         },
+        "ariadne-breathe": {
+          "0%, 100%": {
+            transform: "scale(1)",
+            filter: "drop-shadow(0 0 2px hsl(var(--primary) / 0.2))",
+          },
+          "50%": {
+            transform: "scale(1.04)",
+            filter: "drop-shadow(0 0 6px hsl(var(--primary) / 0.5))",
+          },
+        },
+        "ariadne-ripple": {
+          "0%, 100%": {
+            transform: "scale(1)",
+            opacity: "0.15",
+          },
+          "50%": {
+            transform: "scale(1.08)",
+            opacity: "0",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -143,6 +163,8 @@ export default {
         "activity-pulse": "activity-pulse 2s ease-in-out infinite",
         "indeterminate-progress": "indeterminate-progress 1.5s ease-in-out infinite",
         "topbar-shimmer": "topbar-shimmer 2s ease-in-out infinite",
+        "ariadne-breathe": "ariadne-breathe 2s ease-in-out infinite",
+        "ariadne-ripple": "ariadne-ripple 2s ease-in-out infinite",
       },
     },
   },

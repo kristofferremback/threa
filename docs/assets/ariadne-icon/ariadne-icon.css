@@ -1,0 +1,206 @@
+/**
+ * Ariadne Icon Animation Styles
+ * 
+ * Usage:
+ * 1. Add class "ariadne-icon" to the container
+ * 2. Add class "ariadne-animated" for the breathing animation
+ * 3. Add class "ariadne-loading" for the whisper ripple effect (thinking/loading state)
+ * 
+ * Color Variants:
+ * - Default: Gold (#C8A055) for dark mode
+ * - Add class "ariadne-light" for light mode (#9A7B3D)
+ */
+
+/* ═══════════════════════════════════════════════
+   CSS CUSTOM PROPERTIES
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* Dark mode (default) */
+  --ariadne-color: #c8a055;
+  --ariadne-glow-soft: rgba(200, 160, 85, 0.2);
+  --ariadne-glow-strong: rgba(200, 160, 85, 0.5);
+  --ariadne-ripple-opacity: 0.15;
+
+  /* Animation timing */
+  --ariadne-breathe-duration: 2s;
+  --ariadne-ripple-duration: 2s;
+}
+
+/* Light mode overrides */
+.ariadne-light {
+  --ariadne-color: #9a7b3d;
+  --ariadne-glow-soft: rgba(154, 123, 61, 0.15);
+  --ariadne-glow-strong: rgba(154, 123, 61, 0.35);
+  --ariadne-ripple-opacity: 0.12;
+}
+
+/* ═══════════════════════════════════════════════
+   BASE CONTAINER
+   ═══════════════════════════════════════════════ */
+
+.ariadne-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ariadne-icon svg {
+  display: block;
+  overflow: visible;
+}
+
+.ariadne-icon svg path {
+  stroke: var(--ariadne-color);
+}
+
+/* ═══════════════════════════════════════════════
+   BREATHING ANIMATION (Idle/Active State)
+   ═══════════════════════════════════════════════ */
+
+@keyframes ariadne-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px var(--ariadne-glow-soft));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 6px var(--ariadne-glow-strong));
+  }
+}
+
+.ariadne-animated .ariadne-heart,
+.ariadne-animated svg.ariadne-heart {
+  animation: ariadne-breathe var(--ariadne-breathe-duration) ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* ═══════════════════════════════════════════════
+   WHISPER RIPPLE (Loading/Thinking State)
+   ═══════════════════════════════════════════════ */
+
+@keyframes ariadne-ripple-whisper {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: var(--ariadne-ripple-opacity);
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+
+.ariadne-loading .ariadne-ripple {
+  animation: ariadne-ripple-whisper var(--ariadne-ripple-duration) ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Hide ripple when not loading */
+.ariadne-icon:not(.ariadne-loading) .ariadne-ripple {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════
+   AVATAR FRAME VARIANT
+   ═══════════════════════════════════════════════ */
+
+.ariadne-avatar {
+  border-radius: 50%;
+  background: #111;
+  border: 1.5px solid #222;
+}
+
+.ariadne-light.ariadne-avatar {
+  background: #f5f5f5;
+  border-color: #e0e0e0;
+}
+
+/* ═══════════════════════════════════════════════
+   SIZE PRESETS
+   ═══════════════════════════════════════════════ */
+
+.ariadne-icon.ariadne-xs {
+  width: 16px;
+  height: 16px;
+}
+.ariadne-icon.ariadne-sm {
+  width: 24px;
+  height: 24px;
+}
+.ariadne-icon.ariadne-md {
+  width: 32px;
+  height: 32px;
+}
+.ariadne-icon.ariadne-lg {
+  width: 48px;
+  height: 48px;
+}
+.ariadne-icon.ariadne-xl {
+  width: 64px;
+  height: 64px;
+}
+.ariadne-icon.ariadne-2xl {
+  width: 80px;
+  height: 80px;
+}
+
+/* Stroke width adjustments for different sizes */
+.ariadne-icon.ariadne-xs svg path {
+  stroke-width: 6;
+}
+.ariadne-icon.ariadne-sm svg path {
+  stroke-width: 5;
+}
+.ariadne-icon.ariadne-md svg path {
+  stroke-width: 4;
+}
+.ariadne-icon.ariadne-lg svg path {
+  stroke-width: 3;
+}
+.ariadne-icon.ariadne-xl svg path {
+  stroke-width: 2.5;
+}
+.ariadne-icon.ariadne-2xl svg path {
+  stroke-width: 2.5;
+}
+
+/* Ripple stroke width adjustments */
+.ariadne-icon.ariadne-xs .ariadne-ripple circle {
+  stroke-width: 4;
+}
+.ariadne-icon.ariadne-sm .ariadne-ripple circle {
+  stroke-width: 3;
+}
+.ariadne-icon.ariadne-md .ariadne-ripple circle {
+  stroke-width: 2.5;
+}
+.ariadne-icon.ariadne-lg .ariadne-ripple circle {
+  stroke-width: 2;
+}
+.ariadne-icon.ariadne-xl .ariadne-ripple circle {
+  stroke-width: 1.5;
+}
+.ariadne-icon.ariadne-2xl .ariadne-ripple circle {
+  stroke-width: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   REDUCED MOTION
+   ═══════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .ariadne-animated .ariadne-heart,
+  .ariadne-animated svg.ariadne-heart,
+  .ariadne-loading .ariadne-ripple {
+    animation: none;
+  }
+
+  /* Static glow for reduced motion */
+  .ariadne-animated .ariadne-heart,
+  .ariadne-animated svg.ariadne-heart {
+    filter: drop-shadow(0 0 4px var(--ariadne-glow-soft));
+  }
+}
