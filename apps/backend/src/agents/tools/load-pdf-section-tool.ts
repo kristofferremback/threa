@@ -2,11 +2,22 @@ import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 import { logger } from "../../lib/logger"
 
-const LoadPdfSectionSchema = z.object({
-  attachmentId: z.string().describe("The ID of the PDF attachment"),
-  startPage: z.number().int().min(1).describe("Start page number (1-indexed, inclusive)"),
-  endPage: z.number().int().min(1).describe("End page number (1-indexed, inclusive)"),
-})
+const MAX_PAGES_PER_REQUEST = 10
+
+const LoadPdfSectionSchema = z
+  .object({
+    attachmentId: z.string().describe("The ID of the PDF attachment"),
+    startPage: z.number().int().min(1).describe("Start page number (1-indexed, inclusive)"),
+    endPage: z.number().int().min(1).describe("End page number (1-indexed, inclusive)"),
+  })
+  .refine((data) => data.startPage <= data.endPage, {
+    message: "startPage must be less than or equal to endPage",
+    path: ["startPage"],
+  })
+  .refine((data) => data.endPage - data.startPage + 1 <= MAX_PAGES_PER_REQUEST, {
+    message: `Cannot load more than ${MAX_PAGES_PER_REQUEST} pages at once`,
+    path: ["endPage"],
+  })
 
 export type LoadPdfSectionInput = z.infer<typeof LoadPdfSectionSchema>
 
@@ -56,27 +67,7 @@ For small/medium PDFs (<25 pages), full content is already available in the extr
     schema: LoadPdfSectionSchema,
     func: async (input: LoadPdfSectionInput) => {
       try {
-        // Validate page range
-        if (input.startPage > input.endPage) {
-          return JSON.stringify({
-            error: "startPage must be less than or equal to endPage",
-            startPage: input.startPage,
-            endPage: input.endPage,
-          })
-        }
-
-        // Limit page range to prevent loading too much content
-        const maxPagesPerRequest = 10
-        if (input.endPage - input.startPage + 1 > maxPagesPerRequest) {
-          return JSON.stringify({
-            error: `Cannot load more than ${maxPagesPerRequest} pages at once. Please narrow your page range.`,
-            startPage: input.startPage,
-            endPage: input.endPage,
-            requestedPages: input.endPage - input.startPage + 1,
-            maxAllowed: maxPagesPerRequest,
-          })
-        }
-
+        // Page range validation is handled by the Zod schema (.refine())
         const result = await callbacks.loadPdfSection(input)
 
         if (!result) {
