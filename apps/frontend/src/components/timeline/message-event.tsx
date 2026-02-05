@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
-import { AriadneIcon } from "@/components/ariadne-icon"
+import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
 import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
@@ -79,17 +79,13 @@ function MessageLayout({
         containerClassName
       )}
     >
-      <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-        <AvatarFallback
-          className={
-            isPersona
-              ? "bg-card text-primary shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]"
-              : "bg-muted text-foreground"
-          }
-        >
-          {personaSlug === "ariadne" ? <AriadneIcon size="sm" /> : actorInitials}
-        </AvatarFallback>
-      </Avatar>
+      {isPersona ? (
+        <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
+      ) : (
+        <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+          <AvatarFallback className="bg-muted text-foreground">{actorInitials}</AvatarFallback>
+        </Avatar>
+      )}
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-1">
           <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>

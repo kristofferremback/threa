@@ -7,10 +7,20 @@ const ARIADNE_SLUG = "ariadne"
 
 type AvatarSize = "sm" | "md" | "lg"
 
-const SIZE_CONFIG: Record<AvatarSize, { avatar: string; icon: "xs" | "sm" | "md"; text: string }> = {
-  sm: { avatar: "h-7 w-7", icon: "xs", text: "text-xs" },
-  md: { avatar: "h-9 w-9 rounded-[10px]", icon: "sm", text: "text-sm" },
-  lg: { avatar: "h-11 w-11 rounded-[12px]", icon: "md", text: "text-base" },
+const SIZE_CONFIG: Record<AvatarSize, { avatar: string; icon: "xs" | "sm" | "md"; text: string; border: string }> = {
+  sm: { avatar: "h-7 w-7", icon: "xs", text: "text-xs", border: "shadow-[inset_0_0_0_1px_hsl(var(--primary))]" },
+  md: {
+    avatar: "h-9 w-9 rounded-[10px]",
+    icon: "sm",
+    text: "text-sm",
+    border: "shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]",
+  },
+  lg: {
+    avatar: "h-11 w-11 rounded-[12px]",
+    icon: "md",
+    text: "text-base",
+    border: "shadow-[inset_0_0_0_2px_hsl(var(--primary))]",
+  },
 }
 
 interface PersonaAvatarProps {
@@ -39,7 +49,7 @@ export function PersonaAvatar({ slug, fallback, size = "md", className }: Person
 
   return (
     <Avatar className={cn(config.avatar, "shrink-0", className)}>
-      <AvatarFallback className={cn("bg-primary text-primary-foreground", config.text)}>
+      <AvatarFallback className={cn("bg-card text-primary", config.text, config.border)}>
         {isAriadne ? <AriadneIcon size={config.icon} /> : fallback}
       </AvatarFallback>
     </Avatar>

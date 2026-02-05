@@ -98,11 +98,23 @@ vi.mock("@/hooks", () => ({
   getStepLabel: () => "thinking",
 }))
 
-vi.mock("@/components/ariadne-icon", () => ({
-  AriadneIcon: ({ size }: { size?: string }) => (
-    <span data-testid="ariadne-icon" data-size={size}>
-      🜃
-    </span>
+vi.mock("@/components/persona-avatar", () => ({
+  PersonaAvatar: ({
+    slug,
+    fallback,
+    size,
+    className,
+  }: {
+    slug?: string
+    fallback: string
+    size?: string
+    className?: string
+  }) => (
+    <div data-testid="persona-avatar" data-slug={slug} data-size={size} className={className}>
+      <span className="bg-card text-primary shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]">
+        {slug === "ariadne" ? <span data-testid="ariadne-icon">🜃</span> : fallback}
+      </span>
+    </div>
   ),
 }))
 
@@ -219,19 +231,19 @@ describe("MessageEvent", () => {
       expect(messageContainer).not.toHaveClass("from-muted/[0.03]")
     })
 
-    it("should apply gold-bordered styling to persona avatar", () => {
+    it("should use PersonaAvatar for persona messages", () => {
       const event: StreamEvent = {
         ...createMessageEvent("msg_123", "AI response"),
         actorType: "persona",
       }
 
-      const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
+      render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
-      // Avatar fallback with card background and gold inset border
-      const avatarFallback = container.querySelector(".message-avatar span")
-      expect(avatarFallback).toHaveClass("bg-card")
-      expect(avatarFallback).toHaveClass("text-primary")
-      expect(avatarFallback).toHaveClass("shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]")
+      // Verifies PersonaAvatar is used with correct props
+      const personaAvatar = screen.getByTestId("persona-avatar")
+      expect(personaAvatar).toBeInTheDocument()
+      expect(personaAvatar).toHaveAttribute("data-slug", "ariadne")
+      expect(personaAvatar).toHaveAttribute("data-size", "md")
     })
 
     it("should apply muted background to user avatar", () => {
