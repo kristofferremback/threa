@@ -23,6 +23,7 @@ import {
   TEXT_SUMMARY_TEMPERATURE,
   TEXT_SUMMARY_SYSTEM_PROMPT,
   TEXT_SUMMARY_USER_PROMPT,
+  BINARY_DETECTION,
   textSummarySchema,
 } from "./config"
 import { isBinaryFile, normalizeEncoding, inferFormat } from "./detector"
@@ -100,15 +101,18 @@ export class TextProcessingService implements TextProcessingServiceLike {
     let fullTextToStore: string | null
 
     try {
-      // Download file from S3
-      const fileBuffer = await this.storage.getObject(attachment.storagePath)
+      // Step 1: Fetch first 8KB for binary detection (avoid downloading full file for binaries)
+      const headBuffer = await this.storage.getObjectRange(attachment.storagePath, 0, BINARY_DETECTION.checkSize - 1)
 
-      // Check if file is actually binary (misidentified by uploader)
-      if (isBinaryFile(fileBuffer)) {
+      // Check if file is binary based on head chunk
+      if (isBinaryFile(headBuffer)) {
         log.info({ filename: attachment.filename }, "File detected as binary, marking as skipped")
         await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.SKIPPED)
         return
       }
+
+      // Step 2: File looks like text — download full content
+      const fileBuffer = await this.storage.getObject(attachment.storagePath)
 
       // Normalize encoding to UTF-8
       const normalized = normalizeEncoding(fileBuffer)

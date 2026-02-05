@@ -1,6 +1,5 @@
 import { describe, test, expect } from "bun:test"
 import { isBinaryFile, normalizeEncoding, inferFormat } from "./detector"
-import { isTextAttachment } from "./config"
 
 describe("isBinaryFile", () => {
   test("should detect text files as non-binary", () => {
@@ -96,44 +95,5 @@ describe("inferFormat", () => {
   test("should default to plain for unknown format", () => {
     expect(inferFormat("unknown.txt", "Just some random text")).toBe("plain")
     expect(inferFormat("file.xyz", "Random content")).toBe("plain")
-  })
-})
-
-describe("isTextAttachment", () => {
-  test("should identify text mime types", () => {
-    expect(isTextAttachment("text/plain", "file.txt")).toBe(true)
-    expect(isTextAttachment("text/markdown", "file.md")).toBe(true)
-    expect(isTextAttachment("text/csv", "data.csv")).toBe(true)
-  })
-
-  test("should identify application/json as text", () => {
-    expect(isTextAttachment("application/json", "config.json")).toBe(true)
-  })
-
-  test("should identify code files by extension", () => {
-    expect(isTextAttachment("application/octet-stream", "app.ts")).toBe(true)
-    expect(isTextAttachment("application/octet-stream", "main.py")).toBe(true)
-    expect(isTextAttachment("application/octet-stream", "server.go")).toBe(true)
-  })
-
-  test("should identify config files by extension", () => {
-    expect(isTextAttachment("application/octet-stream", ".env")).toBe(true)
-    expect(isTextAttachment("application/octet-stream", "config.toml")).toBe(true)
-  })
-
-  test("should identify README and similar files without extension", () => {
-    expect(isTextAttachment("application/octet-stream", "README")).toBe(true)
-    expect(isTextAttachment("application/octet-stream", "LICENSE")).toBe(true)
-    expect(isTextAttachment("application/octet-stream", "Makefile")).toBe(true)
-  })
-
-  test("should reject obvious binary types", () => {
-    expect(isTextAttachment("image/png", "photo.png")).toBe(false)
-    expect(isTextAttachment("application/pdf", "doc.pdf")).toBe(false)
-  })
-
-  test("should reject unknown binary files", () => {
-    expect(isTextAttachment("application/octet-stream", "unknown.exe")).toBe(false)
-    expect(isTextAttachment("application/octet-stream", "archive.zip")).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, AttachmentRepository, isOutboxEventType } from "../repositories"
+import { OutboxRepository, isOutboxEventType } from "../repositories"
 import { logger } from "./logger"
 import { JobQueues } from "./job-queue"
 import type { QueueManager } from "./queue-manager"
@@ -8,8 +8,6 @@ import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
 import { isImageAttachment } from "../services/image-caption"
 import { isPdfAttachment } from "../services/pdf-processing"
-import { isTextAttachment } from "../services/text-processing"
-import { ProcessingStatuses } from "@threa/types"
 
 export interface AttachmentUploadedHandlerConfig {
   batchSize?: number
@@ -36,7 +34,7 @@ const DEFAULT_CONFIG = {
  *
  * For images: enqueues IMAGE_CAPTION job for AI processing
  * For PDFs: enqueues PDF_PREPARE job for document extraction
- * For others: sets status='skipped' (no processing needed)
+ * For others: enqueues TEXT_PROCESS job (binary detection decides skip vs process)
  */
 export class AttachmentUploadedHandler implements OutboxHandler {
   readonly listenerId = "attachment-uploaded"
@@ -119,7 +117,8 @@ export class AttachmentUploadedHandler implements OutboxHandler {
               logger.info({ attachmentId, filename, mimeType }, "PDF prepare job dispatched")
               break
 
-            case isTextAttachment(mimeType, filename):
+            default:
+              // Route everything else to text processing — binary detection decides skip vs process
               await this.jobQueue.send(JobQueues.TEXT_PROCESS, {
                 attachmentId,
                 workspaceId,
@@ -127,11 +126,6 @@ export class AttachmentUploadedHandler implements OutboxHandler {
                 storagePath,
               })
               logger.info({ attachmentId, filename, mimeType }, "Text processing job dispatched")
-              break
-
-            default:
-              await AttachmentRepository.updateProcessingStatus(this.db, attachmentId, ProcessingStatuses.SKIPPED)
-              logger.debug({ attachmentId, filename, mimeType }, "Attachment marked as skipped")
           }
 
           lastProcessedId = event.id

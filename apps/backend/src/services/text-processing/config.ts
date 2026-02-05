@@ -55,38 +55,6 @@ export const BINARY_DETECTION = {
 // ============================================================================
 
 /**
- * MIME types that indicate text content.
- */
-export const TEXT_MIME_TYPES = [
-  "text/plain",
-  "text/markdown",
-  "text/x-markdown",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/html",
-  "text/css",
-  "text/javascript",
-  "text/typescript",
-  "text/x-python",
-  "text/x-java",
-  "text/x-c",
-  "text/x-c++",
-  "text/x-go",
-  "text/x-rust",
-  "text/x-ruby",
-  "text/x-php",
-  "text/x-yaml",
-  "text/yaml",
-  "text/xml",
-  "application/json",
-  "application/x-yaml",
-  "application/yaml",
-  "application/xml",
-  "application/javascript",
-  "application/typescript",
-] as const
-
-/**
  * File extension to format mapping.
  * Extensions not in this map will be processed as 'plain' text.
  */
@@ -226,88 +194,6 @@ export const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   ".lisp": "lisp",
   ".scm": "scheme",
   ".rkt": "racket",
-}
-
-/**
- * Check if an attachment is a text file based on mime type and filename.
- *
- * Returns true for:
- * - Known text mime types
- * - application/octet-stream with text-like extension
- * - Any file with a text-like extension
- *
- * Binary detection happens later during processing.
- */
-export function isTextAttachment(mimeType: string, filename: string): boolean {
-  // Check mime type first
-  if (mimeType.startsWith("text/")) {
-    return true
-  }
-
-  if (TEXT_MIME_TYPES.includes(mimeType as (typeof TEXT_MIME_TYPES)[number])) {
-    return true
-  }
-
-  // For octet-stream or unknown types, check extension
-  const lowerFilename = filename.toLowerCase()
-  const ext = getFileExtension(lowerFilename)
-
-  // Known text extensions
-  if (ext && EXTENSION_FORMAT_MAP[ext]) {
-    return true
-  }
-
-  // Common plain text extensions not in the format map
-  const plainTextExtensions = [
-    ".txt",
-    ".log",
-    ".cfg",
-    ".conf",
-    ".config",
-    ".ini",
-    ".env",
-    ".properties",
-    ".toml",
-    ".xml",
-    ".html",
-    ".htm",
-    ".css",
-    ".scss",
-    ".sass",
-    ".less",
-    ".vue",
-    ".svelte",
-    ".astro",
-    ".prisma",
-    ".graphql",
-    ".gql",
-    ".proto",
-    ".dockerfile",
-    ".makefile",
-    ".cmake",
-    ".gitignore",
-    ".gitattributes",
-    ".editorconfig",
-    ".prettierrc",
-    ".eslintrc",
-    ".npmrc",
-    ".nvmrc",
-    ".babelrc",
-  ]
-
-  if (ext && plainTextExtensions.includes(ext)) {
-    return true
-  }
-
-  // Files without extension that are commonly text
-  const textFilenames = ["readme", "license", "changelog", "authors", "contributing", "makefile", "dockerfile"]
-
-  const baseName = lowerFilename.split("/").pop() ?? lowerFilename
-  if (textFilenames.includes(baseName)) {
-    return true
-  }
-
-  return false
 }
 
 /**
