@@ -4,6 +4,7 @@ import { useAuth } from "@/auth"
 import { useWorkspaces, useCreateWorkspace } from "@/hooks"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ThreaLogo } from "@/components/threa-logo"
 
 export function WorkspaceSelectPage() {
   const { user, loading: authLoading } = useAuth()
@@ -31,8 +32,11 @@ export function WorkspaceSelectPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <ThreaLogo size="lg" className="animate-pulse" />
+          <p className="text-muted-foreground text-sm">Loading...</p>
+        </div>
       </div>
     )
   }
@@ -49,11 +53,12 @@ export function WorkspaceSelectPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="flex flex-col items-center gap-6">
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-8">
+        <ThreaLogo size="lg" />
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Welcome, {user?.name || "User"}</h1>
-          <p className="mt-2 text-muted-foreground">Select a workspace to continue</p>
+          <h1 className="text-xl font-medium">Welcome, {user?.name || "User"}</h1>
+          <p className="mt-1 text-muted-foreground text-sm">Select a workspace to continue</p>
         </div>
         {workspaces && workspaces.length > 0 && (
           <div className="flex flex-col gap-2">

@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent, AttachmentProvider } from "@/components/ui/markdown-content"
 import { RelativeTime } from "@/components/relative-time"
+import { PersonaAvatar } from "@/components/persona-avatar"
 import { usePendingMessages, usePanel, createDraftPanelId, useTrace } from "@/contexts"
 import { useActors, getStepLabel, type MessageAgentActivity } from "@/hooks"
 import { cn } from "@/lib/utils"
@@ -40,6 +41,8 @@ interface MessageLayoutProps {
   workspaceId: string
   actorName: string
   actorInitials: string
+  /** Persona slug for SVG icon support (e.g., "ariadne") */
+  personaSlug?: string
   statusIndicator: ReactNode
   actions?: ReactNode
   footer?: ReactNode
@@ -54,6 +57,7 @@ function MessageLayout({
   workspaceId,
   actorName,
   actorInitials,
+  personaSlug,
   statusIndicator,
   actions,
   footer,
@@ -70,16 +74,18 @@ function MessageLayout({
         "message-item group flex gap-[14px] mb-5",
         // AI/Persona messages get full-width gradient with gold accent
         isPersona &&
-          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 border-l-[3px] border-l-primary",
+          "bg-gradient-to-r from-primary/[0.06] to-transparent -mx-6 px-6 py-4 shadow-[inset_3px_0_0_hsl(var(--primary))]",
         isHighlighted && "animate-highlight-flash",
         containerClassName
       )}
     >
-      <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
-        <AvatarFallback className={cn("bg-muted text-foreground", isPersona && "bg-primary text-primary-foreground")}>
-          {actorInitials}
-        </AvatarFallback>
-      </Avatar>
+      {isPersona ? (
+        <PersonaAvatar slug={personaSlug} fallback={actorInitials} size="md" className="message-avatar" />
+      ) : (
+        <Avatar className="message-avatar h-9 w-9 rounded-[10px] shrink-0">
+          <AvatarFallback className="bg-muted text-foreground">{actorInitials}</AvatarFallback>
+        </Avatar>
+      )}
       <div className="message-content flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-1">
           <span className={cn("font-semibold text-sm", isPersona && "text-primary")}>{actorName}</span>
@@ -105,6 +111,7 @@ interface MessageEventInnerProps {
   streamId: string
   actorName: string
   actorInitials: string
+  personaSlug?: string
   hideActions?: boolean
   isHighlighted?: boolean
   activity?: MessageAgentActivity
@@ -117,6 +124,7 @@ function SentMessageEvent({
   streamId,
   actorName,
   actorInitials,
+  personaSlug,
   hideActions,
   isHighlighted,
   activity,
@@ -197,6 +205,7 @@ function SentMessageEvent({
       workspaceId={workspaceId}
       actorName={actorName}
       actorInitials={actorInitials}
+      personaSlug={personaSlug}
       statusIndicator={<RelativeTime date={event.createdAt} className="text-xs text-muted-foreground" />}
       actions={
         !hideActions && (
@@ -230,7 +239,14 @@ function SentMessageEvent({
   )
 }
 
-function PendingMessageEvent({ event, payload, workspaceId, actorName, actorInitials }: MessageEventInnerProps) {
+function PendingMessageEvent({
+  event,
+  payload,
+  workspaceId,
+  actorName,
+  actorInitials,
+  personaSlug,
+}: MessageEventInnerProps) {
   return (
     <MessageLayout
       event={event}
@@ -238,6 +254,7 @@ function PendingMessageEvent({ event, payload, workspaceId, actorName, actorInit
       workspaceId={workspaceId}
       actorName={actorName}
       actorInitials={actorInitials}
+      personaSlug={personaSlug}
       containerClassName="opacity-60"
       statusIndicator={
         <span className="text-xs text-muted-foreground opacity-0 animate-fade-in-delayed">Sending...</span>
@@ -246,7 +263,14 @@ function PendingMessageEvent({ event, payload, workspaceId, actorName, actorInit
   )
 }
 
-function FailedMessageEvent({ event, payload, workspaceId, actorName, actorInitials }: MessageEventInnerProps) {
+function FailedMessageEvent({
+  event,
+  payload,
+  workspaceId,
+  actorName,
+  actorInitials,
+  personaSlug,
+}: MessageEventInnerProps) {
   const { retryMessage } = usePendingMessages()
 
   return (
@@ -256,6 +280,7 @@ function FailedMessageEvent({ event, payload, workspaceId, actorName, actorIniti
       workspaceId={workspaceId}
       actorName={actorName}
       actorInitials={actorInitials}
+      personaSlug={personaSlug}
       containerClassName="border-l-2 border-destructive pl-2"
       statusIndicator={<span className="text-xs text-destructive">Failed to send</span>}
       actions={
@@ -277,11 +302,11 @@ export function MessageEvent({
 }: MessageEventProps) {
   const payload = event.payload as MessagePayload
   const { getStatus } = usePendingMessages()
-  const { getActorName, getActorInitials } = useActors(workspaceId)
+  const { getActorName, getActorAvatar } = useActors(workspaceId)
   const status = getStatus(event.id)
 
   const actorName = getActorName(event.actorId, event.actorType)
-  const actorInitials = getActorInitials(event.actorId, event.actorType)
+  const { fallback: actorInitials, slug: personaSlug } = getActorAvatar(event.actorId, event.actorType)
 
   switch (status) {
     case "pending":
@@ -293,6 +318,7 @@ export function MessageEvent({
           streamId={streamId}
           actorName={actorName}
           actorInitials={actorInitials}
+          personaSlug={personaSlug}
         />
       )
     case "failed":
@@ -304,6 +330,7 @@ export function MessageEvent({
           streamId={streamId}
           actorName={actorName}
           actorInitials={actorInitials}
+          personaSlug={personaSlug}
         />
       )
     default:
@@ -315,6 +342,7 @@ export function MessageEvent({
           streamId={streamId}
           actorName={actorName}
           actorInitials={actorInitials}
+          personaSlug={personaSlug}
           hideActions={hideActions}
           isHighlighted={isHighlighted}
           activity={activity}

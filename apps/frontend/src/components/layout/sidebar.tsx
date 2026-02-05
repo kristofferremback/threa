@@ -45,6 +45,7 @@ import { RelativeTime } from "@/components/relative-time"
 import { StreamTypes, AuthorTypes, type StreamWithPreview } from "@threa/types"
 import { useQueryClient } from "@tanstack/react-query"
 import { ThemeDropdown } from "@/components/theme-dropdown"
+import { ThreaLogo } from "@/components/threa-logo"
 
 // ============================================================================
 // Types & Constants
@@ -369,10 +370,11 @@ function SidebarHeader({ workspaceName, viewMode, onViewModeChange, hideViewTogg
 
   return (
     <div className="flex-shrink-0 border-b px-4 py-3">
-      {/* Workspace name + actions */}
+      {/* Logo + workspace name + actions */}
       <div className="flex items-center justify-between mb-3">
-        <Link to="/workspaces" className="font-semibold hover:underline truncate text-sm">
-          {workspaceName}
+        <Link to="/workspaces" className="flex items-center gap-2 hover:opacity-80 transition-opacity truncate">
+          <ThreaLogo size="sm" />
+          <span className="font-semibold text-sm truncate">{workspaceName}</span>
         </Link>
         <ThemeDropdown />
       </div>

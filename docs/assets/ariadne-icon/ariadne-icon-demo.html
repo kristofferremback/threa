@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ariadne Icon — Asset Documentation</title>
+    <style>
+      /**
+ * Ariadne Icon Animation Styles
+ *
+ * Colors aligned with Threa design system:
+ * - Dark mode: hsl(40, 55%, 55%) = #cba14d (close to #C8A055)
+ * - Light mode: hsl(38, 65%, 50%) = #d2962d
+ */
+
+      :root {
+        /* Dark mode (default) - aligned with design system */
+        --ariadne-color: #cba14d;
+        --ariadne-glow-soft: rgba(203, 161, 77, 0.2);
+        --ariadne-glow-strong: rgba(203, 161, 77, 0.5);
+        --ariadne-ripple-opacity: 0.15;
+
+        /* Animation timing */
+        --ariadne-breathe-duration: 2s;
+        --ariadne-ripple-duration: 2s;
+      }
+
+      /* Light mode overrides */
+      .ariadne-light {
+        --ariadne-color: #d2962d;
+        --ariadne-glow-soft: rgba(210, 150, 45, 0.15);
+        --ariadne-glow-strong: rgba(210, 150, 45, 0.35);
+        --ariadne-ripple-opacity: 0.12;
+      }
+
+      .ariadne-icon {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .ariadne-icon svg {
+        display: block;
+        overflow: visible;
+      }
+
+      .ariadne-icon svg path {
+        stroke: var(--ariadne-color);
+      }
+
+      .ariadne-icon svg circle {
+        stroke: var(--ariadne-color);
+      }
+
+      @keyframes ariadne-breathe {
+        0%,
+        100% {
+          transform: scale(1);
+          filter: drop-shadow(0 0 2px var(--ariadne-glow-soft));
+        }
+        50% {
+          transform: scale(1.04);
+          filter: drop-shadow(0 0 6px var(--ariadne-glow-strong));
+        }
+      }
+
+      .ariadne-animated .ariadne-heart,
+      .ariadne-animated svg.ariadne-heart {
+        animation: ariadne-breathe var(--ariadne-breathe-duration) ease-in-out infinite;
+        transform-origin: center;
+      }
+
+      @keyframes ariadne-ripple-whisper {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: var(--ariadne-ripple-opacity);
+        }
+        50% {
+          transform: scale(1.08);
+          opacity: 0;
+        }
+      }
+
+      .ariadne-loading .ariadne-ripple {
+        animation: ariadne-ripple-whisper var(--ariadne-ripple-duration) ease-in-out infinite;
+        transform-origin: center;
+      }
+
+      .ariadne-icon:not(.ariadne-loading) .ariadne-ripple {
+        display: none;
+      }
+
+      .ariadne-avatar {
+        border-radius: 50%;
+        background: #111;
+        border: 1.5px solid #222;
+      }
+
+      .ariadne-light.ariadne-avatar {
+        background: #f5f5f5;
+        border-color: #e0e0e0;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ariadne-animated .ariadne-heart,
+        .ariadne-animated svg.ariadne-heart,
+        .ariadne-loading .ariadne-ripple {
+          animation: none;
+        }
+
+        .ariadne-animated .ariadne-heart,
+        .ariadne-animated svg.ariadne-heart {
+          filter: drop-shadow(0 0 4px var(--ariadne-glow-soft));
+        }
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        line-height: 1.6;
+        background: #0a0a0a;
+        color: #e0e0e0;
+        padding: 40px 20px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 28px;
+        font-weight: 300;
+        letter-spacing: 0.1em;
+        color: #cba14d;
+        margin-bottom: 8px;
+        text-align: center;
+      }
+
+      .subtitle {
+        text-align: center;
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 48px;
+      }
+
+      h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: #cba14d;
+        border-bottom: 1px solid #1a1a1a;
+        padding-bottom: 10px;
+        margin: 48px 0 24px;
+      }
+
+      h3 {
+        font-size: 14px;
+        color: #888;
+        margin: 24px 0 12px;
+      }
+
+      p {
+        color: #888;
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+
+      .demo-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 24px;
+        margin: 24px 0;
+      }
+
+      .demo-card {
+        border: 1px solid #1a1a1a;
+        border-radius: 12px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .demo-card.light-bg {
+        background: #f5f5f5;
+      }
+
+      .demo-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #666;
+        margin-bottom: 16px;
+      }
+
+      .demo-card.light-bg .demo-label {
+        color: #888;
+      }
+
+      .demo-icon-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 80px;
+      }
+
+      .size-row {
+        display: flex;
+        gap: 24px;
+        align-items: flex-end;
+        justify-content: center;
+        flex-wrap: wrap;
+        padding: 24px;
+        border: 1px solid #1a1a1a;
+        border-radius: 12px;
+        margin: 24px 0;
+      }
+
+      .size-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .size-label {
+        font-size: 10px;
+        color: #555;
+      }
+
+      .toggle-demo {
+        border: 1px solid #1a1a1a;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 24px 0;
+      }
+
+      .toggle-controls {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+      }
+
+      .toggle-btn {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        color: #888;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s;
+      }
+
+      .toggle-btn:hover {
+        border-color: #cba14d;
+        color: #cba14d;
+      }
+
+      .toggle-btn.active {
+        background: rgba(203, 161, 77, 0.1);
+        border-color: #cba14d;
+        color: #cba14d;
+      }
+
+      .toggle-preview {
+        display: flex;
+        justify-content: center;
+        padding: 32px;
+        background: #0a0a0a;
+        border-radius: 8px;
+      }
+
+      .chat-mock {
+        border: 1px solid #1a1a1a;
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 24px 0;
+        max-width: 500px;
+      }
+
+      .chat-mock-header {
+        padding: 10px 14px;
+        border-bottom: 1px solid #1a1a1a;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #555;
+      }
+
+      .chat-mock-body {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .chat-msg {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      .chat-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .chat-avatar.user {
+        background: linear-gradient(135deg, #4a7c59, #6b9e7a);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .chat-bubble {
+        background: #151515;
+        border: 1px solid #1a1a1a;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 13px;
+        color: #bbb;
+        max-width: 340px;
+      }
+
+      .chat-bubble .name {
+        font-size: 11px;
+        font-weight: 600;
+        margin-bottom: 3px;
+      }
+
+      .chat-bubble .name.gold {
+        color: #cba14d;
+      }
+      .chat-bubble .name.green {
+        color: #6b9e7a;
+      }
+
+      .chat-bubble.typing {
+        color: #666;
+        font-style: italic;
+      }
+
+      .color-swatches {
+        display: flex;
+        gap: 16px;
+        margin: 16px 0;
+        flex-wrap: wrap;
+      }
+
+      .swatch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: #111;
+        border-radius: 6px;
+      }
+
+      .swatch-color {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+      }
+
+      .swatch-info {
+        font-size: 12px;
+      }
+
+      .swatch-hex {
+        font-family: monospace;
+        color: #888;
+      }
+
+      .swatch-name {
+        color: #555;
+        font-size: 11px;
+      }
+
+      .note-box {
+        background: rgba(203, 161, 77, 0.1);
+        border: 1px solid rgba(203, 161, 77, 0.3);
+        border-radius: 8px;
+        padding: 16px;
+        margin: 24px 0;
+      }
+
+      .note-box strong {
+        color: #cba14d;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>ARIADNE ICON</h1>
+      <p class="subtitle">Asset Documentation & Interactive Examples</p>
+
+      <div class="note-box">
+        <strong>Note:</strong> Colors have been aligned with the Threa design system. Dark mode uses
+        <code>#cba14d</code> (hsl 40, 55%, 55%) and light mode uses <code>#d2962d</code> (hsl 38, 65%, 50%).
+      </div>
+
+      <!-- COLORS -->
+
+      <h2>Color Palette (Design System Aligned)</h2>
+
+      <div class="color-swatches">
+        <div class="swatch">
+          <div class="swatch-color" style="background: #cba14d"></div>
+          <div class="swatch-info">
+            <div class="swatch-hex">#cba14d</div>
+            <div class="swatch-name">Gold (Dark Mode)</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: #d2962d"></div>
+          <div class="swatch-info">
+            <div class="swatch-hex">#d2962d</div>
+            <div class="swatch-name">Gold (Light Mode)</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: rgba(203, 161, 77, 0.5)"></div>
+          <div class="swatch-info">
+            <div class="swatch-hex">rgba(203, 161, 77, 0.5)</div>
+            <div class="swatch-name">Glow Strong</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: rgba(203, 161, 77, 0.2)"></div>
+          <div class="swatch-info">
+            <div class="swatch-hex">rgba(203, 161, 77, 0.2)</div>
+            <div class="swatch-name">Glow Soft</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATIC VARIANTS -->
+
+      <h2>Static Variants</h2>
+
+      <div class="demo-grid">
+        <div class="demo-card">
+          <div class="demo-label">Dark Mode</div>
+          <div class="demo-icon-container">
+            <div class="ariadne-icon" style="width: 64px; height: 64px">
+              <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+                <path
+                  d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-card light-bg">
+          <div class="demo-label">Light Mode</div>
+          <div class="demo-icon-container">
+            <div class="ariadne-icon ariadne-light" style="width: 64px; height: 64px">
+              <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+                <path
+                  d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANIMATED VARIANTS -->
+
+      <h2>Animated Variants</h2>
+
+      <div class="demo-grid">
+        <div class="demo-card">
+          <div class="demo-label">Breathing (Idle/Active)</div>
+          <div class="demo-icon-container">
+            <div class="ariadne-icon ariadne-animated" style="width: 64px; height: 64px">
+              <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+                <path
+                  d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-card">
+          <div class="demo-label">Loading (Whisper Ripple)</div>
+          <div class="demo-icon-container">
+            <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 64px; height: 64px">
+              <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 64px; height: 64px">
+                <circle cx="50" cy="50" r="42" stroke-width="1.5" fill="none" />
+              </svg>
+              <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+                <path
+                  d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE DEMO -->
+
+      <h2>Interactive Demo</h2>
+
+      <div class="toggle-demo">
+        <div class="toggle-controls">
+          <button class="toggle-btn active" data-state="static">Static</button>
+          <button class="toggle-btn" data-state="breathing">Breathing</button>
+          <button class="toggle-btn" data-state="loading">Loading</button>
+          <button class="toggle-btn" data-toggle="light">Toggle Light Mode</button>
+        </div>
+
+        <div class="toggle-preview">
+          <div id="demo-icon" class="ariadne-icon" style="width: 64px; height: 64px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 64px; height: 64px">
+              <circle cx="50" cy="50" r="42" stroke-width="1.5" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIZE SCALING -->
+
+      <h2>Size Scaling</h2>
+
+      <div class="size-row">
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 16px; height: 16px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 16px; height: 16px">
+              <circle cx="50" cy="50" r="42" stroke-width="4" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 16px; height: 16px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="6"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">16px (xs)</div>
+        </div>
+
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 24px; height: 24px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 24px; height: 24px">
+              <circle cx="50" cy="50" r="42" stroke-width="3" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 24px; height: 24px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="5"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">24px (sm)</div>
+        </div>
+
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 32px; height: 32px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 32px; height: 32px">
+              <circle cx="50" cy="50" r="42" stroke-width="2.5" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 32px; height: 32px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="4"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">32px (md)</div>
+        </div>
+
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 48px; height: 48px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 48px; height: 48px">
+              <circle cx="50" cy="50" r="42" stroke-width="2" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 48px; height: 48px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="3"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">48px (lg)</div>
+        </div>
+
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 64px; height: 64px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 64px; height: 64px">
+              <circle cx="50" cy="50" r="42" stroke-width="1.5" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 64px; height: 64px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">64px (xl)</div>
+        </div>
+
+        <div class="size-item">
+          <div class="ariadne-icon ariadne-animated ariadne-loading" style="width: 80px; height: 80px">
+            <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 80px; height: 80px">
+              <circle cx="50" cy="50" r="42" stroke-width="1" fill="none" />
+            </svg>
+            <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 80px; height: 80px" fill="none">
+              <path
+                d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <div class="size-label">80px (2xl)</div>
+        </div>
+      </div>
+
+      <!-- CHAT CONTEXT -->
+
+      <h2>In Context — Chat Interface</h2>
+
+      <div class="chat-mock">
+        <div class="chat-mock-header">Loading State</div>
+        <div class="chat-mock-body">
+          <div class="chat-msg">
+            <div class="chat-avatar user">K</div>
+            <div class="chat-bubble">
+              <div class="name green">Kristoffer</div>
+              @Ariadne what's our approach to handling rate limits?
+            </div>
+          </div>
+          <div class="chat-msg">
+            <div class="ariadne-icon ariadne-avatar ariadne-animated ariadne-loading" style="width: 32px; height: 32px">
+              <svg class="ariadne-ripple" viewBox="0 0 100 100" style="position: absolute; width: 32px; height: 32px">
+                <circle cx="50" cy="50" r="42" stroke-width="2.5" fill="none" />
+              </svg>
+              <svg class="ariadne-heart" viewBox="0 0 100 100" style="width: 22px; height: 22px" fill="none">
+                <path
+                  d="M 50 18 C 28 18, 20 35, 28 48 C 36 61, 50 55, 50 50 C 50 45, 64 39, 72 48 C 80 57, 72 70, 50 82 C 28 70, 20 57, 28 48"
+                  stroke-width="4"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+              </svg>
+            </div>
+            <div class="chat-bubble typing">
+              <div class="name gold">Ariadne</div>
+              Searching conversations...
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANIMATION SPECS -->
+
+      <h2>Animation Specifications</h2>
+
+      <h3>Breathing Animation</h3>
+      <p>Used for idle/active state. Provides subtle life without demanding attention.</p>
+      <ul style="color: #888; margin-left: 20px; margin-bottom: 16px">
+        <li>Duration: 2 seconds</li>
+        <li>Easing: ease-in-out</li>
+        <li>Scale: 1.0 → 1.04 → 1.0</li>
+        <li>Glow: 2px soft → 6px strong → 2px soft</li>
+      </ul>
+
+      <h3>Whisper Ripple</h3>
+      <p>Used for loading/thinking state. Barely visible ring that expands in sync with breathing.</p>
+      <ul style="color: #888; margin-left: 20px">
+        <li>Duration: 2 seconds (synced with breathe)</li>
+        <li>Easing: ease-in-out</li>
+        <li>Scale: 1.0 → 1.08 → 1.0</li>
+        <li>Opacity: 0.15 → 0 → 0.15</li>
+      </ul>
+    </div>
+
+    <script>
+      // Interactive demo toggle
+      document.querySelectorAll(".toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const icon = document.getElementById("demo-icon")
+          const preview = document.querySelector(".toggle-preview")
+
+          if (btn.dataset.toggle === "light") {
+            btn.classList.toggle("active")
+            icon.classList.toggle("ariadne-light")
+            preview.style.background = icon.classList.contains("ariadne-light") ? "#f5f5f5" : "#0a0a0a"
+            return
+          }
+
+          // Remove active from state buttons
+          document.querySelectorAll(".toggle-btn[data-state]").forEach((b) => b.classList.remove("active"))
+          btn.classList.add("active")
+
+          const state = btn.dataset.state
+          icon.classList.remove("ariadne-animated", "ariadne-loading")
+
+          if (state === "breathing") {
+            icon.classList.add("ariadne-animated")
+          } else if (state === "loading") {
+            icon.classList.add("ariadne-animated", "ariadne-loading")
+          }
+        })
+      })
+    </script>
+  </body>
+</html>
