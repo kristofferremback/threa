@@ -9,7 +9,7 @@ import type {
   TableData,
   DiagramData,
 } from "@threa/types"
-import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers } from "@threa/types"
+import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
@@ -577,6 +577,11 @@ export async function enrichMessagesWithAttachments(
       const isLargePdf =
         extraction?.sourceType === ExtractionSourceTypes.PDF && extraction?.pdfMetadata?.sizeTier === PdfSizeTiers.LARGE
 
+      // For large Excel workbooks, don't include full text (use load_excel_section tool instead)
+      const isLargeExcel =
+        extraction?.sourceType === ExtractionSourceTypes.EXCEL &&
+        extraction?.excelMetadata?.injectionStrategy === InjectionStrategies.SUMMARY
+
       return {
         id: attachment.id,
         filename: attachment.filename,
@@ -585,7 +590,7 @@ export async function enrichMessagesWithAttachments(
           ? {
               contentType: extraction.contentType,
               summary: extraction.summary,
-              fullText: includeFullText && !isLargePdf ? extraction.fullText : null,
+              fullText: includeFullText && !isLargePdf && !isLargeExcel ? extraction.fullText : null,
               structuredData: includeFullText ? extraction.structuredData : null,
               sourceType: extraction.sourceType,
               pdfMetadata: extraction.pdfMetadata

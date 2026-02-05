@@ -58,6 +58,7 @@
     "umzug": "^3",
     "unpdf": "1.1.0",
     "word-extractor": "^1.0.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "^2.8.2",
     "zod": "^4.2.0"
   },

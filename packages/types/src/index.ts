@@ -140,6 +140,10 @@ export type {
   TextMetadata,
   // Word extraction types
   WordMetadata,
+  // Excel extraction types
+  ExcelSheetInfo,
+  ExcelChartInfo,
+  ExcelMetadata,
 } from "./domain"
 
 // Slug validation

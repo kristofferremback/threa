@@ -53,6 +53,12 @@ export {
   type LoadFileSectionCallbacks,
   type LoadFileSectionResult,
 } from "./load-file-section-tool"
+export {
+  createLoadExcelSectionTool,
+  type LoadExcelSectionInput,
+  type LoadExcelSectionCallbacks,
+  type LoadExcelSectionResult,
+} from "./load-excel-section-tool"
 
 /**
  * Check if a tool is enabled for a persona.
