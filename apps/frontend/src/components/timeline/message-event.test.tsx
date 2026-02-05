@@ -87,14 +87,23 @@ vi.mock("@/hooks", () => ({
       if (actorType === "persona") return "AI Companion"
       return "User Name"
     },
-    getActorInitials: (actorId: string | null, actorType: string | null) => {
-      if (!actorId) return "?"
-      if (actorType === "persona") return "AI"
-      return "US"
+    getActorAvatar: (actorId: string | null, actorType: string | null) => {
+      if (!actorId) return { fallback: "?", slug: undefined }
+      if (actorType === "persona") return { fallback: "AI", slug: "ariadne" }
+      return { fallback: "US", slug: undefined }
     },
     getUser: () => undefined,
     getPersona: () => undefined,
   }),
+  getStepLabel: () => "thinking",
+}))
+
+vi.mock("@/components/ariadne-icon", () => ({
+  AriadneIcon: ({ size }: { size?: string }) => (
+    <span data-testid="ariadne-icon" data-size={size}>
+      🜃
+    </span>
+  ),
 }))
 
 const createMessageEvent = (messageId: string, contentMarkdown: string): StreamEvent => ({
@@ -154,7 +163,7 @@ describe("MessageEvent", () => {
       expect(screen.getByTestId("markdown-content")).toHaveTextContent("Hello, world!")
     })
 
-    it("should render AI initials for persona messages", () => {
+    it("should render Ariadne icon for persona messages", () => {
       const event: StreamEvent = {
         ...createMessageEvent("msg_123", "AI response"),
         actorType: "persona",
@@ -162,7 +171,7 @@ describe("MessageEvent", () => {
 
       render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
-      expect(screen.getByText("AI")).toBeInTheDocument()
+      expect(screen.getByTestId("ariadne-icon")).toBeInTheDocument()
     })
 
     it("should render user initials for user messages", () => {
@@ -184,20 +193,19 @@ describe("MessageEvent", () => {
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
-      expect(messageContainer).toHaveClass("border-l-[3px]")
-      expect(messageContainer).toHaveClass("border-l-primary")
+      // Uses inset shadow instead of border to avoid layout shift
+      expect(messageContainer).toHaveClass("shadow-[inset_3px_0_0_hsl(var(--primary))]")
       expect(messageContainer).toHaveClass("bg-gradient-to-r")
       expect(messageContainer).toHaveClass("from-primary/[0.06]")
     })
 
-    it("should not apply gold border to user messages", () => {
+    it("should not apply gold accent to user messages", () => {
       const event = createMessageEvent("msg_123", "User message")
 
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
       const messageContainer = container.querySelector(".group")
-      expect(messageContainer).not.toHaveClass("border-l-[3px]")
-      expect(messageContainer).not.toHaveClass("border-l-primary")
+      expect(messageContainer).not.toHaveClass("shadow-[inset_3px_0_0_hsl(var(--primary))]")
     })
 
     it("should not apply background to user messages", () => {
@@ -211,7 +219,7 @@ describe("MessageEvent", () => {
       expect(messageContainer).not.toHaveClass("from-muted/[0.03]")
     })
 
-    it("should apply gold background to persona avatar", () => {
+    it("should apply gold-bordered styling to persona avatar", () => {
       const event: StreamEvent = {
         ...createMessageEvent("msg_123", "AI response"),
         actorType: "persona",
@@ -219,9 +227,11 @@ describe("MessageEvent", () => {
 
       const { container } = render(<MessageEvent event={event} workspaceId={workspaceId} streamId={streamId} />)
 
-      const avatarFallback = container.querySelector("span")
-      expect(avatarFallback).toHaveClass("bg-primary")
-      expect(avatarFallback).toHaveClass("text-primary-foreground")
+      // Avatar fallback with card background and gold inset border
+      const avatarFallback = container.querySelector(".message-avatar span")
+      expect(avatarFallback).toHaveClass("bg-card")
+      expect(avatarFallback).toHaveClass("text-primary")
+      expect(avatarFallback).toHaveClass("shadow-[inset_0_0_0_1.5px_hsl(var(--primary))]")
     })
 
     it("should apply muted background to user avatar", () => {
