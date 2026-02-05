@@ -29,6 +29,7 @@ export const JobQueues = {
   PDF_PREPARE: "pdf.prepare",
   PDF_PROCESS_PAGE: "pdf.process_page",
   PDF_ASSEMBLE: "pdf.assemble",
+  TEXT_PROCESS: "text.process",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -119,6 +120,14 @@ export interface PdfAssembleJobData {
   pdfJobId: string
 }
 
+/** Text processing job - processes text-based attachments */
+export interface TextProcessJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  storagePath: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -133,6 +142,7 @@ export interface JobDataMap {
   [JobQueues.PDF_PREPARE]: PdfPrepareJobData
   [JobQueues.PDF_PROCESS_PAGE]: PdfProcessPageJobData
   [JobQueues.PDF_ASSEMBLE]: PdfAssembleJobData
+  [JobQueues.TEXT_PROCESS]: TextProcessJobData
 }
 
 /**

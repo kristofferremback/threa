@@ -8,6 +8,7 @@ import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
 import { isImageAttachment } from "../services/image-caption"
 import { isPdfAttachment } from "../services/pdf-processing"
+import { isTextAttachment } from "../services/text-processing"
 import { ProcessingStatuses } from "@threa/types"
 
 export interface AttachmentUploadedHandlerConfig {
@@ -117,8 +118,18 @@ export class AttachmentUploadedHandler implements OutboxHandler {
             })
 
             logger.info({ attachmentId, filename, mimeType }, "PDF prepare job dispatched")
+          } else if (isTextAttachment(mimeType, filename)) {
+            // Enqueue text processing job
+            await this.jobQueue.send(JobQueues.TEXT_PROCESS, {
+              attachmentId,
+              workspaceId,
+              filename,
+              storagePath,
+            })
+
+            logger.info({ attachmentId, filename, mimeType }, "Text processing job dispatched")
           } else {
-            // Non-image/non-PDF: mark as skipped
+            // Unknown file type: mark as skipped
             await AttachmentRepository.updateProcessingStatus(this.db, attachmentId, ProcessingStatuses.SKIPPED)
             logger.debug({ attachmentId, filename, mimeType }, "Attachment marked as skipped")
           }

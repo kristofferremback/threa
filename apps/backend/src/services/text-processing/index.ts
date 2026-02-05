@@ -1,0 +1,6 @@
+export { TextProcessingService } from "./service"
+export { StubTextProcessingService } from "./service.stub"
+export type { TextProcessingServiceDeps } from "./service"
+export type { TextProcessingServiceLike } from "./types"
+export { TEXT_SUMMARY_MODEL_ID, TEXT_SUMMARY_TEMPERATURE, isTextAttachment, TEXT_SIZE_THRESHOLDS } from "./config"
+export { isBinaryFile, normalizeEncoding, inferFormat } from "./detector"

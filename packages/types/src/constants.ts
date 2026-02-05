@@ -175,6 +175,7 @@ export const AGENT_TOOL_NAMES = [
   "get_attachment",
   "load_attachment",
   "load_pdf_section",
+  "load_file_section",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -190,6 +191,7 @@ export const AgentToolNames = {
   GET_ATTACHMENT: "get_attachment",
   LOAD_ATTACHMENT: "load_attachment",
   LOAD_PDF_SECTION: "load_pdf_section",
+  LOAD_FILE_SECTION: "load_file_section",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations
@@ -289,11 +291,45 @@ export const PdfSizeTiers = {
   LARGE: "large",
 } as const satisfies Record<string, PdfSizeTier>
 
-// Extraction source types (image vs PDF)
-export const EXTRACTION_SOURCE_TYPES = ["image", "pdf"] as const
+// Extraction source types (image, PDF, or text)
+export const EXTRACTION_SOURCE_TYPES = ["image", "pdf", "text"] as const
 export type ExtractionSourceType = (typeof EXTRACTION_SOURCE_TYPES)[number]
 
 export const ExtractionSourceTypes = {
   IMAGE: "image",
   PDF: "pdf",
+  TEXT: "text",
 } as const satisfies Record<string, ExtractionSourceType>
+
+// Text file formats (plain is fallback for ALL unrecognized text formats)
+export const TEXT_FORMATS = ["plain", "markdown", "json", "yaml", "csv", "code"] as const
+export type TextFormat = (typeof TEXT_FORMATS)[number]
+
+export const TextFormats = {
+  PLAIN: "plain",
+  MARKDOWN: "markdown",
+  JSON: "json",
+  YAML: "yaml",
+  CSV: "csv",
+  CODE: "code",
+} as const satisfies Record<string, TextFormat>
+
+// Text size tiers (determines injection strategy)
+export const TEXT_SIZE_TIERS = ["small", "medium", "large"] as const
+export type TextSizeTier = (typeof TEXT_SIZE_TIERS)[number]
+
+export const TextSizeTiers = {
+  SMALL: "small",
+  MEDIUM: "medium",
+  LARGE: "large",
+} as const satisfies Record<string, TextSizeTier>
+
+// Context injection strategies for text files
+export const INJECTION_STRATEGIES = ["full", "full_with_note", "summary"] as const
+export type InjectionStrategy = (typeof INJECTION_STRATEGIES)[number]
+
+export const InjectionStrategies = {
+  FULL: "full",
+  FULL_WITH_NOTE: "full_with_note",
+  SUMMARY: "summary",
+} as const satisfies Record<string, InjectionStrategy>
