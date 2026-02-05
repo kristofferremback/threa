@@ -36,10 +36,12 @@ import {
   type GetAttachmentCallbacks,
   type LoadAttachmentCallbacks,
   type LoadPdfSectionCallbacks,
+  type LoadFileSectionCallbacks,
   type AttachmentSearchResult,
   type AttachmentDetails,
   type LoadAttachmentResult,
   type LoadPdfSectionResult,
+  type LoadFileSectionResult,
 } from "./tools"
 import {
   buildStreamContext,
@@ -737,6 +739,7 @@ export class PersonaAgent {
               get: GetAttachmentCallbacks
               load: LoadAttachmentCallbacks | undefined
               loadPdfSection: LoadPdfSectionCallbacks | undefined
+              loadFileSection: LoadFileSectionCallbacks | undefined
             }
           | undefined
         if (invokingUserId && accessibleStreamIds) {
@@ -878,11 +881,55 @@ export class PersonaAgent {
             },
           }
 
+          // load_file_section for loading line ranges from large text files
+          const loadFileSection: LoadFileSectionCallbacks = {
+            loadFileSection: async (input): Promise<LoadFileSectionResult | null> => {
+              const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+              if (!attachment) return null
+
+              // Check access
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+                return null
+              }
+
+              // Get extraction to check metadata
+              const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+              if (!extraction || extraction.sourceType !== "text" || !extraction.textMetadata) {
+                return null
+              }
+
+              const totalLines = extraction.textMetadata.totalLines
+
+              // Validate line range
+              if (input.startLine >= totalLines || input.endLine > totalLines) {
+                return null
+              }
+
+              // Fetch file from storage and extract requested lines
+              const fileBuffer = await storage.getObject(attachment.storagePath)
+              const text = fileBuffer.toString("utf-8")
+              const lines = text.split("\n")
+
+              const selectedLines = lines.slice(input.startLine, input.endLine)
+              const content = selectedLines.join("\n")
+
+              return {
+                attachmentId: input.attachmentId,
+                filename: attachment.filename,
+                startLine: input.startLine,
+                endLine: input.endLine,
+                totalLines,
+                content,
+              }
+            },
+          }
+
           attachmentCallbacks = {
             search: searchAttachments,
             get: getAttachment,
             load: loadAttachment,
             loadPdfSection,
+            loadFileSection,
           }
         }
 

@@ -21,6 +21,11 @@ import { BINARY_DETECTION, EXTENSION_FORMAT_MAP, getFileExtension } from "./conf
 export function isBinaryFile(buffer: Buffer): boolean {
   const checkLength = Math.min(buffer.length, BINARY_DETECTION.checkSize)
 
+  // Empty buffers are not binary (nothing to check)
+  if (checkLength === 0) {
+    return false
+  }
+
   let nullByteCount = 0
 
   for (let i = 0; i < checkLength; i++) {
