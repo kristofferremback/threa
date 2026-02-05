@@ -5,6 +5,8 @@ import type { S3Config } from "../env"
 export interface StorageProvider {
   getSignedDownloadUrl(key: string, expiresIn?: number): Promise<string>
   getObject(key: string): Promise<Buffer>
+  /** Fetch first N bytes of an object using HTTP Range header */
+  getObjectRange(key: string, start: number, end: number): Promise<Buffer>
   delete(key: string): Promise<void>
 }
 
@@ -46,6 +48,25 @@ export function createS3Storage(config: S3Config): StorageProvider {
       }
 
       // Convert readable stream to Buffer
+      const chunks: Uint8Array[] = []
+      for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+        chunks.push(chunk)
+      }
+      return Buffer.concat(chunks)
+    },
+
+    async getObjectRange(key: string, start: number, end: number): Promise<Buffer> {
+      const command = new GetObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        Range: `bytes=${start}-${end}`,
+      })
+      const response = await client.send(command)
+
+      if (!response.Body) {
+        throw new Error(`No body in S3 response for key: ${key}`)
+      }
+
       const chunks: Uint8Array[] = []
       for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
         chunks.push(chunk)

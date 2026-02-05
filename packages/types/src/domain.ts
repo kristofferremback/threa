@@ -29,6 +29,9 @@ import type {
   ExtractionContentType,
   ExtractionSourceType,
   PdfSizeTier,
+  TextFormat,
+  TextSizeTier,
+  InjectionStrategy,
 } from "./constants"
 import type { ThreaDocument } from "./prosemirror"
 
@@ -315,6 +318,87 @@ export interface PdfMetadata {
 }
 
 /**
+ * Section within a text file for large file navigation.
+ */
+export interface TextSection {
+  /** Section type: "heading" for markdown, "key" for JSON, "rows" for CSV, "lines" for plain text */
+  type: "heading" | "key" | "rows" | "lines"
+  /** Section identifier (heading path, JSON key path, row range, line range) */
+  path: string
+  /** Human-readable title for the section */
+  title: string
+  /** Start line (0-indexed) */
+  startLine: number
+  /** End line (0-indexed, exclusive) */
+  endLine: number
+}
+
+/**
+ * Markdown-specific structure.
+ */
+export interface MarkdownStructure {
+  /** Table of contents (heading paths) */
+  toc: string[]
+  /** Whether file contains code blocks */
+  hasCodeBlocks: boolean
+  /** Whether file contains tables */
+  hasTables: boolean
+}
+
+/**
+ * JSON-specific structure.
+ */
+export interface JsonStructure {
+  /** Root type: object, array, or primitive */
+  rootType: "object" | "array" | "primitive"
+  /** Top-level keys (for objects) */
+  topLevelKeys: string[] | null
+  /** Array length (for arrays) */
+  arrayLength: number | null
+  /** Inferred schema description */
+  schemaDescription: string | null
+}
+
+/**
+ * CSV-specific structure.
+ */
+export interface CsvStructure {
+  /** Column headers */
+  headers: string[]
+  /** Total row count (excluding header) */
+  rowCount: number
+  /** Sample of first few rows */
+  sampleRows: string[][]
+}
+
+/**
+ * Code-specific structure.
+ */
+export interface CodeStructure {
+  /** Detected programming language */
+  language: string
+  /** Exports/definitions found */
+  exports: string[] | null
+  /** Import statements found */
+  imports: string[] | null
+}
+
+/**
+ * Metadata for text file extractions.
+ */
+export interface TextMetadata {
+  format: TextFormat
+  sizeTier: TextSizeTier
+  injectionStrategy: InjectionStrategy
+  totalLines: number
+  totalBytes: number
+  encoding: string
+  sections: TextSection[]
+  /** Format-specific structure (null for plain text) */
+  structure: MarkdownStructure | JsonStructure | CsvStructure | CodeStructure | null
+}
+
+/**
  * Extracted content from an attachment (images, documents, etc.).
  * Created by image captioning pipeline for AI agent context.
  */
@@ -328,6 +412,7 @@ export interface AttachmentExtraction {
   structuredData: ChartData | TableData | DiagramData | null
   sourceType: ExtractionSourceType
   pdfMetadata: PdfMetadata | null
+  textMetadata: TextMetadata | null
   createdAt: string
   updatedAt: string
 }

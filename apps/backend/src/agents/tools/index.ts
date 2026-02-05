@@ -47,6 +47,12 @@ export {
   type LoadPdfSectionCallbacks,
   type LoadPdfSectionResult,
 } from "./load-pdf-section-tool"
+export {
+  createLoadFileSectionTool,
+  type LoadFileSectionInput,
+  type LoadFileSectionCallbacks,
+  type LoadFileSectionResult,
+} from "./load-file-section-tool"
 
 /**
  * Check if a tool is enabled for a persona.

@@ -19,6 +19,7 @@ import {
   createGetAttachmentTool,
   createLoadAttachmentTool,
   createLoadPdfSectionTool,
+  createLoadFileSectionTool,
   isToolEnabled,
   type SendMessageInput,
   type SendMessageInputWithSources,
@@ -28,6 +29,7 @@ import {
   type GetAttachmentCallbacks,
   type LoadAttachmentCallbacks,
   type LoadPdfSectionCallbacks,
+  type LoadFileSectionCallbacks,
 } from "./tools"
 import { AgentToolNames, type SourceItem } from "@threa/types"
 import type { AI, CostRecorder } from "../lib/ai/ai"
@@ -113,6 +115,7 @@ export interface ResponseGeneratorCallbacks {
     get: GetAttachmentCallbacks
     load: LoadAttachmentCallbacks | undefined
     loadPdfSection: LoadPdfSectionCallbacks | undefined
+    loadFileSection: LoadFileSectionCallbacks | undefined
   }
   /** Optional callback to await attachment processing for messages (for multi-modal support) */
   awaitAttachmentProcessing?: (messageIds: string[]) => Promise<void>
@@ -231,6 +234,10 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       // Add load_pdf_section for loading page ranges from large PDFs
       if (callbacks.attachments.loadPdfSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_PDF_SECTION)) {
         tools.push(createLoadPdfSectionTool(callbacks.attachments.loadPdfSection))
+      }
+      // Add load_file_section for loading line ranges from large text files
+      if (callbacks.attachments.loadFileSection && isToolEnabled(enabledTools, AgentToolNames.LOAD_FILE_SECTION)) {
+        tools.push(createLoadFileSectionTool(callbacks.attachments.loadFileSection))
       }
     }
 

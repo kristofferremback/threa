@@ -93,6 +93,16 @@ export {
   EXTRACTION_SOURCE_TYPES,
   type ExtractionSourceType,
   ExtractionSourceTypes,
+  // Text processing
+  TEXT_FORMATS,
+  type TextFormat,
+  TextFormats,
+  TEXT_SIZE_TIERS,
+  type TextSizeTier,
+  TextSizeTiers,
+  INJECTION_STRATEGIES,
+  type InjectionStrategy,
+  InjectionStrategies,
 } from "./constants"
 
 // Domain entities (wire format)
@@ -121,6 +131,13 @@ export type {
   AttachmentExtraction,
   PdfSection,
   PdfMetadata,
+  // Text extraction types
+  TextSection,
+  MarkdownStructure,
+  JsonStructure,
+  CsvStructure,
+  CodeStructure,
+  TextMetadata,
 } from "./domain"
 
 // Slug validation
