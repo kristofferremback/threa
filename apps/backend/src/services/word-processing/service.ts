@@ -249,7 +249,7 @@ export class WordProcessingService implements WordProcessingServiceLike {
       try {
         // Skip non-standard image formats that models may not handle well
         if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(image.mimeType)) {
-          captions.push(`[Image ${image.index + 1}: Embedded ${image.mimeType.split("/")[1]} image]`)
+          captions.push(`Embedded ${image.mimeType.split("/")[1]} image`)
           continue
         }
 
@@ -287,7 +287,7 @@ export class WordProcessingService implements WordProcessingServiceLike {
         captions.push(result.value.caption)
       } catch (error) {
         logger.warn({ error, imageIndex: image.index }, "Failed to caption embedded image")
-        captions.push(`[Image ${image.index + 1}: Unable to process]`)
+        captions.push("Unable to process")
       }
     }
 
