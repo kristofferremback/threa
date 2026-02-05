@@ -30,6 +30,7 @@ export const JobQueues = {
   PDF_PROCESS_PAGE: "pdf.process_page",
   PDF_ASSEMBLE: "pdf.assemble",
   TEXT_PROCESS: "text.process",
+  WORD_PROCESS: "word.process",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -128,6 +129,14 @@ export interface TextProcessJobData {
   storagePath: string
 }
 
+/** Word processing job - processes Word documents (.doc, .docx) */
+export interface WordProcessJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  storagePath: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -143,6 +152,7 @@ export interface JobDataMap {
   [JobQueues.PDF_PROCESS_PAGE]: PdfProcessPageJobData
   [JobQueues.PDF_ASSEMBLE]: PdfAssembleJobData
   [JobQueues.TEXT_PROCESS]: TextProcessJobData
+  [JobQueues.WORD_PROCESS]: WordProcessJobData
 }
 
 /**

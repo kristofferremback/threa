@@ -291,14 +291,15 @@ export const PdfSizeTiers = {
   LARGE: "large",
 } as const satisfies Record<string, PdfSizeTier>
 
-// Extraction source types (image, PDF, or text)
-export const EXTRACTION_SOURCE_TYPES = ["image", "pdf", "text"] as const
+// Extraction source types (image, PDF, text, or Word)
+export const EXTRACTION_SOURCE_TYPES = ["image", "pdf", "text", "word"] as const
 export type ExtractionSourceType = (typeof EXTRACTION_SOURCE_TYPES)[number]
 
 export const ExtractionSourceTypes = {
   IMAGE: "image",
   PDF: "pdf",
   TEXT: "text",
+  WORD: "word",
 } as const satisfies Record<string, ExtractionSourceType>
 
 // Text file formats (plain is fallback for ALL unrecognized text formats)

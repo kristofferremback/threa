@@ -138,6 +138,8 @@ export type {
   CsvStructure,
   CodeStructure,
   TextMetadata,
+  // Word extraction types
+  WordMetadata,
 } from "./domain"
 
 // Slug validation

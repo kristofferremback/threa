@@ -399,6 +399,34 @@ export interface TextMetadata {
 }
 
 /**
+ * Metadata for Word document extractions.
+ */
+export interface WordMetadata {
+  /** Document format: "docx" (Open XML) or "doc" (legacy binary) */
+  format: "docx" | "doc"
+  /** Size tier based on extracted content */
+  sizeTier: TextSizeTier
+  /** How content should be injected into AI context */
+  injectionStrategy: InjectionStrategy
+  /** Page count from document properties (null if not available) */
+  pageCount: number | null
+  /** Total word count */
+  wordCount: number
+  /** Total character count */
+  characterCount: number
+  /** Document author from properties (null if not available) */
+  author: string | null
+  /** Document creation date from properties (null if not available) */
+  createdAt: string | null
+  /** Document last modified date from properties (null if not available) */
+  modifiedAt: string | null
+  /** Number of embedded images processed */
+  embeddedImageCount: number
+  /** Section structure for navigation (same format as text files) */
+  sections: TextSection[]
+}
+
+/**
  * Extracted content from an attachment (images, documents, etc.).
  * Created by image captioning pipeline for AI agent context.
  */
@@ -413,6 +441,7 @@ export interface AttachmentExtraction {
   sourceType: ExtractionSourceType
   pdfMetadata: PdfMetadata | null
   textMetadata: TextMetadata | null
+  wordMetadata: WordMetadata | null
   createdAt: string
   updatedAt: string
 }
