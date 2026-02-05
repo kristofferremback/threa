@@ -52,6 +52,8 @@ import { StreamMemberRepository } from "../../../src/repositories/stream-member-
 import { MessageRepository } from "../../../src/repositories/message-repository"
 import { PersonaRepository } from "../../../src/repositories/persona-repository"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
+import { createModelRegistry } from "../../../src/lib/ai/model-registry"
+import type { StorageProvider } from "../../../src/lib/storage/s3-client"
 import { TraceEmitter } from "../../../src/lib/trace-emitter"
 import { EventService } from "../../../src/services/event-service"
 import type { Server } from "socket.io"
@@ -266,6 +268,14 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       return { id: threadId }
     }
 
+    // Stub storage — evals don't load attachments from S3
+    const stubStorage: StorageProvider = {
+      getSignedDownloadUrl: async () => "",
+      getObject: async () => Buffer.alloc(0),
+      getObjectRange: async () => Buffer.alloc(0),
+      delete: async () => {},
+    }
+
     // Create PersonaAgent with real dependencies
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
@@ -274,6 +284,8 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       userPreferencesService,
       researcher,
       searchService,
+      storage: stubStorage,
+      modelRegistry: createModelRegistry(),
       createMessage,
       createThread,
     })
