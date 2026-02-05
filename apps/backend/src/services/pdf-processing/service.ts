@@ -29,7 +29,7 @@ import { ProcessingStatuses, PdfJobStatuses, PdfPageClassifications, PdfSizeTier
 import type { PdfPageClassification, PdfSizeTier } from "@threa/types"
 import { JobQueues } from "../../lib/job-queue"
 import { logger } from "../../lib/logger"
-import { classifyPage, type ClassificationInput } from "./classifier"
+import { classifyPage, type ClassificationInput, type TextItemWithPosition } from "./classifier"
 import {
   PDF_SIZE_THRESHOLDS,
   PDF_LAYOUT_MODEL_ID,
@@ -127,23 +127,40 @@ export class PdfProcessingService implements PdfProcessingServiceLike {
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
         const page = await pdf.getPage(pageNum)
 
-        // Extract text content
+        // Extract text content with position info
         const textContent = await page.getTextContent()
-        const rawText = textContent.items
-          .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-          .filter((s) => s.length > 0)
-          .join(" ")
+        const textItems: TextItemWithPosition[] = []
+        const textStrings: string[] = []
 
-        // Get page operators to detect images/tables
+        for (const item of textContent.items) {
+          if ("str" in item && "transform" in item) {
+            const textItem = item as { str: string; transform: number[]; width: number; height: number }
+            if (textItem.str.length > 0) {
+              textStrings.push(textItem.str)
+              // transform is [scaleX, skewX, skewY, scaleY, translateX, translateY]
+              // translateX (index 4) is x position, translateY (index 5) is y position
+              textItems.push({
+                str: textItem.str,
+                x: textItem.transform[4],
+                y: textItem.transform[5],
+                width: textItem.width ?? 0,
+                height: textItem.height ?? 0,
+              })
+            }
+          }
+        }
+
+        const rawText = textStrings.join(" ")
+
+        // Get page operators to detect images
         const operators = await page.getOperatorList()
         const imageCount = operators.fnArray.filter((fn: number) => fn === 82 || fn === 83).length // paintImageXObject ops
 
-        // Classify the page
+        // Classify the page with text position data for layout detection
         const classificationInput: ClassificationInput = {
           rawText,
           imageCount,
-          hasTables: false, // TODO: Detect tables from operators
-          isMultiColumn: false, // TODO: Detect multi-column layout
+          textItems,
         }
         const { classification } = classifyPage(classificationInput)
 
@@ -197,11 +214,24 @@ export class PdfProcessingService implements PdfProcessingServiceLike {
       await PdfProcessingJobRepository.updateStatus(client, jobId, PdfJobStatuses.PROCESSING_PAGES)
     })
 
-    // Fan out page processing jobs (outside transaction)
+    // Determine which pages need processing vs are already complete
     const pagesNeedingProcessing = pageInfos.filter(
       (p) => p.classification !== PdfPageClassifications.TEXT_RICH && p.classification !== PdfPageClassifications.EMPTY
     )
+    const pagesAlreadyComplete = totalPages - pagesNeedingProcessing.length
 
+    // Pre-increment pages_completed for text_rich/empty pages since they don't need processing.
+    // This ensures the fan-in coordination check (pages_completed + pages_failed >= total_pages)
+    // works correctly for PDFs with mixed page types.
+    if (pagesAlreadyComplete > 0) {
+      await withTransaction(this.pool, async (client) => {
+        for (let i = 0; i < pagesAlreadyComplete; i++) {
+          await PdfProcessingJobRepository.incrementPagesCompleted(client, jobId)
+        }
+      })
+    }
+
+    // Fan out page processing jobs (outside transaction)
     for (const page of pagesNeedingProcessing) {
       await this.jobQueue.send(JobQueues.PDF_PROCESS_PAGE, {
         attachmentId,
