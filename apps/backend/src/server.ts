@@ -59,9 +59,11 @@ import { createPdfPrepareWorker } from "./workers/pdf-prepare-worker"
 import { createPdfPageWorker } from "./workers/pdf-page-worker"
 import { createPdfAssembleWorker } from "./workers/pdf-assemble-worker"
 import { createTextProcessingWorker } from "./workers/text-processing-worker"
+import { createWordProcessingWorker } from "./workers/word-processing-worker"
 import { ImageCaptionService, StubImageCaptionService } from "./services/image-caption"
 import { PdfProcessingService, StubPdfProcessingService } from "./services/pdf-processing"
 import { TextProcessingService, StubTextProcessingService } from "./services/text-processing"
+import { WordProcessingService, StubWordProcessingService } from "./services/word-processing"
 import { PersonaAgent } from "./agents/persona-agent"
 import { TraceEmitter } from "./lib/trace-emitter"
 import { SimulationAgent } from "./agents/simulation-agent"
@@ -75,6 +77,7 @@ import {
   type PdfProcessPageJobData,
   type PdfAssembleJobData,
   type TextProcessJobData,
+  type WordProcessJobData,
 } from "./lib/job-queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./repositories"
@@ -428,6 +431,18 @@ export async function startServer(): Promise<ServerInstance> {
   }
   jobQueue.registerHandler(JobQueues.TEXT_PROCESS, textProcessingWorker, {
     hooks: { onDLQ: textOnDLQ },
+  })
+
+  // Word processing worker
+  const wordProcessingService = config.useStubAI
+    ? new StubWordProcessingService({ pool })
+    : new WordProcessingService({ pool, ai, storage })
+  const wordProcessingWorker = createWordProcessingWorker({ wordProcessingService })
+  const wordOnDLQ: OnDLQHook<WordProcessJobData> = async (querier, job) => {
+    await AttachmentRepository.updateProcessingStatus(querier, job.data.attachmentId, ProcessingStatuses.FAILED)
+  }
+  jobQueue.registerHandler(JobQueues.WORD_PROCESS, wordProcessingWorker, {
+    hooks: { onDLQ: wordOnDLQ },
   })
 
   // Register handlers before starting

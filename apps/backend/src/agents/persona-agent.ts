@@ -468,25 +468,25 @@ export class PersonaAgent {
           preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
         }
 
-        // Await image processing for trigger message attachments before proceeding
-        // This ensures vision models can analyze images in the triggering message
+        // Await attachment processing for all attachments on trigger message before proceeding
+        // This ensures the agent can access extracted content from images, PDFs, Word docs, etc.
         if (triggerMessage) {
           const triggerAttachments = await AttachmentRepository.findByMessageId(db, messageId)
-          const imageAttachmentIds = triggerAttachments.filter((a) => a.mimeType.startsWith("image/")).map((a) => a.id)
+          const attachmentIds = triggerAttachments.map((a) => a.id)
 
-          if (imageAttachmentIds.length > 0) {
+          if (attachmentIds.length > 0) {
             logger.info(
-              { messageId, imageCount: imageAttachmentIds.length },
-              "Awaiting image processing for trigger message"
+              { messageId, attachmentCount: attachmentIds.length },
+              "Awaiting attachment processing for trigger message"
             )
-            const awaitResult = await awaitAttachmentProcessing(pool, imageAttachmentIds)
+            const awaitResult = await awaitAttachmentProcessing(pool, attachmentIds)
             logger.info(
               {
                 messageId,
                 completedCount: awaitResult.completedIds.length,
                 failedCount: awaitResult.failedOrTimedOutIds.length,
               },
-              "Image processing await completed"
+              "Attachment processing await completed"
             )
           }
         }

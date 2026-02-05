@@ -387,13 +387,22 @@ export class Researcher {
 
 ${contextSummary}
 
-If search IS needed:
-- Generate 1-3 focused search queries
-- Start with memo search for summarized knowledge (decisions, context, discussions)
-- Use message search for specific quotes, recent activity, or exact terms
-- Use "semantic" for concepts/topics, "exact" for error messages, IDs, or quoted text
+Respond with:
+- needsSearch: true/false
+- reasoning: brief explanation of your decision
+- queries: array of search queries (or null if needsSearch is false)
 
-If search is NOT needed, set needsSearch to false and queries to null.`,
+Each query must have:
+- target: "memos" | "messages" | "attachments"
+- type: "semantic" | "exact"
+- query: the search text
+
+Guidelines for search:
+- Use target "memos" for summarized knowledge (decisions, context, discussions)
+- Use target "messages" for specific quotes, recent activity, or exact terms
+- Use target "attachments" when looking for documents, images, or files
+- Use type "semantic" for concepts/topics
+- Use type "exact" for error messages, IDs, or quoted text`,
           },
         ],
         temperature: config.temperature,
@@ -440,7 +449,15 @@ ${contextSummary}
 
 ${resultsText || "No results found yet."}
 
-If results are insufficient, suggest additional queries. Otherwise, mark as sufficient.`,
+Respond with:
+- sufficient: true/false
+- reasoning: brief explanation
+- additionalQueries: array of queries (or null if sufficient)
+
+Each query must have:
+- target: "memos" | "messages" | "attachments"
+- type: "semantic" | "exact"
+- query: the search text`,
           },
         ],
         temperature: config.temperature,

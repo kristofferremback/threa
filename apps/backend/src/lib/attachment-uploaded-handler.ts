@@ -8,6 +8,7 @@ import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
 import { isImageAttachment } from "../services/image-caption"
 import { isPdfAttachment } from "../services/pdf-processing"
+import { isWordAttachment } from "../services/word-processing"
 
 export interface AttachmentUploadedHandlerConfig {
   batchSize?: number
@@ -115,6 +116,16 @@ export class AttachmentUploadedHandler implements OutboxHandler {
                 storagePath,
               })
               logger.info({ attachmentId, filename, mimeType }, "PDF prepare job dispatched")
+              break
+
+            case isWordAttachment(mimeType, filename):
+              await this.jobQueue.send(JobQueues.WORD_PROCESS, {
+                attachmentId,
+                workspaceId,
+                filename,
+                storagePath,
+              })
+              logger.info({ attachmentId, filename, mimeType }, "Word processing job dispatched")
               break
 
             default:
