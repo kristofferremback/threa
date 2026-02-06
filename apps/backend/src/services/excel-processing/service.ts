@@ -2,7 +2,6 @@
  * Excel Processing Service
  *
  * Extracts structured content from Excel workbooks using SheetJS.
- * Three-phase pattern (INV-41) to avoid holding DB connections during extraction.
  *
  * Size strategy by total cells:
  * - Small (<5K cells): inject all sheets in full as markdown
@@ -12,13 +11,11 @@
 
 import type { Pool } from "pg"
 import type { ExcelMetadata, TextSizeTier, InjectionStrategy, ExcelSheetInfo, ExcelChartInfo } from "@threa/types"
-import { withClient, withTransaction } from "../../db"
-import { extractionId } from "../../lib/id"
 import type { AI } from "../../lib/ai/ai"
 import type { StorageProvider } from "../../lib/storage/s3-client"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../repositories"
-import { ProcessingStatuses, TextSizeTiers, InjectionStrategies } from "@threa/types"
+import { TextSizeTiers, InjectionStrategies } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { processAttachment, type ExtractionData } from "../../lib/process-attachment"
 import {
   EXCEL_SIZE_THRESHOLDS,
   EXCEL_SHEET_THRESHOLDS,
@@ -49,191 +46,131 @@ export class ExcelProcessingService implements ExcelProcessingServiceLike {
     this.storage = deps.storage
   }
 
-  /**
-   * Process an Excel workbook attachment to extract structured information.
-   *
-   * Three-phase pattern (INV-41):
-   * 1. Fetch attachment, set status='processing' (fast, ~50ms)
-   * 2. Download file, extract content, analyze (no DB, variable time)
-   * 3. Insert extraction record, set status='completed'/'failed' (fast, ~50ms)
-   */
   async processExcel(attachmentId: string): Promise<void> {
     const log = logger.child({ attachmentId })
 
-    // =========================================================================
-    // Phase 1: Fetch attachment and claim it for processing
-    // =========================================================================
-    const attachment = await withClient(this.pool, async (client) => {
-      const att = await AttachmentRepository.findById(client, attachmentId)
-      if (!att) {
-        log.warn("Attachment not found, skipping")
-        return null
-      }
+    await processAttachment(this.pool, attachmentId, async (attachment): Promise<ExtractionData | null> => {
+      log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing Excel workbook")
 
-      // Atomic transition: process if pending, processing, or failed (allows retries and un-DLQ)
-      const claimed = await AttachmentRepository.updateProcessingStatus(
-        client,
-        attachmentId,
-        ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING, ProcessingStatuses.FAILED] }
-      )
+      try {
+        // Download the file
+        const fileBuffer = await this.storage.getObject(attachment.storagePath)
 
-      if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/skipped, skipping")
-        return null
-      }
+        // Validate format using magic bytes
+        const format = validateExcelFormat(fileBuffer)
+        log.info({ format }, "Excel format detected")
 
-      return att
-    })
+        // Extract content
+        const extracted = extractExcel(fileBuffer, format)
 
-    if (!attachment) {
-      return
-    }
+        // Calculate total cells across sheets
+        const totalRows = extracted.sheets.reduce((sum, s) => sum + s.rows, 0)
+        const totalCells = extracted.sheets.reduce((sum, s) => sum + s.rows * s.columns, 0)
 
-    log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing Excel workbook")
+        // Determine size tier and injection strategy
+        const sizeTier = determineSizeTier(totalCells)
+        const injectionStrategy = determineInjectionStrategy(sizeTier)
 
-    // =========================================================================
-    // Phase 2: Download and analyze Excel workbook (NO database connection held)
-    // =========================================================================
-    let format: ExcelFormat
-    let excelMetadata: ExcelMetadata
-    let summary: string
-    let fullTextToStore: string | null
+        // Build sheet info for metadata
+        const sheetInfos: ExcelSheetInfo[] = extracted.sheets.map((s) => ({
+          name: s.name,
+          rows: s.rows,
+          columns: s.columns,
+          headers: s.headers,
+          columnTypes: s.columnTypes,
+          sampleRows: s.sampleRows,
+        }))
 
-    try {
-      // Step 1: Download the file
-      const fileBuffer = await this.storage.getObject(attachment.storagePath)
+        // Build chart info
+        const chartInfos: ExcelChartInfo[] = extracted.charts.map((c) => ({
+          sheetName: c.sheetName,
+          type: c.type,
+          title: c.title,
+          description: c.description,
+        }))
 
-      // Step 2: Validate format using magic bytes
-      format = validateExcelFormat(fileBuffer)
-      log.info({ format }, "Excel format detected")
+        // Build metadata
+        const excelMetadata: ExcelMetadata = {
+          format,
+          sizeTier,
+          injectionStrategy,
+          totalSheets: extracted.sheets.length,
+          totalRows,
+          totalCells,
+          author: extracted.metadata.author,
+          createdAt: extracted.metadata.createdAt?.toISOString() ?? null,
+          modifiedAt: extracted.metadata.modifiedAt?.toISOString() ?? null,
+          sheets: sheetInfos,
+          charts: chartInfos,
+        }
 
-      // Step 3: Extract content
-      const extracted = extractExcel(fileBuffer, format)
+        // Build markdown representation and determine what to store
+        let summary: string
+        let fullTextToStore: string | null
 
-      // Step 4: Calculate total cells across sheets
-      const totalRows = extracted.sheets.reduce((sum, s) => sum + s.rows, 0)
-      const totalCells = extracted.sheets.reduce((sum, s) => sum + s.rows * s.columns, 0)
+        if (sizeTier === TextSizeTiers.LARGE) {
+          fullTextToStore = null
 
-      // Step 5: Determine size tier and injection strategy
-      const sizeTier = determineSizeTier(totalCells)
-      const injectionStrategy = determineInjectionStrategy(sizeTier)
+          const sheetOverview = buildSheetOverview(extracted.sheets)
+          const sampleData = buildSampleDataPreview(extracted.sheets)
 
-      // Step 6: Build sheet info for metadata
-      const sheetInfos: ExcelSheetInfo[] = extracted.sheets.map((s) => ({
-        name: s.name,
-        rows: s.rows,
-        columns: s.columns,
-        headers: s.headers,
-        columnTypes: s.columnTypes,
-        sampleRows: s.sampleRows,
-      }))
-
-      // Step 7: Build chart info
-      const chartInfos: ExcelChartInfo[] = extracted.charts.map((c) => ({
-        sheetName: c.sheetName,
-        type: c.type,
-        title: c.title,
-        description: c.description,
-      }))
-
-      // Step 8: Build metadata
-      excelMetadata = {
-        format,
-        sizeTier,
-        injectionStrategy,
-        totalSheets: extracted.sheets.length,
-        totalRows,
-        totalCells,
-        author: extracted.metadata.author,
-        createdAt: extracted.metadata.createdAt?.toISOString() ?? null,
-        modifiedAt: extracted.metadata.modifiedAt?.toISOString() ?? null,
-        sheets: sheetInfos,
-        charts: chartInfos,
-      }
-
-      // Step 9: Build markdown representation and determine what to store
-      if (sizeTier === TextSizeTiers.LARGE) {
-        // Large workbooks: generate AI summary, store sheet summaries as full text
-        fullTextToStore = null
-
-        const sheetOverview = buildSheetOverview(extracted.sheets)
-        const sampleData = buildSampleDataPreview(extracted.sheets)
-
-        const summaryResult = await this.ai.generateObject({
-          model: EXCEL_SUMMARY_MODEL_ID,
-          schema: excelSummarySchema,
-          temperature: EXCEL_SUMMARY_TEMPERATURE,
-          messages: [
-            { role: "system", content: EXCEL_SUMMARY_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: EXCEL_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
-                .replace("{sheetCount}", String(extracted.sheets.length))
-                .replace("{totalRows}", String(totalRows))
-                .replace("{totalCells}", String(totalCells))
-                .replace("{sheetOverview}", sheetOverview)
-                .replace("{sampleData}", sampleData),
+          const summaryResult = await this.ai.generateObject({
+            model: EXCEL_SUMMARY_MODEL_ID,
+            schema: excelSummarySchema,
+            temperature: EXCEL_SUMMARY_TEMPERATURE,
+            messages: [
+              { role: "system", content: EXCEL_SUMMARY_SYSTEM_PROMPT },
+              {
+                role: "user",
+                content: EXCEL_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
+                  .replace("{sheetCount}", String(extracted.sheets.length))
+                  .replace("{totalRows}", String(totalRows))
+                  .replace("{totalCells}", String(totalCells))
+                  .replace("{sheetOverview}", sheetOverview)
+                  .replace("{sampleData}", sampleData),
+              },
+            ],
+            telemetry: {
+              functionId: "excel-summary",
+              metadata: {
+                attachment_id: attachmentId,
+                workspace_id: attachment.workspaceId,
+                filename: attachment.filename,
+                format,
+                size_tier: sizeTier,
+              },
             },
-          ],
-          telemetry: {
-            functionId: "excel-summary",
-            metadata: {
-              attachment_id: attachmentId,
-              workspace_id: attachment.workspaceId,
-              filename: attachment.filename,
-              format,
-              size_tier: sizeTier,
+            context: {
+              workspaceId: attachment.workspaceId,
             },
-          },
-          context: {
-            workspaceId: attachment.workspaceId,
-          },
-        })
+          })
 
-        summary = summaryResult.value.summary
-        log.info({ format, sizeTier, summaryLength: summary.length }, "Excel summary generated")
-      } else {
-        // Small/medium workbooks: store full markdown content
-        fullTextToStore = buildFullMarkdown(extracted.sheets, sizeTier)
-        summary = generateSimpleSummary(attachment.filename, format, extracted.sheets.length, totalRows, totalCells)
+          summary = summaryResult.value.summary
+          log.info({ format, sizeTier, summaryLength: summary.length }, "Excel summary generated")
+        } else {
+          fullTextToStore = buildFullMarkdown(extracted.sheets, sizeTier)
+          summary = generateSimpleSummary(attachment.filename, format, extracted.sheets.length, totalRows, totalCells)
+        }
+
+        return {
+          contentType: "document" as const,
+          summary,
+          fullText: fullTextToStore,
+          structuredData: null,
+          sourceType: "excel" as const,
+          excelMetadata,
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
+          log.info({ filename: attachment.filename }, "Password-protected workbook, marking as skipped")
+          return null
+        }
+
+        log.error({ error }, "Excel processing failed")
+        throw error
       }
-    } catch (error) {
-      // Check for password-protected or corrupted workbooks
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
-        log.info({ filename: attachment.filename }, "Password-protected workbook, marking as skipped")
-        await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.SKIPPED)
-        return
-      }
-
-      // Log and re-throw - let job queue handle retries, DLQ hook will mark as failed
-      log.error({ error }, "Excel processing failed")
-      throw error
-    }
-
-    // =========================================================================
-    // Phase 3: Save extraction and mark as completed
-    // =========================================================================
-    await withTransaction(this.pool, async (client) => {
-      // Insert extraction record
-      await AttachmentExtractionRepository.insert(client, {
-        id: extractionId(),
-        attachmentId,
-        workspaceId: attachment.workspaceId,
-        contentType: "document",
-        summary,
-        fullText: fullTextToStore,
-        structuredData: null,
-        sourceType: "excel",
-        excelMetadata,
-      })
-
-      // Mark attachment as completed
-      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
     })
-
-    log.info({ format, sizeTier: excelMetadata.sizeTier }, "Excel extraction saved successfully")
   }
 }
 

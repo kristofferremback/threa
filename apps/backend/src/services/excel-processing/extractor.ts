@@ -189,7 +189,7 @@ function readColumnTypes(
 function classifyCellType(cell: XLSX.CellObject): string | null {
   switch (cell.t) {
     case "n":
-      if (cell.z && looksLikeDateFormat(cell.z)) return "date"
+      if (typeof cell.z === "string" && looksLikeDateFormat(cell.z)) return "date"
       return typeof cell.v === "number" && Number.isInteger(cell.v) ? "integer" : "number"
     case "s":
       return "text"
