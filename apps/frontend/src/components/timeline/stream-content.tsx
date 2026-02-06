@@ -93,10 +93,10 @@ export function StreamContent({
     { enabled: !isDraft }
   )
 
-  // In channels, agent responses go to threads — show inline activity on trigger messages
-  // and hide session cards (they belong in the thread). Other stream types show session cards directly.
+  // Track live agent session progress for all stream types (step/message counts on session cards).
+  // In channels, session cards are hidden (responses go to threads) and inline activity shows on trigger messages instead.
   const isChannel = stream?.type === StreamTypes.CHANNEL
-  const agentActivity = useAgentActivity(events, isChannel ? socket : null)
+  const agentActivity = useAgentActivity(events, socket)
 
   const { scrollContainerRef, handleScroll } = useScrollBehavior({
     isLoading,
@@ -165,7 +165,7 @@ export function StreamContent({
             highlightMessageId={highlightMessageId}
             firstUnreadEventId={dividerEventId}
             isDividerFading={isDividerFading}
-            agentActivity={isChannel ? agentActivity : undefined}
+            agentActivity={agentActivity}
             hideSessionCards={isChannel}
           />
         )}

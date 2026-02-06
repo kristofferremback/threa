@@ -12,8 +12,8 @@ import { formatDuration } from "@/lib/dates"
 
 interface AgentSessionEventProps {
   events: StreamEvent[]
-  /** Live progress from parent (via useAgentActivity hook) */
-  liveStepCount?: number
+  /** Live progress counts from parent (via useAgentActivity hook) */
+  liveCounts?: { stepCount: number; messageCount: number }
 }
 
 type SessionStatus = "running" | "completed" | "failed"
@@ -76,7 +76,7 @@ function buildStatusConfig(
   startedPayload: AgentSessionStartedPayload | null,
   completedPayload: AgentSessionCompletedPayload | null,
   failedPayload: AgentSessionFailedPayload | null,
-  liveStepCount: number | undefined
+  liveCounts: { stepCount: number; messageCount: number } | undefined
 ): StatusConfig {
   switch (status) {
     case "completed": {
@@ -125,10 +125,12 @@ function buildStatusConfig(
     }
     case "running": {
       const personaName = startedPayload?.personaName ?? "Agent"
-      const parts: string[] = []
-      if (liveStepCount !== undefined) {
-        parts.push(`${liveStepCount} ${liveStepCount === 1 ? "step" : "steps"}`)
-      }
+      const stepCount = liveCounts?.stepCount ?? 0
+      const messageCount = liveCounts?.messageCount ?? 0
+      const parts: string[] = [
+        `${stepCount} ${stepCount === 1 ? "step" : "steps"}`,
+        `${messageCount} ${messageCount === 1 ? "message" : "messages"} sent`,
+      ]
       return {
         title: `${personaName} is working...`,
         subtitle: parts.join(" • "),
@@ -146,11 +148,11 @@ function buildStatusConfig(
   }
 }
 
-export function AgentSessionEvent({ events, liveStepCount }: AgentSessionEventProps) {
+export function AgentSessionEvent({ events, liveCounts }: AgentSessionEventProps) {
   const { getTraceUrl } = useTrace()
   const { status, sessionId, startedPayload, completedPayload, failedPayload } = deriveStatus(events)
 
-  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, liveStepCount)
+  const config = buildStatusConfig(status, startedPayload, completedPayload, failedPayload, liveCounts)
 
   if (!sessionId) return null
 

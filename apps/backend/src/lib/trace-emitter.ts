@@ -38,6 +38,7 @@ export class TraceEmitter {
  */
 export class SessionTrace {
   private stepNumber = 0
+  private messageCount = 0
   private readonly sessionRoom: string
   private readonly streamRoom: string
   private readonly channelRoom: string | null
@@ -64,6 +65,7 @@ export class SessionTrace {
    */
   async startStep(params: { stepType: AgentStepType; content?: string }): Promise<ActiveStep> {
     this.stepNumber++
+    if (params.stepType === "message_sent") this.messageCount++
     const now = new Date()
 
     // Persist step row (started, not yet completed)
@@ -108,6 +110,7 @@ export class SessionTrace {
       triggerMessageId: this.params.triggerMessageId,
       personaName: this.params.personaName,
       stepCount: stepNumber,
+      messageCount: this.messageCount,
       currentStepType: stepType,
       threadStreamId: this.params.channelStreamId ? this.params.streamId : undefined,
     }
