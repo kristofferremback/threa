@@ -9,6 +9,7 @@ import type { OutboxHandler } from "./outbox-dispatcher"
 import { isImageAttachment } from "../services/image-caption"
 import { isPdfAttachment } from "../services/pdf-processing"
 import { isWordAttachment } from "../services/word-processing"
+import { isExcelAttachment } from "../services/excel-processing"
 
 export interface AttachmentUploadedHandlerConfig {
   batchSize?: number
@@ -126,6 +127,16 @@ export class AttachmentUploadedHandler implements OutboxHandler {
                 storagePath,
               })
               logger.info({ attachmentId, filename, mimeType }, "Word processing job dispatched")
+              break
+
+            case isExcelAttachment(mimeType, filename):
+              await this.jobQueue.send(JobQueues.EXCEL_PROCESS, {
+                attachmentId,
+                workspaceId,
+                filename,
+                storagePath,
+              })
+              logger.info({ attachmentId, filename, mimeType }, "Excel processing job dispatched")
               break
 
             default:

@@ -1,0 +1,27 @@
+import type { ExcelProcessJobData, JobHandler } from "../lib/job-queue"
+import type { ExcelProcessingServiceLike } from "../services/excel-processing"
+import { logger } from "../lib/logger"
+
+export interface ExcelProcessingWorkerDeps {
+  excelProcessingService: ExcelProcessingServiceLike
+}
+
+/**
+ * Create the Excel processing job handler for the queue system.
+ *
+ * This is a thin wrapper that extracts job data and delegates to the service.
+ * All business logic lives in the service for reusability and testability.
+ */
+export function createExcelProcessingWorker(deps: ExcelProcessingWorkerDeps): JobHandler<ExcelProcessJobData> {
+  const { excelProcessingService } = deps
+
+  return async (job) => {
+    const { attachmentId, filename } = job.data
+
+    logger.info({ jobId: job.id, attachmentId, filename }, "Processing Excel workbook job")
+
+    await excelProcessingService.processExcel(attachmentId)
+
+    logger.info({ jobId: job.id, attachmentId }, "Excel processing job completed")
+  }
+}

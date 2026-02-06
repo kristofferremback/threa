@@ -176,6 +176,7 @@ export const AGENT_TOOL_NAMES = [
   "load_attachment",
   "load_pdf_section",
   "load_file_section",
+  "load_excel_section",
 ] as const
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number]
 
@@ -192,6 +193,7 @@ export const AgentToolNames = {
   LOAD_ATTACHMENT: "load_attachment",
   LOAD_PDF_SECTION: "load_pdf_section",
   LOAD_FILE_SECTION: "load_file_section",
+  LOAD_EXCEL_SECTION: "load_excel_section",
 } as const satisfies Record<string, AgentToolName>
 
 // Source types for message citations
@@ -291,8 +293,8 @@ export const PdfSizeTiers = {
   LARGE: "large",
 } as const satisfies Record<string, PdfSizeTier>
 
-// Extraction source types (image, PDF, text, or Word)
-export const EXTRACTION_SOURCE_TYPES = ["image", "pdf", "text", "word"] as const
+// Extraction source types (image, PDF, text, Word, or Excel)
+export const EXTRACTION_SOURCE_TYPES = ["image", "pdf", "text", "word", "excel"] as const
 export type ExtractionSourceType = (typeof EXTRACTION_SOURCE_TYPES)[number]
 
 export const ExtractionSourceTypes = {
@@ -300,6 +302,7 @@ export const ExtractionSourceTypes = {
   PDF: "pdf",
   TEXT: "text",
   WORD: "word",
+  EXCEL: "excel",
 } as const satisfies Record<string, ExtractionSourceType>
 
 // Text file formats (plain is fallback for ALL unrecognized text formats)

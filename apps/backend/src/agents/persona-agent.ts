@@ -37,11 +37,13 @@ import {
   type LoadAttachmentCallbacks,
   type LoadPdfSectionCallbacks,
   type LoadFileSectionCallbacks,
+  type LoadExcelSectionCallbacks,
   type AttachmentSearchResult,
   type AttachmentDetails,
   type LoadAttachmentResult,
   type LoadPdfSectionResult,
   type LoadFileSectionResult,
+  type LoadExcelSectionResult,
 } from "./tools"
 import {
   buildStreamContext,
@@ -740,6 +742,7 @@ export class PersonaAgent {
               load: LoadAttachmentCallbacks | undefined
               loadPdfSection: LoadPdfSectionCallbacks | undefined
               loadFileSection: LoadFileSectionCallbacks | undefined
+              loadExcelSection: LoadExcelSectionCallbacks | undefined
             }
           | undefined
         if (invokingUserId && accessibleStreamIds) {
@@ -924,12 +927,77 @@ export class PersonaAgent {
             },
           }
 
+          // load_excel_section for loading row ranges from large Excel workbooks
+          const loadExcelSection: LoadExcelSectionCallbacks = {
+            loadExcelSection: async (input): Promise<LoadExcelSectionResult | null> => {
+              const attachment = await AttachmentRepository.findById(db, input.attachmentId)
+              if (!attachment) return null
+
+              // Check access
+              if (!attachment.streamId || !accessibleStreamIds.includes(attachment.streamId)) {
+                return null
+              }
+
+              // Get extraction to check metadata
+              const extraction = await AttachmentExtractionRepository.findByAttachmentId(db, input.attachmentId)
+              if (!extraction || extraction.sourceType !== "excel" || !extraction.excelMetadata) {
+                return null
+              }
+
+              // Find the requested sheet in metadata
+              const sheetInfo = extraction.excelMetadata.sheets.find((s) => s.name === input.sheetName)
+              if (!sheetInfo) {
+                return null
+              }
+
+              const { EXCEL_MAX_ROWS_PER_REQUEST } = await import("../services/excel-processing/config")
+              const startRow = input.startRow ?? 0
+              const endRow = Math.min(input.endRow ?? sheetInfo.rows, startRow + EXCEL_MAX_ROWS_PER_REQUEST)
+
+              // Validate row range
+              if (startRow >= sheetInfo.rows || endRow > sheetInfo.rows) {
+                return null
+              }
+
+              // Fetch file from storage and extract requested rows using SheetJS
+              const { extractExcel } = await import("../services/excel-processing/extractor")
+              const { validateExcelFormat } = await import("../services/excel-processing/detector")
+              const fileBuffer = await storage.getObject(attachment.storagePath)
+              const format = validateExcelFormat(fileBuffer)
+              const extracted = extractExcel(fileBuffer, format)
+
+              const sheet = extracted.sheets.find((s) => s.name === input.sheetName)
+              if (!sheet) {
+                return null
+              }
+
+              // Build markdown table for the requested row range
+              const selectedRows = sheet.data.slice(startRow, endRow)
+              const headerRow = `| ${sheet.headers.join(" | ")} |`
+              const separator = `| ${sheet.headers.map(() => "---").join(" | ")} |`
+              const dataRows = selectedRows.map((row) => `| ${row.join(" | ")} |`).join("\n")
+              const content = `${headerRow}\n${separator}\n${dataRows}`
+
+              return {
+                attachmentId: input.attachmentId,
+                filename: attachment.filename,
+                sheetName: input.sheetName,
+                startRow,
+                endRow,
+                totalRows: sheet.rows,
+                headers: sheet.headers,
+                content,
+              }
+            },
+          }
+
           attachmentCallbacks = {
             search: searchAttachments,
             get: getAttachment,
             load: loadAttachment,
             loadPdfSection,
             loadFileSection,
+            loadExcelSection,
           }
         }
 

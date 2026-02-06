@@ -427,6 +427,56 @@ export interface WordMetadata {
 }
 
 /**
+ * Sheet info within an Excel workbook.
+ */
+export interface ExcelSheetInfo {
+  name: string
+  rows: number
+  columns: number
+  headers: string[]
+  columnTypes: string[]
+  sampleRows: string[][]
+}
+
+/**
+ * Chart info within an Excel workbook.
+ */
+export interface ExcelChartInfo {
+  sheetName: string
+  type: string | null
+  title: string | null
+  description: string
+}
+
+/**
+ * Metadata for Excel workbook extractions.
+ */
+export interface ExcelMetadata {
+  /** Document format: "xlsx" (Open XML) or "xls" (legacy binary) */
+  format: "xlsx" | "xls"
+  /** Size tier based on total cells */
+  sizeTier: TextSizeTier
+  /** How content should be injected into AI context */
+  injectionStrategy: InjectionStrategy
+  /** Total number of sheets */
+  totalSheets: number
+  /** Total rows across all sheets */
+  totalRows: number
+  /** Total cells across all sheets */
+  totalCells: number
+  /** Workbook author from properties (null if not available) */
+  author: string | null
+  /** Workbook creation date from properties (null if not available) */
+  createdAt: string | null
+  /** Workbook last modified date from properties (null if not available) */
+  modifiedAt: string | null
+  /** Per-sheet info */
+  sheets: ExcelSheetInfo[]
+  /** Chart info */
+  charts: ExcelChartInfo[]
+}
+
+/**
  * Extracted content from an attachment (images, documents, etc.).
  * Created by image captioning pipeline for AI agent context.
  */
@@ -442,6 +492,7 @@ export interface AttachmentExtraction {
   pdfMetadata: PdfMetadata | null
   textMetadata: TextMetadata | null
   wordMetadata: WordMetadata | null
+  excelMetadata: ExcelMetadata | null
   createdAt: string
   updatedAt: string
 }

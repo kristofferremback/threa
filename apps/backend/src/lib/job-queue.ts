@@ -31,6 +31,7 @@ export const JobQueues = {
   PDF_ASSEMBLE: "pdf.assemble",
   TEXT_PROCESS: "text.process",
   WORD_PROCESS: "word.process",
+  EXCEL_PROCESS: "excel.process",
 } as const
 
 export type JobQueueName = (typeof JobQueues)[keyof typeof JobQueues]
@@ -137,6 +138,14 @@ export interface WordProcessJobData {
   storagePath: string
 }
 
+/** Excel processing job - processes Excel workbooks (.xlsx, .xls, .xlsm) */
+export interface ExcelProcessJobData {
+  attachmentId: string
+  workspaceId: string
+  filename: string
+  storagePath: string
+}
+
 // Map queue names to their data types
 export interface JobDataMap {
   [JobQueues.PERSONA_AGENT]: PersonaAgentJobData
@@ -153,6 +162,7 @@ export interface JobDataMap {
   [JobQueues.PDF_ASSEMBLE]: PdfAssembleJobData
   [JobQueues.TEXT_PROCESS]: TextProcessJobData
   [JobQueues.WORD_PROCESS]: WordProcessJobData
+  [JobQueues.EXCEL_PROCESS]: ExcelProcessJobData
 }
 
 /**

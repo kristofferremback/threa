@@ -9,7 +9,7 @@ import type {
   TableData,
   DiagramData,
 } from "@threa/types"
-import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers } from "@threa/types"
+import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
 import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
@@ -72,6 +72,20 @@ export interface AttachmentContext {
       totalPages: number
       sizeTier: PdfSizeTier
       sections?: PdfSection[]
+    }
+    /** Excel-specific metadata (only for Excel workbooks) */
+    excelMetadata?: {
+      totalSheets: number
+      totalRows: number
+      totalCells: number
+      sheets: Array<{
+        name: string
+        rows: number
+        columns: number
+        headers: string[]
+        columnTypes: string[]
+        sampleRows: string[][]
+      }>
     }
   } | null
   /**
@@ -577,6 +591,11 @@ export async function enrichMessagesWithAttachments(
       const isLargePdf =
         extraction?.sourceType === ExtractionSourceTypes.PDF && extraction?.pdfMetadata?.sizeTier === PdfSizeTiers.LARGE
 
+      // For large Excel workbooks, don't include full text (use load_excel_section tool instead)
+      const isLargeExcel =
+        extraction?.sourceType === ExtractionSourceTypes.EXCEL &&
+        extraction?.excelMetadata?.injectionStrategy === InjectionStrategies.SUMMARY
+
       return {
         id: attachment.id,
         filename: attachment.filename,
@@ -585,7 +604,7 @@ export async function enrichMessagesWithAttachments(
           ? {
               contentType: extraction.contentType,
               summary: extraction.summary,
-              fullText: includeFullText && !isLargePdf ? extraction.fullText : null,
+              fullText: includeFullText && !isLargePdf && !isLargeExcel ? extraction.fullText : null,
               structuredData: includeFullText ? extraction.structuredData : null,
               sourceType: extraction.sourceType,
               pdfMetadata: extraction.pdfMetadata
@@ -593,6 +612,14 @@ export async function enrichMessagesWithAttachments(
                     totalPages: extraction.pdfMetadata.totalPages,
                     sizeTier: extraction.pdfMetadata.sizeTier,
                     sections: extraction.pdfMetadata.sections,
+                  }
+                : undefined,
+              excelMetadata: extraction.excelMetadata
+                ? {
+                    totalSheets: extraction.excelMetadata.totalSheets,
+                    totalRows: extraction.excelMetadata.totalRows,
+                    totalCells: extraction.excelMetadata.totalCells,
+                    sheets: extraction.excelMetadata.sheets,
                   }
                 : undefined,
             }
