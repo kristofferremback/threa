@@ -73,6 +73,7 @@ export interface AgentSessionProgressPayload {
   triggerMessageId: string
   personaName: string
   stepCount: number
+  messageCount: number
   currentStepType: AgentStepType
   /** Thread stream ID for channel mentions - allows frontend to link directly to thread */
   threadStreamId?: string

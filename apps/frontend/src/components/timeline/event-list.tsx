@@ -148,11 +148,14 @@ export function EventList({
     return item.event.id === firstUnreadEventId
   }
 
-  // Build sessionId → stepCount lookup from agentActivity (keyed by triggerMessageId)
-  const sessionStepCounts = new Map<string, number>()
+  // Build sessionId → live counts lookup from agentActivity (keyed by triggerMessageId)
+  const sessionLiveCounts = new Map<string, { stepCount: number; messageCount: number }>()
   if (agentActivity) {
     for (const activity of agentActivity.values()) {
-      sessionStepCounts.set(activity.sessionId, activity.stepCount)
+      sessionLiveCounts.set(activity.sessionId, {
+        stepCount: activity.stepCount,
+        messageCount: activity.messageCount,
+      })
     }
   }
 
@@ -179,7 +182,7 @@ export function EventList({
               <CommandEvent events={item.events} />
             ) : item.type === "session_group" ? (
               hideSessionCards ? null : (
-                <AgentSessionEvent events={item.events} liveStepCount={sessionStepCounts.get(item.sessionId)} />
+                <AgentSessionEvent events={item.events} liveCounts={sessionLiveCounts.get(item.sessionId)} />
               )
             ) : (
               <EventItem
@@ -187,7 +190,7 @@ export function EventList({
                 workspaceId={workspaceId}
                 streamId={streamId}
                 highlightMessageId={highlightMessageId}
-                agentActivity={agentActivity}
+                agentActivity={hideSessionCards ? agentActivity : undefined}
               />
             )}
           </div>
