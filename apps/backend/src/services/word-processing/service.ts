@@ -154,8 +154,6 @@ export class WordProcessingService implements WordProcessingServiceLike {
           )
         }
 
-        log.info({ format, sizeTier: wordMetadata.sizeTier }, "Word extraction saved successfully")
-
         return {
           contentType: "document" as const,
           summary,

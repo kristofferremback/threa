@@ -56,95 +56,98 @@ export class TextProcessingService implements TextProcessingServiceLike {
         return null
       }
 
-      // Download full content
-      const fileBuffer = await this.storage.getObject(attachment.storagePath)
+      try {
+        // Download full content
+        const fileBuffer = await this.storage.getObject(attachment.storagePath)
 
-      // Normalize encoding to UTF-8
-      const normalized = normalizeEncoding(fileBuffer)
-      const textContent = normalized.text
-      const encoding = normalized.encoding
+        // Normalize encoding to UTF-8
+        const normalized = normalizeEncoding(fileBuffer)
+        const textContent = normalized.text
+        const encoding = normalized.encoding
 
-      // Infer format from filename and content
-      const format = inferFormat(attachment.filename, textContent)
+        // Infer format from filename and content
+        const format = inferFormat(attachment.filename, textContent)
 
-      // Parse using format-specific parser
-      const parser = getParser(format)
-      const parseResult = parser.parse(textContent, attachment.filename)
+        // Parse using format-specific parser
+        const parser = getParser(format)
+        const parseResult = parser.parse(textContent, attachment.filename)
 
-      // Determine size tier and injection strategy
-      const totalBytes = fileBuffer.length
-      const sizeTier = determineSizeTier(totalBytes)
-      const injectionStrategy = determineInjectionStrategy(sizeTier)
+        // Determine size tier and injection strategy
+        const totalBytes = fileBuffer.length
+        const sizeTier = determineSizeTier(totalBytes)
+        const injectionStrategy = determineInjectionStrategy(sizeTier)
 
-      // Build text metadata
-      const textMetadata: TextMetadata = {
-        format: parseResult.format,
-        sizeTier,
-        injectionStrategy,
-        totalLines: parseResult.totalLines,
-        totalBytes,
-        encoding,
-        sections: parseResult.sections,
-        structure: parseResult.structure,
-      }
-
-      // Determine what to store and summarize
-      let summary: string
-      let fullTextToStore: string | null
-
-      if (sizeTier === TextSizeTiers.LARGE) {
-        fullTextToStore = null
-
-        const summaryResult = await this.ai.generateObject({
-          model: TEXT_SUMMARY_MODEL_ID,
-          schema: textSummarySchema,
-          temperature: TEXT_SUMMARY_TEMPERATURE,
-          messages: [
-            { role: "system", content: TEXT_SUMMARY_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: TEXT_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
-                .replace("{totalLines}", String(parseResult.totalLines))
-                .replace("{contentPreview}", parseResult.previewContent),
-            },
-          ],
-          telemetry: {
-            functionId: "text-summary",
-            metadata: {
-              attachment_id: attachmentId,
-              workspace_id: attachment.workspaceId,
-              filename: attachment.filename,
-              format,
-              size_tier: sizeTier,
-            },
-          },
-          context: {
-            workspaceId: attachment.workspaceId,
-          },
-        })
-
-        summary = summaryResult.value.summary
-        log.info({ format, sizeTier, summaryLength: summary.length }, "Text summary generated")
-      } else {
-        fullTextToStore = textContent
-        summary = generateSimpleSummary(
-          attachment.filename,
-          format,
-          parseResult.totalLines,
+        // Build text metadata
+        const textMetadata: TextMetadata = {
+          format: parseResult.format,
+          sizeTier,
+          injectionStrategy,
+          totalLines: parseResult.totalLines,
           totalBytes,
-          parseResult.structure
-        )
-      }
+          encoding,
+          sections: parseResult.sections,
+          structure: parseResult.structure,
+        }
 
-      log.info({ format, sizeTier: textMetadata.sizeTier }, "Text extraction saved successfully")
+        // Determine what to store and summarize
+        let summary: string
+        let fullTextToStore: string | null
 
-      return {
-        contentType: "document" as const,
-        summary,
-        fullText: fullTextToStore,
-        structuredData: null,
-        sourceType: "text" as const,
-        textMetadata,
+        if (sizeTier === TextSizeTiers.LARGE) {
+          fullTextToStore = null
+
+          const summaryResult = await this.ai.generateObject({
+            model: TEXT_SUMMARY_MODEL_ID,
+            schema: textSummarySchema,
+            temperature: TEXT_SUMMARY_TEMPERATURE,
+            messages: [
+              { role: "system", content: TEXT_SUMMARY_SYSTEM_PROMPT },
+              {
+                role: "user",
+                content: TEXT_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
+                  .replace("{totalLines}", String(parseResult.totalLines))
+                  .replace("{contentPreview}", parseResult.previewContent),
+              },
+            ],
+            telemetry: {
+              functionId: "text-summary",
+              metadata: {
+                attachment_id: attachmentId,
+                workspace_id: attachment.workspaceId,
+                filename: attachment.filename,
+                format,
+                size_tier: sizeTier,
+              },
+            },
+            context: {
+              workspaceId: attachment.workspaceId,
+            },
+          })
+
+          summary = summaryResult.value.summary
+          log.info({ format, sizeTier, summaryLength: summary.length }, "Text summary generated")
+        } else {
+          fullTextToStore = textContent
+          summary = generateSimpleSummary(
+            attachment.filename,
+            format,
+            parseResult.totalLines,
+            totalBytes,
+            parseResult.structure
+          )
+        }
+
+        return {
+          contentType: "document" as const,
+          summary,
+          fullText: fullTextToStore,
+          structuredData: null,
+          sourceType: "text" as const,
+          textMetadata,
+        }
+      } catch (error) {
+        log.error({ error }, "Text processing failed")
+        throw error
       }
     })
   }

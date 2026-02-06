@@ -152,8 +152,6 @@ export class ExcelProcessingService implements ExcelProcessingServiceLike {
           summary = generateSimpleSummary(attachment.filename, format, extracted.sheets.length, totalRows, totalCells)
         }
 
-        log.info({ format, sizeTier: excelMetadata.sizeTier }, "Excel extraction saved successfully")
-
         return {
           contentType: "document" as const,
           summary,

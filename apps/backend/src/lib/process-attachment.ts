@@ -82,4 +82,6 @@ export async function processAttachment(
 
     await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
   })
+
+  log.info("Attachment extraction saved successfully")
 }
