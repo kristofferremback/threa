@@ -3,26 +3,19 @@
  *
  * Processes image attachments to extract structured information
  * that can be used by AI agents to understand visual content.
- *
- * Uses the three-phase pattern (INV-41) to avoid holding database
- * connections during slow AI calls.
  */
 
 import type { Pool } from "pg"
-import { withClient, withTransaction } from "../../db"
-import { extractionId } from "../../lib/id"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../repositories"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { AI } from "../../lib/ai/ai"
-import { ProcessingStatuses } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { processAttachment } from "../../lib/process-attachment"
 import {
   IMAGE_CAPTION_MODEL_ID,
   IMAGE_CAPTION_TEMPERATURE,
   IMAGE_CAPTION_SYSTEM_PROMPT,
   IMAGE_CAPTION_USER_PROMPT,
   imageAnalysisSchema,
-  type ImageAnalysisOutput,
 } from "./config"
 import type { ImageCaptionServiceLike } from "./types"
 
@@ -43,55 +36,12 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
     this.storage = deps.storage
   }
 
-  /**
-   * Process an image attachment to extract structured information.
-   *
-   * Three-phase pattern (INV-41):
-   * 1. Fetch attachment, set status='processing' (fast, ~50ms)
-   * 2. Download image, call AI with base64 (no DB, 5-15s)
-   * 3. Insert extraction record, set status='completed'/'failed' (fast, ~50ms)
-   */
   async processImage(attachmentId: string): Promise<void> {
     const log = logger.child({ attachmentId })
 
-    // =========================================================================
-    // Phase 1: Fetch attachment and claim it for processing
-    // =========================================================================
-    const attachment = await withClient(this.pool, async (client) => {
-      const att = await AttachmentRepository.findById(client, attachmentId)
-      if (!att) {
-        log.warn("Attachment not found, skipping")
-        return null
-      }
+    await processAttachment(this.pool, attachmentId, async (attachment) => {
+      log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing image attachment")
 
-      // Atomic transition: process if pending, processing, or failed (allows retries and un-DLQ)
-      const claimed = await AttachmentRepository.updateProcessingStatus(
-        client,
-        attachmentId,
-        ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING, ProcessingStatuses.FAILED] }
-      )
-
-      if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/skipped, skipping")
-        return null
-      }
-
-      return att
-    })
-
-    if (!attachment) {
-      return
-    }
-
-    log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing image attachment")
-
-    // =========================================================================
-    // Phase 2: Download and analyze image (NO database connection held)
-    // =========================================================================
-    let analysis: ImageAnalysisOutput
-
-    try {
       // Download image from S3
       const imageBuffer = await this.storage.getObject(attachment.storagePath)
       const base64Image = imageBuffer.toString("base64")
@@ -100,7 +50,7 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
       const mediaType = attachment.mimeType.startsWith("image/") ? attachment.mimeType : "image/png" // Fallback for octet-stream
 
       // Call AI to analyze the image
-      const { value } = await this.ai.generateObject({
+      const { value: analysis } = await this.ai.generateObject({
         model: IMAGE_CAPTION_MODEL_ID,
         schema: imageAnalysisSchema,
         temperature: IMAGE_CAPTION_TEMPERATURE,
@@ -135,22 +85,12 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
         },
       })
 
-      analysis = value
       log.info(
         { contentType: analysis.contentType, summaryLength: analysis.summary.length },
         "Image analysis completed"
       )
-    } catch (error) {
-      // Log and re-throw - let job queue handle retries, DLQ hook will mark as failed
-      log.error({ error }, "Image analysis failed")
-      throw error
-    }
 
-    // =========================================================================
-    // Phase 3: Save extraction and mark as completed
-    // =========================================================================
-    await withTransaction(this.pool, async (client) => {
-      // Build full_text from extracted text components
+      // Build fullText from extracted text components
       const textParts: string[] = []
       if (analysis.extractedText?.headings?.length) {
         textParts.push(...analysis.extractedText.headings)
@@ -163,21 +103,14 @@ export class ImageCaptionService implements ImageCaptionServiceLike {
       }
       const fullText = textParts.length > 0 ? textParts.join("\n") : null
 
-      // Insert extraction record
-      await AttachmentExtractionRepository.insert(client, {
-        id: extractionId(),
-        attachmentId,
-        workspaceId: attachment.workspaceId,
+      log.info("Image extraction saved successfully")
+
+      return {
         contentType: analysis.contentType,
         summary: analysis.summary,
         fullText,
         structuredData: analysis.structuredData,
-      })
-
-      // Mark attachment as completed
-      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+      }
     })
-
-    log.info("Image extraction saved successfully")
   }
 }

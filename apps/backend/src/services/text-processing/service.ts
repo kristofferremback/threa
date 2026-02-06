@@ -3,20 +3,15 @@
  *
  * Processes text-based attachments to extract structured information
  * that can be used by AI agents to understand file content.
- *
- * Uses the three-phase pattern (INV-41) to avoid holding database
- * connections during slow AI calls.
  */
 
 import type { Pool } from "pg"
 import type { TextFormat, TextSizeTier, InjectionStrategy, TextMetadata } from "@threa/types"
-import { withClient, withTransaction } from "../../db"
-import { extractionId } from "../../lib/id"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../repositories"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { AI } from "../../lib/ai/ai"
-import { ProcessingStatuses, TextSizeTiers, InjectionStrategies } from "@threa/types"
+import { TextSizeTiers, InjectionStrategies } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { processAttachment } from "../../lib/process-attachment"
 import {
   TEXT_SIZE_THRESHOLDS,
   TEXT_SUMMARY_MODEL_ID,
@@ -47,80 +42,30 @@ export class TextProcessingService implements TextProcessingServiceLike {
     this.storage = deps.storage
   }
 
-  /**
-   * Process a text attachment to extract structured information.
-   *
-   * Three-phase pattern (INV-41):
-   * 1. Fetch attachment, set status='processing' (fast, ~50ms)
-   * 2. Download file, detect format, parse (no DB, variable time)
-   * 3. Insert extraction record, set status='completed'/'failed' (fast, ~50ms)
-   */
   async processText(attachmentId: string): Promise<void> {
     const log = logger.child({ attachmentId })
 
-    // =========================================================================
-    // Phase 1: Fetch attachment and claim it for processing
-    // =========================================================================
-    const attachment = await withClient(this.pool, async (client) => {
-      const att = await AttachmentRepository.findById(client, attachmentId)
-      if (!att) {
-        log.warn("Attachment not found, skipping")
-        return null
-      }
+    await processAttachment(this.pool, attachmentId, async (attachment) => {
+      log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing text attachment")
 
-      // Atomic transition: process if pending, processing, or failed (allows retries and un-DLQ)
-      const claimed = await AttachmentRepository.updateProcessingStatus(
-        client,
-        attachmentId,
-        ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING, ProcessingStatuses.FAILED] }
-      )
-
-      if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/skipped, skipping")
-        return null
-      }
-
-      return att
-    })
-
-    if (!attachment) {
-      return
-    }
-
-    log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing text attachment")
-
-    // =========================================================================
-    // Phase 2: Download and analyze text file (NO database connection held)
-    // =========================================================================
-    let textContent: string
-    let encoding: string
-    let format: TextFormat
-    let textMetadata: TextMetadata
-    let summary: string
-    let fullTextToStore: string | null
-
-    try {
-      // Step 1: Fetch first 8KB for binary detection (avoid downloading full file for binaries)
+      // Fetch first 8KB for binary detection (avoid downloading full file for binaries)
       const headBuffer = await this.storage.getObjectRange(attachment.storagePath, 0, BINARY_DETECTION.checkSize - 1)
 
-      // Check if file is binary based on head chunk
       if (isBinaryFile(headBuffer)) {
         log.info({ filename: attachment.filename }, "File detected as binary, marking as skipped")
-        await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.SKIPPED)
-        return
+        return null
       }
 
-      // Step 2: File looks like text — download full content
+      // Download full content
       const fileBuffer = await this.storage.getObject(attachment.storagePath)
 
       // Normalize encoding to UTF-8
       const normalized = normalizeEncoding(fileBuffer)
-      textContent = normalized.text
-      encoding = normalized.encoding
+      const textContent = normalized.text
+      const encoding = normalized.encoding
 
       // Infer format from filename and content
-      format = inferFormat(attachment.filename, textContent)
+      const format = inferFormat(attachment.filename, textContent)
 
       // Parse using format-specific parser
       const parser = getParser(format)
@@ -132,7 +77,7 @@ export class TextProcessingService implements TextProcessingServiceLike {
       const injectionStrategy = determineInjectionStrategy(sizeTier)
 
       // Build text metadata
-      textMetadata = {
+      const textMetadata: TextMetadata = {
         format: parseResult.format,
         sizeTier,
         injectionStrategy,
@@ -144,8 +89,10 @@ export class TextProcessingService implements TextProcessingServiceLike {
       }
 
       // Determine what to store and summarize
+      let summary: string
+      let fullTextToStore: string | null
+
       if (sizeTier === TextSizeTiers.LARGE) {
-        // Large files: generate AI summary, don't store full content
         fullTextToStore = null
 
         const summaryResult = await this.ai.generateObject({
@@ -179,7 +126,6 @@ export class TextProcessingService implements TextProcessingServiceLike {
         summary = summaryResult.value.summary
         log.info({ format, sizeTier, summaryLength: summary.length }, "Text summary generated")
       } else {
-        // Small/medium files: store full content, generate simple summary
         fullTextToStore = textContent
         summary = generateSimpleSummary(
           attachment.filename,
@@ -189,34 +135,18 @@ export class TextProcessingService implements TextProcessingServiceLike {
           parseResult.structure
         )
       }
-    } catch (error) {
-      // Log and re-throw - let job queue handle retries, DLQ hook will mark as failed
-      log.error({ error }, "Text processing failed")
-      throw error
-    }
 
-    // =========================================================================
-    // Phase 3: Save extraction and mark as completed
-    // =========================================================================
-    await withTransaction(this.pool, async (client) => {
-      // Insert extraction record
-      await AttachmentExtractionRepository.insert(client, {
-        id: extractionId(),
-        attachmentId,
-        workspaceId: attachment.workspaceId,
-        contentType: "document",
+      log.info({ format, sizeTier: textMetadata.sizeTier }, "Text extraction saved successfully")
+
+      return {
+        contentType: "document" as const,
         summary,
         fullText: fullTextToStore,
         structuredData: null,
-        sourceType: "text",
+        sourceType: "text" as const,
         textMetadata,
-      })
-
-      // Mark attachment as completed
-      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
+      }
     })
-
-    log.info({ format, sizeTier: textMetadata.sizeTier }, "Text extraction saved successfully")
   }
 }
 

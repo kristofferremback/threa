@@ -3,20 +3,15 @@
  *
  * Processes Word documents (.doc, .docx) to extract structured information
  * that can be used by AI agents to understand document content.
- *
- * Uses the three-phase pattern (INV-41) to avoid holding database
- * connections during slow AI calls.
  */
 
 import type { Pool } from "pg"
 import type { TextSizeTier, InjectionStrategy, TextSection, WordMetadata } from "@threa/types"
-import { withClient, withTransaction } from "../../db"
-import { extractionId } from "../../lib/id"
-import { AttachmentRepository, AttachmentExtractionRepository } from "../../repositories"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import type { AI } from "../../lib/ai/ai"
-import { ProcessingStatuses, TextSizeTiers, InjectionStrategies } from "@threa/types"
+import { TextSizeTiers, InjectionStrategies } from "@threa/types"
 import { logger } from "../../lib/logger"
+import { processAttachment, type ExtractionData } from "../../lib/process-attachment"
 import {
   WORD_SIZE_THRESHOLDS,
   WORD_SUMMARY_MODEL_ID,
@@ -51,188 +46,135 @@ export class WordProcessingService implements WordProcessingServiceLike {
     this.storage = deps.storage
   }
 
-  /**
-   * Process a Word document attachment to extract structured information.
-   *
-   * Three-phase pattern (INV-41):
-   * 1. Fetch attachment, set status='processing' (fast, ~50ms)
-   * 2. Download file, extract content, process images (no DB, variable time)
-   * 3. Insert extraction record, set status='completed'/'failed' (fast, ~50ms)
-   */
   async processWord(attachmentId: string): Promise<void> {
     const log = logger.child({ attachmentId })
 
-    // =========================================================================
-    // Phase 1: Fetch attachment and claim it for processing
-    // =========================================================================
-    const attachment = await withClient(this.pool, async (client) => {
-      const att = await AttachmentRepository.findById(client, attachmentId)
-      if (!att) {
-        log.warn("Attachment not found, skipping")
-        return null
-      }
+    await processAttachment(this.pool, attachmentId, async (attachment): Promise<ExtractionData | null> => {
+      log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing Word document")
 
-      // Atomic transition: process if pending, processing, or failed (allows retries and un-DLQ)
-      const claimed = await AttachmentRepository.updateProcessingStatus(
-        client,
-        attachmentId,
-        ProcessingStatuses.PROCESSING,
-        { onlyIfStatusIn: [ProcessingStatuses.PENDING, ProcessingStatuses.PROCESSING, ProcessingStatuses.FAILED] }
-      )
+      try {
+        // Download the file
+        const fileBuffer = await this.storage.getObject(attachment.storagePath)
 
-      if (!claimed) {
-        log.info({ currentStatus: att.processingStatus }, "Attachment already completed/skipped, skipping")
-        return null
-      }
+        // Validate format using magic bytes
+        const format = validateWordFormat(fileBuffer)
+        log.info({ format }, "Word format detected")
 
-      return att
-    })
+        // Extract content
+        const extracted = await extractWord(fileBuffer, format)
+        const textContent = extracted.text
 
-    if (!attachment) {
-      return
-    }
+        // Process embedded images if any (DOCX only)
+        let processedImageCaptions: string[] = []
+        if (extracted.images.length > 0) {
+          log.info({ imageCount: extracted.images.length }, "Processing embedded images")
+          processedImageCaptions = await this.captionEmbeddedImages(
+            extracted.images,
+            attachment.workspaceId,
+            attachmentId
+          )
+        }
 
-    log.info({ filename: attachment.filename, mimeType: attachment.mimeType }, "Processing Word document")
+        // Integrate image captions into text
+        const contentWithImages = this.integrateImageCaptions(textContent, processedImageCaptions)
 
-    // =========================================================================
-    // Phase 2: Download and analyze Word document (NO database connection held)
-    // =========================================================================
-    let format: WordFormat
-    let textContent: string
-    let wordMetadata: WordMetadata
-    let summary: string
-    let fullTextToStore: string | null
+        // Calculate metrics
+        const wordCount = countWords(textContent)
+        const characterCount = textContent.length
+        const contentBytes = Buffer.byteLength(contentWithImages, "utf-8")
 
-    try {
-      // Step 1: Download the file
-      const fileBuffer = await this.storage.getObject(attachment.storagePath)
+        // Determine size tier and injection strategy
+        const sizeTier = determineSizeTier(contentBytes)
+        const injectionStrategy = determineInjectionStrategy(sizeTier)
 
-      // Step 2: Validate format using magic bytes
-      format = validateWordFormat(fileBuffer)
-      log.info({ format }, "Word format detected")
+        // Build sections for navigation
+        const sections = buildSections(textContent)
 
-      // Step 3: Extract content
-      const extracted = await extractWord(fileBuffer, format)
-      textContent = extracted.text
+        // Build metadata
+        const wordMetadata: WordMetadata = {
+          format,
+          sizeTier,
+          injectionStrategy,
+          pageCount: extracted.properties.pageCount,
+          wordCount,
+          characterCount,
+          author: extracted.properties.author,
+          createdAt: extracted.properties.createdAt?.toISOString() ?? null,
+          modifiedAt: extracted.properties.modifiedAt?.toISOString() ?? null,
+          embeddedImageCount: extracted.images.length,
+          sections,
+        }
 
-      // Step 4: Process embedded images if any (DOCX only)
-      let processedImageCaptions: string[] = []
-      if (extracted.images.length > 0) {
-        log.info({ imageCount: extracted.images.length }, "Processing embedded images")
-        processedImageCaptions = await this.captionEmbeddedImages(
-          extracted.images,
-          attachment.workspaceId,
-          attachmentId
-        )
-      }
+        // Determine what to store and summarize
+        let summary: string
+        let fullTextToStore: string | null
 
-      // Step 5: Integrate image captions into text
-      const contentWithImages = this.integrateImageCaptions(textContent, processedImageCaptions)
+        if (sizeTier === TextSizeTiers.LARGE) {
+          fullTextToStore = null
 
-      // Step 6: Calculate metrics
-      const wordCount = countWords(textContent)
-      const characterCount = textContent.length
-      const contentBytes = Buffer.byteLength(contentWithImages, "utf-8")
-
-      // Step 7: Determine size tier and injection strategy
-      const sizeTier = determineSizeTier(contentBytes)
-      const injectionStrategy = determineInjectionStrategy(sizeTier)
-
-      // Step 8: Build sections for navigation
-      const sections = buildSections(textContent)
-
-      // Step 9: Build metadata
-      wordMetadata = {
-        format,
-        sizeTier,
-        injectionStrategy,
-        pageCount: extracted.properties.pageCount,
-        wordCount,
-        characterCount,
-        author: extracted.properties.author,
-        createdAt: extracted.properties.createdAt?.toISOString() ?? null,
-        modifiedAt: extracted.properties.modifiedAt?.toISOString() ?? null,
-        embeddedImageCount: extracted.images.length,
-        sections,
-      }
-
-      // Step 10: Determine what to store and summarize
-      if (sizeTier === TextSizeTiers.LARGE) {
-        // Large documents: generate AI summary, don't store full content
-        fullTextToStore = null
-
-        const contentPreview = textContent.slice(0, 4000)
-        const summaryResult = await this.ai.generateObject({
-          model: WORD_SUMMARY_MODEL_ID,
-          schema: wordSummarySchema,
-          temperature: WORD_SUMMARY_TEMPERATURE,
-          messages: [
-            { role: "system", content: WORD_SUMMARY_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: WORD_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
-                .replace("{wordCount}", String(wordCount))
-                .replace("{contentPreview}", contentPreview),
+          const contentPreview = textContent.slice(0, 4000)
+          const summaryResult = await this.ai.generateObject({
+            model: WORD_SUMMARY_MODEL_ID,
+            schema: wordSummarySchema,
+            temperature: WORD_SUMMARY_TEMPERATURE,
+            messages: [
+              { role: "system", content: WORD_SUMMARY_SYSTEM_PROMPT },
+              {
+                role: "user",
+                content: WORD_SUMMARY_USER_PROMPT.replace("{filename}", attachment.filename)
+                  .replace("{wordCount}", String(wordCount))
+                  .replace("{contentPreview}", contentPreview),
+              },
+            ],
+            telemetry: {
+              functionId: "word-summary",
+              metadata: {
+                attachment_id: attachmentId,
+                workspace_id: attachment.workspaceId,
+                filename: attachment.filename,
+                format,
+                size_tier: sizeTier,
+              },
             },
-          ],
-          telemetry: {
-            functionId: "word-summary",
-            metadata: {
-              attachment_id: attachmentId,
-              workspace_id: attachment.workspaceId,
-              filename: attachment.filename,
-              format,
-              size_tier: sizeTier,
+            context: {
+              workspaceId: attachment.workspaceId,
             },
-          },
-          context: {
-            workspaceId: attachment.workspaceId,
-          },
-        })
+          })
 
-        summary = summaryResult.value.summary
-        log.info({ format, sizeTier, summaryLength: summary.length }, "Word summary generated")
-      } else {
-        // Small/medium documents: store full content with image captions
-        fullTextToStore = contentWithImages
-        summary = generateSimpleSummary(attachment.filename, format, wordCount, characterCount, extracted.images.length)
+          summary = summaryResult.value.summary
+          log.info({ format, sizeTier, summaryLength: summary.length }, "Word summary generated")
+        } else {
+          fullTextToStore = contentWithImages
+          summary = generateSimpleSummary(
+            attachment.filename,
+            format,
+            wordCount,
+            characterCount,
+            extracted.images.length
+          )
+        }
+
+        log.info({ format, sizeTier: wordMetadata.sizeTier }, "Word extraction saved successfully")
+
+        return {
+          contentType: "document" as const,
+          summary,
+          fullText: fullTextToStore,
+          structuredData: null,
+          sourceType: "word" as const,
+          wordMetadata,
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
+          log.info({ filename: attachment.filename }, "Password-protected document, marking as skipped")
+          return null
+        }
+
+        log.error({ error }, "Word processing failed")
+        throw error
       }
-    } catch (error) {
-      // Check for password-protected or corrupted documents
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
-        log.info({ filename: attachment.filename }, "Password-protected document, marking as skipped")
-        await AttachmentRepository.updateProcessingStatus(this.pool, attachmentId, ProcessingStatuses.SKIPPED)
-        return
-      }
-
-      // Log and re-throw - let job queue handle retries, DLQ hook will mark as failed
-      log.error({ error }, "Word processing failed")
-      throw error
-    }
-
-    // =========================================================================
-    // Phase 3: Save extraction and mark as completed
-    // =========================================================================
-    await withTransaction(this.pool, async (client) => {
-      // Insert extraction record
-      await AttachmentExtractionRepository.insert(client, {
-        id: extractionId(),
-        attachmentId,
-        workspaceId: attachment.workspaceId,
-        contentType: "document",
-        summary,
-        fullText: fullTextToStore,
-        structuredData: null,
-        sourceType: "word",
-        wordMetadata,
-      })
-
-      // Mark attachment as completed
-      await AttachmentRepository.updateProcessingStatus(client, attachmentId, ProcessingStatuses.COMPLETED)
     })
-
-    log.info({ format, sizeTier: wordMetadata.sizeTier }, "Word extraction saved successfully")
   }
 
   /**
@@ -337,8 +279,6 @@ function buildSections(text: string): TextSection[] {
   const sections: TextSection[] = []
   const lines = text.split("\n")
 
-  // Simple heuristic: look for lines that might be headings
-  // (short lines followed by content, or lines in ALL CAPS)
   let currentSection: TextSection | null = null
   let lineNumber = 0
 
@@ -346,20 +286,14 @@ function buildSections(text: string): TextSection[] {
     const line = lines[i].trim()
     lineNumber++
 
-    // Skip empty lines
     if (!line) continue
 
-    // Detect potential headings
     const isHeading =
-      // Short lines (likely titles/headings)
       (line.length < 80 && line.length > 2 && !line.endsWith(".") && !line.endsWith(",")) ||
-      // All caps (section headers)
       (line === line.toUpperCase() && line.length > 3 && /[A-Z]/.test(line)) ||
-      // Numbered sections
       /^\d+\.?\s+[A-Z]/.test(line)
 
     if (isHeading) {
-      // Close previous section
       if (currentSection) {
         currentSection.endLine = lineNumber - 1
         if (currentSection.endLine > currentSection.startLine) {
@@ -367,7 +301,6 @@ function buildSections(text: string): TextSection[] {
         }
       }
 
-      // Start new section
       currentSection = {
         type: "heading",
         path: line.slice(0, 100),
@@ -378,7 +311,6 @@ function buildSections(text: string): TextSection[] {
     }
   }
 
-  // Close final section
   if (currentSection) {
     currentSection.endLine = lineNumber
     if (currentSection.endLine > currentSection.startLine) {
