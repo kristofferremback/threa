@@ -950,8 +950,9 @@ export class PersonaAgent {
                 return null
               }
 
+              const { EXCEL_MAX_ROWS_PER_REQUEST } = await import("../services/excel-processing/config")
               const startRow = input.startRow ?? 0
-              const endRow = input.endRow ?? sheetInfo.rows
+              const endRow = Math.min(input.endRow ?? sheetInfo.rows, startRow + EXCEL_MAX_ROWS_PER_REQUEST)
 
               // Validate row range
               if (startRow >= sheetInfo.rows || endRow > sheetInfo.rows) {

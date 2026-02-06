@@ -1,8 +1,7 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 import { logger } from "../../lib/logger"
-
-const MAX_ROWS_PER_REQUEST = 500
+import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../services/excel-processing/config"
 
 const LoadExcelSectionSchema = z
   .object({
@@ -26,12 +25,12 @@ const LoadExcelSectionSchema = z
   .refine(
     (data) => {
       if (data.startRow !== undefined && data.endRow !== undefined) {
-        return data.endRow - data.startRow <= MAX_ROWS_PER_REQUEST
+        return data.endRow - data.startRow <= EXCEL_MAX_ROWS_PER_REQUEST
       }
       return true
     },
     {
-      message: `Cannot load more than ${MAX_ROWS_PER_REQUEST} rows at once`,
+      message: `Cannot load more than ${EXCEL_MAX_ROWS_PER_REQUEST} rows at once`,
       path: ["endRow"],
     }
   )

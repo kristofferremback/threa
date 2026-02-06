@@ -24,12 +24,6 @@ export const EXCEL_SUMMARY_MODEL_ID = "openrouter:google/gemini-2.5-flash"
  */
 export const EXCEL_SUMMARY_TEMPERATURE = 0.3
 
-/**
- * Model for chart captioning (future use).
- * Gemini 2.5 Flash has excellent vision capabilities.
- */
-export const EXCEL_CHART_CAPTION_MODEL_ID = "openrouter:google/gemini-2.5-flash"
-
 // ============================================================================
 // MIME Types and Extensions
 // ============================================================================

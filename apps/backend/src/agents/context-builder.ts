@@ -73,6 +73,20 @@ export interface AttachmentContext {
       sizeTier: PdfSizeTier
       sections?: PdfSection[]
     }
+    /** Excel-specific metadata (only for Excel workbooks) */
+    excelMetadata?: {
+      totalSheets: number
+      totalRows: number
+      totalCells: number
+      sheets: Array<{
+        name: string
+        rows: number
+        columns: number
+        headers: string[]
+        columnTypes: string[]
+        sampleRows: string[][]
+      }>
+    }
   } | null
   /**
    * Base64 data URL for image attachments.
@@ -598,6 +612,14 @@ export async function enrichMessagesWithAttachments(
                     totalPages: extraction.pdfMetadata.totalPages,
                     sizeTier: extraction.pdfMetadata.sizeTier,
                     sections: extraction.pdfMetadata.sections,
+                  }
+                : undefined,
+              excelMetadata: extraction.excelMetadata
+                ? {
+                    totalSheets: extraction.excelMetadata.totalSheets,
+                    totalRows: extraction.excelMetadata.totalRows,
+                    totalCells: extraction.excelMetadata.totalCells,
+                    sheets: extraction.excelMetadata.sheets,
                   }
                 : undefined,
             }
