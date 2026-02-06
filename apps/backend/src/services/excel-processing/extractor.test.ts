@@ -16,7 +16,7 @@ function createXlsxBuffer(sheets: Record<string, unknown[][]>): Buffer {
 }
 
 describe("extractExcel", () => {
-  test("should extract single sheet with headers and data", () => {
+  test("should treat all rows as data with column-letter headers", () => {
     const buffer = createXlsxBuffer({
       Sheet1: [
         ["Name", "Age", "City"],
@@ -31,12 +31,13 @@ describe("extractExcel", () => {
     expect(result.sheets).toHaveLength(1)
     const sheet = result.sheets[0]
     expect(sheet.name).toBe("Sheet1")
-    expect(sheet.headers).toEqual(["Name", "Age", "City"])
-    expect(sheet.rows).toBe(3)
+    expect(sheet.headers).toEqual(["A", "B", "C"])
+    expect(sheet.rows).toBe(4)
     expect(sheet.columns).toBe(3)
-    expect(sheet.data).toHaveLength(3)
-    expect(sheet.data[0]).toEqual(["Alice", "30", "NYC"])
-    expect(sheet.sampleRows).toHaveLength(3)
+    expect(sheet.data).toHaveLength(4)
+    expect(sheet.data[0]).toEqual(["Name", "Age", "City"])
+    expect(sheet.data[1]).toEqual(["Alice", "30", "NYC"])
+    expect(sheet.sampleRows).toHaveLength(4)
   })
 
   test("should extract multiple sheets", () => {
@@ -56,9 +57,9 @@ describe("extractExcel", () => {
 
     expect(result.sheets).toHaveLength(2)
     expect(result.sheets[0].name).toBe("Sales")
-    expect(result.sheets[0].rows).toBe(2)
+    expect(result.sheets[0].rows).toBe(3)
     expect(result.sheets[1].name).toBe("Costs")
-    expect(result.sheets[1].rows).toBe(1)
+    expect(result.sheets[1].rows).toBe(2)
   })
 
   test("should handle empty sheets", () => {
@@ -90,28 +91,46 @@ describe("extractExcel", () => {
     expect(result.sheets[0].headers).toHaveLength(20)
   })
 
-  test("should infer column types correctly", () => {
+  test("should read column types from cell metadata", () => {
     const buffer = createXlsxBuffer({
       Types: [
-        ["ID", "Name", "Score", "Active", "Date"],
-        [1, "Alice", 95.5, "true", "2024-01-15"],
-        [2, "Bob", 87.3, "false", "2024-02-20"],
-        [3, "Carol", 92.1, "true", "2024-03-10"],
+        [1, "Alice", 95.5, true, new Date("2024-01-15")],
+        [2, "Bob", 87.3, false, new Date("2024-02-20")],
+        [3, "Carol", 92.1, true, new Date("2024-03-10")],
       ],
     })
 
     const result = extractExcel(buffer, "xlsx")
     const types = result.sheets[0].columnTypes
 
-    expect(types[0]).toBe("integer") // ID
-    expect(types[1]).toBe("text") // Name
-    expect(types[2]).toBe("number") // Score
-    expect(types[3]).toBe("boolean") // Active
-    expect(types[4]).toBe("date") // Date
+    expect(types[0]).toBe("integer")
+    expect(types[1]).toBe("text")
+    expect(types[2]).toBe("number")
+    expect(types[3]).toBe("boolean")
+    expect(types[4]).toBe("date")
+  })
+
+  test("should use autofilter headers when defined", () => {
+    const workbook = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Name", "Age", "City"],
+      ["Alice", 30, "NYC"],
+      ["Bob", 25, "LA"],
+    ])
+    ws["!autofilter"] = { ref: "A1:C3" }
+    XLSX.utils.book_append_sheet(workbook, ws, "Sheet1")
+    const buffer = Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }))
+
+    const result = extractExcel(buffer, "xlsx")
+    const sheet = result.sheets[0]
+
+    expect(sheet.headers).toEqual(["Name", "Age", "City"])
+    expect(sheet.rows).toBe(2)
+    expect(sheet.data[0]).toEqual(["Alice", "30", "NYC"])
   })
 
   test("should limit sample rows to configured amount", () => {
-    const data = [["Header"]]
+    const data: unknown[][] = []
     for (let i = 0; i < 100; i++) {
       data.push([`Row ${i}`])
     }

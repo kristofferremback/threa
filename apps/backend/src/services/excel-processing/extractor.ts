@@ -81,20 +81,33 @@ export function extractExcel(buffer: Buffer, _format: ExcelFormat): ExcelExtract
       continue
     }
 
-    // First row is headers
-    const headers = rawData[0].map((cell) => String(cell ?? ""))
-    const dataRows = rawData.slice(1).map((row) => row.map((cell) => String(cell ?? "")))
+    const allRows = rawData.map((row) => row.map((cell) => String(cell ?? "")))
+    const columnCount = allRows.reduce((max, row) => Math.max(max, row.length), 0)
 
-    // Infer column types by scanning first ~20 data rows
-    const columnTypes = inferColumnTypes(dataRows.slice(0, 20), headers.length)
+    // Use autofilter to detect structurally defined headers, fall back to column letters
+    const headerRowIndex = detectHeaderRow(worksheet)
 
-    // Build sample rows
+    let headers: string[]
+    let dataRows: string[][]
+
+    if (headerRowIndex !== null && headerRowIndex < allRows.length) {
+      const detected = allRows[headerRowIndex]
+      const fallback = generateColumnHeaders(columnCount)
+      headers = fallback.map((letter, i) => (i < detected.length && detected[i] !== "" ? detected[i] : letter))
+      dataRows = allRows.filter((_, i) => i !== headerRowIndex)
+    } else {
+      headers = generateColumnHeaders(columnCount)
+      dataRows = allRows
+    }
+
+    const typeStartRow = headerRowIndex !== null ? headerRowIndex + 1 : 0
+    const columnTypes = readColumnTypes(worksheet, typeStartRow, columnCount, 20)
     const sampleRows = dataRows.slice(0, EXCEL_SAMPLE_ROWS)
 
     sheets.push({
       name: sheetName,
       rows: dataRows.length,
-      columns: headers.length,
+      columns: columnCount,
       headers,
       columnTypes,
       data: dataRows,
@@ -117,48 +130,93 @@ export function extractExcel(buffer: Buffer, _format: ExcelFormat): ExcelExtract
 }
 
 /**
- * Infer column types by examining the first N data rows.
- * Returns an array of type strings (one per column).
+ * Generate Excel-style column headers: A, B, ..., Z, AA, AB, ...
  */
-function inferColumnTypes(rows: string[][], columnCount: number): string[] {
-  const types: string[] = new Array(columnCount).fill("text")
+function generateColumnHeaders(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => {
+    let result = ""
+    let n = i
+    while (n >= 0) {
+      result = String.fromCharCode(65 + (n % 26)) + result
+      n = Math.floor(n / 26) - 1
+    }
+    return result
+  })
+}
+
+/**
+ * Detect a structurally defined header row via AutoFilter.
+ * Returns the 0-indexed row number, or null if no header detected.
+ */
+function detectHeaderRow(worksheet: XLSX.WorkSheet): number | null {
+  const autofilter = (worksheet as Record<string, unknown>)["!autofilter"] as { ref?: string } | undefined
+  if (autofilter?.ref) {
+    return XLSX.utils.decode_range(autofilter.ref).s.r
+  }
+  return null
+}
+
+/**
+ * Read column types from cell metadata instead of guessing from strings.
+ * Uses cell.t (type) and cell.z (number format) from the worksheet.
+ */
+function readColumnTypes(
+  worksheet: XLSX.WorkSheet,
+  startRow: number,
+  columnCount: number,
+  maxSample: number
+): string[] {
+  const types: string[] = new Array(columnCount).fill("empty")
 
   for (let col = 0; col < columnCount; col++) {
-    const values = rows.map((row) => row[col] ?? "").filter((v) => v !== "")
+    const cellTypes: string[] = []
 
-    if (values.length === 0) {
-      types[col] = "empty"
-      continue
+    for (let row = startRow; row < startRow + maxSample; row++) {
+      const addr = XLSX.utils.encode_cell({ r: row, c: col })
+      const cell = worksheet[addr] as XLSX.CellObject | undefined
+      if (!cell?.t) continue
+
+      const type = classifyCellType(cell)
+      if (type) cellTypes.push(type)
     }
 
-    const allNumbers = values.every((v) => !isNaN(Number(v)) && v.trim() !== "")
-    if (allNumbers) {
-      // Check if integers or decimals
-      const allIntegers = values.every((v) => Number.isInteger(Number(v)))
-      types[col] = allIntegers ? "integer" : "number"
-      continue
-    }
-
-    // Check for dates (common patterns)
-    const datePattern = /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/
-    const allDates = values.every((v) => datePattern.test(v))
-    if (allDates) {
-      types[col] = "date"
-      continue
-    }
-
-    // Check for booleans
-    const boolValues = new Set(["true", "false", "yes", "no", "1", "0"])
-    const allBools = values.every((v) => boolValues.has(v.toLowerCase()))
-    if (allBools) {
-      types[col] = "boolean"
-      continue
-    }
-
-    types[col] = "text"
+    types[col] = resolveColumnType(cellTypes)
   }
 
   return types
+}
+
+function classifyCellType(cell: XLSX.CellObject): string | null {
+  switch (cell.t) {
+    case "n":
+      if (cell.z && looksLikeDateFormat(cell.z)) return "date"
+      return typeof cell.v === "number" && Number.isInteger(cell.v) ? "integer" : "number"
+    case "s":
+      return "text"
+    case "b":
+      return "boolean"
+    case "d":
+      return "date"
+    default:
+      return null
+  }
+}
+
+function resolveColumnType(cellTypes: string[]): string {
+  if (cellTypes.length === 0) return "empty"
+  const unique = [...new Set(cellTypes)]
+  if (unique.length === 1) return unique[0]
+  if (unique.length === 2 && unique.includes("integer") && unique.includes("number")) return "number"
+  return "text"
+}
+
+/**
+ * Check if an Excel number format code represents a date.
+ * Looks for 'y' (year) or 'd' (day) tokens, which are unambiguous date signals.
+ */
+function looksLikeDateFormat(fmt: string): boolean {
+  const stripped = fmt.replace(/\[.*?\]/g, "").replace(/"[^"]*"/g, "")
+  return /[yd]/i.test(stripped)
 }
 
 /**

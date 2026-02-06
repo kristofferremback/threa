@@ -62,7 +62,7 @@ export class StubExcelProcessingService implements ExcelProcessingServiceLike {
           name: "Sheet1",
           rows: 30,
           columns: 6,
-          headers: ["ID", "Name", "Category", "Value", "Date", "Status"],
+          headers: ["A", "B", "C", "D", "E", "F"],
           columnTypes: ["integer", "text", "text", "number", "date", "text"],
           sampleRows: [
             ["1", "Item A", "Category 1", "100.50", "2024-01-15", "Active"],
@@ -74,7 +74,7 @@ export class StubExcelProcessingService implements ExcelProcessingServiceLike {
           name: "Summary",
           rows: 20,
           columns: 3,
-          headers: ["Category", "Total", "Count"],
+          headers: ["A", "B", "C"],
           columnTypes: ["text", "number", "integer"],
           sampleRows: [
             ["Category 1", "250.75", "2"],
