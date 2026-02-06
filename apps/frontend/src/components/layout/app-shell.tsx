@@ -87,7 +87,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     isResizing,
     urgencyBlocks,
     setHovering,
-    pin,
     collapse,
     togglePinned,
     startResizing,
@@ -114,13 +113,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
       setHovering(false)
     }
   }, [setHovering, isMobile])
-
-  // Click on sidebar pins it (from preview or collapsed) - on mobile this just keeps it open
-  const handleSidebarClick = useCallback(() => {
-    if (!isPinned && !isMobile) {
-      pin()
-    }
-  }, [isPinned, pin, isMobile])
 
   // Close backdrop on mobile
   const handleBackdropClick = useCallback(() => {
@@ -267,7 +259,6 @@ export function AppShell({ sidebar, children }: AppShellProps) {
             }}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            onClick={handleSidebarClick}
             role="navigation"
             aria-label="Sidebar navigation"
           >

@@ -73,8 +73,6 @@ interface SidebarContextValue {
   hidePreview: () => void
   /** Toggle between collapsed and pinned */
   togglePinned: () => void
-  /** Pin the sidebar (from preview or collapsed) */
-  pin: () => void
   /** Collapse the sidebar (from pinned) */
   collapse: () => void
   /** Set hovering state */
@@ -225,16 +223,6 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     })
   }, [clearHideTimeout, isMobile, updatePersistedState])
 
-  // Pin the sidebar (or show preview on mobile)
-  const pin = useCallback(() => {
-    clearHideTimeout()
-    const next = isMobile ? "preview" : "pinned"
-    setState(next)
-    if (!isMobile) {
-      updatePersistedState({ openState: "open" })
-    }
-  }, [clearHideTimeout, isMobile, updatePersistedState])
-
   // Collapse the sidebar
   const collapse = useCallback(() => {
     clearHideTimeout()
@@ -382,7 +370,6 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
         showPreview,
         hidePreview,
         togglePinned,
-        pin,
         collapse,
         setHovering,
         startResizing,
