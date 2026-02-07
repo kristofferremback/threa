@@ -24,7 +24,7 @@ export interface SearchFilters {
 
 export interface SearchParams {
   workspaceId: string
-  userId: string
+  memberId: string
   query: string
   filters?: SearchFilters
   limit?: number
@@ -56,17 +56,17 @@ export class SearchService {
    * This is useful for error messages, IDs, or other literal text.
    */
   async search(params: SearchParams): Promise<SearchResult[]> {
-    const { workspaceId, userId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
+    const { workspaceId, memberId, query, filters = {}, limit = DEFAULT_LIMIT, exact = false } = params
 
-    logger.debug({ query, filters, workspaceId, userId, exact }, "Search request")
+    logger.debug({ query, filters, workspaceId, memberId, exact }, "Search request")
 
     // For exact matching, skip embedding generation - use ILIKE directly
     if (exact) {
       return withClient(this.pool, async (client) => {
-        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
+        const streamIds = await this.getAccessibleStreamIds(client, workspaceId, memberId, filters)
 
         if (streamIds.length === 0) {
-          logger.debug({ workspaceId, userId }, "No accessible streams for user")
+          logger.debug({ workspaceId, memberId }, "No accessible streams for member")
           return []
         }
 
@@ -97,11 +97,11 @@ export class SearchService {
     }
 
     return withClient(this.pool, async (client) => {
-      // 1. Get accessible stream IDs for this user
-      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, userId, filters)
+      // 1. Get accessible stream IDs for this member
+      const streamIds = await this.getAccessibleStreamIds(client, workspaceId, memberId, filters)
 
       if (streamIds.length === 0) {
-        logger.debug({ workspaceId, userId }, "No accessible streams for user")
+        logger.debug({ workspaceId, memberId }, "No accessible streams for member")
         return []
       }
 
@@ -146,13 +146,13 @@ export class SearchService {
   private async getAccessibleStreamIds(
     client: PoolClient,
     workspaceId: string,
-    userId: string,
+    memberId: string,
     filters: SearchFilters
   ): Promise<string[]> {
     // Use combined query for access + member filtering
     const accessibleStreamIds = await SearchRepository.getAccessibleStreamsWithMembers(client, {
       workspaceId,
-      userId,
+      memberId,
       memberIds: filters.memberIds,
       streamTypes: filters.streamTypes,
       archiveStatus: filters.archiveStatus,

@@ -6,8 +6,8 @@ import type { AgentAccessSpec } from "../agents/researcher/access-spec"
 
 export interface GetAccessibleStreamsParams {
   workspaceId: string
-  userId: string
-  memberIds?: string[] // Can mix user_xxx and persona_xxx - ID prefix distinguishes
+  memberId: string
+  memberIds?: string[] // Can mix member_xxx and persona_xxx - ID prefix distinguishes
   streamTypes?: StreamType[]
   archiveStatus?: ArchiveStatus[] // ["active"] = active only, ["archived"] = archived only, ["active", "archived"] = all
 }
@@ -17,7 +17,7 @@ export interface SearchResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   createdAt: Date
   rank: number
 }
@@ -38,7 +38,7 @@ function mapRowToSearchResult(row: SearchResultRow): SearchResult {
     streamId: row.stream_id,
     content: row.content_markdown,
     authorId: row.author_id,
-    authorType: row.author_type as "user" | "persona",
+    authorType: row.author_type as "member" | "persona",
     createdAt: row.created_at,
     rank: row.rank,
   }
@@ -95,7 +95,7 @@ export const SearchRepository = {
    * - ["active", "archived"] → all streams
    */
   async getAccessibleStreamsWithMembers(db: Querier, params: GetAccessibleStreamsParams): Promise<string[]> {
-    const { workspaceId, userId, memberIds, streamTypes, archiveStatus } = params
+    const { workspaceId, memberId, memberIds, streamTypes, archiveStatus } = params
     const hasMemberFilter = memberIds && memberIds.length > 0
     const hasTypeFilter = streamTypes && streamTypes.length > 0
 
@@ -106,14 +106,14 @@ export const SearchRepository = {
       const result = await db.query<{ id: string }>(sql`
         SELECT DISTINCT s.id
         FROM streams s
-        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${memberId}
         LEFT JOIN streams root ON s.root_stream_id = root.id
-        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${memberId}
         WHERE s.workspace_id = ${workspaceId}
           AND (
-            sm.user_id IS NOT NULL
+            sm.member_id IS NOT NULL
             OR s.visibility = ${Visibilities.PUBLIC}
-            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.member_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
           )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
           AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
@@ -121,19 +121,19 @@ export const SearchRepository = {
       return result.rows.map((r) => r.id)
     }
 
-    // With member filter: combined query using UNION for users + personas
+    // With member filter: combined query using UNION for members + personas
     const result = await db.query<{ id: string }>(sql`
       WITH accessible AS (
         SELECT DISTINCT s.id
         FROM streams s
-        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.user_id = ${userId}
+        LEFT JOIN stream_members sm ON s.id = sm.stream_id AND sm.member_id = ${memberId}
         LEFT JOIN streams root ON s.root_stream_id = root.id
-        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.user_id = ${userId}
+        LEFT JOIN stream_members root_sm ON root.id = root_sm.stream_id AND root_sm.member_id = ${memberId}
         WHERE s.workspace_id = ${workspaceId}
           AND (
-            sm.user_id IS NOT NULL
+            sm.member_id IS NOT NULL
             OR s.visibility = ${Visibilities.PUBLIC}
-            OR (s.root_stream_id IS NOT NULL AND (root_sm.user_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
+            OR (s.root_stream_id IS NOT NULL AND (root_sm.member_id IS NOT NULL OR root.visibility = ${Visibilities.PUBLIC}))
           )
           AND (${!hasTypeFilter} OR s.type = ANY(${streamTypes ?? []}))
           AND (${filterAll} OR (${includeArchived} AND s.archived_at IS NOT NULL) OR (${!includeArchived} AND s.archived_at IS NULL))
@@ -141,9 +141,9 @@ export const SearchRepository = {
       member_streams AS (
         SELECT stream_id
         FROM (
-          SELECT stream_id, user_id AS member_id
+          SELECT stream_id, member_id
           FROM stream_members
-          WHERE user_id = ANY(${memberIds})
+          WHERE member_id = ANY(${memberIds})
           UNION ALL
           SELECT stream_id, persona_id AS member_id
           FROM stream_persona_participants
@@ -414,11 +414,10 @@ export const SearchRepository = {
     options?: { streamTypes?: StreamType[]; archiveStatus?: ArchiveStatus[] }
   ): Promise<string[]> {
     switch (spec.type) {
-      case "user_full_access":
-        // Delegate to existing user access method
+      case "member_full_access":
         return this.getAccessibleStreamsWithMembers(db, {
           workspaceId,
-          userId: spec.userId,
+          memberId: spec.memberId,
           streamTypes: options?.streamTypes,
           archiveStatus: options?.archiveStatus,
         })
@@ -437,13 +436,13 @@ export const SearchRepository = {
         return [...new Set([...publicIds, ...streamTreeIds])]
       }
 
-      case "user_union": {
-        // Get accessible streams for each user and union them
+      case "member_union": {
+        // Get accessible streams for each member and union them
         const allResults = await Promise.all(
-          spec.userIds.map((userId) =>
+          spec.memberIds.map((memberId) =>
             this.getAccessibleStreamsWithMembers(db, {
               workspaceId,
-              userId,
+              memberId,
               streamTypes: options?.streamTypes,
               archiveStatus: options?.archiveStatus,
             })

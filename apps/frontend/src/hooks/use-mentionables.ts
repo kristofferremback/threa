@@ -38,15 +38,19 @@ export function useMentionables() {
   const mentionables = useMemo<Mentionable[]>(() => {
     if (!bootstrap) return BROADCAST_MENTIONS
 
-    // Mark current user with isCurrentUser flag and put them first
+    // Build member mentionables with slug from member and name from user
     const currentUserId = currentUser?.id
-    const users: Mentionable[] = bootstrap.users.map((user) => ({
-      id: user.id,
-      slug: user.slug,
-      name: user.name,
-      type: "user",
-      isCurrentUser: user.id === currentUserId,
-    }))
+    const userMap = new Map(bootstrap.users.map((u) => [u.id, u]))
+    const users: Mentionable[] = bootstrap.members.map((member) => {
+      const user = userMap.get(member.userId)
+      return {
+        id: member.id,
+        slug: member.slug,
+        name: user?.name ?? member.slug,
+        type: "user",
+        isCurrentUser: member.userId === currentUserId,
+      }
+    })
 
     // Sort users so current user is first
     users.sort((a, b) => {

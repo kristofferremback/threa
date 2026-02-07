@@ -55,7 +55,7 @@ export function createOptimisticBootstrap({
       ...(attachments && attachments.length > 0 && { attachments }),
     },
     actorId: stream.createdBy,
-    actorType: "user",
+    actorType: "member",
     createdAt: message.createdAt,
   }
 

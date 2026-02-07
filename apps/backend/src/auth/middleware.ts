@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
-import type { AuthService } from "../services/auth-service"
-import type { UserService } from "../services/user-service"
+import type { AuthService } from "./auth-service"
+import type { UserService } from "./user-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
 
 const SESSION_COOKIE_NAME = "wos_session"

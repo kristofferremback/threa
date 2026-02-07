@@ -147,14 +147,14 @@ export class EmojiUsageHandler implements OutboxHandler {
       return
     }
 
-    // Only track user messages (not persona/system messages)
-    if (payload.event.actorType !== AuthorTypes.USER) {
+    // Only track member messages (not persona/system messages)
+    if (payload.event.actorType !== AuthorTypes.MEMBER) {
       return
     }
 
-    const userId = payload.event.actorId
-    if (!userId) {
-      logger.warn({ eventId: outboxEvent.id.toString() }, "EmojiUsageHandler: USER message has no actorId, skipping")
+    const memberId = payload.event.actorId
+    if (!memberId) {
+      logger.warn({ eventId: outboxEvent.id.toString() }, "EmojiUsageHandler: MEMBER message has no actorId, skipping")
       return
     }
 
@@ -168,7 +168,7 @@ export class EmojiUsageHandler implements OutboxHandler {
     const items = Array.from(emojiCounts.entries()).map(([shortcode, count]) => ({
       id: emojiUsageId(),
       workspaceId: payload.workspaceId,
-      userId,
+      memberId,
       interactionType: "message" as const,
       shortcode,
       occurrenceCount: count,
@@ -191,7 +191,7 @@ export class EmojiUsageHandler implements OutboxHandler {
   private async handleReactionAdded(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
     const payload = outboxEvent.payload as ReactionOutboxPayload
 
-    if (!payload.workspaceId || !payload.userId || !payload.emoji || !payload.messageId) {
+    if (!payload.workspaceId || !payload.memberId || !payload.emoji || !payload.messageId) {
       logger.debug({ eventId: outboxEvent.id.toString() }, "EmojiUsageHandler: malformed reaction event, skipping")
       return
     }
@@ -210,7 +210,7 @@ export class EmojiUsageHandler implements OutboxHandler {
     await EmojiUsageRepository.insert(this.db, {
       id: emojiUsageId(),
       workspaceId: payload.workspaceId,
-      userId: payload.userId,
+      memberId: payload.memberId,
       interactionType: "message_reaction",
       shortcode,
       occurrenceCount: 1,

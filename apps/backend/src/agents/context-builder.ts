@@ -14,7 +14,7 @@ import type { Stream } from "../repositories/stream-repository"
 import { StreamRepository } from "../repositories/stream-repository"
 import { StreamMemberRepository } from "../repositories/stream-member-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
-import { UserRepository } from "../repositories/user-repository"
+import { MemberRepository } from "../repositories/member-repository"
 import { AttachmentRepository } from "../repositories/attachment-repository"
 import {
   AttachmentExtractionRepository,
@@ -255,10 +255,10 @@ async function buildChannelContext(db: Querier, stream: Stream, temporal?: Tempo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const userIds = members.map((m) => m.userId)
+  const memberIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
-    userIds,
+    memberIds,
     temporal !== undefined
   )
 
@@ -285,10 +285,10 @@ async function buildDmContext(db: Querier, stream: Stream, temporal?: TemporalCo
     StreamMemberRepository.list(db, { streamId: stream.id }),
   ])
 
-  const userIds = members.map((m) => m.userId)
+  const memberIds = members.map((m) => m.memberId)
   const { participants, participantTimezones } = await resolveParticipantsWithTimezones(
     db,
-    userIds,
+    memberIds,
     temporal !== undefined
   )
 
@@ -390,34 +390,34 @@ async function buildThreadPath(db: Querier, stream: Stream): Promise<ThreadPathE
 
 /**
  * Resolve participants and their timezone info in a single batch query.
- * Avoids N+1 queries by fetching all users at once.
+ * Avoids N+1 queries by fetching all members at once.
  */
 async function resolveParticipantsWithTimezones(
   db: Querier,
-  userIds: string[],
+  memberIds: string[],
   includeTimezones: boolean
 ): Promise<{ participants: Participant[]; participantTimezones?: ParticipantTemporal[] }> {
-  if (userIds.length === 0) {
+  if (memberIds.length === 0) {
     return { participants: [], participantTimezones: includeTimezones ? [] : undefined }
   }
 
-  // Batch fetch all users in one query
-  const users = await UserRepository.findByIds(db, userIds)
+  // Batch fetch all members in one query
+  const members = await MemberRepository.findByIds(db, memberIds)
 
-  const participants: Participant[] = users.map((user) => ({
-    id: user.id,
-    name: user.name,
+  const participants: Participant[] = members.map((member) => ({
+    id: member.id,
+    name: member.name,
   }))
 
-  // Build timezone info from the same user data if needed
+  // Build timezone info from the same member data if needed
   let participantTimezones: ParticipantTemporal[] | undefined
   if (includeTimezones) {
     const now = new Date()
-    participantTimezones = users.map((user) => {
-      const timezone = user.timezone ?? "UTC"
+    participantTimezones = members.map((member) => {
+      const timezone = member.timezone ?? "UTC"
       return {
-        id: user.id,
-        name: user.name,
+        id: member.id,
+        name: member.name,
         timezone,
         utcOffset: getUtcOffset(timezone, now),
       }
@@ -430,10 +430,10 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: "user" | "persona"): Promise<string> {
-  if (authorType === "user") {
-    const user = await UserRepository.findById(db, authorId)
-    return user?.name ?? "Unknown"
+async function resolveAuthorName(db: Querier, authorId: string, authorType: "member" | "persona"): Promise<string> {
+  if (authorType === "member") {
+    const member = await MemberRepository.findById(db, authorId)
+    return member?.name ?? "Unknown"
   }
 
   // For personas, we'd need to look up the persona
@@ -515,7 +515,7 @@ export async function enrichMessagesWithAttachments(
   // Find indices of last N user messages before trigger
   const userMessageIndicesBeforeTrigger: number[] = []
   for (let i = triggerIdx - 1; i >= 0 && userMessageIndicesBeforeTrigger.length < FULL_EXTRACTION_USER_MESSAGES; i--) {
-    if (messages[i].authorType === AuthorTypes.USER) {
+    if (messages[i].authorType === AuthorTypes.MEMBER) {
       userMessageIndicesBeforeTrigger.push(i)
     }
   }

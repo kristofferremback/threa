@@ -4,7 +4,7 @@
  * These types define the contracts between frontend and backend.
  */
 
-import type { StreamType, Visibility, CompanionMode, ContentFormat } from "./constants"
+import type { StreamType, Visibility, CompanionMode } from "./constants"
 import type { JSONContent } from "./prosemirror"
 import type {
   Stream,
@@ -222,8 +222,8 @@ export interface AIUsageByOrigin {
   recordCount: number
 }
 
-export interface AIUsageByUser {
-  userId: string | null
+export interface AIUsageByMember {
+  memberId: string | null
   totalCostUsd: number
   totalTokens: number
   recordCount: number
@@ -238,7 +238,7 @@ export interface AIUsageRecord {
   completionTokens: number | null
   totalTokens: number | null
   costUsd: number
-  userId: string | null
+  memberId: string | null
   sessionId: string | null
   createdAt: string
 }
@@ -250,7 +250,7 @@ export interface AIUsageResponse {
   }
   total: AIUsageSummary
   byOrigin: AIUsageByOrigin[]
-  byUser: AIUsageByUser[]
+  byMember: AIUsageByMember[]
 }
 
 export interface AIRecentUsageResponse {

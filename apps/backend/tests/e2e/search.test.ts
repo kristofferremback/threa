@@ -17,6 +17,7 @@ import {
   joinStream,
   archiveStream,
   unarchiveStream,
+  getMemberId,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -196,6 +197,7 @@ describe("Search E2E Tests", () => {
       const clientA = new TestClient()
       const userA = await loginAs(clientA, testEmail("fromA"), "From User A")
       const workspace = await createWorkspace(clientA, `From WS ${testRunId}`)
+      const memberAId = await getMemberId(clientA, workspace.id, userA.id)
       const channel = await createChannel(clientA, workspace.id, `from-${testRunId}`, "public")
 
       const keyword = `dragon${testRunId}`
@@ -208,11 +210,11 @@ describe("Search E2E Tests", () => {
       await joinStream(clientB, workspace.id, channel.id)
       await sendMessage(clientB, workspace.id, channel.id, `User B says ${keyword}`)
 
-      // Search for messages from User A only - pass user ID directly
-      const results = await search(clientA, workspace.id, { query: keyword, from: userA.id })
+      // Search for messages from User A only - pass member ID
+      const results = await search(clientA, workspace.id, { query: keyword, from: memberAId })
 
       expect(results.length).toBe(1)
-      expect(results[0].authorId).toBe(userA.id)
+      expect(results[0].authorId).toBe(memberAId)
     })
 
     test("should filter by co-member with with filter", async () => {
@@ -230,11 +232,11 @@ describe("Search E2E Tests", () => {
       // User B joins workspace and only the shared channel
       const clientB = new TestClient()
       const userB = await loginAs(clientB, testEmail("withB"), "With User B")
-      await joinWorkspace(clientB, workspace.id)
+      const memberB = await joinWorkspace(clientB, workspace.id)
       await joinStream(clientB, workspace.id, channelShared.id)
 
-      // User A searches with userB's ID - should only find messages in shared channel
-      const results = await search(clientA, workspace.id, { query: keyword, with: [userB.id] })
+      // User A searches with userB's member ID - should only find messages in shared channel
+      const results = await search(clientA, workspace.id, { query: keyword, with: [memberB.id] })
 
       expect(results.length).toBe(1)
       expect(results[0].streamId).toBe(channelShared.id)

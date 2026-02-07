@@ -1,3 +1,6 @@
+// Branded ID types
+export type { UserId, MemberId, WorkspaceId } from "./ids"
+
 // Constants and their types
 export {
   // Stream types
@@ -188,7 +191,7 @@ export type {
   AIUsageSummary,
   AIUsageOrigin,
   AIUsageByOrigin,
-  AIUsageByUser,
+  AIUsageByMember,
   AIUsageRecord,
   AIUsageResponse,
   AIRecentUsageResponse,

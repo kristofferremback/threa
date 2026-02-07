@@ -27,6 +27,7 @@ export function createWorkspaceHandlers({
 }: Dependencies) {
   return {
     async list(req: Request, res: Response) {
+      // Pre-workspace route: uses userId (no member context yet)
       const userId = req.userId!
       const workspaces = await workspaceService.getWorkspacesByUserId(userId)
       res.json({ workspaces })
@@ -44,6 +45,7 @@ export function createWorkspaceHandlers({
     },
 
     async create(req: Request, res: Response) {
+      // Pre-workspace route: uses userId (no member context yet)
       const userId = req.userId!
 
       const result = createWorkspaceSchema.safeParse(req.body)
@@ -69,16 +71,16 @@ export function createWorkspaceHandlers({
     },
 
     async bootstrap(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
       const [workspace, members, streams, personas, emojiWeights, userPreferences] = await Promise.all([
         workspaceService.getWorkspaceById(workspaceId),
         workspaceService.getMembers(workspaceId),
-        streamService.listWithPreviews(workspaceId, userId),
+        streamService.listWithPreviews(workspaceId, memberId),
         workspaceService.getPersonasForWorkspace(workspaceId),
-        workspaceService.getEmojiWeights(workspaceId, userId),
-        userPreferencesService.getPreferences(workspaceId, userId),
+        workspaceService.getEmojiWeights(workspaceId, memberId),
+        userPreferencesService.getPreferences(workspaceId, memberId),
       ])
 
       if (!workspace) {
@@ -88,7 +90,7 @@ export function createWorkspaceHandlers({
       const [streamMemberships, users] = await Promise.all([
         streamService.getMembershipsBatch(
           streams.map((s) => s.id),
-          userId
+          memberId
         ),
         workspaceService.getUsersForMembers(members),
       ])
@@ -125,10 +127,10 @@ export function createWorkspaceHandlers({
     },
 
     async markAllAsRead(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
-      const updatedStreamIds = await streamService.markAllAsRead(workspaceId, userId)
+      const updatedStreamIds = await streamService.markAllAsRead(workspaceId, memberId)
 
       res.json({ updatedStreamIds })
     },

@@ -20,6 +20,7 @@ import {
   removeReaction,
   updateMessage,
   deleteMessage,
+  getMemberId,
 } from "../client"
 
 function getBaseUrl(): string {
@@ -94,14 +95,14 @@ describe("Real-time Events", () => {
   let client: TestClient
   let socket: Socket
   let workspaceId: string
-  let userId: string
+  let memberId: string
 
   beforeAll(async () => {
     client = new TestClient()
     const user = await loginAs(client, "realtime-test@example.com", "Realtime Test User")
-    userId = user.id
     const workspace = await createWorkspace(client, "Realtime Test Workspace")
     workspaceId = workspace.id
+    memberId = await getMemberId(client, workspaceId, user.id)
   })
 
   beforeEach(async () => {
@@ -195,7 +196,7 @@ describe("Real-time Events", () => {
       })
       expect(event.event).toMatchObject({
         eventType: "message_created",
-        actorId: userId,
+        actorId: memberId,
       })
       expect(event.event.payload).toMatchObject({
         contentMarkdown: "Hello, real-time!",
@@ -251,7 +252,7 @@ describe("Real-time Events", () => {
 
       const message = await sendMessage(client, workspaceId, stream.id, "React to me")
 
-      const eventPromise = waitForEvent<{ emoji: string; userId: string }>(socket, "reaction:added")
+      const eventPromise = waitForEvent<{ emoji: string; memberId: string }>(socket, "reaction:added")
 
       await addReaction(client, workspaceId, message.id, "👍")
 
@@ -263,7 +264,7 @@ describe("Real-time Events", () => {
         messageId: message.id,
         // Emoji gets normalized to shortcode format
         emoji: ":+1:",
-        userId,
+        memberId,
       })
     })
 
@@ -274,7 +275,7 @@ describe("Real-time Events", () => {
       const message = await sendMessage(client, workspaceId, stream.id, "Unreact from me")
       await addReaction(client, workspaceId, message.id, "❤️")
 
-      const eventPromise = waitForEvent<{ emoji: string; userId: string }>(socket, "reaction:removed")
+      const eventPromise = waitForEvent<{ emoji: string; memberId: string }>(socket, "reaction:removed")
 
       await removeReaction(client, workspaceId, message.id, "❤️")
 
@@ -286,7 +287,7 @@ describe("Real-time Events", () => {
         messageId: message.id,
         // Emoji gets normalized to shortcode format
         emoji: ":heart:",
-        userId,
+        memberId,
       })
     })
   })

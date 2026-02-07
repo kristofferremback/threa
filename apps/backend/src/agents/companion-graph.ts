@@ -248,7 +248,7 @@ export interface NewMessageInfo {
   content: string
   authorId: string
   authorName: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   createdAt: string
 }
 

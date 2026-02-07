@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect } from "react"
+import { useLayoutEffect } from "react"
 import type { Editor } from "@tiptap/react"
 import { useFloating, offset, flip, shift, autoUpdate } from "@floating-ui/react"
 import { Bold, Italic, Strikethrough, Link2, Quote, Code, Braces, List, ListOrdered } from "lucide-react"

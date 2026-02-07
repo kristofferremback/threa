@@ -28,7 +28,7 @@ export interface SimulationAgentDeps {
 export interface SimulationAgentInput {
   streamId: string
   workspaceId: string
-  userId: string
+  memberId: string
   personas: string[]
   topic: string
   turns: number
@@ -60,7 +60,7 @@ export class SimulationAgent {
 
   async run(input: SimulationAgentInput): Promise<SimulationAgentResult> {
     const { pool, ai, streamService, checkpointer, createMessage, orchestratorModel } = this.deps
-    const { streamId, workspaceId, userId, personas: personaSlugs, topic, turns } = input
+    const { streamId, workspaceId, memberId, personas: personaSlugs, topic, turns } = input
 
     logger.info({ streamId, personaSlugs, topic, turns }, "Starting simulation via LangGraph")
 
@@ -115,7 +115,7 @@ export class SimulationAgent {
     const initialState: Partial<SimulationStateType> = {
       streamId,
       workspaceId,
-      userId,
+      memberId,
       personas,
       personaMap,
       topic,

@@ -471,6 +471,7 @@ export async function sendMessageWithAttachments(
 }
 
 export interface WorkspaceMember {
+  id: string
   workspaceId: string
   userId: string
   role: string
@@ -577,6 +578,19 @@ export async function getWorkspaceBootstrap(client: TestClient, workspaceId: str
     throw new Error(`Get workspace bootstrap failed: ${JSON.stringify(data)}`)
   }
   return data.data
+}
+
+/**
+ * Get the current user's member ID in a workspace.
+ * Fetches workspace bootstrap and finds the member matching the given user ID.
+ */
+export async function getMemberId(client: TestClient, workspaceId: string, userId: string): Promise<string> {
+  const bootstrap = await getWorkspaceBootstrap(client, workspaceId)
+  const member = bootstrap.members.find((m) => m.userId === userId)
+  if (!member) {
+    throw new Error(`Member not found for user ${userId} in workspace ${workspaceId}`)
+  }
+  return member.id
 }
 
 export interface Conversation {

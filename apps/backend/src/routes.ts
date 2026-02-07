@@ -1,8 +1,8 @@
 import type { Express, RequestHandler } from "express"
-import { createAuthMiddleware } from "./middleware/auth"
+import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
-import { createAuthHandlers } from "./handlers/auth"
+import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
 import { createMessageHandlers } from "./handlers/message-handlers"
@@ -14,12 +14,12 @@ import { createCommandHandlers } from "./handlers/command-handlers"
 import { createUserPreferencesHandlers } from "./handlers/user-preferences-handlers"
 import { createAIUsageHandlers } from "./handlers/ai-usage-handlers"
 import { createDebugHandlers } from "./handlers/debug-handlers"
-import { createAuthStubHandlers } from "./handlers/auth-stub-handlers"
+import { createAuthStubHandlers } from "./auth/auth-stub-handlers"
 import { createAgentSessionHandlers } from "./handlers/agent-session-handlers"
 import { errorHandler } from "./lib/error-handler"
-import type { AuthService } from "./services/auth-service"
-import { StubAuthService } from "./services/auth-service.stub"
-import type { UserService } from "./services/user-service"
+import type { AuthService } from "./auth/auth-service"
+import { StubAuthService } from "./auth/auth-service.stub"
+import type { UserService } from "./auth/user-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { StreamService } from "./services/stream-service"
 import type { EventService } from "./services/event-service"
@@ -66,7 +66,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
-  const workspaceMember = createWorkspaceMemberMiddleware({ workspaceService })
+  const workspaceMember = createWorkspaceMemberMiddleware({ pool })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]

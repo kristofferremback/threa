@@ -71,7 +71,7 @@ export const SimulationState = Annotation.Root({
   // Configuration (set at start, immutable)
   streamId: Annotation<string>(),
   workspaceId: Annotation<string>(),
-  userId: Annotation<string>(),
+  memberId: Annotation<string>(),
   personas: Annotation<Persona[]>(),
   personaMap: Annotation<Record<string, Persona>>(), // slug → Persona for quick lookup
   topic: Annotation<string>(),
@@ -296,7 +296,7 @@ function createResolvePlacementNode() {
             workspaceId: state.workspaceId,
             parentStreamId: parentMessage.streamId,
             parentMessageId: parentMessage.messageId,
-            createdBy: state.userId,
+            createdBy: state.memberId,
           })
           threadStreamId = thread.id
 

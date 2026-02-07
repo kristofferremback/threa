@@ -2,7 +2,7 @@ import { sql, type Querier } from "../db"
 import { bigIntReplacer } from "../lib/serialization"
 import type { Stream } from "./stream-repository"
 import type { StreamEvent } from "./stream-event-repository"
-import type { User } from "./user-repository"
+import type { Member } from "./member-repository"
 import type { ConversationWithStaleness } from "../lib/conversation-staleness"
 import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
 
@@ -28,7 +28,7 @@ export type OutboxEventType =
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
-  | "user:updated"
+  | "member:updated"
   | "conversation:created"
   | "conversation:updated"
   | "memo:created"
@@ -67,7 +67,7 @@ export type WorkspaceScopedEventType =
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
-  | "user:updated"
+  | "member:updated"
 
 /**
  * Base fields for stream-scoped events.
@@ -107,7 +107,7 @@ export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
 export interface ReactionOutboxPayload extends StreamScopedPayload {
   messageId: string
   emoji: string
-  userId: string
+  memberId: string
 }
 
 export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
@@ -147,15 +147,15 @@ export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload 
 }
 
 export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayload {
-  user: User
+  member: Member
 }
 
 export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
-  userId: string
+  memberId: string
 }
 
-export interface UserUpdatedOutboxPayload extends WorkspaceScopedPayload {
-  user: User
+export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  member: Member
 }
 
 /** Workspace-scoped event for sidebar updates when new messages arrive */
@@ -270,7 +270,7 @@ export interface OutboxEventPayloadMap {
   "attachment:uploaded": AttachmentUploadedOutboxPayload
   "workspace_member:added": WorkspaceMemberAddedOutboxPayload
   "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
-  "user:updated": UserUpdatedOutboxPayload
+  "member:updated": MemberUpdatedOutboxPayload
   "conversation:created": ConversationCreatedOutboxPayload
   "conversation:updated": ConversationUpdatedOutboxPayload
   "memo:created": MemoCreatedOutboxPayload

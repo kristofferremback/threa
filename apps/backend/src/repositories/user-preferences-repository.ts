@@ -4,8 +4,7 @@ import { sql, type Querier } from "../db"
  * Internal row type for preference overrides (snake_case)
  */
 interface PreferenceOverrideRow {
-  workspace_id: string
-  user_id: string
+  member_id: string
   key: string
   value: unknown
   created_at: Date
@@ -22,14 +21,14 @@ export interface PreferenceOverrideRecord {
 
 export const UserPreferencesRepository = {
   /**
-   * Fetch all preference overrides for a workspace/user.
+   * Fetch all preference overrides for a member.
    * Returns only the overrides - merge with defaults in service layer.
    */
-  async findOverrides(db: Querier, workspaceId: string, userId: string): Promise<PreferenceOverrideRecord[]> {
+  async findOverrides(db: Querier, memberId: string): Promise<PreferenceOverrideRecord[]> {
     const result = await db.query<PreferenceOverrideRow>(sql`
       SELECT key, value
       FROM user_preference_overrides
-      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+      WHERE member_id = ${memberId}
     `)
     return result.rows.map((row) => ({
       key: row.key,
@@ -41,11 +40,11 @@ export const UserPreferencesRepository = {
    * Set a single preference override.
    * Uses upsert to handle both insert and update.
    */
-  async setOverride(db: Querier, workspaceId: string, userId: string, key: string, value: unknown): Promise<void> {
+  async setOverride(db: Querier, memberId: string, key: string, value: unknown): Promise<void> {
     await db.query(sql`
-      INSERT INTO user_preference_overrides (workspace_id, user_id, key, value)
-      VALUES (${workspaceId}, ${userId}, ${key}, ${JSON.stringify(value)}::jsonb)
-      ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET
+      INSERT INTO user_preference_overrides (member_id, key, value)
+      VALUES (${memberId}, ${key}, ${JSON.stringify(value)}::jsonb)
+      ON CONFLICT (member_id, key) DO UPDATE SET
         value = ${JSON.stringify(value)}::jsonb,
         updated_at = NOW()
     `)
@@ -54,11 +53,10 @@ export const UserPreferencesRepository = {
   /**
    * Remove a preference override (revert to default).
    */
-  async deleteOverride(db: Querier, workspaceId: string, userId: string, key: string): Promise<void> {
+  async deleteOverride(db: Querier, memberId: string, key: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
+      WHERE member_id = ${memberId}
         AND key = ${key}
     `)
   },
@@ -69,8 +67,7 @@ export const UserPreferencesRepository = {
    */
   async bulkSetOverrides(
     db: Querier,
-    workspaceId: string,
-    userId: string,
+    memberId: string,
     overrides: Array<{ key: string; value: unknown }>
   ): Promise<void> {
     if (overrides.length === 0) return
@@ -81,14 +78,14 @@ export const UserPreferencesRepository = {
     let idx = 1
 
     for (const { key, value } of overrides) {
-      placeholders.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}::jsonb)`)
-      values.push(workspaceId, userId, key, JSON.stringify(value))
+      placeholders.push(`($${idx++}, $${idx++}, $${idx++}::jsonb)`)
+      values.push(memberId, key, JSON.stringify(value))
     }
 
     await db.query(
-      `INSERT INTO user_preference_overrides (workspace_id, user_id, key, value)
+      `INSERT INTO user_preference_overrides (member_id, key, value)
        VALUES ${placeholders.join(", ")}
-       ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET
+       ON CONFLICT (member_id, key) DO UPDATE SET
          value = EXCLUDED.value,
          updated_at = NOW()`,
       values
@@ -98,24 +95,23 @@ export const UserPreferencesRepository = {
   /**
    * Delete multiple overrides by key.
    */
-  async bulkDeleteOverrides(db: Querier, workspaceId: string, userId: string, keys: string[]): Promise<void> {
+  async bulkDeleteOverrides(db: Querier, memberId: string, keys: string[]): Promise<void> {
     if (keys.length === 0) return
 
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
+      WHERE member_id = ${memberId}
         AND key = ANY(${keys})
     `)
   },
 
   /**
-   * Delete all overrides for a user in a workspace (reset to defaults).
+   * Delete all overrides for a member (reset to defaults).
    */
-  async deleteAllOverrides(db: Querier, workspaceId: string, userId: string): Promise<void> {
+  async deleteAllOverrides(db: Querier, memberId: string): Promise<void> {
     await db.query(sql`
       DELETE FROM user_preference_overrides
-      WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+      WHERE member_id = ${memberId}
     `)
   },
 }

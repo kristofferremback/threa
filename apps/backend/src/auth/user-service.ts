@@ -1,5 +1,6 @@
 import { Pool } from "pg"
-import { UserRepository, User, InsertUserParams } from "../repositories"
+import { withClient, withTransaction } from "../db"
+import { UserRepository, User, InsertUserParams } from "./user-repository"
 import { userId } from "../lib/id"
 
 export class UserService {

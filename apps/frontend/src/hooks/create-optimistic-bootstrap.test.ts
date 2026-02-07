@@ -15,7 +15,7 @@ const mockStream: Stream = {
   parentStreamId: null,
   parentMessageId: null,
   rootStreamId: null,
-  createdBy: "user_01TEST",
+  createdBy: "member_01TEST",
   createdAt: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",
   archivedAt: null,
@@ -73,11 +73,11 @@ describe("createOptimisticBootstrap", () => {
 
   it("should set actorId from stream.createdBy", () => {
     const result = createOptimisticBootstrap({
-      stream: { ...mockStream, createdBy: "user_AUTHOR" },
+      stream: { ...mockStream, createdBy: "member_AUTHOR" },
       message: { id: "msg_01TEST", createdAt: "2024-01-01T00:00:00Z" },
       contentMarkdown: "Hello",
     })
 
-    expect(result.events[0].actorId).toBe("user_AUTHOR")
+    expect(result.events[0].actorId).toBe("member_AUTHOR")
   })
 })

@@ -93,30 +93,30 @@ function UserSelect({ members, users, onSelect }: UserSelectProps) {
     return map
   }, [users])
 
-  const getUserName = (userId: string): string => {
-    return userMap.get(userId)?.name ?? userId.substring(0, 8)
+  const getMemberName = (member: WorkspaceMember): string => {
+    return userMap.get(member.userId)?.name ?? member.slug
   }
 
   const filtered = useMemo(() => {
     const searchLower = search.toLowerCase()
     return members.filter((m) => {
       const user = userMap.get(m.userId)
-      const name = user?.name ?? ""
-      return name.toLowerCase().includes(searchLower) || m.userId.toLowerCase().includes(searchLower)
+      const name = user?.name ?? m.slug
+      return name.toLowerCase().includes(searchLower) || m.slug.toLowerCase().includes(searchLower)
     })
   }, [members, userMap, search])
 
   return (
     <div className="w-48">
       <Command className="border rounded-md">
-        <CommandInput placeholder="Search users..." value={search} onValueChange={setSearch} className="h-8" />
+        <CommandInput placeholder="Search members..." value={search} onValueChange={setSearch} className="h-8" />
         <CommandList className="max-h-32">
-          <CommandEmpty>No users found.</CommandEmpty>
+          <CommandEmpty>No members found.</CommandEmpty>
           <CommandGroup>
             {filtered.slice(0, 10).map((member) => {
-              const name = getUserName(member.userId)
+              const name = getMemberName(member)
               return (
-                <CommandItem key={member.userId} value={member.userId} onSelect={() => onSelect(member.userId, name)}>
+                <CommandItem key={member.id} value={member.id} onSelect={() => onSelect(member.id, name)}>
                   {name}
                 </CommandItem>
               )

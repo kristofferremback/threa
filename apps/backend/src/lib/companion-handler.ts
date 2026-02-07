@@ -113,14 +113,14 @@ export class CompanionHandler implements OutboxHandler {
           const { streamId, event: messageEvent } = payload
 
           // Ignore persona messages (avoid infinite loops)
-          if (messageEvent.actorType !== AuthorTypes.USER) {
+          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
             lastProcessedId = event.id
             continue
           }
 
           // Guard against missing actorId (should always exist for USER messages)
           if (!messageEvent.actorId) {
-            logger.warn({ streamId }, "CompanionHandler: USER message has no actorId, skipping")
+            logger.warn({ streamId }, "CompanionHandler: MEMBER message has no actorId, skipping")
             lastProcessedId = event.id
             continue
           }

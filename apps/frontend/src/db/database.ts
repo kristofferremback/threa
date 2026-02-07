@@ -13,10 +13,13 @@ export interface CachedWorkspace {
 }
 
 export interface CachedWorkspaceMember {
-  id: string // composite: `${workspaceId}:${userId}`
+  id: string // member ID (member_xxx)
   workspaceId: string
   userId: string
   role: "owner" | "admin" | "member"
+  slug: string
+  timezone: string | null
+  locale: string | null
   joinedAt: string
   _cachedAt: number
 }
@@ -48,7 +51,7 @@ export interface CachedEvent {
   eventType: EventType
   payload: unknown
   actorId: string | null
-  actorType: "user" | "persona" | null
+  actorType: "member" | "persona" | null
   createdAt: string
   // Optimistic sending state (for message_created events)
   _clientId?: string
@@ -60,7 +63,6 @@ export interface CachedUser {
   id: string
   email: string
   name: string
-  slug: string
   _cachedAt: number
 }
 
@@ -176,6 +178,17 @@ class ThreaDatabase extends Dexie {
       .stores({})
       .upgrade((tx) => {
         return tx.table("draftMessages").clear()
+      })
+
+    // v7: Member identity refactor — members now have their own ID, slug, timezone, locale.
+    // Users no longer have slug. Clear workspace members cache to re-fetch with new shape.
+    this.version(7)
+      .stores({
+        workspaceMembers: "id, workspaceId, userId, slug, _cachedAt",
+        users: "id, email, _cachedAt",
+      })
+      .upgrade((tx) => {
+        return Promise.all([tx.table("workspaceMembers").clear(), tx.table("users").clear()])
       })
   }
 }

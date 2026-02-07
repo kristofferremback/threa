@@ -262,7 +262,7 @@ describe("Emoji E2E Tests", () => {
       const updated = await addReaction(client, workspace.id, message.id, "👍")
 
       // Reaction key should be shortcode format
-      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^usr_/)] })
+      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^member_/)] })
     })
 
     test("should accept shortcode reactions directly", async () => {
@@ -274,7 +274,7 @@ describe("Emoji E2E Tests", () => {
       const message = await sendMessage(client, workspace.id, scratchpad.id, "React to me")
       const updated = await addReaction(client, workspace.id, message.id, ":fire:")
 
-      expect(updated.reactions).toEqual({ ":fire:": [expect.stringMatching(/^usr_/)] })
+      expect(updated.reactions).toEqual({ ":fire:": [expect.stringMatching(/^member_/)] })
     })
   })
 

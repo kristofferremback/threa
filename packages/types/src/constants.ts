@@ -32,11 +32,11 @@ export const CONTENT_FORMATS = ["plaintext", "markdown"] as const
 export type ContentFormat = (typeof CONTENT_FORMATS)[number]
 
 // Author types
-export const AUTHOR_TYPES = ["user", "persona"] as const
+export const AUTHOR_TYPES = ["member", "persona"] as const
 export type AuthorType = (typeof AUTHOR_TYPES)[number]
 
 export const AuthorTypes = {
-  USER: "user",
+  MEMBER: "member",
   PERSONA: "persona",
 } as const satisfies Record<string, AuthorType>
 

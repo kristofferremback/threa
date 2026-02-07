@@ -16,6 +16,20 @@ import type {
   LastMessagePreview,
 } from "@threa/types"
 
+/** Member shape from MemberRepository (includes name/email from users JOIN) */
+interface MemberWithDisplay {
+  id: string
+  workspaceId: string
+  userId: string
+  role: string
+  slug: string
+  timezone: string | null
+  locale: string | null
+  name: string
+  email: string
+  joinedAt: string
+}
+
 interface StreamPayload {
   workspaceId: string
   streamId: string
@@ -24,17 +38,17 @@ interface StreamPayload {
 
 interface WorkspaceMemberAddedPayload {
   workspaceId: string
-  user: User
+  member: MemberWithDisplay
 }
 
 interface WorkspaceMemberRemovedPayload {
   workspaceId: string
-  userId: string
+  memberId: string
 }
 
-interface UserUpdatedPayload {
+interface MemberUpdatedPayload {
   workspaceId: string
-  user: User
+  member: MemberWithDisplay
 }
 
 interface StreamReadPayload {
@@ -193,20 +207,62 @@ export function useSocketEvents(workspaceId: string) {
     // Handle workspace member added
     socket.on("workspace_member:added", (payload: WorkspaceMemberAddedPayload) => {
       const now = Date.now()
+      const { member } = payload
 
-      // Update workspace bootstrap cache - add user if not present
+      // Update workspace bootstrap cache - add member and user if not present
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
-        const bootstrap = old as { users?: User[] }
+        const bootstrap = old as { members?: WorkspaceMember[]; users?: User[] }
+
+        const members = bootstrap.members || []
+        const updatedMembers = members.some((m) => m.id === member.id)
+          ? members
+          : [
+              ...members,
+              {
+                id: member.id,
+                workspaceId: member.workspaceId,
+                userId: member.userId,
+                role: member.role as WorkspaceMember["role"],
+                slug: member.slug,
+                timezone: member.timezone,
+                locale: member.locale,
+                joinedAt: member.joinedAt,
+              },
+            ]
 
         const users = bootstrap.users || []
-        const updatedUsers = users.some((u) => u.id === payload.user.id) ? users : [...users, payload.user]
+        const user: User = {
+          id: member.userId,
+          email: member.email,
+          name: member.name,
+          workosUserId: null,
+          createdAt: member.joinedAt,
+          updatedAt: member.joinedAt,
+        }
+        const updatedUsers = users.some((u) => u.id === member.userId) ? users : [...users, user]
 
-        return { ...bootstrap, users: updatedUsers }
+        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
       })
 
-      // Cache user to IndexedDB
-      db.users.put({ ...payload.user, _cachedAt: now })
+      // Cache member and user to IndexedDB
+      db.workspaceMembers.put({
+        id: member.id,
+        workspaceId: member.workspaceId,
+        userId: member.userId,
+        role: member.role as "owner" | "admin" | "member",
+        slug: member.slug,
+        timezone: member.timezone,
+        locale: member.locale,
+        joinedAt: member.joinedAt,
+        _cachedAt: now,
+      })
+      db.users.put({
+        id: member.userId,
+        email: member.email,
+        name: member.name,
+        _cachedAt: now,
+      })
     })
 
     // Handle workspace member removed
@@ -218,31 +274,64 @@ export function useSocketEvents(workspaceId: string) {
         if (!bootstrap.members) return old
         return {
           ...bootstrap,
-          members: bootstrap.members.filter((m) => m.userId !== payload.userId),
+          members: bootstrap.members.filter((m) => m.id !== payload.memberId),
         }
       })
 
       // Remove from IndexedDB workspace members
-      db.workspaceMembers.delete(`${workspaceId}:${payload.userId}`)
+      db.workspaceMembers.delete(payload.memberId)
     })
 
-    // Handle user updated
-    socket.on("user:updated", (payload: UserUpdatedPayload) => {
+    // Handle member updated
+    socket.on("member:updated", (payload: MemberUpdatedPayload) => {
       const now = Date.now()
+      const { member } = payload
 
-      // Update workspace bootstrap cache
+      // Update workspace bootstrap cache — update both member and user records
       queryClient.setQueryData(workspaceKeys.bootstrap(workspaceId), (old: unknown) => {
         if (!old || typeof old !== "object") return old
-        const bootstrap = old as { users?: User[] }
-        if (!bootstrap.users) return old
-        return {
-          ...bootstrap,
-          users: bootstrap.users.map((u) => (u.id === payload.user.id ? payload.user : u)),
-        }
+        const bootstrap = old as { members?: WorkspaceMember[]; users?: User[] }
+
+        const updatedMembers = bootstrap.members?.map((m) =>
+          m.id === member.id
+            ? {
+                id: member.id,
+                workspaceId: member.workspaceId,
+                userId: member.userId,
+                role: member.role as WorkspaceMember["role"],
+                slug: member.slug,
+                timezone: member.timezone,
+                locale: member.locale,
+                joinedAt: member.joinedAt,
+              }
+            : m
+        )
+
+        const updatedUsers = bootstrap.users?.map((u) =>
+          u.id === member.userId ? { ...u, name: member.name, email: member.email } : u
+        )
+
+        return { ...bootstrap, members: updatedMembers, users: updatedUsers }
       })
 
-      // Update user in IndexedDB
-      db.users.put({ ...payload.user, _cachedAt: now })
+      // Update IndexedDB
+      db.workspaceMembers.put({
+        id: member.id,
+        workspaceId: member.workspaceId,
+        userId: member.userId,
+        role: member.role as "owner" | "admin" | "member",
+        slug: member.slug,
+        timezone: member.timezone,
+        locale: member.locale,
+        joinedAt: member.joinedAt,
+        _cachedAt: now,
+      })
+      db.users.put({
+        id: member.userId,
+        email: member.email,
+        name: member.name,
+        _cachedAt: now,
+      })
     })
 
     // Handle stream read (from other sessions of the same user)
@@ -309,9 +398,10 @@ export function useSocketEvents(workspaceId: string) {
         if (!isMember) return old
 
         // Determine if we should increment unread count:
-        // - Not for own messages
+        // - Not for own messages (authorId is now a memberId — match via member.userId)
         // - Not when currently viewing the stream
-        const isOwnMessage = user && payload.authorId === user.id
+        const currentMember = user && old.members?.find((m: WorkspaceMember) => m.userId === user.id)
+        const isOwnMessage = currentMember && payload.authorId === currentMember.id
         const shouldIncrementUnread = !isOwnMessage && !isViewingStream
 
         return {
@@ -387,7 +477,7 @@ export function useSocketEvents(workspaceId: string) {
       socket.off("stream:display_name_updated")
       socket.off("workspace_member:added")
       socket.off("workspace_member:removed")
-      socket.off("user:updated")
+      socket.off("member:updated")
       socket.off("stream:read")
       socket.off("stream:read_all")
       socket.off("stream:activity")

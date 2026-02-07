@@ -202,9 +202,9 @@ describe("Companion Agent", () => {
       const personaEvents = events.filter((e: StreamEvent) => e.actorType === "persona")
       expect(personaEvents.length).toBe(0)
 
-      // Verify we have exactly one user message
-      const userEvents = events.filter((e: StreamEvent) => e.actorType === "user")
-      expect(userEvents.length).toBe(1)
+      // Verify we have exactly one member message
+      const memberEvents = events.filter((e: StreamEvent) => e.actorType === "member")
+      expect(memberEvents.length).toBe(1)
     })
   })
 

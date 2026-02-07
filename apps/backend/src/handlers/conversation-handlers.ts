@@ -17,7 +17,7 @@ interface Dependencies {
 export function createConversationHandlers({ conversationService, streamService }: Dependencies) {
   return {
     async listByStream(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
       const { streamId } = req.params
 
@@ -32,7 +32,7 @@ export function createConversationHandlers({ conversationService, streamService 
       // Validate stream exists, belongs to workspace, and user has access
       const [stream, isMember] = await Promise.all([
         streamService.getStreamById(streamId),
-        streamService.isMember(streamId, userId),
+        streamService.isMember(streamId, memberId),
       ])
 
       if (!stream || stream.workspaceId !== workspaceId) {
@@ -48,7 +48,7 @@ export function createConversationHandlers({ conversationService, streamService 
     },
 
     async getById(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
       const { conversationId } = req.params
 
@@ -58,7 +58,7 @@ export function createConversationHandlers({ conversationService, streamService 
       }
 
       // Validate user has access to the conversation's stream
-      const isMember = await streamService.isMember(conversation.streamId, userId)
+      const isMember = await streamService.isMember(conversation.streamId, memberId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }
@@ -67,7 +67,7 @@ export function createConversationHandlers({ conversationService, streamService 
     },
 
     async getMessages(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
       const { conversationId } = req.params
 
@@ -77,7 +77,7 @@ export function createConversationHandlers({ conversationService, streamService 
       }
 
       // Validate user has access to the conversation's stream
-      const isMember = await streamService.isMember(conversation.streamId, userId)
+      const isMember = await streamService.isMember(conversation.streamId, memberId)
       if (!isMember) {
         return res.status(403).json({ error: "Not a member of this stream" })
       }

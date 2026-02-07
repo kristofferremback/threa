@@ -6,7 +6,7 @@ export type AIUsageOrigin = "system" | "user"
 interface AIUsageRecordRow {
   id: string
   workspace_id: string
-  user_id: string | null
+  member_id: string | null
   session_id: string | null
   function_id: string
   model: string
@@ -23,7 +23,7 @@ interface AIUsageRecordRow {
 export interface AIUsageRecord {
   id: string
   workspaceId: string
-  userId: string | null
+  memberId: string | null
   sessionId: string | null
   functionId: string
   model: string
@@ -40,7 +40,7 @@ export interface AIUsageRecord {
 export interface InsertAIUsageRecordParams {
   id: string
   workspaceId: string
-  userId?: string
+  memberId?: string
   sessionId?: string
   functionId: string
   model: string
@@ -75,8 +75,8 @@ export interface FunctionBreakdown {
   recordCount: number
 }
 
-export interface UserBreakdown {
-  userId: string | null
+export interface MemberBreakdown {
+  memberId: string | null
   totalCostUsd: number
   totalTokens: number
   recordCount: number
@@ -93,7 +93,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
-    userId: row.user_id,
+    memberId: row.member_id,
     sessionId: row.session_id,
     functionId: row.function_id,
     model: row.model,
@@ -109,7 +109,7 @@ function mapRowToRecord(row: AIUsageRecordRow): AIUsageRecord {
 }
 
 const SELECT_FIELDS = `
-  id, workspace_id, user_id, session_id, function_id,
+  id, workspace_id, member_id, session_id, function_id,
   model, provider, prompt_tokens, completion_tokens,
   total_tokens, cost_usd, origin, metadata, created_at
 `
@@ -118,14 +118,14 @@ export const AIUsageRepository = {
   async insert(client: PoolClient, params: InsertAIUsageRecordParams): Promise<AIUsageRecord> {
     const result = await client.query<AIUsageRecordRow>(sql`
       INSERT INTO ai_usage_records (
-        id, workspace_id, user_id, session_id, function_id,
+        id, workspace_id, member_id, session_id, function_id,
         model, provider, prompt_tokens, completion_tokens,
         total_tokens, cost_usd, origin, metadata
       )
       VALUES (
         ${params.id},
         ${params.workspaceId},
-        ${params.userId ?? null},
+        ${params.memberId ?? null},
         ${params.sessionId ?? null},
         ${params.functionId},
         ${params.model},
@@ -186,10 +186,10 @@ export const AIUsageRepository = {
     }
   },
 
-  async getUserUsage(
+  async getMemberUsage(
     client: PoolClient,
     workspaceId: string,
-    userId: string,
+    memberId: string,
     periodStart: Date,
     periodEnd: Date
   ): Promise<UsageSummary> {
@@ -208,7 +208,7 @@ export const AIUsageRepository = {
         COUNT(*) as record_count
       FROM ai_usage_records
       WHERE workspace_id = ${workspaceId}
-        AND user_id = ${userId}
+        AND member_id = ${memberId}
         AND created_at >= ${periodStart}
         AND created_at < ${periodEnd}
     `)
@@ -289,20 +289,20 @@ export const AIUsageRepository = {
     }))
   },
 
-  async getUsageByUser(
+  async getUsageByMember(
     client: PoolClient,
     workspaceId: string,
     periodStart: Date,
     periodEnd: Date
-  ): Promise<UserBreakdown[]> {
+  ): Promise<MemberBreakdown[]> {
     const result = await client.query<{
-      user_id: string | null
+      member_id: string | null
       total_cost_usd: string
       total_tokens: string
       record_count: string
     }>(sql`
       SELECT
-        user_id,
+        member_id,
         SUM(cost_usd) as total_cost_usd,
         SUM(total_tokens) as total_tokens,
         COUNT(*) as record_count
@@ -310,12 +310,12 @@ export const AIUsageRepository = {
       WHERE workspace_id = ${workspaceId}
         AND created_at >= ${periodStart}
         AND created_at < ${periodEnd}
-      GROUP BY user_id
+      GROUP BY member_id
       ORDER BY total_cost_usd DESC
     `)
 
     return result.rows.map((row) => ({
-      userId: row.user_id,
+      memberId: row.member_id,
       totalCostUsd: parseFloat(row.total_cost_usd),
       totalTokens: parseInt(row.total_tokens, 10),
       recordCount: parseInt(row.record_count, 10),
@@ -325,16 +325,16 @@ export const AIUsageRepository = {
   async listRecent(
     client: PoolClient,
     workspaceId: string,
-    options?: { limit?: number; userId?: string }
+    options?: { limit?: number; memberId?: string }
   ): Promise<AIUsageRecord[]> {
     const limit = options?.limit ?? 50
     const conditions: string[] = [`workspace_id = $1`]
     const values: unknown[] = [workspaceId]
     let paramIndex = 2
 
-    if (options?.userId) {
-      conditions.push(`user_id = $${paramIndex++}`)
-      values.push(options.userId)
+    if (options?.memberId) {
+      conditions.push(`member_id = $${paramIndex++}`)
+      values.push(options.memberId)
     }
 
     values.push(limit)

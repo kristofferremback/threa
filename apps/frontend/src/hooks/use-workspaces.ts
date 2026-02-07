@@ -73,7 +73,6 @@ export function useWorkspaceBootstrap(workspaceId: string) {
         db.workspaces.put({ ...bootstrap.workspace, _cachedAt: now }),
         db.workspaceMembers.bulkPut(
           bootstrap.members.map((m) => ({
-            id: `${m.workspaceId}:${m.userId}`,
             ...m,
             _cachedAt: now,
           }))

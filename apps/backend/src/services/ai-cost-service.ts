@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg"
-import { withTransaction } from "../db"
+import { withClient, withTransaction } from "../db"
 import {
   AIUsageRepository,
   AIBudgetRepository,
@@ -20,7 +20,7 @@ const ALERT_THRESHOLDS = [
 
 export interface RecordUsageParams {
   workspaceId: string
-  userId?: string
+  memberId?: string
   sessionId?: string
   functionId: string
   model: string
@@ -73,7 +73,7 @@ export class AICostService implements AICostServiceLike {
       await AIUsageRepository.insert(client, {
         id: aiUsageId(),
         workspaceId: params.workspaceId,
-        userId: params.userId,
+        memberId: params.memberId,
         sessionId: params.sessionId,
         functionId: params.functionId,
         model: params.model,
@@ -203,10 +203,12 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get usage summary for a user within current billing month.
    */
-  async getUserCurrentMonthUsage(workspaceId: string, userId: string): Promise<UsageSummary> {
+  async getMemberCurrentMonthUsage(workspaceId: string, memberId: string): Promise<UsageSummary> {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return AIUsageRepository.getUserUsage(this.pool, workspaceId, userId, periodStart, periodEnd)
+    return withClient(this.pool, (client) =>
+      AIUsageRepository.getMemberUsage(client, workspaceId, memberId, periodStart, periodEnd)
+    )
   }
 
   /**
@@ -230,10 +232,12 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get usage breakdown by user for current month.
    */
-  async getUsageByUser(workspaceId: string) {
+  async getUsageByMember(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return AIUsageRepository.getUsageByUser(this.pool, workspaceId, periodStart, periodEnd)
+    return withClient(this.pool, (client) =>
+      AIUsageRepository.getUsageByMember(client, workspaceId, periodStart, periodEnd)
+    )
   }
 
   /**
@@ -248,8 +252,8 @@ export class AICostService implements AICostServiceLike {
   /**
    * Get recent usage records.
    */
-  async getRecentUsage(workspaceId: string, options?: { limit?: number; userId?: string }) {
-    return AIUsageRepository.listRecent(this.pool, workspaceId, options)
+  async getRecentUsage(workspaceId: string, options?: { limit?: number; memberId?: string }) {
+    return withClient(this.pool, (client) => AIUsageRepository.listRecent(client, workspaceId, options))
   }
 
   private getCurrentMonthPeriod(): { periodStart: Date; periodEnd: Date } {

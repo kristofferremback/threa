@@ -19,14 +19,14 @@ export function createSimulationWorker(deps: SimulationWorkerDeps): JobHandler<S
   const { agent } = deps
 
   return async (job) => {
-    const { streamId, workspaceId, userId, personas, topic, turns } = job.data
+    const { streamId, workspaceId, memberId, personas, topic, turns } = job.data
 
     logger.info({ jobId: job.id, streamId, personas, topic, turns }, "Processing simulation job")
 
     const result = await agent.run({
       streamId,
       workspaceId,
-      userId,
+      memberId,
       personas,
       topic,
       turns,

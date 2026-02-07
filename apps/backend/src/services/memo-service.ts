@@ -7,11 +7,11 @@ import {
   ConversationRepository,
   MessageRepository,
   OutboxRepository,
-  UserRepository,
   type Memo,
   type PendingMemoItem,
   type Message,
 } from "../repositories"
+import { MemberRepository } from "../repositories/member-repository"
 import { MemoClassifier } from "../lib/memo/classifier"
 import { Memorizer } from "../lib/memo/memorizer"
 import { MessageFormatter } from "../lib/ai/message-formatter"
@@ -156,10 +156,10 @@ export class MemoService implements MemoServiceLike {
       }
 
       // Fetch author timezones for date anchoring in memos
-      // Collect all unique user IDs from messages and conversation participants
+      // Collect all unique member IDs from messages and conversation participants
       const authorIds = new Set<string>()
       for (const msg of messages.values()) {
-        if (msg && msg.authorType === "user") {
+        if (msg && msg.authorType === "member") {
           authorIds.add(msg.authorId)
         }
       }
@@ -171,9 +171,9 @@ export class MemoService implements MemoServiceLike {
 
       const authorTimezones = new Map<string, string | null>()
       if (authorIds.size > 0) {
-        const users = await UserRepository.findByIds(client, Array.from(authorIds))
-        for (const user of users) {
-          authorTimezones.set(user.id, user.timezone)
+        const members = await MemberRepository.findByIds(client, Array.from(authorIds))
+        for (const member of members) {
+          authorTimezones.set(member.id, member.timezone)
         }
       }
 
@@ -213,7 +213,7 @@ export class MemoService implements MemoServiceLike {
           continue
         }
 
-        if (message.authorType !== "user") {
+        if (message.authorType !== "member") {
           continue
         }
 
@@ -322,7 +322,7 @@ export class MemoService implements MemoServiceLike {
 
         if (existingMemo && classification.shouldReviseExisting) {
           // Use the first user message author's timezone for date anchoring
-          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "member")
           const authorTimezone = firstUserMsg
             ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
             : undefined
@@ -387,7 +387,7 @@ export class MemoService implements MemoServiceLike {
           )
         } else if (!existingMemo) {
           // Use the first user message author's timezone for date anchoring
-          const firstUserMsg = messagesArray.find((m) => m.authorType === "user")
+          const firstUserMsg = messagesArray.find((m) => m.authorType === "member")
           const authorTimezone = firstUserMsg
             ? (fetchedData.authorTimezones.get(firstUserMsg.authorId) ?? undefined)
             : undefined

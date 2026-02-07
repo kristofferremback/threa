@@ -16,7 +16,7 @@ import type { UserPreferencesService } from "../services/user-preferences-servic
 import { StreamRepository } from "../repositories/stream-repository"
 import { MessageRepository, type Message } from "../repositories/message-repository"
 import { PersonaRepository, type Persona } from "../repositories/persona-repository"
-import { UserRepository } from "../repositories/user-repository"
+import { MemberRepository } from "../repositories/member-repository"
 import { AgentSessionRepository, SessionStatuses, type AgentSession } from "../repositories/agent-session-repository"
 import { OutboxRepository } from "../repositories/outbox-repository"
 import { StreamEventRepository } from "../repositories/stream-event-repository"
@@ -459,15 +459,15 @@ export class PersonaAgent {
         })
         trace.notifyActivityStarted()
 
-        // Fetch trigger message to get the invoking user
+        // Fetch trigger message to get the invoking member
         // Note: db is Pool here - repos accept Querier which Pool satisfies
         const triggerMessage = await MessageRepository.findById(db, messageId)
-        const invokingUserId = triggerMessage?.authorType === "user" ? triggerMessage.authorId : undefined
+        const invokingMemberId = triggerMessage?.authorType === "member" ? triggerMessage.authorId : undefined
 
-        // Fetch user preferences if we have an invoking user
+        // Fetch user preferences if we have an invoking member
         let preferences: UserPreferences | undefined
-        if (invokingUserId) {
-          preferences = await userPreferencesService.getPreferences(workspaceId, invokingUserId)
+        if (invokingMemberId) {
+          preferences = await userPreferencesService.getPreferences(workspaceId, invokingMemberId)
         }
 
         // Await attachment processing for all attachments on trigger message before proceeding
@@ -514,18 +514,18 @@ export class PersonaAgent {
           }
         }
 
-        // Look up any user authors not already in participants (e.g., scratchpad owner)
-        const userAuthorIds = [
+        // Look up any member authors not already in participants (e.g., scratchpad owner)
+        const memberAuthorIds = [
           ...new Set(
             context.conversationHistory
-              .filter((m) => m.authorType === "user" && !authorNames.has(m.authorId))
+              .filter((m) => m.authorType === "member" && !authorNames.has(m.authorId))
               .map((m) => m.authorId)
           ),
         ]
-        if (userAuthorIds.length > 0) {
-          const users = await UserRepository.findByIds(db, userAuthorIds)
-          for (const u of users) {
-            authorNames.set(u.id, u.name)
+        if (memberAuthorIds.length > 0) {
+          const members = await MemberRepository.findByIds(db, memberAuthorIds)
+          for (const m of members) {
+            authorNames.set(m.id, m.name)
           }
         }
 
@@ -569,8 +569,8 @@ export class PersonaAgent {
 
         // Look up mentioner name if this is a mention trigger
         let mentionerName: string | undefined
-        if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === "user") {
-          const mentioner = await UserRepository.findById(db, triggerMessage.authorId)
+        if (trigger === AgentTriggers.MENTION && triggerMessage?.authorType === "member") {
+          const mentioner = await MemberRepository.findById(db, triggerMessage.authorId)
           mentionerName = mentioner?.name ?? undefined
         }
 
@@ -580,12 +580,12 @@ export class PersonaAgent {
 
         // Create researcher callback for the graph's research node
         let runResearcher: (() => Promise<ResearcherResult>) | undefined
-        if (triggerMessage && invokingUserId) {
+        if (triggerMessage && invokingMemberId) {
           // Capture DM participant IDs if needed
           let dmParticipantIds: string[] | undefined
           if (stream.type === StreamTypes.DM) {
             const members = await StreamMemberRepository.list(db, { streamId })
-            dmParticipantIds = members.map((m) => m.userId)
+            dmParticipantIds = members.map((m) => m.memberId)
           }
 
           runResearcher = () =>
@@ -594,7 +594,7 @@ export class PersonaAgent {
               streamId,
               triggerMessage,
               conversationHistory: context.conversationHistory,
-              invokingUserId,
+              invokingMemberId,
               dmParticipantIds,
             })
         }
@@ -620,11 +620,11 @@ export class PersonaAgent {
         // Compute accessible stream IDs once for both search and attachment tools
         let searchCallbacks: SearchToolsCallbacks | undefined
         let accessibleStreamIds: string[] | undefined
-        if (invokingUserId) {
+        if (invokingMemberId) {
           // Compute access spec for search context
           const accessSpec = await computeAgentAccessSpec(db, {
             stream,
-            invokingUserId,
+            invokingMemberId,
           })
 
           // Get accessible stream IDs for the agent's context
@@ -647,7 +647,7 @@ export class PersonaAgent {
 
               const results = await searchService.search({
                 workspaceId,
-                userId: invokingUserId,
+                memberId: invokingMemberId,
                 query: input.query,
                 filters: { streamIds: filterStreamIds },
                 limit: 10,
@@ -683,11 +683,11 @@ export class PersonaAgent {
             },
 
             searchUsers: async (input) => {
-              const users = await UserRepository.searchByNameOrEmail(db, workspaceId, input.query, 10)
-              return users.map((u) => ({
-                id: u.id,
-                name: u.name,
-                email: u.email,
+              const members = await MemberRepository.searchByNameOrSlug(db, workspaceId, input.query, 10)
+              return members.map((m) => ({
+                id: m.id,
+                name: m.name,
+                email: m.email,
               }))
             },
 
@@ -708,23 +708,23 @@ export class PersonaAgent {
               messages.reverse()
 
               // Enrich with author names
-              const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+              const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
               const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
 
-              const [users, personas] = await Promise.all([
-                userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+              const [members, personas] = await Promise.all([
+                memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
                 personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
               ])
 
-              const userMap = new Map(users.map((u) => [u.id, u.name]))
+              const memberMap = new Map(members.map((m) => [m.id, m.name]))
               const personaMap = new Map(personas.map((p) => [p.id, p.name]))
 
               return messages.map((m) => ({
                 id: m.id,
                 content: m.contentMarkdown,
                 authorName:
-                  m.authorType === "user"
-                    ? (userMap.get(m.authorId) ?? "Unknown User")
+                  m.authorType === "member"
+                    ? (memberMap.get(m.authorId) ?? "Unknown Member")
                     : (personaMap.get(m.authorId) ?? "Unknown Persona"),
                 authorType: m.authorType,
                 createdAt: m.createdAt.toISOString(),
@@ -745,7 +745,7 @@ export class PersonaAgent {
               loadExcelSection: LoadExcelSectionCallbacks | undefined
             }
           | undefined
-        if (invokingUserId && accessibleStreamIds) {
+        if (invokingMemberId && accessibleStreamIds) {
           const searchAttachments: SearchAttachmentsCallbacks = {
             searchAttachments: async (input): Promise<AttachmentSearchResult[]> => {
               const results = await AttachmentRepository.searchWithExtractions(db, {
@@ -1013,16 +1013,16 @@ export class PersonaAgent {
             })
 
             // Look up author names for rich trace display
-            const userIds = [...new Set(messages.filter((m) => m.authorType === "user").map((m) => m.authorId))]
+            const memberIds = [...new Set(messages.filter((m) => m.authorType === "member").map((m) => m.authorId))]
             const personaIds = [...new Set(messages.filter((m) => m.authorType === "persona").map((m) => m.authorId))]
 
-            const [users, personas] = await Promise.all([
-              userIds.length > 0 ? UserRepository.findByIds(db, userIds) : Promise.resolve([]),
+            const [members, personas] = await Promise.all([
+              memberIds.length > 0 ? MemberRepository.findByIds(db, memberIds) : Promise.resolve([]),
               personaIds.length > 0 ? PersonaRepository.findByIds(db, personaIds) : Promise.resolve([]),
             ])
 
             const authorNames = new Map<string, string>()
-            for (const u of users) authorNames.set(u.id, u.name)
+            for (const m of members) authorNames.set(m.id, m.name)
             for (const p of personas) authorNames.set(p.id, p.name)
 
             return messages.map((m) => ({
@@ -1089,7 +1089,7 @@ export class PersonaAgent {
             lastProcessedSequence: session.lastSeenSequence ?? initialSequence,
             enabledTools: persona.enabledTools,
             workspaceId, // For cost tracking
-            invokingUserId, // For cost attribution to the human user
+            invokingMemberId, // For cost attribution to the human user
             runResearcher,
           },
           callbacks
@@ -1454,7 +1454,7 @@ function formatMessagesWithTemporal(messages: MessageWithAttachments[], context:
   if (!temporal) {
     // No temporal context - return messages with original content + attachment context
     return messages.map((m) => ({
-      role: m.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const),
+      role: m.authorType === AuthorTypes.MEMBER ? ("user" as const) : ("assistant" as const),
       content: formatMessageContent(m),
     }))
   }
@@ -1471,9 +1471,9 @@ function formatMessagesWithTemporal(messages: MessageWithAttachments[], context:
   let currentDateKey: string | null = null
 
   for (const msg of messages) {
-    const role = msg.authorType === AuthorTypes.USER ? ("user" as const) : ("assistant" as const)
+    const role = msg.authorType === AuthorTypes.MEMBER ? ("user" as const) : ("assistant" as const)
 
-    if (msg.authorType === AuthorTypes.USER) {
+    if (msg.authorType === AuthorTypes.MEMBER) {
       // Check for date boundary - only on user messages to avoid model mimicking the format
       const msgDateKey = getDateKey(msg.createdAt, temporal.timezone)
       let dateBoundaryPrefix = ""

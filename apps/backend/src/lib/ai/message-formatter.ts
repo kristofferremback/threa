@@ -1,7 +1,7 @@
 import type { Querier } from "../../db"
 import type { Message } from "../../repositories/message-repository"
 import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
-import { UserRepository } from "../../repositories/user-repository"
+import { MemberRepository } from "../../repositories/member-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
 
 function escapeXml(s: string): string {
@@ -26,7 +26,7 @@ export class MessageFormatter {
    * @example
    * const formatted = await messageFormatter.formatMessages(client, messages)
    * // <messages>
-   * // <message authorType="user" authorId="user_123" authorName="Alice" createdAt="2021-01-01T00:00:00Z">Hello!</message>
+   * // <message authorType="member" authorId="user_123" authorName="Alice" createdAt="2021-01-01T00:00:00Z">Hello!</message>
    * // <message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2021-01-01T00:00:01Z">Hi there!</message>
    * // </messages>
    */
@@ -45,24 +45,24 @@ export class MessageFormatter {
    * Returns a map from authorId to name.
    */
   private async resolveAuthorNames(client: Querier, messages: Message[]): Promise<Map<string, string>> {
-    const userIds = new Set<string>()
+    const memberIds = new Set<string>()
     const personaIds = new Set<string>()
 
     for (const m of messages) {
-      if (m.authorType === "user") {
-        userIds.add(m.authorId)
+      if (m.authorType === "member") {
+        memberIds.add(m.authorId)
       } else {
         personaIds.add(m.authorId)
       }
     }
 
-    const [users, personas] = await Promise.all([
-      UserRepository.findByIds(client, [...userIds]),
+    const [members, personas] = await Promise.all([
+      MemberRepository.findByIds(client, [...memberIds]),
       PersonaRepository.findByIds(client, [...personaIds]),
     ])
 
     const nameById = new Map<string, string>()
-    for (const u of users) nameById.set(u.id, u.name)
+    for (const m of members) nameById.set(m.id, m.name)
     for (const p of personas) nameById.set(p.id, p.name)
 
     return nameById
@@ -124,7 +124,7 @@ export class MessageFormatter {
    * @example
    * const formatted = await messageFormatter.formatMessagesWithAttachments(client, messages, attachmentsMap)
    * // <messages>
-   * // <message authorType="user" authorId="user_123" authorName="Alice" createdAt="...">
+   * // <message authorType="member" authorId="user_123" authorName="Alice" createdAt="...">
    * // What's in this image?
    * // <attachment filename="photo.jpg" contentType="photo">A colorful tropical fish swimming in a coral reef</attachment>
    * // </message>

@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express"
-import type { StubAuthService } from "../services/auth-service.stub"
-import type { UserService } from "../services/user-service"
+import type { StubAuthService } from "./auth-service.stub"
+import type { UserService } from "./user-service"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
 import { renderLoginPage } from "./auth-stub-login-page"
@@ -69,10 +69,10 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
   }
 
   const handleStreamJoin: RequestHandler = async (req, res) => {
-    const userId = req.userId!
+    const memberId = req.member!.id
     const { streamId } = req.params
 
-    const member = await streamService.addMember(streamId, userId)
+    const member = await streamService.addMember(streamId, memberId)
     res.json({ member })
   }
 

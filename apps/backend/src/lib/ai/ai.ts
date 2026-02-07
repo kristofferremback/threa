@@ -51,7 +51,7 @@ export type AIOrigin = "system" | "user"
 export interface CostRecorder {
   recordUsage(params: {
     workspaceId: string
-    userId?: string
+    memberId?: string
     sessionId?: string
     functionId: string
     model: string
@@ -79,7 +79,7 @@ export interface TelemetryConfig {
 /** Context for cost tracking - when provided, usage will be recorded */
 export interface CostContext {
   workspaceId: string
-  userId?: string
+  memberId?: string
   sessionId?: string
   /** Origin of the AI call - defaults to 'system' if not specified */
   origin?: AIOrigin
@@ -453,7 +453,7 @@ export function createAI(config: AIConfig): AI {
     try {
       await config.costRecorder.recordUsage({
         workspaceId: params.context.workspaceId,
-        userId: params.context.userId,
+        memberId: params.context.memberId,
         sessionId: params.context.sessionId,
         functionId: params.functionId,
         model: parsed.modelId,

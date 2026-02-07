@@ -8,9 +8,9 @@ import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
 import { createDatabasePools, warmPool, type DatabasePools } from "./db"
 import { runMigrations } from "./db/migrations"
-import { WorkosAuthService } from "./services/auth-service"
-import { StubAuthService } from "./services/auth-service.stub"
-import { UserService } from "./services/user-service"
+import { WorkosAuthService } from "./auth/auth-service"
+import { StubAuthService } from "./auth/auth-service.stub"
+import { UserService } from "./auth/user-service"
 import { WorkspaceService } from "./services/workspace-service"
 import { StreamService } from "./services/stream-service"
 import { EventService } from "./services/event-service"
@@ -245,7 +245,7 @@ export async function startServer(): Promise<ServerInstance> {
     workspaceId: string
     streamId: string
     authorId: string
-    authorType: "user" | "persona"
+    authorType: "member" | "persona"
     content: string
     sources?: { title: string; url: string }[]
     sessionId?: string

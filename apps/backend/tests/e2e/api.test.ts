@@ -22,6 +22,7 @@ import {
   updateMessage,
   deleteMessage,
   getWorkspaceBootstrap,
+  getMemberId,
 } from "../client"
 
 // Generate unique identifier for this test run to avoid collisions
@@ -168,6 +169,7 @@ describe("API E2E Tests", () => {
       const client = new TestClient()
       const user = await loginAs(client, testEmail("messages"), "Messages Test")
       const workspace = await createWorkspace(client, `Msg WS ${testRunId}`)
+      const memberId = await getMemberId(client, workspace.id, user.id)
       const scratchpad = await createScratchpad(client, workspace.id)
 
       const message = await sendMessage(client, workspace.id, scratchpad.id, `Hello ${testRunId}!`)
@@ -175,7 +177,7 @@ describe("API E2E Tests", () => {
       expect(message.id).toMatch(/^msg_/)
       expect(message.contentMarkdown).toBe(`Hello ${testRunId}!`)
       expect(message.sequence).toBe("1")
-      expect(message.authorId).toBe(user.id)
+      expect(message.authorId).toBe(memberId)
 
       const events = await listEvents(client, workspace.id, scratchpad.id, ["message_created"])
       expect(events.length).toBe(1)
@@ -236,7 +238,7 @@ describe("API E2E Tests", () => {
       // Send raw emoji, expect shortcode in response
       const updated = await addReaction(client, workspace.id, message.id, "👍")
 
-      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^usr_/)] })
+      expect(updated.reactions).toEqual({ ":+1:": [expect.stringMatching(/^member_/)] })
     })
 
     test("should accept shortcode input directly", async () => {
@@ -249,7 +251,7 @@ describe("API E2E Tests", () => {
       // Send shortcode directly
       const updated = await addReaction(client, workspace.id, message.id, ":heart:")
 
-      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^usr_/)] })
+      expect(updated.reactions).toEqual({ ":heart:": [expect.stringMatching(/^member_/)] })
     })
 
     test("should remove reaction from message", async () => {
@@ -312,21 +314,17 @@ describe("API E2E Tests", () => {
       const client1 = new TestClient()
       const client2 = new TestClient()
 
-      const user1 = await loginAs(client1, testEmail("reaction-u1"), "Reaction User 1")
-      const user2 = await loginAs(client2, testEmail("reaction-u2"), "Reaction User 2")
+      await loginAs(client1, testEmail("reaction-u1"), "Reaction User 1")
+      await loginAs(client2, testEmail("reaction-u2"), "Reaction User 2")
 
       const workspace = await createWorkspace(client1, `React Users WS ${testRunId}`)
       const scratchpad = await createScratchpad(client1, workspace.id)
 
-      // Add user2 to workspace by having them create content (they auto-join)
-      // Actually, user2 needs to be a member. Let's use the same workspace differently.
-      // For this test, we need to add user2 as a member. Since there's no API for that yet,
-      // let's test with user1 only but verify the structure.
-
       const message = await sendMessage(client1, workspace.id, scratchpad.id, "Multi-user reactions")
       const updated = await addReaction(client1, workspace.id, message.id, "👍")
 
-      expect(updated.reactions[":+1:"]).toContain(user1.id)
+      expect(updated.reactions[":+1:"]).toHaveLength(1)
+      expect(updated.reactions[":+1:"][0]).toMatch(/^member_/)
     })
 
     test("should reject invalid emoji", async () => {

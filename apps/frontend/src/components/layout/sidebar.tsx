@@ -306,7 +306,7 @@ function StreamItemAvatar({ icon, className, badge }: StreamItemAvatarProps) {
 
 interface StreamItemPreviewProps {
   preview: StreamWithPreview["lastMessagePreview"]
-  getActorName: (actorId: string | null, actorType: "user" | "persona" | null) => string
+  getActorName: (actorId: string | null, actorType: "member" | "persona" | null) => string
   compact: boolean
   showPreviewOnHover: boolean
 }
