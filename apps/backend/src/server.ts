@@ -2,7 +2,7 @@ import { createServer, Server } from "http"
 import { Server as SocketIOServer } from "socket.io"
 import { createAdapter } from "@socket.io/postgres-adapter"
 import { Pool } from "pg"
-import { createApp } from "./app"
+import { createApp, corsOrigin } from "./app"
 import { registerRoutes } from "./routes"
 import { errorHandler } from "./middleware/error-handler"
 import { registerSocketHandlers } from "./socket"
@@ -312,7 +312,7 @@ export async function startServer(): Promise<ServerInstance> {
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: true,
+      origin: corsOrigin,
       credentials: true,
     },
   })

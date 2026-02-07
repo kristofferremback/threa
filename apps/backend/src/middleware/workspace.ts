@@ -1,7 +1,34 @@
-import type { Request, Response, NextFunction } from "express"
+import type { Request, Response, NextFunction, RequestHandler } from "express"
 import type { Pool } from "pg"
 import { MemberRepository, type Member } from "../repositories/member-repository"
 import { WorkspaceRepository } from "../repositories/workspace-repository"
+
+type MemberRole = Member["role"]
+
+const ROLE_HIERARCHY: Record<MemberRole, number> = {
+  member: 0,
+  admin: 1,
+  owner: 2,
+}
+
+/**
+ * Requires the authenticated member to have at least the given role.
+ * Must be used after workspaceMember middleware (which sets req.member).
+ */
+export function requireRole(minimumRole: MemberRole): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const member = req.member
+    if (!member) {
+      return res.status(401).json({ error: "Not authenticated" })
+    }
+
+    if (ROLE_HIERARCHY[member.role] < ROLE_HIERARCHY[minimumRole]) {
+      return res.status(403).json({ error: "Insufficient permissions" })
+    }
+
+    next()
+  }
+}
 
 declare global {
   namespace Express {

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useEffect, useMemo, useRef } from "react"
+import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
@@ -98,6 +98,33 @@ export function useSocketEvents(workspaceId: string) {
   // Use ref to avoid stale closure in socket handlers
   const currentStreamIdRef = useRef(currentStreamId)
   currentStreamIdRef.current = currentStreamId
+
+  // Subscribe to stream memberships so we can join/leave stream rooms reactively
+  const { data: memberStreamIds } = useQuery({
+    queryKey: workspaceKeys.bootstrap(workspaceId),
+    select: (data: WorkspaceBootstrap) => data.streamMemberships?.map((m: StreamMember) => m.streamId) ?? [],
+    enabled: false, // don't refetch — just read from cache set by useWorkspaceBootstrap
+  })
+
+  // Stable serialization for dependency tracking
+  const memberStreamIdsKey = useMemo(() => (memberStreamIds ?? []).sort().join(","), [memberStreamIds])
+
+  // Join all member stream rooms so stream-scoped events (e.g. stream:activity)
+  // are received for every stream the user belongs to, not just the active one.
+  useEffect(() => {
+    if (!socket || !workspaceId || !memberStreamIdsKey) return
+
+    const ids = memberStreamIdsKey.split(",").filter(Boolean)
+    for (const id of ids) {
+      socket.emit("join", `ws:${workspaceId}:stream:${id}`)
+    }
+
+    return () => {
+      for (const id of ids) {
+        socket.emit("leave", `ws:${workspaceId}:stream:${id}`)
+      }
+    }
+  }, [socket, workspaceId, memberStreamIdsKey])
 
   useEffect(() => {
     if (!socket || !workspaceId) return

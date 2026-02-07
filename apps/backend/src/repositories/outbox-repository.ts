@@ -51,6 +51,7 @@ export type StreamScopedEventType =
   | "reaction:added"
   | "reaction:removed"
   | "stream:display_name_updated"
+  | "stream:activity"
   | "conversation:created"
   | "conversation:updated"
   | "agent_session:started"
@@ -63,7 +64,6 @@ export type WorkspaceScopedEventType =
   | "stream:updated"
   | "stream:archived"
   | "stream:unarchived"
-  | "stream:activity"
   | "attachment:uploaded"
   | "workspace_member:added"
   | "workspace_member:removed"
@@ -158,9 +158,9 @@ export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {
   member: Member
 }
 
-/** Workspace-scoped event for sidebar updates when new messages arrive */
-export interface StreamActivityOutboxPayload extends WorkspaceScopedPayload {
-  streamId: string
+/** Stream-scoped event for sidebar updates when new messages arrive.
+ *  Only members of the stream receive preview content. */
+export interface StreamActivityOutboxPayload extends StreamScopedPayload {
   authorId: string
   lastMessagePreview: LastMessagePreview
 }
@@ -322,6 +322,7 @@ const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
   "reaction:added",
   "reaction:removed",
   "stream:display_name_updated",
+  "stream:activity",
   "conversation:created",
   "conversation:updated",
   "agent_session:started",

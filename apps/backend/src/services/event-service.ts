@@ -196,11 +196,9 @@ export class EventService {
         event: serializeBigInt(event),
       })
 
-      // 8. Publish unread increment to workspace room for sidebar updates
-      // This is workspace-scoped so all members receive it, then frontend filters
-      // by stream membership and excludes the author's own messages.
-      // Includes lastMessagePreview so sidebar can update preview + urgency without
-      // needing to be subscribed to the stream room.
+      // 8. Publish unread increment for sidebar updates
+      // Stream-scoped: only members of this stream receive the preview content.
+      // Frontend excludes the author's own messages from unread count.
       await OutboxRepository.insert(client, "stream:activity", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,

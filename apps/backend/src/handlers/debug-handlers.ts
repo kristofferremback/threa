@@ -38,7 +38,6 @@ export function createDebugHandlers({ pool, poolMonitor }: Dependencies) {
           connecting: client._connecting,
           ending: client._ending,
           queryable: client._queryable,
-          lastQueryText: client._lastQuery?.text?.substring(0, 100),
         })) ?? []
 
       const idle =
