@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { useStreamService, useMessageService, usePendingMessages } from "@/contexts"
 import { useUser } from "@/auth"
 import { useStreamBootstrap, streamKeys } from "./use-streams"
-import { workspaceKeys } from "./use-workspaces"
+import { useWorkspaceBootstrap, workspaceKeys } from "./use-workspaces"
 import { createOptimisticBootstrap, type AttachmentSummary } from "./create-optimistic-bootstrap"
 import { serializeToMarkdown } from "@threa/prosemirror"
 import type { StreamType, CompanionMode, StreamEvent, JSONContent } from "@threa/types"
@@ -155,6 +155,8 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
   const messageService = useMessageService()
   const { markPending, markFailed, markSent } = usePendingMessages()
   const user = useUser()
+  const { data: wsBootstrap } = useWorkspaceBootstrap(workspaceId)
+  const currentMemberId = wsBootstrap?.members?.find((m) => m.userId === user?.id)?.id ?? null
 
   const { data: bootstrap, isLoading, error } = useStreamBootstrap(workspaceId, streamId, { enabled })
 
@@ -247,7 +249,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           messageId: clientId,
           contentMarkdown,
         },
-        actorId: user?.id ?? null,
+        actorId: currentMemberId,
         actorType: "member",
         createdAt: now,
       }
@@ -314,7 +316,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
 
       return {}
     },
-    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, user]
+    [streamId, workspaceId, messageService, queryClient, markPending, markFailed, markSent, currentMemberId]
   )
 
   return {
