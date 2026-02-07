@@ -303,6 +303,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     s3Config: config.s3,
     commandRegistry,
+    allowDevAuthRoutes: config.useStubAuth && process.env.NODE_ENV !== "production",
   })
 
   app.use(errorHandler)

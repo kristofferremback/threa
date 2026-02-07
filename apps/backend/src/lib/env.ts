@@ -45,9 +45,14 @@ export interface Config {
 
 export function loadConfig(): Config {
   const useStubAuth = process.env.USE_STUB_AUTH === "true"
+  const isProduction = process.env.NODE_ENV === "production"
 
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required")
+  }
+
+  if (isProduction && useStubAuth) {
+    throw new Error("USE_STUB_AUTH must be false in production")
   }
 
   if (!useStubAuth) {

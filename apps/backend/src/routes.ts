@@ -49,6 +49,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   s3Config: S3Config
   commandRegistry: CommandRegistry
+  allowDevAuthRoutes?: boolean
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -66,6 +67,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userPreferencesService,
     s3Config,
     commandRegistry,
+    allowDevAuthRoutes = false,
   } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
@@ -109,7 +111,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
   app.get("/api/auth/logout", authHandlers.logout)
 
-  if (authService instanceof StubAuthService) {
+  if (authService instanceof StubAuthService && !allowDevAuthRoutes) {
+    throw new Error("Stub auth service is not allowed to mount dev auth routes")
+  }
+
+  if (authService instanceof StubAuthService && allowDevAuthRoutes) {
     const authStub = createAuthStubHandlers({
       authStubService: authService,
       userService,
