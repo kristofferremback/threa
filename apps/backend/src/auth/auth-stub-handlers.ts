@@ -4,6 +4,7 @@ import type { UserService } from "./user-service"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
 import { renderLoginPage } from "./auth-stub-login-page"
+import { isSafeRedirect } from "./redirect"
 
 interface Dependencies {
   authStubService: StubAuthService
@@ -40,8 +41,8 @@ export function createAuthStubHandlers(deps: Dependencies): AuthStubHandlers {
       path: "/",
     })
 
-    const redirectTo = state ? Buffer.from(state, "base64").toString("utf-8") : "/"
-    res.redirect(redirectTo)
+    const decoded = state ? Buffer.from(state, "base64").toString("utf-8") : "/"
+    res.redirect(isSafeRedirect(decoded) ? decoded : "/")
   }
 
   const handleDevLogin: RequestHandler = async (req, res) => {
