@@ -94,6 +94,9 @@ export function loadConfig(): Config {
   }
 
   if (useStubAuth) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("USE_STUB_AUTH cannot be enabled in production")
+    }
     logger.warn("Using stub auth service - NOT FOR PRODUCTION")
   }
 
