@@ -16,6 +16,7 @@ import {
   dispatchCommand,
   getBootstrap,
   listEvents,
+  getMemberId,
 } from "../client"
 
 const testRunId = Math.random().toString(36).substring(7)
@@ -49,9 +50,10 @@ describe("Command Visibility E2E", () => {
     const eventTypesA = bootstrapA.events.map((e) => e.eventType)
     expect(eventTypesA).toContain("command_dispatched")
 
-    // Verify the command event has correct actor
+    // Verify the command event has correct actor (member ID, not user ID)
+    const memberIdA = await getMemberId(clientA, workspace.id, userA.id)
     const cmdEventA = bootstrapA.events.find((e) => e.eventType === "command_dispatched")
-    expect(cmdEventA?.actorId).toBe(userA.id)
+    expect(cmdEventA?.actorId).toBe(memberIdA)
 
     // User B fetches bootstrap - should NOT see command events
     const bootstrapB = await getBootstrap(clientB, workspace.id, channel.id)
@@ -105,18 +107,22 @@ describe("Command Visibility E2E", () => {
     const cmdA = await dispatchCommand(clientA, workspace.id, channel.id, "/simulate from A")
     const cmdB = await dispatchCommand(clientB, workspace.id, channel.id, "/simulate from B")
 
+    // Resolve member IDs for comparison
+    const memberIdA = await getMemberId(clientA, workspace.id, userA.id)
+    const memberIdB = await getMemberId(clientB, workspace.id, userB.id)
+
     // User A's bootstrap should only show their command
     const bootstrapA = await getBootstrap(clientA, workspace.id, channel.id)
     const cmdEventsA = bootstrapA.events.filter((e) => e.eventType === "command_dispatched")
     expect(cmdEventsA.length).toBe(1)
-    expect(cmdEventsA[0].actorId).toBe(userA.id)
+    expect(cmdEventsA[0].actorId).toBe(memberIdA)
     expect((cmdEventsA[0].payload as { commandId: string }).commandId).toBe(cmdA.commandId)
 
     // User B's bootstrap should only show their command
     const bootstrapB = await getBootstrap(clientB, workspace.id, channel.id)
     const cmdEventsB = bootstrapB.events.filter((e) => e.eventType === "command_dispatched")
     expect(cmdEventsB.length).toBe(1)
-    expect(cmdEventsB[0].actorId).toBe(userB.id)
+    expect(cmdEventsB[0].actorId).toBe(memberIdB)
     expect((cmdEventsB[0].payload as { commandId: string }).commandId).toBe(cmdB.commandId)
   })
 })
