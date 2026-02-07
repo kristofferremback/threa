@@ -1,6 +1,6 @@
 import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
-import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
+import { createWorkspaceMemberMiddleware, requireRole } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
 import { authRateLimit, aiRateLimit, standardRateLimit, relaxedRateLimit } from "./middleware/rate-limit"
 import { createAuthHandlers } from "./auth/handlers"
@@ -212,7 +212,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage", relaxedRateLimit, ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", relaxedRateLimit, ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", relaxedRateLimit, ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", standardRateLimit, ...authed, aiUsage.updateBudget)
+  app.put(
+    "/api/workspaces/:workspaceId/ai-budget",
+    standardRateLimit,
+    ...authed,
+    requireRole("admin"),
+    aiUsage.updateBudget
+  )
 
   // Agent Sessions (trace viewing)
   app.get(
