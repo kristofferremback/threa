@@ -110,7 +110,7 @@ export class NamingHandler implements OutboxHandler {
             continue
           }
 
-          const payload = await parseMessageCreatedPayload(event.payload, this.db)
+          const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "NamingHandler: malformed event, skipping")
             lastProcessedId = event.id

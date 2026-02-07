@@ -103,7 +103,7 @@ export class CompanionHandler implements OutboxHandler {
             continue
           }
 
-          const payload = await parseMessageCreatedPayload(event.payload, this.db)
+          const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "CompanionHandler: malformed event, skipping")
             lastProcessedId = event.id

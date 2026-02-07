@@ -5,7 +5,6 @@
  * raw type casts to ensure consistent handling across all listeners.
  */
 
-import type { Pool, PoolClient } from "pg"
 import type { AuthorType } from "@threa/types"
 import { AuthorTypes } from "@threa/types"
 
@@ -35,22 +34,7 @@ export interface NormalizedMessageCreatedPayload {
  *
  * Returns null if minimum required fields cannot be extracted.
  */
-export async function parseMessageCreatedPayload(
-  payload: unknown,
-  _pool: Pool
-): Promise<NormalizedMessageCreatedPayload | null> {
-  return parseMessageCreatedPayloadWithClient(payload)
-}
-
-/**
- * Parse and normalize a message:created outbox payload using an existing client.
- *
- * This variant is for use within transactions where you already have a PoolClient.
- */
-export async function parseMessageCreatedPayloadWithClient(
-  payload: unknown,
-  _client?: PoolClient
-): Promise<NormalizedMessageCreatedPayload | null> {
+export function parseMessageCreatedPayload(payload: unknown): NormalizedMessageCreatedPayload | null {
   if (!payload || typeof payload !== "object") {
     return null
   }

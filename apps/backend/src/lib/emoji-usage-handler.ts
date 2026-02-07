@@ -141,7 +141,7 @@ export class EmojiUsageHandler implements OutboxHandler {
   }
 
   private async handleMessageCreated(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
-    const payload = await parseMessageCreatedPayload(outboxEvent.payload, this.db)
+    const payload = parseMessageCreatedPayload(outboxEvent.payload)
     if (!payload) {
       logger.debug({ eventId: outboxEvent.id.toString() }, "EmojiUsageHandler: malformed message event, skipping")
       return
