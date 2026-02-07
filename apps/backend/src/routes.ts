@@ -4,6 +4,7 @@ import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
+import { requireWorkspaceRole } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
@@ -71,6 +72,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const workspaceMember = createWorkspaceMemberMiddleware({ pool })
   const rateLimits = createRateLimiters()
   const opsAccess = createOpsAccessMiddleware()
+  const workspaceAdmin = requireWorkspaceRole({ allowedRoles: ["owner", "admin"] })
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
@@ -194,7 +196,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
+  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, workspaceAdmin, aiUsage.updateBudget)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
