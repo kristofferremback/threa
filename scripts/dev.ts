@@ -133,10 +133,27 @@ async function ensureWorktreeEnv(): Promise<void> {
       // Copy schema + data from main database (threa) to worktree database
       // Duplicate schema errors are expected and harmless (migrations will reconcile)
       console.log(`Copying data from main database...`)
-      await $`docker exec threa-postgres-1 pg_dump -U threa -d threa --no-owner --no-acl | docker exec -i threa-postgres-1 psql -U threa -d ${dbName}`
-        .quiet()
-        .nothrow()
-      console.log(`Data copied successfully`)
+      const lockWaitTimeout = "10s"
+      const copyResult =
+        await $`docker exec threa-postgres-1 bash -o pipefail -c "pg_dump -U threa -d threa --no-owner --no-acl --lock-wait-timeout=${lockWaitTimeout} | PGOPTIONS='-c lock_timeout=${lockWaitTimeout}' psql -U threa -d ${dbName}"`
+          .quiet()
+          .nothrow()
+
+      if (copyResult.exitCode !== 0) {
+        const stderr = copyResult.stderr.toString()
+        if (
+          stderr.includes("canceling statement due to lock timeout") ||
+          stderr.includes("canceling statement due to statement timeout")
+        ) {
+          console.warn(
+            `Data copy skipped due to DB lock timeout. Close other processes using 'threa' and rerun setup if you need a cloned dataset.`
+          )
+        } else {
+          console.warn(`Data copy had errors: ${stderr || `exit code ${copyResult.exitCode}`}`)
+        }
+      } else {
+        console.log(`Data copied successfully`)
+      }
     }
   }
 }
