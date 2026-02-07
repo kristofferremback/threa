@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withTransaction, withClient } from "./setup"
+import { withTransaction } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"
@@ -55,21 +55,19 @@ describe("Event Sourcing", () => {
       expect(message.sequence).toBe(1n)
 
       // Verify event was created
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
+      const events = await StreamEventRepository.list(pool, testStreamId)
 
-        expect(events).toHaveLength(1)
-        expect(events[0]).toMatchObject({
-          streamId: testStreamId,
-          sequence: 1n,
-          eventType: "message_created",
-          actorId: testUserId,
-          actorType: "user",
-        })
-        expect(events[0].payload).toMatchObject({
-          messageId: message.id,
-          contentMarkdown: "Hello, world!",
-        })
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({
+        streamId: testStreamId,
+        sequence: 1n,
+        eventType: "message_created",
+        actorId: testUserId,
+        actorType: "user",
+      })
+      expect(events[0].payload).toMatchObject({
+        messageId: message.id,
+        contentMarkdown: "Hello, world!",
       })
     })
 
@@ -107,10 +105,8 @@ describe("Event Sourcing", () => {
       expect(msg3.sequence).toBe(3n)
 
       // Verify events have matching sequences
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
-        expect(events.map((e) => e.sequence)).toEqual([1n, 2n, 3n])
-      })
+      const events = await StreamEventRepository.list(pool, testStreamId)
+      expect(events.map((e) => e.sequence)).toEqual([1n, 2n, 3n])
     })
 
     test("should isolate sequences per stream", async () => {
@@ -173,10 +169,8 @@ describe("Event Sourcing", () => {
       expect(message.authorId).toBe(personaId)
       expect(message.authorType).toBe("persona")
 
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
-        expect(events[0].actorType).toBe("persona")
-      })
+      const events = await StreamEventRepository.list(pool, testStreamId)
+      expect(events[0].actorType).toBe("persona")
     })
 
     test("should publish to outbox for real-time delivery", async () => {
@@ -196,24 +190,22 @@ describe("Event Sourcing", () => {
         ...testMessageContent("Test message"),
       })
 
-      await withClient(pool, async (client) => {
-        const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
+      const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-        // INV-23: Don't assert event count - verify specific events we care about
-        const messageCreatedEvent = outboxEvents.find((e) => e.eventType === "message:created")
-        expect(messageCreatedEvent).toBeDefined()
-        expect(messageCreatedEvent!.payload).toMatchObject({
-          workspaceId: testWorkspaceId,
-          streamId: testStreamId,
-        })
+      // INV-23: Don't assert event count - verify specific events we care about
+      const messageCreatedEvent = outboxEvents.find((e) => e.eventType === "message:created")
+      expect(messageCreatedEvent).toBeDefined()
+      expect(messageCreatedEvent!.payload).toMatchObject({
+        workspaceId: testWorkspaceId,
+        streamId: testStreamId,
+      })
 
-        const unreadIncrementEvent = outboxEvents.find((e) => e.eventType === "unread:increment")
-        expect(unreadIncrementEvent).toBeDefined()
-        expect(unreadIncrementEvent!.payload).toMatchObject({
-          workspaceId: testWorkspaceId,
-          streamId: testStreamId,
-          authorId: testUserId,
-        })
+      const unreadIncrementEvent = outboxEvents.find((e) => e.eventType === "unread:increment")
+      expect(unreadIncrementEvent).toBeDefined()
+      expect(unreadIncrementEvent!.payload).toMatchObject({
+        workspaceId: testWorkspaceId,
+        streamId: testStreamId,
+        authorId: testUserId,
       })
     })
   })
@@ -246,16 +238,14 @@ describe("Event Sourcing", () => {
       expect(edited!.editedAt).not.toBeNull()
 
       // Both events should exist
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
+      const events = await StreamEventRepository.list(pool, testStreamId)
 
-        expect(events).toHaveLength(2)
-        expect(events[0].eventType).toBe("message_created")
-        expect(events[1].eventType).toBe("message_edited")
-        expect(events[1].payload).toMatchObject({
-          messageId: original.id,
-          contentMarkdown: "Edited content",
-        })
+      expect(events).toHaveLength(2)
+      expect(events[0].eventType).toBe("message_created")
+      expect(events[1].eventType).toBe("message_edited")
+      expect(events[1].payload).toMatchObject({
+        messageId: original.id,
+        contentMarkdown: "Edited content",
       })
     })
 
@@ -309,12 +299,10 @@ describe("Event Sourcing", () => {
         actorId: testUserId,
       })
 
-      await withClient(pool, async (client) => {
-        const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
+      const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-        expect(outboxEvents).toHaveLength(1)
-        expect(outboxEvents[0].eventType).toBe("message:edited")
-      })
+      expect(outboxEvents).toHaveLength(1)
+      expect(outboxEvents[0].eventType).toBe("message:edited")
     })
   })
 
@@ -344,14 +332,12 @@ describe("Event Sourcing", () => {
       expect(deleted!.deletedAt).not.toBeNull()
 
       // Delete event should exist
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
+      const events = await StreamEventRepository.list(pool, testStreamId)
 
-        expect(events).toHaveLength(2)
-        expect(events[1].eventType).toBe("message_deleted")
-        expect(events[1].payload).toMatchObject({
-          messageId: message.id,
-        })
+      expect(events).toHaveLength(2)
+      expect(events[1].eventType).toBe("message_deleted")
+      expect(events[1].payload).toMatchObject({
+        messageId: message.id,
       })
     })
 
@@ -412,14 +398,12 @@ describe("Event Sourcing", () => {
         actorId: testUserId,
       })
 
-      await withClient(pool, async (client) => {
-        const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
+      const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-        expect(outboxEvents).toHaveLength(1)
-        expect(outboxEvents[0].eventType).toBe("message:deleted")
-        expect(outboxEvents[0].payload).toMatchObject({
-          messageId: message.id,
-        })
+      expect(outboxEvents).toHaveLength(1)
+      expect(outboxEvents[0].eventType).toBe("message:deleted")
+      expect(outboxEvents[0].payload).toMatchObject({
+        messageId: message.id,
       })
     })
   })
@@ -452,16 +436,14 @@ describe("Event Sourcing", () => {
       })
 
       // Reaction event should exist
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
-        const reactionEvent = events.find((e) => e.eventType === "reaction_added")
+      const events = await StreamEventRepository.list(pool, testStreamId)
+      const reactionEvent = events.find((e) => e.eventType === "reaction_added")
 
-        expect(reactionEvent).toBeDefined()
-        expect(reactionEvent!.payload).toMatchObject({
-          messageId: message.id,
-          emoji: "👍",
-          userId: testUserId,
-        })
+      expect(reactionEvent).toBeDefined()
+      expect(reactionEvent!.payload).toMatchObject({
+        messageId: message.id,
+        emoji: "👍",
+        userId: testUserId,
       })
     })
 
@@ -544,13 +526,11 @@ describe("Event Sourcing", () => {
       expect(afterRemove!.reactions["👍"]).toBeUndefined()
 
       // Both events should exist (add and remove)
-      await withClient(pool, async (client) => {
-        const events = await StreamEventRepository.list(client, testStreamId)
-        const eventTypes = events.map((e) => e.eventType)
+      const events = await StreamEventRepository.list(pool, testStreamId)
+      const eventTypes = events.map((e) => e.eventType)
 
-        expect(eventTypes).toContain("reaction_added")
-        expect(eventTypes).toContain("reaction_removed")
-      })
+      expect(eventTypes).toContain("reaction_added")
+      expect(eventTypes).toContain("reaction_removed")
     })
 
     test("should handle duplicate reaction gracefully", async () => {
@@ -621,13 +601,11 @@ describe("Event Sourcing", () => {
         userId: testUserId,
       })
 
-      await withClient(pool, async (client) => {
-        const outboxEvents = await OutboxRepository.fetchAfterId(client, baselineId)
+      const outboxEvents = await OutboxRepository.fetchAfterId(pool, baselineId)
 
-        expect(outboxEvents).toHaveLength(2)
-        expect(outboxEvents[0].eventType).toBe("reaction:added")
-        expect(outboxEvents[1].eventType).toBe("reaction:removed")
-      })
+      expect(outboxEvents).toHaveLength(2)
+      expect(outboxEvents[0].eventType).toBe("reaction:added")
+      expect(outboxEvents[1].eventType).toBe("reaction:removed")
     })
   })
 

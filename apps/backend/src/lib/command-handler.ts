@@ -7,7 +7,6 @@ import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
-import { withClient } from "../db"
 
 interface CommandDispatchedEventPayload {
   commandId: string
@@ -82,9 +81,7 @@ export class CommandHandler implements OutboxHandler {
 
   private async processEvents(): Promise<void> {
     await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await withClient(this.db, (client) =>
-        OutboxRepository.fetchAfterId(client, cursor, this.batchSize)
-      )
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
 
       if (events.length === 0) {
         return { status: "no_events" }

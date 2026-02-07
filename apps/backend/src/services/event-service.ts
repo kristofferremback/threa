@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction, withClient } from "../db"
+import { withTransaction } from "../db"
 import { StreamEventRepository, StreamEvent } from "../repositories/stream-event-repository"
 import type { EventType, SourceItem } from "@threa/types"
 import { StreamRepository } from "../repositories/stream-repository"
@@ -390,18 +390,18 @@ export class EventService {
   }
 
   async getMessages(streamId: string, options?: { limit?: number; beforeSequence?: bigint }): Promise<Message[]> {
-    return withClient(this.pool, (client) => MessageRepository.list(client, streamId, options))
+    return MessageRepository.list(this.pool, streamId, options)
   }
 
   async getMessageById(messageId: string): Promise<Message | null> {
-    return withClient(this.pool, (client) => MessageRepository.findById(client, messageId))
+    return MessageRepository.findById(this.pool, messageId)
   }
 
   async listEvents(
     streamId: string,
     filters?: { types?: EventType[]; limit?: number; afterSequence?: bigint; viewerId?: string }
   ): Promise<StreamEvent[]> {
-    return withClient(this.pool, (client) => StreamEventRepository.list(client, streamId, filters))
+    return StreamEventRepository.list(this.pool, streamId, filters)
   }
 
   /**
@@ -409,7 +409,7 @@ export class EventService {
    * Returns a map of messageId -> replyCount
    */
   async getReplyCountsBatch(messageIds: string[]): Promise<Map<string, number>> {
-    return withClient(this.pool, (client) => MessageRepository.getReplyCountsBatch(client, messageIds))
+    return MessageRepository.getReplyCountsBatch(this.pool, messageIds)
   }
 
   /**
@@ -418,6 +418,6 @@ export class EventService {
    * Returns a map of streamId -> message count
    */
   async countMessagesByStreams(streamIds: string[]): Promise<Map<string, number>> {
-    return withClient(this.pool, (client) => StreamEventRepository.countMessagesByStreamBatch(client, streamIds))
+    return StreamEventRepository.countMessagesByStreamBatch(this.pool, streamIds)
   }
 }

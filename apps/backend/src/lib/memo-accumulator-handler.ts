@@ -81,9 +81,7 @@ export class MemoAccumulatorHandler implements OutboxHandler {
 
   private async processEvents(): Promise<void> {
     await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await withClient(this.db, (client) =>
-        OutboxRepository.fetchAfterId(client, cursor, this.batchSize)
-      )
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
 
       if (events.length === 0) {
         return { status: "no_events" }
@@ -120,7 +118,7 @@ export class MemoAccumulatorHandler implements OutboxHandler {
   }
 
   private async handleMessageCreated(outboxEvent: { id: bigint; payload: unknown }): Promise<void> {
-    const payload = await parseMessageCreatedPayload(outboxEvent.payload, this.db)
+    const payload = parseMessageCreatedPayload(outboxEvent.payload)
     if (!payload) {
       logger.debug({ eventId: outboxEvent.id.toString() }, "MemoAccumulatorHandler: malformed event, skipping")
       return

@@ -34,10 +34,8 @@ describe("Agent Session Repository", () => {
     test("should return null when no running session exists", async () => {
       const testStreamId = streamId()
 
-      await withClient(pool, async (client) => {
-        const result = await AgentSessionRepository.findRunningByStream(client, testStreamId)
-        expect(result).toBeNull()
-      })
+      const result = await AgentSessionRepository.findRunningByStream(pool, testStreamId)
+      expect(result).toBeNull()
     })
 
     test("should return running session for stream", async () => {
@@ -112,10 +110,8 @@ describe("Agent Session Repository", () => {
     test("should return null when no sessions exist", async () => {
       const testStreamId = streamId()
 
-      await withClient(pool, async (client) => {
-        const result = await AgentSessionRepository.findLatestByStream(client, testStreamId)
-        expect(result).toBeNull()
-      })
+      const result = await AgentSessionRepository.findLatestByStream(pool, testStreamId)
+      expect(result).toBeNull()
     })
 
     test("should return most recent session regardless of status", async () => {
@@ -258,13 +254,11 @@ describe("Message Repository - listSince", () => {
       ...testMessageContent("Third"),
     })
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(1))
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(1))
 
-      expect(messages).toHaveLength(2)
-      expect(messages[0].id).toBe(msg2.id)
-      expect(messages[1].id).toBe(msg3.id)
-    })
+    expect(messages).toHaveLength(2)
+    expect(messages[0].id).toBe(msg2.id)
+    expect(messages[1].id).toBe(msg3.id)
   })
 
   test("should return empty array when no messages after sequence", async () => {
@@ -280,11 +274,9 @@ describe("Message Repository - listSince", () => {
       ...testMessageContent("Only message"),
     })
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(100))
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(100))
 
-      expect(messages).toHaveLength(0)
-    })
+    expect(messages).toHaveLength(0)
   })
 
   test("should exclude messages from specified author", async () => {
@@ -317,14 +309,12 @@ describe("Message Repository - listSince", () => {
       ...testMessageContent("From user 1 again"),
     })
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(0), {
-        excludeAuthorId: user1Id,
-      })
-
-      expect(messages).toHaveLength(1)
-      expect(messages[0].id).toBe(msg2.id)
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(0), {
+      excludeAuthorId: user1Id,
     })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0].id).toBe(msg2.id)
   })
 
   test("should order by sequence ascending (oldest first)", async () => {
@@ -356,13 +346,11 @@ describe("Message Repository - listSince", () => {
       ...testMessageContent("Third"),
     })
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(0))
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(0))
 
-      expect(messages[0].contentMarkdown).toBe("First")
-      expect(messages[1].contentMarkdown).toBe("Second")
-      expect(messages[2].contentMarkdown).toBe("Third")
-    })
+    expect(messages[0].contentMarkdown).toBe("First")
+    expect(messages[1].contentMarkdown).toBe("Second")
+    expect(messages[2].contentMarkdown).toBe("Third")
   })
 
   test("should not include deleted messages", async () => {
@@ -401,12 +389,10 @@ describe("Message Repository - listSince", () => {
       actorId: testUserId,
     })
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(0))
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(0))
 
-      expect(messages).toHaveLength(2)
-      expect(messages.find((m) => m.id === msg2.id)).toBeUndefined()
-    })
+    expect(messages).toHaveLength(2)
+    expect(messages.find((m) => m.id === msg2.id)).toBeUndefined()
   })
 
   test("should respect limit parameter", async () => {
@@ -424,13 +410,11 @@ describe("Message Repository - listSince", () => {
       })
     }
 
-    await withClient(pool, async (client) => {
-      const messages = await MessageRepository.listSince(client, testStreamId, BigInt(0), {
-        limit: 3,
-      })
-
-      expect(messages).toHaveLength(3)
+    const messages = await MessageRepository.listSince(pool, testStreamId, BigInt(0), {
+      limit: 3,
     })
+
+    expect(messages).toHaveLength(3)
   })
 })
 
@@ -484,18 +468,16 @@ describe("Agent Session - sentMessageIds", () => {
     const testPersonaId = personaId()
     const testSessionId = sessionId()
 
-    await withClient(pool, async (client) => {
-      const session = await AgentSessionRepository.insert(client, {
-        id: testSessionId,
-        streamId: testStreamId,
-        personaId: testPersonaId,
-        triggerMessageId: messageId(),
-        status: SessionStatuses.RUNNING,
-        serverId: "test-server",
-      })
-
-      expect(session.sentMessageIds).toEqual([])
+    const session = await AgentSessionRepository.insert(pool, {
+      id: testSessionId,
+      streamId: testStreamId,
+      personaId: testPersonaId,
+      triggerMessageId: messageId(),
+      status: SessionStatuses.RUNNING,
+      serverId: "test-server",
     })
+
+    expect(session.sentMessageIds).toEqual([])
   })
 })
 
@@ -521,15 +503,13 @@ describe("Agent Session - Concurrency", () => {
     const testSessionId = sessionId()
 
     // Insert a running session
-    await withClient(pool, async (client) => {
-      await AgentSessionRepository.insert(client, {
-        id: testSessionId,
-        streamId: testStreamId,
-        personaId: testPersonaId,
-        triggerMessageId: messageId(),
-        status: SessionStatuses.RUNNING,
-        serverId: "test-server",
-      })
+    await AgentSessionRepository.insert(pool, {
+      id: testSessionId,
+      streamId: testStreamId,
+      personaId: testPersonaId,
+      triggerMessageId: messageId(),
+      status: SessionStatuses.RUNNING,
+      serverId: "test-server",
     })
 
     // Coordination promises (no sleeps!)

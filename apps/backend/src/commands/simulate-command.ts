@@ -175,10 +175,8 @@ export class SimulateCommand implements Command {
   }
 
   private async getAvailablePersonaSlugs(workspaceId: string): Promise<string[]> {
-    return withClient(this.deps.pool, async (client) => {
-      const personas = await PersonaRepository.listForWorkspace(client, workspaceId)
-      return personas.map((p) => p.slug)
-    })
+    const personas = await PersonaRepository.listForWorkspace(this.deps.pool, workspaceId)
+    return personas.map((p) => p.slug)
   }
 
   private async validatePersonas(slugs: string[], workspaceId: string): Promise<{ valid: boolean; error?: string }> {

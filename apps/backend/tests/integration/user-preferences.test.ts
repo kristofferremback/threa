@@ -1,6 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient } from "./setup"
 import { UserPreferencesService } from "../../src/services/user-preferences-service"
 import { UserPreferencesRepository } from "../../src/repositories/user-preferences-repository"
 import { workspaceId, userId } from "../../src/lib/id"
@@ -47,9 +46,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
       })
 
       // Verify no rows in database
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
       expect(overrides).toHaveLength(0)
     })
   })
@@ -62,9 +59,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
       })
 
       // Verify only one row exists
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
       expect(overrides).toHaveLength(1)
       expect(overrides[0]).toMatchObject({ key: "theme", value: "dark" })
     })
@@ -76,9 +71,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
       })
 
       // Verify no rows exist
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
       expect(overrides).toHaveLength(0)
     })
 
@@ -88,9 +81,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
         theme: "dark",
       })
 
-      let overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      let overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
       expect(overrides).toHaveLength(1)
 
       // Revert to default
@@ -98,9 +89,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
         theme: "system",
       })
 
-      overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
       expect(overrides).toHaveLength(0)
     })
 
@@ -112,9 +101,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
         },
       })
 
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
 
       // Should have two separate rows for nested keys
       expect(overrides).toHaveLength(2)
@@ -149,9 +136,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
         },
       })
 
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
 
       // Should have 4 overrides
       expect(overrides).toHaveLength(4)
@@ -175,9 +160,7 @@ describe("User Preferences - Sparse Override Pattern", () => {
         },
       })
 
-      const overrides = await withClient(pool, (client) =>
-        UserPreferencesRepository.findOverrides(client, testWorkspaceId, testUserId)
-      )
+      const overrides = await UserPreferencesRepository.findOverrides(pool, testWorkspaceId, testUserId)
 
       expect(overrides).toHaveLength(1)
       expect(overrides[0]).toMatchObject({

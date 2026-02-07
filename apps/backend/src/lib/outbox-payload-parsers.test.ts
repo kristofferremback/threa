@@ -1,17 +1,10 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
 import { AuthorTypes } from "@threa/types"
 
-// Mock the database dependencies
-mock.module("../db", () => ({
-  withClient: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
-}))
-
-const mockPool = {} as any
-
 describe("parseMessageCreatedPayload", () => {
   describe("modern format", () => {
-    test("should parse valid modern payload", async () => {
+    test("should parse valid modern payload", () => {
       const payload = {
         workspaceId: "ws_123",
         streamId: "stream_456",
@@ -27,7 +20,7 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
 
       expect(result).toEqual({
         workspaceId: "ws_123",
@@ -45,7 +38,7 @@ describe("parseMessageCreatedPayload", () => {
       })
     })
 
-    test("should parse persona message", async () => {
+    test("should parse persona message", () => {
       const payload = {
         workspaceId: "ws_123",
         streamId: "stream_456",
@@ -61,13 +54,13 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
 
       expect(result?.event.actorType).toBe(AuthorTypes.PERSONA)
       expect(result?.event.actorId).toBe("persona_xyz")
     })
 
-    test("should default missing optional fields", async () => {
+    test("should default missing optional fields", () => {
       const payload = {
         workspaceId: "ws_123",
         streamId: "stream_456",
@@ -78,7 +71,7 @@ describe("parseMessageCreatedPayload", () => {
         },
       }
 
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
 
       expect(result).toEqual({
         workspaceId: "ws_123",
@@ -98,41 +91,41 @@ describe("parseMessageCreatedPayload", () => {
   })
 
   describe("invalid payloads", () => {
-    test("should return null for null payload", async () => {
-      const result = await parseMessageCreatedPayload(null, mockPool)
+    test("should return null for null payload", () => {
+      const result = parseMessageCreatedPayload(null)
       expect(result).toBeNull()
     })
 
-    test("should return null for non-object payload", async () => {
-      const result = await parseMessageCreatedPayload("string", mockPool)
+    test("should return null for non-object payload", () => {
+      const result = parseMessageCreatedPayload("string")
       expect(result).toBeNull()
     })
 
-    test("should return null when workspaceId missing", async () => {
+    test("should return null when workspaceId missing", () => {
       const payload = {
         streamId: "stream_456",
         event: { payload: { messageId: "msg_123" } },
       }
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
       expect(result).toBeNull()
     })
 
-    test("should return null when streamId missing", async () => {
+    test("should return null when streamId missing", () => {
       const payload = {
         workspaceId: "ws_123",
         event: { payload: { messageId: "msg_123" } },
       }
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
       expect(result).toBeNull()
     })
 
-    test("should return null when messageId missing from both formats", async () => {
+    test("should return null when messageId missing from both formats", () => {
       const payload = {
         workspaceId: "ws_123",
         streamId: "stream_456",
         event: { payload: {} },
       }
-      const result = await parseMessageCreatedPayload(payload, mockPool)
+      const result = parseMessageCreatedPayload(payload)
       expect(result).toBeNull()
     })
   })

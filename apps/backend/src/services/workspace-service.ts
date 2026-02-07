@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../db"
+import { withTransaction } from "../db"
 import {
   WorkspaceRepository,
   Workspace,
@@ -22,15 +22,15 @@ export class WorkspaceService {
   constructor(private pool: Pool) {}
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
-    return withClient(this.pool, (client) => WorkspaceRepository.findById(client, id))
+    return WorkspaceRepository.findById(this.pool, id)
   }
 
   async getWorkspaceBySlug(slug: string): Promise<Workspace | null> {
-    return withClient(this.pool, (client) => WorkspaceRepository.findBySlug(client, slug))
+    return WorkspaceRepository.findBySlug(this.pool, slug)
   }
 
   async getWorkspacesByUserId(userId: string): Promise<Workspace[]> {
-    return withClient(this.pool, (client) => WorkspaceRepository.list(client, { userId }))
+    return WorkspaceRepository.list(this.pool, { userId })
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
@@ -84,24 +84,24 @@ export class WorkspaceService {
   }
 
   async getMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-    return withClient(this.pool, (client) => WorkspaceRepository.listMembers(client, workspaceId))
+    return WorkspaceRepository.listMembers(this.pool, workspaceId)
   }
 
   async isMember(workspaceId: string, userId: string): Promise<boolean> {
-    return withClient(this.pool, (client) => WorkspaceRepository.isMember(client, workspaceId, userId))
+    return WorkspaceRepository.isMember(this.pool, workspaceId, userId)
   }
 
   async getUsersForMembers(members: WorkspaceMember[]): Promise<User[]> {
     if (members.length === 0) return []
     const userIds = members.map((m) => m.userId)
-    return withClient(this.pool, (client) => UserRepository.findByIds(client, userIds))
+    return UserRepository.findByIds(this.pool, userIds)
   }
 
   async getPersonasForWorkspace(workspaceId: string): Promise<Persona[]> {
-    return withClient(this.pool, (client) => PersonaRepository.listForWorkspace(client, workspaceId))
+    return PersonaRepository.listForWorkspace(this.pool, workspaceId)
   }
 
   async getEmojiWeights(workspaceId: string, userId: string): Promise<Record<string, number>> {
-    return withClient(this.pool, (client) => EmojiUsageRepository.getWeights(client, workspaceId, userId))
+    return EmojiUsageRepository.getWeights(this.pool, workspaceId, userId)
   }
 }

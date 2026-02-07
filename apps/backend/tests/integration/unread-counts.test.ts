@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient, withTransaction, withTestTransaction } from "./setup"
+import { withTransaction, withTestTransaction } from "./setup"
 import { StreamService } from "../../src/services/stream-service"
 import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
@@ -59,7 +59,7 @@ describe("Unread Counts", () => {
       })
 
       // Get the event ID for this message
-      const events = await withClient(pool, (client) => StreamEventRepository.list(client, testStreamId))
+      const events = await StreamEventRepository.list(pool, testStreamId)
       const lastEventId = events[0].id
 
       // Count unreads with lastReadEventId = latest event
@@ -107,7 +107,7 @@ describe("Unread Counts", () => {
       })
 
       // Get the first event as last read
-      const events = await withClient(pool, (client) => StreamEventRepository.list(client, testStreamId))
+      const events = await StreamEventRepository.list(pool, testStreamId)
       const firstEventId = events[0].id
 
       // Should have 2 unread (messages 2 and 3)
@@ -238,8 +238,8 @@ describe("Unread Counts", () => {
       }
 
       // Get first event from stream1, read all of stream2
-      const events1 = await withClient(pool, (client) => StreamEventRepository.list(client, stream1))
-      const events2 = await withClient(pool, (client) => StreamEventRepository.list(client, stream2))
+      const events1 = await StreamEventRepository.list(pool, stream1)
+      const events2 = await StreamEventRepository.list(pool, stream2)
 
       const counts = await streamService.getUnreadCounts([
         { streamId: stream1, lastReadEventId: events1[0].id }, // Read 1, unread 1
@@ -343,7 +343,7 @@ describe("Unread Counts", () => {
       })
 
       // Mark stream1 as read first
-      const events1 = await withClient(pool, (client) => StreamEventRepository.list(client, stream1))
+      const events1 = await StreamEventRepository.list(pool, stream1)
       await streamService.markAsRead(testWorkspaceId, stream1, testUserId, events1[0].id)
 
       // Now markAllAsRead should return empty (both are already read or have no messages)
@@ -432,7 +432,7 @@ describe("Unread Counts", () => {
           authorType: "user",
           ...testMessageContent("Test message"),
         })
-        const events = await withClient(pool, (client) => StreamEventRepository.list(client, streamId))
+        const events = await StreamEventRepository.list(pool, streamId)
         eventIds.push(events[0].id)
       }
 

@@ -10,7 +10,6 @@ import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
-import { withClient } from "../db"
 
 export interface NamingHandlerConfig {
   batchSize?: number
@@ -94,9 +93,7 @@ export class NamingHandler implements OutboxHandler {
   private async processEvents(): Promise<void> {
     await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
       // Fetch batch of events
-      const events = await withClient(this.db, (client) =>
-        OutboxRepository.fetchAfterId(client, cursor, this.batchSize)
-      )
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
 
       if (events.length === 0) {
         return { status: "no_events" }
@@ -113,7 +110,7 @@ export class NamingHandler implements OutboxHandler {
             continue
           }
 
-          const payload = await parseMessageCreatedPayload(event.payload, this.db)
+          const payload = parseMessageCreatedPayload(event.payload)
           if (!payload) {
             logger.debug({ eventId: event.id.toString() }, "NamingHandler: malformed event, skipping")
             lastProcessedId = event.id
@@ -123,7 +120,7 @@ export class NamingHandler implements OutboxHandler {
           const { streamId, event: messageEvent } = payload
           const isAgentMessage = messageEvent.actorType !== AuthorTypes.USER
 
-          const stream = await withClient(this.db, (client) => StreamRepository.findById(client, streamId))
+          const stream = await StreamRepository.findById(this.db, streamId)
           if (!stream) {
             logger.warn({ streamId }, "NamingHandler: stream not found")
             lastProcessedId = event.id
