@@ -12,7 +12,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test"
 import { Pool } from "pg"
 import { withTransaction } from "./setup"
-import { UserRepository } from "../../src/repositories/user-repository"
+import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamRepository } from "../../src/repositories/stream-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"

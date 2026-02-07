@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../db"
+import { withClient, withTransaction } from "../db"
 import {
   WorkspaceRepository,
   Workspace,
@@ -7,9 +7,10 @@ import {
   OutboxRepository,
   EmojiUsageRepository,
 } from "../repositories"
-import { UserRepository, User } from "../repositories/user-repository"
+import { MemberRepository, Member } from "../repositories/member-repository"
+import { UserRepository, User } from "../auth/user-repository"
 import { PersonaRepository, Persona } from "../repositories/persona-repository"
-import { workspaceId } from "../lib/id"
+import { workspaceId, memberId as generateMemberId } from "../lib/id"
 import { generateUniqueSlug } from "../lib/slug"
 import { serializeBigInt } from "../lib/serialization"
 
@@ -45,8 +46,19 @@ export class WorkspaceService {
         createdBy: params.createdBy,
       })
 
-      // Add creator as owner
-      await WorkspaceRepository.addMember(client, id, params.createdBy, "owner")
+      // Add creator as owner — generate member ID and slug
+      const user = await UserRepository.findById(client, params.createdBy)
+      const memberSlug = user
+        ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, id, s))
+        : `member-${generateMemberId().slice(7, 15)}`
+
+      await WorkspaceRepository.addMember(client, {
+        id: generateMemberId(),
+        workspaceId: id,
+        userId: params.createdBy,
+        slug: memberSlug,
+        role: "owner",
+      })
 
       return workspace
     })
@@ -58,13 +70,25 @@ export class WorkspaceService {
     role: WorkspaceMember["role"] = "member"
   ): Promise<WorkspaceMember> {
     return withTransaction(this.pool, async (client) => {
-      const member = await WorkspaceRepository.addMember(client, workspaceId, userId, role)
-
       const user = await UserRepository.findById(client, userId)
-      if (user) {
+      const memberSlug = user
+        ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
+        : `member-${generateMemberId().slice(7, 15)}`
+
+      const member = await WorkspaceRepository.addMember(client, {
+        id: generateMemberId(),
+        workspaceId,
+        userId,
+        slug: memberSlug,
+        role,
+      })
+
+      // Look up full member for outbox event
+      const fullMember = await MemberRepository.findById(client, member.id)
+      if (fullMember) {
         await OutboxRepository.insert(client, "workspace_member:added", {
           workspaceId,
-          user: serializeBigInt(user),
+          member: serializeBigInt(fullMember),
         })
       }
 
@@ -72,13 +96,13 @@ export class WorkspaceService {
     })
   }
 
-  async removeMember(workspaceId: string, userId: string): Promise<void> {
+  async removeMember(workspaceId: string, memberId: string): Promise<void> {
     return withTransaction(this.pool, async (client) => {
-      await WorkspaceRepository.removeMember(client, workspaceId, userId)
+      await WorkspaceRepository.removeMemberById(client, workspaceId, memberId)
 
       await OutboxRepository.insert(client, "workspace_member:removed", {
         workspaceId,
-        userId,
+        memberId,
       })
     })
   }
@@ -101,7 +125,7 @@ export class WorkspaceService {
     return PersonaRepository.listForWorkspace(this.pool, workspaceId)
   }
 
-  async getEmojiWeights(workspaceId: string, userId: string): Promise<Record<string, number>> {
-    return EmojiUsageRepository.getWeights(this.pool, workspaceId, userId)
+  async getEmojiWeights(workspaceId: string, memberId: string): Promise<Record<string, number>> {
+    return withClient(this.pool, (client) => EmojiUsageRepository.getWeights(client, workspaceId, memberId))
   }
 }

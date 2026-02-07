@@ -78,7 +78,7 @@ export class SimulateCommand implements Command {
   constructor(private deps: SimulateCommandDeps) {}
 
   async execute(ctx: CommandContext): Promise<CommandResult> {
-    const { args, streamId, workspaceId, userId, commandId } = ctx
+    const { args, streamId, workspaceId, memberId, commandId } = ctx
 
     if (!args.trim()) {
       return {
@@ -134,7 +134,7 @@ export class SimulateCommand implements Command {
     const result = await this.deps.simulationAgent.run({
       streamId,
       workspaceId,
-      userId,
+      memberId,
       personas: params.personas,
       topic: params.topic,
       turns: params.turns,

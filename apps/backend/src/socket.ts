@@ -1,12 +1,12 @@
 import type { Server, Socket } from "socket.io"
 import { parseCookies } from "./lib/cookies"
-import type { AuthService } from "./services/auth-service"
-import type { UserService } from "./services/user-service"
+import type { AuthService } from "./auth/auth-service"
+import type { UserService } from "./auth/user-service"
 import type { StreamService } from "./services/stream-service"
 import type { WorkspaceService } from "./services/workspace-service"
 import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./repositories/agent-session-repository"
-import { StreamMemberRepository } from "./repositories/stream-member-repository"
+import { MemberRepository } from "./repositories/member-repository"
 import { logger } from "./lib/logger"
 import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/metrics"
 
@@ -131,8 +131,9 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       const streamMatch = room.match(/^ws:([^:]+):stream:(.+)$/)
       if (streamMatch) {
         const [, wsId, streamId] = streamMatch
-        const isMember = await streamService.isMember(streamId, userId)
-        if (!isMember) {
+        // Resolve user → member for stream membership check
+        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
+        if (!member || !(await streamService.isMember(streamId, member.id))) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           return
@@ -158,8 +159,9 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           return
         }
-        const isMember = await StreamMemberRepository.isMember(pool, session.streamId, userId)
-        if (!isMember) {
+        // Resolve user → member for stream membership check
+        const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
+        if (!member || !(await streamService.isMember(session.streamId, member.id))) {
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
           return

@@ -11,7 +11,7 @@
 
 import type { Querier } from "../../db"
 import { StreamRepository } from "../../repositories/stream-repository"
-import { UserRepository } from "../../repositories/user-repository"
+import { MemberRepository } from "../../repositories/member-repository"
 import { logger } from "../../lib/logger"
 
 /**
@@ -27,10 +27,10 @@ function isStreamId(value: string): boolean {
 }
 
 /**
- * Check if a string looks like a user ID (starts with usr_ prefix).
+ * Check if a string looks like a member ID (starts with member_ prefix).
  */
-function isUserId(value: string): boolean {
-  return value.startsWith("usr_")
+function isMemberId(value: string): boolean {
+  return value.startsWith("member_")
 }
 
 /**
@@ -42,10 +42,10 @@ function normalizeStreamRef(value: string): string {
 }
 
 /**
- * Strip common prefixes from user references.
+ * Strip common prefixes from member references.
  * "@kristoffer-remback" -> "kristoffer-remback"
  */
-function normalizeUserRef(value: string): string {
+function normalizeMemberRef(value: string): string {
   return value.replace(/^@/, "").trim()
 }
 
@@ -105,20 +105,20 @@ export async function resolveStreamIdentifier(
 }
 
 /**
- * Resolve a user identifier to their ID.
+ * Resolve a member identifier to their ID.
  *
  * @param db - Database client
  * @param workspaceId - Workspace to scope the lookup to
- * @param identifier - User ID, slug, or @slug
- * @returns The resolved user ID or an error reason
+ * @param identifier - Member ID, slug, or @slug
+ * @returns The resolved member ID or an error reason
  *
  * @example
- * // All of these should resolve to the same user:
- * resolveUserIdentifier(db, workspaceId, "usr_01KEM8751NC7E01NTKF00A47BM")
- * resolveUserIdentifier(db, workspaceId, "kristoffer-remback")
- * resolveUserIdentifier(db, workspaceId, "@kristoffer-remback")
+ * // All of these should resolve to the same member:
+ * resolveMemberIdentifier(db, workspaceId, "member_01KEM8751NC7E01NTKF00A47BM")
+ * resolveMemberIdentifier(db, workspaceId, "kristoffer-remback")
+ * resolveMemberIdentifier(db, workspaceId, "@kristoffer-remback")
  */
-export async function resolveUserIdentifier(
+export async function resolveMemberIdentifier(
   db: Querier,
   workspaceId: string,
   identifier: string
@@ -129,31 +129,25 @@ export async function resolveUserIdentifier(
     return { resolved: false, reason: "Empty identifier" }
   }
 
-  // If it looks like an ID, validate it exists in this workspace
-  if (isUserId(trimmed)) {
-    // For ID lookups, verify workspace membership
-    const user = await UserRepository.findByIdInWorkspace(db, workspaceId, trimmed)
-    if (!user) {
-      // Try global lookup to give better error message
-      const globalUser = await UserRepository.findById(db, trimmed)
-      if (globalUser) {
-        return { resolved: false, reason: `User exists but is not a member of this workspace: ${trimmed}` }
-      }
-      return { resolved: false, reason: `No user found with ID: ${trimmed}` }
+  // If it looks like a member ID, validate it exists in this workspace
+  if (isMemberId(trimmed)) {
+    const member = await MemberRepository.findById(db, trimmed)
+    if (!member || member.workspaceId !== workspaceId) {
+      return { resolved: false, reason: `No member found with ID: ${trimmed}` }
     }
     return { resolved: true, id: trimmed }
   }
 
   // Otherwise, treat as slug (strip @ prefix if present)
-  const slug = normalizeUserRef(trimmed)
+  const slug = normalizeMemberRef(trimmed)
 
-  const user = await UserRepository.findBySlug(db, workspaceId, slug)
+  const member = await MemberRepository.findBySlug(db, workspaceId, slug)
 
-  if (!user) {
-    return { resolved: false, reason: `No user found with slug: ${slug}` }
+  if (!member) {
+    return { resolved: false, reason: `No member found with slug: ${slug}` }
   }
 
-  logger.debug({ identifier, resolvedId: user.id, slug }, "Resolved user identifier")
+  logger.debug({ identifier, resolvedId: member.id, slug }, "Resolved member identifier")
 
-  return { resolved: true, id: user.id }
+  return { resolved: true, id: member.id }
 }

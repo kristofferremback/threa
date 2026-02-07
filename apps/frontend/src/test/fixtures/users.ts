@@ -7,10 +7,7 @@ export function createMockUser(overrides: Partial<User> & { id: string }): User 
   return {
     email: `${overrides.id}@test.com`,
     name: "Test User",
-    slug: overrides.id.replace("user_", ""),
     workosUserId: null,
-    timezone: null,
-    locale: null,
     createdAt: "2025-01-01T00:00:00Z",
     updatedAt: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -20,10 +17,15 @@ export function createMockUser(overrides: Partial<User> & { id: string }): User 
 /**
  * Factory for creating mock WorkspaceMember objects.
  */
-export function createMockMember(overrides: Partial<WorkspaceMember> & { userId: string }): WorkspaceMember {
+export function createMockMember(
+  overrides: Partial<WorkspaceMember> & { id: string; userId: string }
+): WorkspaceMember {
   return {
     workspaceId: "workspace_1",
     role: "member",
+    slug: overrides.userId.replace("user_", ""),
+    timezone: null,
+    locale: null,
     joinedAt: "2025-01-01T00:00:00Z",
     ...overrides,
   }
@@ -33,9 +35,9 @@ export function createMockMember(overrides: Partial<WorkspaceMember> & { userId:
  * Pre-built mock users for common test scenarios.
  */
 export const mockUsers = {
-  martin: createMockUser({ id: "user_1", name: "Martin", slug: "martin" }),
-  kate: createMockUser({ id: "user_2", name: "Kate", slug: "kate" }),
-  alice: createMockUser({ id: "user_3", name: "Alice", slug: "alice" }),
+  martin: createMockUser({ id: "user_1", name: "Martin" }),
+  kate: createMockUser({ id: "user_2", name: "Kate" }),
+  alice: createMockUser({ id: "user_3", name: "Alice" }),
 }
 
 /**
@@ -47,9 +49,9 @@ export const mockUsersList: User[] = Object.values(mockUsers)
  * Pre-built mock workspace members.
  */
 export const mockMembers = {
-  martin: createMockMember({ userId: "user_1", role: "admin" }),
-  kate: createMockMember({ userId: "user_2", role: "member" }),
-  alice: createMockMember({ userId: "user_3", role: "member" }),
+  martin: createMockMember({ id: "member_1", userId: "user_1", role: "admin", slug: "martin" }),
+  kate: createMockMember({ id: "member_2", userId: "user_2", role: "member", slug: "kate" }),
+  alice: createMockMember({ id: "member_3", userId: "user_3", role: "member", slug: "alice" }),
 }
 
 /**

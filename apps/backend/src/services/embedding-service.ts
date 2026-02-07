@@ -9,7 +9,7 @@ export interface EmbeddingServiceConfig {
 /** Context for cost tracking and telemetry */
 export interface EmbeddingContext {
   workspaceId: string
-  userId?: string
+  memberId?: string
   /** Custom function ID for telemetry (e.g., "search-query", "message-embedding") */
   functionId?: string
 }
@@ -38,7 +38,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
    */
   async embed(text: string, context?: EmbeddingContext): Promise<number[]> {
     const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, userId: context.userId, origin: "system" }
+      ? { workspaceId: context.workspaceId, memberId: context.memberId, origin: "system" }
       : undefined
 
     const { value } = await this.ai.embed({
@@ -59,7 +59,7 @@ export class EmbeddingService implements EmbeddingServiceLike {
     }
 
     const costContext: CostContext | undefined = context
-      ? { workspaceId: context.workspaceId, userId: context.userId, origin: "system" }
+      ? { workspaceId: context.workspaceId, memberId: context.memberId, origin: "system" }
       : undefined
 
     const { value } = await this.ai.embedMany({

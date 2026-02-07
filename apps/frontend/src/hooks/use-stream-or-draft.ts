@@ -248,7 +248,7 @@ function useRealStream(workspaceId: string, streamId: string, enabled: boolean):
           contentMarkdown,
         },
         actorId: user?.id ?? null,
-        actorType: "user",
+        actorType: "member",
         createdAt: now,
       }
 

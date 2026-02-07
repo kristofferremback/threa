@@ -161,7 +161,7 @@ async function setupTestData(
   if (input.conversationHistory && input.conversationHistory.length > 0) {
     for (const msg of input.conversationHistory) {
       const authorId = msg.role === "user" ? ctx.userId : testPersonaId
-      const authorType = msg.role === "user" ? AuthorTypes.USER : AuthorTypes.PERSONA
+      const authorType = msg.role === "user" ? AuthorTypes.MEMBER : AuthorTypes.PERSONA
       await eventService.createMessage({
         workspaceId: ctx.workspaceId,
         streamId: testStreamId,
@@ -178,7 +178,7 @@ async function setupTestData(
     workspaceId: ctx.workspaceId,
     streamId: testStreamId,
     authorId: ctx.userId,
-    authorType: AuthorTypes.USER,
+    authorType: AuthorTypes.MEMBER,
     contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })

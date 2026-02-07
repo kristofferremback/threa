@@ -77,8 +77,8 @@ export interface GenerateResponseParams {
   enabledTools: string[] | null
   /** Workspace ID for cost tracking - required for cost attribution */
   workspaceId: string
-  /** User ID who invoked this response - for cost attribution to the human user */
-  invokingUserId?: string
+  /** Member ID who invoked this response - for cost attribution to the human member */
+  invokingMemberId?: string
   /** Callback to run the researcher for workspace knowledge retrieval */
   runResearcher?: () => Promise<import("./researcher").ResearcherResult>
 }
@@ -162,7 +162,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
       lastProcessedSequence,
       enabledTools,
       workspaceId,
-      invokingUserId,
+      invokingMemberId,
       runResearcher,
     } = params
 
@@ -316,7 +316,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
               ...getCostTrackingCallbacks({
                 costRecorder,
                 workspaceId,
-                userId: invokingUserId,
+                memberId: invokingMemberId,
                 sessionId,
                 functionId: "companion-response",
                 origin: "user",

@@ -26,8 +26,8 @@ const mockMessages = [
   {
     id: "msg_1",
     content: "Hello, can you help me with something?",
-    authorType: "user",
-    authorId: "user_123",
+    authorType: "member",
+    authorId: "member_123",
     createdAt: new Date("2024-01-01T10:00:00Z"),
   },
   {

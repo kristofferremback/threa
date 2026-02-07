@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useAIUsage, useAIBudget, useUpdateAIBudget, useWorkspaceBootstrap } from "@/hooks"
-import type { UpdateAIBudgetInput, AIUsageByUser } from "@threa/types"
+import type { UpdateAIBudgetInput, AIUsageByMember } from "@threa/types"
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -166,31 +166,30 @@ function SystemUsageCard({
 }
 
 function AssistantUsageCard({
-  byUser,
-  userNames,
+  byMember,
+  memberNames,
   totalCost,
   isLoading,
 }: {
-  byUser: AIUsageByUser[]
-  userNames: Map<string, string>
+  byMember: AIUsageByMember[]
+  memberNames: Map<string, string>
   totalCost: number
   isLoading: boolean
 }) {
   const items = useMemo(() => {
-    // Filter to only user-attributed usage (agent invocations)
-    const userUsage = byUser.filter((u) => u.userId !== null)
-    const maxCost = Math.max(...userUsage.map((u) => u.totalCostUsd), 0.0001)
+    const memberUsage = byMember.filter((u) => u.memberId !== null)
+    const maxCost = Math.max(...memberUsage.map((u) => u.totalCostUsd), 0.0001)
 
-    return userUsage.map((u) => ({
-      label: userNames.get(u.userId!) ?? "Unknown User",
+    return memberUsage.map((u) => ({
+      label: memberNames.get(u.memberId!) ?? "Unknown Member",
       cost: u.totalCostUsd,
       percentage: (u.totalCostUsd / maxCost) * 100,
     }))
-  }, [byUser, userNames])
+  }, [byMember, memberNames])
 
   const assistantTotal = useMemo(() => {
-    return byUser.filter((u) => u.userId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
-  }, [byUser])
+    return byMember.filter((u) => u.memberId !== null).reduce((sum, u) => sum + u.totalCostUsd, 0)
+  }, [byMember])
 
   if (isLoading) {
     return (
@@ -440,14 +439,16 @@ export function AIUsageAdminPage() {
   const { data: usage, isLoading: usageLoading } = useAIUsage(workspaceId ?? "")
   const { data: budget, isLoading: budgetLoading } = useAIBudget(workspaceId ?? "")
 
-  // Build user name lookup map
-  const userNames = useMemo(() => {
+  // Build member name lookup map (memberId → display name via users)
+  const memberNames = useMemo(() => {
     const map = new Map<string, string>()
-    for (const user of bootstrap?.users ?? []) {
-      map.set(user.id, user.name || user.email || "Unknown")
+    const userMap = new Map((bootstrap?.users ?? []).map((u) => [u.id, u]))
+    for (const member of bootstrap?.members ?? []) {
+      const user = userMap.get(member.userId)
+      map.set(member.id, user?.name || user?.email || member.slug)
     }
     return map
-  }, [bootstrap?.users])
+  }, [bootstrap?.members, bootstrap?.users])
 
   // Get system usage from byOrigin data
   const systemCost = useMemo(() => {
@@ -489,8 +490,8 @@ export function AIUsageAdminPage() {
               isLoading={usageLoading}
             />
             <AssistantUsageCard
-              byUser={usage?.byUser ?? []}
-              userNames={userNames}
+              byMember={usage?.byMember ?? []}
+              memberNames={memberNames}
               totalCost={usage?.total.totalCostUsd ?? 0}
               isLoading={usageLoading}
             />

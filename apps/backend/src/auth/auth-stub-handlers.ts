@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express"
-import type { StubAuthService } from "../services/auth-service.stub"
-import type { UserService } from "../services/user-service"
+import type { StubAuthService } from "./auth-service.stub"
+import type { UserService } from "./user-service"
 import type { WorkspaceService } from "../services/workspace-service"
 import type { StreamService } from "../services/stream-service"
 import { renderLoginPage } from "./auth-stub-login-page"

@@ -21,7 +21,7 @@ export interface StreamEvent {
   eventType: EventType
   payload: unknown
   actorId: string | null
-  actorType: "user" | "persona" | null
+  actorType: "member" | "persona" | null
   createdAt: Date
 }
 
@@ -31,7 +31,7 @@ export interface InsertEventParams {
   eventType: EventType
   payload: unknown
   actorId?: string
-  actorType?: "user" | "persona"
+  actorType?: "member" | "persona"
 }
 
 function mapRowToEvent(row: StreamEventRow): StreamEvent {
@@ -42,7 +42,7 @@ function mapRowToEvent(row: StreamEventRow): StreamEvent {
     eventType: row.event_type as EventType,
     payload: row.payload,
     actorId: row.actor_id,
-    actorType: row.actor_type as "user" | "persona" | null,
+    actorType: row.actor_type as "member" | "persona" | null,
     createdAt: row.created_at,
   }
 }
@@ -157,14 +157,14 @@ export const StreamEventRepository = {
   },
 
   /**
-   * Get the latest sequence number for USER messages only.
-   * Used to check if new user messages arrived while excluding persona responses.
+   * Get the latest sequence number for member messages only.
+   * Used to check if new member messages arrived while excluding persona responses.
    */
-  async getLatestUserMessageSequence(db: Querier, streamId: string): Promise<bigint | null> {
+  async getLatestMemberMessageSequence(db: Querier, streamId: string): Promise<bigint | null> {
     const result = await db.query<{ sequence: string }>(sql`
       SELECT sequence FROM stream_events
       WHERE stream_id = ${streamId}
-        AND actor_type = 'user'
+        AND actor_type = 'member'
       ORDER BY sequence DESC
       LIMIT 1
     `)

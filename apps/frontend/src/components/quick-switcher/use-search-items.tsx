@@ -55,13 +55,13 @@ export function useSearchItems(context: ModeContext): ModeResult {
   // Parse filters from query string (single source of truth)
   const { filters: parsedFilters, text: searchText } = useMemo(() => parseSearchQuery(query), [query])
 
-  // Resolve slug to user ID
+  // Resolve slug to member ID (slugs live on WorkspaceMember, not User)
   const resolveUserSlug = useCallback(
     (slug: string): string | null => {
-      const user = users.find((u) => u.slug === slug)
-      return user?.id ?? null
+      const member = members.find((m) => m.slug === slug)
+      return member?.id ?? null
     },
-    [users]
+    [members]
   )
 
   // Resolve slug to stream ID

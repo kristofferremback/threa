@@ -20,6 +20,8 @@ import { logger } from "./logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
+import { withClient } from "../db"
+import { MemberRepository } from "../repositories/member-repository"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number
@@ -105,7 +107,7 @@ export class BroadcastHandler implements OutboxHandler {
 
       try {
         for (const event of events) {
-          this.broadcastEvent(event)
+          await this.broadcastEvent(event)
           lastProcessedId = event.id
         }
 
@@ -122,10 +124,11 @@ export class BroadcastHandler implements OutboxHandler {
     })
   }
 
-  private broadcastEvent(event: OutboxEvent): void {
+  private async broadcastEvent(event: OutboxEvent): Promise<void> {
     const { workspaceId } = event.payload
 
     // Author-scoped events: only emit to the author's sockets
+    // authorId is a memberId — resolve to userId for socket registry lookup
     if (isAuthorScopedEvent(event)) {
       const payload = event.payload as
         | CommandDispatchedOutboxPayload
@@ -136,12 +139,20 @@ export class BroadcastHandler implements OutboxHandler {
         | UserPreferencesUpdatedOutboxPayload
       const { authorId } = payload
 
-      // O(1) lookup via in-memory registry instead of filtering all sockets in room
-      const sockets = this.userSocketRegistry.getSockets(authorId)
+      const member = await MemberRepository.findById(this.db, authorId)
+      if (!member) {
+        logger.warn({ eventType: event.eventType, authorId }, "Cannot broadcast author-scoped event: member not found")
+        return
+      }
+
+      const sockets = this.userSocketRegistry.getSockets(member.userId)
       for (const socket of sockets) {
         socket.emit(event.eventType, event.payload)
       }
-      logger.debug({ eventType: event.eventType, authorId, emitted: sockets.length }, "Broadcast author-scoped event")
+      logger.debug(
+        { eventType: event.eventType, authorId, userId: member.userId, emitted: sockets.length },
+        "Broadcast author-scoped event"
+      )
       return
     }
 

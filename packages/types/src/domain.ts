@@ -39,10 +39,7 @@ export interface User {
   id: string
   email: string
   name: string
-  slug: string
   workosUserId: string | null
-  timezone: string | null
-  locale: string | null
   createdAt: string
   updatedAt: string
 }
@@ -57,9 +54,13 @@ export interface Workspace {
 }
 
 export interface WorkspaceMember {
+  id: string
   workspaceId: string
   userId: string
   role: WorkspaceMemberRole
+  slug: string
+  timezone: string | null
+  locale: string | null
   joinedAt: string
 }
 
@@ -97,7 +98,7 @@ export interface StreamWithPreview extends Stream {
 
 export interface StreamMember {
   streamId: string
-  userId: string
+  memberId: string
   pinned: boolean
   pinnedAt: string | null
   muted: boolean

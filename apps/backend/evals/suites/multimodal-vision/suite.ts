@@ -178,7 +178,7 @@ async function setupTestData(
     workspaceId: ctx.workspaceId,
     streamId: testStreamId,
     authorId: ctx.userId,
-    authorType: AuthorTypes.USER,
+    authorType: AuthorTypes.MEMBER,
     contentJson: parseMarkdown(input.message),
     contentMarkdown: input.message,
   })

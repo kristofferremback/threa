@@ -59,7 +59,7 @@ export function parseMessageCreatedPayload(payload: unknown): NormalizedMessageC
         event: {
           id: (event.id as string) ?? "",
           sequence: (event.sequence as string) ?? "0",
-          actorType: (event.actorType as AuthorType) ?? AuthorTypes.USER,
+          actorType: (event.actorType as AuthorType) ?? AuthorTypes.MEMBER,
           actorId: (event.actorId as string | null) ?? null,
           payload: {
             messageId: eventPayload.messageId,

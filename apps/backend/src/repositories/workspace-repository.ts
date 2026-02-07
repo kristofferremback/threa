@@ -1,4 +1,5 @@
 import { PoolClient } from "pg"
+import type { Querier } from "../db"
 import { sql } from "../db"
 
 // Internal row type (snake_case, not exported)
@@ -12,9 +13,13 @@ interface WorkspaceRow {
 }
 
 interface WorkspaceMemberRow {
+  id: string
   workspace_id: string
   user_id: string
   role: string
+  slug: string
+  timezone: string | null
+  locale: string | null
   joined_at: Date
 }
 
@@ -29,9 +34,13 @@ export interface Workspace {
 }
 
 export interface WorkspaceMember {
+  id: string
   workspaceId: string
   userId: string
   role: "owner" | "admin" | "member"
+  slug: string
+  timezone: string | null
+  locale: string | null
   joinedAt: Date
 }
 
@@ -55,15 +64,19 @@ function mapRowToWorkspace(row: WorkspaceRow): Workspace {
 
 function mapRowToMember(row: WorkspaceMemberRow): WorkspaceMember {
   return {
+    id: row.id,
     workspaceId: row.workspace_id,
     userId: row.user_id,
     role: row.role as WorkspaceMember["role"],
+    slug: row.slug,
+    timezone: row.timezone,
+    locale: row.locale,
     joinedAt: row.joined_at,
   }
 }
 
 export const WorkspaceRepository = {
-  async findById(client: PoolClient, id: string): Promise<Workspace | null> {
+  async findById(client: Querier, id: string): Promise<Workspace | null> {
     const result = await client.query<WorkspaceRow>(sql`
       SELECT id, name, slug, created_by, created_at, updated_at
       FROM workspaces WHERE id = ${id}
@@ -101,14 +114,20 @@ export const WorkspaceRepository = {
 
   async addMember(
     client: PoolClient,
-    workspaceId: string,
-    userId: string,
-    role: WorkspaceMember["role"] = "member"
+    params: {
+      id: string
+      workspaceId: string
+      userId: string
+      slug: string
+      role?: WorkspaceMember["role"]
+      timezone?: string
+      locale?: string
+    }
   ): Promise<WorkspaceMember> {
     const result = await client.query<WorkspaceMemberRow>(sql`
-      INSERT INTO workspace_members (workspace_id, user_id, role)
-      VALUES (${workspaceId}, ${userId}, ${role})
-      RETURNING workspace_id, user_id, role, joined_at
+      INSERT INTO workspace_members (id, workspace_id, user_id, role, slug, timezone, locale)
+      VALUES (${params.id}, ${params.workspaceId}, ${params.userId}, ${params.role ?? "member"}, ${params.slug}, ${params.timezone ?? null}, ${params.locale ?? null})
+      RETURNING id, workspace_id, user_id, role, slug, timezone, locale, joined_at
     `)
     return mapRowToMember(result.rows[0])
   },
@@ -120,9 +139,16 @@ export const WorkspaceRepository = {
     `)
   },
 
+  async removeMemberById(client: PoolClient, workspaceId: string, memberId: string): Promise<void> {
+    await client.query(sql`
+      DELETE FROM workspace_members
+      WHERE workspace_id = ${workspaceId} AND id = ${memberId}
+    `)
+  },
+
   async listMembers(client: PoolClient, workspaceId: string): Promise<WorkspaceMember[]> {
     const result = await client.query<WorkspaceMemberRow>(sql`
-      SELECT workspace_id, user_id, role, joined_at
+      SELECT id, workspace_id, user_id, role, slug, timezone, locale, joined_at
       FROM workspace_members
       WHERE workspace_id = ${workspaceId}
       ORDER BY joined_at
@@ -141,6 +167,13 @@ export const WorkspaceRepository = {
   async slugExists(client: PoolClient, slug: string): Promise<boolean> {
     const result = await client.query(sql`
       SELECT 1 FROM workspaces WHERE slug = ${slug}
+    `)
+    return result.rows.length > 0
+  },
+
+  async memberSlugExists(client: PoolClient, workspaceId: string, slug: string): Promise<boolean> {
+    const result = await client.query(sql`
+      SELECT 1 FROM workspace_members WHERE workspace_id = ${workspaceId} AND slug = ${slug}
     `)
     return result.rows.length > 0
   },

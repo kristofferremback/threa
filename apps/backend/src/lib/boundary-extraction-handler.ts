@@ -104,7 +104,7 @@ export class BoundaryExtractionHandler implements OutboxHandler {
           const { streamId, workspaceId, event: messageEvent } = payload
 
           // Only process user messages
-          if (messageEvent.actorType !== AuthorTypes.USER) {
+          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
             lastProcessedId = event.id
             continue
           }

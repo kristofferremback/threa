@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTestTransaction } from "./setup"
-import { UserRepository } from "../../src/repositories/user-repository"
+import { UserRepository } from "../../src/auth/user-repository"
 import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
 import { StreamService } from "../../src/services/stream-service"
 import { StreamRepository, type Stream } from "../../src/repositories/stream-repository"

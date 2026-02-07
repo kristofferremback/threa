@@ -4,12 +4,12 @@ import type { Message } from "../../repositories/message-repository"
 import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
 import type { PoolClient } from "pg"
 
-const mockFindUsersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
+const mockFindMembersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
 const mockFindPersonasByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
 
-mock.module("../../repositories/user-repository", () => ({
-  UserRepository: {
-    findByIds: mockFindUsersByIds,
+mock.module("../../repositories/member-repository", () => ({
+  MemberRepository: {
+    findByIds: mockFindMembersByIds,
   },
 }))
 
@@ -27,8 +27,8 @@ function createMessage(overrides: Partial<Message> = {}): Message {
     id: "msg_123",
     streamId: "stream_123",
     sequence: 1n,
-    authorId: "user_123",
-    authorType: "user",
+    authorId: "member_123",
+    authorType: "member",
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: contentMarkdown }] }] },
     contentMarkdown,
     replyCount: 0,
@@ -44,10 +44,10 @@ describe("MessageFormatter", () => {
   let formatter: MessageFormatter
 
   beforeEach(() => {
-    mockFindUsersByIds.mockReset()
+    mockFindMembersByIds.mockReset()
     mockFindPersonasByIds.mockReset()
 
-    mockFindUsersByIds.mockResolvedValue([])
+    mockFindMembersByIds.mockResolvedValue([])
     mockFindPersonasByIds.mockResolvedValue([])
 
     formatter = new MessageFormatter()
@@ -57,7 +57,7 @@ describe("MessageFormatter", () => {
     const result = await formatter.formatMessages(mockClient, [])
 
     expect(result).toBe("<messages></messages>")
-    expect(mockFindUsersByIds).not.toHaveBeenCalled()
+    expect(mockFindMembersByIds).not.toHaveBeenCalled()
     expect(mockFindPersonasByIds).not.toHaveBeenCalled()
   })
 
@@ -65,19 +65,19 @@ describe("MessageFormatter", () => {
     const messages = [
       createMessage({
         id: "msg_1",
-        authorId: "user_123",
-        authorType: "user",
+        authorId: "member_123",
+        authorType: "member",
         contentMarkdown: "Hello!",
         createdAt: new Date("2024-01-01T10:00:00Z"),
       }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
     expect(result).toBe(
-      '<messages>\n<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Hello!</message>\n</messages>'
+      '<messages>\n<message authorType="member" authorId="member_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Hello!</message>\n</messages>'
     )
   })
 
@@ -104,7 +104,13 @@ describe("MessageFormatter", () => {
   test("should batch lookup mixed authors efficiently", async () => {
     const createdAt = new Date("2024-01-01T10:00:00Z")
     const messages = [
-      createMessage({ id: "msg_1", authorId: "user_123", authorType: "user", contentMarkdown: "Question?", createdAt }),
+      createMessage({
+        id: "msg_1",
+        authorId: "member_123",
+        authorType: "member",
+        contentMarkdown: "Question?",
+        createdAt,
+      }),
       createMessage({
         id: "msg_2",
         authorId: "persona_456",
@@ -112,23 +118,29 @@ describe("MessageFormatter", () => {
         contentMarkdown: "Answer!",
         createdAt,
       }),
-      createMessage({ id: "msg_3", authorId: "user_123", authorType: "user", contentMarkdown: "Thanks!", createdAt }),
+      createMessage({
+        id: "msg_3",
+        authorId: "member_123",
+        authorType: "member",
+        contentMarkdown: "Thanks!",
+        createdAt,
+      }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
     mockFindPersonasByIds.mockResolvedValue([{ id: "persona_456", name: "Ariadne" }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
     // Verify batch efficiency: only 1 call per author type despite 3 messages
-    expect(mockFindUsersByIds).toHaveBeenCalledWith(mockClient, ["user_123"])
+    expect(mockFindMembersByIds).toHaveBeenCalledWith(mockClient, ["member_123"])
     expect(mockFindPersonasByIds).toHaveBeenCalledWith(mockClient, ["persona_456"])
 
     expect(result).toBe(
       "<messages>\n" +
-        '<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Question?</message>\n' +
+        '<message authorType="member" authorId="member_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Question?</message>\n' +
         '<message authorType="persona" authorId="persona_456" authorName="Ariadne" createdAt="2024-01-01T10:00:00.000Z">Answer!</message>\n' +
-        '<message authorType="user" authorId="user_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Thanks!</message>\n' +
+        '<message authorType="member" authorId="member_123" authorName="Alice" createdAt="2024-01-01T10:00:00.000Z">Thanks!</message>\n' +
         "</messages>"
     )
   })
@@ -137,13 +149,13 @@ describe("MessageFormatter", () => {
     const messages = [
       createMessage({
         id: "msg_1",
-        authorId: "user_deleted",
-        authorType: "user",
+        authorId: "member_deleted",
+        authorType: "member",
         contentMarkdown: "Message from deleted user",
       }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([])
+    mockFindMembersByIds.mockResolvedValue([])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
@@ -157,7 +169,7 @@ describe("MessageFormatter", () => {
       createMessage({ id: "msg_3", contentMarkdown: "Third", createdAt: new Date("2024-01-01T10:00:02Z") }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
@@ -177,7 +189,7 @@ describe("MessageFormatter", () => {
       }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
@@ -192,7 +204,7 @@ describe("MessageFormatter", () => {
       }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
@@ -204,13 +216,13 @@ describe("MessageFormatter", () => {
     const messages = [
       createMessage({
         id: "msg_1",
-        authorId: "user_123",
-        authorType: "user",
+        authorId: "member_123",
+        authorType: "member",
         contentMarkdown: "Hello",
       }),
     ]
 
-    mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: 'Bob "The Builder" Smith' }])
+    mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: 'Bob "The Builder" Smith' }])
 
     const result = await formatter.formatMessages(mockClient, messages)
 
@@ -223,7 +235,7 @@ describe("MessageFormatter", () => {
       const result = await formatter.formatMessagesInline(mockClient, [])
 
       expect(result).toBe("")
-      expect(mockFindUsersByIds).not.toHaveBeenCalled()
+      expect(mockFindMembersByIds).not.toHaveBeenCalled()
       expect(mockFindPersonasByIds).not.toHaveBeenCalled()
     })
 
@@ -231,8 +243,8 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Hello!",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
@@ -245,13 +257,13 @@ describe("MessageFormatter", () => {
         }),
       ]
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
       mockFindPersonasByIds.mockResolvedValue([{ id: "persona_456", name: "Ariadne" }])
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
       expect(result).toBe(
-        "[2024-01-01T10:00:00.000Z] [user] Alice: Hello!\n\n[2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!"
+        "[2024-01-01T10:00:00.000Z] [member] Alice: Hello!\n\n[2024-01-01T10:00:01.000Z] [persona] Ariadne: Hi there!"
       )
     })
 
@@ -259,36 +271,36 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_abc123",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Hello!",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesInline(mockClient, messages, { includeIds: true })
 
-      expect(result).toBe("[ID:msg_abc123] [2024-01-01T10:00:00.000Z] [user] Alice: Hello!")
+      expect(result).toBe("[ID:msg_abc123] [2024-01-01T10:00:00.000Z] [member] Alice: Hello!")
     })
 
     test("should use 'Unknown' for unresolved author IDs", async () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_deleted",
-          authorType: "user",
+          authorId: "member_deleted",
+          authorType: "member",
           contentMarkdown: "Message from deleted user",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
 
-      mockFindUsersByIds.mockResolvedValue([])
+      mockFindMembersByIds.mockResolvedValue([])
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
-      expect(result).toBe("[2024-01-01T10:00:00.000Z] [user] Unknown: Message from deleted user")
+      expect(result).toBe("[2024-01-01T10:00:00.000Z] [member] Unknown: Message from deleted user")
     })
 
     test("should separate messages with double newlines", async () => {
@@ -297,12 +309,12 @@ describe("MessageFormatter", () => {
         createMessage({ id: "msg_2", contentMarkdown: "Second", createdAt: new Date("2024-01-01T10:00:01Z") }),
       ]
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesInline(mockClient, messages)
 
       expect(result).toBe(
-        "[2024-01-01T10:00:00.000Z] [user] Alice: First\n\n[2024-01-01T10:00:01.000Z] [user] Alice: Second"
+        "[2024-01-01T10:00:00.000Z] [member] Alice: First\n\n[2024-01-01T10:00:01.000Z] [member] Alice: Second"
       )
     })
   })
@@ -314,7 +326,7 @@ describe("MessageFormatter", () => {
         workspaceId: "ws_123",
         streamId: "stream_123",
         messageId: "msg_123",
-        uploadedBy: "user_123",
+        uploadedBy: "member_123",
         filename: "image.jpg",
         mimeType: "image/jpeg",
         sizeBytes: 1024,
@@ -337,14 +349,14 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Hello!",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
       ]
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesWithAttachments(mockClient, messages, new Map())
 
@@ -357,8 +369,8 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "What's in this image?",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
@@ -378,7 +390,7 @@ describe("MessageFormatter", () => {
         }),
       ])
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
 
@@ -391,8 +403,8 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Compare these images",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
@@ -422,7 +434,7 @@ describe("MessageFormatter", () => {
         }),
       ])
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
 
@@ -436,8 +448,8 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Check this file",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
@@ -453,7 +465,7 @@ describe("MessageFormatter", () => {
         }),
       ])
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
 
@@ -465,8 +477,8 @@ describe("MessageFormatter", () => {
       const messages = [
         createMessage({
           id: "msg_1",
-          authorId: "user_123",
-          authorType: "user",
+          authorId: "member_123",
+          authorType: "member",
           contentMarkdown: "Look at this",
           createdAt: new Date("2024-01-01T10:00:00Z"),
         }),
@@ -486,7 +498,7 @@ describe("MessageFormatter", () => {
         }),
       ])
 
-      mockFindUsersByIds.mockResolvedValue([{ id: "user_123", name: "Alice" }])
+      mockFindMembersByIds.mockResolvedValue([{ id: "member_123", name: "Alice" }])
 
       const result = await formatter.formatMessagesWithAttachments(mockClient, messages, attachmentsMap)
 

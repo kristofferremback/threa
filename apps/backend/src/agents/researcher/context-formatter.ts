@@ -1,6 +1,6 @@
 import type { Querier } from "../../db"
 import type { Memo } from "../../repositories/memo-repository"
-import { UserRepository } from "../../repositories/user-repository"
+import { MemberRepository } from "../../repositories/member-repository"
 import { PersonaRepository } from "../../repositories/persona-repository"
 import { StreamRepository } from "../../repositories/stream-repository"
 import { formatRelativeDate } from "../../lib/temporal"
@@ -26,7 +26,7 @@ export interface EnrichedMessageResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   authorName: string
   streamName: string
   streamType: string
@@ -96,7 +96,7 @@ function formatMessagesSection(messages: EnrichedMessageResult[]): string {
   const messageEntries = messages
     .map((msg) => {
       const relativeDate = formatRelativeDate(msg.createdAt)
-      const author = msg.authorType === "user" ? `@${msg.authorName}` : msg.authorName
+      const author = msg.authorType === "member" ? `@${msg.authorName}` : msg.authorName
       const content = msg.content.replace(/\s+/g, " ").trim()
 
       return `> **${author}** in _${msg.streamName}_ (${relativeDate}):
@@ -137,7 +137,7 @@ export interface RawMessageSearchResult {
   streamId: string
   content: string
   authorId: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   createdAt: Date
 }
 
@@ -152,36 +152,36 @@ export async function enrichMessageSearchResults(
   if (results.length === 0) return []
 
   // Collect unique IDs for batch lookup
-  const userIds = new Set<string>()
+  const memberIds = new Set<string>()
   const personaIds = new Set<string>()
   const streamIds = new Set<string>()
 
   for (const r of results) {
-    if (r.authorType === "user") {
-      userIds.add(r.authorId)
+    if (r.authorType === "member") {
+      memberIds.add(r.authorId)
     } else {
       personaIds.add(r.authorId)
     }
     streamIds.add(r.streamId)
   }
 
-  // Batch fetch users, personas, streams
-  const [users, personas, streams] = await Promise.all([
-    userIds.size > 0 ? UserRepository.findByIds(db, [...userIds]) : Promise.resolve([]),
+  // Batch fetch members, personas, streams
+  const [members, personas, streams] = await Promise.all([
+    memberIds.size > 0 ? MemberRepository.findByIds(db, [...memberIds]) : Promise.resolve([]),
     personaIds.size > 0 ? PersonaRepository.findByIds(db, [...personaIds]) : Promise.resolve([]),
     StreamRepository.findByIds(db, [...streamIds]),
   ])
 
   // Build lookup maps
-  const userMap = new Map(users.map((u) => [u.id, u]))
+  const memberMap = new Map(members.map((m) => [m.id, m]))
   const personaMap = new Map(personas.map((p) => [p.id, p]))
   const streamMap = new Map(streams.map((s) => [s.id, s]))
 
   // Enrich results
   return results.map((r) => {
     const authorName =
-      r.authorType === "user"
-        ? (userMap.get(r.authorId)?.name ?? "Unknown")
+      r.authorType === "member"
+        ? (memberMap.get(r.authorId)?.name ?? "Unknown")
         : (personaMap.get(r.authorId)?.name ?? "Assistant")
 
     const stream = streamMap.get(r.streamId)

@@ -59,8 +59,8 @@ export interface ResearcherInput {
   streamId: string
   triggerMessage: Message
   conversationHistory: Message[]
-  invokingUserId: string
-  /** For DMs: all participant user IDs */
+  invokingMemberId: string
+  /** For DMs: all participant member IDs */
   dmParticipantIds?: string[]
 }
 
@@ -135,7 +135,7 @@ export class Researcher {
    */
   async research(input: ResearcherInput): Promise<ResearcherResult> {
     const { pool } = this.deps
-    const { workspaceId, streamId, triggerMessage, invokingUserId, dmParticipantIds } = input
+    const { workspaceId, streamId, triggerMessage, invokingMemberId, dmParticipantIds } = input
 
     // Phase 1: Fetch all setup data with withClient (no transaction, fast reads ~100-200ms)
     const fetchedData = await withClient(pool, async (client) => {
@@ -153,12 +153,12 @@ export class Researcher {
 
       const accessSpec = await computeAgentAccessSpec(client, {
         stream,
-        invokingUserId,
+        invokingMemberId,
       })
 
       // For DMs, we need to pass participant IDs
       const effectiveAccessSpec: AgentAccessSpec =
-        stream.type === "dm" && dmParticipantIds ? { type: "user_union", userIds: dmParticipantIds } : accessSpec
+        stream.type === "dm" && dmParticipantIds ? { type: "member_union", memberIds: dmParticipantIds } : accessSpec
 
       // Get accessible streams for searches
       const accessibleStreamIds = await SearchRepository.getAccessibleStreamsForAgent(
@@ -229,7 +229,7 @@ export class Researcher {
     accessibleStreamIds: string[]
   ): Promise<ResearcherResult> {
     const { ai, configResolver, embeddingService } = this.deps
-    const { workspaceId, triggerMessage, conversationHistory, invokingUserId } = input
+    const { workspaceId, triggerMessage, conversationHistory, invokingMemberId } = input
 
     // Resolve config for researcher
     const config = (await configResolver.resolve(COMPONENT_PATHS.COMPANION_RESEARCHER)) as ResearcherConfig
@@ -266,7 +266,7 @@ export class Researcher {
       workspaceId,
       accessibleStreamIds,
       embeddingService,
-      invokingUserId
+      invokingMemberId
     )
     allMemos = [...allMemos, ...initialResults.memos]
     allMessages = [...allMessages, ...initialResults.messages]
@@ -303,7 +303,7 @@ export class Researcher {
         workspaceId,
         accessibleStreamIds,
         embeddingService,
-        invokingUserId
+        invokingMemberId
       )
 
       // Deduplicate results
@@ -482,7 +482,7 @@ Each query must have:
     workspaceId: string,
     accessibleStreamIds: string[],
     embeddingService: EmbeddingServiceLike,
-    invokingUserId: string
+    invokingMemberId: string
   ): Promise<{
     memos: EnrichedMemoResult[]
     messages: EnrichedMessageResult[]

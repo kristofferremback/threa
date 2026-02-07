@@ -1,5 +1,5 @@
-export { UserRepository } from "./user-repository"
-export type { User, InsertUserParams } from "./user-repository"
+export { MemberRepository } from "./member-repository"
+export type { Member, InsertMemberParams } from "./member-repository"
 
 export { WorkspaceRepository } from "./workspace-repository"
 export type { Workspace, WorkspaceMember, InsertWorkspaceParams } from "./workspace-repository"
@@ -78,7 +78,7 @@ export type {
   UsageSummary,
   ModelBreakdown,
   FunctionBreakdown,
-  UserBreakdown,
+  MemberBreakdown,
   OriginBreakdown,
 } from "./ai-usage-repository"
 

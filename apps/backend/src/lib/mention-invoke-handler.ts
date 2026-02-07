@@ -109,14 +109,14 @@ export class MentionInvokeHandler implements OutboxHandler {
           const { streamId, workspaceId, event: messageEvent } = payload
 
           // Ignore persona messages (avoid infinite loops)
-          if (messageEvent.actorType !== AuthorTypes.USER) {
+          if (messageEvent.actorType !== AuthorTypes.MEMBER) {
             lastProcessedId = event.id
             continue
           }
 
           // Guard against missing actorId
           if (!messageEvent.actorId) {
-            logger.warn({ streamId }, "MentionInvokeHandler: USER message has no actorId, skipping")
+            logger.warn({ streamId }, "MentionInvokeHandler: MEMBER message has no actorId, skipping")
             lastProcessedId = event.id
             continue
           }

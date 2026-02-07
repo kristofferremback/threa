@@ -127,7 +127,7 @@ function ConversationMessages({ workspaceId, conversationId, onMessageClick }: C
 interface MessagePreviewProps {
   message: Message
   workspaceId: string
-  getActorName: (actorId: string | null, actorType: "user" | "persona" | null) => string
+  getActorName: (actorId: string | null, actorType: "member" | "persona" | null) => string
   onMessageClick?: () => void
 }
 

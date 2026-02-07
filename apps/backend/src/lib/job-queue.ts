@@ -76,7 +76,7 @@ export interface MemoBatchProcessJobData {
 export interface SimulationJobData {
   streamId: string
   workspaceId: string
-  userId: string
+  memberId: string
   personas: string[]
   topic: string
   turns: number
@@ -88,7 +88,7 @@ export interface CommandExecuteJobData {
   args: string
   workspaceId: string
   streamId: string
-  userId: string
+  memberId: string
 }
 
 export interface ImageCaptionJobData {

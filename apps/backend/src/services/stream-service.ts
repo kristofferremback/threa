@@ -64,7 +64,7 @@ export class StreamService {
     return StreamRepository.findById(this.pool, id)
   }
 
-  async validateStreamAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream> {
+  async validateStreamAccess(streamId: string, workspaceId: string, memberId: string): Promise<Stream> {
     return withClient(this.pool, async (client) => {
       const stream = await StreamRepository.findById(client, streamId)
 
@@ -81,7 +81,7 @@ export class StreamService {
 
         // Check root stream access: public streams are accessible to all, private require membership
         if (rootStream.visibility !== Visibilities.PUBLIC) {
-          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+          const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
           if (!isRootMember) {
             throw new StreamNotFoundError()
           }
@@ -92,7 +92,7 @@ export class StreamService {
 
       // Non-thread streams: check direct visibility/membership
       if (stream.visibility !== Visibilities.PUBLIC) {
-        const isMember = await StreamMemberRepository.isMember(client, streamId, userId)
+        const isMember = await StreamMemberRepository.isMember(client, streamId, memberId)
         if (!isMember) {
           throw new StreamNotFoundError()
         }
@@ -102,9 +102,9 @@ export class StreamService {
     })
   }
 
-  async getScratchpadsByUser(workspaceId: string, userId: string): Promise<Stream[]> {
+  async getScratchpadsByMember(workspaceId: string, memberId: string): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { userId })
+      const memberships = await StreamMemberRepository.list(client, { memberId })
       const streamIds = memberships.map((m) => m.streamId)
 
       if (streamIds.length === 0) return []
@@ -122,11 +122,11 @@ export class StreamService {
 
   async list(
     workspaceId: string,
-    userId: string,
+    memberId: string,
     filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
   ): Promise<Stream[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { userId })
+      const memberships = await StreamMemberRepository.list(client, { memberId })
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.list(client, workspaceId, {
@@ -143,11 +143,11 @@ export class StreamService {
    */
   async listWithPreviews(
     workspaceId: string,
-    userId: string,
+    memberId: string,
     filters?: { types?: StreamType[]; archiveStatus?: ("active" | "archived")[] }
   ): Promise<StreamWithPreview[]> {
     return withClient(this.pool, async (client) => {
-      const memberships = await StreamMemberRepository.list(client, { userId })
+      const memberships = await StreamMemberRepository.list(client, { memberId })
       const memberStreamIds = memberships.map((m) => m.streamId)
 
       return StreamRepository.listWithPreviews(client, workspaceId, {
@@ -299,7 +299,7 @@ export class StreamService {
       }
 
       // Add parent message author as member so they can participate in the thread
-      if (parentMessage.authorType === "user" && parentMessage.authorId !== params.createdBy) {
+      if (parentMessage.authorType === "member" && parentMessage.authorId !== params.createdBy) {
         const authorIsMember = await StreamMemberRepository.isMember(client, stream.id, parentMessage.authorId)
         if (!authorIsMember) {
           await StreamMemberRepository.insert(client, stream.id, parentMessage.authorId)
@@ -357,7 +357,7 @@ export class StreamService {
             archivedAt: stream.archivedAt,
           },
           actorId: archivedBy,
-          actorType: "user",
+          actorType: "member",
         })
 
         // Notify real-time subscribers
@@ -383,7 +383,7 @@ export class StreamService {
           eventType: "stream_unarchived",
           payload: {},
           actorId: unarchivedBy,
-          actorType: "user",
+          actorType: "member",
         })
 
         // Notify real-time subscribers
@@ -423,7 +423,7 @@ export class StreamService {
   }
 
   // Member operations
-  async addMember(streamId: string, userId: string): Promise<StreamMember> {
+  async addMember(streamId: string, memberId: string): Promise<StreamMember> {
     return withTransaction(this.pool, async (client) => {
       // Get the stream to check if it has a root (is a thread)
       const stream = await StreamRepository.findById(client, streamId)
@@ -431,41 +431,41 @@ export class StreamService {
         throw new StreamNotFoundError()
       }
 
-      // If this is a thread, also add the user to the root stream
+      // If this is a thread, also add the member to the root stream
       if (stream.rootStreamId) {
-        const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+        const isRootMember = await StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
         if (!isRootMember) {
-          await StreamMemberRepository.insert(client, stream.rootStreamId, userId)
+          await StreamMemberRepository.insert(client, stream.rootStreamId, memberId)
         }
       }
 
-      return StreamMemberRepository.insert(client, streamId, userId)
+      return StreamMemberRepository.insert(client, streamId, memberId)
     })
   }
 
-  async removeMember(streamId: string, userId: string): Promise<boolean> {
-    return StreamMemberRepository.delete(this.pool, streamId, userId)
+  async removeMember(streamId: string, memberId: string): Promise<boolean> {
+    return withTransaction(this.pool, (client) => StreamMemberRepository.delete(client, streamId, memberId))
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {
     return StreamMemberRepository.list(this.pool, { streamId })
   }
 
-  async getMembership(streamId: string, userId: string): Promise<StreamMember | null> {
-    return StreamMemberRepository.findByStreamAndUser(this.pool, streamId, userId)
+  async getMembership(streamId: string, memberId: string): Promise<StreamMember | null> {
+    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamAndMember(client, streamId, memberId))
   }
 
-  async getMembershipsBatch(streamIds: string[], userId: string): Promise<StreamMember[]> {
-    return StreamMemberRepository.findByStreamsAndUser(this.pool, streamIds, userId)
+  async getMembershipsBatch(streamIds: string[], memberId: string): Promise<StreamMember[]> {
+    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndMember(client, streamIds, memberId))
   }
 
   // TODO: This is a permission check masquerading as a membership check. "isMember" is
   // misleading because for threads we actually check root stream membership, not direct
   // membership. Should be broken out into a proper authz module (e.g., canParticipate,
   // canRead, canWrite) that encapsulates the permission model cleanly.
-  async isMember(streamId: string, userId: string): Promise<boolean> {
+  async isMember(streamId: string, memberId: string): Promise<boolean> {
     return withClient(this.pool, async (client) => {
-      const directMember = await StreamMemberRepository.isMember(client, streamId, userId)
+      const directMember = await StreamMemberRepository.isMember(client, streamId, memberId)
       if (directMember) {
         return true
       }
@@ -473,33 +473,33 @@ export class StreamService {
       // Threads inherit participation rights from root stream
       const stream = await StreamRepository.findById(client, streamId)
       if (stream?.rootStreamId) {
-        return StreamMemberRepository.isMember(client, stream.rootStreamId, userId)
+        return StreamMemberRepository.isMember(client, stream.rootStreamId, memberId)
       }
 
       return false
     })
   }
 
-  async pinStream(streamId: string, userId: string, pinned: boolean): Promise<StreamMember | null> {
-    return StreamMemberRepository.update(this.pool, streamId, userId, { pinned })
+  async pinStream(streamId: string, memberId: string, pinned: boolean): Promise<StreamMember | null> {
+    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, memberId, { pinned }))
   }
 
-  async muteStream(streamId: string, userId: string, muted: boolean): Promise<StreamMember | null> {
-    return StreamMemberRepository.update(this.pool, streamId, userId, { muted })
+  async muteStream(streamId: string, memberId: string, muted: boolean): Promise<StreamMember | null> {
+    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, memberId, { muted }))
   }
 
   async markAsRead(
     workspaceId: string,
     streamId: string,
-    userId: string,
+    memberId: string,
     eventId: string
   ): Promise<StreamMember | null> {
     return withTransaction(this.pool, async (client) => {
-      const membership = await StreamMemberRepository.update(client, streamId, userId, { lastReadEventId: eventId })
+      const membership = await StreamMemberRepository.update(client, streamId, memberId, { lastReadEventId: eventId })
       if (membership) {
         await OutboxRepository.insert(client, "stream:read", {
           workspaceId,
-          authorId: userId,
+          authorId: memberId,
           streamId,
           lastReadEventId: eventId,
         })
@@ -508,10 +508,10 @@ export class StreamService {
     })
   }
 
-  async markAllAsRead(workspaceId: string, userId: string): Promise<string[]> {
+  async markAllAsRead(workspaceId: string, memberId: string): Promise<string[]> {
     return withTransaction(this.pool, async (client) => {
-      // Get all memberships for this user in this workspace
-      const memberships = await StreamMemberRepository.list(client, { userId })
+      // Get all memberships for this member in this workspace
+      const memberships = await StreamMemberRepository.list(client, { memberId })
 
       // Get all streams in this workspace to filter memberships
       const streams = await StreamRepository.list(client, workspaceId)
@@ -537,7 +537,7 @@ export class StreamService {
 
       // Batch update all memberships in a single query
       if (updatesToApply.size > 0) {
-        await StreamMemberRepository.batchUpdateLastReadEventId(client, userId, updatesToApply)
+        await StreamMemberRepository.batchUpdateLastReadEventId(client, memberId, updatesToApply)
       }
 
       const updatedStreamIds = Array.from(updatesToApply.keys())
@@ -545,7 +545,7 @@ export class StreamService {
       if (updatedStreamIds.length > 0) {
         await OutboxRepository.insert(client, "stream:read_all", {
           workspaceId,
-          authorId: userId,
+          authorId: memberId,
           streamIds: updatedStreamIds,
         })
       }

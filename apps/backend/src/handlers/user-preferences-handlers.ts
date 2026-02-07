@@ -42,15 +42,15 @@ interface Dependencies {
 export function createUserPreferencesHandlers({ userPreferencesService }: Dependencies) {
   return {
     async get(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
-      const preferences = await userPreferencesService.getPreferences(workspaceId, userId)
+      const preferences = await userPreferencesService.getPreferences(workspaceId, memberId)
       res.json({ preferences })
     },
 
     async update(req: Request, res: Response) {
-      const userId = req.userId!
+      const memberId = req.member!.id
       const workspaceId = req.workspaceId!
 
       const result = updatePreferencesSchema.safeParse(req.body)
@@ -61,7 +61,7 @@ export function createUserPreferencesHandlers({ userPreferencesService }: Depend
         })
       }
 
-      const preferences = await userPreferencesService.updatePreferences(workspaceId, userId, result.data)
+      const preferences = await userPreferencesService.updatePreferences(workspaceId, memberId, result.data)
       res.json({ preferences })
     },
   }

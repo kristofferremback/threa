@@ -74,7 +74,7 @@ export interface UpdateStreamParams {
 /** Preview of the last message in a stream for sidebar display */
 export interface LastMessagePreview {
   authorId: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   content: any // ProseMirror JSONContent
   createdAt: Date
 }
@@ -120,7 +120,7 @@ function mapRowToStreamWithPreview(row: StreamWithPreviewRow): StreamWithPreview
     row.last_message_author_id && row.last_message_content && row.last_message_at
       ? {
           authorId: row.last_message_author_id,
-          authorType: row.last_message_author_type as "user" | "persona",
+          authorType: row.last_message_author_type as "member" | "persona",
           content: row.last_message_content,
           createdAt: row.last_message_at,
         }

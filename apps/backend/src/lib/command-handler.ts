@@ -111,7 +111,7 @@ export class CommandHandler implements OutboxHandler {
             args: eventPayload.args,
             workspaceId,
             streamId,
-            userId: authorId,
+            memberId: authorId,
           })
 
           lastProcessedId = event.id
