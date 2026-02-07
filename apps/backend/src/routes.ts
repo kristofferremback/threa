@@ -94,8 +94,10 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Health check endpoint - no auth required
   app.get("/health", debug.health)
 
-  // Debug endpoint - inspect pool internal state
-  app.get("/debug/pool", debug.poolState)
+  // Debug endpoint - only available outside production
+  if (process.env.NODE_ENV !== "production") {
+    app.get("/debug/pool", debug.poolState)
+  }
 
   app.get("/api/auth/login", authRateLimit, authHandlers.login)
   app.all("/api/auth/callback", authRateLimit, authHandlers.callback)
