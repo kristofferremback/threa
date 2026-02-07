@@ -2,6 +2,7 @@ import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
+import { authRateLimit, aiRateLimit, standardRateLimit, relaxedRateLimit } from "./middleware/rate-limit"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
@@ -96,9 +97,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Debug endpoint - inspect pool internal state
   app.get("/debug/pool", debug.poolState)
 
-  app.get("/api/auth/login", authHandlers.login)
-  app.all("/api/auth/callback", authHandlers.callback)
-  app.get("/api/auth/logout", authHandlers.logout)
+  app.get("/api/auth/login", authRateLimit, authHandlers.login)
+  app.all("/api/auth/callback", authRateLimit, authHandlers.callback)
+  app.get("/api/auth/logout", authRateLimit, authHandlers.logout)
 
   if (authService instanceof StubAuthService) {
     const authStub = createAuthStubHandlers({
@@ -120,65 +121,106 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     )
   }
 
-  app.get("/api/auth/me", auth, authHandlers.me)
+  app.get("/api/auth/me", relaxedRateLimit, auth, authHandlers.me)
 
-  app.get("/api/workspaces", auth, workspace.list)
-  app.post("/api/workspaces", auth, workspace.create)
-  app.get("/api/workspaces/:workspaceId", ...authed, workspace.get)
-  app.get("/api/workspaces/:workspaceId/bootstrap", ...authed, workspace.bootstrap)
-  app.get("/api/workspaces/:workspaceId/members", ...authed, workspace.getMembers)
-  app.get("/api/workspaces/:workspaceId/emojis", ...authed, emoji.list)
+  app.get("/api/workspaces", relaxedRateLimit, auth, workspace.list)
+  app.post("/api/workspaces", standardRateLimit, auth, workspace.create)
+  app.get("/api/workspaces/:workspaceId", relaxedRateLimit, ...authed, workspace.get)
+  app.get("/api/workspaces/:workspaceId/bootstrap", relaxedRateLimit, ...authed, workspace.bootstrap)
+  app.get("/api/workspaces/:workspaceId/members", relaxedRateLimit, ...authed, workspace.getMembers)
+  app.get("/api/workspaces/:workspaceId/emojis", relaxedRateLimit, ...authed, emoji.list)
 
   // User preferences
-  app.get("/api/workspaces/:workspaceId/preferences", ...authed, preferences.get)
-  app.patch("/api/workspaces/:workspaceId/preferences", ...authed, preferences.update)
+  app.get("/api/workspaces/:workspaceId/preferences", relaxedRateLimit, ...authed, preferences.get)
+  app.patch("/api/workspaces/:workspaceId/preferences", standardRateLimit, ...authed, preferences.update)
 
-  app.get("/api/workspaces/:workspaceId/streams", ...authed, stream.list)
-  app.post("/api/workspaces/:workspaceId/streams", ...authed, stream.create)
-  app.post("/api/workspaces/:workspaceId/streams/read-all", ...authed, workspace.markAllAsRead)
-  app.get("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.get)
-  app.patch("/api/workspaces/:workspaceId/streams/:streamId", ...authed, stream.update)
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", ...authed, stream.bootstrap)
-  app.patch("/api/workspaces/:workspaceId/streams/:streamId/companion", ...authed, stream.updateCompanionMode)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", ...authed, stream.pin)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", ...authed, stream.mute)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/read", ...authed, stream.markAsRead)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", ...authed, stream.archive)
-  app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", ...authed, stream.unarchive)
+  app.get("/api/workspaces/:workspaceId/streams", relaxedRateLimit, ...authed, stream.list)
+  app.post("/api/workspaces/:workspaceId/streams", standardRateLimit, ...authed, stream.create)
+  app.post("/api/workspaces/:workspaceId/streams/read-all", standardRateLimit, ...authed, workspace.markAllAsRead)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId", relaxedRateLimit, ...authed, stream.get)
+  app.patch("/api/workspaces/:workspaceId/streams/:streamId", standardRateLimit, ...authed, stream.update)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/bootstrap", relaxedRateLimit, ...authed, stream.bootstrap)
+  app.patch(
+    "/api/workspaces/:workspaceId/streams/:streamId/companion",
+    standardRateLimit,
+    ...authed,
+    stream.updateCompanionMode
+  )
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/pin", standardRateLimit, ...authed, stream.pin)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/mute", standardRateLimit, ...authed, stream.mute)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/read", standardRateLimit, ...authed, stream.markAsRead)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/archive", standardRateLimit, ...authed, stream.archive)
+  app.post("/api/workspaces/:workspaceId/streams/:streamId/unarchive", standardRateLimit, ...authed, stream.unarchive)
 
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
+  app.get("/api/workspaces/:workspaceId/streams/:streamId/events", relaxedRateLimit, ...authed, stream.listEvents)
 
-  // Search
-  app.post("/api/workspaces/:workspaceId/search", ...authed, search.search)
+  // Search (triggers AI embeddings)
+  app.post("/api/workspaces/:workspaceId/search", aiRateLimit, ...authed, search.search)
 
-  app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
-  app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
-  app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
-  app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
-  app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
+  // Messages (creation triggers companion AI)
+  app.post("/api/workspaces/:workspaceId/messages", aiRateLimit, ...authed, message.create)
+  app.patch("/api/workspaces/:workspaceId/messages/:messageId", standardRateLimit, ...authed, message.update)
+  app.delete("/api/workspaces/:workspaceId/messages/:messageId", standardRateLimit, ...authed, message.delete)
+  app.post(
+    "/api/workspaces/:workspaceId/messages/:messageId/reactions",
+    standardRateLimit,
+    ...authed,
+    message.addReaction
+  )
+  app.delete(
+    "/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji",
+    standardRateLimit,
+    ...authed,
+    message.removeReaction
+  )
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
-  app.post("/api/workspaces/:workspaceId/attachments", ...authed, upload, attachment.upload)
-  app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
-  app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
+  app.post("/api/workspaces/:workspaceId/attachments", standardRateLimit, ...authed, upload, attachment.upload)
+  app.get(
+    "/api/workspaces/:workspaceId/attachments/:attachmentId/url",
+    relaxedRateLimit,
+    ...authed,
+    attachment.getDownloadUrl
+  )
+  app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", standardRateLimit, ...authed, attachment.delete)
 
   // Conversations
-  app.get("/api/workspaces/:workspaceId/streams/:streamId/conversations", ...authed, conversation.listByStream)
-  app.get("/api/workspaces/:workspaceId/conversations/:conversationId", ...authed, conversation.getById)
-  app.get("/api/workspaces/:workspaceId/conversations/:conversationId/messages", ...authed, conversation.getMessages)
+  app.get(
+    "/api/workspaces/:workspaceId/streams/:streamId/conversations",
+    relaxedRateLimit,
+    ...authed,
+    conversation.listByStream
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/conversations/:conversationId",
+    relaxedRateLimit,
+    ...authed,
+    conversation.getById
+  )
+  app.get(
+    "/api/workspaces/:workspaceId/conversations/:conversationId/messages",
+    relaxedRateLimit,
+    ...authed,
+    conversation.getMessages
+  )
 
-  // Commands
-  app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, command.dispatch)
-  app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
+  // Commands (triggers AI)
+  app.post("/api/workspaces/:workspaceId/commands/dispatch", aiRateLimit, ...authed, command.dispatch)
+  app.get("/api/workspaces/:workspaceId/commands", relaxedRateLimit, ...authed, command.list)
 
   // AI Usage and Budget
-  app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
-  app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
-  app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
+  app.get("/api/workspaces/:workspaceId/ai-usage", relaxedRateLimit, ...authed, aiUsage.getUsage)
+  app.get("/api/workspaces/:workspaceId/ai-usage/recent", relaxedRateLimit, ...authed, aiUsage.getRecentUsage)
+  app.get("/api/workspaces/:workspaceId/ai-budget", relaxedRateLimit, ...authed, aiUsage.getBudget)
+  app.put("/api/workspaces/:workspaceId/ai-budget", standardRateLimit, ...authed, aiUsage.updateBudget)
 
   // Agent Sessions (trace viewing)
-  app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
+  app.get(
+    "/api/workspaces/:workspaceId/agent-sessions/:sessionId",
+    relaxedRateLimit,
+    ...authed,
+    agentSession.getSession
+  )
 
   // Prometheus metrics endpoint (unauthenticated for scraping)
   app.get("/metrics", debug.metrics)
