@@ -31,6 +31,7 @@ export interface S3Config {
 export interface Config {
   port: number
   databaseUrl: string
+  corsAllowedOrigins: string[]
   /** Skip graceful shutdown for immediate termination (dev/test environments) */
   fastShutdown: boolean
   useStubAuth: boolean
@@ -46,9 +47,17 @@ export interface Config {
 export function loadConfig(): Config {
   const useStubAuth = process.env.USE_STUB_AUTH === "true"
   const isProduction = process.env.NODE_ENV === "production"
+  const corsAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
 
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required")
+  }
+
+  if (isProduction && corsAllowedOrigins.length === 0) {
+    throw new Error("CORS_ALLOWED_ORIGINS is required in production")
   }
 
   if (isProduction && useStubAuth) {
@@ -71,6 +80,10 @@ export function loadConfig(): Config {
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
+    corsAllowedOrigins:
+      corsAllowedOrigins.length > 0
+        ? corsAllowedOrigins
+        : ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
     fastShutdown,
     useStubAuth,
     useStubCompanion,

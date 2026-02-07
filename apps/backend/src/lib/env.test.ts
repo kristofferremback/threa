@@ -20,6 +20,7 @@ describe("loadConfig stub auth safety", () => {
     setBaseEnv()
     process.env.NODE_ENV = "production"
     process.env.USE_STUB_AUTH = "true"
+    process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com"
 
     expect(() => loadConfig()).toThrow("USE_STUB_AUTH must be false in production")
   })
@@ -31,5 +32,17 @@ describe("loadConfig stub auth safety", () => {
 
     const config = loadConfig()
     expect(config.useStubAuth).toBe(true)
+  })
+
+  test("requires explicit CORS allowlist in production", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "production"
+    process.env.USE_STUB_AUTH = "false"
+    process.env.WORKOS_API_KEY = "key"
+    process.env.WORKOS_CLIENT_ID = "client"
+    process.env.WORKOS_REDIRECT_URI = "https://app.example.com/callback"
+    process.env.WORKOS_COOKIE_PASSWORD = "password"
+
+    expect(() => loadConfig()).toThrow("CORS_ALLOWED_ORIGINS is required in production")
   })
 })

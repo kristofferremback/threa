@@ -101,6 +101,7 @@ import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/pool-monitor"
 import { AgentSessionMetricsCollector } from "./lib/agent-session-metrics"
+import { createCorsOriginChecker } from "./lib/cors"
 
 export interface ServerInstance {
   server: Server
@@ -287,7 +288,10 @@ export async function startServer(): Promise<ServerInstance> {
   })
   commandRegistry.register(simulateCommand)
 
-  const app = createApp()
+  const app = createApp({
+    corsAllowedOrigins: config.corsAllowedOrigins,
+    isProduction: process.env.NODE_ENV === "production",
+  })
 
   registerRoutes(app, {
     pool,
@@ -313,7 +317,7 @@ export async function startServer(): Promise<ServerInstance> {
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: true,
+      origin: createCorsOriginChecker(config.corsAllowedOrigins),
       credentials: true,
     },
   })
