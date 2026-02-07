@@ -9,7 +9,6 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { withClient } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { StreamPersonaParticipantRepository } from "../../src/repositories/stream-persona-participant-repository"
 import { SearchRepository } from "../../src/repositories/search-repository"
@@ -63,14 +62,12 @@ describe("Stream Persona Participants", () => {
       })
 
       // Verify participation was recorded
-      await withClient(pool, async (client) => {
-        const hasParticipated = await StreamPersonaParticipantRepository.hasParticipated(
-          client,
-          testStreamId,
-          testPersonaId
-        )
-        expect(hasParticipated).toBe(true)
-      })
+      const hasParticipated = await StreamPersonaParticipantRepository.hasParticipated(
+        pool,
+        testStreamId,
+        testPersonaId
+      )
+      expect(hasParticipated).toBe(true)
     })
 
     test("should NOT record participation for user messages", async () => {
@@ -95,10 +92,8 @@ describe("Stream Persona Participants", () => {
       })
 
       // Verify NO participation was recorded
-      await withClient(pool, async (client) => {
-        const participants = await StreamPersonaParticipantRepository.findPersonasByStream(client, testStreamId)
-        expect(participants).toHaveLength(0)
-      })
+      const participants = await StreamPersonaParticipantRepository.findPersonasByStream(pool, testStreamId)
+      expect(participants).toHaveLength(0)
     })
 
     test("should be idempotent - multiple messages create only one record", async () => {
@@ -139,11 +134,9 @@ describe("Stream Persona Participants", () => {
       })
 
       // Verify only one participation record exists
-      await withClient(pool, async (client) => {
-        const participants = await StreamPersonaParticipantRepository.findPersonasByStream(client, testStreamId)
-        expect(participants).toHaveLength(1)
-        expect(participants[0].personaId).toBe(testPersonaId)
-      })
+      const participants = await StreamPersonaParticipantRepository.findPersonasByStream(pool, testStreamId)
+      expect(participants).toHaveLength(1)
+      expect(participants[0].personaId).toBe(testPersonaId)
     })
   })
 
@@ -184,13 +177,11 @@ describe("Stream Persona Participants", () => {
       })
 
       // Verify findStreamsByPersona returns correct streams
-      await withClient(pool, async (client) => {
-        const streams = await StreamPersonaParticipantRepository.findStreamsByPersona(client, testPersonaId)
-        expect(streams).toHaveLength(2)
-        expect(streams).toContain(stream1)
-        expect(streams).toContain(stream2)
-        expect(streams).not.toContain(stream3)
-      })
+      const streams = await StreamPersonaParticipantRepository.findStreamsByPersona(pool, testPersonaId)
+      expect(streams).toHaveLength(2)
+      expect(streams).toContain(stream1)
+      expect(streams).toContain(stream2)
+      expect(streams).not.toContain(stream3)
     })
 
     test("should filter streams where ALL personas have participated", async () => {
@@ -249,18 +240,16 @@ describe("Stream Persona Participants", () => {
       })
 
       // Filter for streams where BOTH personas participated
-      await withClient(pool, async (client) => {
-        const result = await StreamPersonaParticipantRepository.filterStreamsWithAllPersonas(
-          client,
-          [stream1, stream2, stream3],
-          [persona1, persona2]
-        )
+      const result = await StreamPersonaParticipantRepository.filterStreamsWithAllPersonas(
+        pool,
+        [stream1, stream2, stream3],
+        [persona1, persona2]
+      )
 
-        expect(result.size).toBe(1)
-        expect(result.has(stream1)).toBe(true)
-        expect(result.has(stream2)).toBe(false)
-        expect(result.has(stream3)).toBe(false)
-      })
+      expect(result.size).toBe(1)
+      expect(result.has(stream1)).toBe(true)
+      expect(result.has(stream2)).toBe(false)
+      expect(result.has(stream3)).toBe(false)
     })
   })
 
@@ -310,18 +299,16 @@ describe("Stream Persona Participants", () => {
       })
 
       // Get accessible streams with persona filter
-      await withClient(pool, async (client) => {
-        const streamsWithPersona = await SearchRepository.getAccessibleStreamsWithMembers(client, {
-          workspaceId: testWorkspaceId,
-          userId: testUserId,
-          memberIds: [testPersonaId],
-        })
-
-        // Only stream1 should be returned (where persona participated)
-        expect(streamsWithPersona).toHaveLength(1)
-        expect(streamsWithPersona).toContain(stream1)
-        expect(streamsWithPersona).not.toContain(stream2)
+      const streamsWithPersona = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
+        workspaceId: testWorkspaceId,
+        userId: testUserId,
+        memberIds: [testPersonaId],
       })
+
+      // Only stream1 should be returned (where persona participated)
+      expect(streamsWithPersona).toHaveLength(1)
+      expect(streamsWithPersona).toContain(stream1)
+      expect(streamsWithPersona).not.toContain(stream2)
     })
 
     test("should handle mixed user and persona member IDs", async () => {
@@ -371,19 +358,17 @@ describe("Stream Persona Participants", () => {
       })
 
       // Filter for streams where user2 is member AND persona1 has participated
-      await withClient(pool, async (client) => {
-        const result = await SearchRepository.getAccessibleStreamsWithMembers(client, {
-          workspaceId: testWorkspaceId,
-          userId: user1,
-          memberIds: [user2, persona1], // Mixed user + persona IDs
-        })
-
-        // Only stream1 matches: user2 is member AND persona1 participated
-        // stream2: persona1 participated but user2 is NOT a member
-        // stream3: user2 is member but persona1 did NOT participate
-        expect(result).toHaveLength(1)
-        expect(result).toContain(stream1)
+      const result = await SearchRepository.getAccessibleStreamsWithMembers(pool, {
+        workspaceId: testWorkspaceId,
+        userId: user1,
+        memberIds: [user2, persona1], // Mixed user + persona IDs
       })
+
+      // Only stream1 matches: user2 is member AND persona1 participated
+      // stream2: persona1 participated but user2 is NOT a member
+      // stream3: user2 is member but persona1 did NOT participate
+      expect(result).toHaveLength(1)
+      expect(result).toContain(stream1)
     })
   })
 })

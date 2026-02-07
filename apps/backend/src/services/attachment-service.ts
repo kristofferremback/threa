@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction, withClient } from "../db"
+import { withTransaction } from "../db"
 import { AttachmentRepository, AttachmentExtractionRepository, Attachment, OutboxRepository } from "../repositories"
 import type { StorageProvider } from "../lib/storage/s3-client"
 
@@ -51,19 +51,19 @@ export class AttachmentService {
   }
 
   async getById(id: string): Promise<Attachment | null> {
-    return withClient(this.pool, (client) => AttachmentRepository.findById(client, id))
+    return AttachmentRepository.findById(this.pool, id)
   }
 
   async getByIds(ids: string[]): Promise<Attachment[]> {
-    return withClient(this.pool, (client) => AttachmentRepository.findByIds(client, ids))
+    return AttachmentRepository.findByIds(this.pool, ids)
   }
 
   async getByMessageId(messageId: string): Promise<Attachment[]> {
-    return withClient(this.pool, (client) => AttachmentRepository.findByMessageId(client, messageId))
+    return AttachmentRepository.findByMessageId(this.pool, messageId)
   }
 
   async getByMessageIds(messageIds: string[]): Promise<Map<string, Attachment[]>> {
-    return withClient(this.pool, (client) => AttachmentRepository.findByMessageIds(client, messageIds))
+    return AttachmentRepository.findByMessageIds(this.pool, messageIds)
   }
 
   async getDownloadUrl(attachment: Attachment): Promise<string> {

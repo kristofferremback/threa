@@ -11,7 +11,6 @@ import type { QueueManager } from "./queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
-import { withClient } from "../db"
 
 export interface CompanionHandlerConfig {
   batchSize?: number
@@ -88,9 +87,7 @@ export class CompanionHandler implements OutboxHandler {
 
   private async processEvents(): Promise<void> {
     await this.cursorLock.run(async (cursor): Promise<ProcessResult> => {
-      const events = await withClient(this.db, (client) =>
-        OutboxRepository.fetchAfterId(client, cursor, this.batchSize)
-      )
+      const events = await OutboxRepository.fetchAfterId(this.db, cursor, this.batchSize)
 
       if (events.length === 0) {
         return { status: "no_events" }
@@ -131,7 +128,7 @@ export class CompanionHandler implements OutboxHandler {
           const triggeredBy = messageEvent.actorId
 
           // Look up stream to check companion mode
-          const stream = await withClient(this.db, (client) => StreamRepository.findById(client, streamId))
+          const stream = await StreamRepository.findById(this.db, streamId)
           if (!stream) {
             logger.warn({ streamId }, "CompanionHandler: stream not found")
             lastProcessedId = event.id
@@ -145,12 +142,12 @@ export class CompanionHandler implements OutboxHandler {
 
           // Resolve persona: use stream's configured persona, or fall back to system default
           let persona = stream.companionPersonaId
-            ? await withClient(this.db, (client) => PersonaRepository.findById(client, stream.companionPersonaId!))
+            ? await PersonaRepository.findById(this.db, stream.companionPersonaId!)
             : null
 
           // If configured persona is missing or inactive, try system default
           if (!persona || persona.status !== "active") {
-            persona = await withClient(this.db, (client) => PersonaRepository.getSystemDefault(client))
+            persona = await PersonaRepository.getSystemDefault(this.db)
           }
 
           if (!persona) {
@@ -160,9 +157,7 @@ export class CompanionHandler implements OutboxHandler {
           }
 
           // Check if there's an existing session that will handle this message
-          const lastSession = await withClient(this.db, (client) =>
-            AgentSessionRepository.findLatestByStream(client, streamId)
-          )
+          const lastSession = await AgentSessionRepository.findLatestByStream(this.db, streamId)
 
           if (lastSession) {
             const messageSequence = BigInt(messageEvent.sequence)

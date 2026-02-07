@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg"
-import { withClient, withTransaction } from "../db"
+import { withTransaction } from "../db"
 import {
   AIUsageRepository,
   AIBudgetRepository,
@@ -190,9 +190,7 @@ export class AICostService implements AICostServiceLike {
   async getCurrentMonthUsage(workspaceId: string): Promise<UsageSummary> {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getWorkspaceUsage(client, workspaceId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getWorkspaceUsage(this.pool, workspaceId, periodStart, periodEnd)
   }
 
   /**
@@ -208,9 +206,7 @@ export class AICostService implements AICostServiceLike {
   async getUserCurrentMonthUsage(workspaceId: string, userId: string): Promise<UsageSummary> {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getUserUsage(client, workspaceId, userId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getUserUsage(this.pool, workspaceId, userId, periodStart, periodEnd)
   }
 
   /**
@@ -219,9 +215,7 @@ export class AICostService implements AICostServiceLike {
   async getUsageByModel(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getUsageByModel(client, workspaceId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getUsageByModel(this.pool, workspaceId, periodStart, periodEnd)
   }
 
   /**
@@ -230,9 +224,7 @@ export class AICostService implements AICostServiceLike {
   async getUsageByFunction(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getUsageByFunction(client, workspaceId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getUsageByFunction(this.pool, workspaceId, periodStart, periodEnd)
   }
 
   /**
@@ -241,9 +233,7 @@ export class AICostService implements AICostServiceLike {
   async getUsageByUser(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getUsageByUser(client, workspaceId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getUsageByUser(this.pool, workspaceId, periodStart, periodEnd)
   }
 
   /**
@@ -252,16 +242,14 @@ export class AICostService implements AICostServiceLike {
   async getUsageByOrigin(workspaceId: string) {
     const { periodStart, periodEnd } = this.getCurrentMonthPeriod()
 
-    return withClient(this.pool, (client) =>
-      AIUsageRepository.getUsageByOrigin(client, workspaceId, periodStart, periodEnd)
-    )
+    return AIUsageRepository.getUsageByOrigin(this.pool, workspaceId, periodStart, periodEnd)
   }
 
   /**
    * Get recent usage records.
    */
   async getRecentUsage(workspaceId: string, options?: { limit?: number; userId?: string }) {
-    return withClient(this.pool, (client) => AIUsageRepository.listRecent(client, workspaceId, options))
+    return AIUsageRepository.listRecent(this.pool, workspaceId, options)
   }
 
   private getCurrentMonthPeriod(): { periodStart: Date; periodEnd: Date } {

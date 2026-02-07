@@ -61,7 +61,7 @@ export class StreamService {
   constructor(private pool: Pool) {}
 
   async getStreamById(id: string): Promise<Stream | null> {
-    return withClient(this.pool, (client) => StreamRepository.findById(client, id))
+    return StreamRepository.findById(this.pool, id)
   }
 
   async validateStreamAccess(streamId: string, workspaceId: string, userId: string): Promise<Stream> {
@@ -117,7 +117,7 @@ export class StreamService {
   }
 
   async getStreamsByWorkspace(workspaceId: string): Promise<Stream[]> {
-    return withClient(this.pool, (client) => StreamRepository.list(client, workspaceId))
+    return StreamRepository.list(this.pool, workspaceId)
   }
 
   async list(
@@ -416,12 +416,10 @@ export class StreamService {
     displayName: string,
     markAsGenerated: boolean = false
   ): Promise<Stream | null> {
-    return withTransaction(this.pool, (client) =>
-      StreamRepository.update(client, streamId, {
-        displayName,
-        displayNameGeneratedAt: markAsGenerated ? new Date() : undefined,
-      })
-    )
+    return StreamRepository.update(this.pool, streamId, {
+      displayName,
+      displayNameGeneratedAt: markAsGenerated ? new Date() : undefined,
+    })
   }
 
   // Member operations
@@ -446,19 +444,19 @@ export class StreamService {
   }
 
   async removeMember(streamId: string, userId: string): Promise<boolean> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.delete(client, streamId, userId))
+    return StreamMemberRepository.delete(this.pool, streamId, userId)
   }
 
   async getMembers(streamId: string): Promise<StreamMember[]> {
-    return withClient(this.pool, (client) => StreamMemberRepository.list(client, { streamId }))
+    return StreamMemberRepository.list(this.pool, { streamId })
   }
 
   async getMembership(streamId: string, userId: string): Promise<StreamMember | null> {
-    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamAndUser(client, streamId, userId))
+    return StreamMemberRepository.findByStreamAndUser(this.pool, streamId, userId)
   }
 
   async getMembershipsBatch(streamIds: string[], userId: string): Promise<StreamMember[]> {
-    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndUser(client, streamIds, userId))
+    return StreamMemberRepository.findByStreamsAndUser(this.pool, streamIds, userId)
   }
 
   // TODO: This is a permission check masquerading as a membership check. "isMember" is
@@ -483,11 +481,11 @@ export class StreamService {
   }
 
   async pinStream(streamId: string, userId: string, pinned: boolean): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, userId, { pinned }))
+    return StreamMemberRepository.update(this.pool, streamId, userId, { pinned })
   }
 
   async muteStream(streamId: string, userId: string, muted: boolean): Promise<StreamMember | null> {
-    return withTransaction(this.pool, (client) => StreamMemberRepository.update(client, streamId, userId, { muted }))
+    return StreamMemberRepository.update(this.pool, streamId, userId, { muted })
   }
 
   async markAsRead(
@@ -559,14 +557,14 @@ export class StreamService {
   async getUnreadCounts(
     memberships: Array<{ streamId: string; lastReadEventId: string | null }>
   ): Promise<Map<string, number>> {
-    return withClient(this.pool, (client) => StreamEventRepository.countUnreadByStreamBatch(client, memberships))
+    return StreamEventRepository.countUnreadByStreamBatch(this.pool, memberships)
   }
 
   /**
    * Get a map of messageId -> threadStreamId for all messages in a stream that have threads
    */
   async getThreadsForMessages(streamId: string): Promise<Map<string, string>> {
-    return withClient(this.pool, (client) => StreamRepository.findThreadsForMessages(client, streamId))
+    return StreamRepository.findThreadsForMessages(this.pool, streamId)
   }
 
   /**
@@ -574,6 +572,6 @@ export class StreamService {
    * This is an optimized version that fetches threads and counts in a single query.
    */
   async getThreadsWithReplyCounts(streamId: string): Promise<Map<string, { threadId: string; replyCount: number }>> {
-    return withClient(this.pool, (client) => StreamRepository.findThreadsWithReplyCounts(client, streamId))
+    return StreamRepository.findThreadsWithReplyCounts(this.pool, streamId)
   }
 }

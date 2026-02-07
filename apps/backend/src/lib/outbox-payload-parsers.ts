@@ -8,7 +8,6 @@
 import type { Pool, PoolClient } from "pg"
 import type { AuthorType } from "@threa/types"
 import { AuthorTypes } from "@threa/types"
-import { withClient } from "../db"
 
 /**
  * Normalized payload for message:created events.
@@ -38,9 +37,9 @@ export interface NormalizedMessageCreatedPayload {
  */
 export async function parseMessageCreatedPayload(
   payload: unknown,
-  pool: Pool
+  _pool: Pool
 ): Promise<NormalizedMessageCreatedPayload | null> {
-  return withClient(pool, (client) => parseMessageCreatedPayloadWithClient(payload, client))
+  return parseMessageCreatedPayloadWithClient(payload)
 }
 
 /**
@@ -50,7 +49,7 @@ export async function parseMessageCreatedPayload(
  */
 export async function parseMessageCreatedPayloadWithClient(
   payload: unknown,
-  _client: PoolClient
+  _client?: PoolClient
 ): Promise<NormalizedMessageCreatedPayload | null> {
   if (!payload || typeof payload !== "object") {
     return null

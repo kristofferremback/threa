@@ -85,7 +85,7 @@ export function createAIUsageHandlers({ pool }: Dependencies) {
       const workspaceId = req.workspaceId!
       const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 50), 100)
 
-      const records = await withClient(pool, (client) => AIUsageRepository.listRecent(client, workspaceId, { limit }))
+      const records = await AIUsageRepository.listRecent(pool, workspaceId, { limit })
 
       res.json({
         records: records.map((r) => ({

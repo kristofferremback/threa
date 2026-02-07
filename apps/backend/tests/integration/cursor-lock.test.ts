@@ -3,7 +3,6 @@ import { Pool } from "pg"
 import { setupTestDatabase } from "./setup"
 import { CursorLock, ensureListener, type ProcessResult, type CursorLockConfig } from "../../src/lib/cursor-lock"
 import { OutboxRepository } from "../../src/repositories"
-import { withClient } from "./setup"
 
 describe("CursorLock", () => {
   let pool: Pool
@@ -23,44 +22,38 @@ describe("CursorLock", () => {
   }
 
   async function getListenerState() {
-    return withClient(pool, async (client) => {
-      const result = await client.query<{
-        last_processed_id: string
-        retry_count: number
-        retry_after: Date | null
-        last_error: string | null
-        locked_until: Date | null
-        lock_run_id: string | null
-      }>(
-        `SELECT last_processed_id, retry_count, retry_after, last_error, locked_until, lock_run_id
-         FROM outbox_listeners WHERE listener_id = $1`,
-        [testListenerId]
-      )
-      return result.rows[0] ?? null
-    })
+    const result = await pool.query<{
+      last_processed_id: string
+      retry_count: number
+      retry_after: Date | null
+      last_error: string | null
+      locked_until: Date | null
+      lock_run_id: string | null
+    }>(
+      `SELECT last_processed_id, retry_count, retry_after, last_error, locked_until, lock_run_id
+       FROM outbox_listeners WHERE listener_id = $1`,
+      [testListenerId]
+    )
+    return result.rows[0] ?? null
   }
 
   async function insertTestEvent(eventType: string = "test:event"): Promise<bigint> {
-    return withClient(pool, async (client) => {
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO outbox (event_type, payload)
-         VALUES ($1, '{"test": true}')
-         RETURNING id`,
-        [eventType]
-      )
-      return BigInt(result.rows[0].id)
-    })
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO outbox (event_type, payload)
+       VALUES ($1, '{"test": true}')
+       RETURNING id`,
+      [eventType]
+    )
+    return BigInt(result.rows[0].id)
   }
 
   async function getDeadLetters() {
-    return withClient(pool, async (client) => {
-      const result = await client.query(
-        `SELECT listener_id, outbox_event_id, error
-         FROM outbox_dead_letters WHERE listener_id = $1`,
-        [testListenerId]
-      )
-      return result.rows
-    })
+    const result = await pool.query(
+      `SELECT listener_id, outbox_event_id, error
+       FROM outbox_dead_letters WHERE listener_id = $1`,
+      [testListenerId]
+    )
+    return result.rows
   }
 
   beforeAll(async () => {
