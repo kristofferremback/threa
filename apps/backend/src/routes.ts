@@ -3,6 +3,7 @@ import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
 import { createRateLimiters } from "./middleware/rate-limit"
+import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
@@ -69,6 +70,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const auth = createAuthMiddleware({ authService, userService })
   const workspaceMember = createWorkspaceMemberMiddleware({ pool })
   const rateLimits = createRateLimiters()
+  const opsAccess = createOpsAccessMiddleware()
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
@@ -95,11 +97,11 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Baseline request throttling.
   app.use(rateLimits.globalBaseline)
 
-  // Health check endpoint - no auth required
-  app.get("/health", debug.health)
+  // Internal readiness endpoint (public liveness remains /health in app.ts)
+  app.get("/readyz", opsAccess, debug.readiness)
 
   // Debug endpoint - inspect pool internal state
-  app.get("/debug/pool", debug.poolState)
+  app.get("/debug/pool", opsAccess, debug.poolState)
 
   app.get("/api/auth/login", rateLimits.auth, authHandlers.login)
   app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
@@ -197,8 +199,8 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
 
-  // Prometheus metrics endpoint (unauthenticated for scraping)
-  app.get("/metrics", debug.metrics)
+  // Prometheus metrics endpoint (internal access only)
+  app.get("/metrics", opsAccess, debug.metrics)
 
   app.use(errorHandler)
 }
