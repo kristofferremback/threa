@@ -21,6 +21,7 @@ import {
   updateMessage,
   deleteMessage,
   getMemberId,
+  joinWorkspace,
 } from "../client"
 
 function getBaseUrl(): string {
@@ -391,6 +392,33 @@ describe("Real-time Events", () => {
 
       const result = await noEventPromise
       expect(result).toBe("no-event")
+    })
+
+    test("should never expose raw preview content to workspace members outside the stream", async () => {
+      const privateStream = await createScratchpad(client, workspaceId, "off")
+      const outsiderClient = new TestClient()
+      await loginAs(outsiderClient, "workspace-outsider@example.com", "Workspace Outsider")
+      await joinWorkspace(outsiderClient, workspaceId)
+
+      const outsiderSocket = createSocket(outsiderClient)
+      await connectSocket(outsiderSocket)
+
+      try {
+        outsiderSocket.emit("join", `ws:${workspaceId}`)
+        const activityPromise = waitForEvent<{ lastMessagePreview: { content: string } }>(
+          outsiderSocket,
+          "stream:activity"
+        )
+        const secret = "TOP SECRET stream content"
+
+        await sendMessage(client, workspaceId, privateStream.id, secret)
+
+        const activity = await activityPromise
+        expect(activity.lastMessagePreview.content).toBe("[New message]")
+        expect(activity.lastMessagePreview.content).not.toContain(secret)
+      } finally {
+        outsiderSocket.disconnect()
+      }
     })
   })
 

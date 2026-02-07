@@ -51,6 +51,8 @@ export interface ThreadCreatedPayload {
   parentMessageId: string
 }
 
+const REDACTED_WORKSPACE_ACTIVITY_PREVIEW = "[New message]"
+
 // Service params
 export interface CreateMessageParams {
   workspaceId: string
@@ -199,8 +201,8 @@ export class EventService {
       // 8. Publish unread increment to workspace room for sidebar updates
       // This is workspace-scoped so all members receive it, then frontend filters
       // by stream membership and excludes the author's own messages.
-      // Includes lastMessagePreview so sidebar can update preview + urgency without
-      // needing to be subscribed to the stream room.
+      // Never include raw message content here; workspace members who are not in the
+      // stream must not receive message previews.
       await OutboxRepository.insert(client, "stream:activity", {
         workspaceId: params.workspaceId,
         streamId: params.streamId,
@@ -208,7 +210,7 @@ export class EventService {
         lastMessagePreview: {
           authorId: params.authorId,
           authorType: params.authorType,
-          content: params.contentMarkdown,
+          content: REDACTED_WORKSPACE_ACTIVITY_PREVIEW,
           createdAt: event.createdAt.toISOString(),
         },
       })
