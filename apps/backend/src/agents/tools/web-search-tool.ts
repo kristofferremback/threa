@@ -40,6 +40,22 @@ export interface CreateWebSearchToolParams {
 
 const FETCH_TIMEOUT_MS = 30000
 
+/** Patterns that should never be sent to external search APIs. */
+const SENSITIVE_PATTERNS = [
+  /\b[A-Za-z0-9+/]{40,}\b/g, // long base64-like strings (API keys, tokens)
+  /\b(sk|pk|api|key|token|secret|password)[-_][A-Za-z0-9_-]{8,}\b/gi, // prefixed secrets
+  /\b(stream|user|msg|memo|member|workspace)_[0-9A-HJKMNP-TV-Z]{26}\b/g, // internal ULID IDs
+]
+
+/** Redact sensitive patterns from a search query before sending externally. */
+function redactQuery(query: string): string {
+  let redacted = query
+  for (const pattern of SENSITIVE_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED]")
+  }
+  return redacted
+}
+
 /**
  * Creates a web_search tool for the agent to search the web.
  *
@@ -54,6 +70,7 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
       "Search the web for current information. Returns relevant results with titles, URLs, and content snippets. Use this when you need up-to-date information or facts not in your training data.",
     schema: WebSearchSchema,
     func: async (input: WebSearchInput) => {
+      const sanitizedQuery = redactQuery(input.query)
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
@@ -66,7 +83,7 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
             Authorization: `Bearer ${tavilyApiKey}`,
           },
           body: JSON.stringify({
-            query: input.query,
+            query: sanitizedQuery,
             max_results: maxResults,
             include_answer: true,
             search_depth: "basic",
