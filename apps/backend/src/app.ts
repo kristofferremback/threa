@@ -1,11 +1,21 @@
 import express, { type Express } from "express"
 import cors from "cors"
+import helmet from "helmet"
 import cookieParser from "cookie-parser"
 import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
 import { bigIntReplacer } from "./lib/serialization"
 import { metricsMiddleware } from "./middleware/metrics"
+
+/** Parse CORS_ORIGIN env var: comma-separated allowlist or true for permissive (dev only). */
+function getCorsOrigin(): string[] | true {
+  const raw = process.env.CORS_ORIGIN
+  if (!raw) return true // permissive default for dev
+  return raw.split(",").map((s) => s.trim())
+}
+
+export const corsOrigin = getCorsOrigin()
 
 export function createApp(): Express {
   const app = express()
@@ -16,7 +26,10 @@ export function createApp(): Express {
   // Metrics middleware (before everything else to capture all requests)
   app.use(metricsMiddleware)
 
-  app.use(cors({ origin: true, credentials: true }))
+  // Security headers
+  app.use(helmet())
+
+  app.use(cors({ origin: corsOrigin, credentials: true }))
   app.use(cookieParser())
   app.use(express.json())
   app.use(express.urlencoded({ extended: true }))
