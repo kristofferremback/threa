@@ -103,7 +103,7 @@ async function findPostgresContainer(): Promise<string | null> {
   return containers[0] || null
 }
 
-async function createDatabaseIfNotExists(dbName: string): Promise<void> {
+async function createDatabaseIfNotExists(dbName: string): Promise<boolean> {
   console.log(`Checking if database '${dbName}' exists...`)
 
   const container = await findPostgresContainer()
@@ -121,28 +121,37 @@ async function createDatabaseIfNotExists(dbName: string): Promise<void> {
 
   if (checkResult.stdout.toString().trim() === "1") {
     console.log(`Database '${dbName}' already exists`)
-    return
+    return false
   }
 
   console.log(`Creating database '${dbName}'...`)
   await $`docker exec ${container} psql -U threa -d postgres -c "CREATE DATABASE ${dbName}"`
   console.log(`Database '${dbName}' created`)
+  return true
 }
 
 async function cloneDatabase(container: string, sourceDb: string, targetDb: string): Promise<void> {
   console.log(`Cloning database '${sourceDb}' to '${targetDb}'...`)
+  const lockWaitTimeout = "10s"
 
-  // Use pg_dump piped to psql for the clone
-  const result = await $`docker exec ${container} sh -c "pg_dump -U threa ${sourceDb} | psql -U threa ${targetDb}"`
-    .quiet()
-    .nothrow()
+  // Use pg_dump piped to psql for the clone.
+  // Fail fast on lock contention to avoid an apparent "hang" with no output.
+  const result =
+    await $`docker exec ${container} bash -o pipefail -c "pg_dump -U threa --lock-wait-timeout=${lockWaitTimeout} ${sourceDb} | PGOPTIONS='-c lock_timeout=${lockWaitTimeout}' psql -U threa ${targetDb}"`
+      .quiet()
+      .nothrow()
 
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString()
-    // Ignore "already exists" errors for things like extensions
-    if (!stderr.includes("already exists")) {
-      console.warn("Clone had warnings:", stderr)
+    if (
+      stderr.includes("canceling statement due to lock timeout") ||
+      stderr.includes("canceling statement due to statement timeout")
+    ) {
+      throw new Error(
+        `Database clone timed out waiting for a lock. Close other processes using '${sourceDb}' or '${targetDb}' and retry.`
+      )
     }
+    throw new Error(`Database clone failed: ${stderr.trim() || `exit code ${result.exitCode}`}`)
   }
 
   // Sync sequences with actual data (pg_dump doesn't update sequence counters)
@@ -263,9 +272,22 @@ async function main() {
       throw new Error("No running postgres container found")
     }
 
-    await createDatabaseIfNotExists(dbName)
-    await cloneDatabase(container, sourceDbName, dbName)
+    const created = await createDatabaseIfNotExists(dbName)
+    const forceClone = process.env.FORCE_DB_CLONE === "1"
+
+    if (created || forceClone) {
+      if (!created && forceClone) {
+        console.log(`FORCE_DB_CLONE=1 set, cloning into existing database '${dbName}'...`)
+      }
+      await cloneDatabase(container, sourceDbName, dbName)
+    } else {
+      console.log(`Skipping clone because database '${dbName}' already exists`)
+      console.log(`Set FORCE_DB_CLONE=1 to force clone into existing database`)
+    }
   } catch (err) {
+    if (err instanceof Error) {
+      console.warn(`Clone error: ${err.message}`)
+    }
     console.warn("Could not create/clone database - ensure docker is running and postgres is started")
     console.warn("Run 'bun run db:start' from the main worktree, then run this script again")
   }
