@@ -31,7 +31,8 @@ export function renderLoginPage(state: string): string {
     .preset-btn .email { color: #a3a3a3; font-size: 14px; }
     .divider { display: flex; align-items: center; gap: 16px; margin: 24px 0; color: #525252; font-size: 14px; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #404040; }
-    form { display: flex; flex-direction: column; gap: 16px; }
+    .preset-buttons form { display: contents; }
+    .custom-form { display: flex; flex-direction: column; gap: 16px; }
     label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #a3a3a3; }
     input { background: #262626; border: 1px solid #404040; color: #fafafa; padding: 10px 12px; border-radius: 6px; font-size: 16px; }
     input:focus { outline: none; border-color: #c9a227; }
@@ -66,7 +67,7 @@ export function renderLoginPage(state: string): string {
       </form>
     </div>
     <div class="divider">or enter custom credentials</div>
-    <form method="POST" action="/test-auth-login">
+    <form method="POST" action="/test-auth-login" class="custom-form">
       <input type="hidden" name="state" value="${escapeHtml(state)}" />
       <label>
         Email
