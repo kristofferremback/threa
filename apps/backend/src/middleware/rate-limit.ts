@@ -21,7 +21,6 @@ interface RateLimiterSet {
   upload: RequestHandler
   messageCreate: RequestHandler
   commandDispatch: RequestHandler
-  aiQuotaPerMember: RequestHandler
 }
 
 function parsePositiveEnvInt(name: string, fallback: number): number {
@@ -89,12 +88,6 @@ function userScopeKey(req: Request): string {
   return req.userId || getClientIp(req, "unknown")
 }
 
-function workspaceMemberScopeKey(req: Request): string {
-  const workspaceId = req.workspaceId || "unknown-workspace"
-  const memberId = req.member?.id || req.userId || getClientIp(req, "unknown")
-  return `${workspaceId}:${memberId}`
-}
-
 export function createRateLimiters(): RateLimiterSet {
   const globalMax = parsePositiveEnvInt("GLOBAL_RATE_LIMIT_MAX", 300)
   const authMax = parsePositiveEnvInt("AUTH_RATE_LIMIT_MAX", 20)
@@ -141,13 +134,6 @@ export function createRateLimiters(): RateLimiterSet {
       windowMs: 60_000,
       max: 30,
       key: userScopeKey,
-    }),
-
-    aiQuotaPerMember: createRateLimit({
-      name: "ai-quota-member",
-      windowMs: 60_000,
-      max: 40,
-      key: workspaceMemberScopeKey,
     }),
   }
 }

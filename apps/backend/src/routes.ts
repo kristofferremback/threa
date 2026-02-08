@@ -182,13 +182,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/conversations/:conversationId/messages", ...authed, conversation.getMessages)
 
   // Commands
-  app.post(
-    "/api/workspaces/:workspaceId/commands/dispatch",
-    ...authed,
-    rateLimits.commandDispatch,
-    rateLimits.aiQuotaPerMember,
-    command.dispatch
-  )
+  app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, rateLimits.commandDispatch, command.dispatch)
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
   // AI Usage and Budget
