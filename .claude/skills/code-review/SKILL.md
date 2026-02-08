@@ -78,10 +78,47 @@ done
 
 Read each CLAUDE.md file found.
 
-3. **Find the implementation plan:**
-   - Check `~/.claude/plans/` for plan files related to this branch
-   - Look for plan files in the repo (docs/, .claude/, etc.)
-   - If no plan exists, note "No plan found" and use PR description as requirements
+3. **Find the implementation plan** — spawn a background Task agent (`model: "haiku"`, `subagent_type: "general-purpose"`, `run_in_background: true`):
+
+> Find the implementation plan for the current feature branch. Follow these steps:
+>
+> 1. Determine the Claude projects directory:
+>
+> ```bash
+> PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+> CLAUDE_PATH=$(echo "$PROJECT_ROOT" | sed 's/[\/.]/-/g')
+> PROJECTS_DIR="$HOME/.claude/projects/$CLAUDE_PATH"
+> ```
+>
+> 2. Check for plan files written during sessions:
+>
+> ```bash
+> SESSIONS_INDEX="$PROJECTS_DIR/sessions-index.json"
+> for jsonl in "$PROJECTS_DIR"/*.jsonl; do
+>   [ -f "$jsonl" ] || continue
+>   PLAN_FILES=$(grep -o '"file_path":"[^"]*"' "$jsonl" 2>/dev/null | \
+>     grep -iE 'plan|task|design' | \
+>     sed 's/"file_path":"//g' | sed 's/"//g' | sort -u)
+>   [ -n "$PLAN_FILES" ] && echo "$PLAN_FILES"
+> done
+> ```
+>
+> 3. Check for plan files in the repository:
+>
+> ```bash
+> find . -maxdepth 4 -type f \( \
+>   -name "*.plan.md" -o -name "plan.md" -o \
+>   -path "*/plans/*.md" -o -path "*/.claude/plans/*.md" \
+> \) 2>/dev/null
+> ```
+>
+> 4. Check `~/.claude/plans/` for plan files related to this branch
+> 5. If plan files were found, read and combine them chronologically. If multiple plans exist (main + substep), present them with hierarchy.
+> 6. If NO plan files were found, return: "No plan found"
+>
+> Return the combined plan content in markdown format.
+
+This agent runs in the background while you proceed with reading CLAUDE.md files. Collect its result before Step 4.
 
 Store the HEAD SHA, PR description, CLAUDE.md content, and plan content for passing to agents.
 
