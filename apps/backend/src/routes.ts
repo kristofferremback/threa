@@ -123,9 +123,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
       streamService,
     })
 
-    app.get("/test-auth-login", rateLimits.auth, authStub.getLoginPage)
-    app.post("/test-auth-login", rateLimits.auth, authStub.handleLogin)
-    app.post("/api/dev/login", rateLimits.auth, authStub.handleDevLogin)
+    app.get("/test-auth-login", authStub.getLoginPage)
+    app.post("/test-auth-login", authStub.handleLogin)
+    app.post("/api/dev/login", authStub.handleDevLogin)
     app.post("/api/dev/workspaces/:workspaceId/join", auth, authStub.handleWorkspaceJoin)
     app.post(
       "/api/dev/workspaces/:workspaceId/streams/:streamId/join",

@@ -23,6 +23,13 @@ interface RateLimiterSet {
   aiQuotaPerMember: RequestHandler
 }
 
+function parsePositiveEnvInt(name: string, fallback: number): number {
+  const value = process.env[name]
+  if (!value) return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function getClientIp(req: Request): string {
   const xff = req.headers["x-forwarded-for"]
   if (typeof xff === "string" && xff.length > 0) {
@@ -96,12 +103,14 @@ function workspaceMemberScopeKey(req: Request): string {
 }
 
 export function createRateLimiters(): RateLimiterSet {
+  const globalMax = parsePositiveEnvInt("GLOBAL_RATE_LIMIT_MAX", 300)
+
   return {
     // Baseline abuse protection across all API endpoints.
     globalBaseline: createRateLimit({
       name: "global",
       windowMs: 60_000,
-      max: 300,
+      max: globalMax,
       key: (req) => getClientIp(req),
       skip: (req) => req.path === "/health" || req.path === "/metrics",
     }),

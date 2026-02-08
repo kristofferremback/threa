@@ -135,6 +135,7 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.QUEUE_MAX_ACTIVE_TOKENS = "15"
   process.env.QUEUE_POLL_INTERVAL_MS = "100"
   process.env.DATABASE_POOL_MAX = "50"
+  process.env.GLOBAL_RATE_LIMIT_MAX = "10000"
 
   // S3/MinIO configuration for file upload tests
   // Use a test-specific bucket name to avoid conflicts with local development
