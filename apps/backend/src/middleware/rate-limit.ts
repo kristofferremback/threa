@@ -1,4 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
+import { getClientIp } from "../lib/client-ip"
 
 interface RateLimitBucket {
   count: number
@@ -28,14 +29,6 @@ function parsePositiveEnvInt(name: string, fallback: number): number {
   if (!value) return fallback
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
-function getClientIp(req: Request): string {
-  const xff = req.headers["x-forwarded-for"]
-  if (typeof xff === "string" && xff.length > 0) {
-    return xff.split(",")[0]!.trim()
-  }
-  return req.ip || "unknown"
 }
 
 function setRateLimitHeaders(res: Response, max: number, remaining: number, resetAt: number): void {
@@ -93,12 +86,12 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
 }
 
 function userScopeKey(req: Request): string {
-  return req.userId || getClientIp(req)
+  return req.userId || getClientIp(req, "unknown")
 }
 
 function workspaceMemberScopeKey(req: Request): string {
   const workspaceId = req.workspaceId || "unknown-workspace"
-  const memberId = req.member?.id || req.userId || getClientIp(req)
+  const memberId = req.member?.id || req.userId || getClientIp(req, "unknown")
   return `${workspaceId}:${memberId}`
 }
 
@@ -111,7 +104,7 @@ export function createRateLimiters(): RateLimiterSet {
       name: "global",
       windowMs: 60_000,
       max: globalMax,
-      key: (req) => getClientIp(req),
+      key: (req) => getClientIp(req, "unknown"),
       skip: (req) => req.path === "/health" || req.path === "/metrics",
     }),
 
@@ -120,7 +113,7 @@ export function createRateLimiters(): RateLimiterSet {
       name: "auth",
       windowMs: 60_000,
       max: 20,
-      key: (req) => getClientIp(req),
+      key: (req) => getClientIp(req, "unknown"),
     }),
 
     // Search can be expensive and is easy to scrape.

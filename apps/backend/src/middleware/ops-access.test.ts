@@ -7,10 +7,10 @@ interface MockResponse {
   body: unknown
 }
 
-function createReq(ip: string): Request {
+function createReq(ip: string, headers: Request["headers"] = {}): Request {
   return {
     ip,
-    headers: {},
+    headers,
   } as Request
 }
 
@@ -73,5 +73,20 @@ describe("createOpsAccessMiddleware", () => {
 
     expect(nextCalled).toBe(true)
     expect(res.statusCode).toBe(200)
+  })
+
+  test("does not trust spoofed x-forwarded-for header", () => {
+    const middleware = createOpsAccessMiddleware()
+    const req = createReq("8.8.8.8", { "x-forwarded-for": "127.0.0.1" } as Request["headers"])
+    const res = createRes()
+    let nextCalled = false
+    const next: NextFunction = () => {
+      nextCalled = true
+    }
+
+    middleware(req, res, next)
+
+    expect(nextCalled).toBe(false)
+    expect(res.statusCode).toBe(403)
   })
 })

@@ -1,13 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import ipaddr from "ipaddr.js"
-
-function extractClientIp(req: Request): string {
-  const xff = req.headers["x-forwarded-for"]
-  if (typeof xff === "string" && xff.length > 0) {
-    return xff.split(",")[0]!.trim()
-  }
-  return req.ip || ""
-}
+import { getClientIp } from "../lib/client-ip"
 
 export function isInternalNetworkIp(rawIp: string): boolean {
   if (!rawIp) return false
@@ -30,7 +23,7 @@ export function isInternalNetworkIp(rawIp: string): boolean {
 
 export function createOpsAccessMiddleware() {
   return function opsAccessMiddleware(req: Request, res: Response, next: NextFunction): void {
-    const clientIp = extractClientIp(req)
+    const clientIp = getClientIp(req)
     if (isInternalNetworkIp(clientIp)) {
       return next()
     }

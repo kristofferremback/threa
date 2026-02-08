@@ -80,13 +80,53 @@ async function cleanupStaleJobs(): Promise<void> {
   })
 
   try {
-    // Clean new queue system — stale messages from previous runs starve fresh jobs
-    await testPool.query("DELETE FROM queue_messages")
-    await testPool.query("DELETE FROM queue_tokens")
-    // Delete old pg-boss jobs to prevent queue pollution
-    await testPool.query("DELETE FROM pgboss.job WHERE state IN ('created', 'retry', 'active')")
-    // Also clean up archived jobs to prevent bloat
-    await testPool.query("DELETE FROM pgboss.archive WHERE completedon < NOW() - INTERVAL '1 hour'")
+    // Reset mutable application data so every e2e run starts from a clean slate.
+    // Keep static seed/migration tables (for example personas, umzug_migrations) intact.
+    await testPool.query(`
+      TRUNCATE TABLE
+        agent_session_steps,
+        agent_sessions,
+        ai_alerts,
+        ai_budgets,
+        ai_usage_records,
+        ai_user_quotas,
+        attachment_extractions,
+        attachments,
+        conversations,
+        cron_schedules,
+        cron_ticks,
+        emoji_usage,
+        file_chunks,
+        memo_pending_items,
+        memo_stream_state,
+        memos,
+        messages,
+        outbox,
+        outbox_dead_letters,
+        outbox_listeners,
+        pdf_page_extractions,
+        pdf_processing_jobs,
+        queue_messages,
+        queue_tokens,
+        reactions,
+        researcher_cache,
+        socket_io_attachments,
+        stream_events,
+        stream_members,
+        stream_persona_participants,
+        stream_persona_roster,
+        stream_sequences,
+        streams,
+        user_preference_overrides,
+        users,
+        workspace_members,
+        workspaces
+      RESTART IDENTITY CASCADE
+    `)
+
+    // Legacy pg-boss tables can still contain stale rows from prior test/dev runs.
+    await testPool.query("DELETE FROM pgboss.job")
+    await testPool.query("DELETE FROM pgboss.archive")
   } catch {
     // Ignore errors if tables don't exist yet
   } finally {

@@ -97,7 +97,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     // Room management
     // =========================================================================
-    socket.on("join", async (room: string) => {
+    socket.on("join", async (room: string, callback?: (result: { ok: boolean; error?: string }) => void) => {
       const workspaceId = extractWorkspaceId(room)
       const roomPattern = normalizeRoomPattern(room)
       wsMessagesTotal.inc({
@@ -113,11 +113,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         const wsId = workspaceMatch[1]
         const isMember = await workspaceService.isMember(wsId, userId)
         if (!isMember) {
-          socket.emit("error", { message: "Not authorized to join this workspace" })
+          const message = "Not authorized to join this workspace"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: message })
           return
         }
         socket.join(room)
+        callback?.({ ok: true })
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
@@ -134,11 +137,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         // Resolve user → member for stream membership check
         const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
         if (!member || !(await streamService.isMember(streamId, member.id))) {
-          socket.emit("error", { message: "Not authorized to join this stream" })
+          const message = "Not authorized to join this stream"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: message })
           return
         }
         socket.join(room)
+        callback?.({ ok: true })
 
         // Track metrics
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
@@ -155,18 +161,23 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         // Verify user has access to the session's stream
         const session = await AgentSessionRepository.findById(pool, agentSessionId)
         if (!session) {
-          socket.emit("error", { message: "Session not found" })
+          const message = "Session not found"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: message })
           return
         }
         // Resolve user → member for stream membership check
         const member = await MemberRepository.findByUserIdInWorkspace(pool, wsId, userId)
         if (!member || !(await streamService.isMember(session.streamId, member.id))) {
-          socket.emit("error", { message: "Not authorized to join this session" })
+          const message = "Not authorized to join this session"
+          socket.emit("error", { message })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: message })
           return
         }
         socket.join(room)
+        callback?.({ ok: true })
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
         logger.debug({ userId, room }, "Joined agent session room")
@@ -174,13 +185,15 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
       }
 
       // Unknown room format
-      socket.emit("error", { message: "Invalid room format" })
+      const message = "Invalid room format"
+      socket.emit("error", { message })
       wsMessagesTotal.inc({
         workspace_id: workspaceId,
         direction: "sent",
         event_type: "error",
         room_pattern: roomPattern,
       })
+      callback?.({ ok: false, error: message })
     })
 
     socket.on("leave", (room: string) => {

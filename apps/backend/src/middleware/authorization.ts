@@ -18,11 +18,7 @@ export function requireWorkspaceRole(options: AuthorizationOptions): RequestHand
     }
 
     if (!allowed.has(member.role)) {
-      res.status(403).json({
-        error: "Insufficient role",
-        required: options.allowedRoles,
-        current: member.role,
-      })
+      res.status(403).json({ error: "Insufficient role" })
       return
     }
 

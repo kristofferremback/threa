@@ -65,6 +65,7 @@ describe("requireWorkspaceRole", () => {
     const memberResult = run(createReq("member"))
     expect(memberResult.nextCalled).toBe(false)
     expect(memberResult.res.statusCode).toBe(403)
+    expect(memberResult.res.body).toEqual({ error: "Insufficient role" })
 
     const noMemberResult = run(createReq())
     expect(noMemberResult.nextCalled).toBe(false)
