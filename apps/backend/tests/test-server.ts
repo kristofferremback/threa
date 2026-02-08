@@ -74,21 +74,49 @@ async function ensureMinioBucketExists(): Promise<void> {
 /**
  * Cleans up stale jobs from previous test runs to prevent test pollution.
  */
-async function cleanupStaleJobs(): Promise<void> {
+async function cleanupStaleData(): Promise<void> {
   const testPool = new Pool({
     connectionString: process.env.TEST_DATABASE_URL || "postgresql://threa:threa@localhost:5454/threa_test",
   })
 
   try {
-    // Clean new queue system — stale messages from previous runs starve fresh jobs
-    await testPool.query("DELETE FROM queue_messages")
-    await testPool.query("DELETE FROM queue_tokens")
-    // Delete old pg-boss jobs to prevent queue pollution
-    await testPool.query("DELETE FROM pgboss.job WHERE state IN ('created', 'retry', 'active')")
-    // Also clean up archived jobs to prevent bloat
-    await testPool.query("DELETE FROM pgboss.archive WHERE completedon < NOW() - INTERVAL '1 hour'")
+    // TRUNCATE all mutable tables to prevent test pollution between runs.
+    // CASCADE handles FK-like dependencies even though we don't use formal FKs.
+    await testPool.query(`
+      TRUNCATE
+        outbox,
+        outbox_listeners,
+        stream_events,
+        stream_event_projections,
+        stream_members,
+        streams,
+        workspace_members,
+        workspaces,
+        users,
+        messages,
+        reactions,
+        conversations,
+        conversation_messages,
+        memos,
+        memo_source_messages,
+        memo_batches,
+        memo_batch_messages,
+        attachments,
+        agent_sessions,
+        agent_session_steps,
+        search_embeddings,
+        emoji_usage,
+        ai_usage_records,
+        ai_budgets,
+        user_preferences,
+        queue_messages,
+        queue_tokens,
+        schedules,
+        schedule_ticks
+      CASCADE
+    `)
   } catch {
-    // Ignore errors if tables don't exist yet
+    // Ignore errors if tables don't exist yet (first run before migrations)
   } finally {
     await testPool.end()
   }
@@ -118,7 +146,7 @@ async function findAvailablePort(): Promise<number> {
  */
 export async function startTestServer(): Promise<TestServer> {
   await ensureTestDatabaseExists()
-  await cleanupStaleJobs()
+  await cleanupStaleData()
 
   const port = await findAvailablePort()
 
@@ -130,6 +158,13 @@ export async function startTestServer(): Promise<TestServer> {
   process.env.USE_STUB_COMPANION = "true"
   process.env.USE_STUB_BOUNDARY_EXTRACTION = "true"
   process.env.USE_STUB_AI = "true"
+
+  // Disable rate limits for tests (prevent flaky 429s)
+  process.env.GLOBAL_RATE_LIMIT_MAX = "10000"
+  process.env.AUTH_RATE_LIMIT_MAX = "10000"
+
+  // CORS: allow test origin
+  process.env.CORS_ALLOWED_ORIGINS = `http://localhost:${port},http://127.0.0.1:${port}`
 
   // Higher throughput for parallel test files
   process.env.QUEUE_MAX_ACTIVE_TOKENS = "15"

@@ -38,16 +38,31 @@ export interface Config {
   useStubBoundaryExtraction: boolean
   /** Stub all AI features (naming, embedding, memo processing) */
   useStubAI: boolean
+  /** Allowed CORS origins. In production, must be explicitly configured. */
+  corsAllowedOrigins: string[]
+  rateLimits: {
+    globalMax: number
+    authMax: number
+  }
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
 }
 
 export function loadConfig(): Config {
+  const isProduction = process.env.NODE_ENV === "production"
   const useStubAuth = process.env.USE_STUB_AUTH === "true"
 
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required")
+  }
+
+  if (isProduction && useStubAuth) {
+    throw new Error("USE_STUB_AUTH must be false in production")
+  }
+
+  if (isProduction && !process.env.CORS_ALLOWED_ORIGINS) {
+    throw new Error("CORS_ALLOWED_ORIGINS is required in production")
   }
 
   if (!useStubAuth) {
@@ -63,6 +78,10 @@ export function loadConfig(): Config {
   const useStubAI = process.env.USE_STUB_AI === "true"
   const fastShutdown = process.env.FAST_SHUTDOWN === "true"
 
+  const corsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+    : ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+
   const config: Config = {
     port: Number(process.env.PORT) || 3001,
     databaseUrl: process.env.DATABASE_URL,
@@ -71,6 +90,11 @@ export function loadConfig(): Config {
     useStubCompanion,
     useStubBoundaryExtraction,
     useStubAI,
+    corsAllowedOrigins,
+    rateLimits: {
+      globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
+      authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
+    },
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",

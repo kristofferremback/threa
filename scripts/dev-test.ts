@@ -89,6 +89,7 @@ async function main() {
       USE_STUB_AUTH: "true",
       FAST_SHUTDOWN: "true",
       PORT: String(backendPort),
+      CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort}`,
     }
 
     // Set environment variables for frontend (needs to know backend port for proxy)

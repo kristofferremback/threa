@@ -21,6 +21,8 @@ import {
   updateMessage,
   deleteMessage,
   getMemberId,
+  joinWorkspace,
+  joinRoom,
 } from "../client"
 
 function getBaseUrl(): string {
@@ -140,14 +142,7 @@ describe("Real-time Events", () => {
 
   describe("Room Authorization", () => {
     test("should allow joining workspace room when member", async () => {
-      // If join fails, an error event is emitted within ~50ms
-      // We wait for either an error or a short timeout (no error = success)
-      const errorPromise = waitForEvent(socket, "error", 500).catch(() => null)
-
-      socket.emit("join", `ws:${workspaceId}`)
-
-      const error = await errorPromise
-      expect(error).toBeNull()
+      await joinRoom(socket, `ws:${workspaceId}`)
     })
 
     test("should reject joining workspace room when not member", async () => {
@@ -170,19 +165,14 @@ describe("Real-time Events", () => {
 
     test("should allow joining stream room when member", async () => {
       const stream = await createScratchpad(client, workspaceId)
-
-      const errorPromise = waitForEvent(socket, "error", 500).catch(() => null)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-
-      const error = await errorPromise
-      expect(error).toBeNull()
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
     })
   })
 
   describe("Message Events", () => {
     test("should receive message:created event in stream room", async () => {
       const stream = await createScratchpad(client, workspaceId)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const eventPromise = waitForEvent<{ event: any }>(socket, "message:created")
 
@@ -205,7 +195,7 @@ describe("Real-time Events", () => {
 
     test("should receive message:edited event", async () => {
       const stream = await createScratchpad(client, workspaceId)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const message = await sendMessage(client, workspaceId, stream.id, "Original content")
 
@@ -227,7 +217,7 @@ describe("Real-time Events", () => {
 
     test("should receive message:deleted event", async () => {
       const stream = await createScratchpad(client, workspaceId)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const message = await sendMessage(client, workspaceId, stream.id, "To be deleted")
 
@@ -248,7 +238,7 @@ describe("Real-time Events", () => {
   describe("Reaction Events", () => {
     test("should receive reaction:added event", async () => {
       const stream = await createScratchpad(client, workspaceId)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const message = await sendMessage(client, workspaceId, stream.id, "React to me")
 
@@ -270,7 +260,7 @@ describe("Real-time Events", () => {
 
     test("should receive reaction:removed event", async () => {
       const stream = await createScratchpad(client, workspaceId)
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const message = await sendMessage(client, workspaceId, stream.id, "Unreact from me")
       await addReaction(client, workspaceId, message.id, "❤️")
@@ -294,7 +284,7 @@ describe("Real-time Events", () => {
 
   describe("Stream Events", () => {
     test("should receive stream:created event in workspace room", async () => {
-      socket.emit("join", `ws:${workspaceId}`)
+      await joinRoom(socket, `ws:${workspaceId}`)
 
       const eventPromise = waitForEvent<{ stream: any }>(socket, "stream:created")
 
@@ -315,7 +305,7 @@ describe("Real-time Events", () => {
     test("should receive stream:updated event in workspace room", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}`)
+      await joinRoom(socket, `ws:${workspaceId}`)
 
       const eventPromise = waitForEvent<{ stream: any }>(socket, "stream:updated")
 
@@ -349,7 +339,7 @@ describe("Real-time Events", () => {
       })
 
       // Only join stream1
-      socket.emit("join", `ws:${workspaceId}:stream:${stream1.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream1.id}`)
 
       // Send message to stream1 - should receive
       const event1Promise = waitForEvent<{ event: any }>(socket, "message:created")
@@ -367,7 +357,7 @@ describe("Real-time Events", () => {
 
     test("should receive workspace events even if not in stream room", async () => {
       // Join workspace room only
-      socket.emit("join", `ws:${workspaceId}`)
+      await joinRoom(socket, `ws:${workspaceId}`)
 
       const eventPromise = waitForEvent<{ stream: any }>(socket, "stream:created")
 
@@ -381,7 +371,7 @@ describe("Real-time Events", () => {
       const existingStream = await createScratchpad(client, workspaceId)
 
       // Only join stream room, not workspace room
-      socket.emit("join", `ws:${workspaceId}:stream:${existingStream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${existingStream.id}`)
 
       // To verify nothing is received, we use a short timeout
       const noEventPromise = waitForEvent(socket, "stream:created", 300).catch(() => "no-event")
@@ -391,6 +381,31 @@ describe("Real-time Events", () => {
 
       const result = await noEventPromise
       expect(result).toBe("no-event")
+    })
+
+    test("should not deliver stream:activity to workspace members outside the stream", async () => {
+      const privateStream = await createScratchpad(client, workspaceId, "off")
+      const outsiderClient = new TestClient()
+      await loginAs(outsiderClient, "workspace-outsider@example.com", "Workspace Outsider")
+      await joinWorkspace(outsiderClient, workspaceId)
+
+      const outsiderSocket = createSocket(outsiderClient)
+      await connectSocket(outsiderSocket)
+
+      try {
+        await joinRoom(outsiderSocket, `ws:${workspaceId}`)
+
+        // With stream-scoped activity events, the outsider won't receive any
+        // stream:activity event at all (they're not in the stream room)
+        const noActivityPromise = waitForEvent(outsiderSocket, "stream:activity", 500).catch(() => "no-event")
+        const secret = "TOP SECRET stream content"
+
+        await sendMessage(client, workspaceId, privateStream.id, secret)
+
+        expect(await noActivityPromise).toBe("no-event")
+      } finally {
+        outsiderSocket.disconnect()
+      }
     })
   })
 
@@ -409,8 +424,8 @@ describe("Real-time Events", () => {
       await connectSocket(socket2)
 
       try {
-        socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
-        socket2.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+        await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
+        await joinRoom(socket2, `ws:${workspaceId}:stream:${stream.id}`)
 
         const event1Promise = waitForEvent<{ event: any }>(socket, "message:created")
         const event2Promise = waitForEvent<{ event: any }>(socket2, "message:created")

@@ -20,6 +20,7 @@ import {
   createScratchpad,
   sendMessage,
   listEvents,
+  joinRoom,
   type StreamEvent,
 } from "../client"
 
@@ -138,7 +139,7 @@ describe("Companion Agent", () => {
       const stream = await createScratchpad(client, workspaceId)
 
       // Join the stream room to receive events
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       // Start waiting for companion response BEFORE sending message
       const responsePromise = waitForCompanionResponse(socket, stream.id)
@@ -158,7 +159,7 @@ describe("Companion Agent", () => {
     test("should respond with persona author, not user", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Who are you?")
@@ -173,7 +174,7 @@ describe("Companion Agent", () => {
     test("should create agent session for tracking", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Track this session")
@@ -212,7 +213,7 @@ describe("Companion Agent", () => {
     test("should broadcast message:created event for companion response", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Broadcast test")
@@ -234,7 +235,7 @@ describe("Companion Agent", () => {
     test("should have proper message structure in companion response", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       const responsePromise = waitForCompanionResponse(socket, stream.id)
       await sendMessage(client, workspaceId, stream.id, "Structure test")
@@ -259,7 +260,7 @@ describe("Companion Agent", () => {
     test("should respond to each user message", async () => {
       const stream = await createScratchpad(client, workspaceId)
 
-      socket.emit("join", `ws:${workspaceId}:stream:${stream.id}`)
+      await joinRoom(socket, `ws:${workspaceId}:stream:${stream.id}`)
 
       // Send first message and wait for response
       const response1Promise = waitForCompanionResponse(socket, stream.id)

@@ -3,6 +3,8 @@
  * Black box testing - treats the API as an external service.
  */
 
+import type { Socket } from "socket.io-client"
+
 function getBaseUrl(): string {
   // Read at call time, not import time, so setup.ts can set it
   return process.env.TEST_BASE_URL || "http://localhost:3001"
@@ -57,6 +59,10 @@ export class TestClient {
 
   post<T = unknown>(path: string, body?: unknown) {
     return this.request<T>("POST", path, body)
+  }
+
+  put<T = unknown>(path: string, body?: unknown) {
+    return this.request<T>("PUT", path, body)
   }
 
   patch<T = unknown>(path: string, body?: unknown) {
@@ -685,4 +691,25 @@ export async function getEmojis(client: TestClient, workspaceId: string): Promis
     throw new Error(`Get emojis failed: ${JSON.stringify(data)}`)
   }
   return data.emojis
+}
+
+/**
+ * Joins a socket.io room with acknowledgment callback.
+ * Waits for the server to confirm the join succeeded.
+ */
+export async function joinRoom(socket: Socket, room: string, timeoutMs: number = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Socket join timeout for room: ${room}`))
+    }, timeoutMs)
+
+    socket.emit("join", room, (result?: { ok?: boolean; error?: string }) => {
+      clearTimeout(timeout)
+      if (result?.ok) {
+        resolve()
+        return
+      }
+      reject(new Error(result?.error || `Failed to join room: ${room}`))
+    })
+  })
 }
