@@ -6,23 +6,18 @@ allowed-tools: Bash(gh api:*), Bash(gh issue view:*), Bash(gh issue list:*), Bas
 
 # Multi-Perspective Code Review
 
-Spawns a single Opus agent that analyzes a PR from multiple perspectives and posts a unified comment.
+Spawns parallel review agents with confidence-based scoring to filter false positives.
 
-## What It Does
+## Architecture
 
-1. Checks PR eligibility (not draft, not closed, not already reviewed)
-2. Identifies PR number and repo info
-3. Spawns ONE background agent (Opus) that:
-   - Gathers its own context (plan, PR description, CLAUDE.md files)
-   - Reviews from all perspectives
-   - Posts the unified comment directly to GitHub
-4. Agent reports back a summary with confidence score
+- **Orchestrator** (you): eligibility, context gathering, coordination, posting
+- **Sonnet agents** (6 parallel, background): focused review, one perspective each
+- **Haiku agents** (N parallel): independent confidence scoring per issue
+- **Threshold**: only issues scoring >= 80/100 survive to the final comment
 
 ## Instructions
 
 ### Step 1: Check Eligibility
-
-Skip review if PR is ineligible. Run:
 
 ```bash
 gh pr view <NUMBER> --json state,isDraft,author -q '"\(.state)|\(.isDraft)|\(.author.login)"'
@@ -34,332 +29,423 @@ gh pr view <NUMBER> --json state,isDraft,author -q '"\(.state)|\(.isDraft)|\(.au
 - isDraft is true
 - author is a bot (login contains "bot", "dependabot", "renovate", etc.)
 
-Also check for existing review:
+Also check for existing **active** review comments (not already superseded):
 
 ```bash
-gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | .id' | head -1
+gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '[.[] | select(.body | contains("unified-review")) | select(.body | contains("unified-review:superseded") | not) | .id]'
 ```
 
-If a unified-review comment exists, the agent will supersede it (not skip).
+If any active unified-review comments exist, note ALL their IDs — the review will supersede each one (not skip).
 
 ### Step 2: Identify PR
 
-If a PR number was provided as an argument, use that. Otherwise, find the open PR for the current branch:
+If a PR number was provided as an argument, use that. Otherwise:
 
 ```bash
 gh pr view --json number,title,url -q '"\(.number)|\(.title)|\(.url)"'
 ```
 
-Parse `number|title|url` from output. If no PR exists and no number provided:
+If no PR exists and no number provided:
 
 ```
 No open PR found for current branch. Please provide a PR number: /code-review <number>
 ```
 
-Get repo owner/name for API calls:
+Get repo info:
 
 ```bash
 gh repo view --json owner,name -q '"\(.owner.login)|\(.name)"'
 ```
 
-### Step 3: Spawn Review Agent
+### Step 3: Gather Context
 
-Use the Task tool to spawn ONE agent with Opus.
-
-**CRITICAL**:
-
-- Set `model: "opus"` to use Opus
-- Set `run_in_background: true`
-
-Replace `<NUMBER>`, `<TITLE>`, `<OWNER>`, `<REPO>` with actual values.
-
-**Task parameters:**
-
-- subagent_type: "general-purpose"
-- model: "opus"
-- description: "Multi-perspective PR review"
-- run_in_background: true
-- prompt: (see below)
-
-**Agent prompt:**
-
-You are a comprehensive code review agent. Review PR #\<NUMBER\> from multiple perspectives and POST the review comment directly to GitHub.
-
-PR: #\<NUMBER\> - \<TITLE\>
-Repo: \<OWNER\>/\<REPO\>
-
-**Phase 0: Gather Context**
-
-Before reviewing, gather all necessary context yourself:
+The orchestrator gathers context directly (no agents needed for this).
 
 1. **Get PR info:**
-   - `gh pr diff <NUMBER>` - Get the cumulative diff
-   - `gh pr view <NUMBER> --json headRefOid,body -q '{sha: .headRefOid, body: .body}'` - Get HEAD SHA and PR description
-   - `gh api repos/<OWNER>/<REPO>/pulls/<NUMBER>/comments --jq '.[].body'` - Get existing review comments
-   - `gh api repos/<OWNER>/<REPO>/issues/<NUMBER>/comments --jq '.[] | select(.body | contains("unified-review")) | {id: .id, url: .html_url}'` - Check for previous unified review
 
-2. **Find CLAUDE.md files in changed directories:**
+```bash
+gh pr view <NUMBER> --json headRefOid,body -q '{sha: .headRefOid, body: .body}'
+```
 
-   ```bash
-   gh pr diff <NUMBER> --name-only | xargs -I{} dirname {} | sort -u | while read dir; do
-     [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
-   done
-   [ -f "CLAUDE.md" ] && echo "CLAUDE.md"
-   ```
+2. **Find and read CLAUDE.md files:**
 
-   Read each CLAUDE.md file found.
+```bash
+gh pr diff <NUMBER> --name-only | xargs -I{} dirname {} | sort -u | while read dir; do
+  [ -f "$dir/CLAUDE.md" ] && echo "$dir/CLAUDE.md"
+done
+[ -f "CLAUDE.md" ] && echo "CLAUDE.md"
+```
 
-3. **Find the implementation plan** using the /find-plan skill approach:
+Read each CLAUDE.md file found.
+
+3. **Find the implementation plan:**
    - Check `~/.claude/plans/` for plan files related to this branch
    - Look for plan files in the repo (docs/, .claude/, etc.)
-   - If no plan exists, note "No plan found" and proceed with PR description as requirements
+   - If no plan exists, note "No plan found" and use PR description as requirements
 
-**About the diff:** `gh pr diff` shows the cumulative diff between the PR HEAD and the base branch (main). This IS the current state of the PR - not commit-by-commit changes.
+Store the HEAD SHA, PR description, CLAUDE.md content, and plan content for passing to agents.
 
-**Phase 1: Review**
+### Step 4: Spawn Review Agents
 
-**CRITICAL - Read Files for Context:**
+Spawn **6 parallel Sonnet agents** (all with `run_in_background: true`). Each agent returns a list of issues.
 
-The diff shows WHAT changed but not always WHY. For every potential issue:
+**CRITICAL for all agents:**
 
-1. **Use the Read tool** to read the file at the specific line numbers to understand full context
-2. **Trace the data flow** - understand how values are used before and after the change
-3. **Check related code** - changes often require corresponding updates elsewhere
+- `model: "sonnet"`, `subagent_type: "general-purpose"`, `run_in_background: true`
+- Each agent receives the CLAUDE.md content and PR summary you gathered in Step 3
+- Do NOT check build signal or attempt to build/typecheck
 
-**False Positives to Avoid:**
-
-- Pre-existing issues (not introduced by this PR)
-- Issues on lines the PR did not modify (EXCEPTION: missing corresponding changes - see below)
-- Test failures, type errors, build errors - CI catches these. Your job is to find issues CI cannot catch.
-- Issues a linter/typechecker/compiler would catch (imports, types, formatting)
-- General quality issues (test coverage, documentation) unless CLAUDE.md requires them
-- Issues called out in CLAUDE.md but explicitly silenced (lint ignore comments)
-- Intentional functionality changes related to the PR's purpose
-- Theoretical risks without concrete impact
-- Issues where you haven't traced the full data flow
-
-**Plan Adherence (check FIRST):**
-
-Before reviewing code quality, check if the implementation matches the original plan/requirements:
-
-1. Review the plan you found in Phase 0 (requirements, design decisions)
-2. Review the PR description for stated goals
-3. Compare the actual implementation against:
-   - **Stated requirements**: Does the code do what was asked?
-   - **Planned approach**: If a plan exists, does the implementation follow it?
-   - **Scope creep**: Are there changes beyond what was planned/requested?
-   - **Missing pieces**: Are there planned features that weren't implemented?
-   - **Deviations**: If the implementation differs from the plan, is there a good reason?
-
-**What to flag:**
-
-- Implementation that doesn't match stated requirements
-- Missing features that were explicitly planned
-- Fundamental approach differs from plan without explanation in PR description
-
-**What NOT to flag:**
-
-- **User-requested additions**: If the PR description mentions additional requirements, those are authorized scope
-- **Supporting infrastructure**: Migrations, types, tests, refactors that enable the main feature are expected
-- **Implementation details**: The plan says "add caching" - using Redis vs in-memory is an implementation choice, not a deviation
-- Reasonable decisions within the spirit of the plan
-- Cases where no plan exists (just note "No plan found")
-
-**Key principle**: The question is "does this serve the stated goal?" not "was every line in the original plan?" Features often need supporting changes. A migration to add a column, a new type definition, a refactored helper - these aren't scope creep, they're implementation.
-
-**Low-Level (Diff-Focused):**
-Shallow scan of the diff itself for obvious issues:
-
-- Logic errors and bugs in the changed code
-- Edge cases not handled
-- Off-by-one errors, null checks, boundary conditions
-- Incorrect variable usage
-- Focus ONLY on the changes themselves, not surrounding context
-
-**High-Level (Context-Focused):**
-Understand the bigger picture:
-
-- WHY does this code exist? What problem does it solve?
-- Does the change break the existing contract or assumptions?
-- Read git blame/history if needed to understand intent
-- Check if related code elsewhere needs corresponding changes
-
-**Historical Context:**
-Check historical context that may inform the review:
-
-- `gh pr list --state merged --search "path:<file>" --limit 5` - Find previous PRs that touched these files
-- Check comments on those PRs for recurring issues or guidance that applies here
-- Read code comments in modified files - ensure changes comply with any guidance in comments (TODOs, warnings, invariants documented inline)
-
-**Missing Corresponding Changes:**
-
-Flag when changes in one area SHOULD have corresponding changes elsewhere that are missing:
-
-- Backend API change → frontend consumer not updated
-- Type/interface change → usages not updated
-- Schema change → migration or validation not updated
-- Config change → documentation or environment not updated
-- Shared utility change → all callers not considered
-
-This is NOT about flagging unchanged lines - it's about flagging MISSING changes that the PR's changes require.
-
-**Additional Perspectives:**
-
-📋 **CLAUDE.md Compliance**: Check changes against each CLAUDE.md file. Note: CLAUDE.md is guidance for Claude writing code, so not all instructions apply to review. Only flag clear violations. When citing CLAUDE.md, include the specific quote and link to the line.
-
-🏗️ **Abstraction Design**: Evaluate new/modified APIs, contexts, hooks, classes, interfaces. Look for:
-
-- **Leaky abstractions**: API exposes implementation instead of semantic intent. Consumers must combine values or understand internals.
-- **Config sprawl**: Variant logic scattered with `if (type === X)` checks 50+ lines apart. All config for a variant should be in ONE place.
-- **Partial abstractions**: Abstraction handles part of workflow, caller manages rest. Should fully own its domain.
-- **Parallel implementations**: Duplicating existing patterns instead of extending. "Why are there two ways?" should never arise.
-
-**How to evaluate**: Read the API being introduced. Then read ALL consumers in the PR:
-
-- Are consumers doing complex logic to derive simple answers? (leaky abstraction)
-- Is variant-specific logic scattered across the file? (config sprawl)
-- Do callers still need to manage part of what the abstraction should own? (partial abstraction)
-- Does this duplicate patterns that exist elsewhere? (parallel implementation)
-
-The core question: **Does the abstraction make intent obvious and hide implementation details?** When consumers must understand how something works internally, the abstraction is leaky.
-
-🔒 **Security**: Try to delegate to the built-in security review:
+**Issue return format** (all agents must use this):
 
 ```
-Skill(skill: "security-review", args: "<NUMBER>")
+ISSUES:
+- file.ts:10-20 | CATEGORY | Description of the issue and why it matters
+- other-file.ts:50 | CATEGORY | Description
 ```
 
-If the Skill tool works, incorporate its findings. If it fails or is unavailable, fall back to manual review: check for actual vulnerabilities only (CRITICAL/HIGH/MED/LOW), not theoretical risks. Look for injection, auth bypass, data exposure, SSRF, path traversal.
+Categories: `claude-md`, `bug`, `historical`, `plan`, `missing-change`, `abstraction`, `security`, `performance`, `reactivity`
 
-⚡ **Performance**: N+1 queries, unbounded queries, missing useMemo/useCallback. Not "could be faster" without impact.
+If no issues: `ISSUES: none`
 
-🔄 **Reactivity**: For state mutations only. Check outbox events, transactions, frontend handlers.
+---
 
-**Confidence Score** (1-7):
+**Agent 1: CLAUDE.md Compliance**
 
-- 7: Excellent - No issues found
-- 6: Very Good - Minor suggestions only
-- 5: Good - Few non-blocking improvements
-- 4: Acceptable - Some issues, nothing blocking
-- 3: Needs Work - Multiple issues to address
-- 2: Significant Concerns - Blocking issues present
-- 1: Major Problems - Should not merge
+> You are a CLAUDE.md compliance auditor. Review PR #\<NUMBER\> in \<OWNER\>/\<REPO\>.
+>
+> CLAUDE.md files and their contents:
+> \<CLAUDE_MD_CONTENT\>
+>
+> PR Summary: \<PR_SUMMARY\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER>` to get the full diff
+> 2. For each CLAUDE.md instruction (especially project invariants), check if any change in the diff violates it
+> 3. For each potential violation, use the Read tool to read the actual file and confirm the issue exists in context
+> 4. You MUST cite the specific CLAUDE.md instruction being violated — quote it and include the invariant ID if applicable
+>
+> Note: CLAUDE.md is guidance for Claude writing code. Not all instructions apply during review. Only flag CLEAR violations where the diff introduces code that contradicts a specific instruction.
+>
+> Do NOT flag:
+>
+> - Issues explicitly silenced in code (lint ignore comments)
+> - Pre-existing issues not introduced by this PR
+> - Issues a linter/typechecker/compiler would catch
+> - General quality issues unless CLAUDE.md explicitly requires them
+> - Stylistic preferences not explicitly called out in CLAUDE.md
+>
+> Return format:
+>
+> ```
+> ISSUES:
+> - file.ts:10-20 | claude-md | Violates INV-XX: "<quoted instruction>" — <explanation>
+> ```
 
-**Only report issues you're highly confident about.** When in doubt, leave it out. A false positive wastes more time than a missed minor issue.
+---
 
-**Important Notes:**
+**Agent 2: Bug Scan (Diff-Focused)**
 
-- **Do NOT check build signal** - Don't attempt to build or typecheck. Don't report test failures, missing test parameters, or type errors. CI catches these. Your job is to find issues CI cannot catch: logic bugs, architectural problems, CLAUDE.md violations, data flow issues, and abstraction design problems.
-- **Trace the complete data flow** - Don't just look at individual functions. Understand how values flow from entry point to exit point. Many bugs are in the interactions between components, not the components themselves.
-- **Abstraction quality matters as much as correctness** - Code can be "correct" but still poorly designed. The question isn't "does it work?" but "will the next developer use it correctly?" and "will adding a new variant require changes in one place or five?" Design problems compound.
+> You are a bug detector. Shallow scan PR #\<NUMBER\> in \<OWNER\>/\<REPO\> for obvious bugs.
+>
+> PR Summary: \<PR_SUMMARY\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER>` to get the full diff
+> 2. Scan for: logic errors, unhandled edge cases, off-by-one errors, null/undefined hazards, incorrect variable usage, race conditions
+> 3. Focus ONLY on the changes themselves
+> 4. Focus on LARGE bugs — avoid nitpicks
+> 5. If you're not confident it's a bug, skip it
+>
+> Do NOT flag: linter/typechecker issues, test failures, pre-existing issues, pedantic nitpicks.
 
-**Post Comment Format:**
+---
 
-Use `gh pr comment <NUMBER> --body "..."` with this EXACT structure:
+**Agent 3: Historical Context**
+
+> You are a historical context reviewer for PR #\<NUMBER\> in \<OWNER\>/\<REPO\>.
+>
+> PR Summary: \<PR_SUMMARY\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER> --name-only` to get modified files
+> 2. For each modified file:
+>    - `gh pr list --state merged --search "path:<file>" --limit 5` — find previous PRs
+>    - Check comments on those PRs for recurring issues or guidance
+>    - Read the file to check code comments (TODOs, warnings, invariants)
+> 3. Flag changes that violate guidance found in code comments, previous PR feedback, or established patterns
+
+---
+
+**Agent 4: Plan Adherence & Completeness**
+
+> You are reviewing PR #\<NUMBER\> in \<OWNER\>/\<REPO\> for plan adherence and completeness.
+>
+> PR Summary: \<PR_SUMMARY\>
+> Plan: \<PLAN_CONTENT or "No plan found"\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER>` to get the full diff
+> 2. Compare implementation against plan/PR description:
+>    - Does the code do what was asked?
+>    - Are there planned features that weren't implemented?
+>    - Does the approach match the plan?
+> 3. Check for MISSING corresponding changes:
+>    - Backend API change → frontend consumer not updated?
+>    - Type/interface change → usages not updated?
+>    - Schema change → migration or validation not updated?
+>    - Shared utility change → all callers not considered?
+> 4. Use the Read tool to verify each finding — trace the data flow
+>
+> Do NOT flag: supporting infrastructure (migrations, types, tests), implementation detail choices, user-requested additions in PR description.
+
+---
+
+**Agent 5: Design & Non-Functional Concerns**
+
+> You are reviewing PR #\<NUMBER\> in \<OWNER\>/\<REPO\> for design quality and non-functional concerns.
+>
+> CLAUDE.md files: \<CLAUDE_MD_CONTENT\>
+> PR Summary: \<PR_SUMMARY\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER>` and read modified files for full context
+> 2. Check each area — flag concrete issues only, not theoretical risks:
+>
+> **Abstraction Design:**
+>
+> - Leaky abstractions (API exposes implementation details)
+> - Config sprawl (variant logic scattered across file)
+> - Partial abstractions (caller still manages part of the workflow)
+> - Parallel implementations (duplicating existing patterns)
+>
+> **Performance:** N+1 queries, unbounded queries, missing memoization with measurable impact
+>
+> **Reactivity:** Outbox events, transactions, frontend state handlers
+
+---
+
+**Agent 6: Security Review**
+
+> You are a senior security engineer reviewing PR #\<NUMBER\> in \<OWNER\>/\<REPO\>. Focus ONLY on HIGH-CONFIDENCE security vulnerabilities with real exploitation potential. This is not a general code review — focus ONLY on security implications newly introduced by this PR.
+>
+> PR Summary: \<PR_SUMMARY\>
+>
+> Steps:
+>
+> 1. Run `gh pr diff <NUMBER>` to get the full diff
+> 2. Use Read, Glob, and Grep to understand the codebase's existing security patterns (sanitization, validation, auth frameworks)
+> 3. Trace data flow from user inputs to sensitive operations in the changed code
+> 4. Only flag issues where you're >80% confident of actual exploitability
+>
+> **Categories to examine:**
+>
+> - Input validation: SQL injection, command injection, XXE, template injection, path traversal
+> - Auth & authorization: bypass logic, privilege escalation, session flaws, JWT vulnerabilities
+> - Crypto & secrets: hardcoded keys/tokens, weak algorithms, improper key storage
+> - Injection & code execution: deserialization RCE, eval injection, XSS (reflected, stored, DOM-based)
+> - Data exposure: sensitive data logging, PII handling violations, API endpoint leakage
+>
+> **Hard exclusions — do NOT report:**
+>
+> - Denial of Service, resource exhaustion, rate limiting concerns
+> - Secrets stored on disk (handled separately)
+> - Race conditions unless concretely problematic with a specific attack path
+> - Outdated third-party library vulnerabilities
+> - Memory safety issues in memory-safe languages
+> - Issues only in test files
+> - Log spoofing (logging unsanitized user input is not a vulnerability)
+> - SSRF that only controls path (only if it controls host or protocol)
+> - User-controlled content in AI system prompts
+> - Regex injection or regex DoS
+> - Issues in documentation/markdown files
+> - Lack of audit logs
+> - Lack of hardening measures without a concrete vulnerability
+> - Input validation concerns on non-security-critical fields without proven impact
+>
+> **Precedents — calibrate your findings:**
+>
+> - Logging high-value secrets in plaintext IS a vulnerability. Logging URLs is safe.
+> - UUIDs are unguessable — no need to validate.
+> - Environment variables and CLI flags are trusted. Attacks requiring control of env vars are invalid.
+> - Resource management issues (memory/FD leaks) are not security vulnerabilities.
+> - React/Angular are secure against XSS unless using dangerouslySetInnerHTML or bypassSecurityTrustHtml. Do NOT report XSS in tsx files without unsafe methods.
+> - Client-side JS/TS permission checks are not vulnerabilities — the backend handles auth.
+> - Only include MEDIUM findings if they are obvious and concrete.
+>
+> **Severity:**
+>
+> - HIGH: Directly exploitable — RCE, data breach, auth bypass
+> - MEDIUM: Requires specific conditions but significant impact
+> - LOW: Defense-in-depth (but only report if concrete)
+>
+> Return format:
+>
+> ```
+> ISSUES:
+> - file.ts:10-20 | security | [HIGH/MED/LOW] Description with exploit scenario
+> ```
+
+---
+
+### Step 5: Confidence Scoring
+
+Collect all issues from the 6 review agents (via TaskOutput). For each issue, spawn a **parallel Haiku agent** to score it independently.
+
+`model: "haiku"`, `subagent_type: "general-purpose"`
+
+Pass each scoring agent: the issue description, the CLAUDE.md content, and the PR number.
+
+> You are a code review confidence scorer. Score this issue on a scale from 0-100.
+>
+> PR: #\<NUMBER\> in \<OWNER\>/\<REPO\>
+> Issue: \<ISSUE_DESCRIPTION\>
+> CLAUDE.md files: \<CLAUDE_MD_CONTENT\>
+>
+> Run `gh pr diff <NUMBER>` to verify the issue against the actual diff.
+>
+> Scoring rubric:
+>
+> - **0**: False positive. Doesn't stand up to scrutiny, or is a pre-existing issue.
+> - **25**: Might be real, but could be a false positive. If stylistic, not explicitly called out in CLAUDE.md.
+> - **50**: Real issue, but a nitpick or rare in practice. Not very important relative to the rest of the PR.
+> - **75**: Very likely a real issue that will be hit in practice. The existing approach is insufficient. Important and will directly impact functionality, OR directly mentioned in CLAUDE.md.
+> - **100**: Definitely a real issue, will happen frequently. Evidence directly confirms it.
+>
+> **For CLAUDE.md issues specifically:** Double check that the CLAUDE.md actually calls out this issue. If the cited instruction doesn't exist or doesn't say what was claimed, score 25 or lower.
+>
+> Return ONLY: `SCORE: <number>`
+
+**Filter:** Remove any issues scoring below 80.
+
+### Step 6: Compose Comment
+
+Compute an overall confidence score (1-7):
+
+- 7: Excellent — No issues survived filtering
+- 6: Very Good — Minor suggestions only
+- 5: Good — Few non-blocking improvements
+- 4: Acceptable — Some issues, nothing blocking
+- 3: Needs Work — Multiple issues to address
+- 2: Significant Concerns — Blocking issues present
+- 1: Major Problems — Should not merge
+
+### Step 7: Re-Check Eligibility
+
+Re-run the eligibility check from Step 1 to ensure the PR hasn't been closed or converted to draft during the review.
+
+### Step 8: Post Comment
+
+**If issues were found**, use `gh pr comment <NUMBER> --body "..."`:
 
 ```
 <!-- unified-review -->
 
-## Code Review Summary
+### Code review
 
-**Confidence Score: X/7** - [Excellent/Very Good/Good/Acceptable/Needs Work/Significant Concerns/Major Problems]
+**Confidence: X/7** — [Excellent/Very Good/Good/Acceptable/Needs Work/Significant Concerns/Major Problems]
 
-[1-2 sentence overall assessment of the PR quality and what it does well or poorly.]
+Found N issues:
 
-**Suggested improvements:**
-- `file.ts:10-20` - Brief description of issue and fix
-- `other-file.ts:50` - Another issue
+1. `file.ts:10-20` — Brief description (CLAUDE.md says "<quoted instruction>" | bug due to <reason> | etc.)
 
-(Or if no issues: "None - the code is clean.")
+   https://github.com/<OWNER>/<REPO>/blob/<FULL_SHA>/path/file.ts#L9-L21
+
+2. `other-file.ts:50` — Brief description
+
+   https://github.com/<OWNER>/<REPO>/blob/<FULL_SHA>/path/other-file.ts#L49-L52
 
 ---
 
 <details><summary>📐 Plan Adherence [CLEAN | N issues]</summary>
 
-[Assessment of whether implementation matches the plan/requirements. Include:
-- What was planned/requested
-- What was implemented
-- Any gaps or deviations
-Or "✅ Implementation matches the stated requirements." if clean.]
+[Assessment or "✅ Implementation matches the stated requirements."]
 
 </details>
 
-<details><summary>🔍 Code Quality [CLEAN | N suggestions]</summary>
+<details><summary>🔍 Code Quality [CLEAN | N issues]</summary>
 
-[Detailed findings with context, code snippets, and explanations.]
+[Bug findings or "✅ No bugs found."]
 
 </details>
 
 <details><summary>📋 CLAUDE.md Compliance [CLEAN | N violations]</summary>
 
-[Violations with CLAUDE.md citations and quotes.]
+[Violations with citations and quotes, or "✅ No CLAUDE.md violations."]
 
 </details>
 
 <details><summary>🏗️ Abstraction Design [CLEAN | N concerns]</summary>
 
-[Design concerns with explanations.]
+[Design concerns or "✅ No design concerns."]
 
 </details>
 
 <details><summary>🔒 Security [CLEAN | N issues]</summary>
 
-[Security issues by severity, or "✅ No security concerns identified."]
+[Security issues or "✅ No security concerns identified."]
 
 </details>
 
 <details><summary>⚡ Performance [CLEAN | N concerns]</summary>
 
-[Performance issues, or "✅ No performance concerns."]
+[Performance issues or "✅ No performance concerns."]
 
 </details>
 
 <details><summary>🔄 Reactivity [CLEAN | N issues]</summary>
 
-[Reactivity issues, or "✅ No reactivity issues identified."]
+[Reactivity issues or "✅ No reactivity issues identified."]
 
 </details>
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>If this review was useful, react with 👍. Otherwise, react with 👎.</sub>
 ```
 
-**Section Status Format:**
+**If no issues survived filtering:**
 
-- `[CLEAN]` - No issues found in this area
-- `[N suggestions]` / `[N violations]` / `[N concerns]` / `[N issues]` - Count of findings
+```
+<!-- unified-review -->
 
-**Suggested Improvements Format (in summary):**
+### Code review
 
-- Use `file.ts:line` or `file.ts:start-end` format
-- One line per issue, brief description
-- Most important issues first
+**Confidence: 7/7** — Excellent
 
-**Detailed Findings Format (in collapsed sections):**
+No issues found. Checked for bugs, CLAUDE.md compliance, plan adherence, design quality, security, and performance.
 
-- Use headers for distinct issues (e.g., `### Minor: ResizeObserver cleanup`)
-- Include code snippets showing current code and suggested fix
-- Explain WHY it's an issue, not just WHAT
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+<sub>If this review was useful, react with 👍. Otherwise, react with 👎.</sub>
+```
 
 **Link Format Requirements:**
 
-- MUST use full SHA (not branch name or HEAD). Commands like `$(git rev-parse HEAD)` won't work in rendered markdown.
-- Use `#` after the file name, then `L[start]-L[end]` for line range
-- Include 1-2 lines of context before/after the relevant lines (e.g., if commenting on lines 5-6, link to L4-L7)
-- Link to ALL relevant files for each issue (the problematic code, related code, CLAUDE.md citation)
+- MUST use full SHA (not branch name or HEAD). `$(git rev-parse HEAD)` won't work in rendered markdown.
+- `#` after the file name, then `L[start]-L[end]` for line range
+- Include 1-2 lines of context before/after the relevant lines
+- Link to ALL relevant files for each issue
+- For CLAUDE.md citations, link to the specific line in CLAUDE.md
 - Format: `https://github.com/<OWNER>/<REPO>/blob/<FULL_SHA>/path/file.ts#L10-L15`
-- Repo name in URL must match the repo being reviewed
 
-**Supersede Old Comment** (if previous unified-review exists):
+**Supersede Old Comments** (if ANY active unified-review comments found in Step 1):
 
-**CRITICAL**: The old review content MUST be collapsed. Follow these steps exactly:
+For EACH old comment ID, supersede it:
 
-1. Fetch the old comment body and store it:
+1. Fetch the old comment body:
 
 ```bash
 OLD_BODY=$(gh api repos/<OWNER>/<REPO>/issues/comments/[ID] --jq '.body')
 ```
 
-2. Remove the `<!-- unified-review -->` marker from the old body (so it won't be detected as active)
+2. Remove the `<!-- unified-review -->` marker from the old body (replace with `<!-- unified-review:old -->`)
 
-3. Update the old comment with the FULL old content inside the collapsed block:
+3. Update the old comment with full content collapsed:
 
 ```bash
 gh api repos/<OWNER>/<REPO>/issues/comments/[ID] -X PATCH -f body="<!-- unified-review:superseded -->
@@ -373,53 +459,9 @@ $OLD_BODY_WITH_MARKER_REMOVED
 </details>"
 ```
 
-**Example of correct superseded comment:**
+**IMPORTANT:** Supersede ALL active comments, not just the first one. Multiple active reviews can exist from previous runs that failed to supersede properly. Each old review MUST be fully preserved inside `<details>` — never truncate or summarize it.
 
-```
-<!-- unified-review:superseded -->
-**[New review available here](https://github.com/.../issuecomment-123)**
-
-<details>
-<summary>Previous review (superseded)</summary>
-
-## Code Review Summary
-
-**Confidence Score: 6/7** - Very Good
-
-[... entire old review content here, collapsed ...]
-
-</details>
-```
-
-The old review MUST be fully preserved inside `<details>` - never truncate or summarize it.
-
-**Final Output** - Return ONLY this structured summary:
-
-```
-REVIEW_POSTED: <comment_url>
-CONFIDENCE: <1-7>
-SUMMARY:
-  Plan Adherence: <CLEAN | N issues>
-  Code Quality: <CLEAN | N issues>
-  CLAUDE.md: <CLEAN | N violations>
-  Abstraction: <CLEAN | N concerns>
-  Security: <CLEAN | N issues>
-  Performance: <CLEAN | N issues>
-  Reactivity: <CLEAN | N issues>
-KEY_ISSUES: <brief comma-separated list, or "None">
-```
-
-### Step 4: Collect Report
-
-Use TaskOutput to wait for the agent:
-
-```
-TaskOutput(task_id: "<task_id>", block: true, timeout: 300000)
-```
-
-Parse the structured summary from the agent's output.
-
-### Step 5: Report Results to User
+### Step 9: Report to User
 
 ```
 Code review posted to PR #<NUMBER>: <COMMENT_URL>
@@ -438,19 +480,21 @@ Summary:
 Key issues: [list if any]
 ```
 
+## False Positives (shared guidance for ALL review agents)
+
+- Pre-existing issues (not introduced by this PR)
+- Issues on lines the PR did not modify (EXCEPTION: missing corresponding changes)
+- Test failures, type errors, build errors — CI catches these
+- Issues a linter/typechecker/compiler would catch
+- General quality issues unless CLAUDE.md explicitly requires them
+- Issues called out in CLAUDE.md but explicitly silenced in code
+- Intentional functionality changes related to the PR's purpose
+- Theoretical risks without concrete impact
+- Pedantic nitpicks a senior engineer wouldn't call out
+
 ## Example Usage
 
 ```
 /code-review 72
 /code-review
 ```
-
-## Token Efficiency
-
-This skill uses a single Opus agent that gathers its own context:
-
-- Agent fetches plan, PR description, and CLAUDE.md files itself (not passed in prompt)
-- One code exploration pass (not seven)
-- Shared context across all review perspectives
-- Agent posts comment directly (no large content passed back)
-- Only structured summary returned to orchestrator
