@@ -165,13 +165,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Search
   app.post("/api/workspaces/:workspaceId/search", ...authed, rateLimits.search, search.search)
 
-  app.post(
-    "/api/workspaces/:workspaceId/messages",
-    ...authed,
-    rateLimits.messageCreate,
-    rateLimits.aiQuotaPerMember,
-    message.create
-  )
+  app.post("/api/workspaces/:workspaceId/messages", ...authed, rateLimits.messageCreate, message.create)
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
