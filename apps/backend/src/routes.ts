@@ -98,13 +98,13 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const debug = createDebugHandlers({ pool, poolMonitor })
   const agentSession = createAgentSessionHandlers({ pool })
 
-  // Global baseline rate limit
-  app.use(rateLimits.globalBaseline)
-
-  // Ops endpoints - restricted to internal network
+  // Ops endpoints - registered before rate limiter so probes aren't throttled
   app.get("/readyz", opsAccess, debug.health)
   app.get("/debug/pool", opsAccess, debug.poolState)
   app.get("/metrics", opsAccess, debug.metrics)
+
+  // Global baseline rate limit
+  app.use(rateLimits.globalBaseline)
 
   app.get("/api/auth/login", rateLimits.auth, authHandlers.login)
   app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
