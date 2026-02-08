@@ -36,8 +36,8 @@ export function renderLoginPage(state: string): string {
     label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #a3a3a3; }
     input { background: #262626; border: 1px solid #404040; color: #fafafa; padding: 10px 12px; border-radius: 6px; font-size: 16px; }
     input:focus { outline: none; border-color: #c9a227; }
-    button[type="submit"] { background: #c9a227; color: #0a0a0a; border: none; padding: 12px 16px; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
-    button[type="submit"]:hover { background: #d4af37; }
+    .custom-form button { background: #c9a227; color: #0a0a0a; border: none; padding: 12px 16px; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    .custom-form button:hover { background: #d4af37; }
     .warning { background: #422006; border: 1px solid #713f12; color: #fcd34d; padding: 12px; border-radius: 8px; font-size: 14px; margin-bottom: 24px; }
   </style>
 </head>
