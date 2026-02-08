@@ -20,6 +20,7 @@ import {
   createScratchpad,
   sendMessage,
   listEvents,
+  joinRoom,
   type StreamEvent,
 } from "../client"
 
@@ -59,23 +60,6 @@ async function connectSocket(socket: Socket, timeoutMs: number = 5000): Promise<
     })
 
     socket.connect()
-  })
-}
-
-async function joinRoom(socket: Socket, room: string, timeoutMs: number = 5000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`Socket join timeout for room: ${room}`))
-    }, timeoutMs)
-
-    socket.emit("join", room, (result?: { ok?: boolean; error?: string }) => {
-      clearTimeout(timeout)
-      if (result?.ok) {
-        resolve()
-        return
-      }
-      reject(new Error(result?.error || `Failed to join room: ${room}`))
-    })
   })
 }
 

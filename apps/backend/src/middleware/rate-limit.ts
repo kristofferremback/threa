@@ -105,7 +105,7 @@ export function createRateLimiters(): RateLimiterSet {
       windowMs: 60_000,
       max: globalMax,
       key: (req) => getClientIp(req, "unknown"),
-      skip: (req) => req.path === "/health" || req.path === "/metrics",
+      skip: (req) => req.path === "/health" || req.path === "/readyz" || req.path === "/metrics",
     }),
 
     auth: createRateLimit({
