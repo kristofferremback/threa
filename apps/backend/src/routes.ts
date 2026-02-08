@@ -2,7 +2,7 @@ import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
-import { createRateLimiters } from "./middleware/rate-limit"
+import { createRateLimiters, type RateLimiterConfig } from "./middleware/rate-limit"
 import { createOpsAccessMiddleware } from "./middleware/ops-access"
 import { requireRole } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
@@ -49,6 +49,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   s3Config: S3Config
   commandRegistry: CommandRegistry
+  rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
 }
 
@@ -67,6 +68,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userPreferencesService,
     s3Config,
     commandRegistry,
+    rateLimiterConfig,
     allowDevAuthRoutes,
   } = deps
 
@@ -76,7 +78,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
 
-  const rateLimits = createRateLimiters()
+  const rateLimits = createRateLimiters(rateLimiterConfig)
   const opsAccess = createOpsAccessMiddleware()
 
   const authHandlers = createAuthHandlers({ authService, userService })

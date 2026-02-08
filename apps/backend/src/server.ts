@@ -305,6 +305,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     s3Config: config.s3,
     commandRegistry,
+    rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,
   })
 

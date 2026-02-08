@@ -40,6 +40,10 @@ export interface Config {
   useStubAI: boolean
   /** Allowed CORS origins. In production, must be explicitly configured. */
   corsAllowedOrigins: string[]
+  rateLimits: {
+    globalMax: number
+    authMax: number
+  }
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
@@ -87,6 +91,10 @@ export function loadConfig(): Config {
     useStubBoundaryExtraction,
     useStubAI,
     corsAllowedOrigins,
+    rateLimits: {
+      globalMax: Number(process.env.GLOBAL_RATE_LIMIT_MAX) || 300,
+      authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
+    },
     workos: {
       apiKey: process.env.WORKOS_API_KEY || "",
       clientId: process.env.WORKOS_CLIENT_ID || "",

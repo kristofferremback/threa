@@ -14,7 +14,7 @@ interface RateLimitOptions {
   skip?: (req: Request) => boolean
 }
 
-interface RateLimiterSet {
+export interface RateLimiterSet {
   globalBaseline: RequestHandler
   auth: RequestHandler
   search: RequestHandler
@@ -23,11 +23,9 @@ interface RateLimiterSet {
   commandDispatch: RequestHandler
 }
 
-function parsePositiveEnvInt(name: string, fallback: number): number {
-  const value = process.env[name]
-  if (!value) return fallback
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+export interface RateLimiterConfig {
+  globalMax: number
+  authMax: number
 }
 
 function setRateLimitHeaders(res: Response, max: number, remaining: number, resetAt: number): void {
@@ -88,22 +86,19 @@ function userScopeKey(req: Request): string {
   return req.userId || getClientIp(req, "unknown")
 }
 
-export function createRateLimiters(): RateLimiterSet {
-  const globalMax = parsePositiveEnvInt("GLOBAL_RATE_LIMIT_MAX", 300)
-  const authMax = parsePositiveEnvInt("AUTH_RATE_LIMIT_MAX", 20)
-
+export function createRateLimiters(config: RateLimiterConfig): RateLimiterSet {
   return {
     globalBaseline: createRateLimit({
       name: "global",
       windowMs: 60_000,
-      max: globalMax,
+      max: config.globalMax,
       key: (req) => getClientIp(req, "unknown"),
     }),
 
     auth: createRateLimit({
       name: "auth",
       windowMs: 60_000,
-      max: authMax,
+      max: config.authMax,
       key: (req) => getClientIp(req, "unknown"),
     }),
 
