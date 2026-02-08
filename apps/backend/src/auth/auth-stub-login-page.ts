@@ -1,3 +1,7 @@
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
 /**
  * HTML template for the stub auth login page.
  * Only used in development when USE_STUB_AUTH=true.
@@ -37,18 +41,28 @@ export function renderLoginPage(state: string): string {
     <p class="subtitle">Development authentication</p>
     <div class="warning">⚠️ Stub auth enabled. This page only appears in development.</div>
     <div class="preset-buttons">
-      <button type="button" class="preset-btn" onclick="loginAs('alice@example.com', 'Alice Anderson')">
-        <div class="name">Alice Anderson</div>
-        <div class="email">alice@example.com</div>
-      </button>
-      <button type="button" class="preset-btn" onclick="loginAs('bob@example.com', 'Bob Builder')">
-        <div class="name">Bob Builder</div>
-        <div class="email">bob@example.com</div>
-      </button>
+      <form method="POST" action="/test-auth-login">
+        <input type="hidden" name="state" value="${escapeHtml(state)}" />
+        <input type="hidden" name="email" value="alice@example.com" />
+        <input type="hidden" name="name" value="Alice Anderson" />
+        <button type="submit" class="preset-btn">
+          <div class="name">Alice Anderson</div>
+          <div class="email">alice@example.com</div>
+        </button>
+      </form>
+      <form method="POST" action="/test-auth-login">
+        <input type="hidden" name="state" value="${escapeHtml(state)}" />
+        <input type="hidden" name="email" value="bob@example.com" />
+        <input type="hidden" name="name" value="Bob Builder" />
+        <button type="submit" class="preset-btn">
+          <div class="name">Bob Builder</div>
+          <div class="email">bob@example.com</div>
+        </button>
+      </form>
     </div>
     <div class="divider">or enter custom credentials</div>
     <form method="POST" action="/test-auth-login">
-      <input type="hidden" name="state" value="${state}" />
+      <input type="hidden" name="state" value="${escapeHtml(state)}" />
       <label>
         Email
         <input type="email" name="email" value="test@example.com" required />
@@ -60,18 +74,6 @@ export function renderLoginPage(state: string): string {
       <button type="submit">Sign In</button>
     </form>
   </div>
-  <script>
-    function loginAs(email, name) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/test-auth-login';
-      form.innerHTML = '<input type="hidden" name="state" value="${state}" />' +
-        '<input type="hidden" name="email" value="' + email + '" />' +
-        '<input type="hidden" name="name" value="' + name + '" />';
-      document.body.appendChild(form);
-      form.submit();
-    }
-  </script>
 </body>
 </html>`
 }

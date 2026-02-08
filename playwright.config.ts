@@ -119,6 +119,10 @@ export default defineConfig({
         S3_ACCESS_KEY_ID: "minioadmin",
         S3_SECRET_ACCESS_KEY: "minioadmin",
         S3_ENDPOINT: `http://localhost:${MINIO_PORT}`,
+        // Security hardening: allow test origins through CORS, disable rate limits
+        CORS_ALLOWED_ORIGINS: `http://localhost:${backendPort},http://localhost:${frontendPort}`,
+        GLOBAL_RATE_LIMIT_MAX: "10000",
+        AUTH_RATE_LIMIT_MAX: "10000",
       },
     },
     {

@@ -1,22 +1,48 @@
 import express, { type Express } from "express"
 import cors from "cors"
+import helmet from "helmet"
 import cookieParser from "cookie-parser"
 import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
 import { bigIntReplacer } from "./lib/serialization"
 import { metricsMiddleware } from "./middleware/metrics"
+import { createCorsOriginChecker } from "./lib/cors"
 
-export function createApp(): Express {
+interface CreateAppOptions {
+  corsAllowedOrigins: string[]
+  isProduction: boolean
+}
+
+export function createApp(options: CreateAppOptions): Express {
   const app = express()
 
   // Configure JSON serialization to handle BigInt values
   app.set("json replacer", bigIntReplacer)
 
+  app.disable("x-powered-by")
+
   // Metrics middleware (before everything else to capture all requests)
   app.use(metricsMiddleware)
 
-  app.use(cors({ origin: true, credentials: true }))
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "blob:"],
+          connectSrc: ["'self'", "ws:", "wss:"],
+        },
+      },
+      frameguard: { action: "deny" },
+      hsts: options.isProduction ? { maxAge: 31536000, includeSubDomains: true } : false,
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    })
+  )
+
+  app.use(cors({ origin: createCorsOriginChecker(options.corsAllowedOrigins), credentials: true }))
   app.use(cookieParser())
   app.use(express.json())
   app.use(express.urlencoded({ extended: true }))

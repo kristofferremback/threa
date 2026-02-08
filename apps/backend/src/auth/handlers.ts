@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import type { AuthService } from "./auth-service"
 import type { UserService } from "./user-service"
 import { SESSION_COOKIE_CONFIG } from "../lib/cookies"
+import { decodeAndSanitizeRedirectState } from "./redirect"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
@@ -40,7 +41,7 @@ export function createAuthHandlers({ authService, userService }: Dependencies) {
 
       res.cookie(SESSION_COOKIE_NAME, result.sealedSession, SESSION_COOKIE_CONFIG)
 
-      const redirectTo = state ? Buffer.from(state, "base64").toString("utf-8") : "/"
+      const redirectTo = decodeAndSanitizeRedirectState(state)
 
       res.redirect(redirectTo)
     },

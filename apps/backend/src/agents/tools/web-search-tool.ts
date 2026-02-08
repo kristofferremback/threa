@@ -40,6 +40,21 @@ export interface CreateWebSearchToolParams {
 
 const FETCH_TIMEOUT_MS = 30000
 
+// Patterns that might leak internal data in outbound search queries
+const SENSITIVE_PATTERNS: RegExp[] = [
+  /[A-Za-z0-9+/]{40,}={0,2}/g, // base64-like strings (40+ chars)
+  /\b(sk|rk|pk|lf|wos)[-_][A-Za-z0-9_-]{10,}\b/g, // prefixed secrets
+  /\b(stream|user|member|workspace|memo|attachment|session|persona)_[0-9A-HJKMNP-TV-Z]{26}\b/g, // internal ULIDs
+]
+
+function redactQuery(query: string): string {
+  let redacted = query
+  for (const pattern of SENSITIVE_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED]")
+  }
+  return redacted
+}
+
 /**
  * Creates a web_search tool for the agent to search the web.
  *
@@ -56,6 +71,7 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
     func: async (input: WebSearchInput) => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      const sanitizedQuery = redactQuery(input.query)
 
       try {
         const response = await fetch("https://api.tavily.com/search", {
@@ -66,7 +82,7 @@ export function createWebSearchTool(params: CreateWebSearchToolParams) {
             Authorization: `Bearer ${tavilyApiKey}`,
           },
           body: JSON.stringify({
-            query: input.query,
+            query: sanitizedQuery,
             max_results: maxResults,
             include_answer: true,
             search_depth: "basic",

@@ -97,7 +97,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
     // =========================================================================
     // Room management
     // =========================================================================
-    socket.on("join", async (room: string) => {
+    socket.on("join", async (room: string, callback?: (result: { ok: boolean; error?: string }) => void) => {
       const workspaceId = extractWorkspaceId(room)
       const roomPattern = normalizeRoomPattern(room)
       wsMessagesTotal.inc({
@@ -115,6 +115,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         if (!isMember) {
           socket.emit("error", { message: "Not authorized to join this workspace" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Not authorized to join this workspace" })
           return
         }
         socket.join(room)
@@ -124,6 +125,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
         logger.debug({ userId, room }, "Joined workspace room")
+        callback?.({ ok: true })
         return
       }
 
@@ -136,6 +138,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         if (!member || !(await streamService.isMember(streamId, member.id))) {
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Not authorized to join this stream" })
           return
         }
         socket.join(room)
@@ -145,6 +148,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
 
         logger.debug({ userId, room }, "Joined stream room")
+        callback?.({ ok: true })
         return
       }
 
@@ -157,6 +161,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         if (!session) {
           socket.emit("error", { message: "Session not found" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Session not found" })
           return
         }
         // Resolve user → member for stream membership check
@@ -164,12 +169,14 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         if (!member || !(await streamService.isMember(session.streamId, member.id))) {
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
+          callback?.({ ok: false, error: "Not authorized to join this session" })
           return
         }
         socket.join(room)
         wsConnectionsActive.inc({ workspace_id: wsId, room_pattern: roomPattern })
         metricsState.joinedRooms.set(room, { workspaceId: wsId, roomPattern })
         logger.debug({ userId, room }, "Joined agent session room")
+        callback?.({ ok: true })
         return
       }
 
@@ -181,6 +188,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
         event_type: "error",
         room_pattern: roomPattern,
       })
+      callback?.({ ok: false, error: "Invalid room format" })
     })
 
     socket.on("leave", (room: string) => {

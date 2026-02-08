@@ -9,6 +9,7 @@ import { logger } from "../lib/logger"
 import type { SendMessageInputWithSources, SendMessageResult } from "./tools"
 import { isMultimodalToolResult } from "./tools"
 import type { ResearcherResult } from "./researcher"
+import { protectToolOutputBlocks, protectToolOutputText, type MultimodalContentBlock } from "./tool-trust-boundary"
 
 /**
  * Parameters for recording a step in the agent trace.
@@ -861,7 +862,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
           })
         }
 
-        toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: resultStr }))
+        toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id!, content: protectToolOutputText(resultStr) }))
       } catch (error) {
         const durationMs = Date.now() - startTime
         if (callbacks.recordStep) {
@@ -923,7 +924,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
           toolMessages.push(
             new ToolMessage({
               tool_call_id: toolCall.id!,
-              content: result.content,
+              content: protectToolOutputBlocks(result.content as MultimodalContentBlock[]),
             })
           )
         } else {
@@ -940,7 +941,7 @@ function createToolsNode(tools: StructuredToolInterface[]) {
           toolMessages.push(
             new ToolMessage({
               tool_call_id: toolCall.id!,
-              content: resultStr,
+              content: protectToolOutputText(resultStr),
             })
           )
         }

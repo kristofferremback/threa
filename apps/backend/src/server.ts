@@ -86,6 +86,7 @@ import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./repositories"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
+import { createCorsOriginChecker } from "./lib/cors"
 import { parseMarkdown } from "@threa/prosemirror"
 import { normalizeMessage, toEmoji } from "./lib/emoji"
 import { logger } from "./lib/logger"
@@ -287,7 +288,8 @@ export async function startServer(): Promise<ServerInstance> {
   })
   commandRegistry.register(simulateCommand)
 
-  const app = createApp()
+  const isProduction = process.env.NODE_ENV === "production"
+  const app = createApp({ corsAllowedOrigins: config.corsAllowedOrigins, isProduction })
 
   registerRoutes(app, {
     pool,
@@ -303,6 +305,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     s3Config: config.s3,
     commandRegistry,
+    allowDevAuthRoutes: config.useStubAuth && !isProduction,
   })
 
   app.use(errorHandler)
@@ -312,7 +315,7 @@ export async function startServer(): Promise<ServerInstance> {
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: true,
+      origin: createCorsOriginChecker(config.corsAllowedOrigins),
       credentials: true,
     },
   })

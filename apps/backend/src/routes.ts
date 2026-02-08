@@ -2,6 +2,9 @@ import type { Express, RequestHandler } from "express"
 import { createAuthMiddleware } from "./auth/middleware"
 import { createWorkspaceMemberMiddleware } from "./middleware/workspace"
 import { createUploadMiddleware } from "./middleware/upload"
+import { createRateLimiters } from "./middleware/rate-limit"
+import { createOpsAccessMiddleware } from "./middleware/ops-access"
+import { requireRole } from "./middleware/authorization"
 import { createAuthHandlers } from "./auth/handlers"
 import { createWorkspaceHandlers } from "./handlers/workspace-handlers"
 import { createStreamHandlers } from "./handlers/stream-handlers"
@@ -46,6 +49,7 @@ interface Dependencies {
   userPreferencesService: UserPreferencesService
   s3Config: S3Config
   commandRegistry: CommandRegistry
+  allowDevAuthRoutes: boolean
 }
 
 export function registerRoutes(app: Express, deps: Dependencies) {
@@ -63,6 +67,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     userPreferencesService,
     s3Config,
     commandRegistry,
+    allowDevAuthRoutes,
   } = deps
 
   const auth = createAuthMiddleware({ authService, userService })
@@ -70,6 +75,9 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const upload = createUploadMiddleware({ s3Config })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
+
+  const rateLimits = createRateLimiters()
+  const opsAccess = createOpsAccessMiddleware()
 
   const authHandlers = createAuthHandlers({ authService, userService })
   const workspace = createWorkspaceHandlers({
@@ -90,17 +98,23 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const debug = createDebugHandlers({ pool, poolMonitor })
   const agentSession = createAgentSessionHandlers({ pool })
 
-  // Health check endpoint - no auth required
-  app.get("/health", debug.health)
+  // Global baseline rate limit
+  app.use(rateLimits.globalBaseline)
 
-  // Debug endpoint - inspect pool internal state
-  app.get("/debug/pool", debug.poolState)
+  // Ops endpoints - restricted to internal network
+  app.get("/readyz", opsAccess, debug.health)
+  app.get("/debug/pool", opsAccess, debug.poolState)
+  app.get("/metrics", opsAccess, debug.metrics)
 
-  app.get("/api/auth/login", authHandlers.login)
-  app.all("/api/auth/callback", authHandlers.callback)
-  app.get("/api/auth/logout", authHandlers.logout)
+  app.get("/api/auth/login", rateLimits.auth, authHandlers.login)
+  app.all("/api/auth/callback", rateLimits.auth, authHandlers.callback)
+  app.get("/api/auth/logout", rateLimits.auth, authHandlers.logout)
 
   if (authService instanceof StubAuthService) {
+    if (!allowDevAuthRoutes) {
+      throw new Error("StubAuthService is active but dev auth routes are not allowed in this environment")
+    }
+
     const authStub = createAuthStubHandlers({
       authStubService: authService,
       userService,
@@ -149,16 +163,22 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/streams/:streamId/events", ...authed, stream.listEvents)
 
   // Search
-  app.post("/api/workspaces/:workspaceId/search", ...authed, search.search)
+  app.post("/api/workspaces/:workspaceId/search", ...authed, rateLimits.search, search.search)
 
-  app.post("/api/workspaces/:workspaceId/messages", ...authed, message.create)
+  app.post(
+    "/api/workspaces/:workspaceId/messages",
+    ...authed,
+    rateLimits.messageCreate,
+    rateLimits.aiQuotaPerMember,
+    message.create
+  )
   app.patch("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.update)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId", ...authed, message.delete)
   app.post("/api/workspaces/:workspaceId/messages/:messageId/reactions", ...authed, message.addReaction)
   app.delete("/api/workspaces/:workspaceId/messages/:messageId/reactions/:emoji", ...authed, message.removeReaction)
 
   // Attachments (workspace-scoped upload, stream assigned on message creation)
-  app.post("/api/workspaces/:workspaceId/attachments", ...authed, upload, attachment.upload)
+  app.post("/api/workspaces/:workspaceId/attachments", ...authed, rateLimits.upload, upload, attachment.upload)
   app.get("/api/workspaces/:workspaceId/attachments/:attachmentId/url", ...authed, attachment.getDownloadUrl)
   app.delete("/api/workspaces/:workspaceId/attachments/:attachmentId", ...authed, attachment.delete)
 
@@ -168,20 +188,23 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   app.get("/api/workspaces/:workspaceId/conversations/:conversationId/messages", ...authed, conversation.getMessages)
 
   // Commands
-  app.post("/api/workspaces/:workspaceId/commands/dispatch", ...authed, command.dispatch)
+  app.post(
+    "/api/workspaces/:workspaceId/commands/dispatch",
+    ...authed,
+    rateLimits.commandDispatch,
+    rateLimits.aiQuotaPerMember,
+    command.dispatch
+  )
   app.get("/api/workspaces/:workspaceId/commands", ...authed, command.list)
 
   // AI Usage and Budget
   app.get("/api/workspaces/:workspaceId/ai-usage", ...authed, aiUsage.getUsage)
   app.get("/api/workspaces/:workspaceId/ai-usage/recent", ...authed, aiUsage.getRecentUsage)
   app.get("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.getBudget)
-  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, aiUsage.updateBudget)
+  app.put("/api/workspaces/:workspaceId/ai-budget", ...authed, requireRole("admin"), aiUsage.updateBudget)
 
   // Agent Sessions (trace viewing)
   app.get("/api/workspaces/:workspaceId/agent-sessions/:sessionId", ...authed, agentSession.getSession)
-
-  // Prometheus metrics endpoint (unauthenticated for scraping)
-  app.get("/metrics", debug.metrics)
 
   app.use(errorHandler)
 }
