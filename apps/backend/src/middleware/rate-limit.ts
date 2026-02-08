@@ -97,6 +97,7 @@ function workspaceMemberScopeKey(req: Request): string {
 
 export function createRateLimiters(): RateLimiterSet {
   const globalMax = parsePositiveEnvInt("GLOBAL_RATE_LIMIT_MAX", 300)
+  const authMax = parsePositiveEnvInt("AUTH_RATE_LIMIT_MAX", 20)
 
   return {
     // Baseline abuse protection across all API endpoints.
@@ -112,7 +113,7 @@ export function createRateLimiters(): RateLimiterSet {
     auth: createRateLimit({
       name: "auth",
       windowMs: 60_000,
-      max: 20,
+      max: authMax,
       key: (req) => getClientIp(req, "unknown"),
     }),
 

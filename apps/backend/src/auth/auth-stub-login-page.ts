@@ -16,6 +16,7 @@ export function renderLoginPage(state: string): string {
     h1 { font-size: 24px; margin-bottom: 8px; }
     .subtitle { color: #a3a3a3; margin-bottom: 24px; }
     .preset-buttons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+    .preset-form { margin: 0; }
     .preset-btn { background: #262626; border: 1px solid #404040; color: #fafafa; padding: 12px 16px; border-radius: 8px; cursor: pointer; text-align: left; transition: background 0.15s; }
     .preset-btn:hover { background: #303030; }
     .preset-btn .name { font-weight: 500; }
@@ -37,14 +38,24 @@ export function renderLoginPage(state: string): string {
     <p class="subtitle">Development authentication</p>
     <div class="warning">⚠️ Stub auth enabled. This page only appears in development.</div>
     <div class="preset-buttons">
-      <button type="button" class="preset-btn" onclick="loginAs('alice@example.com', 'Alice Anderson')">
-        <div class="name">Alice Anderson</div>
-        <div class="email">alice@example.com</div>
-      </button>
-      <button type="button" class="preset-btn" onclick="loginAs('bob@example.com', 'Bob Builder')">
-        <div class="name">Bob Builder</div>
-        <div class="email">bob@example.com</div>
-      </button>
+      <form method="POST" action="/test-auth-login" class="preset-form">
+        <input type="hidden" name="state" value="${state}" />
+        <input type="hidden" name="email" value="alice@example.com" />
+        <input type="hidden" name="name" value="Alice Anderson" />
+        <button type="submit" class="preset-btn">
+          <div class="name">Alice Anderson</div>
+          <div class="email">alice@example.com</div>
+        </button>
+      </form>
+      <form method="POST" action="/test-auth-login" class="preset-form">
+        <input type="hidden" name="state" value="${state}" />
+        <input type="hidden" name="email" value="bob@example.com" />
+        <input type="hidden" name="name" value="Bob Builder" />
+        <button type="submit" class="preset-btn">
+          <div class="name">Bob Builder</div>
+          <div class="email">bob@example.com</div>
+        </button>
+      </form>
     </div>
     <div class="divider">or enter custom credentials</div>
     <form method="POST" action="/test-auth-login">
@@ -60,18 +71,6 @@ export function renderLoginPage(state: string): string {
       <button type="submit">Sign In</button>
     </form>
   </div>
-  <script>
-    function loginAs(email, name) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/test-auth-login';
-      form.innerHTML = '<input type="hidden" name="state" value="${state}" />' +
-        '<input type="hidden" name="email" value="' + email + '" />' +
-        '<input type="hidden" name="name" value="' + name + '" />';
-      document.body.appendChild(form);
-      form.submit();
-    }
-  </script>
 </body>
 </html>`
 }

@@ -222,11 +222,11 @@ test.describe("Nested Thread Navigation", () => {
     const level1Message = `Level 1 ${testId}`
     await page.keyboard.type(level1Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level1Message)).toBeVisible({ timeout: 5000 })
+    const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
+    await expect(level1Container).toBeVisible({ timeout: 5000 })
     await expect(page.getByText(/Start a new thread/)).not.toBeVisible({ timeout: 3000 })
 
     // Create nested thread
-    const level1Container = page.getByRole("main").locator(".group").filter({ hasText: level1Message }).first()
     await level1Container.hover()
     await level1Container.getByRole("link", { name: "Reply in thread" }).click()
     await expect(page.getByText(/Start a new thread/)).toBeVisible({ timeout: 3000 })
@@ -236,7 +236,8 @@ test.describe("Nested Thread Navigation", () => {
     const level2Message = `Level 2 ${testId}`
     await page.keyboard.type(level2Message)
     await page.keyboard.press("Meta+Enter")
-    await expect(page.getByText(level2Message)).toBeVisible({ timeout: 5000 })
+    const level2InPanel = page.getByRole("main").locator(".group").filter({ hasText: level2Message }).first()
+    await expect(level2InPanel).toBeVisible({ timeout: 5000 })
 
     // Navigate back via breadcrumb
     const breadcrumb = page.locator("nav[aria-label='breadcrumb'] a").first()
@@ -249,7 +250,7 @@ test.describe("Nested Thread Navigation", () => {
 
     // Navigate forward again by clicking the reply count
     await level1InPanel.getByText(/1 reply/i).click()
-    await expect(page.getByText(level2Message)).toBeVisible({ timeout: 3000 })
+    await expect(level2InPanel).toBeVisible({ timeout: 3000 })
 
     // Navigate back again
     await breadcrumb.click()

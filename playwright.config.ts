@@ -102,17 +102,20 @@ export default defineConfig({
   // Ports are dynamically allocated to avoid conflicts with other worktrees
   webServer: [
     {
-      command: "bun run test:browser:backend",
+      command: "bun tests/browser/prepare-infra.ts && bun run test:browser:backend",
       url: `http://localhost:${backendPort}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       env: {
         PORT: String(backendPort),
         DATABASE_URL: `postgresql://threa:threa@localhost:${DB_PORT}/${dbName}`,
+        CORS_ALLOWED_ORIGINS: `http://localhost:${frontendPort},http://127.0.0.1:${frontendPort},http://[::1]:${frontendPort},null`,
         USE_STUB_AUTH: "true",
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
         USE_STUB_AI: "true",
+        GLOBAL_RATE_LIMIT_MAX: "10000",
+        AUTH_RATE_LIMIT_MAX: "10000",
         // MinIO S3-compatible storage for file uploads
         S3_BUCKET: "threa-browser-test",
         S3_REGION: "us-east-1",
