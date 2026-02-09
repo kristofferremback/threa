@@ -3,7 +3,6 @@ import type { StorageProvider } from "../../lib/storage/s3-client"
 import { logger } from "../../lib/logger"
 
 export interface AttachmentSafetyPolicy {
-  allowedMimeTypes: string[]
   malwareScanEnabled: boolean
 }
 
@@ -35,24 +34,9 @@ const SCAN_HEAD_BYTES = 8 * 1024
 const MALWARE_SIGNATURES = ["EICAR-STANDARD-ANTIVIRUS-TEST-FILE", "X5O!P%@AP"] as const
 
 export function createAttachmentSafetyPolicy(params: AttachmentSafetyPolicy): AttachmentSafetyPolicy {
-  const normalizedMimeTypes = Array.from(
-    new Set(
-      params.allowedMimeTypes.map((mimeType) => mimeType.trim().toLowerCase()).filter((mimeType) => mimeType.length > 0)
-    )
-  )
-
-  if (normalizedMimeTypes.length === 0) {
-    throw new Error("Attachment MIME allowlist cannot be empty")
-  }
-
   return {
-    allowedMimeTypes: normalizedMimeTypes,
     malwareScanEnabled: params.malwareScanEnabled,
   }
-}
-
-export function isMimeTypeAllowed(mimeType: string, allowedMimeTypes: string[]): boolean {
-  return allowedMimeTypes.includes(mimeType.toLowerCase())
 }
 
 export function isAttachmentSafeForSharing(safetyStatus: AttachmentSafetyStatus): boolean {

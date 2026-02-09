@@ -4,38 +4,16 @@ import {
   createAttachmentSafetyPolicy,
   createMalwareScanner,
   isAttachmentSafeForSharing,
-  isMimeTypeAllowed,
   safetyStatusBlockReason,
 } from "./upload-safety-policy"
 
 describe("createAttachmentSafetyPolicy", () => {
-  it("normalizes and deduplicates allowed MIME types", () => {
+  it("preserves malware scan enabled setting", () => {
     const policy = createAttachmentSafetyPolicy({
-      allowedMimeTypes: [" image/png ", "IMAGE/PNG", "application/pdf"],
       malwareScanEnabled: true,
     })
 
-    expect(policy.allowedMimeTypes).toEqual(["image/png", "application/pdf"])
     expect(policy.malwareScanEnabled).toBe(true)
-  })
-
-  it("throws when allowlist is empty", () => {
-    expect(() =>
-      createAttachmentSafetyPolicy({
-        allowedMimeTypes: ["   "],
-        malwareScanEnabled: true,
-      })
-    ).toThrow("Attachment MIME allowlist cannot be empty")
-  })
-})
-
-describe("MIME allowlist checks", () => {
-  it("matches MIME types case-insensitively", () => {
-    expect(isMimeTypeAllowed("IMAGE/PNG", ["image/png"])).toBe(true)
-  })
-
-  it("returns false for non-allowlisted MIME types", () => {
-    expect(isMimeTypeAllowed("application/x-msdownload", ["image/png"])).toBe(false)
   })
 })
 
@@ -62,7 +40,6 @@ describe("createMalwareScanner", () => {
         getObjectRange,
       } as any,
       {
-        allowedMimeTypes: ["image/png"],
         malwareScanEnabled: false,
       }
     )
@@ -84,7 +61,6 @@ describe("createMalwareScanner", () => {
         getObjectRange,
       } as any,
       {
-        allowedMimeTypes: ["image/png"],
         malwareScanEnabled: true,
       }
     )
@@ -105,7 +81,6 @@ describe("createMalwareScanner", () => {
         getObjectRange: mock(() => Promise.resolve(Buffer.from("X5O!P%@AP test"))),
       } as any,
       {
-        allowedMimeTypes: ["image/png"],
         malwareScanEnabled: true,
       }
     )

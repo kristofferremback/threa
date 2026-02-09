@@ -302,7 +302,6 @@ export async function startServer(): Promise<ServerInstance> {
     conversationService,
     userPreferencesService,
     s3Config: config.s3,
-    attachmentSafetyPolicy,
     commandRegistry,
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,

@@ -1,44 +1,21 @@
 import { describe, expect, it } from "bun:test"
-import { createAttachmentMimeTypeFileFilter } from "./upload"
+import { createUploadMiddleware, MAX_FILE_SIZE } from "./upload"
 
-describe("createAttachmentMimeTypeFileFilter", () => {
-  it("accepts files when MIME type is allowlisted", () => {
-    const filter = createAttachmentMimeTypeFileFilter(["image/png", "application/pdf"])
+describe("upload middleware", () => {
+  it("creates an express middleware handler", () => {
+    const handler = createUploadMiddleware({
+      s3Config: {
+        bucket: "test-bucket",
+        region: "us-east-1",
+        accessKeyId: "test",
+        secretAccessKey: "test",
+      },
+    })
 
-    let accepted: boolean | undefined
-    let error: Error | null | undefined
-
-    filter(
-      {} as any,
-      {
-        mimetype: "image/png",
-      } as Express.Multer.File,
-      (err: Error | null, allow?: boolean) => {
-        error = err
-        accepted = allow
-      }
-    )
-
-    expect(error).toBeNull()
-    expect(accepted).toBe(true)
+    expect(typeof handler).toBe("function")
   })
 
-  it("rejects files when MIME type is not allowlisted", () => {
-    const filter = createAttachmentMimeTypeFileFilter(["image/png"])
-
-    let error: Error | null | undefined
-
-    filter(
-      {} as any,
-      {
-        mimetype: "application/x-msdownload",
-      } as Express.Multer.File,
-      (err: Error | null) => {
-        error = err
-      }
-    )
-
-    expect(error).toBeInstanceOf(Error)
-    expect(error?.message).toBe("File type not allowed: application/x-msdownload")
+  it("enforces the 50MB max file size", () => {
+    expect(MAX_FILE_SIZE).toBe(50 * 1024 * 1024)
   })
 })

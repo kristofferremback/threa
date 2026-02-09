@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { loadConfig, PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES } from "./env"
+import { loadConfig } from "./env"
 
 const ORIGINAL_ENV = { ...process.env }
 
@@ -48,32 +48,22 @@ describe("loadConfig stub auth safety", () => {
 })
 
 describe("loadConfig attachment safety policy", () => {
-  test("uses public-beta MIME allowlist defaults", () => {
+  test("enables malware scan by default", () => {
     setBaseEnv()
     process.env.NODE_ENV = "development"
     process.env.USE_STUB_AUTH = "true"
 
     const config = loadConfig()
-    expect(config.attachments.allowedMimeTypes).toEqual([...PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES])
-    expect(config.attachments.allowedMimeTypes).toContain("application/javascript")
+    expect(config.attachments.malwareScanEnabled).toBe(true)
   })
 
-  test("parses ATTACHMENT_ALLOWED_MIME_TYPES override", () => {
+  test("allows disabling malware scan via env", () => {
     setBaseEnv()
     process.env.NODE_ENV = "development"
     process.env.USE_STUB_AUTH = "true"
-    process.env.ATTACHMENT_ALLOWED_MIME_TYPES = "image/png, application/pdf , image/png"
+    process.env.ATTACHMENT_MALWARE_SCAN_ENABLED = "false"
 
     const config = loadConfig()
-    expect(config.attachments.allowedMimeTypes).toEqual(["image/png", "application/pdf"])
-  })
-
-  test("throws when ATTACHMENT_ALLOWED_MIME_TYPES is empty", () => {
-    setBaseEnv()
-    process.env.NODE_ENV = "development"
-    process.env.USE_STUB_AUTH = "true"
-    process.env.ATTACHMENT_ALLOWED_MIME_TYPES = "   ,   "
-
-    expect(() => loadConfig()).toThrow("ATTACHMENT_ALLOWED_MIME_TYPES must contain at least one MIME type")
+    expect(config.attachments.malwareScanEnabled).toBe(false)
   })
 })

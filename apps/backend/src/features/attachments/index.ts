@@ -39,7 +39,6 @@ export type { AwaitAttachmentProcessingResult } from "./await-processing"
 export {
   createAttachmentSafetyPolicy,
   createMalwareScanner,
-  isMimeTypeAllowed,
   isAttachmentSafeForSharing,
   safetyStatusBlockReason,
 } from "./upload-safety-policy"
