@@ -81,7 +81,8 @@ export class TestClient {
     file: { content: string | Buffer; filename: string; mimeType: string }
   ): Promise<{ status: number; data: T; headers: Headers }> {
     const formData = new FormData()
-    const blob = new Blob([file.content], { type: file.mimeType })
+    const blobPart: BlobPart = typeof file.content === "string" ? file.content : Uint8Array.from(file.content)
+    const blob = new Blob([blobPart], { type: file.mimeType })
     formData.append("file", blob, file.filename)
 
     const headers: Record<string, string> = {}

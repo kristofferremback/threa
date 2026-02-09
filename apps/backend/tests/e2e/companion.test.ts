@@ -29,11 +29,12 @@ function getBaseUrl(): string {
 }
 
 function createSocket(client: TestClient): Socket {
+  const cookies = (client as unknown as { cookies?: Map<string, string> }).cookies
   const socket = io(getBaseUrl(), {
     extraHeaders: {
-      Cookie: (client as any).cookies
-        ? Array.from((client as any).cookies.entries())
-            .map(([k, v]: [string, string]) => `${k}=${v}`)
+      Cookie: cookies
+        ? Array.from(cookies.entries())
+            .map(([k, v]) => `${k}=${v}`)
             .join("; ")
         : "",
     },
