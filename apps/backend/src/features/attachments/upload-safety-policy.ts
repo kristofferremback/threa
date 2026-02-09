@@ -24,20 +24,6 @@ export interface MalwareScanner {
 
 const SCAN_HEAD_BYTES = 8 * 1024
 
-const SUSPICIOUS_EXTENSIONS = [
-  ".exe",
-  ".dll",
-  ".bat",
-  ".cmd",
-  ".scr",
-  ".com",
-  ".js",
-  ".vbs",
-  ".msi",
-  ".ps1",
-  ".jar",
-] as const
-
 const MALWARE_SIGNATURES = ["EICAR-STANDARD-ANTIVIRUS-TEST-FILE", "X5O!P%@AP"] as const
 
 export function createAttachmentSafetyPolicy(params: AttachmentSafetyPolicy): AttachmentSafetyPolicy {
@@ -76,11 +62,6 @@ export function safetyStatusBlockReason(safetyStatus: AttachmentSafetyStatus): s
   }
 }
 
-function hasSuspiciousExtension(filename: string): boolean {
-  const lowerFilename = filename.toLowerCase()
-  return SUSPICIOUS_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
-}
-
 function containsMalwareSignature(buffer: Buffer): boolean {
   const preview = buffer.toString("utf8").toUpperCase()
   return MALWARE_SIGNATURES.some((signature) => preview.includes(signature))
@@ -91,17 +72,6 @@ export function createMalwareScanner(storage: StorageProvider, policy: Attachmen
     async scan(input: MalwareScanInput): Promise<MalwareScanResult> {
       if (!policy.malwareScanEnabled) {
         return { status: AttachmentSafetyStatuses.CLEAN }
-      }
-
-      if (hasSuspiciousExtension(input.filename)) {
-        logger.warn(
-          {
-            filename: input.filename,
-            mimeType: input.mimeType,
-            storagePath: input.storagePath,
-          },
-          "Attachment has suspicious extension; continuing malware scan"
-        )
       }
 
       try {

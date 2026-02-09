@@ -77,10 +77,11 @@ describe("createMalwareScanner", () => {
     expect(getObjectRange).not.toHaveBeenCalled()
   })
 
-  it("does not quarantine based on extension alone", async () => {
+  it("returns clean when no malware signature is found", async () => {
+    const getObjectRange = mock(() => Promise.resolve(Buffer.from("")))
     const scanner = createMalwareScanner(
       {
-        getObjectRange: mock(() => Promise.resolve(Buffer.from(""))),
+        getObjectRange,
       } as any,
       {
         allowedMimeTypes: ["image/png"],
@@ -95,6 +96,7 @@ describe("createMalwareScanner", () => {
     })
 
     expect(result).toEqual({ status: AttachmentSafetyStatuses.CLEAN })
+    expect(getObjectRange).toHaveBeenCalled()
   })
 
   it("quarantines EICAR signature matches", async () => {
