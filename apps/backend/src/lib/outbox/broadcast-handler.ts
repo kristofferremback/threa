@@ -1,7 +1,8 @@
 import { Server } from "socket.io"
 import type { Pool } from "pg"
-import { OutboxRepository, MemberRepository } from "../repositories"
+import { MemberRepository } from "../../features/workspaces"
 import {
+  OutboxRepository,
   isStreamScopedEvent,
   isOutboxEventType,
   isOneOfOutboxEventType,
@@ -14,13 +15,13 @@ import {
   type StreamReadOutboxPayload,
   type StreamsReadAllOutboxPayload,
   type UserPreferencesUpdatedOutboxPayload,
-} from "../repositories/outbox-repository"
-import type { UserSocketRegistry } from "./user-socket-registry"
-import { logger } from "./logger"
-import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./cursor-lock"
-import { DebounceWithMaxWait } from "./debounce"
-import type { OutboxHandler } from "./outbox-dispatcher"
-import { withClient } from "../db"
+} from "./repository"
+import type { UserSocketRegistry } from "../user-socket-registry"
+import { logger } from "../logger"
+import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../cursor-lock"
+import { DebounceWithMaxWait } from "../debounce"
+import type { OutboxHandler } from "./dispatcher"
+import { withClient } from "../../db"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number

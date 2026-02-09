@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from "pg"
-import { OUTBOX_CHANNEL } from "../repositories"
-import { logger } from "./logger"
+import { OUTBOX_CHANNEL } from "./repository"
+import { logger } from "../logger"
 
 /**
  * Interface for outbox event handlers.

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { parseMessageCreatedPayload } from "./outbox-payload-parsers"
+import { parseMessageCreatedPayload } from "./payload-parsers"
 import { AuthorTypes } from "@threa/types"
 
 describe("parseMessageCreatedPayload", () => {

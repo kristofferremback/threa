@@ -1,12 +1,12 @@
 import type { Pool } from "pg"
 import { OutboxRepository } from "../../repositories"
-import { parseMessageCreatedPayload } from "../../lib/outbox-payload-parsers"
+import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/job-queue"
 import type { QueueManager } from "../../lib/queue-manager"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
-import type { OutboxHandler } from "../../lib/outbox-dispatcher"
+import type { OutboxHandler } from "../../lib/outbox"
 
 export interface EmbeddingHandlerConfig {
   batchSize?: number

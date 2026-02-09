@@ -46,8 +46,7 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher } from "./lib/outbox-dispatcher"
-import { BroadcastHandler } from "./lib/broadcast-handler"
+import { OutboxDispatcher, BroadcastHandler } from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,

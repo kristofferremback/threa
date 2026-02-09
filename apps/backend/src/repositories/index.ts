@@ -59,7 +59,7 @@ export type {
 export { PdfProcessingJobRepository } from "../features/attachments"
 export type { PdfProcessingJob, InsertPdfProcessingJobParams } from "../features/attachments"
 
-export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "./outbox-repository"
+export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "../lib/outbox"
 export type {
   OutboxEvent,
   OutboxEventType,
@@ -71,7 +71,7 @@ export type {
   ReactionOutboxPayload,
   StreamDisplayNameUpdatedPayload,
   AttachmentUploadedOutboxPayload,
-} from "./outbox-repository"
+} from "../lib/outbox"
 
 // Backwards-compatibility shims — canonical source: features/conversations/
 export { ConversationRepository } from "../features/conversations"

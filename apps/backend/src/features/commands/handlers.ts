@@ -5,7 +5,7 @@ import { withTransaction } from "../../db"
 import { CommandRegistry, parseCommand } from "./registry"
 import type { StreamService } from "../streams"
 import { StreamEventRepository } from "../../repositories"
-import { OutboxRepository } from "../../repositories/outbox-repository"
+import { OutboxRepository } from "../../lib/outbox"
 import { eventId, commandId as generateCommandId } from "../../lib/id"
 import { serializeBigInt } from "../../lib/serialization"
 

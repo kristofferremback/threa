@@ -63,7 +63,7 @@ mock.module("./repository", () => ({
 // pollutes the module cache and breaks await-attachment-processing.test.ts.
 // Instead, awaitAttachmentProcessing will use the spyOn'd AttachmentRepository.
 
-mock.module("../../repositories/outbox-repository", () => ({
+mock.module("../../lib/outbox/repository", () => ({
   OutboxRepository: {
     insert: mockOutboxInsert,
   },

@@ -5,7 +5,7 @@ import { StreamRepository, Stream, StreamWithPreview, LastMessagePreview } from 
 import { StreamMemberRepository, StreamMember } from "./member-repository"
 import { StreamEventRepository } from "./event-repository"
 import { MessageRepository } from "../../repositories"
-import { OutboxRepository } from "../../repositories/outbox-repository"
+import { OutboxRepository } from "../../lib/outbox"
 import { streamId, eventId } from "../../lib/id"
 import { DuplicateSlugError, StreamNotFoundError, MessageNotFoundError } from "../../lib/errors"
 import { StreamTypes, Visibilities, CompanionModes, type StreamType, type CompanionMode } from "@threa/types"

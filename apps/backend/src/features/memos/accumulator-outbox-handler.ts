@@ -1,13 +1,13 @@
 import type { Pool } from "pg"
 import { OutboxRepository, StreamStateRepository, StreamRepository } from "../../repositories"
 import { PendingItemRepository } from "./pending-item-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox-payload-parsers"
+import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { pendingItemId } from "../../lib/id"
 import { AuthorTypes, StreamTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
-import type { OutboxHandler } from "../../lib/outbox-dispatcher"
+import type { OutboxHandler } from "../../lib/outbox"
 import { withClient } from "../../db"
 
 export interface MemoAccumulatorHandlerConfig {

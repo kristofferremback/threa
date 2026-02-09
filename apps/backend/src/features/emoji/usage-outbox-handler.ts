@@ -1,14 +1,14 @@
 import type { Pool } from "pg"
 import { OutboxRepository, type ReactionOutboxPayload } from "../../repositories"
 import { EmojiUsageRepository } from "./usage-repository"
-import { parseMessageCreatedPayload } from "../../lib/outbox-payload-parsers"
+import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"
 import { emojiUsageId } from "../../lib/id"
 import { isValidShortcode } from "./emoji"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
-import type { OutboxHandler } from "../../lib/outbox-dispatcher"
+import type { OutboxHandler } from "../../lib/outbox"
 
 export interface EmojiUsageHandlerConfig {
   batchSize?: number
