@@ -87,7 +87,6 @@ import {
   StubWordProcessingService,
   ExcelProcessingService,
   StubExcelProcessingService,
-  createAttachmentSafetyPolicy,
   createMalwareScanner,
 } from "./features/attachments"
 import {
@@ -176,8 +175,7 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Storage and attachment service
   const storage = createS3Storage(config.s3)
-  const attachmentSafetyPolicy = createAttachmentSafetyPolicy(config.attachments)
-  const malwareScanner = createMalwareScanner(storage, attachmentSafetyPolicy)
+  const malwareScanner = createMalwareScanner(storage, config.attachments)
   const attachmentService = new AttachmentService(pool, storage, malwareScanner)
   await attachmentService.recoverStalePendingScans()
 

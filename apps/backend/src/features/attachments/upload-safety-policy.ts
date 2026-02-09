@@ -33,12 +33,6 @@ const SCAN_HEAD_BYTES = 8 * 1024
 
 const MALWARE_SIGNATURES = ["EICAR-STANDARD-ANTIVIRUS-TEST-FILE", "X5O!P%@AP"] as const
 
-export function createAttachmentSafetyPolicy(params: AttachmentSafetyPolicy): AttachmentSafetyPolicy {
-  return {
-    malwareScanEnabled: params.malwareScanEnabled,
-  }
-}
-
 export function isAttachmentSafeForSharing(safetyStatus: AttachmentSafetyStatus): boolean {
   return safetyStatus === AttachmentSafetyStatuses.CLEAN
 }

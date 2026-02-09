@@ -36,12 +36,7 @@ export { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./awa
 export type { AwaitAttachmentProcessingResult } from "./await-processing"
 
 // Upload safety policy
-export {
-  createAttachmentSafetyPolicy,
-  createMalwareScanner,
-  isAttachmentSafeForSharing,
-  safetyStatusBlockReason,
-} from "./upload-safety-policy"
+export { createMalwareScanner, isAttachmentSafeForSharing, safetyStatusBlockReason } from "./upload-safety-policy"
 export type {
   AttachmentSafetyPolicy,
   MalwareScanner,

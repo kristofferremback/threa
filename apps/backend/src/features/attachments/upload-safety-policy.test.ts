@@ -1,21 +1,6 @@
 import { describe, expect, it, mock } from "bun:test"
 import { AttachmentSafetyStatuses } from "@threa/types"
-import {
-  createAttachmentSafetyPolicy,
-  createMalwareScanner,
-  isAttachmentSafeForSharing,
-  safetyStatusBlockReason,
-} from "./upload-safety-policy"
-
-describe("createAttachmentSafetyPolicy", () => {
-  it("preserves malware scan enabled setting", () => {
-    const policy = createAttachmentSafetyPolicy({
-      malwareScanEnabled: true,
-    })
-
-    expect(policy.malwareScanEnabled).toBe(true)
-  })
-})
+import { createMalwareScanner, isAttachmentSafeForSharing, safetyStatusBlockReason } from "./upload-safety-policy"
 
 describe("attachment sharing safety", () => {
   it("only allows clean attachments", () => {
