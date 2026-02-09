@@ -1,4 +1,4 @@
-import { logger } from "./logger"
+import { logger } from "../logger"
 
 /**
  * Ticker - Generic interval runner with concurrency control

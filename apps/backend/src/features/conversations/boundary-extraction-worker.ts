@@ -1,4 +1,4 @@
-import type { BoundaryExtractionJobData, JobHandler } from "../../lib/job-queue"
+import type { BoundaryExtractionJobData, JobHandler } from "../../lib/queue"
 import type { BoundaryExtractionService } from "./boundary-extraction-service"
 import { logger } from "../../lib/logger"
 

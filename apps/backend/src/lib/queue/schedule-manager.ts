@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { Ticker } from "./ticker"
-import { CronRepository } from "../repositories/cron-repository"
-import { logger } from "./logger"
+import { CronRepository } from "./cron-repository"
+import { logger } from "../logger"
 
 export interface ScheduleManagerConfig {
   lookaheadSeconds: number // How far ahead to generate ticks (default: 60)

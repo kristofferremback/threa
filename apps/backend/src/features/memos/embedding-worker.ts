@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import type { EmbeddingJobData, JobHandler } from "../../lib/job-queue"
+import type { EmbeddingJobData, JobHandler } from "../../lib/queue"
 import { MessageRepository } from "../../repositories"
 import type { EmbeddingServiceLike } from "./embedding-service"
 import { logger } from "../../lib/logger"

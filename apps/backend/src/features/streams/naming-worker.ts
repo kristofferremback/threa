@@ -1,4 +1,4 @@
-import type { NamingJobData, JobHandler } from "../../lib/job-queue"
+import type { NamingJobData, JobHandler } from "../../lib/queue"
 import { logger } from "../../lib/logger"
 
 /** Interface for any service that can handle naming jobs */

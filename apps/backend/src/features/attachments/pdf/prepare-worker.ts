@@ -1,4 +1,4 @@
-import type { PdfPrepareJobData, JobHandler } from "../../../lib/job-queue"
+import type { PdfPrepareJobData, JobHandler } from "../../../lib/queue"
 import type { PdfProcessingServiceLike } from "./types"
 import { logger } from "../../../lib/logger"
 

@@ -1,11 +1,6 @@
 import type { Pool } from "pg"
-import {
-  JobQueues,
-  type JobHandler,
-  type MemoBatchCheckJobData,
-  type MemoBatchProcessJobData,
-} from "../../lib/job-queue"
-import type { QueueManager } from "../../lib/queue-manager"
+import { JobQueues, type JobHandler, type MemoBatchCheckJobData, type MemoBatchProcessJobData } from "../../lib/queue"
+import type { QueueManager } from "../../lib/queue"
 import { StreamStateRepository } from "../../repositories"
 import type { MemoServiceLike } from "./service"
 import { logger } from "../../lib/logger"

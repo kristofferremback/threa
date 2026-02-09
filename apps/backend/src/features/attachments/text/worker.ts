@@ -1,4 +1,4 @@
-import type { TextProcessJobData, JobHandler } from "../../../lib/job-queue"
+import type { TextProcessJobData, JobHandler } from "../../../lib/queue"
 import type { TextProcessingServiceLike } from "./types"
 import { logger } from "../../../lib/logger"
 

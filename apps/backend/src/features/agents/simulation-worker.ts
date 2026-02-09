@@ -1,4 +1,4 @@
-import type { SimulationJobData, JobHandler } from "../../lib/job-queue"
+import type { SimulationJobData, JobHandler } from "../../lib/queue"
 import type { SimulationAgentInput, SimulationAgentResult } from "./simulation-agent"
 import { logger } from "../../lib/logger"
 

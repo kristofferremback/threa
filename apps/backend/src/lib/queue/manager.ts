@@ -1,14 +1,14 @@
 import type { Pool } from "pg"
-import { withTransaction } from "../db"
+import { withTransaction } from "../../db"
 import pLimit from "p-limit"
-import type { QueueRepository } from "../repositories/queue-repository"
-import type { TokenPoolRepository } from "../repositories/token-pool-repository"
-import { CronRepository, type CronTick } from "../repositories/cron-repository"
-import { calculateBackoffMs } from "./backoff"
-import { logger } from "./logger"
+import type { QueueRepository } from "./repository"
+import type { TokenPoolRepository } from "./token-pool-repository"
+import { CronRepository, type CronTick } from "./cron-repository"
+import { calculateBackoffMs } from "../backoff"
+import { logger } from "../logger"
 import type { JobDataMap, JobQueueName, JobHandler, HandlerOptions, HandlerHooks } from "./job-queue"
-import { queueId, workerId, tickerId, cronId } from "./id"
-import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "./metrics"
+import { queueId, workerId, tickerId, cronId } from "../id"
+import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "../metrics"
 
 /**
  * Configuration for QueueManager

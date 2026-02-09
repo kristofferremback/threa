@@ -1,5 +1,5 @@
-import type { Querier } from "../db"
-import { sql } from "../db"
+import type { Querier } from "../../db"
+import { sql } from "../../db"
 
 // Internal row type (snake_case)
 interface QueueMessageRow {

@@ -1,4 +1,4 @@
-import type { WordProcessJobData, JobHandler } from "../../../lib/job-queue"
+import type { WordProcessJobData, JobHandler } from "../../../lib/queue"
 import type { WordProcessingServiceLike } from "./types"
 import { logger } from "../../../lib/logger"
 

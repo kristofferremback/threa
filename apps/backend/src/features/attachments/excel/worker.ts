@@ -1,4 +1,4 @@
-import type { ExcelProcessJobData, JobHandler } from "../../../lib/job-queue"
+import type { ExcelProcessJobData, JobHandler } from "../../../lib/queue"
 import type { ExcelProcessingServiceLike } from "./types"
 import { logger } from "../../../lib/logger"
 

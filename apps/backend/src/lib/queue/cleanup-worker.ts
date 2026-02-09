@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { Ticker } from "./ticker"
-import { CronRepository } from "../repositories/cron-repository"
-import { logger } from "./logger"
+import { CronRepository } from "./cron-repository"
+import { logger } from "../logger"
 
 export interface CleanupWorkerConfig {
   intervalMs: number // How often to run cleanup (default: 300000 = 5 minutes)

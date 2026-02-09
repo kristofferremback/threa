@@ -193,7 +193,7 @@ export interface QueueMessageMeta {
  * Hooks should be idempotent since they may be retried on transient failures.
  */
 export type OnDLQHook<T> = (
-  querier: import("../db").Querier,
+  querier: import("../../db").Querier,
   job: Job<T>,
   error: Error,
   meta: QueueMessageMeta

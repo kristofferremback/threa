@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import type { CommandExecuteJobData, JobHandler } from "../../lib/job-queue"
+import type { CommandExecuteJobData, JobHandler } from "../../lib/queue"
 import type { CommandRegistry, CommandContext } from "./registry"
 import { withTransaction } from "../../db"
 import { StreamEventRepository } from "../../repositories"

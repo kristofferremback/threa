@@ -95,7 +95,7 @@ import {
   type TextProcessJobData,
   type WordProcessJobData,
   type ExcelProcessJobData,
-} from "./lib/job-queue"
+} from "./lib/queue"
 import { ProcessingStatuses } from "@threa/types"
 import { AttachmentRepository } from "./repositories"
 import { ulid } from "ulid"
@@ -108,11 +108,7 @@ import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
 import { createModelRegistry } from "./lib/ai/model-registry"
 import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
-import { QueueManager } from "./lib/queue-manager"
-import { ScheduleManager } from "./lib/schedule-manager"
-import { CleanupWorker } from "./lib/cleanup-worker"
-import { QueueRepository } from "./repositories/queue-repository"
-import { TokenPoolRepository } from "./repositories/token-pool-repository"
+import { QueueManager, ScheduleManager, CleanupWorker, QueueRepository, TokenPoolRepository } from "./lib/queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/pool-monitor"
 
