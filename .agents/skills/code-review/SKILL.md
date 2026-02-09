@@ -87,12 +87,27 @@ Re-run Step 1 to ensure PR hasn't been closed/drafted during review.
 
 Use `gh pr comment N --body "..."`. Link format: `https://github.com/OWNER/REPO/blob/FULL_SHA/path/file.ts#L10-L15` (MUST use full SHA, include 1-2 lines context).
 
+**Attribution rule:** Every review comment must explicitly disclose what model(s) produced the review.
+
+- Include a `**Review models:** ...` line in the posted PR comment.
+- Include:
+  - Runtime/orchestrator model (the model running this skill)
+  - Reviewer model used in Step 4 (typically `sonnet`)
+  - Confidence scorer model used in Step 5 (typically `haiku`)
+- Never claim a different runtime (for example, do not claim Claude Code when Codex ran the review).
+
+Examples:
+
+- `**Review models:** Orchestrator: Codex (GPT-5) | Reviewers: sonnet x6 | Scorers: haiku`
+- `**Review models:** Orchestrator: Claude Code (Sonnet) | Reviewers: sonnet x6 | Scorers: haiku`
+
 **If issues found:**
 
 ```
 <!-- unified-review -->
 ### Code review
 **Confidence: X/7** — [Label]
+**Review models:** Orchestrator: <runtime model> | Reviewers: sonnet x6 | Scorers: haiku
 
 Found N issues:
 
@@ -108,7 +123,7 @@ Found N issues:
 <details><summary>⚡ Performance [CLEAN | N concerns]</summary>[details]</details>
 <details><summary>🔄 Reactivity [CLEAN | N issues]</summary>[details]</details>
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
+🤖 Generated with unified-review automation
 <sub>If this review was useful, react with 👍. Otherwise, react with 👎.</sub>
 ```
 
@@ -118,10 +133,11 @@ Found N issues:
 <!-- unified-review -->
 ### Code review
 **Confidence: 7/7** — Excellent
+**Review models:** Orchestrator: <runtime model> | Reviewers: sonnet x6 | Scorers: haiku
 
 No issues found. Checked for bugs, CLAUDE.md compliance, plan adherence, design quality, security, and performance.
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
+🤖 Generated with unified-review automation
 <sub>If this review was useful, react with 👍. Otherwise, react with 👎.</sub>
 ```
 
@@ -132,6 +148,7 @@ No issues found. Checked for bugs, CLAUDE.md compliance, plan adherence, design 
 ```
 Code review posted to PR #N: <URL>
 Confidence: X/7
+Models: Orchestrator=<runtime model>, Reviewers=sonnet x6, Scorers=haiku
 Summary:
 - 📐 Plan: <status>  - 🔍 Bugs: <status>  - 📋 CLAUDE.md: <status>
 - 🏗️ Design: <status>  - 🔒 Security: <status>  - ⚡ Perf: <status>  - 🔄 Reactivity: <status>
