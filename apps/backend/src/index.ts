@@ -4,6 +4,7 @@ initLangfuse()
 
 import { startServer } from "./server"
 import { logger } from "./lib/logger"
+import { classifyGlobalCrash, serializeCrashReason } from "./lib/crash-policy"
 
 const { server, stop, fastShutdown } = await startServer()
 
@@ -35,25 +36,24 @@ process.on("SIGHUP", () => shutdown(0))
 
 // Last-ditch cleanup on crashes
 process.on("uncaughtException", (err) => {
-  logger.fatal({ err }, "Uncaught exception")
-  shutdown(1)
+  const decision = classifyGlobalCrash("uncaughtException", err)
+  if (!decision.isFatal) {
+    logger.warn({ err, classification: decision.classification }, decision.logMessage)
+    return
+  }
+
+  logger.fatal({ err, classification: decision.classification }, decision.logMessage)
+  void shutdown(1)
 })
 
 process.on("unhandledRejection", (reason) => {
-  // Try to extract useful info from the rejection reason
-  let reasonInfo: Record<string, unknown>
-  if (reason instanceof Error) {
-    reasonInfo = { message: reason.message, stack: reason.stack, name: reason.name }
-  } else if (typeof reason === "object" && reason !== null) {
-    try {
-      reasonInfo = { ...reason, stringified: JSON.stringify(reason) }
-    } catch {
-      // JSON.stringify can throw for circular refs, BigInt, etc.
-      reasonInfo = { value: String(reason) }
-    }
-  } else {
-    reasonInfo = { value: String(reason) }
+  const reasonInfo = serializeCrashReason(reason)
+  const decision = classifyGlobalCrash("unhandledRejection", reason)
+  if (!decision.isFatal) {
+    logger.warn({ reason: reasonInfo, classification: decision.classification }, decision.logMessage)
+    return
   }
-  logger.fatal({ reason: reasonInfo }, "Unhandled rejection")
-  shutdown(1)
+
+  logger.fatal({ reason: reasonInfo, classification: decision.classification }, decision.logMessage)
+  void shutdown(1)
 })

@@ -131,27 +131,6 @@ export async function startServer(): Promise<ServerInstance> {
   collectDefaultMetrics()
   logger.info("Prometheus metrics collection initialized")
 
-  // Handle PostgreSQL idle-session timeout errors globally
-  // These are EXPECTED with idle_session_timeout=60s - don't crash the process
-  process.on("uncaughtException", (err: Error & { code?: string }) => {
-    if (err.code === "57P05") {
-      logger.warn(
-        {
-          code: err.code,
-          message: err.message,
-          stack: err.stack,
-        },
-        "Uncaught idle-session timeout error - connection was killed by PostgreSQL (expected with 60s timeout)"
-      )
-      // Don't exit - this is expected behavior, connection will be removed from pool
-      return
-    }
-
-    // For all other uncaught exceptions, log and exit
-    logger.fatal({ err }, "Uncaught exception")
-    process.exit(1)
-  })
-
   // Create separated connection pools:
   // - main: services, workers, queue system, HTTP handlers (30 connections)
   // - listen: OutboxListener LISTEN connections (12 connections)
