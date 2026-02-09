@@ -45,6 +45,6 @@
     "typescript": "^5"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,json,css,md,html}": "prettier --write"
+    "!(.agents|.claude)/**/*.{js,jsx,ts,tsx,json,css,md,html}": "prettier --write"
   }
 }

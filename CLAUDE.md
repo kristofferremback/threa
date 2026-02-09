@@ -32,8 +32,13 @@ threa/
 ├── scripts/         # Dev orchestration and utilities
 ├── tests/           # Cross-app tests (Playwright)
 ├── docs/            # Design docs and exploration notes
+├── .agents/skills/  # Shared agent skills (Claude + Codex)
 └── package.json     # Root workspace config
 ```
+
+### Agent Skills
+
+Skills live in `.agents/skills/<name>/SKILL.md`. `.claude/skills` is a **symlink** to `.agents/skills/` — do not replace the symlink with a real directory. When adding a new skill, create it in `.agents/skills/`, not `.claude/skills/`.
 
 ### Backend: Feature Colocation (INV-51)
 
