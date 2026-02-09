@@ -38,6 +38,8 @@ import {
 import {
   COMPANION_MODEL_ID,
   COMPANION_TEMPERATURE,
+  COMPANION_SUMMARY_MODEL_ID,
+  COMPANION_SUMMARY_TEMPERATURE,
   PersonaAgent,
   type PersonaAgentInput,
   type PersonaAgentDeps,
@@ -45,6 +47,7 @@ import {
   Researcher,
   PersonaRepository,
   TraceEmitter,
+  ConversationSummaryService,
 } from "../../../src/features/agents"
 import { SearchService } from "../../../src/features/search"
 import { UserPreferencesService } from "../../../src/features/user-preferences"
@@ -322,6 +325,11 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
     }
 
     // Create PersonaAgent with real dependencies including vision support
+    const conversationSummaryService = new ConversationSummaryService({
+      ai: ctx.ai,
+      modelId: COMPANION_SUMMARY_MODEL_ID,
+      temperature: COMPANION_SUMMARY_TEMPERATURE,
+    })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
       traceEmitter,
@@ -329,6 +337,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       userPreferencesService,
       researcher,
       searchService,
+      conversationSummaryService,
       storage: mockStorage,
       modelRegistry,
       createMessage,
