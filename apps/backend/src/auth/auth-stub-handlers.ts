@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express"
 import type { StubAuthService } from "./auth-service.stub"
 import type { UserService } from "./user-service"
-import type { WorkspaceService } from "../services/workspace-service"
-import type { StreamService } from "../services/stream-service"
+import type { WorkspaceService } from "../features/workspaces"
+import type { StreamService } from "../features/streams"
 import { renderLoginPage } from "./auth-stub-login-page"
 import { decodeAndSanitizeRedirectState } from "./redirect"
 

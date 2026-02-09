@@ -43,10 +43,10 @@ import {
 import {
   BOUNDARY_EXTRACTION_MODEL_ID,
   BOUNDARY_EXTRACTION_TEMPERATURE,
-} from "../../../src/lib/boundary-extraction/config"
-import { LLMBoundaryExtractor } from "../../../src/lib/boundary-extraction/llm-extractor"
-import type { ExtractionContext } from "../../../src/lib/boundary-extraction/types"
-import type { Message } from "../../../src/repositories/message-repository"
+  LLMBoundaryExtractor,
+  type ExtractionContext,
+} from "../../../src/features/conversations"
+import type { Message } from "../../../src/features/messaging"
 import { ulid } from "ulid"
 
 /**

@@ -8,7 +8,7 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { Message } from "../../../src/repositories"
+import type { Message } from "../../../src/features/messaging"
 
 /**
  * Input for a memorizer case.
@@ -50,7 +50,7 @@ export function createTestMessage(content: string, messageId: string, authorId: 
     streamId: "stream_test",
     sequence: BigInt(1),
     authorId,
-    authorType: "user",
+    authorType: "member",
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] },
     contentMarkdown: content,
     replyCount: 0,

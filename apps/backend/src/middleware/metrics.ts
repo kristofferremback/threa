@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express"
-import { httpRequestsTotal, httpRequestDuration, httpActiveConnections } from "../lib/metrics"
+import { httpRequestsTotal, httpRequestDuration, httpActiveConnections } from "../lib/observability"
 
 /**
  * Map HTTP status code to error type label.

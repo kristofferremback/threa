@@ -32,8 +32,48 @@ threa/
 ├── scripts/         # Dev orchestration and utilities
 ├── tests/           # Cross-app tests (Playwright)
 ├── docs/            # Design docs and exploration notes
+├── .agents/skills/  # Shared agent skills (Claude + Codex)
 └── package.json     # Root workspace config
 ```
+
+### Agent Skills
+
+Skills live in `.agents/skills/<name>/SKILL.md`. `.claude/skills` is a **symlink** to `.agents/skills/` — do not replace the symlink with a real directory. When adding a new skill, create it in `.agents/skills/`, not `.claude/skills/`.
+
+### Backend: Feature Colocation (INV-51)
+
+Domain logic is organized by feature, not by layer. Each feature colocates all its layers:
+
+```
+apps/backend/src/
+├── features/           # Domain features (colocated layers)
+│   ├── streams/        # Stream CRUD, naming, display names
+│   ├── memos/          # GAM pipeline, classifier, memorizer, embeddings
+│   ├── attachments/    # Upload, processing (PDF, text, word, excel, image)
+│   ├── conversations/  # Conversation boundaries, extraction
+│   ├── agents/         # Persona agent, companion graph, tools, researcher
+│   ├── messaging/      # Message CRUD, events
+│   ├── search/         # Full-text + semantic search
+│   ├── workspaces/     # Workspace + member management
+│   ├── commands/       # Slash commands
+│   ├── ai-usage/       # Cost tracking, budgets
+│   ├── emoji/          # Emoji usage tracking
+│   └── user-preferences/
+├── lib/                # Cross-cutting infrastructure only
+│   ├── ai/             # AI wrapper, model registry, cost tracking
+│   ├── storage/        # S3 client
+│   ├── queue-manager.ts, job-queue.ts, schedule-manager.ts
+│   ├── outbox-dispatcher.ts, broadcast-handler.ts
+│   ├── cursor-lock.ts, debounce.ts, temporal.ts, id.ts, ...
+│   └── (utilities, logging, errors, metrics)
+├── middleware/         # Express middleware
+├── auth/               # Authentication (WorkOS + stub)
+├── routes.ts           # Central route registration
+├── server.ts           # Service wiring + startup
+└── app.ts              # Express app factory
+```
+
+Feature slice convention: `index.ts` (barrel), `handlers.ts`, `service.ts`, `repository.ts`, `outbox-handler.ts`, `worker.ts`, `config.ts`, `*.test.ts`.
 
 ## Tech Stack
 
@@ -336,6 +376,10 @@ If you MUST use `mock.module()`, only do so for modules that are exclusively use
 **INV-49: No Deprecated Aliases** - Never create `@deprecated` export aliases for renamed functions, constants, or types. Deprecated aliases add cognitive load, clutter exports, and suggest the codebase isn't maintained. When renaming, update all call sites in the same commit. Git has history if someone needs to find the old name. This is a corollary of INV-38 (Delete Dead Code Immediately).
 
 **INV-50: Reference Members, Not Users** — Outside of auth and the `workspace_members` table itself, always reference workspace members (`MemberId`), never users (`UserId`). Users are global auth identities; members are workspace-scoped actors. Socket infrastructure (pre-workspace) is exempt. Enforced by branded ID types and ESLint `no-restricted-imports` on the `auth/` module boundary.
+
+**INV-51: Feature Colocation** — Backend domain logic lives in `features/<name>/`. Each feature colocates its handler, service, repository, outbox handler, worker, config, and tests. `lib/` is reserved for cross-cutting infrastructure (queue, outbox dispatcher, AI wrapper, utilities, logging). Domain-specific classifiers, prompt builders, extractors, and event handlers belong in features, not `lib/`. Enforced by ESLint (`apps/backend/eslint.config.js`).
+
+**INV-52: Feature Barrel Imports** — Features export their public API through `index.ts` barrels. Other features import only from the barrel (`features/x`), never from internals (`features/x/some-file`). `lib/` never imports from `features/`. Enforced by ESLint (`apps/backend/eslint.config.js`).
 
 When introducing a new invariant:
 

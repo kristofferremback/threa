@@ -1,25 +1,15 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test"
+import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
-import type { Message } from "../../repositories/message-repository"
-import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
-import type { PoolClient } from "pg"
+import { MemberRepository } from "../../features/workspaces"
+import { PersonaRepository } from "../../features/agents"
+import type { Message } from "../../features/messaging"
+import type { AttachmentWithExtraction } from "../../features/attachments"
+import type { Querier } from "../../db"
 
 const mockFindMembersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
 const mockFindPersonasByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))
 
-mock.module("../../repositories/member-repository", () => ({
-  MemberRepository: {
-    findByIds: mockFindMembersByIds,
-  },
-}))
-
-mock.module("../../repositories/persona-repository", () => ({
-  PersonaRepository: {
-    findByIds: mockFindPersonasByIds,
-  },
-}))
-
-const mockClient = {} as PoolClient
+const mockClient = {} as Querier
 
 function createMessage(overrides: Partial<Message> = {}): Message {
   const contentMarkdown = overrides.contentMarkdown ?? "Hello, world!"
@@ -49,6 +39,9 @@ describe("MessageFormatter", () => {
 
     mockFindMembersByIds.mockResolvedValue([])
     mockFindPersonasByIds.mockResolvedValue([])
+
+    spyOn(MemberRepository, "findByIds").mockImplementation(mockFindMembersByIds as any)
+    spyOn(PersonaRepository, "findByIds").mockImplementation(mockFindPersonasByIds as any)
 
     formatter = new MessageFormatter()
   })

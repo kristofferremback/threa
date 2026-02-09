@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express"
-import type { Member } from "../repositories/member-repository"
+import type { Member } from "../features/workspaces"
 
 type WorkspaceRole = Member["role"]
 

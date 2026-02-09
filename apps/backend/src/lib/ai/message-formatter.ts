@@ -1,8 +1,8 @@
 import type { Querier } from "../../db"
-import type { Message } from "../../repositories/message-repository"
-import type { AttachmentWithExtraction } from "../../repositories/attachment-repository"
-import { MemberRepository } from "../../repositories/member-repository"
-import { PersonaRepository } from "../../repositories/persona-repository"
+import type { Message } from "../../features/messaging"
+import type { AttachmentWithExtraction } from "../../features/attachments"
+import { MemberRepository } from "../../features/workspaces"
+import { PersonaRepository } from "../../features/agents"
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")

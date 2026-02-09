@@ -21,7 +21,7 @@ export interface EvalConversationSummary {
  */
 export interface EvalMessage {
   authorId: string
-  authorType: "user" | "persona"
+  authorType: "member" | "persona"
   contentMarkdown: string
 }
 

@@ -16,7 +16,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "Hey team, I need help with the deployment pipeline. The CI is failing on the staging branch.",
       },
       activeConversations: [],
@@ -35,7 +35,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_xyz789",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "Has anyone tried the new Thai place on 5th street? Thinking of ordering lunch.",
       },
       activeConversations: [
@@ -51,7 +51,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_abc123",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "Fixed the token refresh logic",
         },
       ],
@@ -72,7 +72,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_def456",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown:
           "I tried that fix but I'm still getting the 401 error. Can you share the exact headers you're using?",
       },
@@ -89,7 +89,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_abc123",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "Try refreshing the token before the request",
         },
       ],
@@ -107,7 +107,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown:
           "Actually, I just realized we also need to handle the edge case when the token expires mid-request.",
       },
@@ -124,7 +124,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_abc123",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "We need to implement automatic token refresh",
         },
       ],
@@ -144,7 +144,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown:
           "Speaking of authentication, we should also audit our password policies. When was the last security review?",
       },
@@ -161,7 +161,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_def456",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "The OAuth flow is working now",
         },
       ],
@@ -182,7 +182,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "Perfect, that fixed it! The deployment is now working. Thanks for the help everyone!",
       },
       activeConversations: [
@@ -198,7 +198,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_def456",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "Try running the deploy script with verbose mode",
         },
       ],
@@ -225,7 +225,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_new123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "Good morning everyone!",
       },
       activeConversations: [
@@ -252,7 +252,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "Any updates on this?",
       },
       activeConversations: [
@@ -276,7 +276,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
       recentMessages: [
         {
           authorId: "user_def456",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "Looking into it now",
         },
       ],
@@ -295,7 +295,7 @@ export const boundaryExtractionCases: EvalCase<BoundaryExtractionInput, Boundary
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: `Here's the error I'm getting:
 \`\`\`
 Error: Connection refused at 127.0.0.1:5432
@@ -327,7 +327,7 @@ Any ideas what's causing this?`,
     input: {
       newMessage: {
         authorId: "user_abc123",
-        authorType: "user",
+        authorType: "member",
         contentMarkdown: "@sarah can you review the PR when you get a chance?",
       },
       activeConversations: [
@@ -343,7 +343,7 @@ Any ideas what's causing this?`,
       recentMessages: [
         {
           authorId: "user_abc123",
-          authorType: "user",
+          authorType: "member",
           contentMarkdown: "I pushed the changes",
         },
       ],

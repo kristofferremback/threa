@@ -14,8 +14,7 @@
  */
 
 import { createDatabasePool, sql } from "../src/db"
-import { QueueRepository } from "../src/repositories/queue-repository"
-import { JobQueues, type NamingJobData } from "../src/lib/job-queue"
+import { QueueRepository, JobQueues, type NamingJobData } from "../src/lib/queue"
 import { queueId } from "../src/lib/id"
 
 interface UnnamedThread {

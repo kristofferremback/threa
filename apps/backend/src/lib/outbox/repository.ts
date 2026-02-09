@@ -1,0 +1,416 @@
+import { sql, type Querier } from "../../db"
+import { bigIntReplacer } from "../serialization"
+import type { Stream } from "../../features/streams"
+import type { StreamEvent } from "../../features/streams"
+import type { Member } from "../../features/workspaces"
+import type { ConversationWithStaleness } from "../../features/conversations"
+import type { Memo as WireMemo, UserPreferences, LastMessagePreview } from "@threa/types"
+
+/**
+ * Outbox event types and their payloads.
+ * Use the OutboxEventPayload type to get type-safe payload access.
+ */
+export type OutboxEventType =
+  | "message:created"
+  | "message:edited"
+  | "message:deleted"
+  | "message:updated"
+  | "reaction:added"
+  | "reaction:removed"
+  | "stream:created"
+  | "stream:updated"
+  | "stream:archived"
+  | "stream:unarchived"
+  | "stream:display_name_updated"
+  | "stream:read"
+  | "stream:read_all"
+  | "stream:activity"
+  | "attachment:uploaded"
+  | "workspace_member:added"
+  | "workspace_member:removed"
+  | "member:updated"
+  | "conversation:created"
+  | "conversation:updated"
+  | "memo:created"
+  | "memo:revised"
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
+  | "agent_session:started"
+  | "agent_session:completed"
+  | "agent_session:failed"
+  | "user_preferences:updated"
+  | "budget:alert"
+
+/** Events that are scoped to a stream (have streamId) */
+export type StreamScopedEventType =
+  | "message:created"
+  | "message:edited"
+  | "message:deleted"
+  | "message:updated"
+  | "reaction:added"
+  | "reaction:removed"
+  | "stream:display_name_updated"
+  | "stream:activity"
+  | "conversation:created"
+  | "conversation:updated"
+  | "agent_session:started"
+  | "agent_session:completed"
+  | "agent_session:failed"
+
+/** Events that are scoped to a workspace (no streamId) */
+export type WorkspaceScopedEventType =
+  | "stream:created"
+  | "stream:updated"
+  | "stream:archived"
+  | "stream:unarchived"
+  | "attachment:uploaded"
+  | "workspace_member:added"
+  | "workspace_member:removed"
+  | "member:updated"
+
+/**
+ * Base fields for stream-scoped events.
+ */
+interface StreamScopedPayload {
+  workspaceId: string
+  streamId: string
+}
+
+/**
+ * Base fields for workspace-scoped events.
+ */
+interface WorkspaceScopedPayload {
+  workspaceId: string
+}
+
+// Stream-scoped event payloads
+export interface MessageCreatedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface MessageEditedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface MessageDeletedOutboxPayload extends StreamScopedPayload {
+  messageId: string
+}
+
+export interface MessageUpdatedOutboxPayload extends StreamScopedPayload {
+  messageId: string
+  updateType: "reply_count" | "content"
+  replyCount?: number
+  content?: string
+}
+
+export interface ReactionOutboxPayload extends StreamScopedPayload {
+  messageId: string
+  emoji: string
+  memberId: string
+}
+
+export interface StreamDisplayNameUpdatedPayload extends StreamScopedPayload {
+  displayName: string
+}
+
+// Workspace-scoped event payloads (no streamId)
+// Note: StreamCreatedOutboxPayload includes streamId for routing:
+// - For threads: streamId = parentStreamId (broadcast to parent stream room)
+// - For non-threads: streamId = stream.id (broadcast to workspace room)
+export interface StreamCreatedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  stream: Stream
+}
+
+export interface StreamUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  stream: Stream
+}
+
+export interface StreamArchivedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  stream: Stream
+}
+
+export interface StreamUnarchivedOutboxPayload extends WorkspaceScopedPayload {
+  streamId: string
+  stream: Stream
+}
+
+export interface AttachmentUploadedOutboxPayload extends WorkspaceScopedPayload {
+  attachmentId: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  storagePath: string
+}
+
+export interface WorkspaceMemberAddedOutboxPayload extends WorkspaceScopedPayload {
+  member: Member
+}
+
+export interface WorkspaceMemberRemovedOutboxPayload extends WorkspaceScopedPayload {
+  memberId: string
+}
+
+export interface MemberUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  member: Member
+}
+
+/** Stream-scoped event for sidebar updates when new messages arrive.
+ *  Only members of the stream receive preview content. */
+export interface StreamActivityOutboxPayload extends StreamScopedPayload {
+  authorId: string
+  lastMessagePreview: LastMessagePreview
+}
+
+// Conversation event payloads
+export interface ConversationCreatedOutboxPayload extends StreamScopedPayload {
+  conversationId: string
+  conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID (for discoverability) */
+  parentStreamId?: string
+}
+
+export interface ConversationUpdatedOutboxPayload extends StreamScopedPayload {
+  conversationId: string
+  conversation: ConversationWithStaleness
+  /** For thread conversations, the parent channel's stream ID (for discoverability) */
+  parentStreamId?: string
+}
+
+// Memo event payloads
+export interface MemoCreatedOutboxPayload extends WorkspaceScopedPayload {
+  memoId: string
+  memo: WireMemo
+}
+
+export interface MemoRevisedOutboxPayload extends WorkspaceScopedPayload {
+  memoId: string
+  previousMemoId: string
+  memo: WireMemo
+  revisionReason: string
+}
+
+// Author-scoped event payloads (only visible to the author)
+export interface CommandDispatchedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+  authorId: string
+}
+
+export interface CommandCompletedOutboxPayload extends StreamScopedPayload {
+  authorId: string
+  event: StreamEvent
+}
+
+export interface CommandFailedOutboxPayload extends StreamScopedPayload {
+  authorId: string
+  event: StreamEvent
+}
+
+// Agent session event payloads (stream-scoped - visible to all stream members)
+export interface AgentSessionStartedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface AgentSessionCompletedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+export interface AgentSessionFailedOutboxPayload extends StreamScopedPayload {
+  event: StreamEvent
+}
+
+// Read state event payloads (author-scoped - only visible to the user marking as read)
+export interface StreamReadOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamId: string
+  lastReadEventId: string
+}
+
+export interface StreamsReadAllOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  streamIds: string[]
+}
+
+// User preferences event payload (author-scoped - only visible to the user who updated)
+export interface UserPreferencesUpdatedOutboxPayload extends WorkspaceScopedPayload {
+  authorId: string
+  preferences: UserPreferences
+}
+
+// Budget alert event payload
+export interface BudgetAlertOutboxPayload extends WorkspaceScopedPayload {
+  alertType: string
+  thresholdPercent: number
+  currentUsageUsd: number
+  budgetUsd: number
+  percentUsed: number
+}
+
+/**
+ * Maps event types to their payload types for type-safe event handling.
+ */
+export interface OutboxEventPayloadMap {
+  "message:created": MessageCreatedOutboxPayload
+  "message:edited": MessageEditedOutboxPayload
+  "message:deleted": MessageDeletedOutboxPayload
+  "message:updated": MessageUpdatedOutboxPayload
+  "reaction:added": ReactionOutboxPayload
+  "reaction:removed": ReactionOutboxPayload
+  "stream:created": StreamCreatedOutboxPayload
+  "stream:updated": StreamUpdatedOutboxPayload
+  "stream:archived": StreamArchivedOutboxPayload
+  "stream:unarchived": StreamUnarchivedOutboxPayload
+  "stream:display_name_updated": StreamDisplayNameUpdatedPayload
+  "stream:read": StreamReadOutboxPayload
+  "stream:read_all": StreamsReadAllOutboxPayload
+  "stream:activity": StreamActivityOutboxPayload
+  "attachment:uploaded": AttachmentUploadedOutboxPayload
+  "workspace_member:added": WorkspaceMemberAddedOutboxPayload
+  "workspace_member:removed": WorkspaceMemberRemovedOutboxPayload
+  "member:updated": MemberUpdatedOutboxPayload
+  "conversation:created": ConversationCreatedOutboxPayload
+  "conversation:updated": ConversationUpdatedOutboxPayload
+  "memo:created": MemoCreatedOutboxPayload
+  "memo:revised": MemoRevisedOutboxPayload
+  "command:dispatched": CommandDispatchedOutboxPayload
+  "command:completed": CommandCompletedOutboxPayload
+  "command:failed": CommandFailedOutboxPayload
+  "agent_session:started": AgentSessionStartedOutboxPayload
+  "agent_session:completed": AgentSessionCompletedOutboxPayload
+  "agent_session:failed": AgentSessionFailedOutboxPayload
+  "user_preferences:updated": UserPreferencesUpdatedOutboxPayload
+  "budget:alert": BudgetAlertOutboxPayload
+}
+
+export type OutboxEventPayload<T extends OutboxEventType> = OutboxEventPayloadMap[T]
+
+export interface OutboxEvent<T extends OutboxEventType = OutboxEventType> {
+  id: bigint
+  eventType: T
+  payload: OutboxEventPayloadMap[T]
+  createdAt: Date
+}
+
+/**
+ * Type guard to narrow an OutboxEvent to a specific event type.
+ */
+export function isOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventType: T
+): event is OutboxEvent<T> {
+  return event.eventType === eventType
+}
+
+/**
+ * Type guard to narrow an OutboxEvent to one of several event types.
+ */
+export function isOneOfOutboxEventType<T extends OutboxEventType>(
+  event: OutboxEvent,
+  eventTypes: T[]
+): event is OutboxEvent<T> {
+  return eventTypes.includes(event.eventType as T)
+}
+
+const STREAM_SCOPED_EVENTS: StreamScopedEventType[] = [
+  "message:created",
+  "message:edited",
+  "message:deleted",
+  "message:updated",
+  "reaction:added",
+  "reaction:removed",
+  "stream:display_name_updated",
+  "stream:activity",
+  "conversation:created",
+  "conversation:updated",
+  "agent_session:started",
+  "agent_session:completed",
+  "agent_session:failed",
+]
+
+/**
+ * Type guard to check if an event is stream-scoped (has streamId in payload).
+ */
+export function isStreamScopedEvent(event: OutboxEvent): event is OutboxEvent<StreamScopedEventType> {
+  return STREAM_SCOPED_EVENTS.includes(event.eventType as StreamScopedEventType)
+}
+
+/** Events that are author-scoped (only visible to the author) */
+export type AuthorScopedEventType =
+  | "command:dispatched"
+  | "command:completed"
+  | "command:failed"
+  | "stream:read"
+  | "stream:read_all"
+  | "user_preferences:updated"
+
+const AUTHOR_SCOPED_EVENTS: AuthorScopedEventType[] = [
+  "command:dispatched",
+  "command:completed",
+  "command:failed",
+  "stream:read",
+  "stream:read_all",
+  "user_preferences:updated",
+]
+
+/**
+ * Type guard to check if an event is author-scoped (only visible to the author).
+ * These events are emitted only to sockets belonging to the author.
+ */
+export function isAuthorScopedEvent(event: OutboxEvent): event is OutboxEvent<AuthorScopedEventType> {
+  return AUTHOR_SCOPED_EVENTS.includes(event.eventType as AuthorScopedEventType)
+}
+
+interface OutboxRow {
+  id: string
+  event_type: string
+  payload: unknown
+  created_at: Date
+}
+
+function mapRowToOutbox(row: OutboxRow): OutboxEvent {
+  return {
+    id: BigInt(row.id),
+    eventType: row.event_type as OutboxEventType,
+    payload: row.payload as OutboxEventPayloadMap[OutboxEventType],
+    createdAt: row.created_at,
+  }
+}
+
+export const OUTBOX_CHANNEL = "outbox_events"
+
+export const OutboxRepository = {
+  async insert<T extends OutboxEventType>(
+    client: Querier,
+    eventType: T,
+    payload: OutboxEventPayloadMap[T]
+  ): Promise<OutboxEvent<T>> {
+    const result = await client.query<OutboxRow>(sql`
+      INSERT INTO outbox (event_type, payload)
+      VALUES (${eventType}, ${JSON.stringify(payload, bigIntReplacer)})
+      RETURNING id, event_type, payload, created_at
+    `)
+
+    // Notify listeners that new events are available
+    await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
+
+    return mapRowToOutbox(result.rows[0]) as OutboxEvent<T>
+  },
+
+  /**
+   * Fetches events after a cursor ID for cursor-based processing.
+   * No locking - the caller should hold a lock on their listener's cursor row.
+   */
+  async fetchAfterId(client: Querier, afterId: bigint, limit: number = 100): Promise<OutboxEvent[]> {
+    const result = await client.query<OutboxRow>(sql`
+      SELECT id, event_type, payload, created_at
+      FROM outbox
+      WHERE id > ${afterId.toString()}
+      ORDER BY id
+      LIMIT ${limit}
+    `)
+    return result.rows.map(mapRowToOutbox)
+  },
+}

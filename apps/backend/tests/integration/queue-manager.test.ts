@@ -1,9 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { Pool } from "pg"
-import { QueueManager } from "../../src/lib/queue-manager"
-import { QueueRepository } from "../../src/repositories/queue-repository"
-import { TokenPoolRepository } from "../../src/repositories/token-pool-repository"
-import { AttachmentRepository } from "../../src/repositories"
+import { QueueManager, QueueRepository, TokenPoolRepository } from "../../src/lib/queue"
+import { AttachmentRepository } from "../../src/features/attachments"
 import { setupTestDatabase } from "./setup"
 import type {
   Job,

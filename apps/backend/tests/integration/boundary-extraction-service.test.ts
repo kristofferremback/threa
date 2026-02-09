@@ -17,7 +17,7 @@ import { WorkspaceRepository } from "../../src/repositories/workspace-repository
 import { StreamRepository } from "../../src/repositories/stream-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"
 import { ConversationRepository } from "../../src/repositories/conversation-repository"
-import { OutboxRepository } from "../../src/repositories/outbox-repository"
+import { OutboxRepository } from "../../src/lib/outbox"
 import { BoundaryExtractionService } from "../../src/services/boundary-extraction-service"
 import { setupTestDatabase, testMessageContent } from "./setup"
 import { userId, workspaceId, streamId, messageId, conversationId } from "../../src/lib/id"

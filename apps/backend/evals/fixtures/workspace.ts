@@ -6,8 +6,9 @@
 
 import type { Pool } from "pg"
 import { withTransaction } from "../../src/db"
-import { WorkspaceRepository, UserRepository } from "../../src/repositories"
-import { workspaceId, userId } from "../../src/lib/id"
+import { WorkspaceRepository } from "../../src/features/workspaces"
+import { UserRepository } from "../../src/auth/user-repository"
+import { workspaceId, userId, memberId } from "../../src/lib/id"
 
 /**
  * Workspace fixture data created for evals.
@@ -51,7 +52,13 @@ export async function createWorkspaceFixture(pool: Pool): Promise<WorkspaceFixtu
     })
 
     // Add user as owner
-    await WorkspaceRepository.addMember(client, workspace.id, user.id, "owner")
+    await WorkspaceRepository.addMember(client, {
+      id: memberId(),
+      workspaceId: workspace.id,
+      userId: user.id,
+      slug: `eval-user-${timestamp}`,
+      role: "owner",
+    })
 
     return {
       workspaceId: workspace.id,
@@ -95,7 +102,13 @@ export async function createAdditionalUser(
     }
 
     // Add to workspace as member
-    await WorkspaceRepository.addMember(client, workspaceId, user.id, "member")
+    await WorkspaceRepository.addMember(client, {
+      id: memberId(),
+      workspaceId,
+      userId: user.id,
+      slug: `eval-user-${timestamp}`,
+      role: "member",
+    })
 
     return {
       userId: user.id,

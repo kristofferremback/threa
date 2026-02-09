@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 import { sql, withClient } from "../db"
 import { calculateBackoffMs } from "./backoff"
 import { logger } from "./logger"
-import { OutboxRepository } from "../repositories/outbox-repository"
+import { OutboxRepository } from "./outbox"
 
 export interface CursorLockConfig {
   pool: Pool

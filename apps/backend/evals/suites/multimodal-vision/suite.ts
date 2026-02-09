@@ -35,24 +35,26 @@ import {
   averageUnderstandingEvaluator,
   hallucinationRateEvaluator,
 } from "./evaluators"
-import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../../src/agents/companion/config"
-import { PersonaAgent, type PersonaAgentInput, type PersonaAgentDeps } from "../../../src/agents/persona-agent"
-import { LangGraphResponseGenerator } from "../../../src/agents/companion-runner"
-import { Researcher } from "../../../src/agents/researcher/researcher"
-import { SearchService } from "../../../src/services/search-service"
-import { UserPreferencesService } from "../../../src/services/user-preferences-service"
-import { EmbeddingService } from "../../../src/services/embedding-service"
-import { StreamRepository } from "../../../src/repositories/stream-repository"
-import { StreamMemberRepository } from "../../../src/repositories/stream-member-repository"
-import { MessageRepository } from "../../../src/repositories/message-repository"
-import { PersonaRepository } from "../../../src/repositories/persona-repository"
-import { AttachmentRepository } from "../../../src/repositories/attachment-repository"
-import { AttachmentExtractionRepository } from "../../../src/repositories/attachment-extraction-repository"
+import {
+  COMPANION_MODEL_ID,
+  COMPANION_TEMPERATURE,
+  PersonaAgent,
+  type PersonaAgentInput,
+  type PersonaAgentDeps,
+  LangGraphResponseGenerator,
+  Researcher,
+  PersonaRepository,
+  TraceEmitter,
+} from "../../../src/features/agents"
+import { SearchService } from "../../../src/features/search"
+import { UserPreferencesService } from "../../../src/features/user-preferences"
+import { EmbeddingService } from "../../../src/features/memos"
+import { StreamRepository, StreamMemberRepository } from "../../../src/features/streams"
+import { MessageRepository, EventService } from "../../../src/features/messaging"
+import { AttachmentRepository, AttachmentExtractionRepository } from "../../../src/features/attachments"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
 import { createModelRegistry, type ModelRegistry } from "../../../src/lib/ai/model-registry"
 import type { StorageProvider } from "../../../src/lib/storage/s3-client"
-import { TraceEmitter } from "../../../src/lib/trace-emitter"
-import { EventService } from "../../../src/services/event-service"
 import type { Server } from "socket.io"
 import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, StreamTypes, ExtractionContentTypes, ProcessingStatuses } from "@threa/types"
@@ -97,6 +99,13 @@ function createMockStorage(images: Map<string, Buffer>): StorageProvider {
         throw new Error(`Mock storage: key not found: ${key}`)
       }
       return buffer
+    },
+    async getObjectRange(key: string, start: number, end: number): Promise<Buffer> {
+      const buffer = images.get(key)
+      if (!buffer) {
+        throw new Error(`Mock storage: key not found: ${key}`)
+      }
+      return buffer.subarray(start, end + 1)
     },
     async delete(): Promise<void> {
       // No-op for mock
