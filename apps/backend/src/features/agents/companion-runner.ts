@@ -193,7 +193,12 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     })
 
     // Get LangChain model from AI wrapper
-    const model = ai.getLangChainModel(modelId)
+    const { model, effectiveModel, budgetMetadata } = await ai.getLangChainModel(modelId, {
+      workspaceId,
+      memberId: invokingMemberId,
+      sessionId,
+      origin: "user",
+    })
 
     // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]
@@ -276,7 +281,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     }
 
     // Parse model for metadata
-    const parsedModel = ai.parseModel(modelId)
+    const parsedModel = ai.parseModel(effectiveModel)
 
     // Invoke the graph with cost tracking via callbacks
     // Cost recording happens automatically via CostTrackingCallback when LLM calls complete
@@ -310,6 +315,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
                   model_id: parsedModel.modelId,
                   model_provider: parsedModel.modelProvider,
                   model_name: parsedModel.modelName,
+                  ...budgetMetadata,
                 },
               }),
               // Cost tracking callback records usage automatically when handleLLMEnd fires
