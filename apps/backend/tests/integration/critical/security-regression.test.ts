@@ -57,6 +57,20 @@ function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs:
   })
 }
 
+function trackEventCount(socket: Socket, eventName: string): { getCount: () => number; stop: () => void } {
+  let count = 0
+  const handler = () => {
+    count += 1
+  }
+
+  socket.on(eventName, handler)
+
+  return {
+    getCount: () => count,
+    stop: () => socket.off(eventName, handler),
+  }
+}
+
 async function connectSocket(socket: Socket, timeoutMs: number = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -178,6 +192,7 @@ describe("P0 Security Regression Coverage", () => {
   describe("Realtime Privacy Boundary", () => {
     let ownerClient: TestClient
     let outsiderClient: TestClient
+    let ownerSocket: Socket
     let outsiderSocket: Socket
 
     beforeAll(async () => {
@@ -189,6 +204,9 @@ describe("P0 Security Regression Coverage", () => {
     })
 
     afterAll(() => {
+      if (ownerSocket) {
+        ownerSocket.disconnect()
+      }
       if (outsiderSocket) {
         outsiderSocket.disconnect()
       }
@@ -200,16 +218,24 @@ describe("P0 Security Regression Coverage", () => {
 
       await joinWorkspace(outsiderClient, workspace.id, "member")
 
+      ownerSocket = createSocket(ownerClient)
+      await connectSocket(ownerSocket)
+      await joinRoom(ownerSocket, `ws:${workspace.id}:stream:${privateStream.id}`)
+
       outsiderSocket = createSocket(outsiderClient)
       await connectSocket(outsiderSocket)
       await joinRoom(outsiderSocket, `ws:${workspace.id}`)
 
-      const noActivityPromise = waitForEvent(outsiderSocket, "stream:activity", 500).catch(() => "no-event")
+      const outsiderActivity = trackEventCount(outsiderSocket, "stream:activity")
       const secret = `TOP SECRET ${runId}`
+      const ownerActivityPromise = waitForEvent(ownerSocket, "stream:activity")
 
       await sendMessage(ownerClient, workspace.id, privateStream.id, secret)
+      await ownerActivityPromise
 
-      expect(await noActivityPromise).toBe("no-event")
+      // The event has been emitted for the stream room; outsider in workspace room must not receive it.
+      expect(outsiderActivity.getCount()).toBe(0)
+      outsiderActivity.stop()
     })
   })
 })
