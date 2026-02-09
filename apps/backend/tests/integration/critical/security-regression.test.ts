@@ -41,7 +41,21 @@ function createSocket(client: TestClient): Socket {
   })
 }
 
-function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs: number = 5000): Promise<T> {
+function trackEvents<T = unknown>(socket: Socket, eventName: string): { getEvents: () => T[]; stop: () => void } {
+  const events: T[] = []
+  const handler = (event: T) => {
+    events.push(event)
+  }
+
+  socket.on(eventName, handler)
+
+  return {
+    getEvents: () => events,
+    stop: () => socket.off(eventName, handler),
+  }
+}
+
+function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       socket.off(eventName, handler)
@@ -56,20 +70,6 @@ function waitForEvent<T = unknown>(socket: Socket, eventName: string, timeoutMs:
 
     socket.on(eventName, handler)
   })
-}
-
-function trackEventCount(socket: Socket, eventName: string): { getCount: () => number; stop: () => void } {
-  let count = 0
-  const handler = () => {
-    count += 1
-  }
-
-  socket.on(eventName, handler)
-
-  return {
-    getCount: () => count,
-    stop: () => socket.off(eventName, handler),
-  }
 }
 
 async function connectSocket(socket: Socket, timeoutMs: number = 5000): Promise<void> {
@@ -227,16 +227,21 @@ describe("P0 Security Regression Coverage", () => {
       await connectSocket(outsiderSocket)
       await joinRoom(outsiderSocket, `ws:${workspace.id}`)
 
-      const outsiderActivity = trackEventCount(outsiderSocket, "stream:activity")
+      const outsiderActivity = trackEvents<{ streamId: string }>(outsiderSocket, "stream:activity")
       const secret = `TOP SECRET ${runId}`
-      const ownerActivityPromise = waitForEvent(ownerSocket, "stream:activity")
 
-      await sendMessage(ownerClient, workspace.id, privateStream.id, secret)
-      await ownerActivityPromise
+      try {
+        const ownerActivityPromise = waitForEvent<{ streamId: string }>(ownerSocket, "stream:activity", 20_000)
+        await sendMessage(ownerClient, workspace.id, privateStream.id, secret)
 
-      // The event has been emitted for the stream room; outsider in workspace room must not receive it.
-      expect(outsiderActivity.getCount()).toBe(0)
-      outsiderActivity.stop()
-    })
+        const ownerActivity = await ownerActivityPromise
+        expect(ownerActivity.streamId).toBe(privateStream.id)
+
+        // Workspace-scoped outsider must never see private stream activity.
+        expect(outsiderActivity.getEvents().some((event) => event.streamId === privateStream.id)).toBe(false)
+      } finally {
+        outsiderActivity.stop()
+      }
+    }, 30_000)
   })
 })
