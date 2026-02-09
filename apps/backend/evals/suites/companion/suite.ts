@@ -43,6 +43,8 @@ import {
 import {
   COMPANION_MODEL_ID,
   COMPANION_TEMPERATURE,
+  COMPANION_SUMMARY_MODEL_ID,
+  COMPANION_SUMMARY_TEMPERATURE,
   PersonaAgent,
   type PersonaAgentInput,
   type PersonaAgentDeps,
@@ -282,7 +284,11 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     }
 
     // Create PersonaAgent with real dependencies
-    const conversationSummaryService = new ConversationSummaryService({ ai: ctx.ai })
+    const conversationSummaryService = new ConversationSummaryService({
+      ai: ctx.ai,
+      modelId: COMPANION_SUMMARY_MODEL_ID,
+      temperature: COMPANION_SUMMARY_TEMPERATURE,
+    })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
       traceEmitter,

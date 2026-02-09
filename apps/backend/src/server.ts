@@ -62,6 +62,8 @@ import {
   StubResponseGenerator,
   AgentSessionMetricsCollector,
   ConversationSummaryService,
+  COMPANION_SUMMARY_MODEL_ID,
+  COMPANION_SUMMARY_TEMPERATURE,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { AttachmentUploadedHandler } from "./features/attachments"
@@ -332,7 +334,11 @@ export async function startServer(): Promise<ServerInstance> {
   const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
 
   const traceEmitter = new TraceEmitter({ io, pool })
-  const conversationSummaryService = new ConversationSummaryService({ ai })
+  const conversationSummaryService = new ConversationSummaryService({
+    ai,
+    modelId: COMPANION_SUMMARY_MODEL_ID,
+    temperature: COMPANION_SUMMARY_TEMPERATURE,
+  })
   const personaAgent = new PersonaAgent({
     pool,
     traceEmitter,

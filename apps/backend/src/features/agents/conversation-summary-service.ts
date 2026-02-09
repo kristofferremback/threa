@@ -4,7 +4,6 @@ import { MessageRepository, type Message } from "../messaging"
 import { agentConversationSummaryId } from "../../lib/id"
 import type { AI } from "../../lib/ai/ai"
 import { ConversationSummaryRepository } from "./conversation-summary-repository"
-import { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
 import { stripMarkdownFences } from "../../lib/ai/text-utils"
 import { logger } from "../../lib/logger"
 
@@ -26,11 +25,17 @@ interface UpdateSummaryParams {
   keptMessages: Message[]
 }
 
+export interface ConversationSummaryServiceDeps {
+  ai: AI
+  modelId: string
+  temperature: number
+}
+
 /**
  * Maintains rolling summaries for conversation segments dropped from active context windows.
  */
 export class ConversationSummaryService {
-  constructor(private readonly deps: { ai: AI }) {}
+  constructor(private readonly deps: ConversationSummaryServiceDeps) {}
 
   async updateForContext(params: UpdateSummaryParams): Promise<string | null> {
     const { db, workspaceId, streamId, personaId, keptMessages } = params
@@ -113,9 +118,9 @@ export class ConversationSummaryService {
     const messageText = newMessages.map((m) => this.formatMessage(m)).join("\n")
 
     const result = await this.deps.ai.generateObject({
-      model: COMPANION_SUMMARY_MODEL_ID,
+      model: this.deps.modelId,
       schema: summarySchema,
-      temperature: COMPANION_SUMMARY_TEMPERATURE,
+      temperature: this.deps.temperature,
       messages: [
         {
           role: "system",

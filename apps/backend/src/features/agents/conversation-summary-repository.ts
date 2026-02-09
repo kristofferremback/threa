@@ -79,9 +79,20 @@ export const ConversationSummaryRepository = {
         ${params.lastSummarizedSequence.toString()}
       )
       ON CONFLICT (stream_id, persona_id) DO UPDATE SET
-        summary = EXCLUDED.summary,
-        last_summarized_sequence = EXCLUDED.last_summarized_sequence,
-        updated_at = NOW()
+        summary = CASE
+          WHEN EXCLUDED.last_summarized_sequence > agent_conversation_summaries.last_summarized_sequence
+          THEN EXCLUDED.summary
+          ELSE agent_conversation_summaries.summary
+        END,
+        last_summarized_sequence = GREATEST(
+          agent_conversation_summaries.last_summarized_sequence,
+          EXCLUDED.last_summarized_sequence
+        ),
+        updated_at = CASE
+          WHEN EXCLUDED.last_summarized_sequence > agent_conversation_summaries.last_summarized_sequence
+          THEN NOW()
+          ELSE agent_conversation_summaries.updated_at
+        END
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
     return mapRowToSummary(result.rows[0])

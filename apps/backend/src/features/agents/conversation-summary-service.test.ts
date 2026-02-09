@@ -23,6 +23,9 @@ function makeMessage(sequence: bigint, content: string): Message {
 }
 
 describe("ConversationSummaryService", () => {
+  const TEST_MODEL_ID = "openrouter:anthropic/claude-haiku-4.5"
+  const TEST_TEMPERATURE = 0.1
+
   const mockGenerateObject = mock((_options: unknown) =>
     Promise.resolve({
       value: { summary: "Updated summary with key decisions and pending task" },
@@ -61,7 +64,11 @@ describe("ConversationSummaryService", () => {
   })
 
   test("summarizes dropped messages and persists rolling summary state", async () => {
-    const service = new ConversationSummaryService({ ai: mockAI })
+    const service = new ConversationSummaryService({
+      ai: mockAI,
+      modelId: TEST_MODEL_ID,
+      temperature: TEST_TEMPERATURE,
+    })
     const keptMessages = [makeMessage(21n, "Most recent context that remains in window")]
     const droppedMessages = Array.from({ length: 20 }, (_, idx) =>
       makeMessage(BigInt(idx + 1), `Older message ${idx + 1}`)
@@ -93,7 +100,11 @@ describe("ConversationSummaryService", () => {
   })
 
   test("only summarizes messages after the persisted cursor", async () => {
-    const service = new ConversationSummaryService({ ai: mockAI })
+    const service = new ConversationSummaryService({
+      ai: mockAI,
+      modelId: TEST_MODEL_ID,
+      temperature: TEST_TEMPERATURE,
+    })
     const keptMessages = [makeMessage(80n, "Recent message")]
 
     findSummarySpy.mockResolvedValue({
@@ -142,7 +153,11 @@ describe("ConversationSummaryService", () => {
   })
 
   test("returns existing summary without AI call when no new dropped messages need summarization", async () => {
-    const service = new ConversationSummaryService({ ai: mockAI })
+    const service = new ConversationSummaryService({
+      ai: mockAI,
+      modelId: TEST_MODEL_ID,
+      temperature: TEST_TEMPERATURE,
+    })
     const keptMessages = [makeMessage(60n, "Recent message")]
 
     findSummarySpy.mockResolvedValue({
@@ -171,7 +186,11 @@ describe("ConversationSummaryService", () => {
   })
 
   test("does not throw when summary generation fails", async () => {
-    const service = new ConversationSummaryService({ ai: mockAI })
+    const service = new ConversationSummaryService({
+      ai: mockAI,
+      modelId: TEST_MODEL_ID,
+      temperature: TEST_TEMPERATURE,
+    })
     const keptMessages = [makeMessage(30n, "Recent message")]
 
     findSummarySpy.mockResolvedValue({
