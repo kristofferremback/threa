@@ -30,6 +30,17 @@ Note ALL active IDs — new review supersedes each one.
 2. `gh repo view --json owner,name` — store OWNER/REPO
 3. Find and read CLAUDE.md files (root + directories touched by diff)
 4. Find plan **inline** (no agent): Glob for `.claude/plans/`, `~/.claude/plans/`, `*.plan.md`, `plans/*.md`. Read matches. Store plan content or "No plan found".
+5. **Pre-compute historical context** via single Bash call (saves ~20 agent tool calls):
+
+```bash
+files=$(gh pr diff N --name-only | grep -v -E '\.test\.|\.spec\.|evals/|\.env|\.md$|\.json$')
+for f in $files; do
+  prs=$(gh pr list --state merged --search "path:$f" --limit 3 --json number,title -q '.[] | "#\(.number) \(.title)"')
+  [ -n "$prs" ] && printf '=== %s ===\n%s\n' "$f" "$prs"
+done
+```
+
+Store output as `historicalContext`. Pass to Agent 3.
 
 ## Step 3: Spawn Review Agents
 
@@ -64,7 +75,7 @@ Do NOT flag: pre-existing issues, unchanged lines (except missing corresponding 
 
 **Agent 3: Design** — Two jobs:
 1. **Design quality:** Leaky abstractions, config sprawl, partial abstractions, parallel implementations, N+1/unbounded queries, missing memoization, outbox/transaction/reactivity issues. Concrete issues only.
-2. **Historical context:** `gh pr diff N --name-only`, then for **key files with significant changes** (skip tests, configs, trivial edits): `gh pr list --state merged --search "path:<file>" --limit 3`. Check previous PRs for established patterns/feedback. Flag changes violating them.
+2. **Historical context:** You receive pre-computed `HISTORICAL CONTEXT` showing recent merged PRs per file. Analyze provided PR titles for established patterns. Only flag changes that clearly violate patterns visible from the PR history. Do NOT make additional `gh pr list` or `gh api` calls — all historical data is pre-provided.
 
 ---
 
@@ -131,7 +142,10 @@ Code review posted to PR #N: <URL>
 Confidence: X/7
 Models: Orchestrator=<runtime model>, Reviewers=sonnet x3
 Summary:
-- 📐 Plan: <status>  - 🔍 Bugs: <status>  - 📋 CLAUDE.md: <status>
-- 🏗️ Design: <status>  - 🔒 Security: <status>
+- 📐 Plan: <status>
+- 🔍 Bugs: <status>
+- 📋 CLAUDE.md: <status>
+- 🏗️ Design: <status>
+- 🔒 Security: <status>
 Key issues: [list if any]
 ```
