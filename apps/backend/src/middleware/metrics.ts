@@ -47,11 +47,11 @@ function getWorkspaceId(req: Request): string {
  * - Active connections (inc on request, dec on response)
  * - Request count and duration with labels for method, path, status, error type, workspace
  *
- * Skips /health and /metrics endpoints entirely.
+ * Skips /health, /readyz, and /metrics endpoints entirely.
  */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // Skip /health and /metrics entirely
-  if (req.path === "/health" || req.path === "/metrics") {
+  // Skip probe and metrics endpoints entirely
+  if (req.path === "/health" || req.path === "/readyz" || req.path === "/metrics") {
     return next()
   }
 

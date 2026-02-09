@@ -51,7 +51,7 @@ export function createApp(options: CreateAppOptions): Express {
     pinoHttp({
       logger,
       autoLogging: {
-        ignore: (req) => req.url === "/health",
+        ignore: (req) => req.url === "/health" || req.url === "/readyz",
       },
       customLogLevel: (_req, res, err) => {
         if (res.statusCode >= 500 || err) return "error"

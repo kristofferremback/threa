@@ -101,7 +101,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
   const agentSession = createAgentSessionHandlers({ pool })
 
   // Ops endpoints - registered before rate limiter so probes aren't throttled
-  app.get("/readyz", opsAccess, debug.health)
+  app.get("/readyz", opsAccess, debug.readiness)
   app.get("/debug/pool", opsAccess, debug.poolState)
   app.get("/metrics", opsAccess, debug.metrics)
 
