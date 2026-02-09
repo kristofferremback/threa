@@ -72,7 +72,7 @@ export class ScheduleManager {
    * Generate ticks for schedules that need execution soon.
    *
    * Queries schedules with next_tick_needed_at <= NOW + lookahead,
-   * creates tick tokens with jitter (±10% of interval),
+   * creates tick tokens at deterministic execution timestamps,
    * and updates each schedule's next_tick_needed_at.
    */
   private async generateTicks(): Promise<void> {
@@ -87,18 +87,15 @@ export class ScheduleManager {
         return
       }
 
-      // Convert to createTicks format with jitter
-      // Apply ±10% jitter to prevent thundering herd
+      // Convert to createTicks format with deterministic executeAt values.
+      // This preserves one canonical tick per schedule interval across all nodes.
       const ticksToCreate = schedules.map((schedule) => {
-        const jitterMs = schedule.intervalSeconds * 1000 * (Math.random() * 0.2 - 0.1)
-        const executeAt = new Date(schedule.nextTickNeededAt.getTime() + jitterMs)
-
         return {
           scheduleId: schedule.id,
           queueName: schedule.queueName,
           payload: schedule.payload,
           workspaceId: schedule.workspaceId,
-          executeAt,
+          executeAt: schedule.nextTickNeededAt,
           intervalSeconds: schedule.intervalSeconds,
         }
       })
