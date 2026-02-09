@@ -1,5 +1,6 @@
 export { OutboxDispatcher, type OutboxHandler, type OutboxDispatcherConfig } from "./dispatcher"
 export { BroadcastHandler, type BroadcastHandlerConfig } from "./broadcast-handler"
+export { OutboxRetentionWorker, type OutboxRetentionWorkerConfig } from "./retention-worker"
 export { parseMessageCreatedPayload, type NormalizedMessageCreatedPayload } from "./payload-parsers"
 export {
   OutboxRepository,

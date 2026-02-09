@@ -370,6 +370,17 @@ interface OutboxRow {
   created_at: Date
 }
 
+interface RetentionWatermarkRow {
+  listener_count: string
+  min_last_processed_id: string | null
+}
+
+export interface DeleteRetainedOutboxEventsParams {
+  maxEventId: bigint
+  createdBefore: Date
+  limit: number
+}
+
 function mapRowToOutbox(row: OutboxRow): OutboxEvent {
   return {
     id: BigInt(row.id),
@@ -412,5 +423,69 @@ export const OutboxRepository = {
       LIMIT ${limit}
     `)
     return result.rows.map(mapRowToOutbox)
+  },
+
+  /**
+   * Returns the retention watermark for the specified listeners.
+   * The watermark is the minimum cursor across all listeners.
+   *
+   * Safety behavior:
+   * - Returns null if listenerIds is empty
+   * - Returns null if any listener row is missing
+   */
+  async getRetentionWatermark(client: Querier, listenerIds: string[]): Promise<bigint | null> {
+    if (listenerIds.length === 0) {
+      return null
+    }
+
+    const result = await client.query<RetentionWatermarkRow>(sql`
+      SELECT
+        COUNT(*)::text AS listener_count,
+        MIN(last_processed_id)::text AS min_last_processed_id
+      FROM outbox_listeners
+      WHERE listener_id = ANY(${listenerIds})
+    `)
+
+    const row = result.rows[0]
+    const listenerCount = Number(row.listener_count)
+
+    if (listenerCount !== listenerIds.length) {
+      return null
+    }
+
+    if (row.min_last_processed_id === null) {
+      return null
+    }
+
+    return BigInt(row.min_last_processed_id)
+  },
+
+  /**
+   * Deletes outbox events that are both:
+   * - At or before the listener watermark (safe for all listeners)
+   * - Older than the retention cutoff
+   *
+   * Deletion is batched to keep transactions short.
+   */
+  async deleteRetainedEvents(client: Querier, params: DeleteRetainedOutboxEventsParams): Promise<number> {
+    if (params.limit <= 0) {
+      return 0
+    }
+
+    const result = await client.query(sql`
+      WITH candidates AS (
+        SELECT id
+        FROM outbox
+        WHERE id <= ${params.maxEventId.toString()}
+          AND created_at < ${params.createdBefore}
+        ORDER BY id
+        LIMIT ${params.limit}
+      )
+      DELETE FROM outbox
+      USING candidates
+      WHERE outbox.id = candidates.id
+    `)
+
+    return result.rowCount ?? 0
   },
 }

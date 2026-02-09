@@ -46,7 +46,7 @@ import {
 } from "./features/conversations"
 import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
-import { OutboxDispatcher, BroadcastHandler } from "./lib/outbox"
+import { OutboxDispatcher, BroadcastHandler, OutboxRetentionWorker } from "./lib/outbox"
 import {
   CompanionHandler,
   MentionInvokeHandler,
@@ -482,33 +482,37 @@ export async function startServer(): Promise<ServerInstance> {
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
+  const outboxHandlers = [
+    broadcastHandler,
+    companionHandler,
+    namingHandler,
+    emojiUsageHandler,
+    embeddingHandler,
+    boundaryExtractionHandler,
+    memoAccumulatorHandler,
+    commandHandler,
+    mentionInvokeHandler,
+    attachmentUploadedHandler,
+  ]
 
-  // Ensure listeners exist in database
-  await broadcastHandler.ensureListener()
-  await companionHandler.ensureListener()
-  await namingHandler.ensureListener()
-  await emojiUsageHandler.ensureListener()
-  await embeddingHandler.ensureListener()
-  await boundaryExtractionHandler.ensureListener()
-  await memoAccumulatorHandler.ensureListener()
-  await commandHandler.ensureListener()
-  await mentionInvokeHandler.ensureListener()
-  await attachmentUploadedHandler.ensureListener()
+  // Ensure listeners exist in database, then register all handlers
+  for (const handler of outboxHandlers) {
+    await handler.ensureListener()
+    outboxDispatcher.register(handler)
+  }
 
-  // Register all handlers with dispatcher
-  outboxDispatcher.register(broadcastHandler)
-  outboxDispatcher.register(companionHandler)
-  outboxDispatcher.register(namingHandler)
-  outboxDispatcher.register(emojiUsageHandler)
-  outboxDispatcher.register(embeddingHandler)
-  outboxDispatcher.register(boundaryExtractionHandler)
-  outboxDispatcher.register(memoAccumulatorHandler)
-  outboxDispatcher.register(commandHandler)
-  outboxDispatcher.register(mentionInvokeHandler)
-  outboxDispatcher.register(attachmentUploadedHandler)
+  // Outbox retention lifecycle - purge rows safe for all active listeners
+  const outboxRetentionWorker = new OutboxRetentionWorker(pool, {
+    listenerIds: outboxHandlers.map((handler) => handler.listenerId),
+    intervalMs: Number(process.env.OUTBOX_RETENTION_INTERVAL_MS) || 300000,
+    retentionMs: Number(process.env.OUTBOX_RETENTION_WINDOW_MS) || 7 * 24 * 60 * 60 * 1000,
+    batchSize: Number(process.env.OUTBOX_RETENTION_BATCH_SIZE) || 1000,
+    maxBatchesPerRun: Number(process.env.OUTBOX_RETENTION_MAX_BATCHES_PER_RUN) || 10,
+  })
 
   // Start single LISTEN connection that notifies all handlers
   await outboxDispatcher.start()
+  outboxRetentionWorker.start()
 
   const orphanSessionCleanup = createOrphanSessionCleanup(pools.main)
   orphanSessionCleanup.start()
@@ -537,6 +541,7 @@ export async function startServer(): Promise<ServerInstance> {
     agentSessionMetrics.stop()
     await scheduleManager.stop()
     await cleanupWorker.stop()
+    await outboxRetentionWorker.stop()
     await outboxDispatcher.stop()
     await jobQueue.stop()
     logger.info("Closing socket.io...")
