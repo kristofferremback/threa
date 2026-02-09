@@ -6,7 +6,7 @@ The application has comprehensive connection pool instrumentation to help diagno
 
 ## Components
 
-### 1. Pool Monitor (`src/lib/pool-monitor.ts`)
+### 1. Pool Monitor (`src/lib/observability/pool-monitor.ts`)
 
 Tracks health metrics for all database pools:
 
@@ -22,12 +22,30 @@ Tracks health metrics for all database pools:
   - Utilization exceeds 80%
   - Any clients are waiting for connections
 
-### 2. Health Endpoint (`GET /health`)
+### 2. Liveness Endpoint (`GET /health`)
 
-Public endpoint (no auth required) that returns current pool stats:
+Public endpoint (no auth required) for process liveness:
 
 ```bash
 curl http://localhost:3001/health | jq
+```
+
+**Response:**
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### 3. Readiness Endpoint (`GET /readyz`)
+
+Internal ops endpoint with detailed pool readiness stats.
+
+Access is restricted to internal network IPs by `opsAccess` middleware.
+
+```bash
+curl http://localhost:3001/readyz | jq
 ```
 
 **Response:**
@@ -59,7 +77,7 @@ curl http://localhost:3001/health | jq
 
 **Note:** The listen pool utilization is expected to be 100% during normal operation (9 outbox handlers holding LISTEN connections).
 
-### 3. Stress Test Script (`scripts/stress-test.ts`)
+### 4. Stress Test Script (`scripts/stress-test.ts`)
 
 Tool for reproducing connection leaks and testing pool behavior under load.
 
@@ -83,7 +101,7 @@ bun scripts/stress-test.ts --endpoint /api/workspaces --requests 20
 - `--requests <n>`: Concurrent requests per wave (default: 50)
 - `--waves <n>`: Number of waves (default: 10)
 - `--delay <ms>`: Delay between waves (default: 1000)
-- `--endpoint <path>`: API endpoint to test (default: /health)
+- `--endpoint <path>`: API endpoint to test (default: /readyz)
 - `--base-url <url>`: Base URL (default: http://localhost:3001)
 
 **Output:**
@@ -244,7 +262,7 @@ The `@socket.io/postgres-adapter` uses the main pool for pub/sub. Under high Soc
 
 ```bash
 # Count socket connections
-curl http://localhost:3001/health | jq '.pools[] | select(.poolName == "main")'
+curl http://localhost:3001/readyz | jq '.pools[] | select(.poolName == "main")'
 
 # Monitor Socket.io events (add logging if needed)
 ```

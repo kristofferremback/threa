@@ -31,11 +31,27 @@ const testEmail = (name: string) => `${name}-${testRunId}@test.com`
 
 describe("API E2E Tests", () => {
   describe("Health", () => {
-    test("should return ok", async () => {
+    test("should return minimal liveness payload", async () => {
       const client = new TestClient()
       const { status, data } = await client.get<{ status: string }>("/health")
       expect(status).toBe(200)
-      expect(data.status).toBe("ok")
+      expect(data).toEqual({ status: "ok" })
+    })
+
+    test("should return readiness payload with pool stats", async () => {
+      const client = new TestClient()
+      const { status, data } = await client.get<{
+        status: string
+        timestamp: string
+        pools: Array<{ poolName: string }>
+      }>("/readyz")
+
+      expect(status).toBe(200)
+      expect(data).toMatchObject({
+        status: "ok",
+        timestamp: expect.any(String),
+        pools: expect.any(Array),
+      })
     })
   })
 

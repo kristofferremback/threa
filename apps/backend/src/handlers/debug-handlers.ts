@@ -10,11 +10,11 @@ interface Dependencies {
 export function createDebugHandlers({ pool, poolMonitor }: Dependencies) {
   return {
     /**
-     * Health check endpoint.
+     * Readiness check endpoint with current pool stats.
      *
-     * GET /health
+     * GET /readyz
      */
-    health(_req: Request, res: Response) {
+    readiness(_req: Request, res: Response) {
       const poolStats = poolMonitor.getAllPoolStats()
       res.json({
         status: "ok",
