@@ -38,6 +38,7 @@ describe("attachment handlers safety gating", () => {
   it("rejects upload when scanner quarantines the file", async () => {
     const attachmentService = {
       create: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.QUARANTINED))),
+      delete: mock(() => Promise.resolve(true)),
     } as any
 
     const streamService = {
@@ -64,6 +65,7 @@ describe("attachment handlers safety gating", () => {
 
     expect(res.status).toHaveBeenCalledWith(400)
     expect(res.body).toEqual({ error: "Attachment is quarantined due to malware scan" })
+    expect(attachmentService.delete).toHaveBeenCalledWith("attach_1")
   })
 
   it("blocks download URL while malware scan is pending", async () => {

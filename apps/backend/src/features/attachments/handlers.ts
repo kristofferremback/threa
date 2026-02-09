@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import type { AttachmentService } from "./service"
 import type { StreamService } from "../streams"
 import { isAttachmentSafeForSharing, safetyStatusBlockReason } from "./upload-safety-policy"
+import { logger } from "../../lib/logger"
 
 interface Dependencies {
   attachmentService: AttachmentService
@@ -39,6 +40,11 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       })
 
       if (!isAttachmentSafeForSharing(attachment.safetyStatus)) {
+        try {
+          await attachmentService.delete(attachment.id)
+        } catch (err) {
+          logger.warn({ err, attachmentId: attachment.id }, "Failed to clean up quarantined upload")
+        }
         return res.status(400).json({ error: safetyStatusBlockReason(attachment.safetyStatus) })
       }
 
