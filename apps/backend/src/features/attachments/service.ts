@@ -5,7 +5,7 @@ import { AttachmentRepository, type Attachment } from "./repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StorageProvider } from "../../lib/storage/s3-client"
 import { AttachmentSafetyStatuses, ProcessingStatuses } from "@threa/types"
-import type { MalwareScanner } from "./upload-safety-policy"
+import { isAttachmentSafeForSharing, safetyStatusBlockReason, type MalwareScanner } from "./upload-safety-policy"
 import { logger } from "../../lib/logger"
 
 export interface CreateAttachmentParams {
@@ -17,6 +17,11 @@ export interface CreateAttachmentParams {
   sizeBytes: number
   storagePath: string
 }
+
+export type CreateAttachmentForUploadResult =
+  | { status: "created"; attachment: Attachment }
+  | { status: "blocked"; reason: string }
+  | { status: "cleanup_failed"; attachmentId: string }
 
 export class AttachmentService {
   constructor(
@@ -86,6 +91,39 @@ export class AttachmentService {
       }
       return updated
     })
+  }
+
+  /**
+   * Creates an attachment for upload response flows.
+   * Unsafe attachments are cleaned up immediately and return a blocked result.
+   */
+  async createForUpload(params: CreateAttachmentParams): Promise<CreateAttachmentForUploadResult> {
+    const attachment = await this.create(params)
+    const blockReason = this.getSharingBlockReason(attachment)
+
+    if (!blockReason) {
+      return { status: "created", attachment }
+    }
+
+    try {
+      const deleted = await this.delete(attachment.id)
+      if (!deleted) {
+        logger.error({ attachmentId: attachment.id }, "Quarantined attachment cleanup did not delete attachment")
+        return { status: "cleanup_failed", attachmentId: attachment.id }
+      }
+    } catch (err) {
+      logger.error({ err, attachmentId: attachment.id }, "Failed to clean up quarantined upload")
+      return { status: "cleanup_failed", attachmentId: attachment.id }
+    }
+
+    return { status: "blocked", reason: blockReason }
+  }
+
+  getSharingBlockReason(attachment: Attachment): string | null {
+    if (isAttachmentSafeForSharing(attachment.safetyStatus)) {
+      return null
+    }
+    return safetyStatusBlockReason(attachment.safetyStatus)
   }
 
   async getById(id: string): Promise<Attachment | null> {

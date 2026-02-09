@@ -37,8 +37,12 @@ function buildAttachment(safetyStatus: (typeof AttachmentSafetyStatuses)[keyof t
 describe("attachment handlers safety gating", () => {
   it("rejects upload when scanner quarantines the file", async () => {
     const attachmentService = {
-      create: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.QUARANTINED))),
-      delete: mock(() => Promise.resolve(true)),
+      createForUpload: mock(() =>
+        Promise.resolve({
+          status: "blocked",
+          reason: "Attachment is quarantined due to malware scan",
+        })
+      ),
     } as any
 
     const streamService = {
@@ -65,13 +69,16 @@ describe("attachment handlers safety gating", () => {
 
     expect(res.status).toHaveBeenCalledWith(400)
     expect(res.body).toEqual({ error: "Attachment is quarantined due to malware scan" })
-    expect(attachmentService.delete).toHaveBeenCalledWith("attach_1")
   })
 
   it("returns 500 with attachmentId when quarantined cleanup fails", async () => {
     const attachmentService = {
-      create: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.QUARANTINED))),
-      delete: mock(() => Promise.reject(new Error("s3 delete failed"))),
+      createForUpload: mock(() =>
+        Promise.resolve({
+          status: "cleanup_failed",
+          attachmentId: "attach_1",
+        })
+      ),
     } as any
 
     const streamService = {
@@ -101,13 +108,13 @@ describe("attachment handlers safety gating", () => {
       error: "Attachment quarantined and cleanup failed",
       attachmentId: "attach_1",
     })
-    expect(attachmentService.delete).toHaveBeenCalledWith("attach_1")
   })
 
   it("blocks download URL while malware scan is pending", async () => {
     const attachmentService = {
       getById: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.PENDING_SCAN))),
       getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => "Attachment is pending malware scan"),
     } as any
 
     const streamService = {
@@ -135,6 +142,7 @@ describe("attachment handlers safety gating", () => {
     const attachmentService = {
       getById: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.QUARANTINED))),
       getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => "Attachment is quarantined due to malware scan"),
     } as any
 
     const streamService = {
@@ -162,6 +170,7 @@ describe("attachment handlers safety gating", () => {
     const attachmentService = {
       getById: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.CLEAN))),
       getDownloadUrl: mock(() => Promise.resolve("https://download")),
+      getSharingBlockReason: mock(() => null),
     } as any
 
     const streamService = {
