@@ -1,6 +1,7 @@
 import { sql, type Querier } from "../../db"
 import {
   AttachmentSafetyStatuses,
+  ProcessingStatuses,
   type StorageProvider,
   type ProcessingStatus,
   type ExtractionContentType,
@@ -145,6 +146,13 @@ export const AttachmentRepository = {
       byMessage.set(row.message_id, existing)
     }
     return byMessage
+  },
+
+  async findByIdForUpdate(client: Querier, id: string): Promise<Attachment | null> {
+    const result = await client.query<AttachmentRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE id = ${id} FOR UPDATE`
+    )
+    return result.rows[0] ? mapRowToAttachment(result.rows[0]) : null
   },
 
   /**
@@ -296,6 +304,30 @@ export const AttachmentRepository = {
       WHERE id = ${id}
     `)
     return (result.rowCount ?? 0) > 0
+  },
+
+  async quarantineStalePendingScans(client: Querier, options: { olderThan: Date; limit: number }): Promise<string[]> {
+    const result = await client.query<{ id: string }>(sql`
+      WITH stale AS (
+        SELECT id
+        FROM attachments
+        WHERE safety_status = ${AttachmentSafetyStatuses.PENDING_SCAN}
+          AND created_at < ${options.olderThan}
+        ORDER BY created_at ASC
+        LIMIT ${options.limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE attachments a
+      SET
+        safety_status = ${AttachmentSafetyStatuses.QUARANTINED},
+        processing_status = ${ProcessingStatuses.SKIPPED}
+      FROM stale
+      WHERE a.id = stale.id
+        AND a.safety_status = ${AttachmentSafetyStatuses.PENDING_SCAN}
+      RETURNING a.id
+    `)
+
+    return result.rows.map((row) => row.id)
   },
 
   /**

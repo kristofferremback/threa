@@ -8,6 +8,9 @@ import { AttachmentSafetyStatuses, ProcessingStatuses } from "@threa/types"
 import { isAttachmentSafeForSharing, safetyStatusBlockReason, type MalwareScanner } from "./upload-safety-policy"
 import { logger } from "../../lib/logger"
 
+const STALE_PENDING_SCAN_THRESHOLD_MS = 5 * 60 * 1000
+const STALE_PENDING_SCAN_BATCH_SIZE = 200
+
 export interface CreateAttachmentParams {
   id: string
   workspaceId: string
@@ -155,16 +158,60 @@ export class AttachmentService {
   }
 
   async delete(id: string): Promise<boolean> {
-    const attachment = await this.getById(id)
-    if (!attachment) return false
+    const storagePath = await withTransaction(this.pool, async (client) => {
+      const attachment = await AttachmentRepository.findByIdForUpdate(client, id)
+      if (!attachment) {
+        return null
+      }
 
-    // Delete from S3
-    await this.storage.delete(attachment.storagePath)
-
-    // Delete from database (attachment + extraction)
-    return withTransaction(this.pool, async (client) => {
       await AttachmentExtractionRepository.deleteByAttachmentId(client, id)
-      return AttachmentRepository.delete(client, id)
+      const deleted = await AttachmentRepository.delete(client, id)
+      if (!deleted) {
+        throw new Error(`Attachment ${id} could not be deleted after row lock`)
+      }
+
+      return attachment.storagePath
     })
+
+    if (!storagePath) {
+      return false
+    }
+
+    await this.storage.delete(storagePath)
+    return true
+  }
+
+  async recoverStalePendingScans(options?: { staleThresholdMs?: number; batchSize?: number }): Promise<number> {
+    const staleThresholdMs = options?.staleThresholdMs ?? STALE_PENDING_SCAN_THRESHOLD_MS
+    const batchSize = options?.batchSize ?? STALE_PENDING_SCAN_BATCH_SIZE
+
+    if (staleThresholdMs <= 0) {
+      throw new Error(`staleThresholdMs must be positive, got ${staleThresholdMs}`)
+    }
+
+    if (batchSize <= 0) {
+      throw new Error(`batchSize must be positive, got ${batchSize}`)
+    }
+
+    const olderThan = new Date(Date.now() - staleThresholdMs)
+    const recoveredIds = await withTransaction(this.pool, (client) =>
+      AttachmentRepository.quarantineStalePendingScans(client, {
+        olderThan,
+        limit: batchSize,
+      })
+    )
+
+    if (recoveredIds.length > 0) {
+      logger.warn(
+        {
+          count: recoveredIds.length,
+          attachmentIds: recoveredIds,
+          staleThresholdMs,
+        },
+        "Recovered stale pending malware scans by quarantining attachments"
+      )
+    }
+
+    return recoveredIds.length
   }
 }

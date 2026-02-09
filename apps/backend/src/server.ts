@@ -179,6 +179,7 @@ export async function startServer(): Promise<ServerInstance> {
   const attachmentSafetyPolicy = createAttachmentSafetyPolicy(config.attachments)
   const malwareScanner = createMalwareScanner(storage, attachmentSafetyPolicy)
   const attachmentService = new AttachmentService(pool, storage, malwareScanner)
+  await attachmentService.recoverStalePendingScans()
 
   // Create cost tracking service for AI usage
   const costService = new AICostService({ pool })
