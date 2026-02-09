@@ -179,6 +179,27 @@ describe("budget enforcement", () => {
     )
     expect(checkBudget).toHaveBeenCalledWith("ws_123", "openrouter:openai/gpt-5-mini")
   })
+
+  it("should expose the effective model chosen for LangChain calls", async () => {
+    const checkBudget = mock(async () => ({
+      allowed: true as const,
+      reason: "soft_limit" as const,
+      currentUsageUsd: 85,
+      budgetUsd: 100,
+      percentUsed: 0.85,
+      recommendedModel: "openrouter:openai/gpt-5-mini",
+    }))
+
+    const ai = createAI({
+      openrouter: { apiKey: "test-key" },
+      budgetEnforcer: {
+        checkBudget,
+      },
+    })
+
+    const { effectiveModel } = await ai.getLangChainModel("openrouter:openai/gpt-5", { workspaceId: "ws_999" })
+    expect(effectiveModel).toBe("openrouter:openai/gpt-5-mini")
+  })
 })
 
 describe("OpenRouter response fixtures", () => {

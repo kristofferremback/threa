@@ -255,6 +255,11 @@ export interface ManyEmbedResult {
 
 export type RepairFunction = (args: { text: string }) => Promise<string> | string
 
+export interface LangChainModelResult {
+  model: ChatOpenAI
+  effectiveModel: string
+}
+
 export interface AI {
   // Generation
   generateText(options: GenerateTextOptions): Promise<TextResult>
@@ -267,7 +272,7 @@ export interface AI {
   // Model access (for advanced use cases)
   getLanguageModel(modelString: string): LanguageModel
   getEmbeddingModel(modelString: string): EmbeddingModel<string>
-  getLangChainModel(modelString: string, context?: CostContext): Promise<ChatOpenAI>
+  getLangChainModel(modelString: string, context?: CostContext): Promise<LangChainModelResult>
 
   // Cost tracking for LangChain/LangGraph calls
   /** CostTracker instance for this AI wrapper - use with getCostTrackingCallbacks */
@@ -433,14 +438,59 @@ export function createAI(config: AIConfig): AI {
     return params.modelString
   }
 
-  async function getLangChainModel(modelString: string, context?: CostContext): Promise<ChatOpenAI> {
-    const effectiveModelString = await applyBudgetPolicy({
+  function createBudgetAwareLangChainFetch(params: {
+    context?: CostContext
+    fallbackModelString: string
+  }): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+    return async (input, init) => {
+      let requestBodyObject: Record<string, unknown> | null = null
+      let requestedModelString = params.fallbackModelString
+
+      if (typeof init?.body === "string") {
+        try {
+          const parsed = JSON.parse(init.body)
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            requestBodyObject = parsed as Record<string, unknown>
+            const bodyModel = requestBodyObject.model
+            if (typeof bodyModel === "string" && bodyModel.length > 0) {
+              requestedModelString = bodyModel.includes(":") ? bodyModel : `openrouter:${bodyModel}`
+            }
+          }
+        } catch (error) {
+          logger.warn({ error }, "Failed to parse LangChain request body for budget enforcement")
+        }
+      }
+
+      const effectiveModelString = await applyBudgetPolicy({
+        modelString: requestedModelString,
+        context: params.context,
+        functionId: "langchain-model-invoke",
+      })
+
+      let nextInit = init
+      if (requestBodyObject && effectiveModelString !== requestedModelString) {
+        const { modelId: effectiveModelId } = parseModelId(effectiveModelString)
+        nextInit = {
+          ...init,
+          body: JSON.stringify({
+            ...requestBodyObject,
+            model: effectiveModelId,
+          }),
+        }
+      }
+
+      return costCapturingFetch(input, nextInit)
+    }
+  }
+
+  async function getLangChainModel(modelString: string, context?: CostContext): Promise<LangChainModelResult> {
+    const initialEffectiveModelString = await applyBudgetPolicy({
       modelString,
       context,
       functionId: "langchain-model",
     })
 
-    const { provider, modelId } = parseModelId(effectiveModelString)
+    const { provider, modelId } = parseModelId(initialEffectiveModelString)
 
     switch (provider) {
       case "openrouter":
@@ -448,15 +498,21 @@ export function createAI(config: AIConfig): AI {
           throw new Error("OpenRouter not configured. Set OPENROUTER_API_KEY or provide openrouter.apiKey in config.")
         }
         logger.debug({ provider, modelId, requestedModel: modelString }, "Creating LangChain model instance")
-        return new ChatOpenAI({
-          model: modelId,
-          apiKey: apiKeys.openrouter,
-          configuration: {
-            baseURL: OPENROUTER_BASE_URL,
-            // Use cost-capturing fetch from our CostTracker to intercept OpenRouter responses
-            fetch: costCapturingFetch,
-          },
-        })
+        return {
+          model: new ChatOpenAI({
+            model: modelId,
+            apiKey: apiKeys.openrouter,
+            configuration: {
+              baseURL: OPENROUTER_BASE_URL,
+              // Intercept every request to enforce budget policy and capture usage
+              fetch: createBudgetAwareLangChainFetch({
+                context,
+                fallbackModelString: initialEffectiveModelString,
+              }),
+            },
+          }),
+          effectiveModel: initialEffectiveModelString,
+        }
       default:
         throw new Error(`Unsupported LangChain provider: "${provider}". Currently supported: openrouter`)
     }
