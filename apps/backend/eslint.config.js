@@ -45,6 +45,10 @@ export default [
   },
 
   // INV-52: Features import other features only through barrels (index.ts)
+  // Uses explicit feature names because relative imports between features
+  // (e.g., ../../attachments/excel/config) don't contain "features/" in the path.
+  // Pattern `**/name/**` blocks internals but allows barrel imports (`**/name`)
+  // since trailing /** requires at least one more path segment.
   {
     files: ["src/features/**/*.ts"],
     rules: {
@@ -53,7 +57,20 @@ export default [
         {
           patterns: [
             {
-              group: ["**/features/*/!(index)", "**/features/*/!(index)/**"],
+              group: [
+                "**/streams/**",
+                "**/memos/**",
+                "**/attachments/**",
+                "**/conversations/**",
+                "**/agents/**",
+                "**/messaging/**",
+                "**/search/**",
+                "**/workspaces/**",
+                "**/commands/**",
+                "**/ai-usage/**",
+                "**/emoji/**",
+                "**/user-preferences/**",
+              ],
               message: "Import from feature barrels only (features/x/index.ts), not internals (INV-52).",
             },
           ],

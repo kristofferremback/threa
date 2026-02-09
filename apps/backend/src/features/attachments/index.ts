@@ -48,7 +48,12 @@ export type { TextProcessingServiceDeps, TextProcessingServiceLike } from "./tex
 export { WordProcessingService, StubWordProcessingService, isWordAttachment } from "./word"
 export type { WordProcessingServiceDeps, WordProcessingServiceLike } from "./word"
 
-export { ExcelProcessingService, StubExcelProcessingService, isExcelAttachment } from "./excel"
+export {
+  ExcelProcessingService,
+  StubExcelProcessingService,
+  isExcelAttachment,
+  EXCEL_MAX_ROWS_PER_REQUEST,
+} from "./excel"
 export type { ExcelProcessingServiceDeps, ExcelProcessingServiceLike } from "./excel"
 
 // Workers
