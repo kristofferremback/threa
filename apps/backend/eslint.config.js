@@ -24,10 +24,20 @@ export default [
   },
 
   // INV-51: lib/ cannot import from features/ (infrastructure must not depend on domain logic)
-  // Exception: static-config-resolver.ts aggregates AI configs from all features by design
+  // Exceptions:
+  //   static-config-resolver.ts — aggregates AI configs from all features
+  //   message-formatter — AI utility that resolves author names from member/persona repos
+  //   outbox/broadcast-handler — resolves memberId→userId for socket routing
+  //   outbox/repository — outbox payload types reference domain types (type-only, no runtime dep)
   {
     files: ["src/lib/**/*.ts"],
-    ignores: ["src/lib/ai/static-config-resolver.ts"],
+    ignores: [
+      "src/lib/ai/static-config-resolver.ts",
+      "src/lib/ai/message-formatter.ts",
+      "src/lib/ai/message-formatter.test.ts",
+      "src/lib/outbox/broadcast-handler.ts",
+      "src/lib/outbox/repository.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",
