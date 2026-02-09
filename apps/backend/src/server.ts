@@ -61,6 +61,7 @@ import {
   LangGraphResponseGenerator,
   StubResponseGenerator,
   AgentSessionMetricsCollector,
+  ConversationSummaryService,
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { AttachmentUploadedHandler } from "./features/attachments"
@@ -331,6 +332,7 @@ export async function startServer(): Promise<ServerInstance> {
   const researcher = new Researcher({ pool, ai, configResolver, embeddingService })
 
   const traceEmitter = new TraceEmitter({ io, pool })
+  const conversationSummaryService = new ConversationSummaryService({ ai })
   const personaAgent = new PersonaAgent({
     pool,
     traceEmitter,
@@ -338,6 +340,7 @@ export async function startServer(): Promise<ServerInstance> {
     userPreferencesService,
     researcher,
     searchService,
+    conversationSummaryService,
     storage,
     modelRegistry,
     createMessage,

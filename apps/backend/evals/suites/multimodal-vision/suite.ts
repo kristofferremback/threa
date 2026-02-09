@@ -45,6 +45,7 @@ import {
   Researcher,
   PersonaRepository,
   TraceEmitter,
+  ConversationSummaryService,
 } from "../../../src/features/agents"
 import { SearchService } from "../../../src/features/search"
 import { UserPreferencesService } from "../../../src/features/user-preferences"
@@ -322,6 +323,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
     }
 
     // Create PersonaAgent with real dependencies including vision support
+    const conversationSummaryService = new ConversationSummaryService({ ai: ctx.ai })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
       traceEmitter,
@@ -329,6 +331,7 @@ async function runVisionTask(input: MultimodalVisionInput, ctx: EvalContext): Pr
       userPreferencesService,
       researcher,
       searchService,
+      conversationSummaryService,
       storage: mockStorage,
       modelRegistry,
       createMessage,

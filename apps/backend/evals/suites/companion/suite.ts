@@ -50,6 +50,7 @@ import {
   Researcher,
   PersonaRepository,
   TraceEmitter,
+  ConversationSummaryService,
 } from "../../../src/features/agents"
 import { SearchService } from "../../../src/features/search"
 import { UserPreferencesService } from "../../../src/features/user-preferences"
@@ -281,6 +282,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
     }
 
     // Create PersonaAgent with real dependencies
+    const conversationSummaryService = new ConversationSummaryService({ ai: ctx.ai })
     const personaAgent = new PersonaAgent({
       pool: ctx.pool,
       traceEmitter,
@@ -288,6 +290,7 @@ async function runCompanionTask(input: CompanionInput, ctx: EvalContext): Promis
       userPreferencesService,
       researcher,
       searchService,
+      conversationSummaryService,
       storage: stubStorage,
       modelRegistry: createModelRegistry(),
       createMessage,

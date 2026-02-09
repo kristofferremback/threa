@@ -434,4 +434,40 @@ export const MessageRepository = {
 
     return messageRows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
   },
+
+  /**
+   * List messages in an inclusive sequence range.
+   * Returns messages in chronological order.
+   */
+  async listBySequenceRange(
+    db: Querier,
+    streamId: string,
+    startSequence: bigint,
+    endSequence: bigint,
+    options?: { limit?: number }
+  ): Promise<Message[]> {
+    if (endSequence < startSequence) return []
+
+    const limit = options?.limit ?? 200
+    const result = await db.query<MessageRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM messages
+      WHERE stream_id = ${streamId}
+        AND sequence >= ${startSequence.toString()}
+        AND sequence <= ${endSequence.toString()}
+        AND deleted_at IS NULL
+      ORDER BY sequence ASC
+      LIMIT ${limit}
+    `)
+
+    if (result.rows.length === 0) return []
+
+    const messageIds = result.rows.map((r) => r.id)
+    const reactionsResult = await db.query<ReactionRow>(sql`
+      SELECT message_id, member_id, emoji FROM reactions
+      WHERE message_id = ANY(${messageIds})
+    `)
+    const reactionsByMessage = aggregateReactionsByMessage(reactionsResult.rows)
+
+    return result.rows.map((row) => mapRowToMessage(row, reactionsByMessage.get(row.id) ?? {}))
+  },
 }

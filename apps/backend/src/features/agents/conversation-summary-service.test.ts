@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
+import type { AI } from "../../lib/ai/ai"
+import type { Message } from "../messaging"
+import { MessageRepository } from "../messaging"
+import { ConversationSummaryRepository } from "./conversation-summary-repository"
+import { ConversationSummaryService } from "./conversation-summary-service"
+
+function makeMessage(sequence: bigint, content: string): Message {
+  return {
+    id: `msg_${sequence.toString()}`,
+    streamId: "stream_1",
+    sequence,
+    authorId: "member_1",
+    authorType: "member",
+    contentJson: { type: "doc", content: [] },
+    contentMarkdown: content,
+    replyCount: 0,
+    reactions: {},
+    editedAt: null,
+    deletedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  }
+}
+
+describe("ConversationSummaryService", () => {
+  const mockGenerateObject = mock((_options: unknown) =>
+    Promise.resolve({
+      value: { summary: "Updated summary with key decisions and pending task" },
+      response: { usage: {} },
+      usage: {},
+    })
+  )
+  const mockAI = {
+    generateObject: mockGenerateObject,
+  } as unknown as AI
+
+  const findSummarySpy = spyOn(ConversationSummaryRepository, "findByStreamAndPersona")
+  const upsertSummarySpy = spyOn(ConversationSummaryRepository, "upsert")
+  const listMessagesSpy = spyOn(MessageRepository, "list")
+  const listByRangeSpy = spyOn(MessageRepository, "listBySequenceRange")
+
+  beforeEach(() => {
+    mockGenerateObject.mockClear()
+    findSummarySpy.mockClear()
+    upsertSummarySpy.mockClear()
+    listMessagesSpy.mockClear()
+    listByRangeSpy.mockClear()
+    findSummarySpy.mockResolvedValue(null)
+    upsertSummarySpy.mockResolvedValue({
+      id: "agsum_1",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      summary: "Updated summary with key decisions and pending task",
+      lastSummarizedSequence: 20n,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    })
+    listMessagesSpy.mockResolvedValue([])
+    listByRangeSpy.mockResolvedValue([])
+  })
+
+  test("summarizes dropped messages and persists rolling summary state", async () => {
+    const service = new ConversationSummaryService({ ai: mockAI })
+    const keptMessages = [makeMessage(21n, "Most recent context that remains in window")]
+    const droppedMessages = Array.from({ length: 20 }, (_, idx) =>
+      makeMessage(BigInt(idx + 1), `Older message ${idx + 1}`)
+    )
+
+    listMessagesSpy.mockResolvedValue([makeMessage(20n, "Older boundary message")])
+    listByRangeSpy.mockResolvedValue(droppedMessages)
+
+    const summary = await service.updateForContext({
+      db: {} as any,
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      keptMessages,
+    })
+
+    expect(summary).toBe("Updated summary with key decisions and pending task")
+    expect(mockGenerateObject).toHaveBeenCalledTimes(1)
+    expect(listByRangeSpy).toHaveBeenCalledWith({}, "stream_1", 1n, 20n, { limit: 40 })
+    expect(upsertSummarySpy).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        streamId: "stream_1",
+        personaId: "persona_1",
+        lastSummarizedSequence: 20n,
+      })
+    )
+  })
+
+  test("only summarizes messages after the persisted cursor", async () => {
+    const service = new ConversationSummaryService({ ai: mockAI })
+    const keptMessages = [makeMessage(80n, "Recent message")]
+
+    findSummarySpy.mockResolvedValue({
+      id: "agsum_existing",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      summary: "Existing summary of older context",
+      lastSummarizedSequence: 50n,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    })
+    listMessagesSpy.mockResolvedValue([makeMessage(79n, "Older boundary message")])
+    listByRangeSpy
+      .mockResolvedValueOnce([
+        makeMessage(51n, "Message after cursor"),
+        makeMessage(52n, "Another message after cursor"),
+      ])
+      .mockResolvedValueOnce([])
+
+    await service.updateForContext({
+      db: {} as any,
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      keptMessages,
+    })
+
+    expect(listByRangeSpy).toHaveBeenCalledWith({}, "stream_1", 51n, 79n, { limit: 40 })
+    const firstGenerateObjectCall = mockGenerateObject.mock.calls[0]?.[0] as
+      | { context?: unknown; telemetry?: unknown }
+      | undefined
+    expect(firstGenerateObjectCall).toMatchObject({
+      context: { workspaceId: "ws_1", origin: "system" },
+      telemetry: { functionId: "companion-conversation-summary-update" },
+    })
+  })
+
+  test("returns existing summary without AI call when no new dropped messages need summarization", async () => {
+    const service = new ConversationSummaryService({ ai: mockAI })
+    const keptMessages = [makeMessage(60n, "Recent message")]
+
+    findSummarySpy.mockResolvedValue({
+      id: "agsum_existing",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      summary: "Existing summary",
+      lastSummarizedSequence: 59n,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    })
+    listMessagesSpy.mockResolvedValue([makeMessage(59n, "Older boundary message")])
+
+    const summary = await service.updateForContext({
+      db: {} as any,
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      keptMessages,
+    })
+
+    expect(summary).toBe("Existing summary")
+    expect(mockGenerateObject).not.toHaveBeenCalled()
+    expect(upsertSummarySpy).not.toHaveBeenCalled()
+  })
+})

@@ -64,6 +64,10 @@ export type {
 export { StreamPersonaParticipantRepository } from "./stream-persona-participant-repository"
 export type { StreamPersonaParticipant } from "./stream-persona-participant-repository"
 
+export { ConversationSummaryRepository } from "./conversation-summary-repository"
+export type { AgentConversationSummary, UpsertConversationSummaryParams } from "./conversation-summary-repository"
+export { ConversationSummaryService } from "./conversation-summary-service"
+
 // Context builder
 export { buildStreamContext, enrichMessagesWithAttachments } from "./context-builder"
 export type {
@@ -102,6 +106,7 @@ export type {
 
 // Config (exported for static-config-resolver)
 export { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "./companion/config"
+export { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
 export {
   RESEARCHER_MODEL_ID,
   RESEARCHER_MAX_ITERATIONS,
