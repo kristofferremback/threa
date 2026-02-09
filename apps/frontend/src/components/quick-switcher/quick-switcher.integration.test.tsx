@@ -1302,11 +1302,8 @@ describe("QuickSwitcher Integration Tests", () => {
         renderWithProviders(<QuickSwitcher {...defaultProps} />)
 
         // Check what styles Radix Dialog applies to body
-        const bodyStyle = window.getComputedStyle(document.body)
-
-        // Document what we find (not asserting, just logging)
-        // In real browser: pointer-events: none
-        // In jsdom: ???
+        // In real browser: pointer-events: none would be set
+        // In jsdom: getComputedStyle doesn't reflect Radix Dialog's body styles
       })
 
       it("should verify where suggestion list renders in DOM", async () => {
@@ -1322,11 +1319,8 @@ describe("QuickSwitcher Integration Tests", () => {
           expect(screen.getByText("Martin")).toBeInTheDocument()
         })
 
-        // Find where the suggestion list actually rendered (use aria-label to distinguish from ItemList)
-        const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
-
-        // Check if the suggestion list has pointer-events set
-        const listStyle = window.getComputedStyle(suggestionList)
+        // Verify suggestion list rendered (use aria-label to distinguish from ItemList)
+        expect(screen.getByRole("listbox", { name: /suggestions/i })).toBeInTheDocument()
       })
 
       it("should verify that userEvent respects pointer-events:none", async () => {
@@ -1364,8 +1358,7 @@ describe("QuickSwitcher Integration Tests", () => {
         })
 
         // At this point, popover should be active
-        // Let's check the DOM state before pressing Escape
-        const suggestionList = screen.getByRole("listbox", { name: /suggestions/i })
+        expect(screen.getByRole("listbox", { name: /suggestions/i })).toBeInTheDocument()
 
         // Press Escape
         await user.keyboard("{Escape}")

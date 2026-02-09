@@ -11,7 +11,8 @@
  */
 
 import { parseArgs } from "util"
-import { runSuites, runFromConfigFile, type RunnerOptions } from "./framework/runner"
+import { runSuites, runFromConfigFile } from "./framework/runner"
+import type { RunnerOptions } from "./framework/types"
 import { memoClassifierSuite } from "./suites/memo-classifier/suite"
 import { memorizerSuite } from "./suites/memorizer/suite"
 import { companionSuite } from "./suites/companion/suite"
@@ -194,9 +195,9 @@ async function main(): Promise<void> {
   }
 
   if (options.model) {
-    const models = options.model.split(",").map((m) => m.trim())
+    const models = options.model.split(",").map((m: string) => m.trim())
     if (models.length > 1) {
-      console.log(`Comparing ${models.length} models: ${models.map((m) => m.split("/").pop()).join(", ")}`)
+      console.log(`Comparing ${models.length} models: ${models.map((m: string) => m.split("/").pop()).join(", ")}`)
     } else {
       console.log(`Model override: ${options.model}`)
     }

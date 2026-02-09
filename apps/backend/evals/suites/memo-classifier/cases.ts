@@ -17,7 +17,7 @@ export interface ClassifierInput {
   /** Message content in markdown format */
   content: string
   /** Author type (default: "user") */
-  authorType?: "user" | "persona"
+  authorType?: "member" | "persona"
 }
 
 /**
@@ -39,7 +39,7 @@ export function createTestMessage(input: ClassifierInput, messageId: string, aut
     streamId: "stream_test",
     sequence: BigInt(1),
     authorId,
-    authorType: input.authorType ?? "user",
+    authorType: input.authorType ?? "member",
     contentJson: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: input.content }] }] },
     contentMarkdown: input.content,
     replyCount: 0,

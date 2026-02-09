@@ -36,7 +36,7 @@ import {
   accuracyEvaluator,
   wordCountComplianceEvaluator,
 } from "./evaluators"
-import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../../src/services/stream-naming/config"
+import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../../src/features/streams"
 import { StreamNamingService } from "../../../src/features/streams"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 

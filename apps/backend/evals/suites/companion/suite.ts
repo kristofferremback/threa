@@ -40,22 +40,26 @@ import {
   responseDecisionAccuracyEvaluator,
   averageQualityEvaluator,
 } from "./evaluators"
-import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../../src/agents/companion/config"
-import { PersonaAgent, type PersonaAgentInput, type PersonaAgentDeps } from "../../../src/agents/persona-agent"
-import { LangGraphResponseGenerator } from "../../../src/agents/companion-runner"
-import { Researcher } from "../../../src/agents/researcher/researcher"
-import { SearchService } from "../../../src/services/search-service"
-import { UserPreferencesService } from "../../../src/services/user-preferences-service"
+import {
+  COMPANION_MODEL_ID,
+  COMPANION_TEMPERATURE,
+  PersonaAgent,
+  type PersonaAgentInput,
+  type PersonaAgentDeps,
+  LangGraphResponseGenerator,
+  Researcher,
+  PersonaRepository,
+  TraceEmitter,
+} from "../../../src/features/agents"
+import { SearchService } from "../../../src/features/search"
+import { UserPreferencesService } from "../../../src/features/user-preferences"
 import { EmbeddingService } from "../../../src/features/memos"
-import { StreamRepository } from "../../../src/features/streams"
-import { StreamMemberRepository } from "../../../src/features/streams"
-import { MessageRepository } from "../../../src/repositories/message-repository"
-import { PersonaRepository } from "../../../src/repositories/persona-repository"
+import { StreamRepository, StreamMemberRepository } from "../../../src/features/streams"
+import { MessageRepository } from "../../../src/features/messaging"
 import { createPostgresCheckpointer } from "../../../src/lib/ai"
 import { createModelRegistry } from "../../../src/lib/ai/model-registry"
 import type { StorageProvider } from "../../../src/lib/storage/s3-client"
-import { TraceEmitter } from "../../../src/lib/trace-emitter"
-import { EventService } from "../../../src/services/event-service"
+import { EventService } from "../../../src/features/messaging"
 import type { Server } from "socket.io"
 import { parseMarkdown } from "@threa/prosemirror"
 import { AuthorTypes, AgentTriggers, StreamTypes } from "@threa/types"
