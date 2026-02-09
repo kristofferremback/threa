@@ -14,16 +14,17 @@ import {
   BOUNDARY_EXTRACTION_MODEL_ID,
   BOUNDARY_EXTRACTION_TEMPERATURE,
   BOUNDARY_EXTRACTION_SYSTEM_PROMPT,
-} from "../boundary-extraction/config"
-import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../services/stream-naming/config"
-import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../memo/config"
+} from "../../features/conversations"
+import { STREAM_NAMING_MODEL_ID, STREAM_NAMING_TEMPERATURE } from "../../features/streams"
+import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../features/memos"
 import {
   RESEARCHER_MODEL_ID,
   RESEARCHER_MAX_ITERATIONS,
   RESEARCHER_MAX_RESULTS_PER_SEARCH,
-} from "../../agents/researcher/config"
-import { COMPANION_MODEL_ID, COMPANION_TEMPERATURE } from "../../agents/companion/config"
-import { EMBEDDING_MODEL_ID } from "../../services/embedding/config"
+  COMPANION_MODEL_ID,
+  COMPANION_TEMPERATURE,
+} from "../../features/agents"
+import { EMBEDDING_MODEL_ID } from "../../features/memos"
 
 // -----------------------------------------------------------------------------
 // Default Configs

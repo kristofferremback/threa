@@ -15,8 +15,8 @@ import type {
   RunEvaluator,
   CaseResult,
 } from "../../framework/types"
-import { Memorizer, type MemoContent } from "../../../src/lib/memo/memorizer"
-import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/lib/memo/config"
+import { Memorizer, type MemoContent } from "../../../src/features/memos"
+import { MEMO_MODEL_ID, MEMO_TEMPERATURES } from "../../../src/features/memos"
 import { MessageFormatter } from "../../../src/lib/ai/message-formatter"
 import { memorizerCases, createTestMessage, type MemorizerInput, type MemorizerExpected } from "./cases"
 import { messageId } from "../../../src/lib/id"

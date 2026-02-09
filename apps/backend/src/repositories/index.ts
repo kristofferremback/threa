@@ -1,45 +1,63 @@
-export { MemberRepository } from "./member-repository"
-export type { Member, InsertMemberParams } from "./member-repository"
+// Re-export shims — these repos moved to features/workspaces/
+export { MemberRepository } from "../features/workspaces"
+export type { Member, InsertMemberParams } from "../features/workspaces"
 
-export { WorkspaceRepository } from "./workspace-repository"
-export type { Workspace, WorkspaceMember, InsertWorkspaceParams } from "./workspace-repository"
+export { WorkspaceRepository } from "../features/workspaces"
+export type { Workspace, WorkspaceMember, InsertWorkspaceParams } from "../features/workspaces"
 
-export { StreamRepository } from "./stream-repository"
-export type { Stream, StreamType, CompanionMode, InsertStreamParams, UpdateStreamParams } from "./stream-repository"
+// Re-export shims — these repos moved to features/streams/ (INV-51)
+export { StreamRepository } from "../features/streams"
+export type { Stream, InsertStreamParams, UpdateStreamParams } from "../features/streams"
 
-export { StreamMemberRepository } from "./stream-member-repository"
-export type { StreamMember, UpdateStreamMemberParams } from "./stream-member-repository"
+export { StreamMemberRepository } from "../features/streams"
+export type { StreamMember, UpdateStreamMemberParams } from "../features/streams"
 
-export { StreamPersonaParticipantRepository } from "./stream-persona-participant-repository"
-export type { StreamPersonaParticipant } from "./stream-persona-participant-repository"
+// Re-export shims — these repos moved to features/agents/
+export { StreamPersonaParticipantRepository } from "../features/agents"
+export type { StreamPersonaParticipant } from "../features/agents"
 
-export { StreamEventRepository } from "./stream-event-repository"
-export type { StreamEvent, InsertEventParams } from "./stream-event-repository"
+export { PersonaRepository } from "../features/agents"
+export type { Persona } from "../features/agents"
 
-export { MessageRepository } from "./message-repository"
-export type { Message, InsertMessageParams } from "./message-repository"
+export { AgentSessionRepository, SessionStatuses } from "../features/agents"
+export type {
+  AgentSession,
+  AgentSessionStep,
+  SessionStatus,
+  StepType,
+  InsertSessionParams,
+  UpsertStepParams,
+} from "../features/agents"
 
-export { AttachmentRepository } from "./attachment-repository"
-export type { Attachment, InsertAttachmentParams } from "./attachment-repository"
+export { StreamEventRepository } from "../features/streams"
+export type { StreamEvent, InsertEventParams } from "../features/streams"
 
-export { AttachmentExtractionRepository } from "./attachment-extraction-repository"
+// Re-export shims — these repos moved to features/messaging/
+export { MessageRepository } from "../features/messaging"
+export type { Message, InsertMessageParams } from "../features/messaging"
+
+// Re-export shims — these repos moved to features/attachments/
+export { AttachmentRepository } from "../features/attachments"
+export type { Attachment, InsertAttachmentParams, AttachmentWithExtraction } from "../features/attachments"
+
+export { AttachmentExtractionRepository } from "../features/attachments"
 export type {
   AttachmentExtraction,
   InsertAttachmentExtractionParams,
   PdfMetadata,
   PdfSection,
-} from "./attachment-extraction-repository"
+} from "../features/attachments"
 
-export { PdfPageExtractionRepository } from "./pdf-page-extraction-repository"
+export { PdfPageExtractionRepository } from "../features/attachments"
 export type {
   PdfPageExtraction,
   EmbeddedImage,
   InsertPdfPageExtractionParams,
   UpdatePdfPageExtractionParams,
-} from "./pdf-page-extraction-repository"
+} from "../features/attachments"
 
-export { PdfProcessingJobRepository } from "./pdf-processing-job-repository"
-export type { PdfProcessingJob, InsertPdfProcessingJobParams } from "./pdf-processing-job-repository"
+export { PdfProcessingJobRepository } from "../features/attachments"
+export type { PdfProcessingJob, InsertPdfProcessingJobParams } from "../features/attachments"
 
 export { OutboxRepository, OUTBOX_CHANNEL, isOutboxEventType } from "./outbox-repository"
 export type {
@@ -55,22 +73,27 @@ export type {
   AttachmentUploadedOutboxPayload,
 } from "./outbox-repository"
 
-export { ConversationRepository } from "./conversation-repository"
-export type { Conversation, InsertConversationParams, UpdateConversationParams } from "./conversation-repository"
+// Re-export shims — these repos moved to features/conversations/
+export { ConversationRepository } from "../features/conversations"
+export type { Conversation, InsertConversationParams, UpdateConversationParams } from "../features/conversations"
 
-export { MemoRepository } from "./memo-repository"
-export type { Memo, InsertMemoParams, UpdateMemoParams } from "./memo-repository"
+// Re-export shims — these repos moved to features/memos/
+export { MemoRepository } from "../features/memos"
+export type { Memo, InsertMemoParams, UpdateMemoParams, MemoSearchResult } from "../features/memos"
 
-export { PendingItemRepository } from "./pending-item-repository"
-export type { PendingMemoItem, QueuePendingItemParams } from "./pending-item-repository"
+export { PendingItemRepository } from "../features/memos"
+export type { PendingMemoItem, QueuePendingItemParams } from "../features/memos"
 
-export { StreamStateRepository } from "./stream-state-repository"
-export type { MemoStreamState, StreamReadyToProcess } from "./stream-state-repository"
+// Re-export shim — moved to features/streams/ (INV-51)
+export { StreamStateRepository } from "../features/streams"
+export type { MemoStreamState, StreamReadyToProcess } from "../features/streams"
 
-export { EmojiUsageRepository } from "./emoji-usage-repository"
-export type { EmojiUsage, InsertEmojiUsageParams } from "./emoji-usage-repository"
+// Re-export shims — these repos moved to features/emoji/
+export { EmojiUsageRepository } from "../features/emoji"
+export type { EmojiUsage, InsertEmojiUsageParams } from "../features/emoji"
 
-export { AIUsageRepository } from "./ai-usage-repository"
+// Re-export shims — these repos moved to features/ai-usage/
+export { AIUsageRepository } from "../features/ai-usage"
 export type {
   AIUsageRecord,
   AIUsageOrigin,
@@ -80,9 +103,9 @@ export type {
   FunctionBreakdown,
   MemberBreakdown,
   OriginBreakdown,
-} from "./ai-usage-repository"
+} from "../features/ai-usage"
 
-export { AIBudgetRepository } from "./ai-budget-repository"
+export { AIBudgetRepository } from "../features/ai-usage"
 export type {
   AIBudget,
   AIUserQuota,
@@ -91,4 +114,4 @@ export type {
   UpdateAIBudgetParams,
   UpsertAIUserQuotaParams,
   InsertAIAlertParams,
-} from "./ai-budget-repository"
+} from "../features/ai-usage"

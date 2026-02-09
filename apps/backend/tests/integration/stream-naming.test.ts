@@ -12,10 +12,13 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Pool } from "pg"
 import { withTestTransaction } from "./setup"
 import { UserRepository } from "../../src/auth/user-repository"
-import { WorkspaceRepository } from "../../src/repositories/workspace-repository"
-import { StreamService } from "../../src/services/stream-service"
-import { StreamRepository, type Stream } from "../../src/repositories/stream-repository"
-import { needsAutoNaming, getEffectiveDisplayName, formatParticipantNames } from "../../src/lib/display-name"
+import { WorkspaceRepository } from "../../src/repositories"
+import { StreamService, StreamRepository, type Stream } from "../../src/features/streams"
+import {
+  needsAutoNaming,
+  getEffectiveDisplayName,
+  formatParticipantNames,
+} from "../../src/features/streams/display-name"
 import { setupTestDatabase } from "./setup"
 import { userId, workspaceId } from "../../src/lib/id"
 import { StreamTypes, Visibilities, CompanionModes } from "@threa/types"

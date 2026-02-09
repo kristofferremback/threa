@@ -11,66 +11,81 @@ import { runMigrations } from "./db/migrations"
 import { WorkosAuthService } from "./auth/auth-service"
 import { StubAuthService } from "./auth/auth-service.stub"
 import { UserService } from "./auth/user-service"
-import { WorkspaceService } from "./services/workspace-service"
-import { StreamService } from "./services/stream-service"
-import { EventService } from "./services/event-service"
-import { AttachmentService } from "./services/attachment-service"
-import { StreamNamingService } from "./services/stream-naming-service"
-import { StubStreamNamingService } from "./services/stream-naming-service.stub"
+import { WorkspaceService } from "./features/workspaces"
+import {
+  StreamService,
+  StreamNamingService,
+  StubStreamNamingService,
+  NamingHandler,
+  createNamingWorker,
+} from "./features/streams"
+import { EventService } from "./features/messaging"
+import { AttachmentService } from "./features/attachments"
 import { MessageFormatter } from "./lib/ai/message-formatter"
-import { SearchService } from "./services/search-service"
-import { EmbeddingService } from "./services/embedding-service"
-import { StubEmbeddingService } from "./services/embedding-service.stub"
-import { ConversationService } from "./services/conversation-service"
-import { UserPreferencesService } from "./services/user-preferences-service"
-import { BoundaryExtractionService } from "./services/boundary-extraction-service"
+import { SearchService } from "./features/search"
+import {
+  MemoService,
+  StubMemoService,
+  MemoClassifier,
+  Memorizer,
+  EmbeddingService,
+  StubEmbeddingService,
+  EmbeddingHandler,
+  MemoAccumulatorHandler,
+  createEmbeddingWorker,
+  createMemoBatchCheckWorker,
+  createMemoBatchProcessWorker,
+} from "./features/memos"
+import {
+  ConversationService,
+  BoundaryExtractionService,
+  BoundaryExtractionHandler,
+  createBoundaryExtractionWorker,
+  LLMBoundaryExtractor,
+  StubBoundaryExtractor,
+} from "./features/conversations"
+import { UserPreferencesService } from "./features/user-preferences"
 import { createS3Storage } from "./lib/storage/s3-client"
 import { OutboxDispatcher } from "./lib/outbox-dispatcher"
 import { BroadcastHandler } from "./lib/broadcast-handler"
-import { CompanionHandler } from "./lib/companion-handler"
-import { NamingHandler } from "./lib/naming-handler"
-import { EmojiUsageHandler } from "./lib/emoji-usage-handler"
-import { EmbeddingHandler } from "./lib/embedding-handler"
-import { BoundaryExtractionHandler } from "./lib/boundary-extraction-handler"
-import { MemoAccumulatorHandler } from "./lib/memo-accumulator-handler"
-import { CommandHandler } from "./lib/command-handler"
-import { MentionInvokeHandler } from "./lib/mention-invoke-handler"
-import { AttachmentUploadedHandler } from "./lib/attachment-uploaded-handler"
-import { MemoClassifier } from "./lib/memo/classifier"
-import { Memorizer } from "./lib/memo/memorizer"
-import { MemoService } from "./services/memo-service"
-import { StubMemoService } from "./services/memo-service.stub"
-import { AICostService } from "./services/ai-cost-service"
-import { createOrphanSessionCleanup } from "./lib/orphan-session-cleanup"
-import { CommandRegistry } from "./commands"
-import { SimulateCommand } from "./commands/simulate-command"
-import { createPersonaAgentWorker } from "./workers/persona-agent-worker"
-import { Researcher } from "./agents/researcher"
-import { createNamingWorker } from "./workers/naming-worker"
-import { createEmbeddingWorker } from "./workers/embedding-worker"
-import { createBoundaryExtractionWorker } from "./workers/boundary-extraction-worker"
-import { createMemoBatchCheckWorker, createMemoBatchProcessWorker } from "./workers/memo-batch-worker"
-import { createSimulationWorker } from "./workers/simulation-worker"
-import { LLMBoundaryExtractor } from "./lib/boundary-extraction/llm-extractor"
-import { StubBoundaryExtractor } from "./lib/boundary-extraction/stub-extractor"
-import { createCommandWorker } from "./workers/command-worker"
-import { createImageCaptionWorker } from "./workers/image-caption-worker"
-import { createPdfPrepareWorker } from "./workers/pdf-prepare-worker"
-import { createPdfPageWorker } from "./workers/pdf-page-worker"
-import { createPdfAssembleWorker } from "./workers/pdf-assemble-worker"
-import { createTextProcessingWorker } from "./workers/text-processing-worker"
-import { createWordProcessingWorker } from "./workers/word-processing-worker"
-import { createExcelProcessingWorker } from "./workers/excel-processing-worker"
-import { ImageCaptionService, StubImageCaptionService } from "./services/image-caption"
-import { PdfProcessingService, StubPdfProcessingService } from "./services/pdf-processing"
-import { TextProcessingService, StubTextProcessingService } from "./services/text-processing"
-import { WordProcessingService, StubWordProcessingService } from "./services/word-processing"
-import { ExcelProcessingService, StubExcelProcessingService } from "./services/excel-processing"
-import { PersonaAgent } from "./agents/persona-agent"
-import { TraceEmitter } from "./lib/trace-emitter"
-import { SimulationAgent } from "./agents/simulation-agent"
-import { StubSimulationAgent } from "./agents/simulation-agent.stub"
-import { LangGraphResponseGenerator, StubResponseGenerator } from "./agents/companion-runner"
+import {
+  CompanionHandler,
+  MentionInvokeHandler,
+  createOrphanSessionCleanup,
+  createPersonaAgentWorker,
+  Researcher,
+  createSimulationWorker,
+  PersonaAgent,
+  TraceEmitter,
+  SimulationAgent,
+  StubSimulationAgent,
+  LangGraphResponseGenerator,
+  StubResponseGenerator,
+  AgentSessionMetricsCollector,
+} from "./features/agents"
+import { EmojiUsageHandler } from "./features/emoji"
+import { AttachmentUploadedHandler } from "./features/attachments"
+import { AICostService } from "./features/ai-usage"
+import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
+import {
+  createImageCaptionWorker,
+  createPdfPrepareWorker,
+  createPdfPageWorker,
+  createPdfAssembleWorker,
+  createTextProcessingWorker,
+  createWordProcessingWorker,
+  createExcelProcessingWorker,
+  ImageCaptionService,
+  StubImageCaptionService,
+  PdfProcessingService,
+  StubPdfProcessingService,
+  TextProcessingService,
+  StubTextProcessingService,
+  WordProcessingService,
+  StubWordProcessingService,
+  ExcelProcessingService,
+  StubExcelProcessingService,
+} from "./features/attachments"
 import {
   JobQueues,
   type OnDLQHook,
@@ -88,7 +103,7 @@ import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"
 import { parseMarkdown } from "@threa/prosemirror"
-import { normalizeMessage, toEmoji } from "./lib/emoji"
+import { normalizeMessage, toEmoji } from "./features/emoji"
 import { logger } from "./lib/logger"
 import { createPostgresCheckpointer } from "./lib/ai"
 import { createAI } from "./lib/ai/ai"
@@ -101,7 +116,6 @@ import { QueueRepository } from "./repositories/queue-repository"
 import { TokenPoolRepository } from "./repositories/token-pool-repository"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
 import { PoolMonitor } from "./lib/pool-monitor"
-import { AgentSessionMetricsCollector } from "./lib/agent-session-metrics"
 
 export interface ServerInstance {
   server: Server

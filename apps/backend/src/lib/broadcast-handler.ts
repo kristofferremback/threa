@@ -1,6 +1,6 @@
 import { Server } from "socket.io"
 import type { Pool } from "pg"
-import { OutboxRepository } from "../repositories"
+import { OutboxRepository, MemberRepository } from "../repositories"
 import {
   isStreamScopedEvent,
   isOutboxEventType,
@@ -21,7 +21,6 @@ import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "./curs
 import { DebounceWithMaxWait } from "./debounce"
 import type { OutboxHandler } from "./outbox-dispatcher"
 import { withClient } from "../db"
-import { MemberRepository } from "../repositories/member-repository"
 
 export interface BroadcastHandlerConfig {
   batchSize?: number

@@ -6,7 +6,7 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { MessageClassification } from "../../../src/lib/memo/classifier"
+import type { MessageClassification } from "../../../src/features/memos"
 import type { Message } from "../../../src/repositories"
 
 /**

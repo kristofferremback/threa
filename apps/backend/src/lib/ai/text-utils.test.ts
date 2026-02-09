@@ -4,7 +4,8 @@
 
 import { describe, test, expect } from "bun:test"
 import { stripMarkdownFences } from "./text-utils"
-import { memoRepair } from "../memo/repair"
+// eslint-disable-next-line no-restricted-imports -- test file testing cross-cutting repair function
+import { memoRepair } from "../../features/memos/repair"
 
 describe("stripMarkdownFences", () => {
   test("removes ```json fence and normalizes JSON", async () => {
