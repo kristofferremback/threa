@@ -266,7 +266,30 @@ export const AttachmentRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
-  async updateSafetyStatus(client: Querier, id: string, status: AttachmentSafetyStatus): Promise<boolean> {
+  async updateSafetyStatus(
+    client: Querier,
+    id: string,
+    status: AttachmentSafetyStatus,
+    options?: { onlyIfStatus?: AttachmentSafetyStatus; onlyIfStatusIn?: AttachmentSafetyStatus[] }
+  ): Promise<boolean> {
+    if (options?.onlyIfStatusIn) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET safety_status = ${status}
+        WHERE id = ${id} AND safety_status = ANY(${options.onlyIfStatusIn})
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    if (options?.onlyIfStatus) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET safety_status = ${status}
+        WHERE id = ${id} AND safety_status = ${options.onlyIfStatus}
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
     const result = await client.query(sql`
       UPDATE attachments
       SET safety_status = ${status}

@@ -13,9 +13,17 @@ export interface MalwareScanInput {
   mimeType: string
 }
 
+export const MALWARE_SCAN_REASONS = ["signature_match", "scan_error"] as const
+export type MalwareScanReason = (typeof MALWARE_SCAN_REASONS)[number]
+
+export const MalwareScanReasons = {
+  SIGNATURE_MATCH: "signature_match",
+  SCAN_ERROR: "scan_error",
+} as const satisfies Record<string, MalwareScanReason>
+
 export interface MalwareScanResult {
   status: AttachmentSafetyStatus
-  reason?: string
+  reason?: MalwareScanReason
 }
 
 export interface MalwareScanner {
@@ -80,7 +88,7 @@ export function createMalwareScanner(storage: StorageProvider, policy: Attachmen
         if (containsMalwareSignature(head)) {
           return {
             status: AttachmentSafetyStatuses.QUARANTINED,
-            reason: "signature_match",
+            reason: MalwareScanReasons.SIGNATURE_MATCH,
           }
         }
 
@@ -97,7 +105,7 @@ export function createMalwareScanner(storage: StorageProvider, policy: Attachmen
 
         return {
           status: AttachmentSafetyStatuses.QUARANTINED,
-          reason: "scan_error",
+          reason: MalwareScanReasons.SCAN_ERROR,
         }
       }
     },

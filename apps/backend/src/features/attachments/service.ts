@@ -57,9 +57,17 @@ export class AttachmentService {
     })
 
     return withTransaction(this.pool, async (client) => {
-      const safetyUpdated = await AttachmentRepository.updateSafetyStatus(client, params.id, scanResult.status)
+      const safetyUpdated = await AttachmentRepository.updateSafetyStatus(client, params.id, scanResult.status, {
+        onlyIfStatus: AttachmentSafetyStatuses.PENDING_SCAN,
+      })
       if (!safetyUpdated) {
-        throw new Error(`Failed to update safety status for attachment ${params.id}`)
+        const current = await AttachmentRepository.findById(client, params.id)
+        if (!current) {
+          throw new Error(`Attachment ${params.id} was deleted before safety status could be updated`)
+        }
+        throw new Error(
+          `Attachment ${params.id} safety status transition rejected from ${current.safetyStatus} to ${scanResult.status}`
+        )
       }
 
       if (scanResult.status === AttachmentSafetyStatuses.CLEAN) {
