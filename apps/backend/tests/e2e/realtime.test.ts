@@ -35,12 +35,13 @@ function getBaseUrl(): string {
 function createSocket(client: TestClient): Socket {
   // Extract cookies from the client's internal state via a test request
   // This is a bit hacky but works for testing
+  const cookies = (client as unknown as { cookies?: Map<string, string> }).cookies
   const socket = io(getBaseUrl(), {
     // Socket.io-client will use these cookies for authentication
     extraHeaders: {
-      Cookie: (client as any).cookies
-        ? Array.from((client as any).cookies.entries())
-            .map(([k, v]: [string, string]) => `${k}=${v}`)
+      Cookie: cookies
+        ? Array.from(cookies.entries())
+            .map(([k, v]) => `${k}=${v}`)
             .join("; ")
         : "",
     },
@@ -342,7 +343,7 @@ describe("Real-time Events", () => {
       await joinRoom(socket, `ws:${workspaceId}:stream:${stream1.id}`)
 
       // Send message to stream1 - should receive
-      const event1Promise = waitForEvent<{ event: any }>(socket, "message:created")
+      const event1Promise = waitForEvent<{ streamId: string; event: any }>(socket, "message:created")
       await sendMessage(client, workspaceId, stream1.id, "Message to stream 1")
       const event1 = await event1Promise
       expect(event1.streamId).toBe(stream1.id)
@@ -359,7 +360,7 @@ describe("Real-time Events", () => {
       // Join workspace room only
       await joinRoom(socket, `ws:${workspaceId}`)
 
-      const eventPromise = waitForEvent<{ stream: any }>(socket, "stream:created")
+      const eventPromise = waitForEvent<{ workspaceId: string; stream: any }>(socket, "stream:created")
 
       await createScratchpad(client, workspaceId)
 

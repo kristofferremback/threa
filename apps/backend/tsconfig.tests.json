@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*",
+    "evals/**/*",
+    "tests/client.ts",
+    "tests/setup.ts",
+    "tests/test-server.ts",
+    "tests/e2e/**/*",
+    "tests/integration/critical/**/*"
+  ]
+}
