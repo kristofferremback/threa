@@ -105,7 +105,7 @@ async function testEmbedMany() {
 async function testLangChainMinimaxM2() {
   console.log("\n=== Testing LangChain with minimax/minimax-m2.1 ===")
 
-  const model = ai.getLangChainModel("openrouter:minimax/minimax-m2.1")
+  const model = await ai.getLangChainModel("openrouter:minimax/minimax-m2.1")
 
   // Run within cost tracking context
   const usage = await ai.costTracker.runWithTracking(async () => {
@@ -125,7 +125,7 @@ async function testLangChainMinimaxM2() {
 async function testLangChainGpt4oMini() {
   console.log("\n=== Testing LangChain with openai/gpt-4o-mini ===")
 
-  const model = ai.getLangChainModel("openrouter:openai/gpt-4o-mini")
+  const model = await ai.getLangChainModel("openrouter:openai/gpt-4o-mini")
 
   // Run within cost tracking context
   const usage = await ai.costTracker.runWithTracking(async () => {

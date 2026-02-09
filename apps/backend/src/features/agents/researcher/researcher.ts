@@ -568,7 +568,10 @@ Each query must have:
     // For semantic search, generate embedding (AI, no DB, ~200-500ms)
     if (query.type === "semantic") {
       try {
-        const embedding = await embeddingService.embed(query.query)
+        const embedding = await embeddingService.embed(query.query, {
+          workspaceId,
+          functionId: "researcher-memo-semantic-search",
+        })
         // DB search (single query, INV-30)
         const results = await MemoRepository.semanticSearch(pool, {
           workspaceId,
@@ -629,7 +632,10 @@ Each query must have:
       let embedding: number[] = []
       if (searchQuery.trim()) {
         try {
-          embedding = await embeddingService.embed(searchQuery)
+          embedding = await embeddingService.embed(searchQuery, {
+            workspaceId,
+            functionId: "researcher-message-semantic-search",
+          })
         } catch (error) {
           logger.warn({ error }, "Failed to generate embedding, falling back to keyword-only search")
         }

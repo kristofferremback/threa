@@ -22,7 +22,6 @@ const DEFAULT_MONTHLY_BUDGET_USD = 50.0
 
 /** Threshold percentages for alerts and degradation */
 const SOFT_LIMIT_THRESHOLD = 0.8 // 80% - start degrading models
-const HARD_LIMIT_THRESHOLD = 1.0 // 100% - block non-essential features
 
 /**
  * Model degradation mappings.
@@ -102,8 +101,12 @@ export class AIBudgetService implements AIBudgetServiceLike {
       const percentUsed = budgetUsd > 0 ? currentUsageUsd / budgetUsd : 0
 
       // Check hard limit
-      if (budget.hardLimitEnabled && percentUsed >= HARD_LIMIT_THRESHOLD) {
-        logger.warn({ workspaceId, currentUsageUsd, budgetUsd, percentUsed }, "AI budget hard limit reached")
+      const hardLimitThreshold = budget.hardLimitPercent / 100
+      if (budget.hardLimitEnabled && percentUsed >= hardLimitThreshold) {
+        logger.warn(
+          { workspaceId, currentUsageUsd, budgetUsd, percentUsed, hardLimitPercent: budget.hardLimitPercent },
+          "AI budget hard limit reached"
+        )
         return {
           allowed: false,
           reason: "hard_limit",

@@ -246,6 +246,11 @@ function createOrchestrateNode() {
           personaCount: state.personas.length,
         },
       },
+      context: {
+        workspaceId: state.workspaceId,
+        memberId: state.memberId,
+        origin: "user",
+      },
     })
 
     // Validate persona exists
@@ -350,6 +355,11 @@ function createGenerateNode() {
           turn: state.currentTurn,
           personaSlug: persona.slug,
         },
+      },
+      context: {
+        workspaceId: state.workspaceId,
+        memberId: state.memberId,
+        origin: "user",
       },
     })
 

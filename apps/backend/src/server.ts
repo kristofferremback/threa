@@ -64,7 +64,7 @@ import {
 } from "./features/agents"
 import { EmojiUsageHandler } from "./features/emoji"
 import { AttachmentUploadedHandler } from "./features/attachments"
-import { AICostService } from "./features/ai-usage"
+import { AICostService, AIBudgetService } from "./features/ai-usage"
 import { CommandRegistry, SimulateCommand, createCommandWorker, CommandHandler } from "./features/commands"
 import {
   createImageCaptionWorker,
@@ -175,10 +175,12 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Create cost tracking service for AI usage
   const costService = new AICostService({ pool })
+  const budgetService = new AIBudgetService({ pool })
 
   const ai = createAI({
     openrouter: { apiKey: config.ai.openRouterApiKey },
     costRecorder: costService,
+    budgetEnforcer: budgetService,
   })
   const modelRegistry = createModelRegistry()
   const configResolver = createStaticConfigResolver()

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test"
-import { parseModelId, createAI, type UsageWithCost } from "./ai"
+import { describe, it, expect, mock } from "bun:test"
+import { parseModelId, createAI, AIBudgetExceededError } from "./ai"
 
 // Import fixture data captured from real OpenRouter API calls (2026-01-06)
 import fixtures from "./fixtures/openrouter-responses.json"
@@ -115,13 +115,69 @@ describe("API behavior", () => {
 
     expect(() => ai.getLanguageModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
     expect(() => ai.getEmbeddingModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
-    expect(() => ai.getLangChainModel("openrouter:test")).toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
+  })
+
+  it("should have consistent error messages mentioning env var and config for LangChain models", async () => {
+    const ai = createAI({})
+
+    await expect(ai.getLangChainModel("openrouter:test")).rejects.toThrow(/OPENROUTER_API_KEY.*openrouter\.apiKey/)
   })
 
   it("should list supported providers in error for unsupported provider", () => {
     const ai = createAI({ openrouter: { apiKey: "test-key" } })
 
     expect(() => ai.getLanguageModel("unsupported:model")).toThrow(/Currently supported: openrouter/)
+  })
+})
+
+describe("budget enforcement", () => {
+  it("should block generateText when hard limit is reached", async () => {
+    const checkBudget = mock(async () => ({
+      allowed: false as const,
+      reason: "hard_limit" as const,
+      currentUsageUsd: 160,
+      budgetUsd: 100,
+      percentUsed: 1.6,
+    }))
+
+    const ai = createAI({
+      budgetEnforcer: {
+        checkBudget,
+      },
+    })
+
+    await expect(
+      ai.generateText({
+        model: "openrouter:openai/gpt-5",
+        messages: [{ role: "user", content: "test" }],
+        context: { workspaceId: "ws_123" },
+      })
+    ).rejects.toBeInstanceOf(AIBudgetExceededError)
+
+    expect(checkBudget).toHaveBeenCalledWith("ws_123", "openrouter:openai/gpt-5")
+  })
+
+  it("should apply soft-limit recommended model for LangChain calls", async () => {
+    const checkBudget = mock(async () => ({
+      allowed: true as const,
+      reason: "soft_limit" as const,
+      currentUsageUsd: 80,
+      budgetUsd: 100,
+      percentUsed: 0.8,
+      recommendedModel: "unsupported:model",
+    }))
+
+    const ai = createAI({
+      openrouter: { apiKey: "test-key" },
+      budgetEnforcer: {
+        checkBudget,
+      },
+    })
+
+    await expect(ai.getLangChainModel("openrouter:openai/gpt-5-mini", { workspaceId: "ws_123" })).rejects.toThrow(
+      'Unsupported LangChain provider: "unsupported"'
+    )
+    expect(checkBudget).toHaveBeenCalledWith("ws_123", "openrouter:openai/gpt-5-mini")
   })
 })
 

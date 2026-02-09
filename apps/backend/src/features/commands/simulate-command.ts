@@ -93,7 +93,7 @@ export class SimulateCommand implements Command {
     // Parse natural language args
     let params: SimulationParams
     try {
-      params = await this.parseArgs(args, availablePersonas)
+      params = await this.parseArgs(args, availablePersonas, workspaceId, memberId)
     } catch (err) {
       logger.warn({ err, args }, "Failed to parse simulation args")
       return {
@@ -158,7 +158,12 @@ export class SimulateCommand implements Command {
     }
   }
 
-  private async parseArgs(args: string, availablePersonas: string[]): Promise<SimulationParams> {
+  private async parseArgs(
+    args: string,
+    availablePersonas: string[],
+    workspaceId: string,
+    memberId: string
+  ): Promise<SimulationParams> {
     const prompt = buildParsingPrompt(availablePersonas)
 
     const { value } = await this.deps.ai.generateObject({
@@ -168,6 +173,11 @@ export class SimulateCommand implements Command {
       temperature: 0,
       telemetry: {
         functionId: "simulate-parse-args",
+      },
+      context: {
+        workspaceId,
+        memberId,
+        origin: "user",
       },
     })
 

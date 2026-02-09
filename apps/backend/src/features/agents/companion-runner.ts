@@ -193,7 +193,12 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     })
 
     // Get LangChain model from AI wrapper
-    const model = ai.getLangChainModel(modelId)
+    const model = await ai.getLangChainModel(modelId, {
+      workspaceId,
+      memberId: invokingMemberId,
+      sessionId,
+      origin: "user",
+    })
 
     // Create tools array based on persona's enabled tools
     const tools: StructuredToolInterface[] = [sendMessageTool]
