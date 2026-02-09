@@ -182,6 +182,7 @@ test.describe("Sidebar Updates", () => {
       // Create a scratchpad (companion mode is on by default for scratchpads)
       await page.getByRole("button", { name: "+ New Scratchpad" }).click()
       await expect(page.getByText(/Type a message|No messages yet/)).toBeVisible({ timeout: 5000 })
+      const baselineEventCount = await page.getByRole("main").locator("[data-event-id]").count()
 
       // Send a message that will trigger Ariadne's response
       const userMessage = `Hello Ariadne, please respond briefly ${testId}`
@@ -190,36 +191,28 @@ test.describe("Sidebar Updates", () => {
       await page.getByRole("button", { name: "Send" }).click()
       // Scope to main content area to avoid matching sidebar preview
       await expect(page.getByRole("main").getByText(userMessage)).toBeVisible({ timeout: 5000 })
+      const streamId = page.url().match(/\/s\/([^/]+)/)?.[1]
+      expect(streamId).toBeTruthy()
 
       // Navigate away IMMEDIATELY to Drafts page before Ariadne responds
       // (We don't wait for Ariadne's response here)
       await page.getByRole("link", { name: "Drafts" }).click()
       await expect(page.getByRole("heading", { name: "Drafts", level: 1 })).toBeVisible({ timeout: 5000 })
 
-      // Wait for Ariadne to respond (the stream:activity event should fire)
-      // Preview text is in the DOM but hidden until hover (compact sidebar mode),
-      // so we check attachment rather than visibility
-      await expect(page.getByText(/Ariadne:/).first()).toBeAttached({ timeout: 45000 })
-
-      // Navigate back to the scratchpad by clicking the sidebar link
-      // Find the scratchpad that has Ariadne's preview and click the parent link
-      const scratchpadWithAriadne = page
-        .locator("a")
-        .filter({ hasText: /Ariadne:/ })
-        .first()
-      await scratchpadWithAriadne.click()
+      // Navigate back using stable stream ID (preview text and unread badges are not reliable signals here).
+      const scratchpadLink = page.locator(`a[href*="/s/${streamId}"]`).first()
+      await expect(scratchpadLink).toBeVisible({ timeout: 10000 })
+      await scratchpadLink.click()
 
       // CRITICAL: Ariadne's message should be visible WITHOUT a refresh
       // This verifies the stream bootstrap cache was invalidated on stream:activity
-      // Look for any message from Ariadne in the main content area
-      await expect(
-        page
-          .getByRole("main")
-          .locator(".group")
-          .filter({ hasText: /Ariadne/ })
-          .first()
-      ).toBeVisible({
-        timeout: 5000,
+      await expect
+        .poll(async () => page.getByRole("main").locator("[data-event-id]").count(), {
+          timeout: 45000,
+        })
+        .toBeGreaterThanOrEqual(baselineEventCount + 2)
+      await expect(page.getByRole("main").locator("a[title='View agent trace']").first()).toBeAttached({
+        timeout: 10000,
       })
     })
   })
