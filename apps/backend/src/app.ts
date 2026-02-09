@@ -6,7 +6,7 @@ import pinoHttp from "pino-http"
 import { randomUUID } from "crypto"
 import { logger } from "./lib/logger"
 import { bigIntReplacer } from "./lib/serialization"
-import { metricsMiddleware } from "./middleware/metrics"
+import { createMetricsMiddleware } from "./middleware/metrics"
 import { createCorsOriginChecker } from "./lib/cors"
 
 interface CreateAppOptions {
@@ -16,6 +16,8 @@ interface CreateAppOptions {
 
 export function createApp(options: CreateAppOptions): Express {
   const app = express()
+  const requestLoggingIgnoredPaths = ["/health", "/readyz"]
+  const metricsIgnoredPaths = [...requestLoggingIgnoredPaths, "/metrics"]
 
   // Configure JSON serialization to handle BigInt values
   app.set("json replacer", bigIntReplacer)
@@ -23,7 +25,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.disable("x-powered-by")
 
   // Metrics middleware (before everything else to capture all requests)
-  app.use(metricsMiddleware)
+  app.use(createMetricsMiddleware({ ignoredPaths: metricsIgnoredPaths }))
 
   app.use(
     helmet({
@@ -51,7 +53,7 @@ export function createApp(options: CreateAppOptions): Express {
     pinoHttp({
       logger,
       autoLogging: {
-        ignore: (req) => req.url === "/health" || req.url === "/readyz",
+        ignore: (req) => requestLoggingIgnoredPaths.includes(req.url),
       },
       customLogLevel: (_req, res, err) => {
         if (res.statusCode >= 500 || err) return "error"

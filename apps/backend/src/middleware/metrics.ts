@@ -1,6 +1,10 @@
 import type { Request, Response, NextFunction } from "express"
 import { httpRequestsTotal, httpRequestDuration, httpActiveConnections } from "../lib/observability"
 
+interface MetricsMiddlewareOptions {
+  ignoredPaths: string[]
+}
+
 /**
  * Map HTTP status code to error type label.
  */
@@ -46,41 +50,42 @@ function getWorkspaceId(req: Request): string {
  * Tracks:
  * - Active connections (inc on request, dec on response)
  * - Request count and duration with labels for method, path, status, error type, workspace
- *
- * Skips /health, /readyz, and /metrics endpoints entirely.
  */
-export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // Skip probe and metrics endpoints entirely
-  if (req.path === "/health" || req.path === "/readyz" || req.path === "/metrics") {
-    return next()
-  }
+export function createMetricsMiddleware(options: MetricsMiddlewareOptions) {
+  const ignoredPathSet = new Set(options.ignoredPaths)
 
-  const startTime = process.hrtime.bigint()
-  httpActiveConnections.inc()
-
-  // Intercept response finish to capture metrics
-  // Using 'finish' event instead of overriding res.end to avoid TypeScript overload issues
-  res.on("finish", () => {
-    httpActiveConnections.dec()
-
-    const durationNs = process.hrtime.bigint() - startTime
-    const durationSeconds = Number(durationNs) / 1e9
-
-    const normalizedPath = getNormalizedPath(req)
-    const workspaceId = getWorkspaceId(req)
-    const errorType = getErrorType(res.statusCode)
-
-    const labels = {
-      method: req.method,
-      normalized_path: normalizedPath,
-      status_code: res.statusCode.toString(),
-      error_type: errorType,
-      workspace_id: workspaceId,
+  return function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
+    if (ignoredPathSet.has(req.path)) {
+      return next()
     }
 
-    httpRequestsTotal.inc(labels)
-    httpRequestDuration.observe(labels, durationSeconds)
-  })
+    const startTime = process.hrtime.bigint()
+    httpActiveConnections.inc()
 
-  next()
+    // Intercept response finish to capture metrics
+    // Using 'finish' event instead of overriding res.end to avoid TypeScript overload issues
+    res.on("finish", () => {
+      httpActiveConnections.dec()
+
+      const durationNs = process.hrtime.bigint() - startTime
+      const durationSeconds = Number(durationNs) / 1e9
+
+      const normalizedPath = getNormalizedPath(req)
+      const workspaceId = getWorkspaceId(req)
+      const errorType = getErrorType(res.statusCode)
+
+      const labels = {
+        method: req.method,
+        normalized_path: normalizedPath,
+        status_code: res.statusCode.toString(),
+        error_type: errorType,
+        workspace_id: workspaceId,
+      }
+
+      httpRequestsTotal.inc(labels)
+      httpRequestDuration.observe(labels, durationSeconds)
+    })
+
+    next()
+  }
 }
