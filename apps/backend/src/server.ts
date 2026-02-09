@@ -110,7 +110,7 @@ import { createModelRegistry } from "./lib/ai/model-registry"
 import { createStaticConfigResolver } from "./lib/ai/static-config-resolver"
 import { QueueManager, ScheduleManager, CleanupWorker, QueueRepository, TokenPoolRepository } from "./lib/queue"
 import { UserSocketRegistry } from "./lib/user-socket-registry"
-import { PoolMonitor } from "./lib/pool-monitor"
+import { PoolMonitor } from "./lib/observability"
 
 export interface ServerInstance {
   server: Server
@@ -127,7 +127,7 @@ export async function startServer(): Promise<ServerInstance> {
   const config = loadConfig()
 
   // Initialize Prometheus metrics collection
-  const { collectDefaultMetrics } = await import("./lib/metrics")
+  const { collectDefaultMetrics } = await import("./lib/observability")
   collectDefaultMetrics()
   logger.info("Prometheus metrics collection initialized")
 

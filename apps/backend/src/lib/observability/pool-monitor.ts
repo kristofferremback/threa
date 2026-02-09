@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { logger } from "./logger"
+import { logger } from "../logger"
 import { poolConnectionsTotal, poolConnectionsIdle, poolConnectionsWaiting, poolUtilizationPercent } from "./metrics"
 
 export interface PoolStats {

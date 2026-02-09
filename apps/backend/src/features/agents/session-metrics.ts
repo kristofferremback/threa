@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
 import { sql } from "../../db"
-import { agentSessionsActive, agentSessionDuration } from "../../lib/metrics"
+import { agentSessionsActive, agentSessionDuration } from "../../lib/observability"
 import { logger } from "../../lib/logger"
 
 interface SessionCountRow {

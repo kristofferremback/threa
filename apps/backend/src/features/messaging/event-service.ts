@@ -10,7 +10,7 @@ import { OutboxRepository } from "../../lib/outbox"
 import { StreamPersonaParticipantRepository } from "../../repositories"
 import { eventId, messageId } from "../../lib/id"
 import { serializeBigInt } from "../../lib/serialization"
-import { messagesTotal } from "../../lib/metrics"
+import { messagesTotal } from "../../lib/observability"
 import type { JSONContent } from "@threa/types"
 
 // Event payloads

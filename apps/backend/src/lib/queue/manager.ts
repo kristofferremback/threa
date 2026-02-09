@@ -8,7 +8,12 @@ import { calculateBackoffMs } from "../backoff"
 import { logger } from "../logger"
 import type { JobDataMap, JobQueueName, JobHandler, HandlerOptions, HandlerHooks } from "./job-queue"
 import { queueId, workerId, tickerId, cronId } from "../id"
-import { queueMessagesEnqueued, queueMessagesInFlight, queueMessagesProcessed, queueMessageDuration } from "../metrics"
+import {
+  queueMessagesEnqueued,
+  queueMessagesInFlight,
+  queueMessagesProcessed,
+  queueMessageDuration,
+} from "../observability"
 
 /**
  * Configuration for QueueManager

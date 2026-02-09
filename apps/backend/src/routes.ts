@@ -33,7 +33,7 @@ import type { S3Config } from "./lib/env"
 import type { CommandRegistry } from "./features/commands"
 import type { UserPreferencesService } from "./features/user-preferences"
 import type { Pool } from "pg"
-import type { PoolMonitor } from "./lib/pool-monitor"
+import type { PoolMonitor } from "./lib/observability"
 
 interface Dependencies {
   pool: Pool

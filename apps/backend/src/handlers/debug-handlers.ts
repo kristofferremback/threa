@@ -1,6 +1,6 @@
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
-import type { PoolMonitor } from "../lib/pool-monitor"
+import type { PoolMonitor } from "../lib/observability"
 
 interface Dependencies {
   pool: Pool
@@ -67,7 +67,7 @@ export function createDebugHandlers({ pool, poolMonitor }: Dependencies) {
      * GET /metrics
      */
     async metrics(_req: Request, res: Response) {
-      const { registry } = await import("../lib/metrics")
+      const { registry } = await import("../lib/observability")
       res.set("Content-Type", registry.contentType)
       res.end(await registry.metrics())
     },

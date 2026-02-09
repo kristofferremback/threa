@@ -8,7 +8,7 @@ import type { UserSocketRegistry } from "./lib/user-socket-registry"
 import { AgentSessionRepository } from "./repositories"
 import { MemberRepository } from "./repositories"
 import { logger } from "./lib/logger"
-import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/metrics"
+import { wsConnectionsActive, wsConnectionDuration, wsMessagesTotal } from "./lib/observability"
 
 const SESSION_COOKIE_NAME = "wos_session"
 
