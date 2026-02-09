@@ -77,6 +77,10 @@ export const PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES = [
   "text/markdown",
   "text/csv",
   "text/tab-separated-values",
+  // Source code and script files (technical team workflows)
+  "application/javascript",
+  "text/javascript",
+  "application/x-javascript",
   "application/json",
   "application/x-yaml",
   "application/yaml",

@@ -77,7 +77,7 @@ describe("createMalwareScanner", () => {
     expect(getObjectRange).not.toHaveBeenCalled()
   })
 
-  it("quarantines dangerous executable extensions", async () => {
+  it("does not quarantine based on extension alone", async () => {
     const scanner = createMalwareScanner(
       {
         getObjectRange: mock(() => Promise.resolve(Buffer.from(""))),
@@ -94,10 +94,7 @@ describe("createMalwareScanner", () => {
       mimeType: "application/octet-stream",
     })
 
-    expect(result).toEqual({
-      status: AttachmentSafetyStatuses.QUARANTINED,
-      reason: "dangerous_extension",
-    })
+    expect(result).toEqual({ status: AttachmentSafetyStatuses.CLEAN })
   })
 
   it("quarantines EICAR signature matches", async () => {

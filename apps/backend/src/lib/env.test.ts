@@ -55,6 +55,7 @@ describe("loadConfig attachment safety policy", () => {
 
     const config = loadConfig()
     expect(config.attachments.allowedMimeTypes).toEqual([...PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES])
+    expect(config.attachments.allowedMimeTypes).toContain("application/javascript")
   })
 
   test("parses ATTACHMENT_ALLOWED_MIME_TYPES override", () => {

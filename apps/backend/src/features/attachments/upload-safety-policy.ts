@@ -24,7 +24,7 @@ export interface MalwareScanner {
 
 const SCAN_HEAD_BYTES = 8 * 1024
 
-const DANGEROUS_EXTENSIONS = [
+const SUSPICIOUS_EXTENSIONS = [
   ".exe",
   ".dll",
   ".bat",
@@ -76,9 +76,9 @@ export function safetyStatusBlockReason(safetyStatus: AttachmentSafetyStatus): s
   }
 }
 
-function hasDangerousExtension(filename: string): boolean {
+function hasSuspiciousExtension(filename: string): boolean {
   const lowerFilename = filename.toLowerCase()
-  return DANGEROUS_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
+  return SUSPICIOUS_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
 }
 
 function containsMalwareSignature(buffer: Buffer): boolean {
@@ -93,11 +93,15 @@ export function createMalwareScanner(storage: StorageProvider, policy: Attachmen
         return { status: AttachmentSafetyStatuses.CLEAN }
       }
 
-      if (hasDangerousExtension(input.filename)) {
-        return {
-          status: AttachmentSafetyStatuses.QUARANTINED,
-          reason: "dangerous_extension",
-        }
+      if (hasSuspiciousExtension(input.filename)) {
+        logger.warn(
+          {
+            filename: input.filename,
+            mimeType: input.mimeType,
+            storagePath: input.storagePath,
+          },
+          "Attachment has suspicious extension; continuing malware scan"
+        )
       }
 
       try {
