@@ -1,7 +1,6 @@
 import { DynamicStructuredTool } from "@langchain/core/tools"
 import { z } from "zod"
 import { logger } from "../../../lib/logger"
-import { EXCEL_MAX_ROWS_PER_REQUEST } from "../../attachments"
 
 const LoadExcelSectionSchema = z
   .object({
@@ -20,18 +19,6 @@ const LoadExcelSectionSchema = z
     {
       message: "startRow must be less than endRow",
       path: ["startRow"],
-    }
-  )
-  .refine(
-    (data) => {
-      if (data.startRow !== undefined && data.endRow !== undefined) {
-        return data.endRow - data.startRow <= EXCEL_MAX_ROWS_PER_REQUEST
-      }
-      return true
-    },
-    {
-      message: `Cannot load more than ${EXCEL_MAX_ROWS_PER_REQUEST} rows at once`,
-      path: ["endRow"],
     }
   )
 
@@ -80,6 +67,17 @@ For small/medium workbooks (<20K cells), full content is already available in fu
     schema: LoadExcelSectionSchema,
     func: async (input: LoadExcelSectionInput) => {
       try {
+        if (input.startRow !== undefined && input.endRow !== undefined) {
+          const { EXCEL_MAX_ROWS_PER_REQUEST } = await import("../../attachments/excel/config")
+          if (input.endRow - input.startRow > EXCEL_MAX_ROWS_PER_REQUEST) {
+            return JSON.stringify({
+              error: `Cannot load more than ${EXCEL_MAX_ROWS_PER_REQUEST} rows at once`,
+              attachmentId: input.attachmentId,
+              maxRowsPerRequest: EXCEL_MAX_ROWS_PER_REQUEST,
+            })
+          }
+        }
+
         const result = await callbacks.loadExcelSection(input)
 
         if (!result) {

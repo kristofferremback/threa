@@ -68,6 +68,42 @@ describe("attachment handlers safety gating", () => {
     expect(attachmentService.delete).toHaveBeenCalledWith("attach_1")
   })
 
+  it("returns 500 with attachmentId when quarantined cleanup fails", async () => {
+    const attachmentService = {
+      create: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.QUARANTINED))),
+      delete: mock(() => Promise.reject(new Error("s3 delete failed"))),
+    } as any
+
+    const streamService = {
+      isMember: mock(() => Promise.resolve(true)),
+    } as any
+
+    const handlers = createAttachmentHandlers({ attachmentService, streamService })
+    const res = createResponse()
+
+    await handlers.upload(
+      {
+        member: { id: "member_1" },
+        workspaceId: "ws_1",
+        attachmentId: "attach_1",
+        file: {
+          key: "ws_1/attach_1/test.png",
+          originalname: "test.png",
+          mimetype: "image/png",
+          size: 100,
+        },
+      } as any,
+      res
+    )
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(res.body).toEqual({
+      error: "Attachment quarantined and cleanup failed",
+      attachmentId: "attach_1",
+    })
+    expect(attachmentService.delete).toHaveBeenCalledWith("attach_1")
+  })
+
   it("blocks download URL while malware scan is pending", async () => {
     const attachmentService = {
       getById: mock(() => Promise.resolve(buildAttachment(AttachmentSafetyStatuses.PENDING_SCAN))),

@@ -4,7 +4,7 @@ import { S3Client } from "@aws-sdk/client-s3"
 import type { Request, RequestHandler } from "express"
 import type { S3Config } from "../lib/env"
 import { attachmentId } from "../lib/id"
-import { isMimeTypeAllowed, type AttachmentSafetyPolicy } from "../features/attachments/upload-safety-policy"
+import { isMimeTypeAllowed, type AttachmentSafetyPolicy } from "../features/attachments"
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 

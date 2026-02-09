@@ -40,10 +40,20 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       })
 
       if (!isAttachmentSafeForSharing(attachment.safetyStatus)) {
+        const cleanupFailure = {
+          error: "Attachment quarantined and cleanup failed",
+          attachmentId: attachment.id,
+        }
+
         try {
-          await attachmentService.delete(attachment.id)
+          const deleted = await attachmentService.delete(attachment.id)
+          if (!deleted) {
+            logger.error({ attachmentId: attachment.id }, "Quarantined attachment cleanup did not delete attachment")
+            return res.status(500).json(cleanupFailure)
+          }
         } catch (err) {
-          logger.warn({ err, attachmentId: attachment.id }, "Failed to clean up quarantined upload")
+          logger.error({ err, attachmentId: attachment.id }, "Failed to clean up quarantined upload")
+          return res.status(500).json(cleanupFailure)
         }
         return res.status(400).json({ error: safetyStatusBlockReason(attachment.safetyStatus) })
       }
