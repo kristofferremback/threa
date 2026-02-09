@@ -160,7 +160,7 @@ export const CronRepository = {
     db: Querier,
     params: CreateScheduleParams
   ): Promise<{ schedule: CronSchedule; created: boolean }> {
-    const result = await db.query<CronScheduleRow & { xmax: string }>(
+    const result = await db.query<CronScheduleRow & { created: boolean }>(
       sql`
         INSERT INTO cron_schedules (
           id, queue_name, interval_seconds, payload, workspace_id
@@ -188,8 +188,7 @@ export const CronRepository = {
     )
 
     const row = result.rows[0]
-    // xmax = 0 means INSERT (new row), xmax > 0 means UPDATE (existing row)
-    const created = row.xmax === "0"
+    const created = row.created
 
     return {
       schedule: mapRowToSchedule(row),
