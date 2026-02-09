@@ -23,11 +23,12 @@ function toStubWorkosUserId(email: string): string {
 }
 
 function buildCookieHeader(client: TestClient): string {
-  return (client as any).cookies
-    ? Array.from((client as any).cookies.entries())
-        .map(([k, v]: [string, string]) => `${k}=${v}`)
-        .join("; ")
-    : ""
+  const cookies = (client as unknown as { cookies?: Map<string, string> }).cookies
+  if (!cookies) return ""
+
+  return Array.from(cookies.entries())
+    .map(([k, v]) => `${k}=${v}`)
+    .join("; ")
 }
 
 function createSocket(client: TestClient): Socket {
