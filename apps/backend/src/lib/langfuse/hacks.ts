@@ -3,7 +3,7 @@
  * These work around infrastructure problems that can't be cleanly solved otherwise.
  */
 
-import { logger } from "./logger"
+import { logger } from "../logger"
 
 /**
  * Override global fetch to rewrite Langfuse MinIO URLs.

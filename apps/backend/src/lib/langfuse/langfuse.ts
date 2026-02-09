@@ -1,7 +1,7 @@
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { LangfuseSpanProcessor } from "@langfuse/otel"
 import { CallbackHandler } from "@langfuse/langchain"
-import { logger } from "./logger"
+import { logger } from "../logger"
 import { overrideFetchForLangfuseMinio } from "./hacks"
 
 let otelSdk: NodeSDK | null = null
