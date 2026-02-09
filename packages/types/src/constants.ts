@@ -94,6 +94,16 @@ export const ProcessingStatuses = {
   SKIPPED: "skipped",
 } as const satisfies Record<string, ProcessingStatus>
 
+// Attachment malware safety status
+export const ATTACHMENT_SAFETY_STATUSES = ["pending_scan", "clean", "quarantined"] as const
+export type AttachmentSafetyStatus = (typeof ATTACHMENT_SAFETY_STATUSES)[number]
+
+export const AttachmentSafetyStatuses = {
+  PENDING_SCAN: "pending_scan",
+  CLEAN: "clean",
+  QUARANTINED: "quarantined",
+} as const satisfies Record<string, AttachmentSafetyStatus>
+
 // Extraction content types (for image/document analysis)
 export const EXTRACTION_CONTENT_TYPES = [
   "chart",

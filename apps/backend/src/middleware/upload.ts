@@ -4,11 +4,9 @@ import { S3Client } from "@aws-sdk/client-s3"
 import type { Request, RequestHandler } from "express"
 import type { S3Config } from "../lib/env"
 import { attachmentId } from "../lib/id"
+import { isMimeTypeAllowed, type AttachmentSafetyPolicy } from "../features/attachments/upload-safety-policy"
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
-
-// No file type restrictions for in-workspace uploads.
-// File type filtering may be added for cross-workspace sharing (like Slack Connect).
 
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {
@@ -35,13 +33,27 @@ declare module "express" {
 
 export interface UploadMiddlewareConfig {
   s3Config: S3Config
+  attachmentSafetyPolicy: AttachmentSafetyPolicy
+}
+
+export function createAttachmentMimeTypeFileFilter(
+  allowedMimeTypes: string[]
+): (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => void {
+  return (_req, file, cb) => {
+    if (isMimeTypeAllowed(file.mimetype, allowedMimeTypes)) {
+      cb(null, true)
+      return
+    }
+
+    cb(new Error(`File type not allowed: ${file.mimetype}`))
+  }
 }
 
 /**
  * Creates an upload middleware that streams files directly to S3.
  * No temp files are written to disk - prevents DoS via disk exhaustion.
  */
-export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): RequestHandler {
+export function createUploadMiddleware({ s3Config, attachmentSafetyPolicy }: UploadMiddlewareConfig): RequestHandler {
   const s3Client = new S3Client({
     region: s3Config.region,
     credentials: {
@@ -71,6 +83,7 @@ export function createUploadMiddleware({ s3Config }: UploadMiddlewareConfig): Re
 
   const upload = multer({
     storage,
+    fileFilter: createAttachmentMimeTypeFileFilter(attachmentSafetyPolicy.allowedMimeTypes),
     limits: {
       fileSize: MAX_FILE_SIZE,
       files: 1,

@@ -35,6 +35,21 @@ export { AttachmentUploadedHandler } from "./uploaded-outbox-handler"
 export { awaitAttachmentProcessing, hasPendingAttachmentProcessing } from "./await-processing"
 export type { AwaitAttachmentProcessingResult } from "./await-processing"
 
+// Upload safety policy
+export {
+  createAttachmentSafetyPolicy,
+  createMalwareScanner,
+  isMimeTypeAllowed,
+  isAttachmentSafeForSharing,
+  safetyStatusBlockReason,
+} from "./upload-safety-policy"
+export type {
+  AttachmentSafetyPolicy,
+  MalwareScanner,
+  MalwareScanInput,
+  MalwareScanResult,
+} from "./upload-safety-policy"
+
 // Sub-feature re-exports
 export { ImageCaptionService, StubImageCaptionService, isImageAttachment } from "./image-caption"
 export type { ImageCaptionServiceDeps, ImageCaptionServiceLike } from "./image-caption"

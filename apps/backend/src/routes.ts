@@ -10,6 +10,7 @@ import { createWorkspaceHandlers } from "./features/workspaces"
 import { createStreamHandlers } from "./features/streams"
 import { createMessageHandlers } from "./features/messaging"
 import { createAttachmentHandlers } from "./features/attachments"
+import type { AttachmentSafetyPolicy } from "./features/attachments"
 import { createSearchHandlers } from "./features/search"
 import { createEmojiHandlers } from "./features/emoji"
 import { createConversationHandlers } from "./features/conversations"
@@ -48,6 +49,7 @@ interface Dependencies {
   conversationService: ConversationService
   userPreferencesService: UserPreferencesService
   s3Config: S3Config
+  attachmentSafetyPolicy: AttachmentSafetyPolicy
   commandRegistry: CommandRegistry
   rateLimiterConfig: RateLimiterConfig
   allowDevAuthRoutes: boolean
@@ -67,6 +69,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
     conversationService,
     userPreferencesService,
     s3Config,
+    attachmentSafetyPolicy,
     commandRegistry,
     rateLimiterConfig,
     allowDevAuthRoutes,
@@ -74,7 +77,7 @@ export function registerRoutes(app: Express, deps: Dependencies) {
 
   const auth = createAuthMiddleware({ authService, userService })
   const workspaceMember = createWorkspaceMemberMiddleware({ pool })
-  const upload = createUploadMiddleware({ s3Config })
+  const upload = createUploadMiddleware({ s3Config, attachmentSafetyPolicy })
   // Express natively chains handlers - spread array at usage sites
   const authed: RequestHandler[] = [auth, workspaceMember]
 

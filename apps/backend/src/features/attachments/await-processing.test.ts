@@ -38,6 +38,7 @@ describe("awaitAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "completed",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 
@@ -66,6 +67,7 @@ describe("awaitAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "failed",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 
@@ -95,6 +97,7 @@ describe("awaitAttachmentProcessing", () => {
         storageProvider: "s3",
         storagePath: "/test/path1",
         processingStatus: "completed",
+        safetyStatus: "clean",
         createdAt: new Date(),
       },
       {
@@ -109,6 +112,7 @@ describe("awaitAttachmentProcessing", () => {
         storageProvider: "s3",
         storagePath: "/test/path2",
         processingStatus: "failed",
+        safetyStatus: "clean",
         createdAt: new Date(),
       },
     ]
@@ -136,6 +140,7 @@ describe("awaitAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "pending",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 
@@ -177,6 +182,7 @@ describe("hasPendingAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "completed",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 
@@ -201,6 +207,7 @@ describe("hasPendingAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "pending",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 
@@ -225,6 +232,7 @@ describe("hasPendingAttachmentProcessing", () => {
       storageProvider: "s3",
       storagePath: "/test/path",
       processingStatus: "processing",
+      safetyStatus: "clean",
       createdAt: new Date(),
     }
 

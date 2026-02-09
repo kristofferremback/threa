@@ -326,6 +326,7 @@ describe("MessageFormatter", () => {
         storageProvider: "s3" as const,
         storagePath: "/path/to/image.jpg",
         processingStatus: "completed" as const,
+        safetyStatus: "clean" as const,
         createdAt: new Date("2024-01-01T10:00:00Z"),
         extraction: null,
         ...overrides,

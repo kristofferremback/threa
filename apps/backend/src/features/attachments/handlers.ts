@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import type { AttachmentService } from "./service"
 import type { StreamService } from "../streams"
+import { isAttachmentSafeForSharing, safetyStatusBlockReason } from "./upload-safety-policy"
 
 interface Dependencies {
   attachmentService: AttachmentService
@@ -37,6 +38,10 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
         storagePath: file.key,
       })
 
+      if (!isAttachmentSafeForSharing(attachment.safetyStatus)) {
+        return res.status(400).json({ error: safetyStatusBlockReason(attachment.safetyStatus) })
+      }
+
       res.status(201).json({ attachment })
     },
 
@@ -53,6 +58,10 @@ export function createAttachmentHandlers({ attachmentService, streamService }: D
       const attachment = await attachmentService.getById(attachmentId)
       if (!attachment || attachment.workspaceId !== workspaceId) {
         return res.status(404).json({ error: "Attachment not found" })
+      }
+
+      if (!isAttachmentSafeForSharing(attachment.safetyStatus)) {
+        return res.status(403).json({ error: safetyStatusBlockReason(attachment.safetyStatus) })
       }
 
       // For attached files, verify stream membership

@@ -87,6 +87,8 @@ import {
   StubWordProcessingService,
   ExcelProcessingService,
   StubExcelProcessingService,
+  createAttachmentSafetyPolicy,
+  createMalwareScanner,
 } from "./features/attachments"
 import {
   JobQueues,
@@ -174,7 +176,9 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Storage and attachment service
   const storage = createS3Storage(config.s3)
-  const attachmentService = new AttachmentService(pool, storage)
+  const attachmentSafetyPolicy = createAttachmentSafetyPolicy(config.attachments)
+  const malwareScanner = createMalwareScanner(storage, attachmentSafetyPolicy)
+  const attachmentService = new AttachmentService(pool, storage, malwareScanner)
 
   // Create cost tracking service for AI usage
   const costService = new AICostService({ pool })
@@ -297,6 +301,7 @@ export async function startServer(): Promise<ServerInstance> {
     conversationService,
     userPreferencesService,
     s3Config: config.s3,
+    attachmentSafetyPolicy,
     commandRegistry,
     rateLimiterConfig: config.rateLimits,
     allowDevAuthRoutes: config.useStubAuth && !isProduction,

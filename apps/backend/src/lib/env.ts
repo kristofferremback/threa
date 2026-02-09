@@ -28,6 +28,13 @@ export interface S3Config {
   endpoint?: string
 }
 
+export interface AttachmentSafetyConfig {
+  /** Allowed content types for file uploads. */
+  allowedMimeTypes: string[]
+  /** Whether malware scanning is enabled for uploaded files. */
+  malwareScanEnabled: boolean
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -47,6 +54,52 @@ export interface Config {
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
+  attachments: AttachmentSafetyConfig
+}
+
+export const PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  // Images
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  // Documents
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-excel.sheet.macroenabled.12",
+  // Text and structured text
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/tab-separated-values",
+  "application/json",
+  "application/x-yaml",
+  "application/yaml",
+  "text/yaml",
+] as const
+
+function parseAttachmentAllowedMimeTypes(value: string | undefined): string[] {
+  if (!value) {
+    return [...PUBLIC_BETA_ATTACHMENT_ALLOWED_MIME_TYPES]
+  }
+
+  const mimeTypes = value
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0)
+
+  const unique = Array.from(new Set(mimeTypes))
+
+  if (unique.length === 0) {
+    throw new Error("ATTACHMENT_ALLOWED_MIME_TYPES must contain at least one MIME type")
+  }
+
+  return unique
 }
 
 export function loadConfig(): Config {
@@ -114,6 +167,10 @@ export function loadConfig(): Config {
       accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
       endpoint: process.env.S3_ENDPOINT,
+    },
+    attachments: {
+      allowedMimeTypes: parseAttachmentAllowedMimeTypes(process.env.ATTACHMENT_ALLOWED_MIME_TYPES),
+      malwareScanEnabled: process.env.ATTACHMENT_MALWARE_SCAN_ENABLED !== "false",
     },
   }
 

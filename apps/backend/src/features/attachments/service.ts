@@ -4,6 +4,9 @@ import { OutboxRepository } from "../../lib/outbox"
 import { AttachmentRepository, type Attachment } from "./repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StorageProvider } from "../../lib/storage/s3-client"
+import { AttachmentSafetyStatuses, ProcessingStatuses } from "@threa/types"
+import type { MalwareScanner } from "./upload-safety-policy"
+import { logger } from "../../lib/logger"
 
 export interface CreateAttachmentParams {
   id: string
@@ -18,17 +21,19 @@ export interface CreateAttachmentParams {
 export class AttachmentService {
   constructor(
     private pool: Pool,
-    private storage: StorageProvider
+    private storage: StorageProvider,
+    private malwareScanner: MalwareScanner
   ) {}
 
   /**
    * Records attachment metadata after file has been uploaded to S3.
    * The upload itself is handled by multer-s3 middleware (streaming, no temp files).
    * File is uploaded to workspace-level; streamId is set when attached to a message.
+   * Malware scan runs before attachment processing workers are dispatched.
    */
   async create(params: CreateAttachmentParams): Promise<Attachment> {
-    return withTransaction(this.pool, async (client) => {
-      const attachment = await AttachmentRepository.insert(client, {
+    const attachment = await withTransaction(this.pool, async (client) => {
+      return AttachmentRepository.insert(client, {
         id: params.id,
         workspaceId: params.workspaceId,
         uploadedBy: params.uploadedBy,
@@ -36,19 +41,50 @@ export class AttachmentService {
         mimeType: params.mimeType,
         sizeBytes: params.sizeBytes,
         storagePath: params.storagePath,
+        safetyStatus: AttachmentSafetyStatuses.PENDING_SCAN,
       })
+    })
 
-      // Emit outbox event for future workers (text extraction, embeddings, etc.)
-      await OutboxRepository.insert(client, "attachment:uploaded", {
-        workspaceId: params.workspaceId,
-        attachmentId: params.id,
-        filename: params.filename,
-        mimeType: params.mimeType,
-        sizeBytes: params.sizeBytes,
-        storagePath: params.storagePath,
-      })
+    const scanResult = await this.malwareScanner.scan({
+      storagePath: params.storagePath,
+      filename: params.filename,
+      mimeType: params.mimeType,
+    })
 
-      return attachment
+    return withTransaction(this.pool, async (client) => {
+      const safetyUpdated = await AttachmentRepository.updateSafetyStatus(client, params.id, scanResult.status)
+      if (!safetyUpdated) {
+        throw new Error(`Failed to update safety status for attachment ${params.id}`)
+      }
+
+      if (scanResult.status === AttachmentSafetyStatuses.CLEAN) {
+        // Emit outbox event for workers only after malware scan is clean.
+        await OutboxRepository.insert(client, "attachment:uploaded", {
+          workspaceId: params.workspaceId,
+          attachmentId: params.id,
+          filename: params.filename,
+          mimeType: params.mimeType,
+          sizeBytes: params.sizeBytes,
+          storagePath: params.storagePath,
+        })
+      } else {
+        await AttachmentRepository.updateProcessingStatus(client, params.id, ProcessingStatuses.SKIPPED)
+        logger.warn(
+          {
+            attachmentId: params.id,
+            filename: params.filename,
+            mimeType: params.mimeType,
+            reason: scanResult.reason ?? "unknown",
+          },
+          "Attachment quarantined by malware scanner"
+        )
+      }
+
+      const updated = await AttachmentRepository.findById(client, attachment.id)
+      if (!updated) {
+        throw new Error(`Attachment not found after safety update: ${attachment.id}`)
+      }
+      return updated
     })
   }
 

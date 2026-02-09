@@ -1,7 +1,6 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { StreamEventRepository, StreamEvent } from "../streams"
-import type { EventType, SourceItem } from "@threa/types"
 import { StreamRepository } from "../streams"
 import { StreamMemberRepository } from "../streams"
 import { MessageRepository, Message } from "./repository"
@@ -11,7 +10,7 @@ import { StreamPersonaParticipantRepository } from "../agents"
 import { eventId, messageId } from "../../lib/id"
 import { serializeBigInt } from "../../lib/serialization"
 import { messagesTotal } from "../../lib/observability"
-import type { JSONContent } from "@threa/types"
+import { AttachmentSafetyStatuses, type EventType, type SourceItem, type JSONContent } from "@threa/types"
 
 // Event payloads
 export interface AttachmentSummary {
@@ -121,10 +120,15 @@ export class EventService {
         const attachments = await AttachmentRepository.findByIds(client, params.attachmentIds)
         const allValid =
           attachments.length === params.attachmentIds.length &&
-          attachments.every((a) => a.workspaceId === params.workspaceId && a.messageId === null)
+          attachments.every(
+            (a) =>
+              a.workspaceId === params.workspaceId &&
+              a.messageId === null &&
+              a.safetyStatus === AttachmentSafetyStatuses.CLEAN
+          )
 
         if (!allValid) {
-          throw new Error("Invalid attachment IDs: must be unattached and belong to this workspace")
+          throw new Error("Invalid attachment IDs: must be clean, unattached, and belong to this workspace")
         }
 
         attachmentSummaries = attachments.map((a) => ({
