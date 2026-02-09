@@ -452,11 +452,11 @@ export class StreamService {
   }
 
   async getMembership(streamId: string, memberId: string): Promise<StreamMember | null> {
-    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamAndMember(client, streamId, memberId))
+    return StreamMemberRepository.findByStreamAndMember(this.pool, streamId, memberId)
   }
 
   async getMembershipsBatch(streamIds: string[], memberId: string): Promise<StreamMember[]> {
-    return withClient(this.pool, (client) => StreamMemberRepository.findByStreamsAndMember(client, streamIds, memberId))
+    return StreamMemberRepository.findByStreamsAndMember(this.pool, streamIds, memberId)
   }
 
   // TODO: This is a permission check masquerading as a membership check. "isMember" is

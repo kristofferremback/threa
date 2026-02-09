@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withClient, withTransaction } from "../../db"
+import { withTransaction } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
 import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository, EmojiUsageRepository } from "../../repositories"
@@ -121,6 +121,6 @@ export class WorkspaceService {
   }
 
   async getEmojiWeights(workspaceId: string, memberId: string): Promise<Record<string, number>> {
-    return withClient(this.pool, (client) => EmojiUsageRepository.getWeights(client, workspaceId, memberId))
+    return EmojiUsageRepository.getWeights(this.pool, workspaceId, memberId)
   }
 }
