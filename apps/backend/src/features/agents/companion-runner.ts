@@ -193,7 +193,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
     })
 
     // Get LangChain model from AI wrapper
-    const { model, effectiveModel } = await ai.getLangChainModel(modelId, {
+    const { model, effectiveModel, budgetMetadata } = await ai.getLangChainModel(modelId, {
       workspaceId,
       memberId: invokingMemberId,
       sessionId,
@@ -315,6 +315,7 @@ export class LangGraphResponseGenerator implements ResponseGenerator {
                   model_id: parsedModel.modelId,
                   model_provider: parsedModel.modelProvider,
                   model_name: parsedModel.modelName,
+                  ...budgetMetadata,
                 },
               }),
               // Cost tracking callback records usage automatically when handleLLMEnd fires

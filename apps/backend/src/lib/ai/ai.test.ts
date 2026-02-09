@@ -197,8 +197,20 @@ describe("budget enforcement", () => {
       },
     })
 
-    const { effectiveModel } = await ai.getLangChainModel("openrouter:openai/gpt-5", { workspaceId: "ws_999" })
+    const { effectiveModel, budgetMetadata } = await ai.getLangChainModel("openrouter:openai/gpt-5", {
+      workspaceId: "ws_999",
+    })
     expect(effectiveModel).toBe("openrouter:openai/gpt-5-mini")
+    expect(budgetMetadata).toMatchObject({
+      budget_policy_checked: true,
+      budget_policy_reason: "soft_limit",
+      budget_model_requested: "openrouter:openai/gpt-5",
+      budget_model_effective: "openrouter:openai/gpt-5-mini",
+      budget_model_degraded: true,
+      budget_percent_used: 0.85,
+      budget_current_usage_usd: 85,
+      budget_limit_usd: 100,
+    })
   })
 })
 

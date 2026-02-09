@@ -258,6 +258,7 @@ export type RepairFunction = (args: { text: string }) => Promise<string> | strin
 export interface LangChainModelResult {
   model: ChatOpenAI
   effectiveModel: string
+  budgetMetadata: Record<string, string | number | boolean>
 }
 
 export interface AI {
@@ -280,6 +281,17 @@ export interface AI {
 
   // Parsing
   parseModel(modelString: string): ParsedModel
+}
+
+interface BudgetPolicyDecision {
+  requestedModel: string
+  effectiveModel: string
+  reason: "within_budget" | "soft_limit" | "not_checked"
+  policyChecked: boolean
+  modelDegraded: boolean
+  currentUsageUsd?: number
+  budgetUsd?: number
+  percentUsed?: number
 }
 
 // -----------------------------------------------------------------------------
@@ -388,13 +400,19 @@ export function createAI(config: AIConfig): AI {
   // Create cost-capturing fetch from our CostTracker instance
   const costCapturingFetch = costTracker.createInterceptingFetch()
 
-  async function applyBudgetPolicy(params: {
+  async function resolveBudgetPolicy(params: {
     modelString: string
     context?: CostContext
     functionId: string
-  }): Promise<string> {
+  }): Promise<BudgetPolicyDecision> {
     if (!config.budgetEnforcer || !params.context?.workspaceId) {
-      return params.modelString
+      return {
+        requestedModel: params.modelString,
+        effectiveModel: params.modelString,
+        reason: "not_checked",
+        policyChecked: false,
+        modelDegraded: false,
+      }
     }
 
     const status = await config.budgetEnforcer.checkBudget(params.context.workspaceId, params.modelString)
@@ -432,10 +450,55 @@ export function createAI(config: AIConfig): AI {
         },
         "Applying budget-based model degradation before AI call"
       )
-      return status.recommendedModel
+      return {
+        requestedModel: params.modelString,
+        effectiveModel: status.recommendedModel,
+        reason: "soft_limit",
+        policyChecked: true,
+        modelDegraded: true,
+        currentUsageUsd: status.currentUsageUsd,
+        budgetUsd: status.budgetUsd,
+        percentUsed: status.percentUsed,
+      }
     }
 
-    return params.modelString
+    return {
+      requestedModel: params.modelString,
+      effectiveModel: params.modelString,
+      reason: "within_budget",
+      policyChecked: true,
+      modelDegraded: false,
+      currentUsageUsd: status.currentUsageUsd,
+      budgetUsd: status.budgetUsd,
+      percentUsed: status.percentUsed,
+    }
+  }
+
+  function buildBudgetTelemetryMetadata(
+    decision: BudgetPolicyDecision
+  ): Record<string, string | number | boolean | undefined> {
+    return {
+      budget_policy_checked: decision.policyChecked,
+      budget_policy_reason: decision.reason,
+      budget_model_requested: decision.requestedModel,
+      budget_model_effective: decision.effectiveModel,
+      budget_model_degraded: decision.modelDegraded,
+      budget_percent_used: decision.percentUsed,
+      budget_current_usage_usd: decision.currentUsageUsd,
+      budget_limit_usd: decision.budgetUsd,
+    }
+  }
+
+  function compactMetadata(
+    metadata: Record<string, string | number | boolean | undefined>
+  ): Record<string, string | number | boolean> {
+    const compact: Record<string, string | number | boolean> = {}
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value !== undefined) {
+        compact[key] = value
+      }
+    }
+    return compact
   }
 
   function createBudgetAwareLangChainFetch(params: {
@@ -461,15 +524,15 @@ export function createAI(config: AIConfig): AI {
         }
       }
 
-      const effectiveModelString = await applyBudgetPolicy({
+      const budgetDecision = await resolveBudgetPolicy({
         modelString: requestedModelString,
         context: params.context,
         functionId: "langchain-model-invoke",
       })
 
       let nextInit = init
-      if (requestBodyObject && effectiveModelString !== requestedModelString) {
-        const { modelId: effectiveModelId } = parseModelId(effectiveModelString)
+      if (requestBodyObject && budgetDecision.effectiveModel !== requestedModelString) {
+        const { modelId: effectiveModelId } = parseModelId(budgetDecision.effectiveModel)
         nextInit = {
           ...init,
           body: JSON.stringify({
@@ -484,13 +547,13 @@ export function createAI(config: AIConfig): AI {
   }
 
   async function getLangChainModel(modelString: string, context?: CostContext): Promise<LangChainModelResult> {
-    const initialEffectiveModelString = await applyBudgetPolicy({
+    const initialBudgetDecision = await resolveBudgetPolicy({
       modelString,
       context,
       functionId: "langchain-model",
     })
 
-    const { provider, modelId } = parseModelId(initialEffectiveModelString)
+    const { provider, modelId } = parseModelId(initialBudgetDecision.effectiveModel)
 
     switch (provider) {
       case "openrouter":
@@ -507,18 +570,19 @@ export function createAI(config: AIConfig): AI {
               // Intercept every request to enforce budget policy and capture usage
               fetch: createBudgetAwareLangChainFetch({
                 context,
-                fallbackModelString: initialEffectiveModelString,
+                fallbackModelString: initialBudgetDecision.effectiveModel,
               }),
             },
           }),
-          effectiveModel: initialEffectiveModelString,
+          effectiveModel: initialBudgetDecision.effectiveModel,
+          budgetMetadata: compactMetadata(buildBudgetTelemetryMetadata(initialBudgetDecision)),
         }
       default:
         throw new Error(`Unsupported LangChain provider: "${provider}". Currently supported: openrouter`)
     }
   }
 
-  function buildTelemetry(telemetry?: TelemetryConfig, modelString?: string) {
+  function buildTelemetry(telemetry?: TelemetryConfig, modelString?: string, budgetDecision?: BudgetPolicyDecision) {
     if (!telemetry) return undefined
 
     // Include parsed model info in metadata for Langfuse model matching
@@ -532,11 +596,14 @@ export function createAI(config: AIConfig): AI {
       }
     }
 
+    const budgetMetadata = budgetDecision ? buildBudgetTelemetryMetadata(budgetDecision) : {}
+
     return {
       isEnabled: true,
       functionId: telemetry.functionId,
       metadata: {
         ...modelMetadata,
+        ...budgetMetadata,
         ...telemetry.metadata,
       },
     } as const
@@ -633,11 +700,12 @@ export function createAI(config: AIConfig): AI {
     costTracker,
 
     async generateText(options) {
-      const effectiveModel = await applyBudgetPolicy({
+      const budgetDecision = await resolveBudgetPolicy({
         modelString: options.model,
         context: options.context,
         functionId: options.telemetry?.functionId ?? "generateText",
       })
+      const effectiveModel = budgetDecision.effectiveModel
       const model = getLanguageModel(effectiveModel)
       const response = await aiGenerateText({
         model,
@@ -647,7 +715,7 @@ export function createAI(config: AIConfig): AI {
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel),
+        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
 
       const usage = extractUsageWithCost(response)
@@ -672,11 +740,12 @@ export function createAI(config: AIConfig): AI {
     },
 
     async generateObject<T extends z.ZodType>(options: GenerateObjectOptions<T>): Promise<ObjectResult<z.infer<T>>> {
-      const effectiveModel = await applyBudgetPolicy({
+      const budgetDecision = await resolveBudgetPolicy({
         modelString: options.model,
         context: options.context,
         functionId: options.telemetry?.functionId ?? "generateObject",
       })
+      const effectiveModel = budgetDecision.effectiveModel
       const model = getLanguageModel(effectiveModel)
       const repair = options.repair === false ? undefined : (options.repair ?? defaultRepair)
 
@@ -689,7 +758,7 @@ export function createAI(config: AIConfig): AI {
         maxOutputTokens: options.maxTokens,
         temperature: options.temperature,
         experimental_repairText: repair,
-        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel),
+        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
 
       const usage = extractUsageWithCost(response)
@@ -716,17 +785,18 @@ export function createAI(config: AIConfig): AI {
     },
 
     async embed(options) {
-      const effectiveModel = await applyBudgetPolicy({
+      const budgetDecision = await resolveBudgetPolicy({
         modelString: options.model,
         context: options.context,
         functionId: options.telemetry?.functionId ?? "embed",
       })
+      const effectiveModel = budgetDecision.effectiveModel
       const model = getEmbeddingModel(effectiveModel)
       const response = await aiEmbed({
         model,
         value: options.value,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel),
+        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
 
       const usage = extractUsageWithCost(response)
@@ -748,17 +818,18 @@ export function createAI(config: AIConfig): AI {
     },
 
     async embedMany(options) {
-      const effectiveModel = await applyBudgetPolicy({
+      const budgetDecision = await resolveBudgetPolicy({
         modelString: options.model,
         context: options.context,
         functionId: options.telemetry?.functionId ?? "embedMany",
       })
+      const effectiveModel = budgetDecision.effectiveModel
       const model = getEmbeddingModel(effectiveModel)
       const response = await aiEmbedMany({
         model,
         values: options.values,
         // @ts-expect-error AI SDK telemetry types are stricter than needed; our buildTelemetry output is compatible at runtime
-        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel),
+        experimental_telemetry: buildTelemetry(options.telemetry, effectiveModel, budgetDecision),
       })
 
       const usage = extractUsageWithCost(response)
