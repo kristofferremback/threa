@@ -12,7 +12,7 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test"
 import { LLMBoundaryExtractor } from "./llm-extractor"
 import type { ExtractionContext, ConversationSummary } from "./types"
-import type { Message } from "../../../repositories"
+import type { Message } from "../../messaging"
 import type { AI } from "../../../lib/ai/ai"
 import type { ConfigResolver, ComponentConfig } from "../../../lib/ai/config-resolver"
 

@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
 import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"
 import { logger } from "../../lib/logger"

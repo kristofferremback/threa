@@ -1,7 +1,9 @@
 import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test"
 import { MessageFormatter } from "./message-formatter"
-import { MemberRepository, PersonaRepository } from "../../repositories"
-import type { Message, AttachmentWithExtraction } from "../../repositories"
+import { MemberRepository } from "../../features/workspaces"
+import { PersonaRepository } from "../../features/agents"
+import type { Message } from "../../features/messaging"
+import type { AttachmentWithExtraction } from "../../features/attachments"
 import type { Querier } from "../../db"
 
 const mockFindMembersByIds = mock(() => Promise.resolve([] as { id: string; name: string }[]))

@@ -1,13 +1,10 @@
 import type { Pool, PoolClient } from "pg"
 import { withTransaction, withClient } from "../../db"
-import {
-  StreamStateRepository,
-  ConversationRepository,
-  MessageRepository,
-  OutboxRepository,
-  MemberRepository,
-  type Message,
-} from "../../repositories"
+import { StreamStateRepository } from "../streams"
+import { ConversationRepository } from "../conversations"
+import { MessageRepository, type Message } from "../messaging"
+import { OutboxRepository } from "../../lib/outbox"
+import { MemberRepository } from "../workspaces"
 import { MemoRepository, type Memo } from "./repository"
 import { PendingItemRepository, type PendingMemoItem } from "./pending-item-repository"
 import { MemoClassifier } from "./classifier"

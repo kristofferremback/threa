@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
-import { OutboxRepository, StreamStateRepository, StreamRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
+import { StreamStateRepository, StreamRepository } from "../streams"
 import { PendingItemRepository } from "./pending-item-repository"
 import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { pendingItemId } from "../../lib/id"

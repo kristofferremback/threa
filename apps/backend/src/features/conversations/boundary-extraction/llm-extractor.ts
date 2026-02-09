@@ -3,7 +3,7 @@ import type { AI } from "../../../lib/ai/ai"
 import type { ConfigResolver } from "../../../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../../../lib/ai/config-resolver"
 import type { BoundaryExtractor, ExtractionContext, ExtractionResult } from "./types"
-import type { Message } from "../../../repositories"
+import type { Message } from "../../messaging"
 import { logger } from "../../../lib/logger"
 import { StreamTypes } from "@threa/types"
 import {

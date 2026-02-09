@@ -9,7 +9,8 @@
 
 import type { Pool, PoolClient } from "pg"
 import { withClient } from "../../db"
-import { AIBudgetRepository, AIUsageRepository } from "../../repositories"
+import { AIBudgetRepository } from "./budget-repository"
+import { AIUsageRepository } from "./usage-repository"
 import { aiBudgetId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 

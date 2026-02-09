@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withClient } from "../../db"
 import { ConversationRepository } from "./repository"
-import { MessageRepository, type Message } from "../../repositories"
+import { MessageRepository, type Message } from "../messaging"
 import { addStalenessFields, type ConversationWithStaleness } from "./staleness"
 import type { ConversationStatus } from "@threa/types"
 

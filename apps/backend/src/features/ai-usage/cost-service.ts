@@ -1,12 +1,8 @@
 import type { Pool, PoolClient } from "pg"
 import { withClient, withTransaction } from "../../db"
-import {
-  AIUsageRepository,
-  AIBudgetRepository,
-  OutboxRepository,
-  type UsageSummary,
-  type AIUsageOrigin,
-} from "../../repositories"
+import { AIUsageRepository, type UsageSummary, type AIUsageOrigin } from "./usage-repository"
+import { AIBudgetRepository } from "./budget-repository"
+import { OutboxRepository } from "../../lib/outbox"
 import { aiUsageId, aiAlertId } from "../../lib/id"
 import { logger } from "../../lib/logger"
 import type { UsageWithCost, ParsedModel } from "../../lib/ai/ai"

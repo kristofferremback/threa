@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from "pg"
 import { sql, withTransaction, withClient } from "../../db"
 import { ConversationRepository, type Conversation } from "./repository"
-import { MessageRepository, type Message } from "../../repositories"
+import { MessageRepository, type Message } from "../messaging"
 import { StreamRepository, type Stream } from "../streams"
 import { OutboxRepository } from "../../lib/outbox"
 import type { BoundaryExtractor, ExtractionContext, ConversationSummary } from "./boundary-extraction/types"

@@ -4,7 +4,7 @@ import { JobQueues } from "../../lib/queue"
 import { AgentTriggers } from "@threa/types"
 import type { QueueManager } from "../../lib/queue"
 import type { PersonaAgentInput, PersonaAgentResult } from "./persona-agent"
-import { StreamEventRepository } from "../../repositories"
+import { StreamEventRepository } from "../streams"
 import { logger } from "../../lib/logger"
 
 /** Interface for any agent that can handle persona agent jobs */

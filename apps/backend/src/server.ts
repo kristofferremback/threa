@@ -97,7 +97,7 @@ import {
   type ExcelProcessJobData,
 } from "./lib/queue"
 import { ProcessingStatuses } from "@threa/types"
-import { AttachmentRepository } from "./repositories"
+import { AttachmentRepository } from "./features/attachments"
 import { ulid } from "ulid"
 import { loadConfig } from "./lib/env"
 import { createCorsOriginChecker } from "./lib/cors"

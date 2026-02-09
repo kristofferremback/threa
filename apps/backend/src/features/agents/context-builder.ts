@@ -10,14 +10,9 @@ import type {
   DiagramData,
 } from "@threa/types"
 import { StreamTypes, AuthorTypes, ExtractionSourceTypes, PdfSizeTiers, InjectionStrategies } from "@threa/types"
-import {
-  StreamRepository,
-  StreamMemberRepository,
-  MessageRepository,
-  MemberRepository,
-  type Stream,
-  type Message,
-} from "../../repositories"
+import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
+import { MessageRepository, type Message } from "../messaging"
+import { MemberRepository } from "../workspaces"
 import { AttachmentRepository } from "../attachments"
 import { AttachmentExtractionRepository, type PdfMetadata, type PdfSection } from "../attachments"
 import { getUtcOffset, type TemporalContext, type ParticipantTemporal } from "../../lib/temporal"

@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, isOutboxEventType } from "../../repositories"
+import { OutboxRepository, isOutboxEventType } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { JobQueues } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"

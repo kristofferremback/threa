@@ -4,7 +4,7 @@ import { withTransaction } from "./setup"
 import { EventService } from "../../src/services/event-service"
 import { StreamEventRepository } from "../../src/repositories/stream-event-repository"
 import { MessageRepository } from "../../src/repositories/message-repository"
-import { OutboxRepository } from "../../src/repositories/outbox-repository"
+import { OutboxRepository } from "../../src/lib/outbox"
 import { streamId, userId, workspaceId } from "../../src/lib/id"
 import { setupTestDatabase, testMessageContent } from "./setup"
 

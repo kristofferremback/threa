@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type ReactionOutboxPayload } from "../../repositories"
+import { OutboxRepository, type ReactionOutboxPayload } from "../../lib/outbox"
 import { EmojiUsageRepository } from "./usage-repository"
 import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { AuthorTypes } from "@threa/types"

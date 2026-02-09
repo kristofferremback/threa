@@ -10,7 +10,8 @@
  */
 
 import type { Querier } from "../../../db"
-import { StreamRepository, MemberRepository } from "../../../repositories"
+import { StreamRepository } from "../../streams"
+import { MemberRepository } from "../../workspaces"
 import { logger } from "../../../lib/logger"
 
 /**

@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
 import { UserPreferencesRepository } from "./repository"
-import { OutboxRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
 import {
   type UserPreferences,
   type UpdateUserPreferencesInput,

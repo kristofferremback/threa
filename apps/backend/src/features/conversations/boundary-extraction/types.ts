@@ -1,4 +1,4 @@
-import type { Message } from "../../../repositories"
+import type { Message } from "../../messaging"
 import type { ConversationStatus } from "@threa/types"
 
 export interface ConversationSummary {

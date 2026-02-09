@@ -1,6 +1,6 @@
 import { Pool } from "pg"
 import { withTransaction } from "../../db"
-import { OutboxRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
 import { AttachmentRepository, type Attachment } from "./repository"
 import { AttachmentExtractionRepository } from "./extraction-repository"
 import type { StorageProvider } from "../../lib/storage/s3-client"

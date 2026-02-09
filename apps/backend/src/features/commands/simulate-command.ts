@@ -3,7 +3,7 @@ import type { Pool } from "pg"
 import type { Command, CommandContext, CommandResult } from "./registry"
 import type { AI } from "../../lib/ai/ai"
 import type { SimulationAgentLike } from "../agents"
-import { PersonaRepository } from "../../repositories"
+import { PersonaRepository } from "../agents"
 import { withClient } from "../../db"
 import { logger } from "../../lib/logger"
 

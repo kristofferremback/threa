@@ -2,7 +2,7 @@ import type { AI } from "../../lib/ai/ai"
 import type { ConfigResolver } from "../../lib/ai/config-resolver"
 import { COMPONENT_PATHS } from "../../lib/ai/config-resolver"
 import { MessageFormatter } from "../../lib/ai/message-formatter"
-import type { Message } from "../../repositories"
+import type { Message } from "../messaging"
 import type { Memo } from "./repository"
 import {
   memoContentSchema,

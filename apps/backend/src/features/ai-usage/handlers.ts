@@ -2,7 +2,8 @@ import { z } from "zod"
 import type { Request, Response } from "express"
 import type { Pool } from "pg"
 import { withClient } from "../../db"
-import { AIUsageRepository, AIBudgetRepository } from "../../repositories"
+import { AIUsageRepository } from "./usage-repository"
+import { AIBudgetRepository } from "./budget-repository"
 import { aiBudgetId } from "../../lib/id"
 
 const updateBudgetSchema = z.object({

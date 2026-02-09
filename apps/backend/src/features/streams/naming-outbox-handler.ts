@@ -1,5 +1,5 @@
 import type { Pool } from "pg"
-import { OutboxRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
 import { StreamRepository } from "./repository"
 import { parseMessageCreatedPayload } from "../../lib/outbox"
 import { needsAutoNaming } from "./display-name"

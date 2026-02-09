@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:tes
 import { Pool } from "pg"
 import { setupTestDatabase } from "./setup"
 import { CursorLock, ensureListener, type ProcessResult, type CursorLockConfig } from "../../src/lib/cursor-lock"
-import { OutboxRepository } from "../../src/repositories"
+import { OutboxRepository } from "../../src/lib/outbox"
 
 describe("CursorLock", () => {
   let pool: Pool

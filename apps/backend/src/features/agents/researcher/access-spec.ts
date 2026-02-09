@@ -1,8 +1,8 @@
 import type { Querier } from "../../../db"
 import type { StreamType } from "@threa/types"
 import { StreamTypes, Visibilities } from "@threa/types"
-import { StreamRepository, type Stream } from "../../../repositories"
-import { StreamMemberRepository } from "../../../repositories"
+import { StreamRepository, type Stream } from "../../streams"
+import { StreamMemberRepository } from "../../streams"
 
 /**
  * Specifies what streams an agent can access based on invocation context.

@@ -1,7 +1,7 @@
 import { Pool } from "pg"
 import { withTransaction, withClient } from "../../db"
 import { StreamRepository } from "./repository"
-import { MessageRepository } from "../../repositories"
+import { MessageRepository } from "../messaging"
 import { OutboxRepository } from "../../lib/outbox"
 import { AttachmentRepository, type AttachmentWithExtraction } from "../attachments"
 import type { AI } from "../../lib/ai/ai"

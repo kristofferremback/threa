@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express"
 import type { Pool } from "pg"
-import { MemberRepository, type Member, WorkspaceRepository } from "../repositories"
+import { MemberRepository, type Member, WorkspaceRepository } from "../features/workspaces"
 
 declare global {
   namespace Express {

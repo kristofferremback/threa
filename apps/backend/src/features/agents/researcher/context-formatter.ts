@@ -1,5 +1,7 @@
 import type { Querier } from "../../../db"
-import { MemberRepository, StreamRepository, type Memo } from "../../../repositories"
+import { MemberRepository } from "../../workspaces"
+import { StreamRepository } from "../../streams"
+import type { Memo } from "../../memos"
 import { PersonaRepository } from "../persona-repository"
 import { formatRelativeDate } from "../../../lib/temporal"
 

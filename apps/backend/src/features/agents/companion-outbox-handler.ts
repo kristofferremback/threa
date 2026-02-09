@@ -1,6 +1,6 @@
 import type { Pool } from "pg"
-import { OutboxRepository } from "../../repositories"
-import { StreamRepository } from "../../repositories"
+import { OutboxRepository } from "../../lib/outbox"
+import { StreamRepository } from "../streams"
 import { PersonaRepository } from "./persona-repository"
 import { AgentSessionRepository, SessionStatuses } from "./session-repository"
 import { parseMessageCreatedPayload } from "../../lib/outbox"

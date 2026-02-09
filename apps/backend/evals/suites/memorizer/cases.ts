@@ -8,7 +8,7 @@
  */
 
 import type { EvalCase } from "../../framework/types"
-import type { Message } from "../../../src/repositories"
+import type { Message } from "../../../src/features/messaging"
 
 /**
  * Input for a memorizer case.

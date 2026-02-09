@@ -1,7 +1,7 @@
 import type { Pool } from "pg"
 import { JobQueues, type JobHandler, type MemoBatchCheckJobData, type MemoBatchProcessJobData } from "../../lib/queue"
 import type { QueueManager } from "../../lib/queue"
-import { StreamStateRepository } from "../../repositories"
+import { StreamStateRepository } from "../streams"
 import type { MemoServiceLike } from "./service"
 import { logger } from "../../lib/logger"
 
