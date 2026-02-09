@@ -124,12 +124,21 @@ describe("ConversationSummaryService", () => {
 
     expect(listByRangeSpy).toHaveBeenCalledWith({}, "stream_1", 51n, 79n, { limit: 40 })
     const firstGenerateObjectCall = mockGenerateObject.mock.calls[0]?.[0] as
-      | { context?: unknown; telemetry?: unknown }
+      | { context?: unknown; telemetry?: unknown; repair?: ((args: { text: string }) => string) | false }
       | undefined
     expect(firstGenerateObjectCall).toMatchObject({
       context: { workspaceId: "ws_1", origin: "system" },
       telemetry: { functionId: "companion-conversation-summary-update" },
     })
+    const repairFn = firstGenerateObjectCall?.repair
+    expect(typeof repairFn).toBe("function")
+    if (typeof repairFn !== "function") {
+      throw new Error("Expected repair function to be provided")
+    }
+    const repaired = await repairFn({
+      text: "**Rolling Summary:**\n\nUser asked about fish identification.",
+    })
+    expect(repaired).toBe(JSON.stringify({ summary: "User asked about fish identification." }))
   })
 
   test("returns existing summary without AI call when no new dropped messages need summarization", async () => {
@@ -158,6 +167,36 @@ describe("ConversationSummaryService", () => {
 
     expect(summary).toBe("Existing summary")
     expect(mockGenerateObject).not.toHaveBeenCalled()
+    expect(upsertSummarySpy).not.toHaveBeenCalled()
+  })
+
+  test("does not throw when summary generation fails", async () => {
+    const service = new ConversationSummaryService({ ai: mockAI })
+    const keptMessages = [makeMessage(30n, "Recent message")]
+
+    findSummarySpy.mockResolvedValue({
+      id: "agsum_existing",
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      summary: "Existing summary",
+      lastSummarizedSequence: 10n,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    })
+    listMessagesSpy.mockResolvedValue([makeMessage(29n, "Older boundary message")])
+    listByRangeSpy.mockResolvedValue([makeMessage(11n, "Dropped message that needs summarization")])
+    mockGenerateObject.mockRejectedValueOnce(new Error("No object generated"))
+
+    const summary = await service.updateForContext({
+      db: {} as any,
+      workspaceId: "ws_1",
+      streamId: "stream_1",
+      personaId: "persona_1",
+      keptMessages,
+    })
+
+    expect(summary).toBe("Existing summary")
     expect(upsertSummarySpy).not.toHaveBeenCalled()
   })
 })

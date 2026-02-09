@@ -5,6 +5,8 @@ import { agentConversationSummaryId } from "../../lib/id"
 import type { AI } from "../../lib/ai/ai"
 import { ConversationSummaryRepository } from "./conversation-summary-repository"
 import { COMPANION_SUMMARY_MODEL_ID, COMPANION_SUMMARY_TEMPERATURE } from "./companion/config"
+import { stripMarkdownFences } from "../../lib/ai/text-utils"
+import { logger } from "../../lib/logger"
 
 const SUMMARY_BATCH_SIZE = 40
 const MAX_BATCHES_PER_UPDATE = 5
@@ -63,11 +65,26 @@ export class ConversationSummaryService {
       })
       if (batch.length === 0) break
 
-      currentSummary = await this.summarizeBatch({
-        workspaceId,
-        existingSummary: currentSummary,
-        newMessages: batch,
-      })
+      try {
+        currentSummary = await this.summarizeBatch({
+          workspaceId,
+          existingSummary: currentSummary,
+          newMessages: batch,
+        })
+      } catch (err) {
+        logger.warn(
+          {
+            err,
+            workspaceId,
+            streamId,
+            personaId,
+            cursor: cursor.toString(),
+            maxSequenceToSummarize: maxSequenceToSummarize.toString(),
+          },
+          "Rolling conversation summary failed; continuing without summary update"
+        )
+        break
+      }
       lastSummarizedSequence = batch[batch.length - 1].sequence
 
       await ConversationSummaryRepository.upsert(db, {
@@ -123,6 +140,7 @@ ${messageText}
 Return the fully updated rolling summary.`,
         },
       ],
+      repair: async ({ text }) => JSON.stringify({ summary: await this.normalizeSummaryText(text) }),
       telemetry: { functionId: "companion-conversation-summary-update" },
       context: { workspaceId, origin: "system" },
     })
@@ -137,5 +155,12 @@ Return the fully updated rolling summary.`,
         ? `${message.contentMarkdown.slice(0, MAX_MESSAGE_CHARS)}...`
         : message.contentMarkdown
     return `[#${message.sequence.toString()}] ${message.authorType}:${message.authorId} ${truncated}`
+  }
+
+  private async normalizeSummaryText(text: string): Promise<string> {
+    let summary = (await stripMarkdownFences({ text })).trim()
+    summary = summary.replace(/^\*\*rolling summary:?\*\*\s*/i, "").trim()
+    summary = summary.replace(/^rolling summary:?\s*/i, "").trim()
+    return summary.length > 1200 ? summary.slice(0, 1200) : summary
   }
 }
