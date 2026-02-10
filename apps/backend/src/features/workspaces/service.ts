@@ -9,6 +9,8 @@ import { PersonaRepository, type Persona } from "../agents"
 import { workspaceId, memberId as generateMemberId } from "../../lib/id"
 import { generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
+import type { NotificationService } from "../notifications"
+import { logger } from "../../lib/logger"
 
 export interface CreateWorkspaceParams {
   name: string
@@ -16,7 +18,13 @@ export interface CreateWorkspaceParams {
 }
 
 export class WorkspaceService {
-  constructor(private pool: Pool) {}
+  private pool: Pool
+  private notificationService: NotificationService
+
+  constructor(deps: { pool: Pool; notificationService: NotificationService }) {
+    this.pool = deps.pool
+    this.notificationService = deps.notificationService
+  }
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
     return WorkspaceRepository.findById(this.pool, id)
@@ -31,11 +39,13 @@ export class WorkspaceService {
   }
 
   async createWorkspace(params: CreateWorkspaceParams): Promise<Workspace> {
-    return withTransaction(this.pool, async (client) => {
+    let memberId: string | null = null
+
+    const workspace = await withTransaction(this.pool, async (client) => {
       const id = workspaceId()
       const slug = await generateUniqueSlug(params.name, (slug) => WorkspaceRepository.slugExists(client, slug))
 
-      const workspace = await WorkspaceRepository.insert(client, {
+      const ws = await WorkspaceRepository.insert(client, {
         id,
         name: params.name,
         slug,
@@ -48,16 +58,30 @@ export class WorkspaceService {
         ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, id, s))
         : `member-${generateMemberId().slice(7, 15)}`
 
+      const mId = generateMemberId()
       await WorkspaceRepository.addMember(client, {
-        id: generateMemberId(),
+        id: mId,
         workspaceId: id,
         userId: params.createdBy,
         slug: memberSlug,
         role: "owner",
       })
+      memberId = mId
 
-      return workspace
+      return ws
     })
+
+    // Provision system notification stream outside transaction (INV-41)
+    if (memberId) {
+      this.notificationService.provisionSystemStream(workspace.id, memberId).catch((err) => {
+        logger.error(
+          { err, workspaceId: workspace.id, memberId },
+          "Failed to provision system stream on workspace creation"
+        )
+      })
+    }
+
+    return workspace
   }
 
   async addMember(
@@ -65,13 +89,13 @@ export class WorkspaceService {
     userId: string,
     role: WorkspaceMember["role"] = "member"
   ): Promise<WorkspaceMember> {
-    return withTransaction(this.pool, async (client) => {
+    const member = await withTransaction(this.pool, async (client) => {
       const user = await UserRepository.findById(client, userId)
       const memberSlug = user
         ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
         : `member-${generateMemberId().slice(7, 15)}`
 
-      const member = await WorkspaceRepository.addMember(client, {
+      const m = await WorkspaceRepository.addMember(client, {
         id: generateMemberId(),
         workspaceId,
         userId,
@@ -80,7 +104,7 @@ export class WorkspaceService {
       })
 
       // Look up full member for outbox event
-      const fullMember = await MemberRepository.findById(client, member.id)
+      const fullMember = await MemberRepository.findById(client, m.id)
       if (fullMember) {
         await OutboxRepository.insert(client, "workspace_member:added", {
           workspaceId,
@@ -88,8 +112,15 @@ export class WorkspaceService {
         })
       }
 
-      return member
+      return m
     })
+
+    // Provision system notification stream outside transaction (INV-41)
+    this.notificationService.provisionSystemStream(workspaceId, member.id).catch((err) => {
+      logger.error({ err, workspaceId, memberId: member.id }, "Failed to provision system stream on member add")
+    })
+
+    return member
   }
 
   async removeMember(workspaceId: string, memberId: string): Promise<void> {

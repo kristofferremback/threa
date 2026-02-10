@@ -170,7 +170,6 @@ export async function startServer(): Promise<ServerInstance> {
   const checkpointer = await createPostgresCheckpointer(pool)
 
   const userService = new UserService(pool)
-  const workspaceService = new WorkspaceService(pool)
   const streamService = new StreamService(pool)
   const eventService = new EventService(pool)
   const authService = config.useStubAuth ? new StubAuthService() : new WorkosAuthService(config.workos)
@@ -263,6 +262,9 @@ export async function startServer(): Promise<ServerInstance> {
     })
   }
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
+
+  const notificationService = new NotificationService({ pool, createMessage })
+  const workspaceService = new WorkspaceService({ pool, notificationService })
 
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = config.useStubAI
@@ -498,7 +500,6 @@ export async function startServer(): Promise<ServerInstance> {
   const commandHandler = new CommandHandler(pool, jobQueue)
   const mentionInvokeHandler = new MentionInvokeHandler(pool, jobQueue)
   const attachmentUploadedHandler = new AttachmentUploadedHandler(pool, jobQueue)
-  const notificationService = new NotificationService({ pool, createMessage })
   const notificationOutboxHandler = new NotificationOutboxHandler(pool, notificationService)
   const outboxHandlers = [
     broadcastHandler,
