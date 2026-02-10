@@ -234,9 +234,13 @@ export const WorkspaceRepository = {
     if (sets.length === 0) return null
 
     values.push(memberId)
+    let whereClause = `WHERE id = $${paramIndex}`
+    if (params.setupCompleted === true) {
+      whereClause += ` AND setup_completed = false`
+    }
     const query = `
       UPDATE workspace_members SET ${sets.join(", ")}
-      WHERE id = $${paramIndex}
+      ${whereClause}
       RETURNING id, workspace_id, user_id, role, slug, display_name, timezone, locale, setup_completed, joined_at
     `
     const result = await db.query<WorkspaceMemberRow>(query, values)

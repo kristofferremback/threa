@@ -183,9 +183,13 @@ export class InvitationService {
     const acceptedWorkspaceIds: string[] = []
 
     for (const invitation of pending) {
-      const wsId = await this.acceptInvitation(invitation.id, userId)
-      if (wsId) {
-        acceptedWorkspaceIds.push(wsId)
+      try {
+        const wsId = await this.acceptInvitation(invitation.id, userId)
+        if (wsId) {
+          acceptedWorkspaceIds.push(wsId)
+        }
+      } catch (err) {
+        logger.error({ err, invitationId: invitation.id, email }, "Failed to accept invitation")
       }
     }
 

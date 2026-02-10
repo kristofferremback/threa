@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction, type Querier } from "../../db"
+import { withTransaction, withClient } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
 import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository } from "../../lib/outbox"
@@ -159,7 +159,8 @@ export class WorkspaceService {
     workspaceId: string,
     params: { name?: string; slug?: string; timezone: string; locale: string }
   ): Promise<WorkspaceMember> {
-    return withTransaction(this.pool, async (client) => {
+    // Phase 1: Fast reads
+    const { member, user, orgId } = await withClient(this.pool, async (client) => {
       const member = await MemberRepository.findById(client, memberId)
       if (!member || member.workspaceId !== workspaceId) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
@@ -172,9 +173,16 @@ export class WorkspaceService {
       const user = await UserRepository.findById(client, member.userId)
       if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
 
-      // Determine slug
+      const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
+      return { member, user, orgId }
+    })
+
+    // Phase 2: External API call — no DB connection held
+    const enforceEmailSlug = await this.shouldEnforceEmailSlug(orgId, user)
+
+    // Phase 3: Transaction with re-check via WHERE guard on setup_completed
+    return withTransaction(this.pool, async (client) => {
       let slug: string
-      const enforceEmailSlug = await this.shouldEnforceEmailSlug(client, workspaceId, user)
 
       if (enforceEmailSlug) {
         slug = deriveSlugFromEmail(user.email)
@@ -184,7 +192,6 @@ export class WorkspaceService {
         slug = await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
       }
 
-      // Ensure slug uniqueness for derived/provided slugs
       const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
       if (slugExists && slug !== member.slug) {
         slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
@@ -199,10 +206,9 @@ export class WorkspaceService {
       })
 
       if (!updated) {
-        throw new HttpError("Failed to update member", { status: 500, code: "UPDATE_FAILED" })
+        throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
       }
 
-      // Look up full member (with name/email from user join) for outbox event
       const fullMember = await MemberRepository.findById(client, memberId)
       if (fullMember) {
         await OutboxRepository.insert(client, "member:updated", {
@@ -215,11 +221,8 @@ export class WorkspaceService {
     })
   }
 
-  private async shouldEnforceEmailSlug(db: Querier, workspaceId: string, user: User): Promise<boolean> {
-    if (!this.workosOrgService) return false
-
-    const orgId = await WorkspaceRepository.getWorkosOrganizationId(db, workspaceId)
-    if (!orgId) return false
+  private async shouldEnforceEmailSlug(orgId: string | null, user: User): Promise<boolean> {
+    if (!this.workosOrgService || !orgId) return false
 
     const org = await this.workosOrgService.getOrganization(orgId)
     if (!org || org.domains.length === 0) return false
