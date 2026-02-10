@@ -188,6 +188,7 @@ export type {
   // Invitations
   SendInvitationsInput,
   SendInvitationsResponse,
+  InvitationSkipReason,
   CompleteMemberSetupInput,
   // Emojis
   EmojiEntry,

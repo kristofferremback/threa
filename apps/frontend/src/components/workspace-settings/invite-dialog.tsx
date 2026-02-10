@@ -69,7 +69,7 @@ export function InviteDialog({ workspaceId, open, onOpenChange, onSuccess }: Inv
                 <p className="text-sm font-medium">Skipped {result.skipped.length}</p>
                 {result.skipped.map((s, i) => (
                   <p key={i} className="text-sm text-muted-foreground">
-                    {s.email} — {s.reason}
+                    {s.email} — {s.reason === "already_member" ? "Already a member" : "Invitation already pending"}
                   </p>
                 ))}
               </div>

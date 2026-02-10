@@ -156,9 +156,11 @@ export interface SendInvitationsInput {
   role?: "admin" | "member"
 }
 
+export type InvitationSkipReason = "already_member" | "pending_invitation"
+
 export interface SendInvitationsResponse {
   sent: WorkspaceInvitation[]
-  skipped: Array<{ email: string; reason: string }>
+  skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
 export interface CompleteMemberSetupInput {

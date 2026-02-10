@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
+import { withTransaction, withClient, sql } from "../../db"
 import { InvitationRepository, type Invitation } from "./repository"
 import { WorkspaceRepository, MemberRepository } from "../workspaces"
 import { UserRepository } from "../../auth/user-repository"
@@ -10,7 +10,7 @@ import { generateUniqueSlug } from "../../lib/slug"
 import { serializeBigInt } from "../../lib/serialization"
 import { logger } from "../../lib/logger"
 import type { WorkosOrgService } from "../../auth/workos-org-service"
-import type { InvitationStatus } from "@threa/types"
+import type { InvitationSkipReason, InvitationStatus } from "@threa/types"
 
 const INVITATION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
@@ -23,7 +23,7 @@ interface SendInvitationsParams {
 
 interface SendResult {
   sent: Invitation[]
-  skipped: Array<{ email: string; reason: string }>
+  skipped: Array<{ email: string; reason: InvitationSkipReason }>
 }
 
 export class InvitationService {
@@ -37,7 +37,7 @@ export class InvitationService {
     const emails = params.emails.map((e) => e.toLowerCase().trim())
 
     const sent: Invitation[] = []
-    const skipped: Array<{ email: string; reason: string }> = []
+    const skipped: SendResult["skipped"] = []
 
     // Ensure workspace has a WorkOS organization (lazy creation)
     const orgId = await this.ensureWorkosOrganization(workspaceId)
@@ -67,12 +67,12 @@ export class InvitationService {
     for (const email of emails) {
       const user = usersByEmail.get(email)
       if (user && memberUserIds.has(user.id)) {
-        skipped.push({ email, reason: "Already a member" })
+        skipped.push({ email, reason: "already_member" })
         continue
       }
 
       if (pendingEmails.has(email)) {
-        skipped.push({ email, reason: "Invitation already pending" })
+        skipped.push({ email, reason: "pending_invitation" })
         continue
       }
 
@@ -249,21 +249,32 @@ export class InvitationService {
   }
 
   private async ensureWorkosOrganization(workspaceId: string): Promise<string | null> {
-    // Check if workspace already has an org
     const existingOrgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
     if (existingOrgId) return existingOrgId
 
-    // Lazy create
-    const workspace = await WorkspaceRepository.findById(this.pool, workspaceId)
-    if (!workspace) return null
+    // Advisory lock serializes concurrent org creation per workspace.
+    // Holds one connection during the WorkOS API call (~sub-second, one-time per workspace).
+    return withClient(this.pool, async (client) => {
+      const lockKey = `threa_ensure_workos_org_${workspaceId}`
+      await client.query(sql`SELECT pg_advisory_lock(hashtext(${lockKey}))`)
 
-    try {
-      const org = await this.workosOrgService.createOrganization(workspace.name)
-      await WorkspaceRepository.setWorkosOrganizationId(this.pool, workspaceId, org.id)
-      return org.id
-    } catch (error) {
-      logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
-      return null
-    }
+      try {
+        // Re-check after acquiring lock — concurrent caller may have created it
+        const orgId = await WorkspaceRepository.getWorkosOrganizationId(client, workspaceId)
+        if (orgId) return orgId
+
+        const workspace = await WorkspaceRepository.findById(client, workspaceId)
+        if (!workspace) return null
+
+        const org = await this.workosOrgService.createOrganization(workspace.name)
+        await WorkspaceRepository.setWorkosOrganizationId(client, workspaceId, org.id)
+        return org.id
+      } catch (error) {
+        logger.error({ err: error, workspaceId }, "Failed to create WorkOS organization")
+        return null
+      } finally {
+        await client.query(sql`SELECT pg_advisory_unlock(hashtext(${lockKey}))`)
+      }
+    })
   }
 }
