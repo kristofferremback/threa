@@ -46,3 +46,24 @@ describe("loadConfig stub auth safety", () => {
     expect(() => loadConfig()).toThrow("CORS_ALLOWED_ORIGINS is required in production")
   })
 })
+
+describe("loadConfig attachment safety policy", () => {
+  test("enables malware scan by default", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+
+    const config = loadConfig()
+    expect(config.attachments.malwareScanEnabled).toBe(true)
+  })
+
+  test("allows disabling malware scan via env", () => {
+    setBaseEnv()
+    process.env.NODE_ENV = "development"
+    process.env.USE_STUB_AUTH = "true"
+    process.env.ATTACHMENT_MALWARE_SCAN_ENABLED = "false"
+
+    const config = loadConfig()
+    expect(config.attachments.malwareScanEnabled).toBe(false)
+  })
+})

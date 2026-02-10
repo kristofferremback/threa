@@ -1,5 +1,12 @@
 import { sql, type Querier } from "../../db"
-import type { StorageProvider, ProcessingStatus, ExtractionContentType } from "@threa/types"
+import {
+  AttachmentSafetyStatuses,
+  ProcessingStatuses,
+  type StorageProvider,
+  type ProcessingStatus,
+  type ExtractionContentType,
+  type AttachmentSafetyStatus,
+} from "@threa/types"
 
 // Internal row type (snake_case, not exported)
 interface AttachmentRow {
@@ -14,6 +21,7 @@ interface AttachmentRow {
   storage_provider: string
   storage_path: string
   processing_status: string
+  safety_status: string
   created_at: Date
 }
 
@@ -30,6 +38,7 @@ export interface Attachment {
   storageProvider: StorageProvider
   storagePath: string
   processingStatus: ProcessingStatus
+  safetyStatus: AttachmentSafetyStatus
   createdAt: Date
 }
 
@@ -43,6 +52,7 @@ export interface InsertAttachmentParams {
   sizeBytes: number
   storagePath: string
   storageProvider?: StorageProvider
+  safetyStatus?: AttachmentSafetyStatus
 }
 
 // Row type for attachments with extraction joined
@@ -74,6 +84,7 @@ function mapRowToAttachment(row: AttachmentRow): Attachment {
     storageProvider: row.storage_provider as StorageProvider,
     storagePath: row.storage_path,
     processingStatus: row.processing_status as ProcessingStatus,
+    safetyStatus: row.safety_status as AttachmentSafetyStatus,
     createdAt: row.created_at,
   }
 }
@@ -94,7 +105,7 @@ function mapRowToAttachmentWithExtraction(row: AttachmentWithExtractionRow): Att
 const SELECT_FIELDS = `
   id, workspace_id, stream_id, message_id, uploaded_by,
   filename, mime_type, size_bytes,
-  storage_provider, storage_path, processing_status,
+  storage_provider, storage_path, processing_status, safety_status,
   created_at
 `
 
@@ -137,6 +148,13 @@ export const AttachmentRepository = {
     return byMessage
   },
 
+  async findByIdForUpdate(client: Querier, id: string): Promise<Attachment | null> {
+    const result = await client.query<AttachmentRow>(
+      sql`SELECT ${sql.raw(SELECT_FIELDS)} FROM attachments WHERE id = ${id} FOR UPDATE`
+    )
+    return result.rows[0] ? mapRowToAttachment(result.rows[0]) : null
+  },
+
   /**
    * Find attachments with their extractions for a list of message IDs.
    * Returns a map from message ID to attachments with extraction data.
@@ -151,7 +169,7 @@ export const AttachmentRepository = {
       SELECT
         a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
         a.filename, a.mime_type, a.size_bytes,
-        a.storage_provider, a.storage_path, a.processing_status,
+        a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,
@@ -176,7 +194,7 @@ export const AttachmentRepository = {
       INSERT INTO attachments (
         id, workspace_id, stream_id, uploaded_by,
         filename, mime_type, size_bytes,
-        storage_provider, storage_path
+        storage_provider, storage_path, safety_status
       )
       VALUES (
         ${params.id},
@@ -187,7 +205,8 @@ export const AttachmentRepository = {
         ${params.mimeType},
         ${params.sizeBytes},
         ${params.storageProvider ?? "s3"},
-        ${params.storagePath}
+        ${params.storagePath},
+        ${params.safetyStatus ?? AttachmentSafetyStatuses.PENDING_SCAN}
       )
       RETURNING ${sql.raw(SELECT_FIELDS)}
     `)
@@ -204,7 +223,7 @@ export const AttachmentRepository = {
     const result = await client.query(sql`
       UPDATE attachments
       SET message_id = ${messageId}, stream_id = ${streamId}
-      WHERE id = ANY(${attachmentIds}) AND message_id IS NULL
+      WHERE id = ANY(${attachmentIds}) AND message_id IS NULL AND safety_status = ${AttachmentSafetyStatuses.CLEAN}
     `)
     return result.rowCount ?? 0
   },
@@ -255,6 +274,62 @@ export const AttachmentRepository = {
     return (result.rowCount ?? 0) > 0
   },
 
+  async updateSafetyStatus(
+    client: Querier,
+    id: string,
+    status: AttachmentSafetyStatus,
+    options?: { onlyIfStatus?: AttachmentSafetyStatus; onlyIfStatusIn?: AttachmentSafetyStatus[] }
+  ): Promise<boolean> {
+    if (options?.onlyIfStatusIn) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET safety_status = ${status}
+        WHERE id = ${id} AND safety_status = ANY(${options.onlyIfStatusIn})
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    if (options?.onlyIfStatus) {
+      const result = await client.query(sql`
+        UPDATE attachments
+        SET safety_status = ${status}
+        WHERE id = ${id} AND safety_status = ${options.onlyIfStatus}
+      `)
+      return (result.rowCount ?? 0) > 0
+    }
+
+    const result = await client.query(sql`
+      UPDATE attachments
+      SET safety_status = ${status}
+      WHERE id = ${id}
+    `)
+    return (result.rowCount ?? 0) > 0
+  },
+
+  async quarantineStalePendingScans(client: Querier, options: { olderThan: Date; limit: number }): Promise<string[]> {
+    const result = await client.query<{ id: string }>(sql`
+      WITH stale AS (
+        SELECT id
+        FROM attachments
+        WHERE safety_status = ${AttachmentSafetyStatuses.PENDING_SCAN}
+          AND created_at < ${options.olderThan}
+        ORDER BY created_at ASC
+        LIMIT ${options.limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE attachments a
+      SET
+        safety_status = ${AttachmentSafetyStatuses.QUARANTINED},
+        processing_status = ${ProcessingStatuses.SKIPPED}
+      FROM stale
+      WHERE a.id = stale.id
+        AND a.safety_status = ${AttachmentSafetyStatuses.PENDING_SCAN}
+      RETURNING a.id
+    `)
+
+    return result.rows.map((row) => row.id)
+  },
+
   /**
    * Search attachments with their extractions joined.
    * Searches by filename and extraction content (summary, full_text).
@@ -281,7 +356,7 @@ export const AttachmentRepository = {
         SELECT
           a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
           a.filename, a.mime_type, a.size_bytes,
-          a.storage_provider, a.storage_path, a.processing_status,
+          a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
           a.created_at,
           e.content_type AS extraction_content_type,
           e.summary AS extraction_summary,
@@ -306,7 +381,7 @@ export const AttachmentRepository = {
       SELECT
         a.id, a.workspace_id, a.stream_id, a.message_id, a.uploaded_by,
         a.filename, a.mime_type, a.size_bytes,
-        a.storage_provider, a.storage_path, a.processing_status,
+        a.storage_provider, a.storage_path, a.processing_status, a.safety_status,
         a.created_at,
         e.content_type AS extraction_content_type,
         e.summary AS extraction_summary,

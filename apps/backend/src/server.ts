@@ -87,6 +87,7 @@ import {
   StubWordProcessingService,
   ExcelProcessingService,
   StubExcelProcessingService,
+  createMalwareScanner,
 } from "./features/attachments"
 import {
   JobQueues,
@@ -174,7 +175,9 @@ export async function startServer(): Promise<ServerInstance> {
 
   // Storage and attachment service
   const storage = createS3Storage(config.s3)
-  const attachmentService = new AttachmentService(pool, storage)
+  const malwareScanner = createMalwareScanner(storage, config.attachments)
+  const attachmentService = new AttachmentService(pool, storage, malwareScanner)
+  await attachmentService.recoverStalePendingScans()
 
   // Create cost tracking service for AI usage
   const costService = new AICostService({ pool })

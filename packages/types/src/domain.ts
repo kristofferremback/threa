@@ -20,6 +20,7 @@ import type {
   PersonaStatus,
   StorageProvider,
   ProcessingStatus,
+  AttachmentSafetyStatus,
   ConversationStatus,
   MemoType,
   KnowledgeType,
@@ -162,6 +163,7 @@ export interface Attachment {
   sizeBytes: number
   storageProvider: StorageProvider
   processingStatus: ProcessingStatus
+  safetyStatus: AttachmentSafetyStatus
   createdAt: string
 }
 

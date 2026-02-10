@@ -7,9 +7,6 @@ import { attachmentId } from "../lib/id"
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-// No file type restrictions for in-workspace uploads.
-// File type filtering may be added for cross-workspace sharing (like Slack Connect).
-
 // Extend Express.Multer.File to include multer-s3 properties
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

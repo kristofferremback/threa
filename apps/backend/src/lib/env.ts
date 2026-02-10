@@ -28,6 +28,11 @@ export interface S3Config {
   endpoint?: string
 }
 
+export interface AttachmentSafetyConfig {
+  /** Whether malware scanning is enabled for uploaded files. */
+  malwareScanEnabled: boolean
+}
+
 export interface Config {
   port: number
   databaseUrl: string
@@ -47,6 +52,7 @@ export interface Config {
   workos: WorkosConfig
   ai: AIConfig
   s3: S3Config
+  attachments: AttachmentSafetyConfig
 }
 
 export function loadConfig(): Config {
@@ -114,6 +120,9 @@ export function loadConfig(): Config {
       accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
       endpoint: process.env.S3_ENDPOINT,
+    },
+    attachments: {
+      malwareScanEnabled: process.env.ATTACHMENT_MALWARE_SCAN_ENABLED !== "false",
     },
   }
 
