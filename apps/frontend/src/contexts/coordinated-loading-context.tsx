@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { useWorkspaceBootstrap } from "@/hooks/use-workspaces"
 import { useCoordinatedStreamQueries } from "@/hooks/use-coordinated-stream-queries"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { StreamContentSkeleton } from "@/components/loading"
 import { ApiError } from "@/api/client"
 
@@ -66,6 +67,17 @@ export function CoordinatedLoadingProvider({ workspaceId, streamIds, children }:
   const { isLoading: streamsLoading, results } = useCoordinatedStreamQueries(workspaceId, streamIds)
 
   const isLoading = workspaceLoading || streamsLoading
+
+  debugBootstrap("Coordinated loading state", {
+    workspaceId,
+    streamIds,
+    workspaceLoading,
+    streamsLoading,
+    isLoading,
+    isReady,
+    showSkeleton,
+    showLoadingIndicator,
+  })
 
   // Compute phase from state
   const phase = useMemo<CoordinatedPhase>(() => {

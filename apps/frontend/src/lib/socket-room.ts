@@ -1,4 +1,5 @@
 import type { Socket } from "socket.io-client"
+import { debugBootstrap } from "./bootstrap-debug"
 
 interface JoinAckResult {
   ok: boolean
@@ -23,6 +24,7 @@ function getPendingJoins(socket: Socket): Map<string, Promise<void>> {
 
 function waitForConnection(socket: Socket, room: string, timeoutMs: number): Promise<void> {
   if (socket.connected) {
+    debugBootstrap("Socket already connected before join", { room })
     return Promise.resolve()
   }
 
@@ -40,6 +42,7 @@ function waitForConnection(socket: Socket, room: string, timeoutMs: number): Pro
 
     const handleConnect = () => {
       cleanup()
+      debugBootstrap("Socket connected while waiting to join room", { room })
       resolve()
     }
 
@@ -59,6 +62,7 @@ function waitForConnection(socket: Socket, room: string, timeoutMs: number): Pro
 
     timeoutId = setTimeout(() => {
       cleanup()
+      debugBootstrap("Timed out waiting for socket connection before join", { room, timeoutMs, lastConnectError })
       reject(
         new Error(
           lastConnectError
@@ -86,6 +90,7 @@ function emitJoinWithAck(socket: Socket, room: string, timeoutMs: number): Promi
       if (settled) return
       settled = true
       cleanup()
+      debugBootstrap("Join ack success", { room })
       resolve()
     }
 
@@ -93,6 +98,7 @@ function emitJoinWithAck(socket: Socket, room: string, timeoutMs: number): Promi
       if (settled) return
       settled = true
       cleanup()
+      debugBootstrap("Join ack failed", { room, error: error.message })
       reject(error)
     }
 
@@ -106,6 +112,7 @@ function emitJoinWithAck(socket: Socket, room: string, timeoutMs: number): Promi
       rejectOnce(new Error(`Timed out waiting for join ack for room "${room}"`))
     }, timeoutMs)
 
+    debugBootstrap("Emitting join with ack", { room })
     socket.emit("join", room, (result?: JoinAckResult) => {
       if (!result?.ok) {
         rejectOnce(new Error(result?.error ?? `Failed to join room "${room}"`))
@@ -121,9 +128,11 @@ export async function joinRoomWithAck(socket: Socket, room: string, options?: Jo
   const pendingJoins = getPendingJoins(socket)
   const existingJoin = pendingJoins.get(room)
   if (existingJoin) {
+    debugBootstrap("Reusing in-flight join promise", { room })
     return existingJoin
   }
 
+  debugBootstrap("Starting joinRoomWithAck", { room, timeoutMs })
   const joinPromise = (async () => {
     await waitForConnection(socket, room, timeoutMs)
     await emitJoinWithAck(socket, room, timeoutMs)

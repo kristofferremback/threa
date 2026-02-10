@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
@@ -64,10 +65,12 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
   const existingQueryState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
   const hasExistingError = existingQueryState?.status === "error"
 
-  return useQuery({
+  const query = useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId),
     queryFn: async () => {
+      debugBootstrap("Stream bootstrap queryFn start", { workspaceId, streamId, hasSocket: !!socket })
       if (!socket) {
+        debugBootstrap("Stream bootstrap missing socket", { workspaceId, streamId })
         throw new Error("Socket not available for stream subscription")
       }
       try {
@@ -80,6 +83,11 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       }
 
       const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+      debugBootstrap("Stream bootstrap fetch success", {
+        workspaceId,
+        streamId,
+        eventCount: bootstrap.events.length,
+      })
       const now = Date.now()
 
       // Cache stream and events to IndexedDB
@@ -109,6 +117,20 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
     refetchOnReconnect: false,
     structuralSharing: false,
   })
+
+  debugBootstrap("Stream bootstrap observer state", {
+    workspaceId,
+    streamId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasExistingError,
+    hasExistingError,
+    status: query.status,
+    fetchStatus: query.fetchStatus,
+    isPending: query.isPending,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  })
+
+  return query
 }
 
 export function useCreateStream(workspaceId: string) {

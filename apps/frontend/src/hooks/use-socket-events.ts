@@ -3,6 +3,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
@@ -110,6 +111,12 @@ export function useSocketEvents(workspaceId: string) {
     enabled: false,
   })
 
+  debugBootstrap("Socket events cache observer state", {
+    workspaceId,
+    hasSocket: !!socket,
+    memberStreamIds,
+  })
+
   // Stable serialization for dependency tracking
   const memberStreamIdsKey = useMemo(() => (memberStreamIds ?? []).sort().join(","), [memberStreamIds])
 
@@ -119,6 +126,7 @@ export function useSocketEvents(workspaceId: string) {
     if (!socket || !workspaceId || !memberStreamIdsKey) return
 
     const ids = memberStreamIdsKey.split(",").filter(Boolean)
+    debugBootstrap("Socket events joining member stream rooms", { workspaceId, streamIds: ids })
     for (const id of ids) {
       void joinRoomWithAck(socket, `ws:${workspaceId}:stream:${id}`).catch((error) => {
         console.error(`[SocketEvents] Failed to join stream room ws:${workspaceId}:stream:${id}`, error)
@@ -136,6 +144,7 @@ export function useSocketEvents(workspaceId: string) {
     if (!socket || !workspaceId) return
 
     // Join workspace room to receive stream metadata events
+    debugBootstrap("Socket events joining workspace room", { workspaceId })
     void joinRoomWithAck(socket, `ws:${workspaceId}`).catch((error) => {
       console.error(`[SocketEvents] Failed to join workspace room ws:${workspaceId}`, error)
     })

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { agentSessionsApi } from "@/api"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type {
   AgentSessionStep,
@@ -60,6 +61,16 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     enabled: !!workspaceId && !!sessionId && isSubscribed,
     // Always refetch when modal opens - don't serve stale data from a previous view
     staleTime: 0,
+  })
+
+  debugBootstrap("Agent trace observer state", {
+    workspaceId,
+    sessionId,
+    hasSocket: !!socket,
+    isSubscribed,
+    isSubscribing,
+    queryLoading: isQueryLoading,
+    hasQueryError: !!queryError,
   })
 
   const handleStepStarted = useCallback(
@@ -141,6 +152,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     socket.on("agent_session:failed", handleFailed)
 
     // Subscribe to session room FIRST and only fetch bootstrap after join ack.
+    debugBootstrap("Agent trace joining session room", { workspaceId, sessionId, room })
     void joinRoomWithAck(socket, room)
       .then(() => {
         if (isCancelled) return

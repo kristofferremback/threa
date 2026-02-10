@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService, type StreamService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
@@ -18,6 +19,7 @@ async function queryFnWithoutSocket() {
 // Create a stable query function factory
 function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
   return async () => {
+    debugBootstrap("Coordinated stream bootstrap queryFn start", { workspaceId, streamId })
     try {
       await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
     } catch (error) {
@@ -28,6 +30,11 @@ function createBootstrapQueryFn(streamService: StreamService, socket: Socket, wo
     }
 
     const bootstrap = await streamService.bootstrap(workspaceId, streamId)
+    debugBootstrap("Coordinated stream bootstrap fetch success", {
+      workspaceId,
+      streamId,
+      eventCount: bootstrap.events.length,
+    })
     const now = Date.now()
 
     // Cache stream and events to IndexedDB (same as useStreamBootstrap)
@@ -104,6 +111,16 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
   const isLoading = results.some((r) => r.isLoading && !r.isError)
   const isError = results.some((r) => r.isError)
   const errors = results.filter((r) => r.error).map((r) => r.error)
+
+  debugBootstrap("Coordinated stream observer state", {
+    workspaceId,
+    streamIds,
+    serverStreamIds,
+    hasSocket: !!socket,
+    isLoading,
+    isError,
+    errorCount: errors.length,
+  })
 
   return {
     results,

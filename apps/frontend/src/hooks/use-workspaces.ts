@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useWorkspaceService } from "@/contexts"
+import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
@@ -67,7 +68,9 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: async () => {
+      debugBootstrap("Workspace bootstrap queryFn start", { workspaceId, hasSocket: !!socket })
       if (!socket) {
+        debugBootstrap("Workspace bootstrap missing socket", { workspaceId })
         throw new Error("Socket not available for workspace subscription")
       }
       try {
@@ -80,6 +83,11 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       }
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
+      debugBootstrap("Workspace bootstrap fetch success", {
+        workspaceId,
+        streamCount: bootstrap.streams.length,
+        memberCount: bootstrap.members.length,
+      })
       const now = Date.now()
 
       // Cache all data to IndexedDB
@@ -116,6 +124,17 @@ export function useWorkspaceBootstrap(workspaceId: string) {
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  })
+
+  debugBootstrap("Workspace bootstrap observer state", {
+    workspaceId,
+    enabled: !!workspaceId && !!socket && !hasExistingError,
+    hasExistingError,
+    status: query.status,
+    fetchStatus: query.fetchStatus,
+    isPending: query.isPending,
+    isLoading: query.isLoading,
+    isError: query.isError,
   })
 
   // Manual retry that resets error state first
