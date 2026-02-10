@@ -427,7 +427,7 @@ async function resolveParticipantsWithTimezones(
  */
 async function resolveAuthorName(db: Querier, authorId: string, authorType: AuthorType): Promise<string> {
   if (authorType === "system") {
-    return "System"
+    return "Threa"
   }
 
   if (authorType === "member") {
