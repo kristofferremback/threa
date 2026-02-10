@@ -274,17 +274,24 @@ describe("NotificationService", () => {
 
       // Only stream A exists — stream B needs provisioning
       spyOn(StreamRepository, "list").mockResolvedValue([streamA])
+
+      const mockClient = { query: mock(() => Promise.resolve({ rows: [], rowCount: 0 })) }
       spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
-        callback({})) as any)
-      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: newStreamB, created: true })
-      spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
-      spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+        callback(mockClient)) as any)
+      spyOn(StreamRepository, "bulkInsertSystemStreams").mockResolvedValue({
+        streams: [newStreamB],
+        createdIds: new Set([newStreamB.id]),
+      })
 
       const { service, createMessage } = createService()
       await service.notifyWorkspace(WORKSPACE_ID, "Alert")
 
       // Bulk provision was called once (single transaction for all missing)
       expect(db.withTransaction).toHaveBeenCalledTimes(1)
+      expect(StreamRepository.bulkInsertSystemStreams).toHaveBeenCalledWith(
+        mockClient,
+        expect.arrayContaining([expect.objectContaining({ workspaceId: WORKSPACE_ID, createdBy: MEMBER_B })])
+      )
       expect(createMessage).toHaveBeenCalledTimes(2)
     })
 

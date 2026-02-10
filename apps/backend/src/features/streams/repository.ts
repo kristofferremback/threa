@@ -500,6 +500,53 @@ export const StreamRepository = {
     return { stream: existing, created: false }
   },
 
+  /**
+   * Batch insert system streams for multiple members.
+   * Returns all streams (created + existing) and the set of newly created IDs.
+   */
+  async bulkInsertSystemStreams(
+    db: Querier,
+    entries: Array<{ id: string; workspaceId: string; createdBy: string }>
+  ): Promise<{ streams: Stream[]; createdIds: Set<string> }> {
+    if (entries.length === 0) return { streams: [], createdIds: new Set() }
+
+    const placeholders: string[] = []
+    const values: unknown[] = []
+    let idx = 1
+    for (const entry of entries) {
+      placeholders.push(`($${idx++}, $${idx++}, 'system', 'System', 'private', 'off', $${idx++})`)
+      values.push(entry.id, entry.workspaceId, entry.createdBy)
+    }
+
+    const insertResult = await db.query<StreamRow>(
+      `INSERT INTO streams (
+        id, workspace_id, type, display_name, visibility, companion_mode, created_by
+      ) VALUES ${placeholders.join(", ")}
+      ON CONFLICT (workspace_id, created_by) WHERE type = 'system'
+      DO NOTHING
+      RETURNING ${SELECT_FIELDS}`,
+      values
+    )
+
+    const created = insertResult.rows.map(mapRowToStream)
+    const createdIds = new Set(created.map((s) => s.id))
+
+    // Fetch existing streams for entries that hit conflict
+    const conflictMemberIds = entries.filter((e) => !createdIds.has(e.id)).map((e) => e.createdBy)
+
+    let existing: Stream[] = []
+    if (conflictMemberIds.length > 0) {
+      const existingResult = await db.query<StreamRow>(
+        `SELECT ${SELECT_FIELDS} FROM streams
+        WHERE workspace_id = $1 AND type = 'system' AND created_by = ANY($2)`,
+        [entries[0].workspaceId, conflictMemberIds]
+      )
+      existing = existingResult.rows.map(mapRowToStream)
+    }
+
+    return { streams: [...created, ...existing], createdIds }
+  },
+
   async findByTypeAndOwner(
     db: Querier,
     workspaceId: string,

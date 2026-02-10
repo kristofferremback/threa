@@ -1,16 +1,14 @@
 import type { Pool } from "pg"
-import { sql, withTransaction } from "../../db"
+import { withTransaction } from "../../db"
 import { StreamRepository, StreamMemberRepository, type Stream } from "../streams"
-import { OutboxRepository } from "../../lib/outbox"
+import { OutboxRepository, OUTBOX_CHANNEL } from "../../lib/outbox"
 import type { BudgetAlertOutboxPayload } from "../../lib/outbox"
 import { MemberRepository } from "../workspaces"
 import { streamId } from "../../lib/id"
-import { StreamTypes, Visibilities, CompanionModes, AuthorTypes } from "@threa/types"
+import { StreamTypes, AuthorTypes } from "@threa/types"
 import type { AuthorType } from "@threa/types"
 import type { Message } from "../messaging"
 import { logger } from "../../lib/logger"
-
-const BACKFILL_BATCH_SIZE = 100
 
 interface CreateMessageFn {
   (params: {
@@ -130,82 +128,54 @@ export class NotificationService {
 
   /**
    * Provision system streams for multiple members in a single transaction.
-   * Uses INSERT ... ON CONFLICT for each member to handle concurrent provisioning.
+   * Batches all inserts (streams, members, outbox) to avoid N*3 round-trips.
    */
   private async bulkProvisionSystemStreams(workspaceId: string, memberIds: string[]): Promise<Stream[]> {
+    if (memberIds.length === 0) return []
+
     return withTransaction(this.pool, async (client) => {
-      const streams: Stream[] = []
+      const entries = memberIds.map((memberId) => ({
+        id: streamId(),
+        workspaceId,
+        createdBy: memberId,
+      }))
 
-      for (const memberId of memberIds) {
-        const id = streamId()
-        const { stream, created } = await StreamRepository.insertSystemStream(client, {
-          id,
-          workspaceId,
-          createdBy: memberId,
-        })
+      const { streams, createdIds } = await StreamRepository.bulkInsertSystemStreams(client, entries)
+      const created = streams.filter((s) => createdIds.has(s.id))
 
-        if (created) {
-          await StreamMemberRepository.insert(client, id, memberId)
-          await OutboxRepository.insert(client, "stream:created", {
-            workspaceId,
-            streamId: stream.id,
-            stream,
-          })
+      if (created.length > 0) {
+        // Batch insert stream members
+        const memberPlaceholders: string[] = []
+        const memberValues: unknown[] = []
+        let mIdx = 1
+        for (const stream of created) {
+          memberPlaceholders.push(`($${mIdx++}, $${mIdx++})`)
+          memberValues.push(stream.id, stream.createdBy)
         }
+        await client.query(
+          `INSERT INTO stream_members (stream_id, member_id)
+           VALUES ${memberPlaceholders.join(", ")}
+           ON CONFLICT (stream_id, member_id) DO NOTHING`,
+          memberValues
+        )
 
-        streams.push(stream)
+        // Batch insert outbox events
+        const outboxPlaceholders: string[] = []
+        const outboxValues: unknown[] = []
+        let oIdx = 1
+        for (const stream of created) {
+          outboxPlaceholders.push(`($${oIdx++}, $${oIdx++}::jsonb)`)
+          outboxValues.push("stream:created", JSON.stringify({ workspaceId, streamId: stream.id, stream }))
+        }
+        await client.query(
+          `INSERT INTO outbox (event_type, payload)
+           VALUES ${outboxPlaceholders.join(", ")}`,
+          outboxValues
+        )
+        await client.query(`NOTIFY ${OUTBOX_CHANNEL}`)
       }
 
       return streams
     })
-  }
-
-  /**
-   * Backfill system streams for all workspace members who don't have one yet.
-   * Safe to call on every startup — uses INSERT ... ON CONFLICT for idempotency.
-   * Processes in batches grouped by workspace to minimize transaction count.
-   */
-  async backfillSystemStreams(): Promise<void> {
-    let totalProvisioned = 0
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const result = await this.pool.query<{ workspace_id: string; member_id: string }>(sql`
-        SELECT wm.workspace_id, wm.id AS member_id
-        FROM workspace_members wm
-        WHERE NOT EXISTS (
-          SELECT 1 FROM streams s
-          WHERE s.workspace_id = wm.workspace_id
-            AND s.type = ${StreamTypes.SYSTEM}
-            AND s.created_by = wm.id
-        )
-        LIMIT ${BACKFILL_BATCH_SIZE}
-      `)
-
-      if (result.rows.length === 0) break
-
-      logger.info({ batchSize: result.rows.length }, "Backfilling system streams batch")
-
-      // Group by workspace for batched provisioning (one transaction per workspace)
-      const byWorkspace = new Map<string, string[]>()
-      for (const row of result.rows) {
-        const members = byWorkspace.get(row.workspace_id) ?? []
-        members.push(row.member_id)
-        byWorkspace.set(row.workspace_id, members)
-      }
-
-      for (const [wsId, memberIds] of byWorkspace) {
-        try {
-          await this.bulkProvisionSystemStreams(wsId, memberIds)
-          totalProvisioned += memberIds.length
-        } catch (err) {
-          logger.error({ err, workspaceId: wsId }, "Failed to backfill system streams for workspace")
-        }
-      }
-    }
-
-    if (totalProvisioned > 0) {
-      logger.info({ count: totalProvisioned }, "System stream backfill complete")
-    }
   }
 }
