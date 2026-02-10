@@ -47,17 +47,21 @@ export class SystemMessageService {
   }
 
   /**
-   * Format and send a budget alert notification to all workspace members.
+   * Format and send a budget alert to workspace owners.
    * Owns the message formatting — outbox handler passes structured data (INV-46).
+   *
+   * TODO: Hardcoded English text — replace with proper i18n/template system
+   * when we add translation support.
    */
   async sendBudgetAlert(alert: BudgetAlertOutboxPayload): Promise<void> {
     const { workspaceId, percentUsed, budgetUsd, currentUsageUsd } = alert
     const content = `**Budget alert** — AI usage has reached ${percentUsed}% of your $${budgetUsd}/month budget ($${currentUsageUsd.toFixed(2)} spent).`
-    await this.notifyWorkspace(workspaceId, content)
+    await this.notifyOwners(workspaceId, content)
   }
 
-  async notifyWorkspace(workspaceId: string, contentMarkdown: string): Promise<void> {
-    const members = await MemberRepository.listByWorkspace(this.pool, workspaceId)
+  async notifyOwners(workspaceId: string, contentMarkdown: string): Promise<void> {
+    const allMembers = await MemberRepository.listByWorkspace(this.pool, workspaceId)
+    const members = allMembers.filter((m) => m.role === "owner")
 
     const existingStreams = await StreamRepository.list(this.pool, workspaceId, {
       types: [StreamTypes.SYSTEM],

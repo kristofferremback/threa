@@ -17,11 +17,7 @@ export interface CreateWorkspaceParams {
 }
 
 export class WorkspaceService {
-  private pool: Pool
-
-  constructor(deps: { pool: Pool }) {
-    this.pool = deps.pool
-  }
+  constructor(private pool: Pool) {}
 
   async getWorkspaceById(id: string): Promise<Workspace | null> {
     return WorkspaceRepository.findById(this.pool, id)

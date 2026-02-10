@@ -1083,6 +1083,9 @@ export function Sidebar({ workspaceId }: SidebarProps) {
     })
   }, [bootstrap?.streams, getUnreadCount])
 
+  // System streams are auto-created infrastructure — don't count toward "has content"
+  const hasUserStreams = processedStreams.some((s) => s.type !== StreamTypes.SYSTEM)
+
   // Organize streams by section
   const streamsBySection = useMemo(() => {
     const important: StreamItemData[] = []
@@ -1257,7 +1260,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
           workspaceName={bootstrap?.workspace.name ?? "Loading..."}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          hideViewToggle={processedStreams.length === 0}
+          hideViewToggle={!hasUserStreams}
         />
       }
       quickLinks={
@@ -1293,7 +1296,7 @@ export function Sidebar({ workspaceId }: SidebarProps) {
               <p className="px-2 py-4 text-xs text-muted-foreground text-center">Loading...</p>
             ) : error ? (
               <p className="px-2 py-4 text-xs text-destructive text-center">Failed to load</p>
-            ) : processedStreams.length === 0 ? (
+            ) : !hasUserStreams ? (
               /* Empty state - shown in both views when no streams */
               <div className="px-4 py-8 text-center">
                 <p className="text-sm text-muted-foreground mb-4">No streams yet</p>

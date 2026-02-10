@@ -21,7 +21,7 @@ function mockCursorLock(onRun?: (result: ProcessResult) => void) {
 
 function createHandler() {
   const systemMessageService = {
-    notifyWorkspace: mock(async () => {}),
+    notifyOwners: mock(async () => {}),
     notifyMember: mock(async () => {}),
     sendBudgetAlert: mock(async () => {}),
     findSystemStream: mock(async () => null),
@@ -75,7 +75,7 @@ describe("SystemMessageOutboxHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(systemMessageService.sendBudgetAlert).not.toHaveBeenCalled()
-    expect(systemMessageService.notifyWorkspace).not.toHaveBeenCalled()
+    expect(systemMessageService.notifyOwners).not.toHaveBeenCalled()
   })
 
   it("should return no_events when batch is empty", async () => {
@@ -87,7 +87,7 @@ describe("SystemMessageOutboxHandler", () => {
     })
 
     const systemMessageService = {
-      notifyWorkspace: mock(async () => {}),
+      notifyOwners: mock(async () => {}),
       sendBudgetAlert: mock(async () => {}),
     } as unknown as SystemMessageService
     const handler = new SystemMessageOutboxHandler({} as any, systemMessageService)

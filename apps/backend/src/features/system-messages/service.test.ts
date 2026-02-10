@@ -74,7 +74,7 @@ describe("SystemMessageService", () => {
   })
 
   describe("sendBudgetAlert", () => {
-    it("should format budget data as markdown and delegate to notifyWorkspace", async () => {
+    it("should format budget data as markdown and delegate to notifyOwners", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
 
       spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
@@ -111,8 +111,8 @@ describe("SystemMessageService", () => {
     })
   })
 
-  describe("notifyWorkspace", () => {
-    it("should send message to each member's system stream", async () => {
+  describe("notifyOwners", () => {
+    it("should send message to each owner's system stream", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
@@ -133,7 +133,7 @@ describe("SystemMessageService", () => {
           id: MEMBER_B,
           workspaceId: WORKSPACE_ID,
           userId: "usr_2",
-          role: "member",
+          role: "owner",
           slug: "bob",
           timezone: null,
           locale: null,
@@ -145,22 +145,22 @@ describe("SystemMessageService", () => {
       spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
-      await service.notifyWorkspace(WORKSPACE_ID, "Workspace-wide alert")
+      await service.notifyOwners(WORKSPACE_ID, "Owner alert")
 
       expect(StreamRepository.list).toHaveBeenCalledWith(expect.anything(), WORKSPACE_ID, {
         types: [StreamTypes.SYSTEM],
       })
       expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ streamId: streamA.id, content: "Workspace-wide alert" })
+        expect.objectContaining({ streamId: streamA.id, content: "Owner alert" })
       )
       expect(createMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ streamId: streamB.id, content: "Workspace-wide alert" })
+        expect.objectContaining({ streamId: streamB.id, content: "Owner alert" })
       )
     })
 
-    it("should skip members with missing streams and continue notifying others", async () => {
-      const streamB = fakeStream({ createdBy: MEMBER_B })
+    it("should only notify owners, not regular members", async () => {
+      const streamA = fakeStream({ createdBy: MEMBER_A })
 
       spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
         {
@@ -188,18 +188,56 @@ describe("SystemMessageService", () => {
           joinedAt: new Date(),
         },
       ])
+      spyOn(StreamRepository, "list").mockResolvedValue([streamA])
 
-      // Only member B has a system stream
+      const { service, createMessage } = createService()
+      await service.notifyOwners(WORKSPACE_ID, "Alert")
+
+      expect(createMessage).toHaveBeenCalledTimes(1)
+      expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamA.id }))
+    })
+
+    it("should skip owners with missing streams and continue notifying others", async () => {
+      const streamB = fakeStream({ createdBy: MEMBER_B })
+
+      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+        {
+          id: MEMBER_A,
+          workspaceId: WORKSPACE_ID,
+          userId: "usr_1",
+          role: "owner",
+          slug: "alice",
+          timezone: null,
+          locale: null,
+          name: "Alice",
+          email: "alice@test.com",
+          joinedAt: new Date(),
+        },
+        {
+          id: MEMBER_B,
+          workspaceId: WORKSPACE_ID,
+          userId: "usr_2",
+          role: "owner",
+          slug: "bob",
+          timezone: null,
+          locale: null,
+          name: "Bob",
+          email: "bob@test.com",
+          joinedAt: new Date(),
+        },
+      ])
+
+      // Only owner B has a system stream
       spyOn(StreamRepository, "list").mockResolvedValue([streamB])
 
       const { service, createMessage } = createService()
-      await service.notifyWorkspace(WORKSPACE_ID, "Alert")
+      await service.notifyOwners(WORKSPACE_ID, "Alert")
 
       expect(createMessage).toHaveBeenCalledTimes(1)
       expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
     })
 
-    it("should continue notifying remaining members when one fails", async () => {
+    it("should continue notifying remaining owners when one fails", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
@@ -220,7 +258,7 @@ describe("SystemMessageService", () => {
           id: MEMBER_B,
           workspaceId: WORKSPACE_ID,
           userId: "usr_2",
-          role: "member",
+          role: "owner",
           slug: "bob",
           timezone: null,
           locale: null,
@@ -235,7 +273,7 @@ describe("SystemMessageService", () => {
       const { service, createMessage } = createService()
       createMessage.mockRejectedValueOnce(new Error("message creation failed")).mockResolvedValueOnce({} as any)
 
-      await service.notifyWorkspace(WORKSPACE_ID, "Alert")
+      await service.notifyOwners(WORKSPACE_ID, "Alert")
 
       expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
