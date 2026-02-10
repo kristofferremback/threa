@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import { useSocket, useSocketReconnectCount } from "@/contexts"
 import { useAuth } from "@/auth"
 import { db } from "@/db"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
 import { workspaceKeys } from "./use-workspaces"
 import type {
@@ -116,7 +117,9 @@ export function useSocketEvents(workspaceId: string) {
 
     const ids = memberStreamIdsKey.split(",").filter(Boolean)
     for (const id of ids) {
-      socket.emit("join", `ws:${workspaceId}:stream:${id}`)
+      void joinRoomWithAck(socket, `ws:${workspaceId}:stream:${id}`).catch((error) => {
+        console.error(`[SocketEvents] Failed to join stream room ws:${workspaceId}:stream:${id}`, error)
+      })
     }
 
     return () => {
@@ -130,7 +133,9 @@ export function useSocketEvents(workspaceId: string) {
     if (!socket || !workspaceId) return
 
     // Join workspace room to receive stream metadata events
-    socket.emit("join", `ws:${workspaceId}`)
+    void joinRoomWithAck(socket, `ws:${workspaceId}`).catch((error) => {
+      console.error(`[SocketEvents] Failed to join workspace room ws:${workspaceId}`, error)
+    })
 
     // Handle stream created
     socket.on("stream:created", (payload: StreamPayload) => {

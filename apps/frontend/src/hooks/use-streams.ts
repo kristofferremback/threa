@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useStreamService } from "@/contexts"
+import { useSocket, useStreamService } from "@/contexts"
 import { db } from "@/db"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Stream, StreamType } from "@threa/types"
 import type { CreateStreamInput, UpdateStreamInput } from "@/api"
 import { workspaceKeys } from "./use-workspaces"
@@ -54,6 +55,7 @@ export function useStream(workspaceId: string, streamId: string) {
 }
 
 export function useStreamBootstrap(workspaceId: string, streamId: string, options?: { enabled?: boolean }) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
@@ -65,6 +67,11 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
   return useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId),
     queryFn: async () => {
+      if (!socket) {
+        throw new Error("Socket not available for stream subscription")
+      }
+      await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+
       const bootstrap = await streamService.bootstrap(workspaceId, streamId)
       const now = Date.now()
 
@@ -83,7 +90,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       return bootstrap
     },
     // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !hasExistingError,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasExistingError,
     // Match coordinated loading options to share cache correctly and prevent
     // multiple observers from conflicting. Coordinated loading handles initial
     // fetch, and socket events handle updates.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useSocket } from "@/contexts"
 import { agentSessionsApi } from "@/api"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import type {
   AgentSessionStep,
   AgentSession,
@@ -44,10 +45,16 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
   const [terminalStatus, setTerminalStatus] = useState<"completed" | "failed" | null>(null)
   // Track if socket is subscribed (enables query after subscription)
   const [isSubscribed, setIsSubscribed] = useState(false)
+  const [isSubscribing, setIsSubscribing] = useState(false)
+  const [subscriptionError, setSubscriptionError] = useState<Error | null>(null)
 
   // Bootstrap: single fetch for historical data. Real-time updates come via socket.
   // IMPORTANT: Only fetch AFTER socket subscription is confirmed to avoid race conditions
-  const { data, isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading: isQueryLoading,
+    error: queryError,
+  } = useQuery({
     queryKey: ["agent-session", workspaceId, sessionId],
     queryFn: () => agentSessionsApi.getSession(workspaceId, sessionId),
     enabled: !!workspaceId && !!sessionId && isSubscribed,
@@ -116,15 +123,15 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     if (!socket || !workspaceId || !sessionId) return
 
     const room = `ws:${workspaceId}:agent_session:${sessionId}`
+    let isCancelled = false
 
     // Reset state for new session
     setRealtimeSteps(new Map())
     setStreamingContent({})
     setTerminalStatus(null)
     setIsSubscribed(false)
-
-    // Subscribe to session room FIRST
-    socket.emit("join", room)
+    setIsSubscribing(true)
+    setSubscriptionError(null)
 
     // Set up event listeners
     socket.on("agent_session:step:started", handleStepStarted)
@@ -133,13 +140,23 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     socket.on("agent_session:completed", handleCompleted)
     socket.on("agent_session:failed", handleFailed)
 
-    // Mark as subscribed after a microtask to ensure join is queued
-    // This enables the query to fetch AFTER subscription is established
-    queueMicrotask(() => {
-      setIsSubscribed(true)
-    })
+    // Subscribe to session room FIRST and only fetch bootstrap after join ack.
+    void joinRoomWithAck(socket, room)
+      .then(() => {
+        if (isCancelled) return
+        setIsSubscribed(true)
+      })
+      .catch((error: unknown) => {
+        if (isCancelled) return
+        setSubscriptionError(error instanceof Error ? error : new Error("Failed to subscribe to session room"))
+      })
+      .finally(() => {
+        if (isCancelled) return
+        setIsSubscribing(false)
+      })
 
     return () => {
+      isCancelled = true
       setIsSubscribed(false)
       socket.emit("leave", room)
       socket.off("agent_session:step:started", handleStepStarted)
@@ -171,8 +188,8 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     session: data?.session ?? null,
     persona: data?.persona ?? null,
     status,
-    isLoading,
-    error: error as Error | null,
+    isLoading: isSubscribing || isQueryLoading,
+    error: subscriptionError ?? (queryError as Error | null),
   }
 }
 

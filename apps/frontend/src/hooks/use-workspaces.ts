@@ -1,7 +1,8 @@
 import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useWorkspaceService } from "@/contexts"
+import { useSocket, useWorkspaceService } from "@/contexts"
 import { db } from "@/db"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import type { Workspace } from "@threa/types"
 
 // Query keys for cache management
@@ -54,6 +55,7 @@ export function useWorkspace(workspaceId: string) {
 }
 
 export function useWorkspaceBootstrap(workspaceId: string) {
+  const socket = useSocket()
   const workspaceService = useWorkspaceService()
   const queryClient = useQueryClient()
 
@@ -65,6 +67,11 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
     queryFn: async () => {
+      if (!socket) {
+        throw new Error("Socket not available for workspace subscription")
+      }
+      await joinRoomWithAck(socket, `ws:${workspaceId}`)
+
       const bootstrap = await workspaceService.bootstrap(workspaceId)
       const now = Date.now()
 
@@ -94,7 +101,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       return bootstrap
     },
     // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: !!workspaceId && !hasExistingError,
+    enabled: !!workspaceId && !!socket && !hasExistingError,
     // Prevent automatic refetching - socket events handle updates
     staleTime: Infinity,
     gcTime: Infinity,

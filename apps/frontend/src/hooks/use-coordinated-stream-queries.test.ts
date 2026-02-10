@@ -4,12 +4,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { useCoordinatedStreamQueries } from "./use-coordinated-stream-queries"
 
-const mockBootstrap = vi.fn()
+const { mockBootstrap, mockJoinRoomWithAck } = vi.hoisted(() => ({
+  mockBootstrap: vi.fn(),
+  mockJoinRoomWithAck: vi.fn(),
+}))
 
 vi.mock("@/contexts", () => ({
   useStreamService: () => ({
     bootstrap: mockBootstrap,
   }),
+  useSocket: () => ({ connected: true }),
 }))
 
 vi.mock("@/db", () => ({
@@ -17,6 +21,10 @@ vi.mock("@/db", () => ({
     streams: { put: vi.fn() },
     events: { bulkPut: vi.fn() },
   },
+}))
+
+vi.mock("@/lib/socket-room", () => ({
+  joinRoomWithAck: mockJoinRoomWithAck,
 }))
 
 function createTestQueryClient() {
@@ -36,6 +44,7 @@ function createWrapper(queryClient: QueryClient) {
 describe("useCoordinatedStreamQueries", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockJoinRoomWithAck.mockResolvedValue(undefined)
   })
 
   it("should filter out draft IDs and not fetch them", async () => {
@@ -60,6 +69,8 @@ describe("useCoordinatedStreamQueries", () => {
     expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_456")
     expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft_abc")
     expect(mockBootstrap).not.toHaveBeenCalledWith("workspace_1", "draft_xyz")
+    expect(mockJoinRoomWithAck).toHaveBeenCalledWith(expect.any(Object), "ws:workspace_1:stream:stream_123")
+    expect(mockJoinRoomWithAck).toHaveBeenCalledWith(expect.any(Object), "ws:workspace_1:stream:stream_456")
   })
 
   it("should return isLoading=true while queries are pending", () => {

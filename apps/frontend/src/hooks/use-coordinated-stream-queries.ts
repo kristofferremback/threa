@@ -1,17 +1,25 @@
 import { useMemo } from "react"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
-import { useStreamService, type StreamService } from "@/contexts"
+import { useSocket, useStreamService, type StreamService } from "@/contexts"
 import { db } from "@/db"
+import { joinRoomWithAck } from "@/lib/socket-room"
 import { streamKeys } from "./use-streams"
+import type { Socket } from "socket.io-client"
 
 function isDraftId(id: string): boolean {
   // Draft scratchpads use "draft_xxx" format, draft thread panels use "draft:xxx:xxx" format
   return id.startsWith("draft_") || id.startsWith("draft:")
 }
 
+async function queryFnWithoutSocket() {
+  throw new Error("Socket not available for stream subscription")
+}
+
 // Create a stable query function factory
-function createBootstrapQueryFn(streamService: StreamService, workspaceId: string, streamId: string) {
+function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
   return async () => {
+    await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+
     const bootstrap = await streamService.bootstrap(workspaceId, streamId)
     const now = Date.now()
 
@@ -36,6 +44,7 @@ function createBootstrapQueryFn(streamService: StreamService, workspaceId: strin
  * Filters out draft IDs since they're local IndexedDB data.
  */
 export function useCoordinatedStreamQueries(workspaceId: string, streamIds: string[]) {
+  const socket = useSocket()
   const streamService = useStreamService()
   const queryClient = useQueryClient()
 
@@ -63,9 +72,9 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     () =>
       serverStreamIds.map((streamId) => ({
         queryKey: streamKeys.bootstrap(workspaceId, streamId),
-        queryFn: createBootstrapQueryFn(streamService, workspaceId, streamId),
+        queryFn: socket ? createBootstrapQueryFn(streamService, socket, workspaceId, streamId) : queryFnWithoutSocket,
         // Don't enable queries that have already errored to prevent continuous refetch loops
-        enabled: !!workspaceId && !erroredStreamIds.has(streamId),
+        enabled: !!workspaceId && !!socket && !erroredStreamIds.has(streamId),
         staleTime: Infinity, // Never consider data stale
         gcTime: Infinity, // Never garbage collect
         // Prevent ALL automatic refetching
@@ -78,7 +87,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
         // sharing can cause stale references. Worth the extra re-renders for correctness.
         structuralSharing: false,
       })),
-    [serverStreamIds, workspaceId, streamService, erroredStreamIds]
+    [serverStreamIds, workspaceId, streamService, socket, erroredStreamIds]
   )
 
   const results = useQueries({ queries })
