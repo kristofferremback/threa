@@ -264,7 +264,7 @@ export async function startServer(): Promise<ServerInstance> {
   const createThread = (params: Parameters<typeof streamService.createThread>[0]) => streamService.createThread(params)
 
   const notificationService = new NotificationService({ pool, createMessage })
-  const workspaceService = new WorkspaceService({ pool, notificationService })
+  const workspaceService = new WorkspaceService({ pool })
 
   // Simulation agent - needed for SimulateCommand
   const simulationAgent = config.useStubAI

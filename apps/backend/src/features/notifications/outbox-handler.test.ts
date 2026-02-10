@@ -24,7 +24,6 @@ function createHandler() {
     notifyWorkspace: mock(async () => {}),
     notifyMember: mock(async () => {}),
     sendBudgetAlert: mock(async () => {}),
-    provisionSystemStream: mock(async () => ({}) as any),
     findSystemStream: mock(async () => null),
   } as unknown as NotificationService
 

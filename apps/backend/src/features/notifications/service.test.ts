@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { AuthorTypes, CompanionModes, StreamTypes, Visibilities } from "@threa/types"
-import * as db from "../../db"
-import { StreamRepository, StreamMemberRepository } from "../streams"
-import { OutboxRepository } from "../../lib/outbox"
+import { StreamRepository } from "../streams"
 import { MemberRepository } from "../workspaces"
 import { NotificationService } from "./service"
 import type { Stream } from "../streams"
@@ -48,74 +46,8 @@ describe("NotificationService", () => {
     mock.restore()
   })
 
-  describe("provisionSystemStream", () => {
-    it("should create stream and emit outbox event when no stream exists", async () => {
-      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
-      spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
-        callback({})) as any)
-
-      const insertedStream = fakeStream({ createdBy: MEMBER_A })
-      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: insertedStream, created: true })
-      spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
-      spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
-
-      const { service } = createService()
-      const stream = await service.provisionSystemStream(WORKSPACE_ID, MEMBER_A)
-
-      expect(stream).toBe(insertedStream)
-      expect(StreamRepository.insertSystemStream).toHaveBeenCalledWith(
-        {},
-        expect.objectContaining({
-          workspaceId: WORKSPACE_ID,
-          createdBy: MEMBER_A,
-        })
-      )
-      expect(StreamMemberRepository.insert).toHaveBeenCalledWith({}, expect.stringMatching(/^stream_/), MEMBER_A)
-      expect(OutboxRepository.insert).toHaveBeenCalledWith(
-        {},
-        "stream:created",
-        expect.objectContaining({
-          workspaceId: WORKSPACE_ID,
-        })
-      )
-    })
-
-    it("should be idempotent when stream already exists", async () => {
-      const existingStream = fakeStream({ createdBy: MEMBER_A })
-      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(existingStream)
-      const txSpy = spyOn(db, "withTransaction")
-
-      const { service } = createService()
-      const stream = await service.provisionSystemStream(WORKSPACE_ID, MEMBER_A)
-
-      expect(stream).toBe(existingStream)
-      expect(txSpy).not.toHaveBeenCalled()
-    })
-
-    it("should return existing stream when ON CONFLICT resolves concurrent insert", async () => {
-      const existingStream = fakeStream({ createdBy: MEMBER_A })
-
-      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
-      spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
-        callback({})) as any)
-
-      // insertSystemStream returns created: false (ON CONFLICT hit)
-      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: existingStream, created: false })
-
-      const memberInsertSpy = spyOn(StreamMemberRepository, "insert")
-      const outboxSpy = spyOn(OutboxRepository, "insert")
-
-      const { service } = createService()
-      const stream = await service.provisionSystemStream(WORKSPACE_ID, MEMBER_A)
-
-      expect(stream).toBe(existingStream)
-      expect(memberInsertSpy).not.toHaveBeenCalled()
-      expect(outboxSpy).not.toHaveBeenCalled()
-    })
-  })
-
   describe("notifyMember", () => {
-    it("should create message with authorType system and authorId system when notifying a member", async () => {
+    it("should send message to existing system stream", async () => {
       const systemStream = fakeStream({ createdBy: MEMBER_A })
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(systemStream)
 
@@ -131,25 +63,13 @@ describe("NotificationService", () => {
       })
     })
 
-    it("should lazily provision stream when none exists", async () => {
-      const newStream = fakeStream({ createdBy: MEMBER_A })
-
+    it("should log error and skip when system stream is missing", async () => {
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
-      spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
-        callback({})) as any)
-      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: newStream, created: true })
-      spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
-      spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
       const { service, createMessage } = createService()
       await service.notifyMember(WORKSPACE_ID, MEMBER_A, "Test notification")
 
-      expect(StreamRepository.insertSystemStream).toHaveBeenCalled()
-      expect(createMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          streamId: newStream.id,
-        })
-      )
+      expect(createMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -192,7 +112,7 @@ describe("NotificationService", () => {
   })
 
   describe("notifyWorkspace", () => {
-    it("should use batch-fetched streams when notifying all workspace members", async () => {
+    it("should send message to each member's system stream", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
@@ -222,8 +142,6 @@ describe("NotificationService", () => {
           joinedAt: new Date(),
         },
       ])
-
-      // Batch-fetch returns both streams
       spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
@@ -241,9 +159,8 @@ describe("NotificationService", () => {
       )
     })
 
-    it("should bulk-provision missing streams in a single transaction when some members lack streams", async () => {
-      const streamA = fakeStream({ createdBy: MEMBER_A })
-      const newStreamB = fakeStream({ createdBy: MEMBER_B })
+    it("should skip members with missing streams and continue notifying others", async () => {
+      const streamB = fakeStream({ createdBy: MEMBER_B })
 
       spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
         {
@@ -272,27 +189,14 @@ describe("NotificationService", () => {
         },
       ])
 
-      // Only stream A exists — stream B needs provisioning
-      spyOn(StreamRepository, "list").mockResolvedValue([streamA])
-
-      const mockClient = { query: mock(() => Promise.resolve({ rows: [], rowCount: 0 })) }
-      spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
-        callback(mockClient)) as any)
-      spyOn(StreamRepository, "bulkInsertSystemStreams").mockResolvedValue({
-        streams: [newStreamB],
-        createdIds: new Set([newStreamB.id]),
-      })
+      // Only member B has a system stream
+      spyOn(StreamRepository, "list").mockResolvedValue([streamB])
 
       const { service, createMessage } = createService()
       await service.notifyWorkspace(WORKSPACE_ID, "Alert")
 
-      // Bulk provision was called once (single transaction for all missing)
-      expect(db.withTransaction).toHaveBeenCalledTimes(1)
-      expect(StreamRepository.bulkInsertSystemStreams).toHaveBeenCalledWith(
-        mockClient,
-        expect.arrayContaining([expect.objectContaining({ workspaceId: WORKSPACE_ID, createdBy: MEMBER_B })])
-      )
-      expect(createMessage).toHaveBeenCalledTimes(2)
+      expect(createMessage).toHaveBeenCalledTimes(1)
+      expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
     })
 
     it("should continue notifying remaining members when one fails", async () => {
@@ -326,7 +230,6 @@ describe("NotificationService", () => {
         },
       ])
 
-      // Batch-fetch returns both streams, but createMessage fails for first member
       spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
@@ -334,7 +237,6 @@ describe("NotificationService", () => {
 
       await service.notifyWorkspace(WORKSPACE_ID, "Alert")
 
-      // Second member still got notified despite first failing
       expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
     })
