@@ -70,7 +70,14 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
       if (!socket) {
         throw new Error("Socket not available for stream subscription")
       }
-      await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+      try {
+        await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+      } catch (error) {
+        console.error(
+          `[StreamBootstrap] Failed to receive join ack for ws:${workspaceId}:stream:${streamId}; continuing with bootstrap fetch`,
+          error
+        )
+      }
 
       const bootstrap = await streamService.bootstrap(workspaceId, streamId)
       const now = Date.now()

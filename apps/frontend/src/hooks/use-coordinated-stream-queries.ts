@@ -18,7 +18,14 @@ async function queryFnWithoutSocket() {
 // Create a stable query function factory
 function createBootstrapQueryFn(streamService: StreamService, socket: Socket, workspaceId: string, streamId: string) {
   return async () => {
-    await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+    try {
+      await joinRoomWithAck(socket, `ws:${workspaceId}:stream:${streamId}`)
+    } catch (error) {
+      console.error(
+        `[CoordinatedStreamBootstrap] Failed to receive join ack for ws:${workspaceId}:stream:${streamId}; continuing with bootstrap fetch`,
+        error
+      )
+    }
 
     const bootstrap = await streamService.bootstrap(workspaceId, streamId)
     const now = Date.now()

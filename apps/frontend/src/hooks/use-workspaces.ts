@@ -70,7 +70,14 @@ export function useWorkspaceBootstrap(workspaceId: string) {
       if (!socket) {
         throw new Error("Socket not available for workspace subscription")
       }
-      await joinRoomWithAck(socket, `ws:${workspaceId}`)
+      try {
+        await joinRoomWithAck(socket, `ws:${workspaceId}`)
+      } catch (error) {
+        console.error(
+          `[WorkspaceBootstrap] Failed to receive join ack for ws:${workspaceId}; continuing with bootstrap fetch`,
+          error
+        )
+      }
 
       const bootstrap = await workspaceService.bootstrap(workspaceId)
       const now = Date.now()

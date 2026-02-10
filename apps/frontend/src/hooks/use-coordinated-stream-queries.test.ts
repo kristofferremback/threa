@@ -121,6 +121,24 @@ describe("useCoordinatedStreamQueries", () => {
     expect(result.current.errors).toHaveLength(1)
   })
 
+  it("should continue to bootstrap fetch when join ack fails", async () => {
+    const queryClient = createTestQueryClient()
+    mockJoinRoomWithAck.mockRejectedValueOnce(new Error("join timeout"))
+    mockBootstrap.mockResolvedValue({
+      stream: { id: "stream_123" },
+      events: [],
+      membership: null,
+    })
+
+    renderHook(() => useCoordinatedStreamQueries("workspace_1", ["stream_123"]), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => {
+      expect(mockBootstrap).toHaveBeenCalledWith("workspace_1", "stream_123")
+    })
+  })
+
   it("should return isLoading=false immediately when streamIds is empty", () => {
     const queryClient = createTestQueryClient()
 

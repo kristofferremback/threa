@@ -148,7 +148,13 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
       })
       .catch((error: unknown) => {
         if (isCancelled) return
-        setSubscriptionError(error instanceof Error ? error : new Error("Failed to subscribe to session room"))
+        const joinError = error instanceof Error ? error : new Error("Failed to subscribe to session room")
+        console.error(
+          `[AgentTrace] Failed to receive join ack for ${room}; continuing with bootstrap fetch and realtime listeners`,
+          joinError
+        )
+        setSubscriptionError(joinError)
+        setIsSubscribed(true)
       })
       .finally(() => {
         if (isCancelled) return
@@ -189,7 +195,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     persona: data?.persona ?? null,
     status,
     isLoading: isSubscribing || isQueryLoading,
-    error: subscriptionError ?? (queryError as Error | null),
+    error: (queryError as Error | null) ?? (data ? null : subscriptionError),
   }
 }
 
