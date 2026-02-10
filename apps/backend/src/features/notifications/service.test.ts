@@ -49,13 +49,13 @@ describe("NotificationService", () => {
   })
 
   describe("provisionSystemStream", () => {
-    it("should create stream with type system and private visibility", async () => {
+    it("should create stream and emit outbox event when no stream exists", async () => {
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
       spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
         callback({})) as any)
 
       const insertedStream = fakeStream({ createdBy: MEMBER_A })
-      spyOn(StreamRepository, "insert").mockResolvedValue(insertedStream)
+      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: insertedStream, created: true })
       spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
       spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
@@ -63,14 +63,10 @@ describe("NotificationService", () => {
       const stream = await service.provisionSystemStream(WORKSPACE_ID, MEMBER_A)
 
       expect(stream).toBe(insertedStream)
-      expect(StreamRepository.insert).toHaveBeenCalledWith(
+      expect(StreamRepository.insertSystemStream).toHaveBeenCalledWith(
         {},
         expect.objectContaining({
           workspaceId: WORKSPACE_ID,
-          type: StreamTypes.SYSTEM,
-          displayName: "System",
-          visibility: Visibilities.PRIVATE,
-          companionMode: CompanionModes.OFF,
           createdBy: MEMBER_A,
         })
       )
@@ -96,30 +92,30 @@ describe("NotificationService", () => {
       expect(txSpy).not.toHaveBeenCalled()
     })
 
-    it("should handle concurrent provisioning via in-transaction re-check", async () => {
+    it("should return existing stream when ON CONFLICT resolves concurrent insert", async () => {
       const existingStream = fakeStream({ createdBy: MEMBER_A })
 
-      // First call: findByTypeAndOwner returns null (outside tx)
-      // Inside transaction: findByTypeAndOwner returns existing (race resolved)
-      spyOn(StreamRepository, "findByTypeAndOwner")
-        .mockResolvedValueOnce(null) // pre-tx check
-        .mockResolvedValueOnce(existingStream) // in-tx re-check
-
+      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
       spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
         callback({})) as any)
 
-      const insertSpy = spyOn(StreamRepository, "insert")
+      // insertSystemStream returns created: false (ON CONFLICT hit)
+      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: existingStream, created: false })
+
+      const memberInsertSpy = spyOn(StreamMemberRepository, "insert")
+      const outboxSpy = spyOn(OutboxRepository, "insert")
 
       const { service } = createService()
       const stream = await service.provisionSystemStream(WORKSPACE_ID, MEMBER_A)
 
       expect(stream).toBe(existingStream)
-      expect(insertSpy).not.toHaveBeenCalled()
+      expect(memberInsertSpy).not.toHaveBeenCalled()
+      expect(outboxSpy).not.toHaveBeenCalled()
     })
   })
 
   describe("notifyMember", () => {
-    it("should create message with authorType system and authorId system", async () => {
+    it("should create message with authorType system and authorId system when notifying a member", async () => {
       const systemStream = fakeStream({ createdBy: MEMBER_A })
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(systemStream)
 
@@ -141,14 +137,14 @@ describe("NotificationService", () => {
       spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValue(null)
       spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
         callback({})) as any)
-      spyOn(StreamRepository, "insert").mockResolvedValue(newStream)
+      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: newStream, created: true })
       spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
       spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
 
       const { service, createMessage } = createService()
       await service.notifyMember(WORKSPACE_ID, MEMBER_A, "Test notification")
 
-      expect(StreamRepository.insert).toHaveBeenCalled()
+      expect(StreamRepository.insertSystemStream).toHaveBeenCalled()
       expect(createMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           streamId: newStream.id,
@@ -157,8 +153,46 @@ describe("NotificationService", () => {
     })
   })
 
+  describe("sendBudgetAlert", () => {
+    it("should format budget data as markdown and delegate to notifyWorkspace", async () => {
+      const streamA = fakeStream({ createdBy: MEMBER_A })
+
+      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+        {
+          id: MEMBER_A,
+          workspaceId: WORKSPACE_ID,
+          userId: "usr_1",
+          role: "owner",
+          slug: "alice",
+          timezone: null,
+          locale: null,
+          name: "Alice",
+          email: "alice@test.com",
+          joinedAt: new Date(),
+        },
+      ])
+      spyOn(StreamRepository, "list").mockResolvedValue([streamA])
+
+      const { service, createMessage } = createService()
+      await service.sendBudgetAlert({
+        workspaceId: WORKSPACE_ID,
+        alertType: "threshold",
+        thresholdPercent: 80,
+        currentUsageUsd: 40.5,
+        budgetUsd: 50,
+        percentUsed: 81,
+      })
+
+      expect(createMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: "**Budget alert** — AI usage has reached 81% of your $50/month budget ($40.50 spent).",
+        })
+      )
+    })
+  })
+
   describe("notifyWorkspace", () => {
-    it("should create messages for all workspace members", async () => {
+    it("should use batch-fetched streams when notifying all workspace members", async () => {
       const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
@@ -189,11 +223,15 @@ describe("NotificationService", () => {
         },
       ])
 
-      spyOn(StreamRepository, "findByTypeAndOwner").mockResolvedValueOnce(streamA).mockResolvedValueOnce(streamB)
+      // Batch-fetch returns both streams
+      spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
       await service.notifyWorkspace(WORKSPACE_ID, "Workspace-wide alert")
 
+      expect(StreamRepository.list).toHaveBeenCalledWith(expect.anything(), WORKSPACE_ID, {
+        types: [StreamTypes.SYSTEM],
+      })
       expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(
         expect.objectContaining({ streamId: streamA.id, content: "Workspace-wide alert" })
@@ -203,7 +241,55 @@ describe("NotificationService", () => {
       )
     })
 
+    it("should bulk-provision missing streams in a single transaction when some members lack streams", async () => {
+      const streamA = fakeStream({ createdBy: MEMBER_A })
+      const newStreamB = fakeStream({ createdBy: MEMBER_B })
+
+      spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
+        {
+          id: MEMBER_A,
+          workspaceId: WORKSPACE_ID,
+          userId: "usr_1",
+          role: "owner",
+          slug: "alice",
+          timezone: null,
+          locale: null,
+          name: "Alice",
+          email: "alice@test.com",
+          joinedAt: new Date(),
+        },
+        {
+          id: MEMBER_B,
+          workspaceId: WORKSPACE_ID,
+          userId: "usr_2",
+          role: "member",
+          slug: "bob",
+          timezone: null,
+          locale: null,
+          name: "Bob",
+          email: "bob@test.com",
+          joinedAt: new Date(),
+        },
+      ])
+
+      // Only stream A exists — stream B needs provisioning
+      spyOn(StreamRepository, "list").mockResolvedValue([streamA])
+      spyOn(db, "withTransaction").mockImplementation((async (_db: unknown, callback: (client: any) => Promise<any>) =>
+        callback({})) as any)
+      spyOn(StreamRepository, "insertSystemStream").mockResolvedValue({ stream: newStreamB, created: true })
+      spyOn(StreamMemberRepository, "insert").mockResolvedValue({} as any)
+      spyOn(OutboxRepository, "insert").mockResolvedValue({} as any)
+
+      const { service, createMessage } = createService()
+      await service.notifyWorkspace(WORKSPACE_ID, "Alert")
+
+      // Bulk provision was called once (single transaction for all missing)
+      expect(db.withTransaction).toHaveBeenCalledTimes(1)
+      expect(createMessage).toHaveBeenCalledTimes(2)
+    })
+
     it("should continue notifying remaining members when one fails", async () => {
+      const streamA = fakeStream({ createdBy: MEMBER_A })
       const streamB = fakeStream({ createdBy: MEMBER_B })
 
       spyOn(MemberRepository, "listByWorkspace").mockResolvedValue([
@@ -233,16 +319,16 @@ describe("NotificationService", () => {
         },
       ])
 
-      // First member's stream lookup fails
-      spyOn(StreamRepository, "findByTypeAndOwner")
-        .mockRejectedValueOnce(new Error("db error"))
-        .mockResolvedValueOnce(streamB)
+      // Batch-fetch returns both streams, but createMessage fails for first member
+      spyOn(StreamRepository, "list").mockResolvedValue([streamA, streamB])
 
       const { service, createMessage } = createService()
+      createMessage.mockRejectedValueOnce(new Error("message creation failed")).mockResolvedValueOnce({} as any)
+
       await service.notifyWorkspace(WORKSPACE_ID, "Alert")
 
       // Second member still got notified despite first failing
-      expect(createMessage).toHaveBeenCalledTimes(1)
+      expect(createMessage).toHaveBeenCalledTimes(2)
       expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ streamId: streamB.id }))
     })
   })

@@ -1,5 +1,6 @@
 import type { Querier } from "../../db"
 import type {
+  AuthorType,
   StreamType,
   UserPreferences,
   ExtractionContentType,
@@ -424,7 +425,7 @@ async function resolveParticipantsWithTimezones(
 /**
  * Resolve author name for a message.
  */
-async function resolveAuthorName(db: Querier, authorId: string, authorType: string): Promise<string> {
+async function resolveAuthorName(db: Querier, authorId: string, authorType: AuthorType): Promise<string> {
   if (authorType === "system") {
     return "System"
   }

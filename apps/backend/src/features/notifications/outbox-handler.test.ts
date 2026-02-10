@@ -23,6 +23,7 @@ function createHandler() {
   const notificationService = {
     notifyWorkspace: mock(async () => {}),
     notifyMember: mock(async () => {}),
+    sendBudgetAlert: mock(async () => {}),
     provisionSystemStream: mock(async () => ({}) as any),
     findSystemStream: mock(async () => null),
   } as unknown as NotificationService
@@ -39,21 +40,18 @@ describe("NotificationOutboxHandler", () => {
     mock.restore()
   })
 
-  it("should send budget alert notifications to workspace", async () => {
+  it("should pass structured budget alert payload to notification service when budget:alert event is received", async () => {
+    const payload = {
+      workspaceId: "ws_test",
+      alertType: "threshold",
+      thresholdPercent: 80,
+      currentUsageUsd: 40.5,
+      budgetUsd: 50,
+      percentUsed: 81,
+    }
+
     const fetchSpy = spyOn(OutboxRepository, "fetchAfterId").mockResolvedValue([
-      {
-        id: 1n,
-        eventType: "budget:alert",
-        payload: {
-          workspaceId: "ws_test",
-          alertType: "threshold",
-          thresholdPercent: 80,
-          currentUsageUsd: 40.5,
-          budgetUsd: 50,
-          percentUsed: 81,
-        },
-        createdAt: new Date(),
-      },
+      { id: 1n, eventType: "budget:alert", payload, createdAt: new Date() },
     ] as any)
 
     const { handler, notificationService } = createHandler()
@@ -63,10 +61,7 @@ describe("NotificationOutboxHandler", () => {
     await new Promise((r) => setTimeout(r, 300))
 
     expect(fetchSpy).toHaveBeenCalled()
-    expect(notificationService.notifyWorkspace).toHaveBeenCalledWith(
-      "ws_test",
-      "**Budget alert** — AI usage has reached 81% of your $50/month budget ($40.50 spent)."
-    )
+    expect(notificationService.sendBudgetAlert).toHaveBeenCalledWith(payload)
   })
 
   it("should skip non-matching event types and advance cursor", async () => {
@@ -80,6 +75,7 @@ describe("NotificationOutboxHandler", () => {
 
     await new Promise((r) => setTimeout(r, 300))
 
+    expect(notificationService.sendBudgetAlert).not.toHaveBeenCalled()
     expect(notificationService.notifyWorkspace).not.toHaveBeenCalled()
   })
 
@@ -91,7 +87,10 @@ describe("NotificationOutboxHandler", () => {
       result = r
     })
 
-    const notificationService = { notifyWorkspace: mock(async () => {}) } as unknown as NotificationService
+    const notificationService = {
+      notifyWorkspace: mock(async () => {}),
+      sendBudgetAlert: mock(async () => {}),
+    } as unknown as NotificationService
     const handler = new NotificationOutboxHandler({} as any, notificationService)
     handler.handle()
 

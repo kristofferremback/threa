@@ -462,6 +462,44 @@ export const StreamRepository = {
     return result.rows.length > 0
   },
 
+  /**
+   * Atomically insert a system stream or return the existing one.
+   * Uses ON CONFLICT DO NOTHING on idx_streams_system_per_member to handle
+   * concurrent provisioning (same pattern as insertOrFindThread).
+   */
+  async insertSystemStream(
+    db: Querier,
+    params: { id: string; workspaceId: string; createdBy: string }
+  ): Promise<{ stream: Stream; created: boolean }> {
+    const insertResult = await db.query<StreamRow>(sql`
+      INSERT INTO streams (
+        id, workspace_id, type, display_name, visibility,
+        companion_mode, created_by
+      ) VALUES (
+        ${params.id},
+        ${params.workspaceId},
+        ${"system"},
+        ${"System"},
+        ${"private"},
+        ${"off"},
+        ${params.createdBy}
+      )
+      ON CONFLICT (workspace_id, created_by) WHERE type = 'system'
+      DO NOTHING
+      RETURNING ${sql.raw(SELECT_FIELDS)}
+    `)
+
+    if (insertResult.rows.length > 0) {
+      return { stream: mapRowToStream(insertResult.rows[0]), created: true }
+    }
+
+    const existing = await this.findByTypeAndOwner(db, params.workspaceId, "system", params.createdBy)
+    if (!existing) {
+      throw new Error("System stream creation conflict but existing stream not found")
+    }
+    return { stream: existing, created: false }
+  },
+
   async findByTypeAndOwner(
     db: Querier,
     workspaceId: string,

@@ -1,5 +1,6 @@
 import type { Pool } from "pg"
-import { OutboxRepository, type BudgetAlertOutboxPayload } from "../../lib/outbox"
+import { OutboxRepository } from "../../lib/outbox"
+import type { BudgetAlertOutboxPayload } from "../../lib/outbox"
 import { logger } from "../../lib/logger"
 import { CursorLock, ensureListenerFromLatest, type ProcessResult } from "../../lib/cursor-lock"
 import { DebounceWithMaxWait } from "../../lib/debounce"
@@ -93,12 +94,16 @@ export class NotificationOutboxHandler implements OutboxHandler {
   }
 
   private async handleBudgetAlert(payload: BudgetAlertOutboxPayload): Promise<void> {
-    const { workspaceId, percentUsed, budgetUsd, currentUsageUsd } = payload
+    await this.notificationService.sendBudgetAlert(payload)
 
-    const message = `**Budget alert** — AI usage has reached ${percentUsed}% of your $${budgetUsd}/month budget ($${currentUsageUsd.toFixed(2)} spent).`
-
-    await this.notificationService.notifyWorkspace(workspaceId, message)
-
-    logger.info({ workspaceId, percentUsed, budgetUsd, currentUsageUsd }, "Budget alert notification sent to workspace")
+    logger.info(
+      {
+        workspaceId: payload.workspaceId,
+        percentUsed: payload.percentUsed,
+        budgetUsd: payload.budgetUsd,
+        currentUsageUsd: payload.currentUsageUsd,
+      },
+      "Budget alert notification sent to workspace"
+    )
   }
 }
