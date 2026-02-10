@@ -113,6 +113,7 @@ export default defineConfig({
         USE_STUB_COMPANION: "true",
         USE_STUB_BOUNDARY_EXTRACTION: "true",
         USE_STUB_AI: "true",
+        THREA_TEST_LOG_FILE: process.env.THREA_TEST_LOG_FILE,
         // MinIO S3-compatible storage for file uploads
         S3_BUCKET: "threa-browser-test",
         S3_REGION: "us-east-1",
