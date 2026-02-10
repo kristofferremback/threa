@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useWorkspaceService } from "@/contexts"
+import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
@@ -14,6 +15,10 @@ export const workspaceKeys = {
   details: () => [...workspaceKeys.all, "detail"] as const,
   detail: (id: string) => [...workspaceKeys.details(), id] as const,
   bootstrap: (id: string) => [...workspaceKeys.all, "bootstrap", id] as const,
+}
+
+function isTerminalBootstrapError(error: unknown): boolean {
+  return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
 
 export function useWorkspaces() {
@@ -63,7 +68,7 @@ export function useWorkspaceBootstrap(workspaceId: string) {
   // Check if this query has already errored - don't re-enable if so
   // This prevents continuous refetching when the server is down
   const existingQueryState = queryClient.getQueryState(workspaceKeys.bootstrap(workspaceId))
-  const hasExistingError = existingQueryState?.status === "error"
+  const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
 
   const query = useQuery({
     queryKey: workspaceKeys.bootstrap(workspaceId),
@@ -115,8 +120,9 @@ export function useWorkspaceBootstrap(workspaceId: string) {
 
       return bootstrap
     },
-    // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: !!workspaceId && !!socket && !hasExistingError,
+    // Keep terminal auth/not-found errors disabled to avoid loops.
+    // Non-terminal errors can recover automatically on future attempts.
+    enabled: !!workspaceId && !!socket && !hasTerminalError,
     // Prevent automatic refetching - socket events handle updates
     staleTime: Infinity,
     gcTime: Infinity,
@@ -128,8 +134,8 @@ export function useWorkspaceBootstrap(workspaceId: string) {
 
   debugBootstrap("Workspace bootstrap observer state", {
     workspaceId,
-    enabled: !!workspaceId && !!socket && !hasExistingError,
-    hasExistingError,
+    enabled: !!workspaceId && !!socket && !hasTerminalError,
+    hasTerminalError,
     status: query.status,
     fetchStatus: query.fetchStatus,
     isPending: query.isPending,

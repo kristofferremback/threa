@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService } from "@/contexts"
+import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
@@ -18,6 +19,10 @@ export const streamKeys = {
   bootstrap: (workspaceId: string, streamId: string) =>
     [...streamKeys.all, "bootstrap", workspaceId, streamId] as const,
   events: (workspaceId: string, streamId: string) => [...streamKeys.all, "events", workspaceId, streamId] as const,
+}
+
+function isTerminalBootstrapError(error: unknown): boolean {
+  return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
 
 export function useStreams(workspaceId: string, filters?: { type?: StreamType }) {
@@ -63,7 +68,7 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
   // Check if this query has already errored - don't re-enable if so
   // This prevents continuous refetching when a stream doesn't exist
   const existingQueryState = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
-  const hasExistingError = existingQueryState?.status === "error"
+  const hasTerminalError = existingQueryState?.status === "error" && isTerminalBootstrapError(existingQueryState.error)
 
   const query = useQuery({
     queryKey: streamKeys.bootstrap(workspaceId, streamId),
@@ -104,8 +109,9 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
 
       return bootstrap
     },
-    // Don't enable if the query has already errored to prevent continuous refetch loops
-    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasExistingError,
+    // Keep terminal auth/not-found errors disabled to avoid loops.
+    // Non-terminal errors can recover automatically on future attempts.
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
     // Match coordinated loading options to share cache correctly and prevent
     // multiple observers from conflicting. Coordinated loading handles initial
     // fetch, and socket events handle updates.
@@ -121,8 +127,8 @@ export function useStreamBootstrap(workspaceId: string, streamId: string, option
   debugBootstrap("Stream bootstrap observer state", {
     workspaceId,
     streamId,
-    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasExistingError,
-    hasExistingError,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!streamId && !!socket && !hasTerminalError,
+    hasTerminalError,
     status: query.status,
     fetchStatus: query.fetchStatus,
     isPending: query.isPending,

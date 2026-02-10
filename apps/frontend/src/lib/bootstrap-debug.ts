@@ -22,7 +22,12 @@ export function isBootstrapDebugEnabled(): boolean {
     return paramFlag
   }
 
-  const stored = window.localStorage.getItem(DEBUG_STORAGE_KEY)
+  const getItem = window.localStorage?.getItem
+  if (typeof getItem !== "function") {
+    return false
+  }
+
+  const stored = getItem.call(window.localStorage, DEBUG_STORAGE_KEY)
   return stored === "1" || stored === "true"
 }
 
@@ -31,7 +36,12 @@ export function setBootstrapDebugEnabled(enabled: boolean): void {
     return
   }
 
-  window.localStorage.setItem(DEBUG_STORAGE_KEY, enabled ? "1" : "0")
+  const setItem = window.localStorage?.setItem
+  if (typeof setItem !== "function") {
+    return
+  }
+
+  setItem.call(window.localStorage, DEBUG_STORAGE_KEY, enabled ? "1" : "0")
 }
 
 export function debugBootstrap(message: string, details?: unknown): void {

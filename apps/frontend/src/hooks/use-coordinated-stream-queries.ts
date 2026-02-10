@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
 import { useSocket, useStreamService, type StreamService } from "@/contexts"
+import { ApiError } from "@/api/client"
 import { debugBootstrap } from "@/lib/bootstrap-debug"
 import { db } from "@/db"
 import { joinRoomWithAck } from "@/lib/socket-room"
@@ -10,6 +11,10 @@ import type { Socket } from "socket.io-client"
 function isDraftId(id: string): boolean {
   // Draft scratchpads use "draft_xxx" format, draft thread panels use "draft:xxx:xxx" format
   return id.startsWith("draft_") || id.startsWith("draft:")
+}
+
+function isTerminalBootstrapError(error: unknown): boolean {
+  return ApiError.isApiError(error) && (error.status === 403 || error.status === 404)
 }
 
 async function queryFnWithoutSocket() {
@@ -74,7 +79,7 @@ export function useCoordinatedStreamQueries(workspaceId: string, streamIds: stri
     const errored = new Set<string>()
     for (const streamId of serverStreamIds) {
       const state = queryClient.getQueryState(streamKeys.bootstrap(workspaceId, streamId))
-      if (state?.status === "error") {
+      if (state?.status === "error" && isTerminalBootstrapError(state.error)) {
         errored.add(streamId)
       }
     }
