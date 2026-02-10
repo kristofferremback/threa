@@ -150,7 +150,7 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           await streamService.validateStreamAccess(streamId, wsId, member.id)
         } catch (error) {
           if (!isJoinAccessError(error)) {
-            throw error
+            logger.error({ error, userId, room, wsId, streamId }, "Unexpected error during stream room join")
           }
           socket.emit("error", { message: "Not authorized to join this stream" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })
@@ -192,7 +192,10 @@ export function registerSocketHandlers(io: Server, deps: Dependencies) {
           await streamService.validateStreamAccess(session.streamId, wsId, member.id)
         } catch (error) {
           if (!isJoinAccessError(error)) {
-            throw error
+            logger.error(
+              { error, userId, room, wsId, streamId: session.streamId },
+              "Unexpected error during agent session room join"
+            )
           }
           socket.emit("error", { message: "Not authorized to join this session" })
           wsMessagesTotal.inc({ workspace_id: wsId, direction: "sent", event_type: "error", room_pattern: roomPattern })

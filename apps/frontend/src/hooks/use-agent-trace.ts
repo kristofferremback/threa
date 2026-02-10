@@ -134,7 +134,7 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
     if (!socket || !workspaceId || !sessionId) return
 
     const room = `ws:${workspaceId}:agent_session:${sessionId}`
-    let isCancelled = false
+    const abortController = new AbortController()
 
     // Reset state for new session
     setRealtimeSteps(new Map())
@@ -153,13 +153,12 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
 
     // Subscribe to session room FIRST and only fetch bootstrap after join ack.
     debugBootstrap("Agent trace joining session room", { workspaceId, sessionId, room })
-    void joinRoomWithAck(socket, room)
+    void joinRoomWithAck(socket, room, { signal: abortController.signal })
       .then(() => {
-        if (isCancelled) return
         setIsSubscribed(true)
       })
       .catch((error: unknown) => {
-        if (isCancelled) return
+        if (abortController.signal.aborted) return
         const joinError = error instanceof Error ? error : new Error("Failed to subscribe to session room")
         console.error(
           `[AgentTrace] Failed to receive join ack for ${room}; continuing with bootstrap fetch and realtime listeners`,
@@ -169,12 +168,12 @@ export function useAgentTrace(workspaceId: string, sessionId: string): UseAgentT
         setIsSubscribed(true)
       })
       .finally(() => {
-        if (isCancelled) return
+        if (abortController.signal.aborted) return
         setIsSubscribing(false)
       })
 
     return () => {
-      isCancelled = true
+      abortController.abort()
       setIsSubscribed(false)
       socket.emit("leave", room)
       socket.off("agent_session:step:started", handleStepStarted)

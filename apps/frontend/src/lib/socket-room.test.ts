@@ -125,4 +125,31 @@ describe("joinRoomWithAck", () => {
 
     await expect(joinPromise).rejects.toThrow('Socket disconnected while joining room "ws:workspace_1"')
   })
+
+  it("should reject immediately when signal is already aborted", async () => {
+    const socket = new MockSocket()
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(joinRoomWithAck(asSocket(socket), "ws:workspace_1", { signal: controller.signal })).rejects.toThrow(
+      'Join aborted for room "ws:workspace_1"'
+    )
+    expect(socket.emitCalls).toBe(0)
+  })
+
+  it("should abort during connection wait without emitting join", async () => {
+    const socket = new MockSocket()
+    socket.connected = false
+    const controller = new AbortController()
+
+    const joinPromise = joinRoomWithAck(asSocket(socket), "ws:workspace_1", {
+      timeoutMs: 200,
+      signal: controller.signal,
+    })
+
+    setTimeout(() => controller.abort(), 10)
+
+    await expect(joinPromise).rejects.toThrow('Join aborted for room "ws:workspace_1"')
+    expect(socket.emitCalls).toBe(0)
+  })
 })

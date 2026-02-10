@@ -125,15 +125,20 @@ export function useSocketEvents(workspaceId: string) {
   useEffect(() => {
     if (!socket || !workspaceId || !memberStreamIdsKey) return
 
+    const abortController = new AbortController()
     const ids = memberStreamIdsKey.split(",").filter(Boolean)
     debugBootstrap("Socket events joining member stream rooms", { workspaceId, streamIds: ids })
     for (const id of ids) {
-      void joinRoomWithAck(socket, `ws:${workspaceId}:stream:${id}`).catch((error) => {
-        console.error(`[SocketEvents] Failed to join stream room ws:${workspaceId}:stream:${id}`, error)
-      })
+      void joinRoomWithAck(socket, `ws:${workspaceId}:stream:${id}`, { signal: abortController.signal }).catch(
+        (error) => {
+          if (abortController.signal.aborted) return
+          console.error(`[SocketEvents] Failed to join stream room ws:${workspaceId}:stream:${id}`, error)
+        }
+      )
     }
 
     return () => {
+      abortController.abort()
       for (const id of ids) {
         socket.emit("leave", `ws:${workspaceId}:stream:${id}`)
       }
@@ -143,9 +148,12 @@ export function useSocketEvents(workspaceId: string) {
   useEffect(() => {
     if (!socket || !workspaceId) return
 
+    const abortController = new AbortController()
+
     // Join workspace room to receive stream metadata events
     debugBootstrap("Socket events joining workspace room", { workspaceId })
-    void joinRoomWithAck(socket, `ws:${workspaceId}`).catch((error) => {
+    void joinRoomWithAck(socket, `ws:${workspaceId}`, { signal: abortController.signal }).catch((error) => {
+      if (abortController.signal.aborted) return
       console.error(`[SocketEvents] Failed to join workspace room ws:${workspaceId}`, error)
     })
 
@@ -513,6 +521,7 @@ export function useSocketEvents(workspaceId: string) {
     })
 
     return () => {
+      abortController.abort()
       socket.emit("leave", `ws:${workspaceId}`)
       socket.off("stream:created")
       socket.off("stream:updated")

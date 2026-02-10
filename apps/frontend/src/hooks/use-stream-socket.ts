@@ -91,9 +91,11 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     if (!socket || !workspaceId || !streamId || !shouldSubscribe) return
 
     const room = `ws:${workspaceId}:stream:${streamId}`
+    const abortController = new AbortController()
 
     // Subscribe FIRST (before any fetches happen)
-    void joinRoomWithAck(socket, room).catch((error) => {
+    void joinRoomWithAck(socket, room, { signal: abortController.signal }).catch((error) => {
+      if (abortController.signal.aborted) return
       console.error(`[StreamSocket] Failed to join room ${room}`, error)
     })
 
@@ -372,6 +374,7 @@ export function useStreamSocket(workspaceId: string, streamId: string, options?:
     socket.on("agent_session:failed", handleAgentSessionEvent)
 
     return () => {
+      abortController.abort()
       socket.emit("leave", room)
       socket.off("message:created", handleMessageCreated)
       socket.off("message:edited", handleMessageEdited)

@@ -8,6 +8,7 @@ interface JoinAckResult {
 
 interface JoinRoomOptions {
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 const DEFAULT_JOIN_TIMEOUT_MS = 5000
@@ -22,10 +23,14 @@ function getPendingJoins(socket: Socket): Map<string, Promise<void>> {
   return next
 }
 
-function waitForConnection(socket: Socket, room: string, timeoutMs: number): Promise<void> {
+function waitForConnection(socket: Socket, room: string, timeoutMs: number, signal?: AbortSignal): Promise<void> {
   if (socket.connected) {
     debugBootstrap("Socket already connected before join", { room })
     return Promise.resolve()
+  }
+
+  if (signal?.aborted) {
+    return Promise.reject(new Error(`Join aborted for room "${room}"`))
   }
 
   return new Promise((resolve, reject) => {
@@ -38,6 +43,7 @@ function waitForConnection(socket: Socket, room: string, timeoutMs: number): Pro
       }
       socket.off("connect", handleConnect)
       socket.off("connect_error", handleConnectError)
+      signal?.removeEventListener("abort", handleAbort)
     }
 
     const handleConnect = () => {
@@ -50,8 +56,14 @@ function waitForConnection(socket: Socket, room: string, timeoutMs: number): Pro
       lastConnectError = error.message
     }
 
+    const handleAbort = () => {
+      cleanup()
+      reject(new Error(`Join aborted for room "${room}"`))
+    }
+
     socket.on("connect", handleConnect)
     socket.on("connect_error", handleConnectError)
+    signal?.addEventListener("abort", handleAbort, { once: true })
 
     // Handle race where socket connected between initial check and listener registration.
     if (socket.connected) {
@@ -125,18 +137,34 @@ function emitJoinWithAck(socket: Socket, room: string, timeoutMs: number): Promi
 
 export async function joinRoomWithAck(socket: Socket, room: string, options?: JoinRoomOptions): Promise<void> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_JOIN_TIMEOUT_MS
+  const signal = options?.signal
+
+  if (signal?.aborted) {
+    throw new Error(`Join aborted for room "${room}"`)
+  }
+
   const pendingJoins = getPendingJoins(socket)
   const existingJoin = pendingJoins.get(room)
   if (existingJoin) {
     debugBootstrap("Reusing in-flight join promise", { room })
-    return existingJoin
+    if (!signal) return existingJoin
+    // Race the shared promise against the abort signal so this caller can bail out
+    // without cancelling the join for other callers sharing the dedup promise.
+    return raceAbortSignal(existingJoin, signal, room)
   }
 
   debugBootstrap("Starting joinRoomWithAck", { room, timeoutMs })
   const joinPromise = (async () => {
-    await waitForConnection(socket, room, timeoutMs)
+    await waitForConnection(socket, room, timeoutMs, signal)
+    if (signal?.aborted) throw new Error(`Join aborted for room "${room}"`)
     await emitJoinWithAck(socket, room, timeoutMs)
   })()
+
+  // Cancellable joins skip the dedup map — aborting a shared promise would reject
+  // for non-cancellable callers that deduped onto it.
+  if (signal) {
+    return joinPromise
+  }
 
   pendingJoins.set(room, joinPromise)
 
@@ -145,4 +173,33 @@ export async function joinRoomWithAck(socket: Socket, room: string, options?: Jo
   } finally {
     pendingJoins.delete(room)
   }
+}
+
+function raceAbortSignal(promise: Promise<void>, signal: AbortSignal, room: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      reject(new Error(`Join aborted for room "${room}"`))
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true })
+
+    promise.then(
+      () => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener("abort", onAbort)
+        resolve()
+      },
+      (err) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener("abort", onAbort)
+        reject(err)
+      }
+    )
+  })
 }
