@@ -50,20 +50,28 @@ export class InvitationService {
       inviterWorkosUserId = user?.workosUserId ?? undefined
     }
 
+    // Batch-fetch: users by email, existing members, pending invitations
+    const existingUsers = await UserRepository.findByEmails(this.pool, emails)
+    const usersByEmail = new Map(existingUsers.map((u) => [u.email, u]))
+
+    const userIds = existingUsers.map((u) => u.id)
+    const memberUserIds = await WorkspaceRepository.findMemberUserIds(this.pool, workspaceId, userIds)
+
+    const pendingInvitations = await InvitationRepository.findPendingByEmailsAndWorkspace(
+      this.pool,
+      emails,
+      workspaceId
+    )
+    const pendingEmails = new Set(pendingInvitations.map((inv) => inv.email))
+
     for (const email of emails) {
-      // Check if already a member (by email → user → member)
-      const user = await UserRepository.findByEmail(this.pool, email)
-      if (user) {
-        const isMember = await WorkspaceRepository.isMember(this.pool, workspaceId, user.id)
-        if (isMember) {
-          skipped.push({ email, reason: "Already a member" })
-          continue
-        }
+      const user = usersByEmail.get(email)
+      if (user && memberUserIds.has(user.id)) {
+        skipped.push({ email, reason: "Already a member" })
+        continue
       }
 
-      // Check for existing pending invitation
-      const existing = await InvitationRepository.findPendingByEmailAndWorkspace(this.pool, email, workspaceId)
-      if (existing) {
+      if (pendingEmails.has(email)) {
         skipped.push({ email, reason: "Invitation already pending" })
         continue
       }
@@ -105,7 +113,6 @@ export class InvitationService {
           await InvitationRepository.setWorkosInvitationId(this.pool, id, workosResult.id)
         } catch (error) {
           logger.error({ err: error, email, invitationId: id }, "Failed to send WorkOS invitation")
-          // Local invitation still exists — admin can resend later
         }
       }
 
@@ -186,27 +193,30 @@ export class InvitationService {
   }
 
   async revokeInvitation(invitationId: string, workspaceId: string): Promise<boolean> {
-    return withTransaction(this.pool, async (client) => {
-      const invitation = await InvitationRepository.findById(client, invitationId)
-      if (!invitation || invitation.workspaceId !== workspaceId) return false
+    // Phase 1: Update local status in transaction
+    const invitation = await withTransaction(this.pool, async (client) => {
+      const inv = await InvitationRepository.findById(client, invitationId)
+      if (!inv || inv.workspaceId !== workspaceId) return null
 
       const updated = await InvitationRepository.updateStatus(client, invitationId, "revoked", {
         revokedAt: new Date(),
       })
 
-      if (!updated) return false
-
-      // Revoke in WorkOS if we have an ID
-      if (invitation.workosInvitationId) {
-        try {
-          await this.workosOrgService.revokeInvitation(invitation.workosInvitationId)
-        } catch (error) {
-          logger.error({ err: error, invitationId }, "Failed to revoke WorkOS invitation")
-        }
-      }
-
-      return true
+      return updated ? inv : null
     })
+
+    if (!invitation) return false
+
+    // Phase 2: Revoke in WorkOS (no DB connection held)
+    if (invitation.workosInvitationId) {
+      try {
+        await this.workosOrgService.revokeInvitation(invitation.workosInvitationId)
+      } catch (error) {
+        logger.error({ err: error, invitationId }, "Failed to revoke WorkOS invitation")
+      }
+    }
+
+    return true
   }
 
   async resendInvitation(invitationId: string, workspaceId: string): Promise<Invitation | null> {

@@ -171,6 +171,16 @@ export const WorkspaceRepository = {
     return result.rows.length > 0
   },
 
+  async findMemberUserIds(db: Querier, workspaceId: string, userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set()
+
+    const result = await db.query<{ user_id: string }>(sql`
+      SELECT user_id FROM workspace_members
+      WHERE workspace_id = ${workspaceId} AND user_id = ANY(${userIds})
+    `)
+    return new Set(result.rows.map((r) => r.user_id))
+  },
+
   async slugExists(db: Querier, slug: string): Promise<boolean> {
     const result = await db.query(sql`
       SELECT 1 FROM workspaces WHERE slug = ${slug}

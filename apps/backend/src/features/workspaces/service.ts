@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { withTransaction } from "../../db"
+import { withTransaction, type Querier } from "../../db"
 import { WorkspaceRepository, Workspace, WorkspaceMember } from "./repository"
 import { MemberRepository, Member } from "./member-repository"
 import { OutboxRepository } from "../../lib/outbox"
@@ -160,14 +160,8 @@ export class WorkspaceService {
     params: { name?: string; slug?: string; timezone: string; locale: string }
   ): Promise<WorkspaceMember> {
     return withTransaction(this.pool, async (client) => {
-      const member = await WorkspaceRepository.findMemberByUserId(
-        client,
-        workspaceId,
-        // memberId is actually the member ID, look up via member table
-        (await MemberRepository.findById(client, memberId))?.userId ?? ""
-      )
-
-      if (!member) {
+      const member = await MemberRepository.findById(client, memberId)
+      if (!member || member.workspaceId !== workspaceId) {
         throw new HttpError("Member not found", { status: 404, code: "MEMBER_NOT_FOUND" })
       }
 
@@ -175,24 +169,22 @@ export class WorkspaceService {
         throw new HttpError("Member setup already completed", { status: 400, code: "SETUP_ALREADY_COMPLETED" })
       }
 
+      const user = await UserRepository.findById(client, member.userId)
+      if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+
       // Determine slug
       let slug: string
-      const shouldEnforceEmailSlug = await this.shouldEnforceEmailSlug(workspaceId, member.userId)
+      const enforceEmailSlug = await this.shouldEnforceEmailSlug(client, workspaceId, user)
 
-      if (shouldEnforceEmailSlug) {
-        const user = await UserRepository.findById(client, member.userId)
-        if (!user) throw new HttpError("User not found", { status: 404, code: "USER_NOT_FOUND" })
+      if (enforceEmailSlug) {
         slug = deriveSlugFromEmail(user.email)
       } else if (params.slug) {
         slug = generateSlug(params.slug)
       } else {
-        const user = await UserRepository.findById(client, member.userId)
-        slug = user
-          ? await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
-          : `member-${generateMemberId().slice(7, 15)}`
+        slug = await generateUniqueSlug(user.name, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
       }
 
-      // Ensure slug uniqueness
+      // Ensure slug uniqueness for derived/provided slugs
       const slugExists = await WorkspaceRepository.memberSlugExists(client, workspaceId, slug)
       if (slugExists && slug !== member.slug) {
         slug = await generateUniqueSlug(slug, (s) => WorkspaceRepository.memberSlugExists(client, workspaceId, s))
@@ -223,17 +215,14 @@ export class WorkspaceService {
     })
   }
 
-  private async shouldEnforceEmailSlug(workspaceId: string, userId: string): Promise<boolean> {
+  private async shouldEnforceEmailSlug(db: Querier, workspaceId: string, user: User): Promise<boolean> {
     if (!this.workosOrgService) return false
 
-    const orgId = await WorkspaceRepository.getWorkosOrganizationId(this.pool, workspaceId)
+    const orgId = await WorkspaceRepository.getWorkosOrganizationId(db, workspaceId)
     if (!orgId) return false
 
     const org = await this.workosOrgService.getOrganization(orgId)
     if (!org || org.domains.length === 0) return false
-
-    const user = await UserRepository.findById(this.pool, userId)
-    if (!user) return false
 
     const emailDomain = user.email.split("@")[1]?.toLowerCase()
     return org.domains.some((d) => d.toLowerCase() === emailDomain)

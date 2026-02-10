@@ -121,6 +121,16 @@ export const InvitationRepository = {
     return result.rows[0] ? mapRow(result.rows[0]) : null
   },
 
+  async findPendingByEmailsAndWorkspace(db: Querier, emails: string[], workspaceId: string): Promise<Invitation[]> {
+    if (emails.length === 0) return []
+
+    const result = await db.query<InvitationRow>(sql`
+      SELECT ${sql.raw(SELECT_FIELDS)} FROM workspace_invitations
+      WHERE email = ANY(${emails}) AND workspace_id = ${workspaceId} AND status = 'pending' AND expires_at > NOW()
+    `)
+    return result.rows.map(mapRow)
+  },
+
   async updateStatus(
     db: Querier,
     id: string,

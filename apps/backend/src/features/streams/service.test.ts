@@ -1,81 +1,30 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test"
+import { describe, test, expect, spyOn, beforeEach } from "bun:test"
+import type { PoolClient } from "pg"
 import { StreamService } from "./service"
+import { StreamRepository } from "./repository"
+import { StreamMemberRepository } from "./member-repository"
+import { StreamEventRepository } from "./event-repository"
+import { OutboxRepository } from "../../lib/outbox"
+import * as idModule from "../../lib/id"
+import * as db from "../../db"
 import { HttpError } from "../../lib/errors"
 
-const mockFindById = mock(() => Promise.resolve(null as Record<string, unknown> | null))
-const mockInsertMember = mock(() =>
-  Promise.resolve({
-    streamId: "stream_1",
-    memberId: "member_1",
-    pinned: false,
-    pinnedAt: null,
-    muted: false,
-    lastReadEventId: null,
-    lastReadAt: null,
-    joinedAt: new Date(),
-  })
-)
+const mockFindById = spyOn(StreamRepository, "findById")
+const mockInsertMember = spyOn(StreamMemberRepository, "insert")
+const mockInsertEvent = spyOn(StreamEventRepository, "insert")
+const mockInsertOutbox = spyOn(OutboxRepository, "insert")
 
-const mockInsertEvent = mock(() =>
-  Promise.resolve({
-    id: "evt_1",
-    streamId: "stream_1",
-    sequence: 1n,
-    eventType: "member_joined",
-    payload: {},
-    actorId: "member_1",
-    actorType: "member",
-    createdAt: new Date(),
-  })
-)
-
-const mockInsertOutbox = mock(() =>
-  Promise.resolve({ id: 1n, eventType: "stream:member_joined", payload: {}, createdAt: new Date() })
-)
-
-mock.module("./repository", () => ({
-  StreamRepository: {
-    findById: mockFindById,
-  },
-}))
-
-mock.module("./member-repository", () => ({
-  StreamMemberRepository: {
-    insert: mockInsertMember,
-  },
-}))
-
-mock.module("./event-repository", () => ({
-  StreamEventRepository: {
-    insert: mockInsertEvent,
-  },
-}))
-
-mock.module("../../lib/outbox", () => ({
-  OutboxRepository: {
-    insert: mockInsertOutbox,
-  },
-}))
-
-mock.module("../../lib/id", () => ({
-  eventId: () => "evt_1",
-  streamId: () => "stream_new",
-}))
-
-mock.module("../../db", () => ({
-  withClient: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
-  withTransaction: (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
-}))
+spyOn(idModule, "eventId").mockReturnValue("evt_1")
+spyOn(idModule, "streamId").mockReturnValue("stream_new")
+spyOn(db, "withClient").mockImplementation((_pool, fn) => fn({} as PoolClient))
+spyOn(db, "withTransaction").mockImplementation((_pool, fn) => fn({} as PoolClient))
 
 describe("StreamService.joinPublicChannel", () => {
   let service: StreamService
 
   beforeEach(() => {
     mockFindById.mockReset()
-    mockInsertMember.mockReset()
-    mockInsertEvent.mockReset()
-    mockInsertOutbox.mockReset()
-    mockInsertMember.mockResolvedValue({
+    mockInsertMember.mockReset().mockResolvedValue({
       streamId: "stream_1",
       memberId: "member_1",
       pinned: false,
@@ -84,8 +33,8 @@ describe("StreamService.joinPublicChannel", () => {
       lastReadEventId: null,
       lastReadAt: null,
       joinedAt: new Date(),
-    })
-    mockInsertEvent.mockResolvedValue({
+    } as never)
+    mockInsertEvent.mockReset().mockResolvedValue({
       id: "evt_1",
       streamId: "stream_1",
       sequence: 1n,
@@ -94,13 +43,13 @@ describe("StreamService.joinPublicChannel", () => {
       actorId: "member_1",
       actorType: "member",
       createdAt: new Date(),
-    })
-    mockInsertOutbox.mockResolvedValue({
+    } as never)
+    mockInsertOutbox.mockReset().mockResolvedValue({
       id: 1n,
       eventType: "stream:member_joined",
       payload: {},
       createdAt: new Date(),
-    })
+    } as never)
     service = new StreamService({} as never)
   })
 
@@ -110,7 +59,7 @@ describe("StreamService.joinPublicChannel", () => {
       workspaceId: "ws_1",
       type: "channel",
       visibility: "public",
-    })
+    } as never)
 
     const result = await service.joinPublicChannel("stream_1", "ws_1", "member_1")
 
@@ -124,7 +73,7 @@ describe("StreamService.joinPublicChannel", () => {
       workspaceId: "ws_1",
       type: "channel",
       visibility: "public",
-    })
+    } as never)
 
     await service.joinPublicChannel("stream_1", "ws_1", "member_1")
 
@@ -164,7 +113,7 @@ describe("StreamService.joinPublicChannel", () => {
       workspaceId: "ws_other",
       type: "channel",
       visibility: "public",
-    })
+    } as never)
 
     await expect(service.joinPublicChannel("stream_1", "ws_1", "member_1")).rejects.toThrow("Stream not found")
   })
@@ -175,7 +124,7 @@ describe("StreamService.joinPublicChannel", () => {
       workspaceId: "ws_1",
       type: "scratchpad",
       visibility: "public",
-    })
+    } as never)
 
     const error = await service.joinPublicChannel("stream_1", "ws_1", "member_1").catch((e) => e)
 
@@ -190,7 +139,7 @@ describe("StreamService.joinPublicChannel", () => {
       workspaceId: "ws_1",
       type: "channel",
       visibility: "private",
-    })
+    } as never)
 
     const error = await service.joinPublicChannel("stream_1", "ws_1", "member_1").catch((e) => e)
 
